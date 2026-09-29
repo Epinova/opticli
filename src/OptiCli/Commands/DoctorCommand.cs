@@ -92,8 +92,14 @@ internal static class DoctorCommand
                     project.SourceRoot,
                     project.HowFound,
                     project.Project.TargetFramework,
-                    PackageVersions.Find(project.Project, CsprojFile.CmsPackage),
+                    PackageVersions.FindCms(project.Project),
                     project.Project.UserSecretsId);
+            if (project is not null && projectSection.CmsVersion is null)
+            {
+                warnings.Add(File.Exists(PackageVersions.AssetsFile(project.Project))
+                    ? $"The CMS version is unknown: {CsprojFile.CmsPackage} is neither referenced with a version nor in obj/project.assets.json."
+                    : $"The CMS version is unknown until the project is restored: run dotnet restore {project.ProjectFile}");
+            }
 
             var resolution = context.ResolveConnection();
             var candidates = resolution.Candidates.Select(c => ToView(c, project)).ToList();
