@@ -1,0 +1,132 @@
+using OptiCli.Core.Errors;
+using OptiCli.Core.Writes;
+
+namespace OptiCli.Core.Tests.Writes;
+
+public class WritePlanTests
+{
+    private const string ThreeSteps = """
+        {"operations": [
+          {"op": "create", "id": "page", "parent": 123, "type": "ArticlePage", "name": "News", "properties": {"Heading": "Hi"}},
+          {"op": "block", "id": "teaser", "type": "TeaserBlock", "name": "Teaser", "for": "$page", "properties": {"Text": "t"}},
+          {"op": "area", "ref": "$page", "property": "MainArea", "action": "add", "item": "$teaser", "at": 0, "display": "wide"},
+          {"op": "set", "ref": "456", "properties": {"RelatedPage": "$page", "Heading": "$notAnId", "MainArea": [{"ref": "$teaser"}]}}
+        ]}
+        """;
+
+    [Fact]
+    public void Parses_operations_with_their_fields_and_dependencies()
+    {
+        var plan = WritePlan.Parse(ThreeSteps);
+
+        Assert.Equal(4, plan.Steps.Count);
+        var create = Assert.IsType<CreateOperation>(plan.Steps[0].Operation);
+        Assert.Equal(("123", "ArticlePage", "News", "page"), (create.Parent, create.Type, create.Name, create.Id));
+        Assert.Empty(plan.Steps[0].DependsOn);
+
+        Assert.Equal(["page"], plan.Steps[1].DependsOn);
+        var area = Assert.IsType<AreaEdit>(plan.Steps[2].Operation);
+        Assert.Equal(("add", "$teaser", 0, "wide"), (area.Action, area.Item, area.At, area.Display));
+        Assert.Equal(new HashSet<string> { "page", "teaser" }, plan.Steps[2].DependsOn);
+
+        // Property values count only when they are exactly "$<plan id>".
+        Assert.Equal(new HashSet<string> { "page", "teaser" }, plan.Steps[3].DependsOn);
+    }
+
+    [Fact]
+    public void Resolve_substitutes_created_ids_in_refs_and_property_values()
+    {
+        var plan = WritePlan.Parse(ThreeSteps);
+        var created = new Dictionary<string, int> { ["page"] = 900, ["teaser"] = 901 };
+
+        var area = Assert.IsType<AreaEdit>(WritePlan.Resolve(plan.Steps[2], created));
+        Assert.Equal(("900", "901"), (area.Ref, area.Item));
+
+        var set = Assert.IsType<SetOperation>(WritePlan.Resolve(plan.Steps[3], created));
+        Assert.Equal("900", (string?)set.Properties!["RelatedPage"]);
+        Assert.Equal("$notAnId", (string?)set.Properties["Heading"]);
+        Assert.Equal("901", (string?)set.Properties["MainArea"]![0]!["ref"]);
+
+        // The plan itself is untouched.
+        Assert.Equal("$page", ((SetOperation)plan.Steps[3].Operation).Properties!["RelatedPage"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Every_shape_problem_is_reported_at_once()
+    {
+        const string json = """
+            {"operations": [
+              {"op": "set", "ref": "$later", "properties": {"Heading": "x"}},
+              {"op": "create", "id": "later", "parent": "1", "type": "ArticlePage", "name": "n", "colour": "red"},
+              {"op": "area", "ref": "1", "property": "MainArea", "action": "sideways"},
+              {"op": "explode"},
+              {"op": "publish"},
+              {"op": "set", "ref": "1", "publish": "yes", "properties": []},
+              {"op": "delete", "ref": "$nothing"},
+              {"op": "create", "id": "later", "parent": "1", "type": "T", "name": "dup"},
+              {"op": "block", "type": "TeaserBlock", "name": "b"},
+              {"op": "create", "id": "1bad", "parent": "1", "type": "T", "name": "n"},
+              {"op": "set", "ref": "1", "id": "x"}
+            ]}
+            """;
+
+        var error = Assert.Throws<UsageException>(() => WritePlan.Parse(json));
+
+        foreach (var expected in new[]
+        {
+            "'$later' is created by a later operation",
+            "unknown field \"colour\"",
+            "\"action\" must be add, remove or move",
+            "\"op\" must be one of",
+            "(publish): \"ref\" is required",
+            "\"publish\" must be true or false",
+            "\"properties\" must be an object",
+            "'$nothing' is not the id of an earlier",
+            "id 'later' is already used by operations[1]",
+            "give exactly one of \"for\" and \"parent\"",
+            "id '1bad' must start with a letter",
+            "(set): unknown field \"id\"",
+        })
+        {
+            Assert.Contains(expected, error.Message);
+        }
+        Assert.NotNull(error.Details);
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("{}")]
+    [InlineData("""{"operations": []}""")]
+    [InlineData("""{"operations": [{"op": "delete", "ref": "1"}], "extra": 1}""")]
+    [InlineData("not json")]
+    public void The_plan_must_be_an_object_with_operations(string json)
+    {
+        Assert.Throws<UsageException>(() => WritePlan.Parse(json));
+    }
+
+    [Fact]
+    public void A_property_value_naming_a_later_step_is_an_error()
+    {
+        const string json = """
+            {"operations": [
+              {"op": "set", "ref": "1", "properties": {"RelatedPage": "$page"}},
+              {"op": "create", "id": "page", "parent": "1", "type": "ArticlePage", "name": "n"}
+            ]}
+            """;
+
+        var error = Assert.Throws<UsageException>(() => WritePlan.Parse(json));
+        Assert.Contains("'$page' is created by a later operation", error.Message);
+    }
+
+    [Fact]
+    public void With_publish_turns_on_publishing_only_for_ops_that_can_publish()
+    {
+        Assert.True(((SetOperation)new SetOperation("1").WithPublish()).Publish);
+        Assert.True(((AreaEdit)new AreaEdit("1", "MainArea", "add", "2").WithPublish()).Publish);
+        var create = new CreateOperation("1", "T", "n") { Id = "keep" }.WithPublish();
+        Assert.True(((CreateOperation)create).Publish);
+        Assert.Equal("keep", create.Id);
+        var move = new MoveOperation("1", "2");
+        Assert.Same(move, move.WithPublish());
+    }
+}

@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <!-- Runs on whatever newer runtime the machine has (sites are often .NET 9/10 only). -->
+    <RollForward>Major</RollForward>
+    <AssemblyName>opticli</AssemblyName>
+    <RootNamespace>OptiCli</RootNamespace>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>opticli</ToolCommandName>
+    <PackageId>OptiCli</PackageId>
+    <Description>Read and write local Optimizely CMS 12 sites from the command line.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>optimizely;episerver;cms;cli;dotnet-tool</PackageTags>
+    <PackageLicenseExpression>MPL-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/epinova/opticli</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/epinova/opticli.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The agent skill ships inside opticli.dll; `opticli skill install` writes it out. -->
+    <EmbeddedResource Include="..\..\skill\*.md" LogicalName="skill/%(Filename)%(Extension)" Visible="false" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OptiCli.Core\OptiCli.Core.csproj" />
+    <!-- Built first but never referenced: the agent is loaded into the site process, not into the CLI.
+         Its DLL is copied to agent/ in the build output and so into tools/<tfm>/any/agent/ in the package. -->
+    <ProjectReference Include="..\OptiCli.Agent\OptiCli.Agent.csproj" ReferenceOutputAssembly="false" OutputItemType="OptiCliAgent" />
+  </ItemGroup>
+
+  <Target Name="IncludeOptiCliAgent" AfterTargets="ResolveProjectReferences">
+    <ItemGroup>
+      <ContentWithTargetPath Include="@(OptiCliAgent)" TargetPath="agent\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+
+</Project>

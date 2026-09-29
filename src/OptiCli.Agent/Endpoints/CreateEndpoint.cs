@@ -1,0 +1,84 @@
+using System.Globalization;
+using EPiServer.Core;
+using EPiServer.DataAbstraction;
+using EPiServer.DataAccess;
+using OptiCli.Agent.Content;
+using OptiCli.Agent.Http;
+using OptiCli.Protocol;
+
+namespace OptiCli.Agent.Endpoints;
+
+internal static class CreateEndpoint
+{
+    public static WriteResult Handle(AgentRequest request, CreateRequest body)
+    {
+        var flow = new WriteFlow(request);
+        if (string.IsNullOrWhiteSpace(body.Name))
+        {
+            throw AgentException.Usage("name is required.");
+        }
+
+        var type = TypeEndpoint.Find(flow.Types, body.Type);
+        var (parent, owner) = Parent(request, flow, body);
+        var culture = body.Lang is { } lang ? flow.Locator.EnabledLanguage(lang) : MasterLanguage(owner);
+
+        var content = culture is null
+            ? flow.Repository.GetDefault<IContent>(parent.ContentLink, type.ID)
+            : flow.Repository.GetDefault<IContent>(parent.ContentLink, type.ID, culture);
+        var before = PropertyValues.Snapshot(content);
+        content.Name = body.Name;
+        flow.Writer.Apply(content, body.Properties);
+
+        return flow.Save(
+            content,
+            before,
+            body.Publish ? SaveAction.Publish : SaveAction.Save,
+            body.DryRun,
+            shown: null,
+            baseVersion: null,
+            saveUnchanged: true,
+            precheck: Availability(request, parent, type, flow.Types));
+    }
+
+    /// <summary>
+    /// The explicit parent, or the "For this page" assets folder of <c>forContent</c>; plus the content
+    /// whose master language new content defaults to (the parent, or the folder's owner).
+    /// </summary>
+    private static (IContent Parent, IContent LanguageSource) Parent(AgentRequest request, WriteFlow flow, CreateRequest body)
+    {
+        if ((body.Parent is null) == (body.ForContent is null))
+        {
+            throw AgentException.Usage("Give exactly one of parent or forContent.");
+        }
+        if (body.Parent is not null)
+        {
+            var parent = flow.Locator.LoadAnyLanguage(flow.Locator.ResolveContent(body.Parent, "parent"));
+            return (parent, parent);
+        }
+
+        var owner = flow.Locator.LoadAnyLanguage(flow.Locator.ResolveContent(body.ForContent, "forContent"));
+        var assets = request.Service<ContentAssetHelper>();
+        // A dry run must not create the folder; validating against the owner is close enough.
+        IContent folder = body.DryRun
+            ? (IContent?)assets.GetAssetFolder(owner.ContentLink) ?? owner
+            : assets.GetOrCreateAssetFolder(owner.ContentLink);
+        return (folder, owner);
+    }
+
+    private static CultureInfo? MasterLanguage(IContent content) =>
+        content is ILocalizable { MasterLanguage: { } master } ? master : null;
+
+    /// <summary>The editor's "allowed types" rule for pages, reported as a validation error rather than an exception.</summary>
+    private static IEnumerable<ValidationIssue> Availability(AgentRequest request, IContent parent, ContentType type, IContentTypeRepository types)
+    {
+        if (parent is not PageData || type is not PageType)
+        {
+            yield break;
+        }
+        var parentType = types.Load(parent.ContentTypeID);
+        if (parentType is not null && !request.Service<ContentTypeAvailabilityService>().IsAllowed(parentType.Name, type.Name))
+        {
+            yield return new ValidationIssue(null, $"{type.Name} is not allowed below {parentType.Name} ({parent.ContentLink.ID}).");
+        }
+    }
+}

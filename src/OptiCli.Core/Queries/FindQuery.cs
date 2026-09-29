@@ -1,0 +1,206 @@
+using System.Globalization;
+using System.Text;
+using Microsoft.Data.SqlClient;
+using OptiCli.Core.Cms;
+using OptiCli.Core.Content;
+using OptiCli.Core.Data;
+using OptiCli.Core.Errors;
+using OptiCli.Core.Refs;
+using OptiCli.Core.Text;
+
+namespace OptiCli.Core.Queries;
+
+public enum FindStatus
+{
+    Any,
+
+    /// <summary>The branch is published.</summary>
+    Published,
+
+    /// <summary>The branch was never published, or has a version newer than the published one.</summary>
+    Draft,
+}
+
+/// <summary>
+/// <c>find</c>: content of one type, filtered in SQL. <c>--where</c> compares the primary (published, or
+/// never-published latest) values in <c>tblContentProperty</c>, the ones the site shows.
+/// </summary>
+public sealed class FindQuery(ContentSession session)
+{
+    private const string NamePseudoProperty = "Name";
+
+    /// <returns>Up to <paramref name="limit"/> + 1 matching ids (the extra one signals more), ordered by id.</returns>
+    public async Task<IReadOnlyList<int>> RunAsync(
+        ContentTypeInfo type,
+        IReadOnlyList<WhereClause> where,
+        int? underId,
+        FindStatus status,
+        LanguageBranch? language,
+        int offset,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var parameters = new List<SqlParameter>
+        {
+            new("@type", type.Id),
+            new("@offset", offset),
+            new("@take", limit + 1),
+        };
+        var sql = new StringBuilder($"""
+            SELECT c.pkID
+            FROM tblContent c
+            JOIN tblContentLanguage cl ON cl.fkContentID = c.pkID AND cl.fkLanguageBranchID = {(language is null ? "c.fkMasterLanguageBranchID" : "@lang")}
+            WHERE c.fkContentTypeID = @type AND c.Deleted = 0
+            """);
+        if (language is not null)
+        {
+            parameters.Add(new SqlParameter("@lang", language.Id));
+        }
+        if (underId is { } under)
+        {
+            sql.Append("\n  AND c.ContentPath LIKE @under");
+            parameters.Add(new SqlParameter("@under", $"%.{under.ToString(CultureInfo.InvariantCulture)}.%"));
+        }
+        sql.Append(status switch
+        {
+            FindStatus.Published => $"\n  AND cl.Status = {(int)VersionStatus.Published}",
+            FindStatus.Draft => $"""
+
+                  AND (cl.Status <> {(int)VersionStatus.Published} OR EXISTS (
+                      SELECT 1 FROM tblWorkContent wc
+                      WHERE wc.fkContentID = c.pkID AND wc.fkLanguageBranchID = cl.fkLanguageBranchID
+                        AND wc.Status IN ({VersionStatuses.UnpublishedSql}) AND wc.pkID > ISNULL(cl.Version, 0)))
+                """,
+            _ => "",
+        });
+
+        for (var i = 0; i < where.Count; i++)
+        {
+            sql.Append("\n  AND ").Append(await ConditionAsync(type, where[i], i, parameters, cancellationToken));
+        }
+        sql.Append("\nORDER BY c.pkID\nOFFSET @offset ROWS FETCH NEXT @take ROWS ONLY");
+
+        return await session.Db.QueryAsync(sql.ToString(), r => r.GetInt32("pkID"), cancellationToken, parameters.ToArray());
+    }
+
+    private async Task<string> ConditionAsync(ContentTypeInfo type, WhereClause clause, int index, List<SqlParameter> parameters, CancellationToken cancellationToken)
+    {
+        var value = $"@v{index}";
+        var path = clause.Property.Split('.', StringSplitOptions.TrimEntries);
+        var properties = session.Model.PropertiesOf(type.Id).ToList();
+        var outer = properties.FirstOrDefault(p => string.Equals(p.Name, path[0], StringComparison.OrdinalIgnoreCase));
+
+        if (outer is null && path.Length == 1 && string.Equals(path[0], NamePseudoProperty, StringComparison.OrdinalIgnoreCase))
+        {
+            parameters.Add(new SqlParameter(value, clause.Operator == WhereOperator.Contains ? WhereClause.ContainsPattern(clause.Value) : clause.Value));
+            return clause.Operator == WhereOperator.Contains ? $"cl.Name LIKE {value} ESCAPE '\\'" : $"cl.Name = {value}";
+        }
+
+        var definition = outer ?? throw UnknownProperty(type, path[0], properties.Select(p => p.Name).Append(NamePseudoProperty));
+        var scope = "p.ScopeName IS NULL";
+        var cultureSpecific = definition.CultureSpecific;
+        if (path.Length > 1)
+        {
+            if (definition.BaseType != PropertyBaseType.Block || definition.IsList || definition.BlockType is not { } blockType)
+            {
+                throw new UsageException($"'{definition.Name}' is not a local block, so '{clause.Property}' cannot be looked up.", "Use Block.Property only for single block-typed properties.");
+            }
+            var innerProperties = session.Model.PropertiesOf(blockType).ToList();
+            var inner = innerProperties.FirstOrDefault(p => string.Equals(p.Name, path[1], StringComparison.OrdinalIgnoreCase))
+                ?? throw UnknownProperty(session.Model.Type(blockType)!, path[1], innerProperties.Select(p => p.Name));
+            scope = $"p.ScopeName = @s{index}";
+            parameters.Add(new SqlParameter($"@s{index}", $".{definition.Id.ToString(CultureInfo.InvariantCulture)}.{inner.Id.ToString(CultureInfo.InvariantCulture)}."));
+            cultureSpecific |= inner.CultureSpecific;
+            definition = inner;
+        }
+        else if (definition.BaseType == PropertyBaseType.Block)
+        {
+            throw new UsageException($"'{definition.Name}' is a block; filter on one of its properties, e.g. --where {definition.Name}.<Property>=value.");
+        }
+
+        var (condition, negate) = await ValueConditionAsync(definition, clause, value, parameters, cancellationToken);
+        var exists = $"""
+            EXISTS (SELECT 1 FROM tblContentProperty p
+                    WHERE p.fkContentID = c.pkID AND p.fkPropertyDefinitionID = {definition.Id.ToString(CultureInfo.InvariantCulture)}
+                      AND p.fkLanguageBranchID = {(cultureSpecific ? "cl.fkLanguageBranchID" : "c.fkMasterLanguageBranchID")}
+                      AND {scope} AND {condition})
+            """;
+        return negate ? "NOT " + exists : exists;
+    }
+
+    /// <returns>The SQL condition on <c>p</c>, and whether the EXISTS must be negated (false booleans are often not stored).</returns>
+    private async Task<(string Condition, bool Negate)> ValueConditionAsync(
+        PropertyDefinition definition, WhereClause clause, string value, List<SqlParameter> parameters, CancellationToken cancellationToken)
+    {
+        var text = clause.Value.Trim();
+        var contains = clause.Operator == WhereOperator.Contains;
+
+        UsageException Invalid(string expected) => new(
+            $"'{clause.Value}' is not {expected}, which {definition.Name} ({definition.TypeName}) stores.",
+            contains ? "~ (contains) only works on text properties; use =." : null);
+
+        switch (definition.BaseType)
+        {
+            case PropertyBaseType.Boolean:
+                var flag = text.ToLowerInvariant() switch
+                {
+                    _ when contains => throw Invalid("true or false"),
+                    "true" or "1" or "yes" => true,
+                    "false" or "0" or "no" => false,
+                    _ => throw Invalid("true or false"),
+                };
+                return ("p.Boolean = 1", !flag);
+
+            case PropertyBaseType.Number:
+            case PropertyBaseType.PageType:
+                if (contains)
+                {
+                    throw Invalid("a whole number");
+                }
+                var number = int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) ? parsed
+                    : definition.BaseType == PropertyBaseType.PageType ? session.Model.RequireType(text).Id
+                    : throw Invalid("a whole number");
+                parameters.Add(new SqlParameter(value, number));
+                return ($"p.Number = {value}", false);
+
+            case PropertyBaseType.FloatNumber:
+                if (contains || !double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var real))
+                {
+                    throw Invalid("a number");
+                }
+                parameters.Add(new SqlParameter(value, real));
+                return ($"p.FloatNumber = {value}", false);
+
+            case PropertyBaseType.Date:
+                if (contains || !DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var date))
+                {
+                    throw Invalid("a date (yyyy-MM-dd or yyyy-MM-ddTHH:mm:ss)");
+                }
+                parameters.Add(new SqlParameter(value, date));
+                return (text.Length <= 10 ? $"CAST(p.Date AS date) = CAST({value} AS date)" : $"p.Date = {value}", false);
+
+            case PropertyBaseType.PageReference:
+            case PropertyBaseType.ContentReference:
+                var target = await session.LocateAsync(text, null, cancellationToken);
+                parameters.Add(new SqlParameter(value, target.Id));
+                return ($"p.ContentLink = {value}", false);
+        }
+
+        if (definition.TypeName is "ContentArea" or "ContentReferenceList" && ContentRefParser.TryParse(text, out _, out _))
+        {
+            // Items are stored by GUID: "contains this item" is the useful question for both operators.
+            var item = await session.LocateAsync(text, null, cancellationToken);
+            var header = await session.HeaderAsync(item.Id, cancellationToken);
+            parameters.Add(new SqlParameter(value, WhereClause.ContainsPattern(header.Guid.ToString("D"))));
+            return ($"p.LongString LIKE {value} ESCAPE '\\'", false);
+        }
+
+        var column = definition.BaseType == PropertyBaseType.String ? "p.String" : "p.LongString";
+        parameters.Add(new SqlParameter(value, contains ? WhereClause.ContainsPattern(clause.Value) : clause.Value));
+        return (contains ? $"{column} LIKE {value} ESCAPE '\\'" : $"{column} = {value}", false);
+    }
+
+    private static UsageException UnknownProperty(ContentTypeInfo type, string name, IEnumerable<string> names) => new(
+        $"{type.Name} has no property '{name}'.",
+        Suggestions.DidYouMean(name, names) ?? $"Run `opticli type {type.Name}` to list its properties.");
+}

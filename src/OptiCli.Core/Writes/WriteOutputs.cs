@@ -1,0 +1,76 @@
+using System.Globalization;
+using OptiCli.Protocol;
+
+namespace OptiCli.Core.Writes;
+
+/// <summary>
+/// The agent's <see cref="WriteResult"/> in the CLI's identity conventions: <see cref="Ref"/> is the
+/// content (pass it to any command), <see cref="Version"/> the version written (<c>id_version</c>).
+/// </summary>
+/// <param name="Version">The saved version; for a dry run the version the change was applied to.</param>
+/// <param name="BaseVersion">The version the change was based on (draft) or that was published (publish).</param>
+public sealed record WriteOutput(
+    string? Ref,
+    string? Version,
+    Guid? Guid,
+    string? Type,
+    string? Name,
+    string? Language,
+    string? Status,
+    string? Parent,
+    bool Saved,
+    bool Published,
+    bool DryRun,
+    bool Valid,
+    string? BaseVersion,
+    IReadOnlyList<PropertyChange> Changes,
+    IReadOnlyList<ValidationIssue>? Validation)
+{
+    /// <param name="type">Shown when the agent returns no content (a dry-run create).</param>
+    public static WriteOutput From(WriteResult result, string? type = null, string? name = null, string? parent = null)
+    {
+        var content = result.Content;
+        return new WriteOutput(
+            content is null ? null : Id(content.Id),
+            content?.Version is { } version ? VersionRef(content.Id, version) : null,
+            content?.Guid,
+            content?.Type ?? type,
+            content?.Name ?? name,
+            content?.Language,
+            content?.Status,
+            content?.Parent ?? parent,
+            result.Saved,
+            result.Published,
+            result.DryRun,
+            result.Valid,
+            content is not null && result.BaseVersion is { } baseVersion ? VersionRef(content.Id, baseVersion) : null,
+            result.Changes,
+            result.Validation);
+    }
+
+    public static string Id(int id) => id.ToString(CultureInfo.InvariantCulture);
+
+    public static string VersionRef(int id, int version) => $"{Id(id)}_{version.ToString(CultureInfo.InvariantCulture)}";
+}
+
+/// <summary>Result of move and delete (a delete is a move to the recycle bin).</summary>
+/// <param name="Moved">False for a dry run.</param>
+/// <param name="Descendants">Content items below it, which moved with it.</param>
+public sealed record MoveOutput(
+    string Ref,
+    Guid? Guid,
+    string? Type,
+    string? Name,
+    string? Language,
+    string? Status,
+    string? Parent,
+    string? PreviousParent,
+    bool Moved,
+    bool DryRun,
+    int Descendants,
+    bool? RecycleBin = null);
+
+/// <param name="Output">A <see cref="WriteOutput"/> or <see cref="MoveOutput"/>.</param>
+/// <param name="Source"><c>agent</c> when the site did the work, <c>db</c> for dry runs opticli checks itself.</param>
+/// <param name="CreatedId">Content id of what a create made (for plans' <c>$id</c>).</param>
+public sealed record WriteOutcome(object Output, string Source, int? CreatedId, IReadOnlyList<string> Warnings);

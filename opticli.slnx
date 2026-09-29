@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OptiCli/OptiCli.csproj" />
+    <Project Path="src/OptiCli.Core/OptiCli.Core.csproj" />
+    <Project Path="src/OptiCli.Agent/OptiCli.Agent.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OptiCli.Core.Tests/OptiCli.Core.Tests.csproj" />
+    <Project Path="tests/OptiCli.Agent.Tests/OptiCli.Agent.Tests.csproj" />
+    <Project Path="tests/OptiCli.Integration/OptiCli.Integration.csproj" />
+  </Folder>
+</Solution>

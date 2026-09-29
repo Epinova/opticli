@@ -1,0 +1,17 @@
+namespace OptiCli.Core.SourceScan;
+
+/// <param name="ContentTypeGuid">GUID from a <c>[ContentType(GUID = "...")]</c>-style attribute on the class, if any.</param>
+/// <param name="BodyStart">Index of the opening brace in the file text.</param>
+/// <param name="BodyEnd">Index of the closing brace in the file text.</param>
+public sealed record ClassDeclaration(
+    string Name,
+    string File,
+    int Line,
+    string? Namespace,
+    IReadOnlyList<string> BaseTypes,
+    Guid? ContentTypeGuid,
+    int BodyStart,
+    int BodyEnd)
+{
+    public bool Contains(int index) => index > BodyStart && index < BodyEnd;
+}

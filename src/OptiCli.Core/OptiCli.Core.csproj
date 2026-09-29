@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>OptiCli.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Compile-private: projects referencing Core get SqlClient at runtime but cannot new up a
+         SqlConnection themselves, so CmsDatabase stays the only way to reach a database. -->
+    <PackageReference Include="Microsoft.Data.SqlClient" PrivateAssets="compile" />
+    <!-- Microsoft Entra ID authentication (Authentication=Active Directory ...), common for Azure SQL dev databases.
+         SqlClient loads it by name when present; nothing compiles against it (or its newer System.Text.Json). -->
+    <PackageReference Include="Microsoft.Data.SqlClient.Extensions.Azure" ExcludeAssets="compile" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Agent protocol DTOs, source-linked here only: Core is the single CLI-side assembly that owns them. -->
+    <Compile Include="..\OptiCli.Protocol\**\*.cs" LinkBase="Protocol" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OptiCli.Core.Tests" />
+    <!-- Samples content with fixed queries through CmsDatabase, the only way to reach the database. -->
+    <InternalsVisibleTo Include="OptiCli.Integration" />
+  </ItemGroup>
+
+</Project>

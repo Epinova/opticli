@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RollForward>Major</RollForward>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Ground truth for the agent's own connection string parser; never used to connect. -->
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Only EPiServer-free types are tested; the CMS assemblies are compile-only in the agent and absent here. -->
+    <ProjectReference Include="..\..\src\OptiCli.Agent\OptiCli.Agent.csproj" />
+    <Compile Include="..\Shared\ConnectionStringCases.cs" Link="Shared\ConnectionStringCases.cs" />
+  </ItemGroup>
+
+</Project>

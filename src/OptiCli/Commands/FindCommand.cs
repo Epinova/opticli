@@ -1,0 +1,65 @@
+using System.CommandLine;
+using OptiCli.Cli;
+using OptiCli.Core.Output;
+using OptiCli.Core.Queries;
+
+namespace OptiCli.Commands;
+
+internal static class FindCommand
+{
+    public static Command Create(GlobalOptions options)
+    {
+        var type = new Option<string>("--type") { Description = "Content type name or GUID.", Required = true, HelpName = "type" };
+        var where = new Option<string[]>("--where")
+        {
+            Description = "Filter on a property, repeatable: Prop=value (exact) or Prop~value (contains). Block.Prop reaches into a local block; "
+                + "Name filters on the item name; for ContentArea/references the value is a ref (items containing it).",
+            HelpName = "Prop=value",
+            AllowMultipleArgumentsPerToken = false,
+        };
+        var under = new Option<string?>("--under") { Description = "Only descendants of this ref.", HelpName = "ref" };
+        var status = new Option<string>("--status")
+        {
+            Description = "published, draft (never published or has newer unpublished changes) or any.",
+            DefaultValueFactory = _ => "any",
+            HelpName = "published|draft|any",
+        };
+        status.AcceptOnlyFromAmong("published", "draft", "any");
+        var content = new ContentOptions();
+        content.Lang.Description = "Match and show items in this branch (code); items without it are skipped. Default: each item's master language.";
+        var list = new ListOptions(options);
+
+        var command = new Command("find", """
+            List content items of one type, optionally filtered on property values, location and status.
+            Filters run in SQL on each item's primary (published) values. Without --lang every item is matched and shown in its
+            master language; with --lang only items that have that branch. A ContentArea or reference filter takes a ref:
+            --where MainArea=456 finds the items whose MainArea contains content 456.
+            Example: opticli find --type ArticlePage --where Heading~news --under /en/ --status published
+            """);
+        command.Options.Add(type);
+        command.Options.Add(where);
+        command.Options.Add(under);
+        command.Options.Add(status);
+        content.AddTo(command, withRef: false);
+        list.AddTo(command);
+
+        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        {
+            await using var session = await context.OpenContentAsync(cancellationToken);
+            var contentType = session.Model.RequireType(context.Parse.GetValue(type)!);
+            var clauses = (context.Parse.GetValue(where) ?? []).Select(WhereClause.Parse).ToList();
+            var underRef = context.Parse.GetValue(under);
+            int? underId = underRef is null ? null : (await session.LocateAsync(underRef, context.Parse.GetValue(content.Site), cancellationToken)).Id;
+            var language = session.Language(context.Parse.GetValue(content.Lang));
+            var (offset, limit) = list.Window(context.Parse);
+
+            var ids = await new FindQuery(session).RunAsync(
+                contentType, clauses, underId, Enum.Parse<FindStatus>(context.Parse.GetValue(status)!, ignoreCase: true), language, offset, limit, cancellationToken);
+            var page = Paging.FromWindow(ids, offset, limit);
+            await session.Identities.LoadAsync(page.Items, [], cancellationToken);
+            var items = page.Items.Select(id => session.Identities.Describe(session.Identities.Header(id)!, language)).ToList();
+            return new CommandResult(items, page.Next);
+        });
+        return command;
+    }
+}

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>OptiCli.Agent</RootNamespace>
+    <!-- Loaded into a foreign process: never ship our own copies of the host's assemblies. -->
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <!-- Compile against the oldest CMS 12; the host's own (newer) copy is what runs. -->
+    <PackageReference Include="EPiServer.CMS.Core" ExcludeAssets="runtime" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\OptiCli.Protocol\**\*.cs" LinkBase="Protocol" />
+    <!-- Dependency-free helper shared with the CLI so "did you mean" behaves the same on both sides. -->
+    <Compile Include="..\OptiCli.Core\Text\Suggestions.cs" Link="Shared\Suggestions.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OptiCli.Agent.Tests" />
+  </ItemGroup>
+
+</Project>
