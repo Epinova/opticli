@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>opticli</title>
+<meta name="description" content="opticli is a command-line tool for reading and changing the content of an Optimizely CMS 12 site, built for developers and their coding agents.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/asciinema-player@3.17.0/dist/bundle/asciinema-player.css">
+<style>
+:root {
+  color-scheme: light;
+  --ground: #f3f5f8;
+  --surface: #ffffff;
+  --ink: #17202b;
+  --muted: #5a6574;
+  --rule: #d8dee6;
+  --accent: #0b7f8a;
+  --accent-soft: #e0f1f2;
+  --term-bg: #121a22;
+  --term-fg: #d7dee6;
+  --shadow: 0 1px 2px rgba(23, 32, 43, .06), 0 8px 28px rgba(23, 32, 43, .08);
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --ground: #0f151c;
+    --surface: #17202a;
+    --ink: #e4e9ef;
+    --muted: #97a3b2;
+    --rule: #28333f;
+    --accent: #4cc3cc;
+    --accent-soft: #15333a;
+    --term-bg: #0a0f14;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 28px rgba(0, 0, 0, .35);
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.6 var(--body); padding-inline: 16px; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-block: 40px 72px; display: grid; gap: 56px; }
+h1, h2 { font-family: var(--display); text-wrap: balance; margin: 0; letter-spacing: -.01em; }
+h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); line-height: 1.05; }
+h2 { font-size: 1.55rem; line-height: 1.2; }
+p { margin: 0; }
+code { font-family: var(--mono); font-size: .88em; }
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.lead { font-size: 1.18rem; color: var(--muted); max-width: 64ch; }
+.intro { display: grid; gap: 14px; }
+.intro h1 .prompt { color: var(--accent); font-family: var(--mono); font-weight: 400; font-size: .7em; margin-right: .25em; vertical-align: .08em; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; padding-top: 6px; }
+.btn { display: inline-block; padding: 9px 16px; border-radius: 7px; background: var(--accent); color: var(--ground); font-weight: 600; text-decoration: none; }
+.btn:hover { filter: brightness(1.08); }
+.actions a:not(.btn) { font-weight: 500; }
+
+.stage { display: grid; gap: 16px; }
+.term { background: var(--term-bg); border-radius: 10px; box-shadow: var(--shadow); overflow: hidden; }
+.term-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,.06); color: #8793a1; font: 12px var(--mono); }
+.term-bar i { width: 10px; height: 10px; border-radius: 50%; background: #2b3642; display: block; }
+.term-bar span { margin-left: 8px; }
+#player { min-height: 200px; }
+.asciinema-player-theme-opti {
+  --term-color-foreground: #d7dee6;
+  --term-color-background: #121a22;
+  --term-color-0: #1b2530; --term-color-1: #ef6b73; --term-color-2: #6fd08c; --term-color-3: #e8c26a;
+  --term-color-4: #6aa8f0; --term-color-5: #d08bf0; --term-color-6: #4cc3cc; --term-color-7: #c5ced8;
+  --term-color-8: #6b7784; --term-color-9: #ff8a90; --term-color-10: #8fe3a8; --term-color-11: #f3d58c;
+  --term-color-12: #8cc0ff; --term-color-13: #e2a9ff; --term-color-14: #7fdce3; --term-color-15: #eef2f6;
+}
+
+.chapters { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.chapters button {
+  width: 100%; height: 100%; text-align: left; cursor: pointer;
+  display: grid; gap: 6px; align-content: start;
+  padding: 12px 14px; border: 1px solid var(--rule); border-radius: 8px;
+  background: var(--surface); color: var(--ink); font: inherit;
+  transition: border-color .15s, background .15s;
+}
+.chapters button:hover { border-color: var(--accent); }
+.chapters button[aria-current="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.chapters .meta { display: flex; justify-content: space-between; font: .8rem var(--mono); font-variant-numeric: tabular-nums; }
+.chapters .n { font-weight: 700; color: var(--accent); }
+.chapters .time { color: var(--muted); }
+.chapters .t { font-weight: 600; line-height: 1.3; }
+
+section { display: grid; gap: 20px; }
+section > .head { display: grid; gap: 8px; }
+section > .head p { color: var(--muted); max-width: 70ch; }
+
+.flow { display: grid; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
+.lane { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font: .9rem var(--mono); }
+.lane .tag { font: 600 .74rem var(--body); letter-spacing: .09em; text-transform: uppercase; color: var(--muted); width: 4.5em; }
+.node { border: 1px solid var(--rule); background: var(--surface); border-radius: 6px; padding: 6px 10px; white-space: nowrap; }
+.node.hot { border-color: var(--accent); background: var(--accent-soft); }
+.arrow { color: var(--muted); white-space: nowrap; font-size: .8rem; }
+
+.features { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 28px 36px; margin: 0; padding: 0; list-style: none; }
+.features li { display: grid; gap: 6px; align-content: start; border-top: 1px solid var(--rule); padding-top: 14px; }
+.features h3 { margin: 0; font-size: 1.06rem; font-weight: 600; }
+.features p { color: var(--muted); font-size: .96rem; }
+.features code.eg { display: block; margin-top: 4px; padding: 7px 10px; border-radius: 6px; background: var(--term-bg); color: var(--term-fg); font-size: .82rem; overflow-x: auto; white-space: nowrap; }
+.points { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px 32px; margin: 0; padding: 0; list-style: none; }
+.points li { border-top: 1px solid var(--rule); padding-top: 12px; }
+.points b { display: block; font-weight: 600; margin-bottom: 2px; }
+.points span { color: var(--muted); font-size: .95rem; }
+
+pre.cmd { margin: 0; background: var(--term-bg); color: var(--term-fg); border-radius: 8px; padding: 16px 18px; overflow-x: auto; font: .88rem/1.7 var(--mono); }
+pre.cmd .c { color: #7c8896; }
+
+footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rule); padding-top: 18px; max-width: 80ch; display: grid; gap: 8px; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="intro">
+    <h1><span class="prompt">❯</span>opticli</h1>
+    <p class="lead">A command-line tool for the content in your Optimizely CMS 12 site. Look up pages and blocks, trace them
+      to the code that renders them, and change them through the CMS API, from your terminal or through your coding agent.</p>
+    <div class="actions"><a class="btn" href="https://github.com/epinova/opticli">View on GitHub</a><a href="#get-started">Get started</a></div>
+  </div>
+
+  <div class="stage">
+    <div class="term">
+      <div class="term-bar"><i></i><i></i><i></i><span>opticli on the Alloy sample site</span></div>
+      <div id="player"></div>
+    </div>
+    <ol class="chapters" id="chapters"><li><button type="button" data-index="0" aria-current="false"><span class="meta"><span class="n">1</span><span class="time">0:04</span></span><span class="t">No setup</span></button></li><li><button type="button" data-index="1" aria-current="false"><span class="meta"><span class="n">2</span><span class="time">0:28</span></span><span class="t">Find the content</span></button></li><li><button type="button" data-index="2" aria-current="false"><span class="meta"><span class="n">3</span><span class="time">0:57</span></span><span class="t">Find the code</span></button></li><li><button type="button" data-index="3" aria-current="false"><span class="meta"><span class="n">4</span><span class="time">1:14</span></span><span class="t">Make the change</span></button></li><li><button type="button" data-index="4" aria-current="false"><span class="meta"><span class="n">5</span><span class="time">2:35</span></span><span class="t">Let an agent do it</span></button></li></ol>
+  </div>
+
+  <section>
+    <div class="head">
+      <h2>What it's for</h2>
+    </div>
+    <ul class="features">
+      <li><h3>Answer content questions without SQL</h3>
+        <p>No more hand-written queries against <code>tblContent</code>. Items come back with every property decoded, including ContentAreas, local blocks, links and rich text. Reads go straight to the database, so the site doesn't need to be running.</p>
+        <code class="eg">opticli get 123 --fields MainContentArea</code></li>
+      <li><h3>Go from content to code</h3>
+        <p>See the C# class for a content type, the source line of each property and the Razor views, plus which ContentAreas accept it according to <code>[AllowedTypes]</code>.</p>
+        <code class="eg">opticli type TeaserBlock</code></li>
+      <li><h3>Know what a change will affect</h3>
+        <p>Find every page and block that references an item, through nested blocks all the way up to pages. You can also resolve a URL to content, or list the unpublished drafts.</p>
+        <code class="eg">opticli where-used 456 --pages</code></li>
+      <li><h3>Change content through the CMS API</h3>
+        <p>Writes go through <code>IContentRepository</code> inside your running site, so validation, versioning, events and caches all work. Changes are saved as drafts unless you publish, and every write command takes <code>--dry-run</code>.</p>
+        <code class="eg">opticli set 123 Heading="New title" --dry-run</code></li>
+      <li><h3>Nothing to add to your solution</h3>
+        <p><code>serve</code> starts your existing build with a small agent injected at startup, through a .NET startup hook and a hosting startup. Your site's code and config stay as they are.</p>
+        <code class="eg">opticli serve</code></li>
+      <li><h3>Built for coding agents</h3>
+        <p>Piped output is compact JSON. Every item has a ref you can pass to the next command, and errors come with a code and a hint. A Claude Code skill tells the agent when to use opticli and how to use it safely.</p>
+        <code class="eg">opticli skill install</code></li>
+    </ul>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>How it works</h2>
+    </div>
+    <div class="flow" role="img" aria-label="Reads: opticli queries the CMS database with fixed read-only SQL. Writes: opticli calls the site agent inside the running site over loopback HTTP with a per-run token; the agent uses IContentRepository.">
+      <div class="lane"><span class="tag">Reads</span><span class="node hot">opticli</span><span class="arrow">── fixed read-only SQL ─▶</span><span class="node">CMS database</span></div>
+      <div class="lane"><span class="tag">Writes</span><span class="node hot">opticli</span><span class="arrow">── 127.0.0.1 + token ─▶</span><span class="node">agent in your running site</span><span class="arrow">── IContentRepository ─▶</span><span class="node">CMS database</span></div>
+    </div>
+    <ul class="points">
+      <li><b>Your local database by default</b><span>opticli reads the connection string from the site's Development config. To use a remote database you have to choose it explicitly, and every response then carries a warning.</span></li>
+      <li><b>Read-only reads</b><span>Reads use fixed queries. <code>opticli sql</code> accepts a single <code>SELECT</code> against the site's own database and runs it in a transaction that is rolled back.</span></li>
+      <li><b>Nothing permanent by accident</b><span>Changes are saved as drafts by the user <code>opticli</code>. Publishing needs <code>--publish</code>, and <code>delete</code> only moves content to the recycle bin.</span></li>
+    </ul>
+  </section>
+
+  <section id="get-started">
+    <div class="head">
+      <h2>Get started</h2>
+      <p>You need the .NET 8 SDK or newer. Run opticli from anywhere inside a CMS 12 site's repository.</p>
+    </div>
+    <pre class="cmd"><span class="c"># build and install as a global tool</span>
+git clone https://github.com/epinova/opticli.git &amp;&amp; cd opticli
+dotnet pack src/OptiCli -c Release -o artifacts
+dotnet tool install -g OptiCli --add-source ./artifacts
+
+<span class="c"># then, in your site's repository</span>
+opticli doctor                          <span class="c"># what it found: project, database, content types</span>
+opticli resolve https://example.com/en/about/
+opticli skill install                   <span class="c"># teach Claude Code to use it</span></pre>
+  </section>
+
+  <footer>
+    <p>opticli is open source under the MPL-2.0. It is an independent project, not affiliated with or endorsed by Optimizely.
+      The screencast was recorded on Optimizely's Alloy sample site, with long pauses shortened.</p>
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/asciinema-player@3.17.0/dist/bundle/asciinema-player.min.js"></script>
+<script>
+let player;
+
+function start() {
+  player = AsciinemaPlayer.create('opticli-demo.cast', document.getElementById('player'), {
+    theme: 'opti',
+    fit: 'width',
+    poster: 'npt:0:4.5',
+    terminalFontFamily: '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace',
+    terminalLineHeight: 1.3,
+  });
+  player.addEventListener('marker', ({ index }) => highlight(index));
+}
+
+function highlight(index) {
+  document.querySelectorAll('#chapters button').forEach((b, i) => b.setAttribute('aria-current', i === index ? 'true' : 'false'));
+}
+
+document.getElementById('chapters').addEventListener('click', async e => {
+  const button = e.target.closest('button[data-index]');
+  if (!button || !player) return;
+  const index = Number(button.dataset.index);
+  await player.seek({ marker: index });
+  highlight(index);
+  player.play();
+});
+
+// The terminal measures its font when it is created, so wait for the font (at most 1.5 s).
+Promise.race([
+  document.fonts ? document.fonts.load('14px "JetBrains Mono"') : Promise.resolve(),
+  new Promise(r => setTimeout(r, 1500)),
+]).catch(() => {}).then(start);
+</script>
+</body>
+</html>
