@@ -51,6 +51,28 @@ public class MediaFilesTests
     }
 
     [Fact]
+    public void A_linked_directory_out_of_the_plan_folder_is_refused()
+    {
+        using var root = new TempDirectory();
+        root.Write("secrets/key.txt", "secret");
+        Directory.CreateDirectory(root.Combine("plan"));
+        Directory.CreateSymbolicLink(root.Combine("plan/assets"), root.Combine("secrets"));
+
+        Assert.Contains("links to", Assert.Throws<UsageException>(() => MediaFiles.ForPlan("assets/key.txt", root.Combine("plan"), allowOutside: false)).Message);
+    }
+
+    [Fact]
+    public void Links_that_stay_inside_the_plan_folder_are_fine()
+    {
+        using var root = new TempDirectory();
+        root.Write("real/plan/files/report.pdf", "%PDF");
+        Directory.CreateSymbolicLink(root.Combine("plan"), root.Combine("real/plan"));
+        Directory.CreateSymbolicLink(root.Combine("real/plan/current"), "files");
+
+        Assert.Equal(root.Combine("plan/current/report.pdf"), MediaFiles.ForPlan("current/report.pdf", root.Combine("plan"), allowOutside: false));
+    }
+
+    [Fact]
     public void Allow_outside_accepts_any_path()
     {
         using var root = new TempDirectory();

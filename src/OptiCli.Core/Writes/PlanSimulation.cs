@@ -37,7 +37,9 @@ public static class PlanSimulation
         };
         var creating = op is CreateOperation or BlockCreateOperation or UploadOperation
             ? step
-            : steps.FirstOrDefault(s => s.Operation.Id == target && s.Index < step.Index && s.Operation is CreateOperation or BlockCreateOperation or UploadOperation);
+            : target is null
+                ? null
+                : steps.FirstOrDefault(s => s.Operation.Id == target && s.Index < step.Index && s.Operation is CreateOperation or BlockCreateOperation or UploadOperation);
         if (creating is null || (target is not null && existing.ContainsKey(target)))
         {
             return null;
@@ -49,13 +51,17 @@ public static class PlanSimulation
         var language = LanguageOf(creating.Operation);
         foreach (var later in steps.Where(s => s.Index > creating.Index && s.Index <= step.Index))
         {
-            if (later.Operation is SetOperation set && PlanId(set.Ref) == target && (set.Lang is null || set.Lang == language))
+            if (later.Operation is SetOperation set && PlanId(set.Ref) == target && SameLanguage(set.Lang, language))
             {
                 if (set.Properties is not null)
                 {
                     PropertyArguments.Merge(properties, set.Properties);
                 }
                 name = set.Name ?? name;
+            }
+            else if (later.Operation is AreaEdit area && PlanId(area.Ref) == target && SameLanguage(area.Lang, language))
+            {
+                Edit(properties, area);
             }
         }
 
@@ -94,6 +100,41 @@ public static class PlanSimulation
         // A GUID is only checked for the step that creates the content: whether it exists already.
         simulated = simulated with { Id = null, ContentGuid = updateExisting || creating.Index != step.Index ? null : creating.Operation.ContentGuid };
         return new Simulation(simulated, target, standIns, skipped, references);
+    }
+
+    private static bool SameLanguage(string? step, string? created) => step is null || string.Equals(step, created, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// An area step applied to the ContentArea value as <c>properties</c> gives it (<c>[{"ref": ...}]</c>). An item or
+    /// position that isn't there is left to the real run to report.
+    /// </summary>
+    private static void Edit(JsonObject properties, AreaEdit area)
+    {
+        var key = properties.Select(p => p.Key).FirstOrDefault(k => k.Equals(area.Property, StringComparison.OrdinalIgnoreCase)) ?? area.Property;
+        var items = properties[key] is JsonArray existing ? existing.DeepClone().AsArray() : [];
+        int Find() => area.Index ?? items.ToList().FindIndex(i => i is JsonObject item && (string?)item["ref"] == area.Item);
+        switch (area.Action)
+        {
+            case Protocol.AreaOps.Add when area.Item is not null && (area.At ?? items.Count) is var at && at >= 0 && at <= items.Count:
+                var added = new JsonObject { ["ref"] = area.Item };
+                if (area.Display is not null)
+                {
+                    added["displayOption"] = area.Display;
+                }
+                items.Insert(at, added);
+                break;
+            case Protocol.AreaOps.Remove when Find() is var index && index >= 0 && index < items.Count:
+                items.RemoveAt(index);
+                break;
+            case Protocol.AreaOps.Move when Find() is var from && from >= 0 && from < items.Count && area.To is { } to && to >= 0 && to < items.Count:
+                var moved = items[from];
+                items.RemoveAt(from);
+                items.Insert(to, moved);
+                break;
+            default:
+                return;
+        }
+        properties[key] = items;
     }
 
     /// <summary>The content type a planned id is created as; null for an upload whose type follows from the file.</summary>

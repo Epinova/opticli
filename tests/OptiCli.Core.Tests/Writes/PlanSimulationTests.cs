@@ -79,4 +79,45 @@ public class PlanSimulationTests
 
     [Fact]
     public void Area_edits_are_not_simulated() => Assert.Null(PlanSimulation.For(Plan.Steps[6], Plan.Steps, None, updateExisting: false));
+
+    [Fact]
+    public void Area_edits_on_planned_content_are_part_of_what_later_steps_simulate()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "create", "id": "page", "parent": "100", "type": "ArticlePage", "name": "Page"},
+              {"op": "block", "id": "teaser", "type": "TeaserBlock", "name": "Teaser", "for": "$page"},
+              {"op": "area", "ref": "$page", "property": "MainArea", "action": "add", "item": "200", "display": "wide"},
+              {"op": "area", "ref": "$page", "property": "MainArea", "action": "add", "item": "300", "at": 0},
+              {"op": "area", "ref": "$page", "property": "MainArea", "action": "remove", "item": "300"},
+              {"op": "publish", "ref": "$page"},
+              {"op": "area", "ref": "$page", "property": "MainArea", "action": "add", "item": "$teaser"},
+              {"op": "publish", "ref": "$page"}
+            ]}
+            """);
+
+        var existingOnly = Assert.IsType<CreateOperation>(PlanSimulation.For(plan.Steps[5], plan.Steps, None, updateExisting: false)!.Operation);
+        Assert.Equal("""[{"ref":"200","displayOption":"wide"}]""", existingOnly.Properties!["MainArea"]!.ToJsonString());
+
+        var withPlanned = PlanSimulation.For(plan.Steps[7], plan.Steps, None, updateExisting: false)!;
+        Assert.Null(withPlanned.Operation is CreateOperation { Properties: { } values } ? values["MainArea"] : null);
+        Assert.Equal(["MainArea"], withPlanned.Unchecked);
+        Assert.Equal([("MainArea", "teaser")], withPlanned.References);
+    }
+
+    [Fact]
+    public void Steps_without_a_planned_target_are_not_simulated_as_an_earlier_step_without_an_id()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "block", "type": "TeaserBlock", "name": "Shared", "parent": "100"},
+              {"op": "create", "id": "page", "parent": "100", "type": "ArticlePage", "name": "Page"},
+              {"op": "area", "ref": "$page", "property": "MainArea", "action": "add", "item": "200"},
+              {"op": "move", "ref": "300", "to": "100"}
+            ]}
+            """);
+
+        Assert.Null(PlanSimulation.For(plan.Steps[2], plan.Steps, None, updateExisting: false));
+        Assert.Null(PlanSimulation.For(plan.Steps[3], plan.Steps, None, updateExisting: false));
+    }
 }

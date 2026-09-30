@@ -147,7 +147,8 @@ property of the same name wins). All are versioned, show in `changes`, and are r
     `Shortcut=` makes it a normal page again. As an object:
     `{"Shortcut":{"type":"external","to":"456","anchor":"reports","target":"_blank"}}`, where `type` is `shortcut`,
     `external`, `fetchData` (show another page's content) or `inactive`, `to` the page, `url` an external URL,
-    `anchor` a fragment for an external link to a page, and `target` the window (`_blank`, `_top`).
+    `anchor` a fragment for an external link to a page, and `target` the window (`_blank`, `_top`). The object `get`
+    shows can be sent back as is (its `url` of a link to a page is the stored permanent link, which `to` replaces).
 
 ### Uploads
 
@@ -167,7 +168,8 @@ property of the same name wins). All are versioned, show in `changes`, and are r
 
 - Levels: a comma list of `Read`, `Create`, `Edit`, `Delete`, `Publish`, `Administer`, or `FullAccess`.
   `--grant Role=Levels` (roles) and `--user Name=Levels` (users) set that entry to exactly those levels;
-  `--revoke Name` removes the entry. Options repeat; revokes apply before grants.
+  `--revoke Name` removes the entry. Options repeat; revokes apply before grants. An item has one entry per name, so
+  a `--user` grant for a name that has a role entry (or the reverse) is refused unless it is revoked in the same change.
 - An item that inherits can only be changed with `--break-inheritance`, which first copies the inherited entries onto
   it. `--inherit` drops the item's own entries. Children that inherit follow; descendants are never rewritten.
 - Role names are checked against the site's virtual roles (Everyone, Authenticated, ...), its role provider and the
@@ -210,7 +212,8 @@ how to undo it. `--publish` on `apply` publishes every operation: only when the 
 How far the dry run gets (`meta.warnings` sums it up; step statuses):
 - `valid`: the site dry-ran the operation as is.
 - `simulated`: the operation is on content the plan creates, so the site dry-ran that content as it will be after the
-  operation (every value set on it so far; published if the operation publishes), under its nearest existing ancestor.
+  operation (every value set on it so far, area edits included; published if the operation publishes), under its
+  nearest existing ancestor.
   Its warnings name the stand-ins and the values not checked yet: those that refer to other planned content. A
   required property or a site validator that fails at publish shows up here. Area placements and references to
   planned content are checked against `[AllowedTypes]` in the code.
@@ -225,7 +228,8 @@ Plans that run again (a section rebuilt after a database refresh, or repaired af
 - `apply --update-existing`: such a step updates that content (name and properties, as a new draft) instead; content
   in the recycle bin is moved back under the plan's parent first (`restored: true`). A different type, or content that
   was moved elsewhere, is a `conflict`. `area add` of an item that is already there, `translate` to an existing branch
-  (it becomes a `set`), `publish` of a published version and `delete` of deleted content change nothing.
+  (it becomes a `set` of its name and properties, or a `publish` without them), `publish` of a published version, a
+  `publish: true` that changes nothing on published content, and `delete` of deleted content change nothing.
 - Step statuses: `saved`, or `unchanged` when the content was already as the step wants it. `result.existing: true`
   marks updated content. `area remove`/`move` by index are not repeatable; set whole ContentAreas in `properties`
   instead. Content that is no longer in the plan is left alone. An existing upload keeps its file.

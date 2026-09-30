@@ -55,11 +55,28 @@ public static class MediaFiles
         {
             throw Outside(file, $"is outside the plan's folder {root}");
         }
-        if (File.Exists(full) && new FileInfo(full).ResolveLinkTarget(returnFinalTarget: true) is { } target && !Inside(target.FullName, root))
+        var realRoot = RealPath(root);
+        if (RealPath(full) is var real && !Inside(real, realRoot))
         {
-            throw Outside(file, $"links to {target.FullName}, outside the plan's folder {root}");
+            throw Outside(file, $"links to {real}, outside the plan's folder {realRoot}");
         }
         return full;
+    }
+
+    /// <summary><paramref name="path"/> with every symlink on it followed, the file's and its directories' alike.</summary>
+    private static string RealPath(string path)
+    {
+        var full = Path.GetFullPath(path);
+        var current = Path.GetPathRoot(full) ?? "";
+        foreach (var part in full[current.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var next = Path.Combine(current, part);
+            FileSystemInfo entry = Directory.Exists(next) ? new DirectoryInfo(next) : new FileInfo(next);
+            current = entry.LinkTarget is not null && entry.ResolveLinkTarget(returnFinalTarget: true) is { } target
+                ? RealPath(target.FullName)
+                : next;
+        }
+        return Path.TrimEndingDirectorySeparator(current);
     }
 
     private static bool Inside(string path, string root) =>

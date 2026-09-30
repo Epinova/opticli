@@ -55,6 +55,7 @@ internal static class DraftEndpoint
             body.DryRun,
             ContentSummaries.Describe(current, flow.Types),
             baseLink.WorkID,
-            saveUnchanged: body.Publish);
+            // Publishing a draft saves it even unchanged; an unchanged published version stays as it is.
+            saveUnchanged: body.Publish && current is IVersionable { Status: not VersionStatus.Published });
     }
 }

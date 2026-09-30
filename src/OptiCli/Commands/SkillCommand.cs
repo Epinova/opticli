@@ -29,12 +29,13 @@ internal static class SkillCommand
         {
             Description = "Install into the repository's .claude/skills/opticli/ (the git repository around the working directory, shared through git) instead of ~/.claude/skills/opticli/.",
         };
-        var force = new Option<bool>("--force") { Description = "Replace an installed copy that differs (an older version or local edits)." };
+        var force = new Option<bool>("--force") { Description = "Replace an installed copy with local edits, or one without an install record (installed by opticli before 0.4)." };
         var command = new Command("install", """
             Install the skill bundled with this opticli for Claude Code (SKILL.md plus reference.md).
-            Goes to ~/.claude/skills/opticli/, or with --repo to <repository>/.claude/skills/opticli/. An identical copy is
-            left alone; a different one is only replaced with --force. `opticli doctor` warns when an installed copy was
-            written for an older opticli.
+            Goes to ~/.claude/skills/opticli/, or with --repo to <repository>/.claude/skills/opticli/. A copy this command
+            installed is replaced when its files are unedited; edited files (or a copy without .opticli-install.json, from
+            opticli before 0.4) are only replaced with --force. `opticli doctor` warns when an installed copy was written
+            for an older opticli.
             Example: opticli skill install --repo
             """);
         command.Options.Add(repo);

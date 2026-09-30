@@ -292,8 +292,12 @@ public sealed class WriteExecutor(
         var language = session.Language(op.Lang) ?? throw new UsageException("translate needs --lang <code>.");
         if (updateExisting && target.Header.Languages.ContainsKey(language.Id))
         {
-            var set = await SetAsync(new SetOperation(op.Ref, op.Properties, op.Name, language.Code, op.Publish, Force: true), dryRun, cancellationToken);
-            return set with { Output = ((WriteOutput)set.Output) with { Existing = true } };
+            var existing = op.Properties is not null || op.Name is not null
+                ? await SetAsync(new SetOperation(op.Ref, op.Properties, op.Name, language.Code, op.Publish, Force: true), dryRun, cancellationToken)
+                : op.Publish
+                    ? await PublishAsync(new PublishOperation(op.Ref, Lang: language.Code), dryRun, cancellationToken)
+                    : await LatestUnchangedAsync(target, language, dryRun, $"The {language.Code} branch already exists; nothing to do.", cancellationToken);
+            return existing with { Output = ((WriteOutput)existing.Output) with { Existing = true } };
         }
         PropertyNameCheck.Check(session.Model, target.Header.TypeId, op.Properties);
         var request = new LanguageBranchRequest
@@ -335,12 +339,7 @@ public sealed class WriteExecutor(
         {
             if (updateExisting)
             {
-                var current = session.Identities.Describe(target.Header, session.Model.Language(version.LanguageId), version.Id, version.StatusValue, version.Name);
-                return new WriteOutcome(
-                    new WriteOutput(WriteOutput.Id(target.Id), version.Ref, current.Guid, current.Type, current.Name, current.Language, current.Status,
-                        target.Header.ParentId is { } parentId ? WriteOutput.Id(parentId) : null,
-                        Saved: false, Published: false, DryRun: dryRun, Valid: true, BaseVersion: version.Ref, Changes: [], Validation: null),
-                    DbSource, null, [$"{version.Ref} is already published; nothing to do."]);
+                return Unchanged(target, version, dryRun, $"{version.Ref} is already published; nothing to do.");
             }
             throw new ConflictException($"Version {version.Ref} is already the published version.");
         }
@@ -356,6 +355,24 @@ public sealed class WriteExecutor(
             Saved: false, Published: false, DryRun: true, Valid: true, BaseVersion: version.Ref, Changes: [], Validation: null);
         return new WriteOutcome(output, DbSource, null,
             ["Dry-run publish checks only that the version exists and isn't published yet; the CMS validates it when it is actually published."]);
+    }
+
+    /// <summary>The latest version of <paramref name="language"/>, reported as a step that changed nothing.</summary>
+    private async Task<WriteOutcome> LatestUnchangedAsync(Target target, LanguageBranch language, bool dryRun, string message, CancellationToken cancellationToken)
+    {
+        var version = await VersionReader.LatestAsync(session.Db, session.Model, target.Id, language.Id, cancellationToken)
+            ?? throw new NotFoundException($"Content {target.Id} has no version in {language.Code}.", $"List them with `opticli versions {target.Id}`.");
+        return Unchanged(target, version, dryRun, message);
+    }
+
+    private WriteOutcome Unchanged(Target target, VersionInfo version, bool dryRun, string message)
+    {
+        var current = session.Identities.Describe(target.Header, session.Model.Language(version.LanguageId), version.Id, version.StatusValue, version.Name);
+        return new WriteOutcome(
+            new WriteOutput(WriteOutput.Id(target.Id), version.Ref, current.Guid, current.Type, current.Name, current.Language, current.Status,
+                target.Header.ParentId is { } parentId ? WriteOutput.Id(parentId) : null,
+                Saved: false, Published: false, DryRun: dryRun, Valid: true, BaseVersion: version.Ref, Changes: [], Validation: null),
+            DbSource, null, [message]);
     }
 
     private async Task<WriteOutcome> MoveAsync(MoveOperation op, bool dryRun, CancellationToken cancellationToken)

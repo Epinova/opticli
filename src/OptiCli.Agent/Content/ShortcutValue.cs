@@ -83,6 +83,17 @@ internal sealed record ShortcutValue(string Type, string? To = null, string? Url
         }
 
         type ??= url is not null ? External : to is not null ? Shortcut : throw AgentException.Usage("A shortcut object needs a type, a to or a url.", Syntax);
+        if (type == External && to is not null && url is not null && IsPermanentLink(url))
+        {
+            // As get shows an external link to a page: the stored permanent link next to the page it names.
+            url = null;
+        }
+        if (url?.IndexOf('#', StringComparison.Ordinal) is >= 0 and var hash && anchor is not null)
+        {
+            anchor = url[(hash + 1)..] == anchor
+                ? null
+                : throw AgentException.Usage($"The url already has the anchor #{url[(hash + 1)..]}; drop \"anchor\" or the url's #{url[(hash + 1)..]}.");
+        }
         switch (type)
         {
             case Shortcut or FetchData when to is null:
@@ -96,6 +107,8 @@ internal sealed record ShortcutValue(string Type, string? To = null, string? Url
         }
         return new ShortcutValue(type, to, url is null ? null : Link(url), anchor is { Length: > 0 } ? anchor : null, target is { Length: > 0 } ? target : null);
     }
+
+    private static bool IsPermanentLink(string url) => url.TrimStart().StartsWith("~/link/", StringComparison.OrdinalIgnoreCase);
 
     private static string? TypeName(string? text) => Types.FirstOrDefault(t => t.Equals(text?.Trim(), StringComparison.OrdinalIgnoreCase));
 

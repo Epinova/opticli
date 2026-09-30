@@ -238,7 +238,7 @@ agent injected, and returns once the site agent answers.
 | `--build` | off: opticli warns when sources are newer than the build, and `--build` runs `dotnet build` first |
 | `--timeout <s>` | 180 seconds to wait for the site to answer |
 | `--foreground` | off: the site runs in the background; with it, the site's output streams until Ctrl+C |
-| `--https` | off (or `"https": true` in the user config): also listen on `https://localhost:<next free port>` with the development certificate, printed as `browseUrl`, for sites that redirect to HTTPS. `serve` warns when a site does |
+| `--https` | off (or `"https": true` in the user config, which `--https false` overrides): also listen on `https://localhost:<next free port>` with the development certificate, printed as `browseUrl`, for sites that redirect to HTTPS. `serve` warns when a site does |
 
 `serve --status`, `serve --logs [--tail N]` and `serve --stop` manage the running site.
 
@@ -315,7 +315,7 @@ runtime. It ships no copies of them.
 You can set per-project defaults in the user config. `opticli db use` adds the chosen `database` there.
 
 ```json
-{"projects": {"/abs/path/to/Site": {"connection": "...", "output": "bin/Debug/net8.0/Site.dll", "port": 5199}}}
+{"projects": {"/abs/path/to/Site": {"connection": "...", "output": "bin/Debug/net8.0/Site.dll", "port": 5199, "https": true}}}
 ```
 
 ## Supported versions

@@ -33,6 +33,11 @@ public sealed class WriteRoundTripTests
             Assert.Contains(output.After.Entries, e => e.Name == "Everyone" && e.Mask == (AccessLevels.Read | AccessLevels.Edit));
             await AssertSameAsync(site, folder, inherited: false, cancellationToken);
 
+            // One entry per name: a user grant for a role's name is refused rather than replacing the role.
+            var clash = await Assert.ThrowsAnyAsync<Core.Errors.OptiCliException>(() => writes.RunAsync(new AccessOperation(folder,
+                GrantUsers: new Dictionary<string, string> { ["Everyone"] = "Read" }), dryRun: true, cancellationToken));
+            Assert.Contains("has a role entry", clash.Message);
+
             var revoked = await writes.RunAsync(new AccessOperation(folder, Revoke: ["Everyone"]), dryRun: false, cancellationToken);
             Assert.DoesNotContain(((AccessOutput)revoked.Output).After.Entries, e => e.Name == "Everyone");
             await AssertSameAsync(site, folder, inherited: false, cancellationToken);
@@ -42,6 +47,66 @@ public sealed class WriteRoundTripTests
         }
         finally
         {
+            await writes.RunAsync(new DeleteOperation(folder), dryRun: false, cancellationToken);
+        }
+    }
+
+    [SiteFact]
+    public async Task Inherit_saves_below_a_parent_with_its_own_access_rights()
+    {
+        var cancellationToken = CancellationToken.None;
+        await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
+        var writes = new WriteExecutor(site.Session, _ => Task.FromResult(site.Agent));
+
+        var parent = await ScratchFolderAsync(site, writes, cancellationToken);
+        try
+        {
+            await writes.RunAsync(new AccessOperation(parent, BreakInheritance: true), dryRun: false, cancellationToken);
+            var child = WriteOutput.Id((await writes.RunAsync(new CreateOperation(parent, FolderType, "child"), dryRun: false, cancellationToken)).CreatedId!.Value);
+            await writes.RunAsync(new AccessOperation(child, BreakInheritance: true), dryRun: false, cancellationToken);
+            await AssertSameAsync(site, child, inherited: false, cancellationToken);
+
+            // Same entries as the parent's, so only the inherited flag changes.
+            var dry = Assert.IsType<AccessOutput>((await writes.RunAsync(new AccessOperation(child, Inherit: true), dryRun: true, cancellationToken)).Output);
+            Assert.Equal((true, parent), (dry.After.Inherited, dry.After.From));
+
+            var inherited = Assert.IsType<AccessOutput>((await writes.RunAsync(new AccessOperation(child, Inherit: true), dryRun: false, cancellationToken)).Output);
+            Assert.True(inherited.Saved);
+            await AssertSameAsync(site, child, inherited: true, cancellationToken);
+        }
+        finally
+        {
+            await writes.RunAsync(new DeleteOperation(parent), dryRun: false, cancellationToken);
+        }
+    }
+
+    [SiteFact]
+    public async Task A_draft_shows_its_own_stop_publish_and_an_unchanged_publish_saves_nothing()
+    {
+        var cancellationToken = CancellationToken.None;
+        await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
+        var writes = new WriteExecutor(site.Session, _ => Task.FromResult(site.Agent), projectDirectory: site.ProjectDirectory);
+
+        var folder = await ScratchFolderAsync(site, writes, cancellationToken);
+        var file = Path.Combine(Path.GetTempPath(), $"opticli-it-{Guid.NewGuid():N}.pdf");
+        await File.WriteAllBytesAsync(file, MinimalPdf(), cancellationToken);
+        try
+        {
+            var media = (await writes.RunAsync(new UploadOperation(file, Parent: folder, Publish: true), dryRun: false, cancellationToken)).CreatedId!.Value;
+            var stop = new System.Text.Json.Nodes.JsonObject { ["StopPublish"] = "2099-01-01T00:00:00Z" };
+            await writes.RunAsync(new SetOperation(WriteOutput.Id(media), stop), dryRun: false, cancellationToken);
+
+            Assert.Null((await GetAsync(site, media, VersionSelector.Published, cancellationToken)).StopPublish);
+            Assert.Equal(new DateTime(2099, 1, 1, 0, 0, 0, DateTimeKind.Utc), (await GetAsync(site, media, new VersionSelector(VersionKind.Latest), cancellationToken)).StopPublish?.ToUniversalTime());
+
+            var published = Assert.IsType<WriteOutput>((await writes.RunAsync(new SetOperation(WriteOutput.Id(media), stop, Publish: true), dryRun: false, cancellationToken)).Output);
+            Assert.True(published.Published);
+            var again = Assert.IsType<WriteOutput>((await writes.RunAsync(new SetOperation(WriteOutput.Id(media), stop, Publish: true), dryRun: false, cancellationToken)).Output);
+            Assert.Equal((false, published.Version), (again.Saved, again.Version));
+        }
+        finally
+        {
+            File.Delete(file);
             await writes.RunAsync(new DeleteOperation(folder), dryRun: false, cancellationToken);
         }
     }
@@ -172,6 +237,10 @@ public sealed class WriteRoundTripTests
         var created = await writes.RunAsync(new CreateOperation(WriteOutput.Id(parent), FolderType, $"opticli-it {Guid.NewGuid():N}"), dryRun: false, cancellationToken);
         return WriteOutput.Id(created.CreatedId ?? throw new InvalidOperationException("The folder was not created."));
     }
+
+    /// <summary>The item as <c>get</c> shows it, read fresh from the database.</summary>
+    private static Task<ContentDocument> GetAsync(SiteUnderTest site, int id, VersionSelector version, CancellationToken cancellationToken) =>
+        new ContentLoader(site.Session.Db, new IdentityResolver(site.Session.Db, site.Session.Model)).GetAsync(id, version, null, new Core.Properties.DecodeOptions(), cancellationToken);
 
     /// <summary>The ACL as <see cref="AccessReader"/> reads it from the database equals the CMS's (a no-op dry run).</summary>
     private static async Task AssertSameAsync(SiteUnderTest site, string reference, bool inherited, CancellationToken cancellationToken)

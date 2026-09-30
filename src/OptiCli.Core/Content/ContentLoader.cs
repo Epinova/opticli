@@ -96,7 +96,8 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
             shownVersion?.Saved ?? row?.Saved,
             shownVersion?.ChangedBy ?? row?.ChangedBy,
             shownVersion?.StartPublish ?? row?.StartPublish,
-            row?.StopPublish,
+            // Not ?? as for StartPublish: a draft without a stop date isn't stopped by the published version's.
+            shownVersion is not null ? shownVersion.StopPublish : row?.StopPublish,
             isPage ? Queries.ChildOrder.Name(sortingVersion?.ChildOrderRule ?? header.ChildOrderRule) : null,
             isPage ? sortingVersion?.PeerOrder ?? header.PeerOrder : null,
             isPage ? ShortcutInfo.SimpleAddressPath(facts?.ExternalUrl ?? row?.ExternalUrl) : null,

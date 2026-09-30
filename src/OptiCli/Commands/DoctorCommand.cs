@@ -132,7 +132,7 @@ internal static class DoctorCommand
             foreach (var skill in skills.Where(s => s.Outdated))
             {
                 warnings.Add($"The opticli skill in {skill.Path} was written for opticli {skill.Version ?? "(no version)"}, this is {ToolInfo.Version}. "
-                    + $"Update it: opticli skill install --force{(skill.Scope == SkillScope.Repository ? " --repo" : "")}");
+                    + $"Update it: opticli skill install{(skill.Scope == SkillScope.Repository ? " --repo" : "")} (it asks for --force only if the files were edited).");
             }
 
             var report = new Report(

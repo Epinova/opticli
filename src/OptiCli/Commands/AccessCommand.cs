@@ -28,7 +28,7 @@ internal static class AccessCommand
         };
         var revoke = new Option<string[]>("--revoke")
         {
-            Description = "Remove every entry for this role or user. Repeatable; applied before the grants.",
+            Description = "Remove the entry for this role or user (an item has one per name). Repeatable; applied before the grants.",
             HelpName = "name",
             AllowMultipleArgumentsPerToken = false,
         };

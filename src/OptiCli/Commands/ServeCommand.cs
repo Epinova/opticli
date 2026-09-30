@@ -28,7 +28,7 @@ internal static class ServeCommand
         var stop = new Option<bool>("--stop") { Description = "Stop the site (SIGTERM, then kill after 20 s) and forget its token." };
         var https = new Option<bool>("--https")
         {
-            Description = "Also listen on https://localhost:<next free port> with the ASP.NET Core development certificate, to browse a site that redirects to HTTPS. Default: \"https\": true in the user config.",
+            Description = "Also listen on https://localhost:<next free port> with the ASP.NET Core development certificate, to browse a site that redirects to HTTPS. Default: \"https\" in the user config; --https false turns it off.",
         };
 
         var command = new Command("serve", """
@@ -50,7 +50,7 @@ internal static class ServeCommand
         {
             var parse = context.Parse;
             var modes = new[] { parse.GetValue(status), parse.GetValue(logs), parse.GetValue(stop) }.Count(m => m);
-            var starting = parse.GetValue(build) || parse.GetValue(port) is not null || parse.GetValue(foreground) || parse.GetValue(output) is not null || parse.GetValue(https);
+            var starting = parse.GetValue(build) || parse.GetValue(port) is not null || parse.GetValue(foreground) || parse.GetValue(output) is not null || parse.GetResult(https) is not null;
             if (modes > 1 || (modes == 1 && starting))
             {
                 throw new UsageException("--status, --logs and --stop are separate actions; don't combine them with each other or with start options.");
@@ -79,12 +79,12 @@ internal static class ServeCommand
             {
                 throw new UsageException("--timeout must be a positive number of seconds.");
             }
-            return await StartAsync(context, parse.GetValue(build), parse.GetValue(port), parse.GetValue(foreground), parse.GetValue(output), parse.GetValue(https), TimeSpan.FromSeconds(seconds), cancellationToken);
+            return await StartAsync(context, parse.GetValue(build), parse.GetValue(port), parse.GetValue(foreground), parse.GetValue(output), parse.GetResult(https) is null ? null : parse.GetValue(https), TimeSpan.FromSeconds(seconds), cancellationToken);
         });
         return command;
     }
 
-    private static async Task<CommandResult> StartAsync(CliContext context, bool build, int? port, bool foreground, string? output, bool https, TimeSpan timeout, CancellationToken cancellationToken)
+    private static async Task<CommandResult> StartAsync(CliContext context, bool build, int? port, bool foreground, string? output, bool? https, TimeSpan timeout, CancellationToken cancellationToken)
     {
         var project = context.Project;
         // The database check comes before anything is started or even looked for.
@@ -134,7 +134,7 @@ internal static class ServeCommand
             AgentLocator.Locate(AppContext.BaseDirectory),
             httpPort,
             timeout,
-            https || settings?.Https == true ? PortSelector.Select(null, null, p => p != httpPort && PortSelector.IsFree(p)) : null);
+            (https ?? settings?.Https == true) ? PortSelector.Select(null, null, p => p != httpPort && PortSelector.IsFree(p)) : null);
 
         if (!foreground)
         {

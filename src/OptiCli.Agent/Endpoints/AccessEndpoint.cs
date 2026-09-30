@@ -73,7 +73,7 @@ internal static class AccessEndpoint
                     writable.Add(new AccessControlEntry(entry.Name, entry.Access, entry.EntityType));
                 }
             }
-            foreach (var name in revokes)
+            foreach (var name in revokes.Distinct(StringComparer.OrdinalIgnoreCase))
             {
                 if (Entry(writable, name) is { } existing)
                 {
@@ -101,7 +101,7 @@ internal static class AccessEndpoint
         }
 
         var after = writable.IsInherited
-            ? current.IsInherited ? before : Effective(flow, security, flow.Locator.LoadAnyLanguage(link).ParentLink)
+            ? current.IsInherited ? before : Effective(flow, security, flow.Locator.LoadAnyLanguage(link).ParentLink) with { Inherited = true }
             : Own(link, writable);
         if (AccessRules.LockOut(before, after) is { } lockOut)
         {
@@ -134,6 +134,14 @@ internal static class AccessEndpoint
         }
         if (Entry(acl, name) is { } existing)
         {
+            // The ACL holds one entry per name (case-insensitive), so a grant would silently turn a role into a user.
+            if (existing.EntityType != type)
+            {
+                var (was, wanted) = (AccessKinds.From((int)existing.EntityType), AccessKinds.From((int)type));
+                throw AgentException.Usage(
+                    $"'{existing.Name}' has a {was} entry; an item can't have a {wanted} entry of the same name as well.",
+                    $"Revoke it in the same change (revokes apply before grants) to replace it with the {wanted}.");
+            }
             acl.Remove(existing.Name);
         }
         acl.Add(new AccessControlEntry(name, (AccessLevel)mask, type));

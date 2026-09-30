@@ -26,6 +26,9 @@ public sealed record VersionInfo(
 
     [JsonIgnore] public VersionStatus StatusValue { get; init; }
 
+    /// <summary>When this version stops being published, as saved in it (a draft can change it).</summary>
+    [JsonIgnore] public DateTime? StopPublish { get; init; }
+
     /// <summary>The page's child order rule and sort index as saved in this version (they are versioned).</summary>
     [JsonIgnore] public int? ChildOrderRule { get; init; }
 
@@ -51,7 +54,7 @@ public static class VersionReader
 {
     private const string Columns = """
         wc.pkID, wc.fkContentID, wc.fkLanguageBranchID, wc.Status, wc.Name, wc.Saved, wc.ChangedByName, wc.StartPublish,
-        wc.DelayPublishUntil, wc.ChildOrderRule, wc.PeerOrder, wc.LinkType, wc.LinkURL, wc.ContentLinkGUID, wc.ExternalURL,
+        wc.StopPublish, wc.DelayPublishUntil, wc.ChildOrderRule, wc.PeerOrder, wc.LinkType, wc.LinkURL, wc.ContentLinkGUID, wc.ExternalURL,
         f.FrameName, cl.Status AS BranchStatus, cl.Version AS BranchVersion, cd.CommonDraftId
         """;
 
@@ -110,6 +113,7 @@ public static class VersionReader
             ContentId = contentId,
             LanguageId = languageId,
             StatusValue = status,
+            StopPublish = r.GetDateTimeOrNull("StopPublish"),
             ChildOrderRule = r.GetInt32OrNull("ChildOrderRule"),
             PeerOrder = r.GetInt32OrNull("PeerOrder"),
             LinkType = r.GetInt32OrNull("LinkType"),

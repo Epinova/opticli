@@ -43,6 +43,24 @@ public class ShortcutValueTests
             Parse("""{"type": "external", "to": "123", "anchor": "#reports", "target": "_blank"}"""));
 
     [Fact]
+    public void An_external_link_to_a_page_reads_back_as_get_shows_it() =>
+        Assert.Equal(
+            new ShortcutValue(ShortcutValue.External, To: "123", Anchor: "reports"),
+            Parse("""{"type": "external", "to": {"ref": "123", "name": "Reports"}, "url": "~/link/8c9ccb7a963f4d1996727fd7356a2252.aspx#reports", "anchor": "reports"}"""));
+
+    [Fact]
+    public void The_anchor_of_a_link_to_a_page_wins_over_the_stored_permanent_link() =>
+        Assert.Equal(
+            new ShortcutValue(ShortcutValue.External, To: "123", Anchor: "b"),
+            Parse("""{"type": "external", "to": "123", "url": "~/link/8c9ccb7a963f4d1996727fd7356a2252.aspx#a", "anchor": "b"}"""));
+
+    [Theory]
+    [InlineData("""{"url": "https://example.com/a#x", "anchor": "x"}""")]
+    [InlineData("""{"url": "https://example.com/a#x"}""")]
+    public void An_anchor_already_in_the_url_is_not_added_twice(string json) =>
+        Assert.Equal(new ShortcutValue(ShortcutValue.External, Url: "https://example.com/a#x"), Parse(json));
+
+    [Fact]
     public void Fetch_data_and_inactive_shortcuts()
     {
         Assert.Equal(new ShortcutValue(ShortcutValue.FetchData, To: "123"), Parse("""{"type": "fetchData", "to": "123"}"""));
@@ -56,6 +74,7 @@ public class ShortcutValueTests
     [InlineData("{\"type\": \"shortcut\", \"to\": \"1\", \"anchor\": \"x\"}", "takes \"to\", not")]
     [InlineData("{\"type\": \"external\"}", "either \"url\" or \"to\"")]
     [InlineData("{\"type\": \"external\", \"to\": \"1\", \"url\": \"https://x.no\"}", "either \"url\" or \"to\"")]
+    [InlineData("{\"url\": \"https://x.no/#a\", \"anchor\": \"b\"}", "already has the anchor #a")]
     [InlineData("{\"type\": \"inactive\", \"target\": \"_blank\"}", "takes no other fields")]
     [InlineData("{\"to\": \"1\", \"window\": \"_blank\"}", "Unknown shortcut field 'window'")]
     [InlineData("{}", "needs a type, a to or a url")]
