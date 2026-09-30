@@ -14,12 +14,16 @@ public static class PlanStepStatus
 
     public const string Invalid = "invalid";
     public const string Saved = "saved";
+
+    /// <summary>Ran, but found everything as the step wants it (<c>apply --update-existing</c>, or a set that changes nothing).</summary>
+    public const string Unchanged = "unchanged";
     public const string Failed = "failed";
     public const string NotRun = "notRun";
 }
 
 /// <param name="Result">The step's write result (as the single command would print it).</param>
 /// <param name="Undo">How to reverse the step, for saved steps.</param>
+/// <param name="Guid">The GUID a create, block or upload step gives its content, when the plan fixes one.</param>
 public sealed record PlanStepResult(
     int Index,
     string Op,
@@ -28,7 +32,8 @@ public sealed record PlanStepResult(
     object? Result = null,
     ErrorBody? Error = null,
     string? Undo = null,
-    IReadOnlyList<string>? Warnings = null);
+    IReadOnlyList<string>? Warnings = null,
+    Guid? Guid = null);
 
 /// <param name="Created">Plan id to content ref, for every created item.</param>
 public sealed record PlanRun(bool DryRun, IReadOnlyList<PlanStepResult> Operations, IReadOnlyDictionary<string, string> Created);
@@ -49,11 +54,12 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     {
         var steps = PlanFiles.Resolve(plan.Steps.Select(s => publishAll ? s with { Operation = s.Operation.WithPublish() } : s), planDirectory, allowOutside);
 
+        var existing = executor.UpdateExisting ? await ExistingAsync(steps, cancellationToken) : new Dictionary<string, int>();
         var checks = new List<PlanStepResult>();
         OptiCliException? firstFailure = null;
         foreach (var step in steps)
         {
-            var (result, failure) = await ValidateAsync(step, steps, cancellationToken);
+            var (result, failure) = await ValidateAsync(step, steps, existing, cancellationToken);
             checks.Add(result);
             firstFailure ??= failure;
         }
@@ -83,13 +89,14 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                 {
                     created[id] = createdId;
                 }
-                results.Add(new PlanStepResult(step.Index, operation.Kind, operation.Id, PlanStepStatus.Saved, outcome.Output,
-                    Undo: UndoHints.For(operation, outcome.Output), Warnings: outcome.Warnings.Count > 0 ? outcome.Warnings : null));
+                results.Add(new PlanStepResult(step.Index, operation.Kind, operation.Id, Changed(outcome.Output) ? PlanStepStatus.Saved : PlanStepStatus.Unchanged,
+                    outcome.Output, Undo: UndoHints.For(operation, outcome.Output), Warnings: outcome.Warnings.Count > 0 ? outcome.Warnings : null,
+                    Guid: operation.ContentGuid));
             }
             catch (OptiCliException ex)
             {
-                results.Add(new PlanStepResult(step.Index, operation.Kind, operation.Id, PlanStepStatus.Failed, ex.Details, Error(ex)));
-                results.AddRange(steps.Where(s => s.Index > step.Index).Select(s => new PlanStepResult(s.Index, s.Operation.Kind, s.Operation.Id, PlanStepStatus.NotRun)));
+                results.Add(new PlanStepResult(step.Index, operation.Kind, operation.Id, PlanStepStatus.Failed, ex.Details, Error(ex), Guid: operation.ContentGuid));
+                results.AddRange(steps.Where(s => s.Index > step.Index).Select(s => new PlanStepResult(s.Index, s.Operation.Kind, s.Operation.Id, PlanStepStatus.NotRun, Guid: s.Operation.ContentGuid)));
                 var saved = results.Count(r => r.Status == PlanStepStatus.Saved);
                 throw OptiCliException.Create(
                     ex.Code,
@@ -101,27 +108,51 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         return new PlanRun(false, results, Refs(created));
     }
 
-    private async Task<(PlanStepResult Result, OptiCliException? Failure)> ValidateAsync(PlanStep step, IReadOnlyList<PlanStep> steps, CancellationToken cancellationToken)
+    /// <summary>Plan id to content id, for steps whose GUID already exists outside the recycle bin (<c>--update-existing</c>).</summary>
+    private async Task<Dictionary<string, int>> ExistingAsync(IReadOnlyList<PlanStep> steps, CancellationToken cancellationToken)
+    {
+        var withGuid = steps.Where(s => s.Operation is { Id: not null, ContentGuid: not null }).ToList();
+        var ids = await ContentHeaderReader.IdsByGuidsAsync(session.Db, withGuid.Select(s => s.Operation.ContentGuid!.Value), cancellationToken);
+        var headers = await ContentHeaderReader.ByIdsAsync(session.Db, ids.Values, cancellationToken);
+        return withGuid
+            .Where(s => ids.TryGetValue(s.Operation.ContentGuid!.Value, out var id) && headers.TryGetValue(id, out var header) && !header.Deleted)
+            .ToDictionary(s => s.Operation.Id!, s => ids[s.Operation.ContentGuid!.Value], StringComparer.Ordinal);
+    }
+
+    private static bool Changed(object output) => output switch
+    {
+        WriteOutput write => write.Saved || write.Restored == true,
+        MoveOutput move => move.Moved,
+        AccessOutput access => access.Saved,
+        _ => true,
+    };
+
+    /// <param name="existing">Content that steps' GUIDs already name; steps that only depend on it get a full dry run.</param>
+    private async Task<(PlanStepResult Result, OptiCliException? Failure)> ValidateAsync(PlanStep step, IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing, CancellationToken cancellationToken)
     {
         var op = step.Operation;
         try
         {
-            if (step.DependsOn.Count > 0)
+            if (step.DependsOn.Count > 0 && step.DependsOn.All(existing.ContainsKey))
+            {
+                op = WritePlan.Resolve(step, existing);
+            }
+            else if (step.DependsOn.Count > 0)
             {
                 CheckNamesOfPlannedContent(op, steps);
                 if (op is UploadOperation upload)
                 {
                     MediaFiles.Check(upload.File);
                 }
-                return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Deferred), null);
+                return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Deferred, Guid: op.ContentGuid), null);
             }
             var outcome = await executor.RunAsync(op, dryRun: true, cancellationToken);
             return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Valid, outcome.Output,
-                Warnings: outcome.Warnings.Count > 0 ? outcome.Warnings : null), null);
+                Warnings: outcome.Warnings.Count > 0 ? outcome.Warnings : null, Guid: op.ContentGuid), null);
         }
         catch (OptiCliException ex) when (ex.Code is not (ErrorCode.Unreachable or ErrorCode.Internal))
         {
-            return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Invalid, ex.Details, Error(ex)), ex);
+            return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Invalid, ex.Details, Error(ex), Guid: op.ContentGuid), ex);
         }
     }
 

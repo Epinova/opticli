@@ -207,4 +207,71 @@ public class WritePlanTests
         Assert.Contains("operations[0] (upload): give exactly one of \"for\" and \"parent\"", error.Message);
         Assert.Contains("operations[1] (upload): \"file\" is required", error.Message);
     }
+
+    [Fact]
+    public void A_guid_namespace_gives_every_creating_step_a_guid_from_its_id()
+    {
+        var plan = WritePlan.Parse("""
+            {"guidNamespace": "6f1c2b3a-9d4e-4f5a-8b7c-1d2e3f4a5b6c", "operations": [
+              {"op": "create", "id": "root", "parent": "1", "type": "ArticlePage", "name": "N"},
+              {"op": "block", "id": "text", "type": "TextBlock", "name": "T", "for": "$root", "guid": "0b1c2d3e-0000-4000-8000-000000000001"},
+              {"op": "set", "ref": "$root", "properties": {"Heading": "x"}}
+            ]}
+            """);
+
+        var ns = Guid.Parse("6f1c2b3a-9d4e-4f5a-8b7c-1d2e3f4a5b6c");
+        Assert.Equal(ns, plan.GuidNamespace);
+        Assert.Equal(StableGuids.Create(ns, "root"), plan.Steps[0].Operation.ContentGuid);
+        Assert.Equal(Guid.Parse("0b1c2d3e-0000-4000-8000-000000000001"), plan.Steps[1].Operation.ContentGuid);
+        Assert.Null(plan.Steps[2].Operation.ContentGuid);
+        // Resolving $ids keeps the GUID.
+        Assert.Equal(plan.Steps[1].Operation.ContentGuid, WritePlan.Resolve(plan.Steps[1], new Dictionary<string, int> { ["root"] = 5 }).ContentGuid);
+    }
+
+    [Fact]
+    public void Without_a_namespace_only_explicit_guids_are_set()
+    {
+        var plan = WritePlan.Parse("""{"operations": [{"op": "create", "id": "a", "parent": "1", "type": "ArticlePage", "name": "N"}]}""");
+
+        Assert.Null(plan.GuidNamespace);
+        Assert.Null(plan.Steps[0].Operation.ContentGuid);
+    }
+
+    [Fact]
+    public void Guid_problems_are_reported_with_the_rest()
+    {
+        var error = Assert.Throws<UsageException>(() => WritePlan.Parse("""
+            {"guidNamespace": "not-a-guid", "operations": [
+              {"op": "create", "parent": "1", "type": "ArticlePage", "name": "N", "guid": "nope"},
+              {"op": "upload", "file": "a.pdf", "parent": "1", "guid": "0b1c2d3e-0000-4000-8000-000000000001"},
+              {"op": "block", "type": "TextBlock", "name": "T", "parent": "1", "guid": "0b1c2d3e-0000-4000-8000-000000000001"},
+              {"op": "set", "ref": "1", "guid": "0b1c2d3e-0000-4000-8000-000000000002", "properties": {"A": "b"}}
+            ]}
+            """));
+
+        Assert.Contains("\"guidNamespace\" must be a GUID", error.Message);
+        Assert.Contains("\"guid\" 'nope' is not a GUID", error.Message);
+        Assert.Contains("operations[1, 2] all have GUID 0b1c2d3e-0000-4000-8000-000000000001", error.Message);
+        Assert.Contains("operations[3] (set): unknown field \"guid\"", error.Message);
+    }
+
+    [Fact]
+    public void With_a_namespace_a_creating_step_needs_an_id()
+    {
+        var error = Assert.Throws<UsageException>(() => WritePlan.Parse("""
+            {"guidNamespace": "6f1c2b3a-9d4e-4f5a-8b7c-1d2e3f4a5b6c", "operations": [
+              {"op": "create", "parent": "1", "type": "ArticlePage", "name": "N"}
+            ]}
+            """));
+
+        Assert.Contains("operations[0] (create): needs an \"id\"", error.Message);
+    }
+
+    [Theory]
+    [InlineData("""{"operations": [{"op": "delete", "ref": "1"}], "extra": 1}""")]
+    [InlineData("""{"guidNamespace": "6f1c2b3a-9d4e-4f5a-8b7c-1d2e3f4a5b6c"}""")]
+    public void Only_operations_and_a_guid_namespace_are_allowed_at_the_top(string json)
+    {
+        Assert.Contains("guidNamespace", Assert.Throws<UsageException>(() => WritePlan.Parse(json)).Message);
+    }
 }

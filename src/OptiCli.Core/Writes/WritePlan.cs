@@ -27,10 +27,10 @@ public sealed partial class WritePlan
     public static readonly IReadOnlyDictionary<string, string[]> Fields = new Dictionary<string, string[]>
     {
         ["set"] = ["ref*", "properties", "name", "lang", "publish", "baseVersion", "force"],
-        ["create"] = ["parent*", "type*", "name*", "properties", "lang", "publish", "id"],
+        ["create"] = ["parent*", "type*", "name*", "properties", "lang", "publish", "id", "guid"],
         ["area"] = ["ref*", "property*", "action*", "item", "index", "at", "to", "display", "lang", "publish", "baseVersion", "force"],
-        ["block"] = ["type*", "name*", "for", "parent", "properties", "lang", "publish", "id"],
-        ["upload"] = ["file*", "for", "parent", "name", "type", "properties", "publish", "id"],
+        ["block"] = ["type*", "name*", "for", "parent", "properties", "lang", "publish", "id", "guid"],
+        ["upload"] = ["file*", "for", "parent", "name", "type", "properties", "publish", "id", "guid"],
         ["translate"] = ["ref*", "lang*", "name", "properties", "publish"],
         ["publish"] = ["ref*", "version", "lang"],
         ["move"] = ["ref*", "to*"],
@@ -38,9 +38,19 @@ public sealed partial class WritePlan
         ["access"] = ["ref*", "grant", "grantUsers", "revoke", "breakInheritance", "inherit", "allowUnknownRole"],
     };
 
-    private WritePlan(IReadOnlyList<PlanStep> steps) => Steps = steps;
+    /// <summary>Ops that create content, and so can have an <c>id</c> and a <c>guid</c>.</summary>
+    public static readonly IReadOnlySet<string> CreatingOps = new HashSet<string>(StringComparer.Ordinal) { "create", "block", "upload" };
+
+    private WritePlan(IReadOnlyList<PlanStep> steps, Guid? guidNamespace)
+    {
+        Steps = steps;
+        GuidNamespace = guidNamespace;
+    }
 
     public IReadOnlyList<PlanStep> Steps { get; }
+
+    /// <summary>The plan's <c>guidNamespace</c>: every creating step's GUID is derived from it and the step's <c>id</c>.</summary>
+    public Guid? GuidNamespace { get; }
 
     /// <exception cref="UsageException">The plan is malformed; <c>details.problems</c> lists every problem.</exception>
     public static WritePlan Parse(string json)
@@ -54,16 +64,33 @@ public sealed partial class WritePlan
         {
             throw new UsageException($"The plan is not valid JSON: {ex.Message}");
         }
-        if (root is not JsonObject { } plan || plan["operations"] is not JsonArray { Count: > 0 } operations || plan.Count != 1)
+        if (root is not JsonObject { } plan || plan["operations"] is not JsonArray { Count: > 0 } operations
+            || plan.Any(p => p.Key is not ("operations" or "guidNamespace")))
         {
-            throw new UsageException("""A plan is an object with one field, "operations": a non-empty array.""", PlanHint);
+            throw new UsageException("""A plan is an object with "operations", a non-empty array, and optionally "guidNamespace".""", PlanHint);
         }
 
         var problems = new List<string>();
+        Guid? guidNamespace = null;
+        if (plan["guidNamespace"] is { } namespaceNode)
+        {
+            guidNamespace = namespaceNode is JsonValue namespaceValue && namespaceValue.TryGetValue<string>(out var text) && Guid.TryParse(text, out var parsedNamespace) && parsedNamespace != Guid.Empty
+                ? parsedNamespace
+                : null;
+            if (guidNamespace is null)
+            {
+                problems.Add("\"guidNamespace\" must be a GUID (make one with `uuidgen`, once per plan, and keep it).");
+            }
+        }
         var parsed = new List<(WriteOperation? Op, int Index)>();
         for (var i = 0; i < operations.Count; i++)
         {
-            parsed.Add((ParseStep(operations[i], i, problems), i));
+            parsed.Add((ParseStep(operations[i], i, guidNamespace, problems), i));
+        }
+
+        foreach (var duplicate in parsed.Where(p => p.Op?.ContentGuid is not null).GroupBy(p => p.Op!.ContentGuid).Where(g => g.Count() > 1))
+        {
+            problems.Add($"operations[{string.Join(", ", duplicate.Select(d => d.Index))}] all have GUID {duplicate.Key:D}.");
         }
 
         var steps = new List<PlanStep>();
@@ -90,7 +117,7 @@ public sealed partial class WritePlan
         {
             throw new UsageException($"The plan has {problems.Count} problem(s): {string.Join(" ", problems)}", PlanHint) { Details = new { problems } };
         }
-        return new WritePlan(steps);
+        return new WritePlan(steps, guidNamespace);
     }
 
     public const string PlanHint =
@@ -141,7 +168,7 @@ public sealed partial class WritePlan
         return dependsOn;
     }
 
-    private static WriteOperation? ParseStep(JsonNode? node, int index, List<string> problems)
+    private static WriteOperation? ParseStep(JsonNode? node, int index, Guid? guidNamespace, List<string> problems)
     {
         var where = $"operations[{index}]";
         if (node is not JsonObject step)
@@ -209,7 +236,35 @@ public sealed partial class WritePlan
         {
             problems.Add($"{reader.Where}: give exactly one of \"for\" and \"parent\".");
         }
-        return operation with { Id = id };
+        return operation with { Id = id, ContentGuid = ContentGuid(reader, op, id, guidNamespace) };
+    }
+
+    /// <summary>The step's <c>guid</c>, else one derived from the plan's namespace and the step's id.</summary>
+    private static Guid? ContentGuid(StepReader reader, string op, string? id, Guid? guidNamespace)
+    {
+        if (!CreatingOps.Contains(op))
+        {
+            return null;
+        }
+        if (reader.String("guid") is { } text)
+        {
+            if (Guid.TryParse(text, out var guid) && guid != Guid.Empty)
+            {
+                return guid;
+            }
+            reader.Problem($"\"guid\" '{text}' is not a GUID.");
+            return null;
+        }
+        if (guidNamespace is not { } ns)
+        {
+            return null;
+        }
+        if (id is null)
+        {
+            reader.Problem("needs an \"id\" (or a \"guid\"): with a guidNamespace, the id is what its GUID is made from, so a rerun finds it.");
+            return null;
+        }
+        return StableGuids.Create(ns, id);
     }
 
     [GeneratedRegex("^[A-Za-z][A-Za-z0-9_-]*$")]
@@ -300,6 +355,8 @@ public sealed partial class WritePlan
             JsonObject obj => (JsonObject)obj.DeepClone(),
             _ => Problem<JsonObject>(name, "an object of property names to values"),
         };
+
+        public void Problem(string message) => problems.Add($"{Where}: {message}");
 
         private T? Problem<T>(string name, string expected)
         {

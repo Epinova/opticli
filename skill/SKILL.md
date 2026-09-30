@@ -127,7 +127,8 @@ unless `--publish` is passed. The new draft becomes the primary draft, which edi
 5. `opticli serve --stop` when you're done writing.
 
 Structured values (ContentArea items, links, lists) go in `--values '{"MainArea":[{"ref":"456"}]}'`; several related
-writes can run as one validated plan with `opticli apply plan.json`. Syntax for both: [reference.md](reference.md).
+writes can run as one validated plan with `opticli apply plan.json`. A plan with `"guidNamespace"` can be run again
+with `apply --update-existing` (always `--dry-run` it first). Syntax for all of this: [reference.md](reference.md).
 
 ## Rules
 

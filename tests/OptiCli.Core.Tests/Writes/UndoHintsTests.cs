@@ -95,4 +95,23 @@ public class UndoHintsTests
     {
         Assert.Null(UndoHints.For(new AccessOperation("123", Grant: new Dictionary<string, string> { ["Everyone"] = "Read" }), Access(Parent, Parent, saved: false)));
     }
+
+    [Fact]
+    public void Updating_existing_content_is_undone_like_a_draft_not_by_deleting_it()
+    {
+        var updated = Output() with { Existing = true };
+
+        Assert.Contains("unpublished draft", UndoHints.For(new CreateOperation("10", "ArticlePage", "Name"), updated));
+        Assert.Contains("unpublished draft", UndoHints.For(new TranslateOperation("123", "en"), updated));
+        Assert.Null(UndoHints.For(new UploadOperation("/tmp/a.pdf", Parent: "10"), Output(saved: false) with { Existing = true }));
+    }
+
+    [Fact]
+    public void Restored_content_names_how_to_put_it_back_in_the_recycle_bin()
+    {
+        Assert.Equal("123 was moved back out of the recycle bin (opticli delete 123 returns it there).",
+            UndoHints.For(new CreateOperation("10", "ArticlePage", "Name"), Output(saved: false) with { Existing = true, Restored = true }));
+        Assert.StartsWith("123 was moved back out of the recycle bin (opticli delete 123 returns it there); 123_456 is an unpublished draft",
+            UndoHints.For(new CreateOperation("10", "ArticlePage", "Name"), Output() with { Existing = true, Restored = true }));
+    }
 }

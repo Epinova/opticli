@@ -82,6 +82,41 @@ public sealed class WriteRoundTripTests
     }
 
     [SiteFact]
+    public async Task A_create_with_a_fixed_guid_can_run_again_and_restores_from_the_recycle_bin()
+    {
+        var cancellationToken = CancellationToken.None;
+        await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
+        var writes = new WriteExecutor(site.Session, _ => Task.FromResult(site.Agent));
+        var rerun = new WriteExecutor(site.Session, _ => Task.FromResult(site.Agent), updateExisting: true);
+
+        var parent = await ScratchFolderAsync(site, writes, cancellationToken);
+        var create = new CreateOperation(parent, FolderType, "fixed guid") { ContentGuid = Guid.NewGuid() };
+        try
+        {
+            var first = Assert.IsType<WriteOutput>((await writes.RunAsync(create, dryRun: false, cancellationToken)).Output);
+            Assert.Equal(create.ContentGuid, first.Guid);
+
+            await Assert.ThrowsAsync<Core.Errors.ConflictException>(() => writes.RunAsync(create, dryRun: false, cancellationToken));
+
+            var again = await rerun.RunAsync(create, dryRun: false, cancellationToken);
+            Assert.Equal(int.Parse(first.Ref!, System.Globalization.CultureInfo.InvariantCulture), again.CreatedId);
+            Assert.Equal((true, false), (((WriteOutput)again.Output).Existing == true, ((WriteOutput)again.Output).Saved));
+
+            await writes.RunAsync(new DeleteOperation(first.Ref!), dryRun: false, cancellationToken);
+            var restored = Assert.IsType<WriteOutput>((await rerun.RunAsync(create with { Name = "renamed" }, dryRun: false, cancellationToken)).Output);
+            Assert.True(restored.Restored);
+            Assert.Equal(parent, restored.Parent);
+            var header = await ContentHeaderReader.ByIdAsync(site.Session.Db, again.CreatedId!.Value, cancellationToken);
+            Assert.False(header!.Deleted);
+            Assert.Equal("renamed", header.LanguageRow(null)?.Name);
+        }
+        finally
+        {
+            await writes.RunAsync(new DeleteOperation(parent), dryRun: false, cancellationToken);
+        }
+    }
+
+    [SiteFact]
     public async Task A_provider_ref_resolves_to_the_same_content_as_its_guid()
     {
         var cancellationToken = CancellationToken.None;

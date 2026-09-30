@@ -215,7 +215,9 @@ These commands write:
   and asset roots are refused, and so is a change that leaves no role with Administer.
 - `apply plan.json` runs several operations validated together. Later operations can refer to an item an earlier
   one created as `$id`. A property value `"@texts/body.html"` is that file's text, as `Prop=@file` is on the command
-  line. Files in a plan are relative to the plan file and must stay inside its folder.
+  line. Files in a plan are relative to the plan file and must stay inside its folder. With `"guidNamespace"`, what a
+  plan creates gets the same GUIDs in every database, and `apply --update-existing` runs it again: existing content is
+  updated (and moved back out of the recycle bin), and steps that are already done change nothing.
 
 Every write command takes `--dry-run`. Structured values use `--values`, e.g.
 `--values '{"MainArea":[{"ref":"456"}]}'`. `set` and `area` check that nobody saved a newer version in the meantime

@@ -72,6 +72,9 @@ public sealed record AreaOperation
     public int? At { get; init; }
 
     public string? DisplayOption { get; init; }
+
+    /// <summary>add only: do nothing when the area already has an item referencing <see cref="Ref"/> (re-runnable plans).</summary>
+    public bool IfMissing { get; init; }
 }
 
 public static class AreaOps
@@ -134,6 +137,19 @@ public sealed record CreateRequest
     public bool Publish { get; init; }
 
     public bool DryRun { get; init; }
+
+    /// <summary>
+    /// The new content's GUID, so it is the same in every database it is created in. If content with this GUID
+    /// exists, the request fails with <c>conflict</c> unless <see cref="UpdateExisting"/>.
+    /// </summary>
+    public Guid? Guid { get; init; }
+
+    /// <summary>
+    /// When content with <see cref="Guid"/> exists: update it instead (name and properties, as a new version like
+    /// <see cref="AgentRoutes.Draft"/>). It must be of the same type and under the same parent; content in the recycle
+    /// bin is moved back under the parent first. The response has <see cref="WriteResult.Existing"/>.
+    /// </summary>
+    public bool UpdateExisting { get; init; }
 }
 
 /// <summary>Body of <see cref="AgentRoutes.Media"/>: upload a file as a new media item (image, PDF, video, ...).</summary>
@@ -169,6 +185,12 @@ public sealed record UploadRequest
 
     /// <summary>Validate type, parent, name and properties without storing a file.</summary>
     public bool DryRun { get; init; }
+
+    /// <summary>As <see cref="CreateRequest.Guid"/>.</summary>
+    public Guid? Guid { get; init; }
+
+    /// <summary>As <see cref="CreateRequest.UpdateExisting"/>; existing media keeps its file.</summary>
+    public bool UpdateExisting { get; init; }
 }
 
 /// <summary>Body of <see cref="AgentRoutes.Languages"/>: create a language branch as a draft.</summary>

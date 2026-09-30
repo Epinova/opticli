@@ -55,6 +55,12 @@ public sealed record WriteResult
     /// <summary>Warnings, or for an invalid dry run the errors that would block the save.</summary>
     public IReadOnlyList<ValidationIssue>? Validation { get; init; }
 
+    /// <summary>A create or upload with <see cref="CreateRequest.UpdateExisting"/> found the content and updated it.</summary>
+    public bool Existing { get; init; }
+
+    /// <summary>That existing content was in the recycle bin and was moved back under the parent (not for a dry run).</summary>
+    public bool Restored { get; init; }
+
     /// <summary>For an upload: the media type the file is created as (also for a dry run, which has no <see cref="Content"/>).</summary>
     public string? MediaType { get; init; }
 }

@@ -20,6 +20,7 @@ internal static class BlockCommand
         var forContent = new Option<string?>("--for") { Description = "Put it in this content's \"For this page\" assets folder (created if missing).", HelpName = "ref" };
         var parent = new Option<string?>("--parent") { Description = "Put it in this folder instead.", HelpName = "ref" };
         var lang = new Option<string?>("--lang") { Description = "Language. Default: the master language of --for or --parent.", HelpName = "code" };
+        var guid = new Option<Guid?>("--guid") { Description = "The new content's GUID (default: a new one). Fails with a conflict if it exists.", HelpName = "guid" };
         var write = new WriteOptions();
         var command = new Command("create", """
             Create a shared block, as a draft unless --publish. Needs `opticli serve`.
@@ -32,6 +33,7 @@ internal static class BlockCommand
         command.Options.Add(forContent);
         command.Options.Add(parent);
         command.Options.Add(lang);
+        command.Options.Add(guid);
         write.AddProperties(command);
         write.AddCommon(command);
 
@@ -40,7 +42,10 @@ internal static class BlockCommand
             var parse = context.Parse;
             var operation = new BlockCreateOperation(
                 parse.GetValue(type)!, parse.GetValue(name)!, parse.GetValue(forContent), parse.GetValue(parent),
-                write.ParseProperties(context), parse.GetValue(lang), parse.GetValue(write.Publish));
+                write.ParseProperties(context), parse.GetValue(lang), parse.GetValue(write.Publish))
+            {
+                ContentGuid = parse.GetValue(guid),
+            };
             await using var session = await context.OpenContentAsync(cancellationToken);
             return WriteOptions.Result(await context.Writes(session).RunAsync(operation, parse.GetValue(write.DryRun), cancellationToken));
         });

@@ -20,8 +20,20 @@ namespace OptiCli.Core.Writes;
 /// Publish, move and delete have no dry run in the agent; for those the checks run here, against the database.
 /// </remarks>
 /// <param name="projectDirectory">The site project, to show where an uploaded file landed on disk.</param>
-public sealed class WriteExecutor(ContentSession session, Func<CancellationToken, Task<AgentClient>> connect, string? site = null, string? projectDirectory = null)
+/// <param name="updateExisting">
+/// Make steps safe to run again (<c>apply --update-existing</c>): content that exists with a step's GUID is updated,
+/// an <c>area add</c> of an item already there, a <c>translate</c> to an existing branch (which becomes a <c>set</c>),
+/// a <c>publish</c> of a published version and a <c>delete</c> of deleted content change nothing.
+/// </param>
+public sealed class WriteExecutor(
+    ContentSession session,
+    Func<CancellationToken, Task<AgentClient>> connect,
+    string? site = null,
+    string? projectDirectory = null,
+    bool updateExisting = false)
 {
+    public bool UpdateExisting => updateExisting;
+
     public const string AgentSource = "agent";
     public const string DbSource = "db";
 
@@ -95,6 +107,7 @@ public sealed class WriteExecutor(ContentSession session, Func<CancellationToken
                 Ref = (await ResolveAsync(op.Item ?? throw new UsageException("area add needs the block to add."), "block", cancellationToken)).ContentRef,
                 At = op.At,
                 DisplayOption = op.Display,
+                IfMissing = updateExisting,
             },
             AreaOps.Remove or AreaOps.Move => new AreaOperation
             {
@@ -154,6 +167,8 @@ public sealed class WriteExecutor(ContentSession session, Func<CancellationToken
             Properties = PropertyArguments.ToRequest(op.Properties),
             Publish = op.Publish,
             DryRun = dryRun,
+            Guid = op.ContentGuid,
+            UpdateExisting = updateExisting,
         };
         return await CreatedAsync(request, type.Name, cancellationToken);
     }
@@ -180,6 +195,8 @@ public sealed class WriteExecutor(ContentSession session, Func<CancellationToken
             Properties = PropertyArguments.ToRequest(op.Properties),
             Publish = op.Publish,
             DryRun = dryRun,
+            Guid = op.ContentGuid,
+            UpdateExisting = updateExisting,
         };
         return await CreatedAsync(request, type.Name, cancellationToken);
     }
@@ -213,14 +230,16 @@ public sealed class WriteExecutor(ContentSession session, Func<CancellationToken
             Data = dryRun ? null : Convert.ToBase64String(await File.ReadAllBytesAsync(file.FullName, cancellationToken)),
             Publish = op.Publish,
             DryRun = dryRun,
+            Guid = op.ContentGuid,
+            UpdateExisting = updateExisting,
         };
 
         var result = await PostAsync<WriteResult>(AgentRoutes.Media, request, cancellationToken);
-        var output = WriteOutput.From(result, result.MediaType ?? type?.Name, request.Name ?? request.FileName, request.Parent) with
+        var output = Created(result, result.MediaType ?? type?.Name, request.Name ?? request.FileName, request.Parent, request.Guid) with
         {
-            Upload = new UploadInfo(file.FullName, file.Length, result.Saved && result.Content is { } saved ? await BlobAsync(saved.Id, cancellationToken) : null),
+            Upload = new UploadInfo(file.FullName, file.Length, result.Saved && !result.Existing && result.Content is { } saved ? await BlobAsync(saved.Id, cancellationToken) : null),
         };
-        return Outcome(output, result.Saved ? result.Content?.Id : null);
+        return Outcome(output, CreatedId(result));
     }
 
     /// <summary>Where the site stored a media item's file, read back from the database.</summary>
@@ -233,14 +252,34 @@ public sealed class WriteExecutor(ContentSession session, Func<CancellationToken
     private async Task<WriteOutcome> CreatedAsync(CreateRequest request, string typeName, CancellationToken cancellationToken)
     {
         var result = await PostAsync<WriteResult>(AgentRoutes.Create, request, cancellationToken);
-        var output = WriteOutput.From(result, typeName, request.Name, request.Parent);
-        return Outcome(output, result.Saved ? result.Content?.Id : null);
+        return Outcome(Created(result, typeName, request.Name, request.Parent, request.Guid), CreatedId(result));
     }
+
+    /// <param name="guid">The GUID asked for, shown for a dry run, which has no content yet.</param>
+    private static WriteOutput Created(WriteResult result, string? typeName, string? name, string? parent, Guid? guid)
+    {
+        var output = WriteOutput.From(result, typeName, name, parent);
+        return output with
+        {
+            Guid = output.Guid ?? guid,
+            Existing = result.Existing ? true : null,
+            Restored = result.Restored ? true : null,
+        };
+    }
+
+    /// <summary>What a plan's <c>$id</c> binds to: new content once saved, existing content also when unchanged.</summary>
+    private static int? CreatedId(WriteResult result) =>
+        (result.Saved || result.Existing) && !result.DryRun ? result.Content?.Id : null;
 
     private async Task<WriteOutcome> TranslateAsync(TranslateOperation op, bool dryRun, CancellationToken cancellationToken)
     {
         var target = await EditableAsync(op.Ref, cancellationToken);
         var language = session.Language(op.Lang) ?? throw new UsageException("translate needs --lang <code>.");
+        if (updateExisting && target.Header.Languages.ContainsKey(language.Id))
+        {
+            var set = await SetAsync(new SetOperation(op.Ref, op.Properties, op.Name, language.Code, op.Publish, Force: true), dryRun, cancellationToken);
+            return set with { Output = ((WriteOutput)set.Output) with { Existing = true } };
+        }
         PropertyNameCheck.Check(session.Model, target.Header.TypeId, op.Properties);
         var request = new LanguageBranchRequest
         {
@@ -264,7 +303,7 @@ public sealed class WriteExecutor(ContentSession session, Func<CancellationToken
         var language = LanguageFor(op.Lang, target);
         var versionId = op.Version ?? target.Version;
 
-        if (!dryRun)
+        if (!dryRun && !updateExisting)
         {
             var result = await PostAsync<WriteResult>(AgentRoutes.Publish(target.ContentRef), new PublishRequest { Version = versionId, Lang = language?.Code }, cancellationToken);
             return Outcome(WriteOutput.From(result), null);
@@ -279,7 +318,21 @@ public sealed class WriteExecutor(ContentSession session, Func<CancellationToken
         }
         if (version.StatusValue == VersionStatus.Published)
         {
+            if (updateExisting)
+            {
+                var current = session.Identities.Describe(target.Header, session.Model.Language(version.LanguageId), version.Id, version.StatusValue, version.Name);
+                return new WriteOutcome(
+                    new WriteOutput(WriteOutput.Id(target.Id), version.Ref, current.Guid, current.Type, current.Name, current.Language, current.Status,
+                        target.Header.ParentId is { } parentId ? WriteOutput.Id(parentId) : null,
+                        Saved: false, Published: false, DryRun: dryRun, Valid: true, BaseVersion: version.Ref, Changes: [], Validation: null),
+                    DbSource, null, [$"{version.Ref} is already published; nothing to do."]);
+            }
             throw new ConflictException($"Version {version.Ref} is already the published version.");
+        }
+        if (!dryRun)
+        {
+            var result = await PostAsync<WriteResult>(AgentRoutes.Publish(target.ContentRef), new PublishRequest { Version = versionId, Lang = language?.Code }, cancellationToken);
+            return Outcome(WriteOutput.From(result), null);
         }
         var identity = session.Identities.Describe(target.Header, session.Model.Language(version.LanguageId), version.Id, version.StatusValue, version.Name);
         var output = new WriteOutput(
@@ -312,6 +365,11 @@ public sealed class WriteExecutor(ContentSession session, Func<CancellationToken
         var target = Movable(await EditableAsync(op.Ref, cancellationToken));
         if (target.Header.Deleted)
         {
+            if (updateExisting)
+            {
+                return new WriteOutcome(DryMove(target, null, 0, recycleBin: true) with { DryRun = dryRun }, DbSource, null,
+                    [$"Content {target.Id} is already in the recycle bin; nothing to do."]);
+            }
             throw new ConflictException($"Content {target.Id} is already in the recycle bin.");
         }
         var descendants = await DescendantCountAsync(target.Header, cancellationToken);

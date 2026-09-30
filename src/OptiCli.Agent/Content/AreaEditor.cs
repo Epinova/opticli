@@ -32,6 +32,10 @@ internal sealed class AreaEditor(ContentLocator locator, PropertyWriter writer)
             switch (op.Op)
             {
                 case AreaOps.Add:
+                    if (op.IfMissing && op.Ref is not null && items.Any(item => item.ContentLink is { } present && present.CompareToIgnoreWorkID(locator.ResolveContent(op.Ref, "ContentArea item"))))
+                    {
+                        continue;
+                    }
                     var at = op.At ?? items.Count;
                     CheckPosition(where, at, items.Count);
                     items.Insert(at, writer.NewAreaItem(op.Ref, op.DisplayOption));

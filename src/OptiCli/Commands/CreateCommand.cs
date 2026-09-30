@@ -13,6 +13,7 @@ internal static class CreateCommand
         var type = new Option<string>("--type") { Description = "Content type name or GUID (see `opticli types`).", Required = true, HelpName = "type" };
         var name = new Option<string>("--name") { Description = "Content name.", Required = true, HelpName = "name" };
         var lang = new Option<string?>("--lang") { Description = "Language of the new content. Default: the parent's master language.", HelpName = "code" };
+        var guid = new Option<Guid?>("--guid") { Description = "The new content's GUID (default: a new one). Fails with a conflict if it exists.", HelpName = "guid" };
         var write = new WriteOptions();
         var command = new Command("create", """
             Create a page, block or folder under a parent, as a draft unless --publish. Needs `opticli serve`.
@@ -24,13 +25,17 @@ internal static class CreateCommand
         command.Options.Add(type);
         command.Options.Add(name);
         command.Options.Add(lang);
+        command.Options.Add(guid);
         write.AddProperties(command);
         write.AddCommon(command);
 
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
-            var operation = new CreateOperation(parse.GetValue(parent)!, parse.GetValue(type)!, parse.GetValue(name)!, write.ParseProperties(context), parse.GetValue(lang), parse.GetValue(write.Publish));
+            var operation = new CreateOperation(parse.GetValue(parent)!, parse.GetValue(type)!, parse.GetValue(name)!, write.ParseProperties(context), parse.GetValue(lang), parse.GetValue(write.Publish))
+            {
+                ContentGuid = parse.GetValue(guid),
+            };
             await using var session = await context.OpenContentAsync(cancellationToken);
             return WriteOptions.Result(await context.Writes(session).RunAsync(operation, parse.GetValue(write.DryRun), cancellationToken));
         });

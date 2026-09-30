@@ -8,24 +8,27 @@ public static class UndoHints
     /// <returns>Null when nothing was saved.</returns>
     public static string? For(WriteOperation operation, object output) => (operation, output) switch
     {
+        (_, WriteOutput { Restored: true } restored) =>
+            $"{restored.Ref} was moved back out of the recycle bin (opticli delete {restored.Ref} returns it there){(restored.Saved ? $"; {Version(restored)}" : ".")}",
         (_, WriteOutput { Saved: false }) or (_, MoveOutput { Moved: false }) or (_, AccessOutput { Saved: false }) => null,
         (AccessOperation, AccessOutput access) => Access(access),
-        (CreateOperation or BlockCreateOperation or UploadOperation, WriteOutput created) =>
+        (CreateOperation or BlockCreateOperation or UploadOperation, WriteOutput { Existing: not true } created) =>
             $"opticli delete {created.Ref} (moves it to the recycle bin)",
-        (TranslateOperation, WriteOutput branch) =>
+        (TranslateOperation, WriteOutput { Existing: not true } branch) =>
             $"Language branch '{branch.Language}' was created ({branch.Version}); opticli can't remove a branch, delete it in the CMS edit UI if unwanted.",
         (PublishOperation, WriteOutput published) =>
             $"{published.Version} is now published; to go back, publish the previously published version: opticli versions {published.Ref}, then opticli publish {published.Ref} --version <id>",
-        (_, WriteOutput { Published: true } saved) =>
-            $"{saved.Version} was published; to go back, re-publish the version it was based on: opticli publish {saved.Ref} --version {VersionId(saved.BaseVersion)}",
-        (_, WriteOutput draft) =>
-            $"{draft.Version} is an unpublished draft, so nothing live changed; the version it was based on ({draft.BaseVersion}) is unchanged.",
+        (_, WriteOutput saved) => Version(saved),
         (DeleteOperation, MoveOutput deleted) =>
             $"opticli move {deleted.Ref} --to {deleted.PreviousParent} (restores it from the recycle bin)",
         (_, MoveOutput moved) =>
             $"opticli move {moved.Ref} --to {moved.PreviousParent}",
         _ => null,
     };
+
+    private static string Version(WriteOutput saved) => saved.Published
+        ? $"{saved.Version} was published; to go back, re-publish the version it was based on: opticli publish {saved.Ref} --version {VersionId(saved.BaseVersion)}"
+        : $"{saved.Version} is an unpublished draft, so nothing live changed; the version it was based on ({saved.BaseVersion}) is unchanged.";
 
     /// <summary>
     /// The command that turns <c>after</c> back into <c>before</c>: access rights aren't versioned, so this is the only

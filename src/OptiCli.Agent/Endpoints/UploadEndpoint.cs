@@ -27,7 +27,22 @@ internal static class UploadEndpoint
         var type = MediaType(request, flow, extension, body.Type);
         var (parent, _) = CreateEndpoint.Parent(request, flow, body.Parent, body.ForContent, body.DryRun);
 
+        if (body.Guid is { } guid && ExistingContent.Find(flow, guid) is { } existing)
+        {
+            var name = string.IsNullOrWhiteSpace(body.Name) ? body.FileName.Trim() : body.Name;
+            var updated = ExistingContent.Update(flow, existing, body.UpdateExisting, type, parent, null, name, body.Properties, body.Publish, body.DryRun);
+            return updated with
+            {
+                MediaType = type.Name,
+                Validation = [.. updated.Validation ?? [], new ValidationIssue(null, "The media item exists, so its file was kept; replace it in the CMS edit UI if it changed.", "warning")],
+            };
+        }
+
         var media = flow.Repository.GetDefault<MediaData>(parent.ContentLink, type.ID);
+        if (body.Guid is { } fixedGuid)
+        {
+            media.ContentGuid = fixedGuid;
+        }
         var before = PropertyValues.Snapshot(media);
         media.Name = string.IsNullOrWhiteSpace(body.Name) ? body.FileName.Trim() : body.Name;
         flow.Writer.Apply(media, body.Properties);

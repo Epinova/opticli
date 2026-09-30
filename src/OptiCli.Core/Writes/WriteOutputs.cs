@@ -29,6 +29,12 @@ public sealed record WriteOutput(
     /// <summary>For an upload: the file sent, and where the site stored it (none for a dry run).</summary>
     public UploadInfo? Upload { get; init; }
 
+    /// <summary>True when a create, block, upload or translate step of <c>apply --update-existing</c> updated existing content.</summary>
+    public bool? Existing { get; init; }
+
+    /// <summary>True when that content was in the recycle bin and was moved back.</summary>
+    public bool? Restored { get; init; }
+
     /// <param name="type">Shown when the agent returns no content (a dry-run create).</param>
     public static WriteOutput From(WriteResult result, string? type = null, string? name = null, string? parent = null)
     {

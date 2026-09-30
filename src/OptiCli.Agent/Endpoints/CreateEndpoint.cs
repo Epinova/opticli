@@ -22,9 +22,18 @@ internal static class CreateEndpoint
         var (parent, owner) = Parent(request, flow, body.Parent, body.ForContent, body.DryRun);
         var culture = body.Lang is { } lang ? flow.Locator.EnabledLanguage(lang) : MasterLanguage(owner);
 
+        if (body.Guid is { } guid && ExistingContent.Find(flow, guid) is { } existing)
+        {
+            return ExistingContent.Update(flow, existing, body.UpdateExisting, type, parent, body.Lang is null ? null : culture, body.Name, body.Properties, body.Publish, body.DryRun);
+        }
+
         var content = culture is null
             ? flow.Repository.GetDefault<IContent>(parent.ContentLink, type.ID)
             : flow.Repository.GetDefault<IContent>(parent.ContentLink, type.ID, culture);
+        if (body.Guid is { } fixedGuid)
+        {
+            content.ContentGuid = fixedGuid;
+        }
         var before = PropertyValues.Snapshot(content);
         content.Name = body.Name;
         flow.Writer.Apply(content, body.Properties);

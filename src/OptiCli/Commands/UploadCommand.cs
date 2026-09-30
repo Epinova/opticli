@@ -17,6 +17,7 @@ internal static class UploadCommand
             Description = "Media type (see `opticli types --kind media`). Default: the type the site maps the file's extension to; a type that doesn't accept it fails with the ones that do.",
             HelpName = "type",
         };
+        var guid = new Option<Guid?>("--guid") { Description = "The new content's GUID (default: a new one). Fails with a conflict if it exists.", HelpName = "guid" };
         var write = new WriteOptions();
         var command = new Command("upload", """
             Upload a file (PDF, image, video, ...) as a new media item, as a draft unless --publish. Needs `opticli serve`.
@@ -30,6 +31,7 @@ internal static class UploadCommand
         command.Options.Add(parent);
         command.Options.Add(name);
         command.Options.Add(type);
+        command.Options.Add(guid);
         write.AddProperties(command);
         write.AddCommon(command);
 
@@ -39,7 +41,10 @@ internal static class UploadCommand
             var operation = new UploadOperation(
                 Path.GetFullPath(parse.GetValue(file)!, context.Environment.CurrentDirectory),
                 parse.GetValue(forContent), parse.GetValue(parent), parse.GetValue(name), parse.GetValue(type),
-                write.ParseProperties(context), parse.GetValue(write.Publish));
+                write.ParseProperties(context), parse.GetValue(write.Publish))
+            {
+                ContentGuid = parse.GetValue(guid),
+            };
             await using var session = await context.OpenContentAsync(cancellationToken);
             return WriteOptions.Result(await context.Writes(session).RunAsync(operation, parse.GetValue(write.DryRun), cancellationToken));
         });

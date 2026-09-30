@@ -171,6 +171,19 @@ fields as the commands (`opticli apply --help` lists them). `"$id"` refers to wh
 Every operation is validated before anything is written; on a failure opticli stops and reports what was saved and
 how to undo it. `--publish` on `apply` publishes every operation: only when the user asked.
 
+Plans that run again (a section rebuilt after a database refresh, or repaired after edits):
+- `"guidNamespace": "<GUID>"` next to `"operations"` gives every `create`, `block` and `upload` a GUID derived from its
+  `id` (each such step then needs an `id`); `"guid"` on a step sets one explicitly. The content then has the same GUID,
+  and permanent link `~/link/<guid without dashes>.aspx`, in every database. Each step result shows its `guid`.
+- Without `--update-existing` a step whose GUID exists fails validation with `conflict`, before anything is written.
+- `apply --update-existing`: such a step updates that content (name and properties, as a new draft) instead; content
+  in the recycle bin is moved back under the plan's parent first (`restored: true`). A different type, or content that
+  was moved elsewhere, is a `conflict`. `area add` of an item that is already there, `translate` to an existing branch
+  (it becomes a `set`), `publish` of a published version and `delete` of deleted content change nothing.
+- Step statuses: `saved`, or `unchanged` when the content was already as the step wants it. `result.existing: true`
+  marks updated content. `area remove`/`move` by index are not repeatable; set whole ContentAreas in `properties`
+  instead. Content that is no longer in the plan is left alone. An existing upload keeps its file.
+
 ## serve and env
 
 - `opticli serve [--build] [--port N] [--foreground] [--output <dll>] [--timeout s]`: runs the existing build

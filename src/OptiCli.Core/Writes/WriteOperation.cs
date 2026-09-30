@@ -14,6 +14,12 @@ public abstract record WriteOperation
     /// <summary>Plan-local name of the content a create step makes, referenced by later steps as <c>$id</c>.</summary>
     public string? Id { get; init; }
 
+    /// <summary>
+    /// create, block and upload: the new content's GUID, the same in every database the step runs against (a plan's
+    /// <c>guid</c>, or derived from <c>guidNamespace</c> and <see cref="Id"/>). Null: the CMS picks one.
+    /// </summary>
+    public Guid? ContentGuid { get; init; }
+
     /// <summary>Every ref-valued field, so a plan can resolve <c>$id</c>s in them.</summary>
     public abstract IEnumerable<string?> Refs { get; }
 
