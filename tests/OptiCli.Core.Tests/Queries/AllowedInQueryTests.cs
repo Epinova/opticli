@@ -53,6 +53,20 @@ public class AllowedInQueryTests : IDisposable
         Assert.Empty(Find("HeroBlock", explicitOnly: true));
     }
 
+    [Theory]
+    [InlineData("MainArea", "TeaserBlock", true)]
+    [InlineData("MainArea", "FactBlock", false)]
+    [InlineData("MainArea", "HeroBlock", false)]
+    [InlineData("RelatedItems", "HeroBlock", true)]
+    [InlineData("RelatedPage", "HeroBlock", true)]
+    [InlineData("Heading", "HeroBlock", null)]
+    public void Allows_answers_for_one_property_and_an_unrestricted_reference_takes_anything(string property, string target, bool? allowed)
+    {
+        var model = ModelFixture.Create();
+
+        Assert.Equal(allowed, AllowedInQuery.Allows(model, CSharpSourceIndex.Build(_root.Path), model.RequireType("ArticlePage"), property, model.RequireType(target)));
+    }
+
     public void Dispose() => _root.Dispose();
 
     private List<AllowedIn> Find(string target, bool explicitOnly)

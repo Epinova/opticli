@@ -74,9 +74,31 @@ public static class AllowedInQuery
             .ToList();
     }
 
+    /// <summary>
+    /// Whether <paramref name="owner"/>'s reference property takes <paramref name="target"/>: false only when its
+    /// <c>[AllowedTypes]</c> in the code leaves the type out (or restricts it); true without the attribute.
+    /// </summary>
+    /// <returns>Null when the property isn't a ContentArea or reference.</returns>
+    public static bool? Allows(CmsModel model, CSharpSourceIndex index, ContentTypeInfo owner, string property, ContentTypeInfo target)
+    {
+        var definition = model.PropertiesOf(owner.Id).FirstOrDefault(p => p.Name.Equals(property, StringComparison.OrdinalIgnoreCase));
+        if (definition is null || !IsReference(definition))
+        {
+            return null;
+        }
+        var classes = ContentTypeSources.FindClasses(index, owner.Guid, owner.ClassName ?? owner.Name, owner.Namespace);
+        var declaration = classes.Count > 0 ? ContentTypeSources.FindProperties(index, classes[0].Class).GetValueOrDefault(definition.Name)?.AllowedTypes : null;
+        if (declaration is null)
+        {
+            return true;
+        }
+        var names = TargetNames(index, target);
+        return !declaration.Restricted.Any(names.Contains) && (declaration.Allowed.Count == 0 || declaration.Allowed.Any(names.Contains));
+    }
+
     private static bool IsList(PropertyDefinition property) => property.TypeName is "ContentArea" or "ContentReferenceList";
 
-    private static bool IsReference(PropertyDefinition property) =>
+    public static bool IsReference(PropertyDefinition property) =>
         property.TypeName is "ContentArea" or "ContentReferenceList"
         || property.BaseType is PropertyBaseType.ContentReference or PropertyBaseType.PageReference;
 

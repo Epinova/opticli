@@ -46,7 +46,7 @@ internal static class CreateEndpoint
             shown: null,
             baseVersion: null,
             saveUnchanged: true,
-            precheck: Availability(request, parent, type, flow.Types));
+            precheck: Availability(request, parent, type, flow.Types, ParentType(flow, body)));
     }
 
     /// <summary>
@@ -78,13 +78,19 @@ internal static class CreateEndpoint
         content is ILocalizable { MasterLanguage: { } master } ? master : null;
 
     /// <summary>The editor's "allowed types" rule for pages, reported as a validation error rather than an exception.</summary>
-    private static IEnumerable<ValidationIssue> Availability(AgentRequest request, IContent parent, ContentType type, IContentTypeRepository types)
+    private static ContentType? ParentType(WriteFlow flow, CreateRequest body) =>
+        body.ParentType is null ? null
+        : body.DryRun ? TypeEndpoint.Find(flow.Types, body.ParentType)
+        : throw AgentException.Usage("parentType only applies to a dry run.");
+
+    /// <param name="plannedParent">The type the real parent will have, when the dry run uses a stand-in parent.</param>
+    private static IEnumerable<ValidationIssue> Availability(AgentRequest request, IContent parent, ContentType type, IContentTypeRepository types, ContentType? plannedParent = null)
     {
-        if (parent is not PageData || type is not PageType)
+        if (type is not PageType || (plannedParent is null ? parent is not PageData : plannedParent is not PageType))
         {
             yield break;
         }
-        var parentType = types.Load(parent.ContentTypeID);
+        var parentType = plannedParent ?? types.Load(parent.ContentTypeID);
         if (parentType is not null && !request.Service<ContentTypeAvailabilityService>().IsAllowed(parentType.Name, type.Name))
         {
             yield return new ValidationIssue(null, $"{type.Name} is not allowed below {parentType.Name} ({parent.ContentLink.ID}).");

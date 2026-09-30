@@ -1,6 +1,8 @@
 using System.CommandLine;
 using OptiCli.Cli;
 using OptiCli.Core.Errors;
+using OptiCli.Core.Queries;
+using OptiCli.Core.SourceScan;
 using OptiCli.Core.Writes;
 
 namespace OptiCli.Commands;
@@ -22,8 +24,10 @@ internal static class ApplyCommand
         write.Publish.Description = "Publish every set, create, area, block, upload and translate operation (as if each had \"publish\": true).";
         var command = new Command("apply", $$$"""
             Run several writes from a JSON plan, validating every one before anything is saved. Needs `opticli serve`.
-            Each operation gets a dry run first (operations on content created earlier in the plan get their names checked
-            and are validated when they run); nothing is written unless all pass. Then they run in order; on a failure
+            Each operation gets a dry run first; nothing is written unless all pass. Operations on content the plan creates
+            are dry-run against a stand-in: the content as it will be after that operation, under its nearest existing
+            ancestor (status "simulated"; values that refer to other planned content are checked when the plan runs, and
+            their ContentArea placements against [AllowedTypes] in the code). The rest get their names checked ("deferred"). Then they run in order; on a failure
             opticli stops and reports what was saved (refs and versions), what failed, and how to undo each saved operation.
             Plan: {"operations": [ {"op": "...", ...}, ... ]}. A create, block or upload operation may have an "id"; later
             operations refer to what it created as "$id", in ref fields and as a whole string value in "properties".
@@ -58,10 +62,22 @@ internal static class ApplyCommand
             var planDirectory = path == "-" ? context.Environment.CurrentDirectory : Path.GetDirectoryName(Path.GetFullPath(path, context.Environment.CurrentDirectory))!;
             await using var session = await context.OpenContentAsync(cancellationToken);
             var writes = context.Writes(session, updateExisting: parse.GetValue(updateExisting));
-            var run = await new PlanRunner(session, writes, planDirectory, parse.GetValue(allowOutside)).RunAsync(plan, parse.GetValue(write.DryRun), parse.GetValue(write.Publish), cancellationToken);
-            return new CommandResult(run, Source: WriteExecutor.AgentSource);
+            var project = context.TryGetProject(out _);
+            var allowedTypes = project is null ? null : new AllowedTypesCheck(session.Model, () => CSharpSourceIndex.Build(project.SourceRoot));
+            var run = await new PlanRunner(session, writes, planDirectory, parse.GetValue(allowOutside), allowedTypes).RunAsync(plan, parse.GetValue(write.DryRun), parse.GetValue(write.Publish), cancellationToken);
+            return new CommandResult(run, Warnings: run.DryRun ? [Coverage(run)] : null, Source: WriteExecutor.AgentSource);
         });
         return command;
+    }
+
+    /// <summary>How thoroughly the dry run could check the plan.</summary>
+    private static string Coverage(PlanRun run)
+    {
+        int Count(string status) => run.Operations.Count(o => o.Status == status);
+        var deferred = Count(PlanStepStatus.Deferred);
+        return $"Dry run of {run.Operations.Count} operation(s): {Count(PlanStepStatus.Valid)} checked by the site, "
+            + $"{Count(PlanStepStatus.Simulated)} checked against stand-ins for content the plan creates (their warnings say what wasn't), "
+            + $"{deferred} only name-checked{(deferred > 0 ? " (the site validates them when the plan runs)" : "")}.";
     }
 
     private static async Task<string> ReadPlanAsync(string path, string currentDirectory, CancellationToken cancellationToken)

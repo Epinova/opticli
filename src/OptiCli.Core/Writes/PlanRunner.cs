@@ -12,6 +12,12 @@ public static class PlanStepStatus
     /// <summary>Refers to content an earlier step creates, so only its shape and names could be checked.</summary>
     public const string Deferred = "deferred";
 
+    /// <summary>
+    /// Refers to content an earlier step creates, and was dry-run against a stand-in (see <see cref="PlanSimulation"/>);
+    /// its warnings say what could not be checked yet.
+    /// </summary>
+    public const string Simulated = "simulated";
+
     public const string Invalid = "invalid";
     public const string Saved = "saved";
 
@@ -44,7 +50,8 @@ public sealed record PlanRun(bool DryRun, IReadOnlyList<PlanStepResult> Operatio
 /// </summary>
 /// <param name="planDirectory">The plan file's folder, which files in the plan are relative to (the working directory for stdin).</param>
 /// <param name="allowOutside">Allow files outside <paramref name="planDirectory"/> (see <see cref="PlanFiles"/>).</param>
-public sealed class PlanRunner(ContentSession session, WriteExecutor executor, string planDirectory, bool allowOutside = false)
+/// <param name="allowedTypes">Checks ContentArea placements of planned content against <c>[AllowedTypes]</c> in the code; null skips that.</param>
+public sealed class PlanRunner(ContentSession session, WriteExecutor executor, string planDirectory, bool allowOutside = false, Queries.AllowedTypesCheck? allowedTypes = null)
 {
     /// <exception cref="OptiCliException">
     /// Validation failed (nothing written), or a step failed during execution; <c>details</c> is the
@@ -144,6 +151,14 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                 {
                     MediaFiles.Check(upload.File);
                 }
+                if (PlanSimulation.For(step, steps, existing, executor.UpdateExisting) is { } simulation)
+                {
+                    return await SimulateAsync(step, simulation, steps, cancellationToken);
+                }
+                if (op is AreaEdit { Action: Protocol.AreaOps.Add } add && await AreaPlacementAsync(add, steps, cancellationToken) is { } checkedAdd)
+                {
+                    return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Simulated, Warnings: [checkedAdd]), null);
+                }
                 return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Deferred, Guid: op.ContentGuid), null);
             }
             var outcome = await executor.RunAsync(op, dryRun: true, cancellationToken);
@@ -153,6 +168,123 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         catch (OptiCliException ex) when (ex.Code is not (ErrorCode.Unreachable or ErrorCode.Internal))
         {
             return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Invalid, ex.Details, Error(ex), Guid: op.ContentGuid), ex);
+        }
+    }
+
+    /// <summary>The step as a dry run against stand-ins; validation errors on the properties it had to leave out don't count.</summary>
+    private async Task<(PlanStepResult Result, OptiCliException? Failure)> SimulateAsync(PlanStep step, Simulation simulation, IReadOnlyList<PlanStep> steps, CancellationToken cancellationToken)
+    {
+        var op = step.Operation;
+        var notes = new List<string>();
+        if (simulation.StandIns.Count > 0)
+        {
+            notes.Add($"Dry-run under stand-in parents, since the plan creates the real ones: {string.Join(", ", simulation.StandIns.Select(s => $"{s.Value} for {s.Key}"))}.");
+        }
+        if (simulation.Unchecked.Count > 0)
+        {
+            notes.Add($"Not checked until the plan runs: {string.Join(", ", simulation.Unchecked)} (refer to content the plan creates).");
+        }
+        var owner = simulation.Target is { } target ? PlanSimulation.TypeOf(target, steps) : null;
+        owner ??= (simulation.Operation as CreateOperation)?.Type ?? (simulation.Operation as BlockCreateOperation)?.Type;
+        var placements = new List<string>();
+        foreach (var (property, planId) in simulation.References)
+        {
+            if (owner is not null && PlanSimulation.TypeOf(planId, steps) is { } item && Placement(owner, property, item) is { } problem)
+            {
+                placements.Add(problem);
+            }
+        }
+
+        WriteOutcome? outcome = null;
+        IReadOnlyList<Protocol.ValidationIssue> errors = [];
+        object? details = null;
+        try
+        {
+            outcome = await executor.RunAsync(simulation.Operation, dryRun: true, cancellationToken);
+        }
+        catch (ContentValidationException ex) when (ex.Details is WriteOutput invalid)
+        {
+            // Errors on properties the simulation left out (a required ContentArea, say) say nothing about the plan.
+            // So are URL segment clashes under a stand-in parent: the segment only has to be unique among the real siblings.
+            errors = (invalid.Validation ?? [])
+                .Where(v => v.Severity == "error" && !Left(v.Property, simulation.Unchecked))
+                .Where(v => simulation.StandIns.Count == 0 || !string.Equals(v.Property, "PageURLSegment", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            details = invalid with { Validation = errors };
+            if (errors.Count < (invalid.Validation ?? []).Count(v => v.Severity == "error"))
+            {
+                notes.Add("Validation errors that only the stand-in causes were ignored (on properties not checked yet, or a URL segment clash with the stand-in's children).");
+            }
+        }
+
+        var messages = errors.Select(v => v.Property is null ? v.Message : $"{v.Property}: {v.Message}").Concat(placements).ToList();
+        if (messages.Count > 0)
+        {
+            var failure = new ContentValidationException(
+                $"Dry run (as it will be after operation {step.Index}): the change would fail validation ({string.Join("; ", messages)}). Nothing was saved.",
+                "details has the dry-run result; fix the listed properties and retry. Content the plan creates is checked under an existing stand-in parent.")
+            { Details = details ?? outcome?.Output };
+            return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Invalid, failure.Details, Error(failure), Warnings: notes, Guid: op.ContentGuid), failure);
+        }
+        var warnings = notes.Concat(outcome?.Warnings ?? []).ToList();
+        return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Simulated, outcome?.Output ?? details,
+            Warnings: warnings.Count > 0 ? warnings : null, Guid: op.ContentGuid), null);
+    }
+
+    private static bool Left(string? property, IReadOnlyList<string> skipped) =>
+        property is not null && skipped.Any(u => property.Equals(u, StringComparison.OrdinalIgnoreCase) || property.StartsWith(u + ".", StringComparison.OrdinalIgnoreCase) || property.StartsWith(u + "[", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>An <c>area add</c> on planned content, or of a planned item: checked against <c>[AllowedTypes]</c> in the code.</summary>
+    /// <returns>A note when it could be checked and passed; null when it couldn't be checked.</returns>
+    /// <exception cref="ContentValidationException">The code doesn't allow the item there.</exception>
+    private async Task<string?> AreaPlacementAsync(AreaEdit add, IReadOnlyList<PlanStep> steps, CancellationToken cancellationToken)
+    {
+        if (allowedTypes is null || add.Item is null)
+        {
+            return null;
+        }
+        var owner = await TypeOfAsync(add.Ref, steps, cancellationToken);
+        var item = await TypeOfAsync(add.Item, steps, cancellationToken);
+        if (owner is null || item is null)
+        {
+            return null;
+        }
+        if (Placement(owner, add.Property, item) is { } problem)
+        {
+            throw new ContentValidationException($"Dry run: {problem}", "Pick a ContentArea that allows the type (`opticli allowed-in <type>`), or another block type.");
+        }
+        return $"{item} is allowed in {owner}.{add.Property} by [AllowedTypes] in the code; the CMS validates the placement when the plan runs.";
+    }
+
+    /// <returns>Why the code doesn't allow <paramref name="item"/> in the property; null when it does or can't tell.</returns>
+    private string? Placement(string owner, string property, string item)
+    {
+        var ownerType = session.Model.Types.FirstOrDefault(t => t.Name.Equals(owner, StringComparison.OrdinalIgnoreCase));
+        var definition = ownerType is null ? null : session.Model.PropertiesOf(ownerType.Id).FirstOrDefault(p => p.Name.Equals(property, StringComparison.OrdinalIgnoreCase));
+        if (definition is null || !Queries.AllowedInQuery.IsReference(definition))
+        {
+            return null;
+        }
+        return allowedTypes?.Allows(owner, definition.Name, item) == false
+            ? $"{owner}.{definition.Name} doesn't allow {item}, by [AllowedTypes] in the code (see `opticli allowed-in {item}`)."
+            : null;
+    }
+
+    /// <summary>The content type of a plan id (as planned) or of existing content; null when unknown.</summary>
+    private async Task<string?> TypeOfAsync(string reference, IReadOnlyList<PlanStep> steps, CancellationToken cancellationToken)
+    {
+        if (PlanSimulation.PlanId(reference) is { } id)
+        {
+            return PlanSimulation.TypeOf(id, steps);
+        }
+        try
+        {
+            var located = await session.LocateAsync(reference, null, cancellationToken);
+            return session.Model.TypeName((await session.HeaderAsync(located.Id, cancellationToken)).TypeId);
+        }
+        catch (OptiCliException)
+        {
+            return null;
         }
     }
 

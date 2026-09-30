@@ -169,6 +169,7 @@ public sealed class WriteExecutor(
             DryRun = dryRun,
             Guid = op.ContentGuid,
             UpdateExisting = updateExisting,
+            ParentType = dryRun ? op.PlannedParentType : null,
         };
         return await CreatedAsync(request, type.Name, cancellationToken);
     }

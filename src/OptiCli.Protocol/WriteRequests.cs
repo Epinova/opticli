@@ -145,6 +145,12 @@ public sealed record CreateRequest
     public Guid? Guid { get; init; }
 
     /// <summary>
+    /// Dry run only: check the "allowed below" rule against this content type instead of <see cref="Parent"/>'s, for
+    /// content whose real parent doesn't exist yet (a plan that creates both).
+    /// </summary>
+    public string? ParentType { get; init; }
+
+    /// <summary>
     /// When content with <see cref="Guid"/> exists: update it instead (name and properties, as a new version like
     /// <see cref="AgentRoutes.Draft"/>). It must be of the same type and under the same parent; content in the recycle
     /// bin is moved back under the parent first. The response has <see cref="WriteResult.Existing"/>.

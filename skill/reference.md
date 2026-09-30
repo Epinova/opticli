@@ -91,6 +91,8 @@ primary draft, the version edit mode opens.
 | `apply <plan.json\|->` | `opticli apply plan.json --dry-run` |
 
 `move` and `delete` refuse start pages, site and asset roots, the recycle bin and anything that contains them.
+As in the CMS, `delete` leaves the "For this page" folders of the item and its descendants where they are (they go
+when the recycle bin is emptied, and are there if the item is restored); a warning lists them.
 `--dry-run` on `publish`, `move` and `delete` checks the arguments and the item without asking the site.
 
 Positions in `area` are zero-based; a plain number is a position, `ref:789` (or a GUID) names the item by the
@@ -106,6 +108,11 @@ content it shows. `--at` and `--display` only apply to `add`.
   - ContentArea: `{"MainArea":[{"ref":"456"},{"ref":"789","displayOption":"wide"}]}` (replaces the whole area;
     use `area` to add/remove single items). An item may name its content by `"guid"` instead of `"ref"`.
   - Local block: `{"Hero":{"Heading":"Hi","Link":"/en/about/"}}`.
+  - Block list (`IList<SomeBlock>`, shown by `get` as `BlockList`): an array of such objects, replacing the whole list:
+    `{"Persons":[{"Name":"Kari","Biography":"<p>...</p>","Image":"63__provider"},{"Name":"Per"}]}`.
+- `StartPublish` and `StopPublish` (also as `PageStartPublish`/`PageStopPublish`) set the publish dates, e.g.
+  `StartPublish=2025-02-14` or `2025-02-14T08:00:00+01:00` (no offset: the site's local time); `StopPublish=` clears
+  it. Lists and archives often sort and filter by `StartPublish`, which otherwise is the time of publishing.
   - Content provider content (e.g. DAM images, shown by `get` as `63__provider`) works wherever a content ref does:
     `HeroImage=63__provider`, a ContentArea item `{"ref":"63__provider"}`, or its GUID.
   - Link (`LinkItem`): `{"Button":{"href":"456","text":"Read more"}}`, optionally with `title` and `target`. `Button=456` or `Button=/en/about/` changes
@@ -171,6 +178,16 @@ fields as the commands (`opticli apply --help` lists them). `"$id"` refers to wh
 Every operation is validated before anything is written; on a failure opticli stops and reports what was saved and
 how to undo it. `--publish` on `apply` publishes every operation: only when the user asked.
 
+How far the dry run gets (`meta.warnings` sums it up; step statuses):
+- `valid`: the site dry-ran the operation as is.
+- `simulated`: the operation is on content the plan creates, so the site dry-ran that content as it will be after the
+  operation (every value set on it so far; published if the operation publishes), under its nearest existing ancestor.
+  Its warnings name the stand-ins and the values not checked yet: those that refer to other planned content. A
+  required property or a site validator that fails at publish shows up here. Area placements and references to
+  planned content are checked against `[AllowedTypes]` in the code.
+- `deferred`: only names were checked (`access`, `translate`, `move`, `delete` on planned content); the site validates
+  them when the plan runs.
+
 Plans that run again (a section rebuilt after a database refresh, or repaired after edits):
 - `"guidNamespace": "<GUID>"` next to `"operations"` gives every `create`, `block` and `upload` a GUID derived from its
   `id` (each such step then needs an `id`); `"guid"` on a step sets one explicitly. The content then has the same GUID,
@@ -186,12 +203,15 @@ Plans that run again (a section rebuilt after a database refresh, or repaired af
 
 ## serve and env
 
-- `opticli serve [--build] [--port N] [--foreground] [--output <dll>] [--timeout s]`: runs the existing build
+- `opticli serve [--build] [--port N] [--https] [--foreground] [--output <dll>] [--timeout s]`: runs the existing build
   output (`bin/Debug/<tfm>/<Site>.dll`) with the site agent injected through `DOTNET_STARTUP_HOOKS`, in Development, on
   `http://127.0.0.1:<port>` (default 5199, else the first free port up to 5299), waiting up to `--timeout`
   (default 180 s) for it to answer. A warning says when sources are newer than the
   build; `--build` runs `dotnet build` first. The site's code and files are not changed.
 - `opticli serve --status | --logs [--tail N] | --stop`.
+- A site that redirects HTTP to HTTPS can't be browsed on the agent's address (`serve` warns). `--https` also binds
+  `https://localhost:<port>` with the ASP.NET Core development certificate and prints it as `browseUrl`; opticli keeps
+  talking to the agent over HTTP. Without a certificate the site fails to start: `dotnet dev-certs https --trust`.
 - The agent refuses to start if the site would use a different database, or a remote one other than the development
   database (exit 3). It answers only loopback callers with the per-run token, and only in Development. `serve`
   refuses a remote database that isn't the development one.

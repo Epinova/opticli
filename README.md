@@ -91,7 +91,7 @@ When stdout is redirected, every command prints a single JSON line:
 
 ```json
 {"ok":true,"data":{"ref":"123","type":"ArticlePage","name":"News","status":"published","url":"/en/news/",
- "properties":{"Heading":{"type":"String","value":"Hello"}}},"meta":{"source":"db","version":"0.3.0"}}
+ "properties":{"Heading":{"type":"String","value":"Hello"}}},"meta":{"source":"db","version":"0.4.0"}}
 ```
 
 ## Using opticli with coding agents
@@ -106,7 +106,9 @@ opticli skill install --repo   # into <repository>/.claude/skills/opticli/, to s
 
 For other agents, add the skill text to their instruction file, e.g.
 `opticli skill print >> AGENTS.md` (and `opticli skill print reference.md` for the details). `opticli doctor` warns
-when an installed skill is older than the opticli you run.
+when an installed skill is older than the opticli you run. Run `skill install` again after updating opticli. It
+replaces a copy it installed itself, and asks for `--force` only when the files were edited since (or were installed
+by an opticli older than 0.4, which kept no record of them).
 
 The skill sets these rules for agents:
 - Never publish or delete unless the user asked for it.
@@ -236,6 +238,7 @@ agent injected, and returns once the site agent answers.
 | `--build` | off: opticli warns when sources are newer than the build, and `--build` runs `dotnet build` first |
 | `--timeout <s>` | 180 seconds to wait for the site to answer |
 | `--foreground` | off: the site runs in the background; with it, the site's output streams until Ctrl+C |
+| `--https` | off (or `"https": true` in the user config): also listen on `https://localhost:<next free port>` with the development certificate, printed as `browseUrl`, for sites that redirect to HTTPS. `serve` warns when a site does |
 
 `serve --status`, `serve --logs [--tail N]` and `serve --stop` manage the running site.
 

@@ -106,6 +106,12 @@ public sealed record CreateOperation(
 {
     public override string Kind => "create";
 
+    /// <summary>
+    /// Dry run only: check that the type is allowed below this type instead of below <see cref="Parent"/>'s, for a plan
+    /// step whose real parent is created by an earlier step (<see cref="PlanSimulation"/>).
+    /// </summary>
+    public string? PlannedParentType { get; init; }
+
     public override IEnumerable<string?> Refs => [Parent];
 
     public override WriteOperation MapRefs(Func<string, string> map) => this with { Parent = map(Parent), Properties = MapValues(Properties, map) };
