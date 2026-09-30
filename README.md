@@ -28,7 +28,7 @@ In this README, "site agent" means that injected assembly. "Coding agent" means 
 
 ## Requirements
 
-- The **.NET 8 SDK** or newer to build opticli. It runs on the newest .NET runtime installed.
+- The **.NET 8 SDK** or newer to install opticli. It runs on the newest .NET runtime installed.
 - An **Optimizely CMS 12** site (`EPiServer.CMS.AspNetCore` 12.x) whose repository you have checked out.
 - Its database on **SQL Server**: a local instance, LocalDB, a container, or a remote development database such as
   Azure SQL. For Microsoft Entra ID authentication (`Authentication=Active Directory Default`), sign in with
@@ -42,13 +42,21 @@ opticli is developed on Linux. Paths and process handling for Windows and macOS 
 
 ## Install
 
-opticli isn't on NuGet yet. Build it and install it as a global .NET tool:
+Install opticli from NuGet as a global .NET tool:
+
+```sh
+dotnet tool install -g OptiCli
+opticli --version
+```
+
+To update, run `dotnet tool update -g OptiCli`.
+
+To install from source instead, build the package and install it from the output folder:
 
 ```sh
 git clone https://github.com/epinova/opticli.git && cd opticli
 dotnet pack src/OptiCli -c Release -o artifacts
 dotnet tool install -g OptiCli --add-source ./artifacts
-opticli --version
 ```
 
 To update, run `dotnet tool update -g OptiCli --add-source ./artifacts` after a new `pack`.
@@ -362,6 +370,18 @@ with the reason in `tests/OptiCli.Integration/Comparison/KnownDifferences.cs`; a
 
 Issues and pull requests are welcome. Please run the unit tests before sending a change. When a change touches
 reads, also run the integration test against a site you have.
+
+### Releasing
+
+Set the new version as `<Version>` in [Directory.Build.props](Directory.Build.props) and as `opticli-version` in
+[skill/SKILL.md](skill/SKILL.md). Commit, then push a matching tag:
+
+```sh
+git tag v0.4.0 && git push origin v0.4.0
+```
+
+The [release workflow](.github/workflows/release.yml) checks that the tag matches both versions, runs the unit
+tests and publishes the package to nuget.org.
 
 ## Licence
 

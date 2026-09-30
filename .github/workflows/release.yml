@@ -1,0 +1,53 @@
+# Publishes the OptiCli tool package to nuget.org when a version tag (v1.2.3) is pushed.
+# Authenticates with nuget.org trusted publishing: no API key is stored in the repository.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # Named in the nuget.org trusted publishing policy; add required reviewers to it to approve each release.
+    environment: nuget
+    permissions:
+      contents: read
+      id-token: write # lets NuGet/login exchange the workflow's OIDC token for a short-lived API key
+    steps:
+      - uses: actions/checkout@v5
+
+      # SDK 10 reads opticli.slnx and builds the net8.0 projects.
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Check the tag matches the version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(dotnet msbuild src/OptiCli/OptiCli.csproj -getProperty:Version)"
+          skill="$(sed -n 's/^opticli-version:[[:space:]]*//p' skill/SKILL.md)"
+          echo "tag $tag, Directory.Build.props $version, skill/SKILL.md $skill"
+          if [ "$tag" != "$version" ] || [ "$tag" != "$skill" ]; then
+            echo "::error::Tag v$tag must match <Version> in Directory.Build.props and opticli-version in skill/SKILL.md."
+            exit 1
+          fi
+
+      - name: Test
+        run: dotnet test opticli.slnx -c Release
+
+      - name: Pack
+        run: dotnet pack src/OptiCli/OptiCli.csproj -c Release -o artifacts
+
+      - name: Log in to nuget.org
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: Push
+        run: >
+          dotnet nuget push "artifacts/*.nupkg"
+          --api-key "${{ steps.login.outputs.NUGET_API_KEY }}"
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
