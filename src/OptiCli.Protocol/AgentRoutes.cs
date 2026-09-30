@@ -41,6 +41,13 @@ public static class AgentRoutes
     public static readonly string Create = $"{Prefix}/content";
 
     /// <summary>
+    /// <c>POST /v1/media</c>. Body: <see cref="UploadRequest"/> (up to <see cref="UploadRequest.MaxBytes"/> of file content).
+    /// Response: <see cref="WriteResult"/> (201 when saved), as for <see cref="Create"/>. Errors: <c>usage</c> when no
+    /// media type accepts the extension or <c>type</c> doesn't, <c>not_found</c> (parent, type), <c>validation</c> 422.
+    /// </summary>
+    public static readonly string Media = $"{Prefix}/media";
+
+    /// <summary>
     /// <c>POST /v1/content/{ref}/draft</c>. Body: <see cref="DraftRequest"/>. Response: <see cref="WriteResult"/>.
     /// Always saves a new version (<c>Save | ForceNewVersion</c>, or <c>Publish | ForceNewVersion</c>),
     /// based on the ref's version if it has one, else the latest version in the language. A saved draft

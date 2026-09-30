@@ -15,8 +15,8 @@ public sealed record PlanStep(int Index, WriteOperation Operation, IReadOnlySet<
 /// An <c>opticli apply</c> plan: <c>{"operations": [{"op": "create", "id": "page", ...}, {"op": "area", "ref": "$page", ...}]}</c>.
 /// </summary>
 /// <remarks>
-/// <para>Each operation has the fields of the matching command (see <see cref="Fields"/>). A create or
-/// block step may have an <c>id</c>; later steps refer to the content it creates as <c>"$id"</c>, in ref
+/// <para>Each operation has the fields of the matching command (see <see cref="Fields"/>). A create, block or
+/// upload step may have an <c>id</c>; later steps refer to the content it creates as <c>"$id"</c>, in ref
 /// fields and as a whole string value inside <c>properties</c>.</para>
 /// <para>Parsing checks the whole shape at once and reports every problem: unknown ops and fields, missing
 /// required fields, wrong JSON types, duplicate ids, and <c>$id</c>s that aren't defined by an earlier step.</para>
@@ -30,6 +30,7 @@ public sealed partial class WritePlan
         ["create"] = ["parent*", "type*", "name*", "properties", "lang", "publish", "id"],
         ["area"] = ["ref*", "property*", "action*", "item", "index", "at", "to", "display", "lang", "publish", "baseVersion", "force"],
         ["block"] = ["type*", "name*", "for", "parent", "properties", "lang", "publish", "id"],
+        ["upload"] = ["file*", "for", "parent", "name", "type", "properties", "publish", "id"],
         ["translate"] = ["ref*", "lang*", "name", "properties", "publish"],
         ["publish"] = ["ref*", "version", "lang"],
         ["move"] = ["ref*", "to*"],
@@ -117,7 +118,7 @@ public sealed partial class WritePlan
             {
                 problems.Add(allIds.Contains(id)
                     ? $"operations[{index}]: '{reference}' is created by a later operation; move that one before it."
-                    : $"operations[{index}]: '{reference}' is not the id of an earlier create or block operation.");
+                    : $"operations[{index}]: '{reference}' is not the id of an earlier create, block or upload operation.");
             }
         }
 
@@ -180,6 +181,7 @@ public sealed partial class WritePlan
             "create" => new CreateOperation(reader.Ref("parent"), reader.String("type") ?? "", reader.String("name") ?? "", reader.Object("properties"), reader.String("lang"), reader.Bool("publish")),
             "area" => new AreaEdit(reader.Ref("ref"), reader.String("property") ?? "", reader.String("action") ?? "", reader.OptionalRef("item"), reader.Int("index"), reader.Int("at"), reader.Int("to"), reader.String("display"), reader.String("lang"), reader.Bool("publish"), reader.Int("baseVersion"), reader.Bool("force")),
             "block" => new BlockCreateOperation(reader.String("type") ?? "", reader.String("name") ?? "", reader.OptionalRef("for"), reader.OptionalRef("parent"), reader.Object("properties"), reader.String("lang"), reader.Bool("publish")),
+            "upload" => new UploadOperation(reader.String("file") ?? "", reader.OptionalRef("for"), reader.OptionalRef("parent"), reader.String("name"), reader.String("type"), reader.Object("properties"), reader.Bool("publish")),
             "translate" => new TranslateOperation(reader.Ref("ref"), reader.String("lang") ?? "", reader.String("name"), reader.Object("properties"), reader.Bool("publish")),
             "publish" => new PublishOperation(reader.Ref("ref"), reader.Int("version"), reader.String("lang")),
             "move" => new MoveOperation(reader.Ref("ref"), reader.Ref("to")),
@@ -202,7 +204,8 @@ public sealed partial class WritePlan
                 }
             }
         }
-        if (operation is BlockCreateOperation block && (block.For is null) == (block.Parent is null))
+        if ((operation is BlockCreateOperation block && (block.For is null) == (block.Parent is null))
+            || (operation is UploadOperation upload && (upload.For is null) == (upload.Parent is null)))
         {
             problems.Add($"{reader.Where}: give exactly one of \"for\" and \"parent\".");
         }

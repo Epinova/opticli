@@ -8,6 +8,7 @@ internal enum AgentEndpoint
     Ping,
     Type,
     Create,
+    Upload,
     Draft,
     Languages,
     Publish,
@@ -29,7 +30,7 @@ internal static partial class AgentRouter
     private static readonly string VersionSegment = AgentRoutes.Prefix.TrimStart('/');
 
     private static readonly string RouteList =
-        $"GET {AgentRoutes.Prefix}/ping, GET {AgentRoutes.Prefix}/types/{{name}}, POST {AgentRoutes.Prefix}/content, " +
+        $"GET {AgentRoutes.Prefix}/ping, GET {AgentRoutes.Prefix}/types/{{name}}, POST {AgentRoutes.Prefix}/content, POST {AgentRoutes.Prefix}/media, " +
         $"POST {AgentRoutes.Prefix}/content/{{ref}}/draft|languages|publish|move|access, GET|DELETE {AgentRoutes.Prefix}/content/{{ref}}";
 
     /// <exception cref="AgentException">No route matches, or it belongs to another protocol version.</exception>
@@ -56,6 +57,7 @@ internal static partial class AgentRouter
             ["ping"] => (AgentEndpoint.Ping, (string?)null, "GET"),
             ["types", var name] => (AgentEndpoint.Type, name, "GET"),
             ["content"] => (AgentEndpoint.Create, (string?)null, "POST"),
+            ["media"] => (AgentEndpoint.Upload, (string?)null, "POST"),
             ["content", var reference] when IsMethod(method, "GET") => (AgentEndpoint.Read, reference, "GET"),
             ["content", var reference] => (AgentEndpoint.Delete, reference, "DELETE"),
             ["content", var reference, "draft"] => (AgentEndpoint.Draft, reference, "POST"),

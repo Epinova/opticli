@@ -40,6 +40,10 @@ internal sealed class WriteFlow
 
     public IValidationService Validation { get; }
 
+    /// <summary>New content as stored, if a save got that far.</summary>
+    public IContent? Saved(IContent writable) =>
+        writable.ContentGuid != Guid.Empty && Repository.TryGet<IContent>(writable.ContentGuid, out var stored) ? stored : null;
+
     public static SaveAction DraftAction(bool publish) =>
         (publish ? SaveAction.Publish : SaveAction.Save) | SaveAction.ForceNewVersion;
 
@@ -84,7 +88,20 @@ internal sealed class WriteFlow
             return new WriteResult { Content = shown, BaseVersion = baseVersion, Validation = issues.Count > 0 ? issues : null };
         }
 
-        var saved = Repository.Save(writable, action, AccessLevel.NoAccess);
+        var isNew = ContentReference.IsNullOrEmpty(writable.ContentLink);
+        ContentReference saved;
+        try
+        {
+            saved = Repository.Save(writable, action, AccessLevel.NoAccess);
+        }
+        catch (Exception ex) when (ex is not AgentException && isNew && Saved(writable) is { } created)
+        {
+            // The CMS raises its post-save events inside Save: a site handler that throws (a search indexer, say) fails
+            // the call after the content exists.
+            throw new AgentException(AgentErrorCodes.Internal,
+                $"'{created.Name}' was saved as {created.ContentLink.ID}, but the site failed after saving it: {ex.Message}",
+                "in the site's own code handling the save; the content exists");
+        }
         if (!published && writable is IVersionable)
         {
             // ForceNewVersion leaves the old primary draft in place, and edit mode would keep opening that one.

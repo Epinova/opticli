@@ -156,6 +156,29 @@ public sealed record BlockCreateOperation(
     public override WriteOperation WithPublish() => this with { Publish = true };
 }
 
+/// <summary>A file as new media, in <paramref name="For"/>'s "For this page" folder or under the folder <paramref name="Parent"/>.</summary>
+/// <param name="File">Path of the file to upload; in a plan, relative to the plan file.</param>
+/// <param name="Type">Media type; default: the one the CMS maps the file's extension to.</param>
+/// <param name="Name">Content name; default: the file name.</param>
+public sealed record UploadOperation(
+    string File,
+    string? For = null,
+    string? Parent = null,
+    string? Name = null,
+    string? Type = null,
+    JsonObject? Properties = null,
+    bool Publish = false) : WriteOperation
+{
+    public override string Kind => "upload";
+
+    public override IEnumerable<string?> Refs => [For, Parent];
+
+    public override WriteOperation MapRefs(Func<string, string> map) =>
+        this with { For = Map(For, map), Parent = Map(Parent, map), Properties = MapValues(Properties, map) };
+
+    public override WriteOperation WithPublish() => this with { Publish = true };
+}
+
 public sealed record TranslateOperation(
     string Ref,
     string Lang,

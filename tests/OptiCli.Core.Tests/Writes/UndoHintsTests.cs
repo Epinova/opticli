@@ -17,6 +17,7 @@ public class UndoHintsTests
     {
         Assert.Equal("opticli delete 123 (moves it to the recycle bin)", UndoHints.For(new CreateOperation("10", "ArticlePage", "Name"), Output()));
         Assert.StartsWith("opticli delete 123", UndoHints.For(new BlockCreateOperation("TeaserBlock", "Name", For: "10"), Output()));
+        Assert.StartsWith("opticli delete 123", UndoHints.For(new UploadOperation("/tmp/report.pdf", Parent: "10"), Output()));
     }
 
     [Fact]

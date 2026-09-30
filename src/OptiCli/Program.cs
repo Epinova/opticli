@@ -14,9 +14,9 @@ var root = new RootCommand($$$"""
 
     Refs: {{{ContentRefParser.Syntax}}}
     Reads query the database directly and need nothing running.
-    Writes (set, create, area, block, translate, publish, move, delete, access, apply) go through the CMS inside the running site:
-      `opticli serve` first, `opticli serve --stop` when done. They save drafts unless --publish, delete only moves to the
-      recycle bin, and every write takes --dry-run.
+    Writes (set, create, area, block, upload, translate, publish, move, delete, access, apply) go through the CMS inside
+      the running site: `opticli serve` first, `opticli serve --stop` when done. They save drafts unless --publish,
+      delete only moves to the recycle bin, and every write takes --dry-run.
     Output: compact JSON {"ok": true, "data": ..., "meta": {"source", "version", "next", "warnings", "database"}} when
       stdout is redirected, tables on a terminal; --json / --text force one, --jsonl (list commands) prints one item per
       line. Lists return 50 items: pass meta.next as --cursor for more, or raise --limit.
@@ -53,6 +53,7 @@ root.Subcommands.Add(SetCommand.Create(options));
 root.Subcommands.Add(CreateCommand.Create(options));
 root.Subcommands.Add(AreaCommand.Create(options));
 root.Subcommands.Add(BlockCommand.Create(options));
+root.Subcommands.Add(UploadCommand.Create(options));
 root.Subcommands.Add(TranslateCommand.Create(options));
 root.Subcommands.Add(PublishCommand.Create(options));
 root.Subcommands.Add(MoveCommand.Create(options));

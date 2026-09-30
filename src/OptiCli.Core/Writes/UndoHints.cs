@@ -10,7 +10,7 @@ public static class UndoHints
     {
         (_, WriteOutput { Saved: false }) or (_, MoveOutput { Moved: false }) or (_, AccessOutput { Saved: false }) => null,
         (AccessOperation, AccessOutput access) => Access(access),
-        (CreateOperation or BlockCreateOperation, WriteOutput created) =>
+        (CreateOperation or BlockCreateOperation or UploadOperation, WriteOutput created) =>
             $"opticli delete {created.Ref} (moves it to the recycle bin)",
         (TranslateOperation, WriteOutput branch) =>
             $"Language branch '{branch.Language}' was created ({branch.Version}); opticli can't remove a branch, delete it in the CMS edit UI if unwanted.",

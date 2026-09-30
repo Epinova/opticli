@@ -136,6 +136,41 @@ public sealed record CreateRequest
     public bool DryRun { get; init; }
 }
 
+/// <summary>Body of <see cref="AgentRoutes.Media"/>: upload a file as a new media item (image, PDF, video, ...).</summary>
+/// <remarks>
+/// Give <see cref="Parent"/> (a folder) or <see cref="ForContent"/>, as for <see cref="CreateRequest"/>. The media type
+/// is the one the CMS maps the file's extension to, or <see cref="Type"/>, which must accept the extension.
+/// </remarks>
+public sealed record UploadRequest
+{
+    /// <summary>At most this many bytes of file content (before base64).</summary>
+    public const int MaxBytes = 50 * 1024 * 1024;
+
+    public string? Parent { get; init; }
+
+    public string? ForContent { get; init; }
+
+    /// <summary>The file's name with its extension, e.g. <c>report.pdf</c>; no directories.</summary>
+    public required string FileName { get; init; }
+
+    /// <summary>Content name; default <see cref="FileName"/>.</summary>
+    public string? Name { get; init; }
+
+    /// <summary>Media type name or GUID; default: the type the CMS maps the extension to.</summary>
+    public string? Type { get; init; }
+
+    /// <summary>Same value rules as <see cref="DraftRequest.Properties"/> (e.g. alt text, copyright).</summary>
+    public IReadOnlyDictionary<string, JsonElement>? Properties { get; init; }
+
+    /// <summary>The file content, base64. Required unless <see cref="DryRun"/>.</summary>
+    public string? Data { get; init; }
+
+    public bool Publish { get; init; }
+
+    /// <summary>Validate type, parent, name and properties without storing a file.</summary>
+    public bool DryRun { get; init; }
+}
+
 /// <summary>Body of <see cref="AgentRoutes.Languages"/>: create a language branch as a draft.</summary>
 public sealed record LanguageBranchRequest
 {

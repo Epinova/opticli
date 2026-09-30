@@ -26,6 +26,9 @@ public sealed record WriteOutput(
     IReadOnlyList<PropertyChange> Changes,
     IReadOnlyList<ValidationIssue>? Validation)
 {
+    /// <summary>For an upload: the file sent, and where the site stored it (none for a dry run).</summary>
+    public UploadInfo? Upload { get; init; }
+
     /// <param name="type">Shown when the agent returns no content (a dry-run create).</param>
     public static WriteOutput From(WriteResult result, string? type = null, string? name = null, string? parent = null)
     {
@@ -52,6 +55,10 @@ public sealed record WriteOutput(
 
     public static string VersionRef(int id, int version) => $"{Id(id)}_{version.ToString(CultureInfo.InvariantCulture)}";
 }
+
+/// <param name="File">The local file that was uploaded.</param>
+/// <param name="Blob">Where the site stored it, as <c>opticli blob</c> shows it; null for a dry run.</param>
+public sealed record UploadInfo(string File, long Bytes, Queries.BlobLocation? Blob);
 
 /// <summary>Result of move and delete (a delete is a move to the recycle bin).</summary>
 /// <param name="Moved">False for a dry run.</param>

@@ -19,7 +19,7 @@ internal static class CreateEndpoint
         }
 
         var type = TypeEndpoint.Find(flow.Types, body.Type);
-        var (parent, owner) = Parent(request, flow, body);
+        var (parent, owner) = Parent(request, flow, body.Parent, body.ForContent, body.DryRun);
         var culture = body.Lang is { } lang ? flow.Locator.EnabledLanguage(lang) : MasterLanguage(owner);
 
         var content = culture is null
@@ -44,22 +44,22 @@ internal static class CreateEndpoint
     /// The explicit parent, or the "For this page" assets folder of <c>forContent</c>; plus the content
     /// whose master language new content defaults to (the parent, or the folder's owner).
     /// </summary>
-    private static (IContent Parent, IContent LanguageSource) Parent(AgentRequest request, WriteFlow flow, CreateRequest body)
+    internal static (IContent Parent, IContent LanguageSource) Parent(AgentRequest request, WriteFlow flow, string? parentRef, string? forContent, bool dryRun)
     {
-        if ((body.Parent is null) == (body.ForContent is null))
+        if ((parentRef is null) == (forContent is null))
         {
             throw AgentException.Usage("Give exactly one of parent or forContent.");
         }
-        if (body.Parent is not null)
+        if (parentRef is not null)
         {
-            var parent = flow.Locator.LoadAnyLanguage(flow.Locator.ResolveContent(body.Parent, "parent"));
+            var parent = flow.Locator.LoadAnyLanguage(flow.Locator.ResolveContent(parentRef, "parent"));
             return (parent, parent);
         }
 
-        var owner = flow.Locator.LoadAnyLanguage(flow.Locator.ResolveContent(body.ForContent, "forContent"));
+        var owner = flow.Locator.LoadAnyLanguage(flow.Locator.ResolveContent(forContent, "forContent"));
         var assets = request.Service<ContentAssetHelper>();
         // A dry run must not create the folder; validating against the owner is close enough.
-        IContent folder = body.DryRun
+        IContent folder = dryRun
             ? (IContent?)assets.GetAssetFolder(owner.ContentLink) ?? owner
             : assets.GetOrCreateAssetFolder(owner.ContentLink);
         return (folder, owner);

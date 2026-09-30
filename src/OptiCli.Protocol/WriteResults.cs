@@ -54,6 +54,9 @@ public sealed record WriteResult
 
     /// <summary>Warnings, or for an invalid dry run the errors that would block the save.</summary>
     public IReadOnlyList<ValidationIssue>? Validation { get; init; }
+
+    /// <summary>For an upload: the media type the file is created as (also for a dry run, which has no <see cref="Content"/>).</summary>
+    public string? MediaType { get; init; }
 }
 
 /// <summary>A property value before and after, in the same JSON shape the draft endpoint accepts.</summary>

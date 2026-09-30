@@ -13,13 +13,16 @@ namespace OptiCli.Integration;
 /// </summary>
 internal sealed class SiteUnderTest : IAsyncDisposable
 {
-    private SiteUnderTest(ContentSession session, AgentClient agent)
+    private SiteUnderTest(ContentSession session, AgentClient agent, string projectDirectory)
     {
         Session = session;
         Agent = agent;
+        ProjectDirectory = projectDirectory;
     }
 
     public ContentSession Session { get; }
+
+    public string ProjectDirectory { get; }
 
     public AgentClient Agent { get; }
 
@@ -33,7 +36,7 @@ internal sealed class SiteUnderTest : IAsyncDisposable
         var db = await CmsDatabase.OpenAsync(connection, cancellationToken);
         try
         {
-            return new SiteUnderTest(await ContentSession.OpenAsync(db, cancellationToken), agent);
+            return new SiteUnderTest(await ContentSession.OpenAsync(db, cancellationToken), agent, project.Directory);
         }
         catch
         {

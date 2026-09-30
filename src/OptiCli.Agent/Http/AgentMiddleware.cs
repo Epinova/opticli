@@ -49,6 +49,7 @@ internal static class AgentMiddleware
         AgentEndpoint.Ping => (200, PingEndpoint.Handle(request)),
         AgentEndpoint.Type => (200, TypeEndpoint.Handle(request)),
         AgentEndpoint.Create => Created(CreateEndpoint.Handle(request, await request.ReadBodyAsync<CreateRequest>())),
+        AgentEndpoint.Upload => Created(UploadEndpoint.Handle(request, await request.ReadBodyAsync<UploadRequest>(UploadEndpoint.MaxBodyBytes))),
         AgentEndpoint.Draft => (200, DraftEndpoint.Handle(request, await request.ReadBodyAsync<DraftRequest>())),
         AgentEndpoint.Languages => Created(LanguageEndpoint.Handle(request, await request.ReadBodyAsync<LanguageBranchRequest>())),
         AgentEndpoint.Publish => (200, PublishEndpoint.Handle(request, await request.ReadOptionalBodyAsync<PublishRequest>() ?? new PublishRequest())),

@@ -171,4 +171,40 @@ public class WritePlanTests
         Assert.Contains("\"grant\".Everyone must be levels", error.Message);
         Assert.Contains("\"revoke\" must be an array of strings", error.Message);
     }
+
+    [Fact]
+    public void Parses_upload_operations_whose_ids_later_steps_can_use()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "upload", "id": "pdf", "file": "files/q1.pdf", "parent": "3", "name": "Q1", "type": "PdfFile", "properties": {"Copyright": "x"}}
+            ]}
+            """);
+
+        var upload = Assert.IsType<UploadOperation>(plan.Steps[0].Operation);
+        Assert.Equal(("files/q1.pdf", "3", null, "Q1", "PdfFile", "pdf"), (upload.File, upload.Parent, upload.For, upload.Name, upload.Type, upload.Id));
+        Assert.True(upload.WithPublish() is UploadOperation { Publish: true });
+
+        var chained = WritePlan.Parse("""
+            {"operations": [
+              {"op": "upload", "id": "pdf", "file": "q1.pdf", "for": "123"},
+              {"op": "set", "ref": "456", "properties": {"Files": ["$pdf"]}}
+            ]}
+            """);
+        Assert.Equal(["pdf"], chained.Steps[1].DependsOn);
+    }
+
+    [Fact]
+    public void An_upload_needs_a_file_and_exactly_one_of_for_and_parent()
+    {
+        var error = Assert.Throws<UsageException>(() => WritePlan.Parse("""
+            {"operations": [
+              {"op": "upload", "file": "a.pdf"},
+              {"op": "upload", "parent": "3", "for": "4"}
+            ]}
+            """));
+
+        Assert.Contains("operations[0] (upload): give exactly one of \"for\" and \"parent\"", error.Message);
+        Assert.Contains("operations[1] (upload): \"file\" is required", error.Message);
+    }
 }

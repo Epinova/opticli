@@ -205,15 +205,16 @@ language, or the language the URL selects.
 ### Writing (needs `opticli serve`)
 
 These commands write:
-- `set`, `create`, `area` (add, remove or move ContentArea items), `block create` and `translate` save a draft
-  unless `--publish` is given.
+- `set`, `create`, `area` (add, remove or move ContentArea items), `block create`, `upload` and `translate` save a
+  draft unless `--publish` is given. `upload <file>` adds a PDF, image or other file (up to 50 MB) as media, as the
+  type the site maps its extension to, and prints where the file was stored.
 - `publish`, `move` and `delete` (to the recycle bin).
 - `access <ref>` with `--grant Role=Levels`, `--user Name=Levels`, `--revoke Name`, `--break-inheritance` or
   `--inherit` changes one item's access rights. Children that inherit follow; nothing is applied to descendants.
   Access rights aren't versioned, so the output shows them before and after. The root, the recycle bin, start pages
   and asset roots are refused, and so is a change that leaves no role with Administer.
 - `apply plan.json` runs several operations validated together. Later operations can refer to an item an earlier
-  one created as `$id`.
+  one created as `$id`. Upload files in a plan are relative to the plan file and must stay inside its folder.
 
 Every write command takes `--dry-run`. Structured values use `--values`, e.g.
 `--values '{"MainArea":[{"ref":"456"}]}'`. `set` and `area` check that nobody saved a newer version in the meantime

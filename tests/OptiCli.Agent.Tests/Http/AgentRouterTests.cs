@@ -11,6 +11,7 @@ public class AgentRouterTests
     [InlineData("GET", "/v1/types/0b1c2d3e-0000-4000-8000-000000000001", "Type", "0b1c2d3e-0000-4000-8000-000000000001")]
     [InlineData("POST", "/v1/content", "Create", null)]
     [InlineData("POST", "/v1/content/", "Create", null)]
+    [InlineData("POST", "/v1/media", "Upload", null)]
     [InlineData("POST", "/v1/content/123/draft", "Draft", "123")]
     [InlineData("POST", "/v1/content/123_456/draft", "Draft", "123_456")]
     [InlineData("POST", "/v1/content/123/languages", "Languages", "123")]

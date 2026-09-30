@@ -19,7 +19,8 @@ namespace OptiCli.Core.Writes;
 /// this database) is passed to the site by GUID, also when it was given as <c>63__provider</c>.
 /// Publish, move and delete have no dry run in the agent; for those the checks run here, against the database.
 /// </remarks>
-public sealed class WriteExecutor(ContentSession session, Func<CancellationToken, Task<AgentClient>> connect, string? site = null)
+/// <param name="projectDirectory">The site project, to show where an uploaded file landed on disk.</param>
+public sealed class WriteExecutor(ContentSession session, Func<CancellationToken, Task<AgentClient>> connect, string? site = null, string? projectDirectory = null)
 {
     public const string AgentSource = "agent";
     public const string DbSource = "db";
@@ -38,6 +39,7 @@ public sealed class WriteExecutor(ContentSession session, Func<CancellationToken
             AreaEdit area => await AreaAsync(area, dryRun, cancellationToken),
             CreateOperation create => await CreateAsync(create, dryRun, cancellationToken),
             BlockCreateOperation block => await BlockAsync(block, dryRun, cancellationToken),
+            UploadOperation upload => await UploadAsync(upload, dryRun, cancellationToken),
             TranslateOperation translate => await TranslateAsync(translate, dryRun, cancellationToken),
             PublishOperation publish => await PublishAsync(publish, dryRun, cancellationToken),
             MoveOperation move => await MoveAsync(move, dryRun, cancellationToken),
@@ -180,6 +182,52 @@ public sealed class WriteExecutor(ContentSession session, Func<CancellationToken
             DryRun = dryRun,
         };
         return await CreatedAsync(request, type.Name, cancellationToken);
+    }
+
+    private async Task<WriteOutcome> UploadAsync(UploadOperation op, bool dryRun, CancellationToken cancellationToken)
+    {
+        if ((op.For is null) == (op.Parent is null))
+        {
+            throw new UsageException("Give exactly one of --for <ref> (the content's \"For this page\" folder) or --parent <folder>.");
+        }
+        var file = MediaFiles.Check(op.File);
+        ContentTypeInfo? type = null;
+        if (op.Type is not null)
+        {
+            type = session.Model.RequireType(op.Type);
+            if (type.Kind != ContentKind.Media)
+            {
+                throw new UsageException($"{type.Name} is a {type.Kind.ToString().ToLowerInvariant()} type, not a media type.", "See `opticli types --kind media`.");
+            }
+            PropertyNameCheck.Check(session.Model, type.Id, op.Properties);
+        }
+        var request = new UploadRequest
+        {
+            Parent = op.Parent is null ? null : (await ResolveAsync(op.Parent, "parent", cancellationToken)).ContentRef,
+            ForContent = op.For is null ? null : (await ResolveAsync(op.For, "--for", cancellationToken)).ContentRef,
+            // The name the user gave the file, even when it is a link to a file with another name.
+            FileName = Path.GetFileName(op.File),
+            Name = op.Name,
+            Type = type?.Name,
+            Properties = PropertyArguments.ToRequest(op.Properties),
+            Data = dryRun ? null : Convert.ToBase64String(await File.ReadAllBytesAsync(file.FullName, cancellationToken)),
+            Publish = op.Publish,
+            DryRun = dryRun,
+        };
+
+        var result = await PostAsync<WriteResult>(AgentRoutes.Media, request, cancellationToken);
+        var output = WriteOutput.From(result, result.MediaType ?? type?.Name, request.Name ?? request.FileName, request.Parent) with
+        {
+            Upload = new UploadInfo(file.FullName, file.Length, result.Saved && result.Content is { } saved ? await BlobAsync(saved.Id, cancellationToken) : null),
+        };
+        return Outcome(output, result.Saved ? result.Content?.Id : null);
+    }
+
+    /// <summary>Where the site stored a media item's file, read back from the database.</summary>
+    private async Task<Queries.BlobLocation?> BlobAsync(int id, CancellationToken cancellationToken)
+    {
+        var header = await ContentHeaderReader.ByIdAsync(session.Db, id, cancellationToken);
+        return header?.LanguageRow(null)?.BlobUri is { } uri ? Queries.BlobLocator.Locate(uri, projectDirectory) : null;
     }
 
     private async Task<WriteOutcome> CreatedAsync(CreateRequest request, string typeName, CancellationToken cancellationToken)

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
 using OptiCli.Protocol;
 
@@ -27,15 +28,21 @@ internal sealed class AgentRequest(HttpContext context, string? argument)
 
     public T Service<T>() where T : notnull => Context.RequestServices.GetRequiredService<T>();
 
+    /// <param name="maxBytes">Limit for this route; default 16 MB.</param>
     /// <exception cref="AgentException">The body is empty.</exception>
-    public async Task<T> ReadBodyAsync<T>() where T : class =>
-        await ReadOptionalBodyAsync<T>() ?? throw AgentException.Usage($"This route needs a JSON body ({typeof(T).Name}).");
+    public async Task<T> ReadBodyAsync<T>(int maxBytes = MaxBodyBytes) where T : class =>
+        await ReadOptionalBodyAsync<T>(maxBytes) ?? throw AgentException.Usage($"This route needs a JSON body ({typeof(T).Name}).");
 
-    public async Task<T?> ReadOptionalBodyAsync<T>() where T : class
+    public async Task<T?> ReadOptionalBodyAsync<T>(int maxBytes = MaxBodyBytes) where T : class
     {
-        if (Context.Request.ContentLength > MaxBodyBytes)
+        if (Context.Request.ContentLength > maxBytes)
         {
-            throw AgentException.Usage($"The request body is larger than {MaxBodyBytes / (1024 * 1024)} MB.");
+            throw AgentException.Usage($"The request body is larger than {maxBytes / (1024 * 1024)} MB.");
+        }
+        // The site's own server limit (Kestrel: 30 MB by default) would cut a large upload off first.
+        if (maxBytes > MaxBodyBytes && Context.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limit)
+        {
+            limit.MaxRequestBodySize = maxBytes;
         }
 
         using var buffer = new MemoryStream();
@@ -44,9 +51,9 @@ internal sealed class AgentRequest(HttpContext context, string? argument)
         {
             return null;
         }
-        if (buffer.Length > MaxBodyBytes)
+        if (buffer.Length > maxBytes)
         {
-            throw AgentException.Usage($"The request body is larger than {MaxBodyBytes / (1024 * 1024)} MB.");
+            throw AgentException.Usage($"The request body is larger than {maxBytes / (1024 * 1024)} MB.");
         }
         buffer.Position = 0;
         return JsonSerializer.Deserialize<T>(buffer, RequestOptions);

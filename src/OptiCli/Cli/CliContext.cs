@@ -99,7 +99,7 @@ internal sealed class CliContext(ParseResult parse, GlobalOptions options, OptiC
         _agent ??= await AgentProbe.ConnectAsync(StateStore, UseConnection(), cancellationToken);
 
     /// <summary>Runs write operations against <paramref name="session"/>'s database and the project's agent.</summary>
-    public WriteExecutor Writes(ContentSession session, string? site = null) => new(session, ConnectAgentAsync, site);
+    public WriteExecutor Writes(ContentSession session, string? site = null) => new(session, ConnectAgentAsync, site, TryGetProject(out _)?.Directory);
 
     private (ProjectInfo?, OptiCliException?) LocateProject()
     {

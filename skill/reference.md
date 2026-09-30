@@ -82,6 +82,7 @@ primary draft, the version edit mode opens.
 | `area <ref> <Prop> remove <position\|ref:id>` | `opticli area 123 MainArea remove ref:789` |
 | `area <ref> <Prop> move <position\|ref:id> <to>` | `opticli area 123 MainArea move 0 2` |
 | `block create --type T --name N (--for <page-ref> \| --parent <folder-ref>)` | `opticli block create --type TeaserBlock --name Teaser --for 123` |
+| `upload <file> (--for <ref> \| --parent <folder-ref>) [--name N] [--type T] [Prop=value...]` | `opticli upload report.pdf --parent 456 --name "Annual report" --dry-run` |
 | `translate <ref> --lang <code> [--name N] [Prop=value...]` | `opticli translate 123 --lang de --name "Neuigkeiten"` |
 | `publish <ref> [--version id]` | `opticli publish 123_456` (only when the user asked) |
 | `move <ref> --to <parent-ref>` | `opticli move 123 --to 45` |
@@ -111,6 +112,20 @@ content it shows. `--at` and `--display` only apply to `add`.
     only the href and keeps the text. Link collections take an array of the same objects. A content ref as `href`
     is stored as a permanent link, like the editor stores it.
 - Property names are checked against the content type before anything is sent; a typo fails with a suggestion.
+
+### Uploads
+
+- The media type is the one the site registers for the file's extension (`[MediaDescriptor(ExtensionString = ...)]`);
+  `--type` picks another, which must accept the extension. Types that accept any file (often a content provider's)
+  are only used with `--type`.
+- At most 50 MB; only regular files (a symlink is followed to its file). `--dry-run` checks type, parent, name and
+  properties without sending the file.
+- Media folders: `opticli create <folder-ref> --type SysContentFolder --name Reports`. `--for <ref>` puts the file in
+  that page's or block's "For this page" folder.
+- Output: as `create`, plus `upload` (`file`, `bytes`, `blob`: where the site stored it, as `opticli blob` shows it).
+  A draft medium is only visible to editors; `--publish` (only when asked) makes it public.
+- If the site's own code fails after the save (e.g. a search indexer that can't parse the file), the error says the
+  item was saved and gives its id.
 
 ### Access rights
 
@@ -142,10 +157,14 @@ explicitly; `--force` skips the check.
   {"op": "area", "ref": "$page", "property": "MainArea", "action": "add", "item": "$teaser"}]}
 ```
 
-Ops: `set`, `create`, `area`, `block`, `translate`, `publish`, `move`, `delete`, `access`, with the same fields as
-the commands (`opticli apply --help` lists them). An `access` step:
-`{"op": "access", "ref": "$page", "grant": {"Authenticated": "Read"}, "revoke": ["Everyone"], "breakInheritance": true}`
-(`grantUsers` for users, `inherit`, `allowUnknownRole`). `"$id"` refers to what an earlier `create`/`block` with that `id` made.
+Ops: `set`, `create`, `area`, `block`, `upload`, `translate`, `publish`, `move`, `delete`, `access`, with the same
+fields as the commands (`opticli apply --help` lists them). `"$id"` refers to what an earlier `create`, `block` or
+`upload` with that `id` made.
+- `{"op": "upload", "id": "q1", "file": "files/q1.pdf", "parent": "$reports"}` reads `file` relative to the plan
+  file (the working directory for `-`) and refuses paths outside that folder unless `apply --allow-outside`.
+- `{"op": "access", "ref": "$page", "grant": {"Authenticated": "Read"}, "revoke": ["Everyone"], "breakInheritance": true}`
+  (also `grantUsers`, `inherit`, `allowUnknownRole`).
+
 Every operation is validated before anything is written; on a failure opticli stops and reports what was saved and
 how to undo it. `--publish` on `apply` publishes every operation: only when the user asked.
 

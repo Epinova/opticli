@@ -120,7 +120,8 @@ unless `--publish` is passed. The new draft becomes the primary draft, which edi
    database it warns that the database is shared: tell the user that the writes will reach it.
 2. Dry-run first: add `--dry-run` to see the validated before/after without saving.
 3. Run the write: `opticli set 123 Heading="New title"`, `opticli area 123 MainArea add 456`,
-   `opticli block create --type TeaserBlock --name "Teaser" --for 123`, `opticli create 123 --type ArticlePage --name News`.
+   `opticli block create --type TeaserBlock --name "Teaser" --for 123`, `opticli create 123 --type ArticlePage --name News`,
+   `opticli upload report.pdf --for 123` (a file as media; then reference its `ref` in a property).
 4. Verify: `opticli get <ref>` (the draft: `get <version ref from the output>` or `--version latest`) and
    `opticli versions <ref> --limit 3`.
 5. `opticli serve --stop` when you're done writing.
