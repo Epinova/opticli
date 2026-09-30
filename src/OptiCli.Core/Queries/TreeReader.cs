@@ -7,6 +7,7 @@ namespace OptiCli.Core.Queries;
 
 /// <summary>A content item in the tree, with its languages and how many children it has.</summary>
 /// <param name="Children">Nested children (tree only), in the order the CMS lists them.</param>
+/// <param name="SortIndex">Set when the parent sorts its children by sort index (<c>children</c> and <c>tree</c>).</param>
 /// <param name="More">How many further children exist beyond those listed.</param>
 public sealed record TreeNode(
     string Ref,
@@ -19,6 +20,7 @@ public sealed record TreeNode(
     IReadOnlyList<string> Languages,
     int ChildCount,
     bool? Deleted,
+    int? SortIndex = null,
     IReadOnlyList<TreeNode>? Children = null,
     int? More = null);
 
@@ -56,7 +58,7 @@ public sealed class TreeReader(ContentSession session)
 
         TreeNode Build(ContentHeader header, int level)
         {
-            var node = Node(header, language, counts.GetValueOrDefault(header.Id));
+            var node = Node(header, language, counts.GetValueOrDefault(header.Id), SortIndex(header));
             if (level >= depth)
             {
                 return node;
@@ -82,13 +84,21 @@ public sealed class TreeReader(ContentSession session)
     }
 
     /// <summary>Tree nodes (without nested children) for a page of headers.</summary>
-    public async Task<IReadOnlyList<TreeNode>> NodesAsync(IReadOnlyList<ContentHeader> headers, LanguageBranch? language, CancellationToken cancellationToken)
+    /// <param name="sortIndex">Show each node's sort index when its parent sorts by it (for children).</param>
+    public async Task<IReadOnlyList<TreeNode>> NodesAsync(
+        IReadOnlyList<ContentHeader> headers, LanguageBranch? language, CancellationToken cancellationToken, bool sortIndex = false)
     {
         var counts = await ChildCountsAsync(headers.Select(h => h.Id), cancellationToken);
-        return headers.Select(h => Node(h, language, counts.GetValueOrDefault(h.Id))).ToList();
+        return headers.Select(h => Node(h, language, counts.GetValueOrDefault(h.Id), sortIndex ? SortIndex(h) : null)).ToList();
     }
 
-    private TreeNode Node(ContentHeader header, LanguageBranch? language, int childCount)
+    /// <summary>The item's sort index when its (loaded) parent lists children by it; otherwise it doesn't show.</summary>
+    private int? SortIndex(ContentHeader header) =>
+        header.ParentId is { } parentId && session.Identities.Header(parentId) is { } parent && ChildOrder.ByIndex(parent.ChildOrderRule)
+            ? header.PeerOrder
+            : null;
+
+    private TreeNode Node(ContentHeader header, LanguageBranch? language, int childCount, int? sortIndex = null)
     {
         var identity = session.Identities.Describe(header, language);
         return new TreeNode(
@@ -101,7 +111,8 @@ public sealed class TreeReader(ContentSession session)
             identity.Url,
             header.Languages.Keys.Select(id => session.Model.Language(id)?.DisplayCode).OfType<string>().Order().ToList(),
             childCount,
-            identity.Deleted);
+            identity.Deleted,
+            sortIndex);
     }
 
     private async Task<Dictionary<int, int>> ChildCountsAsync(IEnumerable<int> ids, CancellationToken cancellationToken)

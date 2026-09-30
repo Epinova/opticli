@@ -29,6 +29,11 @@ internal static class PropertyValues
             values[PropertyWriter.StartPublishKey] = ToJson(versionable.StartPublish);
             values[PropertyWriter.StopPublishKey] = ToJson(versionable.StopPublish);
         }
+        if (content is PageData page)
+        {
+            values[PropertyWriter.ChildSortOrderKey] = ToJson(page.ChildSortOrder.ToString());
+            values[PropertyWriter.SortIndexKey] = ToJson(page.SortIndex);
+        }
         foreach (var property in content.Property)
         {
             if (!property.IsMetaData || PropertyWriter.WritableMetadata.Contains(property.Name))

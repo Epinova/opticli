@@ -41,7 +41,7 @@ remote default, disagreeing launch profiles, or only other environments' `appset
 | `resolve <url>` | `--site`. Result has `site`, `host`, `languageSource`, `matchedBy`. |
 | `url <ref>` | Per language: `path` (site-relative), `url` (absolute), `site`. |
 | `tree <ref> [--depth N] [--limit N]` | Default depth 2, max 5000 nodes (`capped`). `--limit` is children per node; the rest are counted in `more`. |
-| `children <ref>` / `ancestors <ref>` | One level down / the path from the root. |
+| `children <ref>` / `ancestors <ref>` | One level down, in the parent's `childSortOrder` / the path from the root. Children show `sortIndex` when the parent sorts by `Index`. |
 | `find --type T [--where ...] [--under <ref>] [--status published\|draft\|any] [--lang]` | `--where` is repeatable: `Prop=value` exact, `Prop~value` contains, `Block.Prop=...` inside a local block, `Name~...` on the name, `Area=<ref>` for ContentAreas/references containing that content. Deleted items excluded. |
 | `search <text> [--in names\|strings\|all] [--lang]` | One row per item and language with `matches[]` (`property`, `snippet`). Capped at 2000 values per source (`meta.warnings`). |
 | `where-used <ref> [--pages]` | Rows: owner identity + `saved`, `changedBy` + `property` (e.g. `MainArea`, `Hero.Link`, `MainArea[2].Text`), `kind` (`contentArea`, `contentReference`, `contentReferenceList`, `richTextLink`, `richTextBlock`, `link`, `linkCollection`, `url`, `text`, `softlink`), `sources` (`softlink` = CMS link index, `property` = value scan). Deleted owners last, `deleted: true`. The value scan reads each branch's primary values (published, else the latest draft); the link index covers saved versions. `--pages` follows block owners up to the pages (rows get `via`: the blocks in between), newest `saved` first. |
@@ -57,6 +57,7 @@ remote default, disagreeing launch profiles, or only other environments' `appset
 {"ref":"123","guid":"...","type":"ArticlePage","name":"News","language":"en","status":"published",
  "url":"/en/news/","kind":"page","version":"123_456","masterLanguage":"en","languages":["en","de"],
  "parent":"45","saved":"2024-05-01T10:00:00Z","changedBy":"editor","startPublish":"...",
+ "childSortOrder":"PublishedDescending","sortIndex":100,
  "properties":{
    "Heading":{"type":"String","value":"Hello","culture":"en"},
    "MainArea":{"type":"ContentArea","value":[{"ref":"789","type":"TeaserBlock","name":"Teaser","displayOption":"wide"}]},
@@ -113,6 +114,11 @@ content it shows. `--at` and `--display` only apply to `add`.
 - `StartPublish` and `StopPublish` (also as `PageStartPublish`/`PageStopPublish`) set the publish dates, e.g.
   `StartPublish=2025-02-14` or `2025-02-14T08:00:00+01:00` (no offset: the site's local time); `StopPublish=` clears
   it. Lists and archives often sort and filter by `StartPublish`, which otherwise is the time of publishing.
+- Pages only: `ChildSortOrder` (also `PageChildOrderRule`) is how the page's children are sorted, edit mode's
+  Settings > Sort order: `CreatedDescending` (the default), `CreatedAscending`, `Alphabetical`, `Index`,
+  `ChangedDescending`, `PublishedAscending` or `PublishedDescending`. `SortIndex` (also `PagePeerOrder`) is the page's
+  place among its siblings when the parent sorts by `Index`. Both are versioned like other properties and can only
+  be changed on the master language. List pages that show "children" usually use this order.
   - Content provider content (e.g. DAM images, shown by `get` as `63__provider`) works wherever a content ref does:
     `HeroImage=63__provider`, a ContentArea item `{"ref":"63__provider"}`, or its GUID.
   - Link (`LinkItem`): `{"Button":{"href":"456","text":"Read more"}}`, optionally with `title` and `target`. `Button=456` or `Button=/en/about/` changes

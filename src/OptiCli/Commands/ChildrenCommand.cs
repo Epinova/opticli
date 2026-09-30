@@ -12,7 +12,7 @@ internal static class ChildrenCommand
         var list = new ListOptions(options);
         var command = new Command("children", """
             List the direct children of a content item, in the order the CMS lists them.
-            Each child: ref, type, name, status, languages, URL and child count.
+            Each child: ref, type, name, status, languages, URL, child count, and sortIndex when the parent sorts by it.
             Example: opticli children 123 --lang en
             """);
         content.AddTo(command);
@@ -25,7 +25,7 @@ internal static class ChildrenCommand
             var language = content.Language(context, session, located);
             var reader = new TreeReader(session);
             var page = list.Apply(context.Parse, await reader.ChildrenAsync(located.Id, language, cancellationToken));
-            return new CommandResult(await reader.NodesAsync(page.Items, language, cancellationToken), page.Next);
+            return new CommandResult(await reader.NodesAsync(page.Items, language, cancellationToken, sortIndex: true), page.Next);
         });
         return command;
     }

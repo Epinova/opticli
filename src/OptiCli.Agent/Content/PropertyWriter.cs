@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using EPiServer;
 using EPiServer.Core;
+using EPiServer.Filters;
 using EPiServer.SpecializedProperties;
 using OptiCli.Agent.Http;
 using OptiCli.Protocol;
@@ -30,6 +31,21 @@ internal sealed class PropertyWriter(ContentLocator locator, BlockFactory blocks
         ["PageStartPublish"] = StartPublishKey,
         [StopPublishKey] = StopPublishKey,
         ["PageStopPublish"] = StopPublishKey,
+    };
+
+    public const string ChildSortOrderKey = "ChildSortOrder";
+    public const string SortIndexKey = "SortIndex";
+
+    /// <summary>
+    /// A page's sort order for its children and its own sort index among its siblings (<see cref="PageData.ChildSortOrder"/>,
+    /// <see cref="PageData.SortIndex"/>), by those names and their metadata names. List pages often show children in this order.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> Sorting = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        [ChildSortOrderKey] = ChildSortOrderKey,
+        ["PageChildOrderRule"] = ChildSortOrderKey,
+        [SortIndexKey] = SortIndexKey,
+        ["PagePeerOrder"] = SortIndexKey,
     };
 
     public void Apply(IContentData content, IReadOnlyDictionary<string, JsonElement>? values)
@@ -76,6 +92,21 @@ internal sealed class PropertyWriter(ContentLocator locator, BlockFactory blocks
             return;
         }
 
+        if (Sorting.TryGetValue(name, out var sorting)
+            && content.Property.All(p => p.IsMetaData || !p.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+        {
+            if (content is not PageData page)
+            {
+                throw AgentException.Usage($"'{sorting}' is a page setting; {content.GetOriginalType().Name} is not a page.");
+            }
+            if (!page.IsMasterLanguageBranch)
+            {
+                throw AgentException.Usage($"'{sorting}' is not culture-specific, so it can only be changed on the master language ({page.MasterLanguage?.Name}).");
+            }
+            SetSorting(page, sorting, value);
+            return;
+        }
+
         var property = Find(content, name);
         if (content is ILocalizable { Language: { } language, MasterLanguage: { } master }
             && !language.Equals(master) && !property.IsLanguageSpecific)
@@ -113,6 +144,18 @@ internal sealed class PropertyWriter(ContentLocator locator, BlockFactory blocks
         else
         {
             versionable.StopPublish = parsed;
+        }
+    }
+
+    private static void SetSorting(PageData page, string which, JsonElement value)
+    {
+        if (which == ChildSortOrderKey)
+        {
+            page.ChildSortOrder = (FilterSortOrder)PageSorting.ParseChildSortOrder(value);
+        }
+        else
+        {
+            page.SortIndex = PageSorting.ParseSortIndex(value);
         }
     }
 

@@ -81,6 +81,13 @@ public class QueryHelpersTests
     }
 
     [Theory]
+    [InlineData(ChildOrder.PublishedDescending, "PublishedDescending")]
+    [InlineData(ChildOrder.Index, "Index")]
+    [InlineData(0, "None")]
+    [InlineData(42, "42")]
+    public void Child_order_rules_are_named_as_set_takes_them(int rule, string name) => Assert.Equal(name, ChildOrder.Name(rule));
+
+    [Theory]
     [InlineData(null, VersionKind.Published, null)]
     [InlineData("Published", VersionKind.Published, null)]
     [InlineData("latest", VersionKind.Latest, null)]

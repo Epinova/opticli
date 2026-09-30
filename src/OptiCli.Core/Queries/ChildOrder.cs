@@ -17,6 +17,24 @@ public static class ChildOrder
     public const int PublishedAscending = 7;
     public const int PublishedDescending = 8;
 
+    /// <summary>The rule's <c>FilterSortOrder</c> name, as <c>get</c> shows it and <c>set ChildSortOrder=...</c> takes it.</summary>
+    public static string Name(int rule) => rule switch
+    {
+        CreatedDescending => nameof(CreatedDescending),
+        CreatedAscending => nameof(CreatedAscending),
+        Alphabetical => nameof(Alphabetical),
+        Index => nameof(Index),
+        ChangedDescending => nameof(ChangedDescending),
+        Rank => nameof(Rank),
+        PublishedAscending => nameof(PublishedAscending),
+        PublishedDescending => nameof(PublishedDescending),
+        0 => "None",
+        _ => rule.ToString(System.Globalization.CultureInfo.InvariantCulture),
+    };
+
+    /// <summary>Whether children under this rule are listed by their sort index.</summary>
+    public static bool ByIndex(int rule) => rule is Index or Rank;
+
     public static IReadOnlyList<ContentHeader> Sort(IEnumerable<ContentHeader> children, int parentRule, int? languageId)
     {
         string Name(ContentHeader h) => h.LanguageRow(languageId)?.Name ?? "";
@@ -29,7 +47,7 @@ public static class ChildOrder
             CreatedDescending => children.OrderByDescending(Created),
             CreatedAscending => children.OrderBy(Created),
             Alphabetical => children.OrderBy(Name, StringComparer.CurrentCultureIgnoreCase),
-            Index or Rank => children.OrderBy(h => h.PeerOrder),
+            _ when ByIndex(parentRule) => children.OrderBy(h => h.PeerOrder),
             ChangedDescending => children.OrderByDescending(Changed),
             PublishedAscending => children.OrderBy(Published),
             PublishedDescending => children.OrderByDescending(Published),

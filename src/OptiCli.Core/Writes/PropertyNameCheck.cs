@@ -13,9 +13,14 @@ public static class PropertyNameCheck
 {
     /// <summary>
     /// Names the agent accepts that are not property definitions: the content name, the writable built-in metadata and
-    /// the publish dates (<c>StartPublish</c>, <c>StopPublish</c>, also under their page metadata names).
+    /// the publish dates (<c>StartPublish</c>, <c>StopPublish</c>) and a page's sorting (<c>ChildSortOrder</c>,
+    /// <c>SortIndex</c>), the last four also under their page metadata names.
     /// </summary>
-    public static readonly IReadOnlyList<string> BuiltIn = ["Name", "PageURLSegment", "PageVisibleInMenu", "StartPublish", "StopPublish", "PageStartPublish", "PageStopPublish"];
+    public static readonly IReadOnlyList<string> BuiltIn =
+    [
+        "Name", "PageURLSegment", "PageVisibleInMenu", "StartPublish", "StopPublish", "PageStartPublish", "PageStopPublish",
+        "ChildSortOrder", "SortIndex", "PageChildOrderRule", "PagePeerOrder",
+    ];
 
     /// <exception cref="UsageException">A name is not a property of the type (or of the local block it is nested in).</exception>
     public static void Check(CmsModel model, int contentTypeId, JsonObject? properties)

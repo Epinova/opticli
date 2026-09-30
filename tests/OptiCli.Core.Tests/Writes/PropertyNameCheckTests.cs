@@ -74,4 +74,11 @@ public class PropertyNameCheckTests
         PropertyNameCheck.Check(Model, ModelFixture.ArticlePage,
             JsonNode.Parse("""{"StartPublish": "2025-02-14", "StopPublish": null, "PageStartPublish": "2025-02-14T08:00:00+01:00"}""")!.AsObject());
     }
+
+    [Fact]
+    public void Page_sorting_is_built_in()
+    {
+        PropertyNameCheck.Check(Model, ModelFixture.ArticlePage,
+            JsonNode.Parse("""{"ChildSortOrder": "PublishedDescending", "SortIndex": 200, "PageChildOrderRule": 8, "pagePeerOrder": "100"}""")!.AsObject());
+    }
 }

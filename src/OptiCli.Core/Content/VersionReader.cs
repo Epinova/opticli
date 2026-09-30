@@ -25,13 +25,18 @@ public sealed record VersionInfo(
     [JsonIgnore] public int LanguageId { get; init; }
 
     [JsonIgnore] public VersionStatus StatusValue { get; init; }
+
+    /// <summary>The page's child order rule and sort index as saved in this version (they are versioned).</summary>
+    [JsonIgnore] public int? ChildOrderRule { get; init; }
+
+    [JsonIgnore] public int? PeerOrder { get; init; }
 }
 
 public static class VersionReader
 {
     private const string Columns = """
         wc.pkID, wc.fkContentID, wc.fkLanguageBranchID, wc.Status, wc.Name, wc.Saved, wc.ChangedByName, wc.StartPublish,
-        wc.DelayPublishUntil, cl.Status AS BranchStatus, cl.Version AS BranchVersion, cd.CommonDraftId
+        wc.DelayPublishUntil, wc.ChildOrderRule, wc.PeerOrder, cl.Status AS BranchStatus, cl.Version AS BranchVersion, cd.CommonDraftId
         """;
 
     private static readonly string From = $"""
@@ -88,6 +93,8 @@ public static class VersionReader
             ContentId = contentId,
             LanguageId = languageId,
             StatusValue = status,
+            ChildOrderRule = r.GetInt32OrNull("ChildOrderRule"),
+            PeerOrder = r.GetInt32OrNull("PeerOrder"),
         };
     }
 }

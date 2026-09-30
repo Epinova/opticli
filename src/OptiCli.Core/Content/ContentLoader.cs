@@ -64,6 +64,9 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
         var latestDraft = shownVersion is null && row is not null
             ? await ContentHeaderReader.NewerDraftAsync(db, contentId, branch, row.VersionId, cancellationToken)
             : null;
+        // Sorting isn't culture-specific: a version of another branch may hold a stale copy.
+        var isPage = Model.Kind(header.TypeId) == Cms.ContentKind.Page;
+        var sortingVersion = shownVersion?.LanguageId == header.MasterLanguageId ? shownVersion : null;
         var identity = identities.Describe(
             header,
             branchLanguage,
@@ -87,6 +90,8 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
             shownVersion?.ChangedBy ?? row?.ChangedBy,
             shownVersion?.StartPublish ?? row?.StartPublish,
             row?.StopPublish,
+            isPage ? Queries.ChildOrder.Name(sortingVersion?.ChildOrderRule ?? header.ChildOrderRule) : null,
+            isPage ? sortingVersion?.PeerOrder ?? header.PeerOrder : null,
             latestDraft is { } draft ? ContentIdentity.RefFor(contentId, draft) : null,
             header.Deleted ? true : null,
             language is not null && language.Id != branch && version.Kind != VersionKind.Specific ? language.Code : null,

@@ -130,6 +130,10 @@ Structured values (ContentArea items, links, lists) go in `--values '{"MainArea"
 writes can run as one validated plan with `opticli apply plan.json`. A plan with `"guidNamespace"` can be run again
 with `apply --update-existing` (always `--dry-run` it first). Syntax for all of this: [reference.md](reference.md).
 
+Besides the content type's properties, writes take a few built-in settings: `Name`, `PageURLSegment`,
+`PageVisibleInMenu`, `StartPublish`/`StopPublish`, and on pages `ChildSortOrder` and `SortIndex`. A list page that shows
+its children in the wrong order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a code change.
+
 ## Rules
 
 - Never pass `--publish` and never run `publish` unless the user explicitly asked for the change to go live.

@@ -6,6 +6,8 @@ namespace OptiCli.Core.Content;
 /// <param name="Version">The version shown, as a ref (<c>123_456</c>).</param>
 /// <param name="Languages">All language branches the item has.</param>
 /// <param name="LatestDraft">A newer unpublished version of this branch, when one exists.</param>
+/// <param name="ChildSortOrder">Pages only: how its children are sorted (<c>FilterSortOrder</c> name).</param>
+/// <param name="SortIndex">Pages only: its place among its siblings when the parent sorts by index.</param>
 /// <param name="RequestedLanguage">Set when the item has no branch in the requested language and another is shown.</param>
 public sealed record ContentDocument(
     string Ref,
@@ -24,6 +26,8 @@ public sealed record ContentDocument(
     string? ChangedBy,
     DateTime? StartPublish,
     DateTime? StopPublish,
+    string? ChildSortOrder,
+    int? SortIndex,
     string? LatestDraft,
     bool? Deleted,
     string? RequestedLanguage,
