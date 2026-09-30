@@ -373,13 +373,14 @@ public sealed class WriteExecutor(
             throw new ConflictException($"Content {target.Id} is already in the recycle bin.");
         }
         var descendants = await DescendantCountAsync(target.Header, cancellationToken);
+        var warnings = await AssetFolderWarningAsync(target.Header, cancellationToken);
         if (dryRun)
         {
-            return new WriteOutcome(DryMove(target, null, descendants, recycleBin: true), DbSource, null, []);
+            return new WriteOutcome(DryMove(target, null, descendants, recycleBin: true), DbSource, null, warnings);
         }
         var agent = await AgentAsync(cancellationToken);
         var result = await agent.SendAsync<MoveResult>(HttpMethod.Delete, AgentRoutes.Delete(target.ContentRef), null, cancellationToken);
-        return new WriteOutcome(Moved(result, descendants, recycleBin: true), AgentSource, null, []);
+        return new WriteOutcome(Moved(result, descendants, recycleBin: true), AgentSource, null, warnings);
     }
 
     private async Task<WriteOutcome> AccessAsync(AccessOperation op, bool dryRun, CancellationToken cancellationToken)
@@ -490,6 +491,31 @@ public sealed class WriteExecutor(
 
     /// <summary><c>--lang</c>, else the language a URL ref selected, else null (the agent uses the master language).</summary>
     private LanguageBranch? LanguageFor(string? code, Target target) => session.Language(code) ?? target.UrlLanguage;
+
+    /// <summary>
+    /// The CMS leaves an item's "For this page" folder where it is when the item goes to the recycle bin (it is removed
+    /// with the item when the bin is emptied, and is still there if the item is restored). Say so when it has content.
+    /// </summary>
+    private async Task<List<string>> AssetFolderWarningAsync(ContentHeader header, CancellationToken cancellationToken)
+    {
+        var prefix = $"{(header.ContentPath.Length == 0 ? "." : header.ContentPath)}{WriteOutput.Id(header.Id)}.%";
+        var rows = await session.Db.QueryAsync("""
+            SELECT f.pkID, (SELECT COUNT(*) FROM tblContent c WHERE c.fkParentID = f.pkID AND c.Deleted = 0) AS Items
+            FROM tblContent f
+            JOIN tblContent o ON o.ContentGUID = f.ContentOwnerID
+            WHERE f.Deleted = 0 AND (o.pkID = @id OR o.ContentPath LIKE @prefix)
+            """, r => (Folder: r.GetInt32(0), Items: r.GetInt32(1)), cancellationToken,
+            new SqlParameter("@id", header.Id), new SqlParameter("@prefix", prefix));
+        var used = rows.Where(r => r.Items > 0).ToList();
+        if (used.Count == 0)
+        {
+            return [];
+        }
+        var folders = used.Count == 1
+            ? $"Its \"For this page\" folder ({used[0].Folder}, {used[0].Items} item(s)) stays"
+            : $"The \"For this page\" folders of {header.Id} and its descendants ({used.Count} folders, {used.Sum(r => r.Items)} items: {string.Join(", ", used.Select(r => r.Folder))}) stay";
+        return [$"{folders} where they are, as in the CMS: they are removed with their pages when the recycle bin is emptied, and are still there if {header.Id} is restored. `opticli delete <folder>` moves one to the recycle bin too."];
+    }
 
     private async Task<int> DescendantCountAsync(ContentHeader header, CancellationToken cancellationToken)
     {
