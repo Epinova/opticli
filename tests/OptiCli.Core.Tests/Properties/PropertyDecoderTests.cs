@@ -156,7 +156,7 @@ public class PropertyDecoderTests
         Assert.Equal(["Heading"], Decode(rows).Select(p => p.Key));
 
         var all = Decode(rows, new DecodeOptions(AllProperties: true));
-        Assert.Equal(12, all.Count);
+        Assert.Equal(13, all.Count);
         Assert.Equal("""{"type":"ContentArea","value":null}""", all["MainArea"]!.ToJsonString());
     }
 
@@ -225,5 +225,20 @@ public class PropertyDecoderTests
         var sources = properties["Facts"]!["value"]![0]!["Sources"]!;
         Assert.Equal("PageReference", sources["type"]!.GetValue<string>());
         Assert.Equal(["456", "999"], sources["value"]!.AsArray().Select(r => r!["ref"]!.GetValue<string>()));
+    }
+
+    [Fact]
+    public void Category_properties_show_names_from_their_category_rows()
+    {
+        // As stored: the row's scope and number are its definition id, which keys its tblContentCategory rows.
+        var properties = Decode([new PropertyRow(123, Topics, English, ScopeName: $"{Topics}", Number: Topics, Categories: [3, 2, 9])]);
+
+        Assert.Equal("""{"type":"Category","value":["Events","News","#9"],"culture":"en"}""", properties["Topics"]!.ToJsonString());
+    }
+
+    [Fact]
+    public void A_category_property_without_categories_is_empty()
+    {
+        Assert.False(Decode([new PropertyRow(123, Topics, English, ScopeName: $"{Topics}", Number: Topics)]).ContainsKey("Topics"));
     }
 }

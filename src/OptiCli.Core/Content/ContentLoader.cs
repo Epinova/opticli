@@ -64,9 +64,16 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
         var latestDraft = shownVersion is null && row is not null
             ? await ContentHeaderReader.NewerDraftAsync(db, contentId, branch, row.VersionId, cancellationToken)
             : null;
-        // Sorting isn't culture-specific: a version of another branch may hold a stale copy.
-        var isPage = Model.Kind(header.TypeId) == Cms.ContentKind.Page;
-        var sortingVersion = shownVersion?.LanguageId == header.MasterLanguageId ? shownVersion : null;
+        // Page settings come from the version shown, or the branch's primary version. Sorting isn't culture-specific:
+        // a version of another branch may hold a stale copy.
+        var kind = Model.Kind(header.TypeId);
+        var isPage = kind == Cms.ContentKind.Page;
+        var facts = shownVersion ?? (isPage && row?.VersionId is { } primary ? await VersionReader.ByIdAsync(db, Model, primary, cancellationToken) : null);
+        var sortingVersion = facts?.LanguageId == header.MasterLanguageId ? facts : null;
+        var shortcut = isPage ? await ShortcutAsync(facts, branchLanguage, cancellationToken) : null;
+        var category = kind is Cms.ContentKind.Page or Cms.ContentKind.Block or Cms.ContentKind.Media
+            ? await PropertyRowReader.BuiltInCategoriesAsync(db, contentId, branch, shownVersion?.Id, cancellationToken)
+            : [];
         var identity = identities.Describe(
             header,
             branchLanguage,
@@ -92,6 +99,9 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
             row?.StopPublish,
             isPage ? Queries.ChildOrder.Name(sortingVersion?.ChildOrderRule ?? header.ChildOrderRule) : null,
             isPage ? sortingVersion?.PeerOrder ?? header.PeerOrder : null,
+            isPage ? ShortcutInfo.SimpleAddressPath(facts?.ExternalUrl ?? row?.ExternalUrl) : null,
+            shortcut,
+            category.Count == 0 ? null : category.Select(Model.CategoryName).ToList(),
             latestDraft is { } draft ? ContentIdentity.RefFor(contentId, draft) : null,
             header.Deleted ? true : null,
             language is not null && language.Id != branch && version.Kind != VersionKind.Specific ? language.Code : null,
@@ -128,6 +138,30 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
 
         var lookup = new ResolvedReferences(identities, language);
         return trees.ToDictionary(t => t.Header.Guid, t => Decoder(lookup, plain, t.Header).Decode(t.Header.TypeId, t.Tree));
+    }
+
+    /// <summary>The page's shortcut, with the page it points at described; null for a normal page.</summary>
+    private async Task<ShortcutInfo?> ShortcutAsync(VersionInfo? version, LanguageBranch? language, CancellationToken cancellationToken)
+    {
+        if (ShortcutInfo.TypeName(version?.LinkType) is not { } type)
+        {
+            return null;
+        }
+        var external = type == "external";
+        var permanent = external ? LinkTarget.From(automaticLink: false, contentLinkGuid: null, version!.LinkUrl) : null;
+        var target = external ? permanent?.Guid : version!.ShortcutGuid is { } guid && guid != Guid.Empty ? guid : null;
+        ContentIdentity? to = null;
+        if (target is { } targetGuid)
+        {
+            await identities.LoadAsync([], [targetGuid], cancellationToken);
+            to = identities.ByGuid(targetGuid, language);
+        }
+        return new ShortcutInfo(
+            type,
+            to,
+            external ? version!.LinkUrl : null,
+            permanent?.Anchor,
+            ShortcutInfo.FrameTarget(version!.FrameName));
     }
 
     private int ChooseBranch(ContentHeader header, LanguageBranch? language, List<string> notes)

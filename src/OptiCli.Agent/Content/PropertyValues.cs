@@ -3,6 +3,8 @@ using System.Globalization;
 using System.Text.Json;
 using EPiServer;
 using EPiServer.Core;
+using EPiServer.DataAbstraction;
+using EPiServer.ServiceLocation;
 using EPiServer.SpecializedProperties;
 using OptiCli.Protocol;
 
@@ -33,12 +35,19 @@ internal static class PropertyValues
         {
             values[PropertyWriter.ChildSortOrderKey] = ToJson(page.ChildSortOrder.ToString());
             values[PropertyWriter.SortIndexKey] = ToJson(page.SortIndex);
+            values[PropertyWriter.ShortcutKey] = ToJson(Shortcut(page));
+            // As get shows it: /campaign (the CMS stores ~/campaign; ExternalURL gives campaign).
+            values[PropertyWriter.SimpleAddressKey] = ToJson(page.ExternalURL?.Trim().TrimStart('~').Trim('/') is { Length: > 0 } address ? "/" + address : null);
+        }
+        if (content is ICategorizable { Category: var category })
+        {
+            values[PropertyWriter.CategoryKey] = ToJson(Categories(category));
         }
         foreach (var property in content.Property)
         {
             if (!property.IsMetaData || PropertyWriter.WritableMetadata.Contains(property.Name))
             {
-                values[property.Name] = ToJson(Format(property.Value));
+                values[property.Name] = ToJson(property is PropertyCategory categories ? Categories(categories.Category) : Format(property.Value));
             }
         }
         return values;
@@ -57,6 +66,43 @@ internal static class PropertyValues
             }
         }
         return changes;
+    }
+
+    /// <summary>Category names, as the writer takes them; null when there are none.</summary>
+    private static string[]? Categories(CategoryList? categories)
+    {
+        if (categories is not { Count: > 0 })
+        {
+            return null;
+        }
+        // Not PropertyCategory.CategoryNames: it caches the names it first read and needs a parent.
+        var repository = ServiceLocator.Current.GetInstance<CategoryRepository>();
+        return categories.Select(id => repository.Get(id)?.Name ?? id.ToString(CultureInfo.InvariantCulture)).ToArray();
+    }
+
+    /// <summary>The shortcut as the writer takes it; null for a normal page.</summary>
+    private static Dictionary<string, string?>? Shortcut(PageData page)
+    {
+        if (page.LinkType == PageShortcutType.Normal)
+        {
+            return null;
+        }
+        var target = page.Property["PageShortcutLink"]?.Value as ContentReference;
+        var shortcut = new Dictionary<string, string?> { ["type"] = ShortcutValue.CamelCase(page.LinkType.ToString()) };
+        if (page.LinkType is PageShortcutType.Shortcut or PageShortcutType.FetchData && !ContentReference.IsNullOrEmpty(target))
+        {
+            shortcut["to"] = target.ToReferenceWithoutVersion().ToString();
+        }
+        if (page.LinkType == PageShortcutType.External)
+        {
+            // As saved to the database (a permanent link stays one); LinkURL gives the friendly URL.
+            shortcut["url"] = page.Property["PageLinkURL"]?.SaveData(page.Property)?.ToString() ?? page.LinkURL;
+        }
+        if (page.Property["PageTargetFrame"] is PropertyFrame { IsNull: false } frame)
+        {
+            shortcut["target"] = PropertyWriter.FrameTarget(frame.FrameName);
+        }
+        return shortcut;
     }
 
     public static object? Format(object? value) => value switch

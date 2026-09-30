@@ -150,7 +150,19 @@ public sealed class WriteExecutor(
                 $"Someone saved {latest} after the version this change was based on. Look at it (opticli get {latest}), then run the command again: without --base-version it is based on the latest version; --force skips the check.")
             { Details = ex.Details };
         }
-        return Outcome(WriteOutput.From(result), null);
+        return await WithSimpleAddressCheckAsync(Outcome(WriteOutput.From(result), null), result, target.Header, self: true, cancellationToken);
+    }
+
+    /// <param name="header">The page written, or the parent of new content (<paramref name="self"/> false).</param>
+    private async Task<WriteOutcome> WithSimpleAddressCheckAsync(WriteOutcome outcome, WriteResult result, ContentHeader? header, bool self, CancellationToken cancellationToken)
+    {
+        if (header is null)
+        {
+            return outcome;
+        }
+        var warnings = await SimpleAddressCheck.WarningsAsync(
+            session, result, header.AncestorIds.Append(header.Id).ToList(), self ? header.Id : result.Content?.Id, cancellationToken);
+        return warnings.Count == 0 ? outcome : outcome with { Warnings = [.. outcome.Warnings, .. warnings] };
     }
 
     private async Task<WriteOutcome> CreateAsync(CreateOperation op, bool dryRun, CancellationToken cancellationToken)
@@ -171,7 +183,7 @@ public sealed class WriteExecutor(
             UpdateExisting = updateExisting,
             ParentType = dryRun ? op.PlannedParentType : null,
         };
-        return await CreatedAsync(request, type.Name, cancellationToken);
+        return await CreatedAsync(request, type.Name, cancellationToken, parent.Stored);
     }
 
     private async Task<WriteOutcome> BlockAsync(BlockCreateOperation op, bool dryRun, CancellationToken cancellationToken)
@@ -250,10 +262,12 @@ public sealed class WriteExecutor(
         return header?.LanguageRow(null)?.BlobUri is { } uri ? Queries.BlobLocator.Locate(uri, projectDirectory) : null;
     }
 
-    private async Task<WriteOutcome> CreatedAsync(CreateRequest request, string typeName, CancellationToken cancellationToken)
+    /// <param name="parent">The parent's header, for the simple address check.</param>
+    private async Task<WriteOutcome> CreatedAsync(CreateRequest request, string typeName, CancellationToken cancellationToken, ContentHeader? parent = null)
     {
         var result = await PostAsync<WriteResult>(AgentRoutes.Create, request, cancellationToken);
-        return Outcome(Created(result, typeName, request.Name, request.Parent, request.Guid), CreatedId(result));
+        return await WithSimpleAddressCheckAsync(
+            Outcome(Created(result, typeName, request.Name, request.Parent, request.Guid), CreatedId(result)), result, parent, self: false, cancellationToken);
     }
 
     /// <param name="guid">The GUID asked for, shown for a dry run, which has no content yet.</param>
@@ -291,7 +305,7 @@ public sealed class WriteExecutor(
             DryRun = dryRun,
         };
         var result = await PostAsync<WriteResult>(AgentRoutes.Languages(target.ContentRef), request, cancellationToken);
-        return Outcome(WriteOutput.From(result), null);
+        return await WithSimpleAddressCheckAsync(Outcome(WriteOutput.From(result), null), result, target.Header, self: true, cancellationToken);
     }
 
     private async Task<WriteOutcome> PublishAsync(PublishOperation op, bool dryRun, CancellationToken cancellationToken)

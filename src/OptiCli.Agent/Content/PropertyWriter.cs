@@ -2,15 +2,17 @@ using System.Globalization;
 using System.Text.Json;
 using EPiServer;
 using EPiServer.Core;
+using EPiServer.DataAbstraction;
 using EPiServer.Filters;
 using EPiServer.SpecializedProperties;
 using OptiCli.Agent.Http;
+using OptiCli.Core.Text;
 using OptiCli.Protocol;
 
 namespace OptiCli.Agent.Content;
 
 /// <summary>Applies a request's property map to a writable content instance.</summary>
-internal sealed class PropertyWriter(ContentLocator locator, BlockFactory blocks)
+internal sealed class PropertyWriter(ContentLocator locator, BlockFactory blocks, CategoryRepository categories, IFrameRepository frames)
 {
     /// <summary>Pseudo-property for the content name in snapshots and diffs.</summary>
     public const string NameKey = "Name";
@@ -46,6 +48,30 @@ internal sealed class PropertyWriter(ContentLocator locator, BlockFactory blocks
         ["PageChildOrderRule"] = ChildSortOrderKey,
         [SortIndexKey] = SortIndexKey,
         ["PagePeerOrder"] = SortIndexKey,
+    };
+
+    public const string ShortcutKey = "Shortcut";
+    public const string SimpleAddressKey = "SimpleAddress";
+
+    /// <summary>
+    /// A page's shortcut (link type, target, window) and simple address, the latter also by its <see cref="PageData"/>
+    /// and metadata names.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> PageLinks = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        [ShortcutKey] = ShortcutKey,
+        [SimpleAddressKey] = SimpleAddressKey,
+        ["ExternalURL"] = SimpleAddressKey,
+        ["PageExternalURL"] = SimpleAddressKey,
+    };
+
+    public const string CategoryKey = "Category";
+
+    /// <summary>The built-in category of pages, shared blocks and media (<see cref="ICategorizable"/>), also by the pages' metadata name.</summary>
+    public static readonly IReadOnlyDictionary<string, string> BuiltInCategory = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        [CategoryKey] = CategoryKey,
+        ["PageCategory"] = CategoryKey,
     };
 
     public void Apply(IContentData content, IReadOnlyDictionary<string, JsonElement>? values)
@@ -92,18 +118,44 @@ internal sealed class PropertyWriter(ContentLocator locator, BlockFactory blocks
             return;
         }
 
-        if (Sorting.TryGetValue(name, out var sorting)
-            && content.Property.All(p => p.IsMetaData || !p.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+        var ownProperty = content.Property.Any(p => !p.IsMetaData && p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+        if (!ownProperty && (Sorting.TryGetValue(name, out var setting) || PageLinks.TryGetValue(name, out setting)))
         {
             if (content is not PageData page)
             {
-                throw AgentException.Usage($"'{sorting}' is a page setting; {content.GetOriginalType().Name} is not a page.");
+                throw AgentException.Usage($"'{setting}' is a page setting; {content.GetOriginalType().Name} is not a page.");
             }
-            if (!page.IsMasterLanguageBranch)
+            if (Sorting.ContainsKey(setting))
             {
-                throw AgentException.Usage($"'{sorting}' is not culture-specific, so it can only be changed on the master language ({page.MasterLanguage?.Name}).");
+                if (!page.IsMasterLanguageBranch)
+                {
+                    throw AgentException.Usage($"'{setting}' is not culture-specific, so it can only be changed on the master language ({page.MasterLanguage?.Name}).");
+                }
+                SetSorting(page, setting, value);
             }
-            SetSorting(page, sorting, value);
+            else if (setting == ShortcutKey)
+            {
+                SetShortcut(page, ShortcutValue.Parse(value));
+            }
+            else
+            {
+                page.ExternalURL = SimpleAddress(value);
+            }
+            return;
+        }
+
+        if (!ownProperty && BuiltInCategory.ContainsKey(name))
+        {
+            if (content is not ICategorizable categorizable)
+            {
+                throw AgentException.Usage($"{content.GetOriginalType().Name} has no built-in category; pages, shared blocks and media have one.");
+            }
+            if (content is ILocalizable { Language: { } branch, MasterLanguage: { } masterBranch } && !branch.Equals(masterBranch)
+                && content.Property.OfType<PropertyCategory>().FirstOrDefault(p => p.IsMetaData) is { IsLanguageSpecific: false })
+            {
+                throw AgentException.Usage($"'{CategoryKey}' is not culture-specific, so it can only be changed on the master language ({masterBranch.Name}).");
+            }
+            categorizable.Category = new CategoryList(Categories(value, CategoryKey));
             return;
         }
 
@@ -159,12 +211,131 @@ internal sealed class PropertyWriter(ContentLocator locator, BlockFactory blocks
         }
     }
 
+    /// <summary>
+    /// Sets the link type, the page it points at, the external URL and the window, as edit mode's shortcut dialog does.
+    /// Saving sets the link of every type but external (the page's own, the target's, or <c>#</c> when inactive).
+    /// </summary>
+    private void SetShortcut(PageData page, ShortcutValue shortcut)
+    {
+        var type = Enum.Parse<PageShortcutType>(shortcut.Type);
+        var link = page.Property["PageShortcutLink"];
+        link.Clear();
+        if (type is PageShortcutType.Shortcut or PageShortcutType.FetchData)
+        {
+            var target = locator.LoadAnyLanguage(locator.ResolveContent(shortcut.To, "shortcut target"));
+            link.Value = target is PageData targetPage
+                ? targetPage.PageLink.ToPageReference().ToReferenceWithoutVersion()
+                : throw AgentException.Usage($"A shortcut must point at a page; {shortcut.To} is {target.GetOriginalType().Name}.");
+        }
+        else if (type == PageShortcutType.External)
+        {
+            var anchor = shortcut.Anchor is { } fragment ? "#" + fragment : "";
+            page.LinkURL = (shortcut.To is { } to ? PermanentLink(to) : shortcut.Url) + anchor;
+        }
+        page.LinkType = type;
+
+        var frame = page.Property["PageTargetFrame"];
+        if (shortcut.Target is null)
+        {
+            frame.Clear();
+        }
+        else
+        {
+            frame.Value = Frame(shortcut.Target).ID;
+        }
+    }
+
+    /// <summary>A window by name (<c>_blank</c>, as stored: <c>target="_blank"</c>), description or id.</summary>
+    private Frame Frame(string name)
+    {
+        var all = frames.List().ToList();
+        return all.FirstOrDefault(f => f.ID.ToString(CultureInfo.InvariantCulture) == name
+                || FrameTarget(f.Name).Equals(name, StringComparison.OrdinalIgnoreCase)
+                || f.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(f.Description, name, StringComparison.OrdinalIgnoreCase))
+            ?? throw AgentException.Usage($"No window '{name}'.", $"Windows: {string.Join(", ", all.Select(f => FrameTarget(f.Name)))}.");
+    }
+
+    /// <summary><c>_blank</c> from a frame name stored as <c>target="_blank"</c>.</summary>
+    public static string FrameTarget(string? name)
+    {
+        var value = name?.Trim() ?? "";
+        return value.StartsWith("target=", StringComparison.OrdinalIgnoreCase) ? value[7..].Trim('"', '\'', ' ') : value;
+    }
+
+    /// <summary>A simple address as the CMS stores it (<c>~/campaign</c>) from <c>campaign</c>, <c>/campaign</c> or <c>~/campaign</c>; empty clears it.</summary>
+    private static string? SimpleAddress(JsonElement value)
+    {
+        var text = value.ValueKind switch
+        {
+            JsonValueKind.Null => "",
+            JsonValueKind.String => value.GetString()!.Trim(),
+            _ => throw AgentException.Usage("SimpleAddress must be a string like \"campaign\", or empty to clear it."),
+        };
+        var path = text.TrimStart('~').Trim('/');
+        if (path.Length == 0)
+        {
+            return null;
+        }
+        return path.Contains("://", StringComparison.Ordinal) || path.Any(c => char.IsWhiteSpace(c) || c is '?' or '#')
+            ? throw AgentException.Usage($"'{text}' is not a simple address: give a path like \"campaign\" (no host, query or spaces).")
+            : "~/" + path;
+    }
+
+    /// <summary>Categories by name (<c>Name</c>, else the display name), or id; an array or a comma-separated string.</summary>
+    private List<int> Categories(JsonElement value, string what)
+    {
+        var items = value.ValueKind switch
+        {
+            JsonValueKind.Null => [],
+            JsonValueKind.Array => value.EnumerateArray().Select(item => item.ValueKind == JsonValueKind.Number ? item.GetRawText() : item.GetString() ?? "").ToList(),
+            JsonValueKind.String => value.GetString()!.Split(',').ToList(),
+            JsonValueKind.Number => [value.GetRawText()],
+            _ => throw AgentException.Usage($"{what} takes category names: [\"News\", \"Events\"] or \"News,Events\"."),
+        };
+        var all = categories.GetRoot().GetList().Cast<Category>().ToList();
+        var ids = new List<int>();
+        foreach (var item in items.Select(i => i.Trim()).Where(i => i.Length > 0))
+        {
+            var match = all.FirstOrDefault(c => c.ID.ToString(CultureInfo.InvariantCulture) == item || c.Name.Equals(item, StringComparison.OrdinalIgnoreCase))
+                ?? all.FirstOrDefault(c => string.Equals(c.Description, item, StringComparison.OrdinalIgnoreCase));
+            if (match is null)
+            {
+                var names = all.Where(c => c.Selectable).Select(c => c.Name).ToList();
+                var suggestion = Suggestions.DidYouMean(item, names);
+                var list = names.Count == 0 ? "The site has no categories (they're made in admin mode)." : $"Categories: {string.Join(", ", names)}.";
+                throw AgentException.Usage($"No category '{item}'.", suggestion is null ? list : $"{suggestion} {list}");
+            }
+            if (!match.Selectable)
+            {
+                throw AgentException.Usage($"Category '{match.Name}' is not selectable (edit mode doesn't offer it).");
+            }
+            if (!ids.Contains(match.ID))
+            {
+                ids.Add(match.ID);
+            }
+        }
+        return ids;
+    }
+
     private void SetValue(PropertyData property, JsonElement value)
     {
         switch (value.ValueKind)
         {
             case JsonValueKind.Null or JsonValueKind.Undefined:
                 property.Clear();
+                return;
+            case JsonValueKind.Array or JsonValueKind.String or JsonValueKind.Number when property is PropertyCategory:
+                // By name as well as id, unlike ParseToSelf; an empty list clears it.
+                var ids = Categories(value, property.Name);
+                if (ids.Count == 0)
+                {
+                    property.Clear();
+                }
+                else
+                {
+                    property.Value = new CategoryList(ids);
+                }
                 return;
             case JsonValueKind.Array when property is PropertyContentArea:
                 property.Value = BuildArea(value.Deserialize<List<AreaItemValue>>(AgentJson.Options)!);

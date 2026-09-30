@@ -5,7 +5,8 @@ namespace OptiCli.Core.Tests.Content;
 
 /// <summary>
 /// A small hand-written CMS model: an article page with a hero block, a fact list (whose items have a list
-/// of page references) and a ContentArea, a teaser block type with a custom option list and a date, two languages (en master, sv) plus the invariant branch, and one site.
+/// of page references), a ContentArea and a Category property, a teaser block type with a custom option list and a date, two languages (en master, sv)
+/// plus the invariant branch, one site and two categories.
 /// </summary>
 internal static class ModelFixture
 {
@@ -29,6 +30,7 @@ internal static class ModelFixture
     public const int Links = 110;
     public const int MoreLink = 111;
     public const int RelatedItems = 112;
+    public const int Topics = 113;
     public const int TeaserText = 201;
     public const int TeaserOptions = 202;
     public const int TeaserStart = 203;
@@ -67,6 +69,7 @@ internal static class ModelFixture
             new(Links, ArticlePage, "Links", "LinkCollection", PropertyBaseType.LinkCollection, null, false, false),
             new(MoreLink, ArticlePage, "MoreLink", "LinkItem", PropertyBaseType.LongString, null, false, false),
             new(RelatedItems, ArticlePage, "RelatedItems", "ContentReferenceList", PropertyBaseType.Json, null, false, false),
+            new(Topics, ArticlePage, "Topics", "Category", PropertyBaseType.Category, null, false, false),
             new(TeaserText, TeaserBlock, "Text", "XhtmlString", PropertyBaseType.LongString, null, true, false),
             new(TeaserOptions, TeaserBlock, "Options", "OptionList", PropertyBaseType.LongString, null, false, false),
             new(TeaserStart, TeaserBlock, "StartDate", "Date", PropertyBaseType.Date, null, false, false),
@@ -78,7 +81,8 @@ internal static class ModelFixture
         [En, Sv, None],
         sites ?? [Site()],
         globalAssetsRoot: 3,
-        contentAssetsRoot: 4);
+        contentAssetsRoot: 4,
+        categories: new Dictionary<int, string> { [2] = "News", [3] = "Events" });
 
     /// <summary>A site whose start page is 5, assets root 6, with hosts for en (primary) and sv.</summary>
     public static SiteInfo Site(params HostInfo[] hosts) => new(

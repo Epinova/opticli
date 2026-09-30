@@ -40,7 +40,8 @@ public static class PropertyTree
         var top = new Dictionary<int, PropertyNode>();
         foreach (var row in rows)
         {
-            if (string.IsNullOrEmpty(row.ScopeName))
+            // A top-level Category row's scope is its own definition id ("22"), which keys its categories.
+            if (string.IsNullOrEmpty(row.ScopeName) || row.ScopeName == row.DefinitionId.ToString(System.Globalization.CultureInfo.InvariantCulture))
             {
                 Node(top, row.DefinitionId).Row = row;
                 continue;

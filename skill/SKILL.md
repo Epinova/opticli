@@ -131,8 +131,9 @@ writes can run as one validated plan with `opticli apply plan.json`. A plan with
 with `apply --update-existing` (always `--dry-run` it first). Syntax for all of this: [reference.md](reference.md).
 
 Besides the content type's properties, writes take a few built-in settings: `Name`, `PageURLSegment`,
-`PageVisibleInMenu`, `StartPublish`/`StopPublish`, and on pages `ChildSortOrder` and `SortIndex`. A list page that shows
-its children in the wrong order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a code change.
+`PageVisibleInMenu`, `StartPublish`/`StopPublish`, `Category`, and on pages `ChildSortOrder`, `SortIndex`,
+`SimpleAddress` and `Shortcut` (a menu item that links elsewhere). A list page that shows its children in the wrong
+order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a code change.
 
 ## Rules
 

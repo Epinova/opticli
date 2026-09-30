@@ -30,18 +30,35 @@ public sealed record VersionInfo(
     [JsonIgnore] public int? ChildOrderRule { get; init; }
 
     [JsonIgnore] public int? PeerOrder { get; init; }
+
+    /// <summary>The page's link type (<c>EPiServer.Core.PageShortcutType</c>): 0 normal, 1 shortcut, 2 external, 3 inactive, 4 fetch data.</summary>
+    [JsonIgnore] public int? LinkType { get; init; }
+
+    /// <summary>The page's link: its own permanent link, a shortcut target's, or an external link's URL.</summary>
+    [JsonIgnore] public string? LinkUrl { get; init; }
+
+    /// <summary>The page a shortcut or fetch-data page points at.</summary>
+    [JsonIgnore] public Guid? ShortcutGuid { get; init; }
+
+    /// <summary>The window its link opens in, as stored: <c>target="_blank"</c>.</summary>
+    [JsonIgnore] public string? FrameName { get; init; }
+
+    /// <summary>The simple address, as stored: <c>~/campaign</c>.</summary>
+    [JsonIgnore] public string? ExternalUrl { get; init; }
 }
 
 public static class VersionReader
 {
     private const string Columns = """
         wc.pkID, wc.fkContentID, wc.fkLanguageBranchID, wc.Status, wc.Name, wc.Saved, wc.ChangedByName, wc.StartPublish,
-        wc.DelayPublishUntil, wc.ChildOrderRule, wc.PeerOrder, cl.Status AS BranchStatus, cl.Version AS BranchVersion, cd.CommonDraftId
+        wc.DelayPublishUntil, wc.ChildOrderRule, wc.PeerOrder, wc.LinkType, wc.LinkURL, wc.ContentLinkGUID, wc.ExternalURL,
+        f.FrameName, cl.Status AS BranchStatus, cl.Version AS BranchVersion, cd.CommonDraftId
         """;
 
     private static readonly string From = $"""
         FROM tblWorkContent wc
         LEFT JOIN tblContentLanguage cl ON cl.fkContentID = wc.fkContentID AND cl.fkLanguageBranchID = wc.fkLanguageBranchID
+        LEFT JOIN tblFrame f ON f.pkID = wc.fkFrameID
         {ContentHeaderReader.CommonDraftApply}
         """;
 
@@ -95,6 +112,11 @@ public static class VersionReader
             StatusValue = status,
             ChildOrderRule = r.GetInt32OrNull("ChildOrderRule"),
             PeerOrder = r.GetInt32OrNull("PeerOrder"),
+            LinkType = r.GetInt32OrNull("LinkType"),
+            LinkUrl = r.GetStringOrNull("LinkURL"),
+            ShortcutGuid = r.GetGuidOrNull("ContentLinkGUID"),
+            FrameName = r.GetStringOrNull("FrameName"),
+            ExternalUrl = r.GetStringOrNull("ExternalURL"),
         };
     }
 }

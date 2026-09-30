@@ -36,11 +36,14 @@ public sealed class CmsModel
           AND cl.Name IN ('SysGlobalAssets', 'SysContentAssets')
         """;
 
+    private const string CategoriesSql = "SELECT pkID, CategoryName FROM tblCategory";
+
     /// <summary><c>tblPropertyDefinition.LanguageSpecific</c> value for culture-specific properties.</summary>
     private const int CultureSpecificFlag = 4;
 
     private readonly Dictionary<int, ContentTypeInfo> _types;
     private readonly ILookup<int, PropertyDefinition> _propertiesByType;
+    private readonly IReadOnlyDictionary<int, string> _categories;
 
     internal CmsModel(
         IReadOnlyList<ContentTypeInfo> types,
@@ -48,8 +51,10 @@ public sealed class CmsModel
         IReadOnlyList<LanguageBranch> languages,
         IReadOnlyList<SiteInfo> sites,
         int? globalAssetsRoot,
-        int? contentAssetsRoot)
+        int? contentAssetsRoot,
+        IReadOnlyDictionary<int, string>? categories = null)
     {
+        _categories = categories ?? new Dictionary<int, string>();
         _types = types.ToDictionary(t => t.Id);
         Types = types;
         Properties = properties.ToDictionary(p => p.Id);
@@ -87,8 +92,11 @@ public sealed class CmsModel
         var sites = await SiteReader.ListAsync(db, cancellationToken);
         var roots = await db.QueryAsync(AssetRootsSql, r => (Id: r.GetInt32("pkID"), Name: r.GetString("Name")), cancellationToken);
 
+        var categories = await db.QueryAsync(CategoriesSql, r => (Id: r.GetInt32("pkID"), Name: r.GetString("CategoryName")), cancellationToken);
+
         int? Root(string name) => roots.Where(r => r.Name == name).Select(r => (int?)r.Id).FirstOrDefault();
-        return new CmsModel(types, properties, languages, sites, Root("SysGlobalAssets"), Root("SysContentAssets"));
+        return new CmsModel(types, properties, languages, sites, Root("SysGlobalAssets"), Root("SysContentAssets"),
+            categories.ToDictionary(c => c.Id, c => c.Name));
     }
 
     public ContentTypeInfo? Type(int id) => _types.GetValueOrDefault(id);
@@ -101,6 +109,9 @@ public sealed class CmsModel
     public IEnumerable<PropertyDefinition> PropertiesOf(int contentTypeId) => _propertiesByType[contentTypeId];
 
     public LanguageBranch? Language(int id) => Languages.FirstOrDefault(l => l.Id == id);
+
+    /// <summary>A category's name (<c>tblCategory.CategoryName</c>), as <c>set</c> takes it.</summary>
+    public string CategoryName(int id) => _categories.TryGetValue(id, out var name) ? name : $"#{id}";
 
     public LanguageBranch? LanguageByCode(string code) =>
         Languages.FirstOrDefault(l => !l.IsInvariant && string.Equals(l.Code, code.Trim(), StringComparison.OrdinalIgnoreCase));

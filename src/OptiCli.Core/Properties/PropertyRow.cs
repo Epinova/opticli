@@ -11,6 +11,10 @@ namespace OptiCli.Core.Properties;
 /// property is culture-specific). Null on top-level values and on block values saved by older CMS versions,
 /// where the property's own culture setting decides.
 /// </param>
+/// <param name="Categories">
+/// For a Category property: the category ids, from <c>tblContentCategory</c>/<c>tblWorkContentCategory</c>, whose
+/// <c>CategoryType</c> is the row's <see cref="Number"/> and <c>ScopeName</c> the row's.
+/// </param>
 public sealed record PropertyRow(
     int ContentId,
     int DefinitionId,
@@ -25,7 +29,8 @@ public sealed record PropertyRow(
     DateTime? Date = null,
     string? String = null,
     string? LongString = null,
-    Guid? LinkGuid = null);
+    Guid? LinkGuid = null,
+    IReadOnlyList<int>? Categories = null);
 
 public static class PropertyRows
 {

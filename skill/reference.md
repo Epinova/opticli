@@ -57,14 +57,16 @@ remote default, disagreeing launch profiles, or only other environments' `appset
 {"ref":"123","guid":"...","type":"ArticlePage","name":"News","language":"en","status":"published",
  "url":"/en/news/","kind":"page","version":"123_456","masterLanguage":"en","languages":["en","de"],
  "parent":"45","saved":"2024-05-01T10:00:00Z","changedBy":"editor","startPublish":"...",
- "childSortOrder":"PublishedDescending","sortIndex":100,
+ "childSortOrder":"PublishedDescending","sortIndex":100,"simpleAddress":"/news","category":["Press"],
+ "shortcut":{"type":"shortcut","to":{"ref":"456","type":"NewsPage","name":"News archive","url":"/en/archive/"}},
  "properties":{
    "Heading":{"type":"String","value":"Hello","culture":"en"},
    "MainArea":{"type":"ContentArea","value":[{"ref":"789","type":"TeaserBlock","name":"Teaser","displayOption":"wide"}]},
    "Hero":{"type":"Block","blockType":"HeroBlock","value":{"Heading":{"type":"String","value":"..."}}}}}
 ```
 
-`culture` on a top-level property is the branch its value came from (shared properties come from the master
+`simpleAddress`, `shortcut` (absent on a normal page; an external link also has `url`, and `to`/`anchor` when it is
+a permanent link to a page) and `category` appear when set. `culture` on a top-level property is the branch its value came from (shared properties come from the master
 language). Empty properties are omitted unless `--all-properties`. Rich text gives the (possibly truncated) HTML
 plus its resolved links and embedded blocks.
 
@@ -111,20 +113,41 @@ content it shows. `--at` and `--display` only apply to `add`.
   - Local block: `{"Hero":{"Heading":"Hi","Link":"/en/about/"}}`.
   - Block list (`IList<SomeBlock>`, shown by `get` as `BlockList`): an array of such objects, replacing the whole list:
     `{"Persons":[{"Name":"Kari","Biography":"<p>...</p>","Image":"63__provider"},{"Name":"Per"}]}`.
-- `StartPublish` and `StopPublish` (also as `PageStartPublish`/`PageStopPublish`) set the publish dates, e.g.
-  `StartPublish=2025-02-14` or `2025-02-14T08:00:00+01:00` (no offset: the site's local time); `StopPublish=` clears
-  it. Lists and archives often sort and filter by `StartPublish`, which otherwise is the time of publishing.
-- Pages only: `ChildSortOrder` (also `PageChildOrderRule`) is how the page's children are sorted, edit mode's
-  Settings > Sort order: `CreatedDescending` (the default), `CreatedAscending`, `Alphabetical`, `Index`,
-  `ChangedDescending`, `PublishedAscending` or `PublishedDescending`. `SortIndex` (also `PagePeerOrder`) is the page's
-  place among its siblings when the parent sorts by `Index`. Both are versioned like other properties and can only
-  be changed on the master language. List pages that show "children" usually use this order.
   - Content provider content (e.g. DAM images, shown by `get` as `63__provider`) works wherever a content ref does:
     `HeroImage=63__provider`, a ContentArea item `{"ref":"63__provider"}`, or its GUID.
   - Link (`LinkItem`): `{"Button":{"href":"456","text":"Read more"}}`, optionally with `title` and `target`. `Button=456` or `Button=/en/about/` changes
     only the href and keeps the text. Link collections take an array of the same objects. A content ref as `href`
     is stored as a permanent link, like the editor stores it.
+  - Category property: category names (`CategoryName` in admin mode, or the display name) or ids, as an array or
+    comma-separated: `Topics=News,Events` or `{"Topics":["News","Events"]}`. `Topics=` clears it.
 - Property names are checked against the content type before anything is sent; a typo fails with a suggestion.
+
+### Built-in settings
+
+Besides the type's properties, `set`, `create`, `translate` and plan steps take these by name (a type's own
+property of the same name wins). All are versioned, show in `changes`, and are read back by `get`.
+
+- `StartPublish` and `StopPublish` (also `PageStartPublish`/`PageStopPublish`): the publish dates, e.g.
+  `StartPublish=2025-02-14` or `2025-02-14T08:00:00+01:00` (no offset: the site's local time); `StopPublish=` clears
+  it. Lists and archives often sort and filter by `StartPublish`, which otherwise is the time of publishing.
+- `Category` (also `PageCategory`), on pages, shared blocks and media: the built-in category, with the same values as a
+  Category property. Lists and filters often select by it. Only categories marked selectable in admin mode are taken.
+- Pages only:
+  - `ChildSortOrder` (also `PageChildOrderRule`): how the page's children are sorted, edit mode's Settings > Sort
+    order: `CreatedDescending` (the default), `CreatedAscending`, `Alphabetical`, `Index`, `ChangedDescending`,
+    `PublishedAscending` or `PublishedDescending`. List pages that show children usually use this order.
+  - `SortIndex` (also `PagePeerOrder`): the page's place among its siblings when the parent sorts by `Index`. It and
+    `ChildSortOrder` can only be changed on the master language.
+  - `SimpleAddress` (also `ExternalURL`/`PageExternalURL`): a short address such as `/campaign`, as `campaign`,
+    `/campaign` or `~/campaign`; `SimpleAddress=` clears it. A warning names any page of the same site and language
+    that already has it (the CMS saves the clash).
+  - `Shortcut`: where the page's link goes instead of the page (Settings > Shortcut), which is how menus link to
+    other pages or sites. `Shortcut=456` is a shortcut to page 456 (id or GUID; a plan's `$id` works), a URL
+    (`https://...`, `/path/`, `mailto:`) is an external link, `Shortcut=inactive` shows the name without a link, and
+    `Shortcut=` makes it a normal page again. As an object:
+    `{"Shortcut":{"type":"external","to":"456","anchor":"reports","target":"_blank"}}`, where `type` is `shortcut`,
+    `external`, `fetchData` (show another page's content) or `inactive`, `to` the page, `url` an external URL,
+    `anchor` a fragment for an external link to a page, and `target` the window (`_blank`, `_top`).
 
 ### Uploads
 

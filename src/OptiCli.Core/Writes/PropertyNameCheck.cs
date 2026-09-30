@@ -13,13 +13,15 @@ public static class PropertyNameCheck
 {
     /// <summary>
     /// Names the agent accepts that are not property definitions: the content name, the writable built-in metadata and
-    /// the publish dates (<c>StartPublish</c>, <c>StopPublish</c>) and a page's sorting (<c>ChildSortOrder</c>,
-    /// <c>SortIndex</c>), the last four also under their page metadata names.
+    /// the publish dates (<c>StartPublish</c>, <c>StopPublish</c>), a page's sorting (<c>ChildSortOrder</c>,
+    /// <c>SortIndex</c>), shortcut and simple address, and the built-in category of pages and media, most also under
+    /// their metadata names.
     /// </summary>
     public static readonly IReadOnlyList<string> BuiltIn =
     [
         "Name", "PageURLSegment", "PageVisibleInMenu", "StartPublish", "StopPublish", "PageStartPublish", "PageStopPublish",
         "ChildSortOrder", "SortIndex", "PageChildOrderRule", "PagePeerOrder",
+        "Shortcut", "SimpleAddress", "ExternalURL", "PageExternalURL", "Category", "PageCategory",
     ];
 
     /// <exception cref="UsageException">A name is not a property of the type (or of the local block it is nested in).</exception>

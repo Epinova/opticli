@@ -113,6 +113,11 @@ public sealed class PropertyDecoder(
                 return row.Number is { } number ? With(result, number) : null;
             case PropertyBaseType.FloatNumber:
                 return row.FloatNumber is { } real ? With(result, real) : null;
+            case PropertyBaseType.Category:
+                // The ids are stored apart from the row (tblContentCategory); the row only holds their key.
+                return row.Categories is { Count: > 0 } categories
+                    ? WithNode(result, new JsonArray(categories.Select(id => (JsonNode?)JsonValue.Create(model.CategoryName(id))).ToArray()))
+                    : null;
             case PropertyBaseType.PageType:
                 return row.Number is { } typeId ? With(result, model.TypeName(typeId)) : null;
             case PropertyBaseType.Date:
