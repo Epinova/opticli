@@ -7,7 +7,9 @@ namespace OptiCli.Protocol;
 /// <para>All requests need the <see cref="AgentProtocol.TokenHeader"/> header and are only answered
 /// for loopback callers while the site runs in Development. Bodies are JSON (<see cref="AgentJson"/>),
 /// responses are <see cref="AgentResponse{T}"/>.</para>
-/// <para><c>{ref}</c> is a content id (<c>123</c>), a version (<c>123_456</c>) or a content GUID. URLs
+/// <para><c>{ref}</c> is a content id (<c>123</c>), a version (<c>123_456</c>), a content GUID, or content from a
+/// content provider (<c>63__provider</c>, as <c>ContentReference.ToString()</c> prints it). The same forms work in
+/// property values, ContentArea items and link hrefs. URLs
 /// and paths are resolved by the CLI before calling. Writes are saved as <see cref="AgentProtocol.PrincipalName"/>
 /// and never skip versioning: drafts are always new versions, delete always goes to the recycle bin.</para>
 /// <para>Errors common to every route: <c>unauthorized</c> 401, <c>refused</c> 403/503, <c>usage</c> 400

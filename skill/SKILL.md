@@ -38,6 +38,9 @@ when a command below doesn't cover your question.
 
 Wherever a command takes `<ref>`: a content id (`123`), a specific version (`123_456`, from `versions`), a content
 GUID, or a URL/path (`/en/about/`, `https://www.example.com/en/about/`). `1` is the root of all content.
+Content from a content provider (e.g. DAM images) shows as `63__provider`: pass it back as is in property values,
+ContentAreas and links, but it can't be read with `get` (it isn't in the database). Its id is local to this database;
+use the `guid` in anything that must work in other environments.
 Add `--lang <code>` to choose a language branch (default: the item's master language, or the language of the URL).
 
 ## The commands you'll use most

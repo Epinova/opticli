@@ -15,8 +15,8 @@ namespace OptiCli.Core.Writes;
 /// the base version for concurrency, calls the agent, and reshapes its answer.
 /// </summary>
 /// <remarks>
-/// The agent only accepts ids, versions and GUIDs, so URLs are resolved here; GUIDs of content from a
-/// content provider (not in this database) are passed through for the site to resolve.
+/// The agent only accepts ids, versions and GUIDs, so URLs are resolved here; content from a content provider (not in
+/// this database) is passed to the site by GUID, also when it was given as <c>63__provider</c>.
 /// Publish, move and delete have no dry run in the agent; for those the checks run here, against the database.
 /// </remarks>
 public sealed class WriteExecutor(ContentSession session, Func<CancellationToken, Task<AgentClient>> connect, string? site = null)
@@ -375,6 +375,12 @@ public sealed class WriteExecutor(ContentSession session, Func<CancellationToken
             throw new UsageException($"{what} '{reference}' refers to plan content; $ids only work inside `opticli apply`.");
         }
         var parsed = ContentRefParser.Parse(reference);
+        if (parsed.Kind == ContentRefKind.Provider)
+        {
+            return await ContentHeaderReader.ProviderGuidAsync(session.Db, parsed.Id, parsed.Provider!, cancellationToken) is { } mapped
+                ? new Target(0, null, mapped.ToString("D"), null, null)
+                : throw ContentLocator.ProviderNotFound(parsed);
+        }
         if (parsed.Kind == ContentRefKind.Guid)
         {
             var ids = await ContentHeaderReader.IdsByGuidsAsync(session.Db, [parsed.Guid], cancellationToken);

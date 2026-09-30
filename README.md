@@ -196,8 +196,10 @@ Don't point opticli at such a connection unless you mean to write to what is beh
 | `sql "<SELECT …>"` | anything else, read-only |
 
 A `<ref>` is a content id (`123`), a version (`123_456`), a content GUID, or a URL or path (`/en/about/`,
-`https://host/en/about/`). `--lang <code>` picks the language branch. The default is the master language, or the
-language the URL selects.
+`https://host/en/about/`). Content from a content provider, such as images from a DAM, shows up as `63__provider`. You
+can pass that form back in property values, ContentArea items and links. The id before `__` is local to one database;
+the GUID is the same in every environment. `--lang <code>` picks the language branch. The default is the master
+language, or the language the URL selects.
 
 ### Writing (needs `opticli serve`)
 

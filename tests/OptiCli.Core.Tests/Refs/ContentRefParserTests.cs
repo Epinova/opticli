@@ -49,6 +49,27 @@ public class ContentRefParserTests
     }
 
     [Theory]
+    [InlineData("63__dam-assets-provider", 63, "dam-assets-provider")]
+    [InlineData(" 7__dam ", 7, "dam")]
+    [InlineData("12__provider.v2", 12, "provider.v2")]
+    public void Parses_content_provider_refs(string input, int id, string provider)
+    {
+        var parsed = ContentRefParser.Parse(input);
+
+        Assert.Equal(ContentRefKind.Provider, parsed.Kind);
+        Assert.Equal(id, parsed.Id);
+        Assert.Equal(provider, parsed.Provider);
+        Assert.Null(parsed.VersionId);
+    }
+
+    [Fact]
+    public void Rejects_a_version_of_provider_content_and_names_the_ref_to_use()
+    {
+        Assert.False(ContentRefParser.TryParse("63_5__dam", out _, out var error));
+        Assert.Contains("63__dam", error);
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("0")]
@@ -62,6 +83,13 @@ public class ContentRefParserTests
     [InlineData("en/about")]
     [InlineData("ftp://example.com/file")]
     [InlineData("١٢٣")]
+    [InlineData("63_5__dam")]
+    [InlineData("0__dam")]
+    [InlineData("63__")]
+    [InlineData("63___dam")]
+    [InlineData("63__-dam")]
+    [InlineData("63__da m")]
+    [InlineData("__dam")]
     public void Rejects_everything_else_with_a_usage_error(string input)
     {
         Assert.False(ContentRefParser.TryParse(input, out _, out var error));
@@ -76,6 +104,7 @@ public class ContentRefParserTests
     [InlineData("123_456")]
     [InlineData("0b6f9c4e-3f1a-4d2b-9a8e-1c2d3e4f5a6b")]
     [InlineData("/en/about/")]
+    [InlineData("63__dam-assets-provider")]
     public void ToString_round_trips(string input)
     {
         var parsed = ContentRefParser.Parse(input);

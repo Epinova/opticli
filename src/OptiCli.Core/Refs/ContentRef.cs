@@ -10,6 +10,12 @@ public enum ContentRefKind
 
     /// <summary>An absolute URL or a site-relative path; resolved against the site's hosts.</summary>
     Url,
+
+    /// <summary>
+    /// <c>63__provider</c>: content a content provider (e.g. a DAM) maps into the CMS. The id is local to this
+    /// database (<c>tblMappedIdentity.pkID</c>); the content's GUID is what stays the same across environments.
+    /// </summary>
+    Provider,
 }
 
 /// <summary>
@@ -33,17 +39,23 @@ public sealed record ContentRef
     /// <summary>The URL or path, as given, for <see cref="ContentRefKind.Url"/>.</summary>
     public string? Url { get; private init; }
 
+    /// <summary>The provider name for <see cref="ContentRefKind.Provider"/> (<see cref="Id"/> is its mapped id).</summary>
+    public string? Provider { get; private init; }
+
     public static ContentRef ForId(int id, int? versionId = null) => new(ContentRefKind.Id) { Id = id, VersionId = versionId };
 
     public static ContentRef ForGuid(Guid guid) => new(ContentRefKind.Guid) { Guid = guid };
 
     public static ContentRef ForUrl(string url) => new(ContentRefKind.Url) { Url = url };
 
+    public static ContentRef ForProvider(int id, string provider) => new(ContentRefKind.Provider) { Id = id, Provider = provider };
+
     /// <summary>The canonical form, which <see cref="ContentRefParser"/> parses back to an equal ref.</summary>
     public override string ToString() => Kind switch
     {
         ContentRefKind.Id => VersionId is { } version ? $"{Id}_{version}" : Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
         ContentRefKind.Guid => Guid.ToString("D"),
+        ContentRefKind.Provider => $"{Id.ToString(System.Globalization.CultureInfo.InvariantCulture)}__{Provider}",
         _ => Url!,
     };
 }

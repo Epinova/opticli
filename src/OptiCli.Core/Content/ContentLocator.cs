@@ -31,9 +31,21 @@ public sealed class ContentLocator(CmsDatabase db, CmsModel model)
                     ? new LocatedContent(id, null, null)
                     : throw new NotFoundException($"No content with GUID {reference.Guid:D}.", "GUIDs are stable across environments, but the item may not exist in this database.");
 
+            case ContentRefKind.Provider:
+                var mapped = await ContentHeaderReader.ProviderGuidAsync(db, reference.Id, reference.Provider!, cancellationToken);
+                throw mapped is { } guid
+                    ? new UsageException(
+                        $"{reference} is content from the content provider '{reference.Provider}' (GUID {guid:D}); it isn't stored in the CMS database, so opticli can't read it.",
+                        "Refer to it in property values and ContentAreas by this ref or its GUID; the GUID is the one that works across environments.")
+                    : ProviderNotFound(reference);
+
             default:
                 var resolved = await new UrlResolver(db, model).ResolveAsync(reference.Url!, site, cancellationToken);
                 return new LocatedContent(resolved.ContentId, null, resolved);
         }
     }
+
+    public static NotFoundException ProviderNotFound(ContentRef reference) => new(
+        $"No content {reference} from the content provider '{reference.Provider}' in this database.",
+        "The id before __ is local to each database; use the GUID for anything that must work across environments.");
 }

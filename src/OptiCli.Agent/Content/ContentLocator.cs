@@ -26,6 +26,15 @@ internal sealed class ContentLocator(IContentRepository repository, IContentVers
                 : throw AgentException.NotFound($"No content with GUID {guid}.");
         }
 
+        if (parsed.Provider is { } provider)
+        {
+            var provided = new ContentReference(parsed.Id, 0, provider);
+            return Repository.TryGet<IContent>(provided, AnyLanguage(), out var content)
+                ? content.ContentLink.ToReferenceWithoutVersion()
+                : throw AgentException.NotFound($"No content {reference?.Trim()} from the content provider '{provider}'.",
+                    "The id before __ is local to each database; the content's GUID works across environments.");
+        }
+
         var link = new ContentReference(parsed.Id, parsed.Version ?? 0);
         if (!Repository.TryGet<IContent>(link.ToReferenceWithoutVersion(), AnyLanguage(), out _))
         {

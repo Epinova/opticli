@@ -7,7 +7,7 @@ namespace OptiCli.Core.Refs;
 public static partial class ContentRefParser
 {
     public const string Syntax =
-        "A ref is a content id (123), id_version (123_456), a content GUID, or a URL/path (/en/about/ or https://host/en/about/).";
+        "A ref is a content id (123), id_version (123_456), a content GUID, a URL/path (/en/about/ or https://host/en/about/), or content provider content as get prints it (63__provider).";
 
     /// <exception cref="UsageException">The input is not a ref.</exception>
     public static ContentRef Parse(string? input) =>
@@ -40,6 +40,17 @@ public static partial class ContentRefParser
             return true;
         }
 
+        if (ProviderPattern().Match(value) is { Success: true } provided)
+        {
+            if (!TryParsePositive(provided.Groups["id"].Value, out var mappedId))
+            {
+                error = $"'{value}' is not a valid content provider ref: the id is a positive 32-bit integer.";
+                return false;
+            }
+            result = ContentRef.ForProvider(mappedId, provided.Groups["provider"].Value);
+            return true;
+        }
+
         if (Guid.TryParse(value, out var guid))
         {
             result = ContentRef.ForGuid(guid);
@@ -64,9 +75,11 @@ public static partial class ContentRefParser
             return true;
         }
 
-        error = IdentifierPattern().IsMatch(value)
-            ? $"'{value}' is not a content ref. If it is a content type, list its content with `opticli find --type {value}`."
-            : $"'{value}' is not a content ref.";
+        error = VersionedProviderPattern().Match(value) is { Success: true } versioned
+            ? $"'{value}' names a version of content provider content, which opticli can't address; use {versioned.Groups["id"].Value}__{versioned.Groups["provider"].Value}."
+            : IdentifierPattern().IsMatch(value)
+                ? $"'{value}' is not a content ref. If it is a content type, list its content with `opticli find --type {value}`."
+                : $"'{value}' is not a content ref.";
         return false;
     }
 
@@ -78,6 +91,16 @@ public static partial class ContentRefParser
 
     [GeneratedRegex(@"^(?<id>[0-9]+)(?:_(?<version>[0-9]+))?$")]
     private static partial Regex IdPattern();
+
+    /// <summary>
+    /// <c>ContentReference.ToString()</c> of provider content: id, an empty version, then the provider name. Provider
+    /// content has no versions opticli can address, so <c>63_5__provider</c> is not accepted.
+    /// </summary>
+    [GeneratedRegex(@"^(?<id>[0-9]+)__(?<provider>[A-Za-z0-9][A-Za-z0-9.-]*)$")]
+    private static partial Regex ProviderPattern();
+
+    [GeneratedRegex(@"^(?<id>[0-9]+)_[0-9]+__?(?<provider>[A-Za-z0-9][A-Za-z0-9.-]*)$")]
+    private static partial Regex VersionedProviderPattern();
 
     /// <summary>The permanent-link form CMS stores in rich text and link properties.</summary>
     [GeneratedRegex(@"^~?/link/(?<guid>[0-9a-fA-F-]{32,36})\.aspx", RegexOptions.IgnoreCase)]

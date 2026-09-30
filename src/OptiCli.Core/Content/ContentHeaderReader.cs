@@ -119,6 +119,14 @@ public static class ContentHeaderReader
         return result;
     }
 
+    /// <summary>The GUID a content provider mapped its item <c>id__provider</c> to; null when this database has no such mapping.</summary>
+    public static async Task<Guid?> ProviderGuidAsync(CmsDatabase db, int id, string provider, CancellationToken cancellationToken)
+    {
+        var rows = await db.QueryAsync("SELECT ContentGuid FROM tblMappedIdentity WHERE pkID = @id AND Provider = @provider",
+            r => r.GetGuid("ContentGuid"), cancellationToken, new SqlParameter("@id", id), new SqlParameter("@provider", provider));
+        return rows.Count > 0 ? rows[0] : null;
+    }
+
     /// <summary>The newest version of a branch that is not published yet and is newer than the published one.</summary>
     public static async Task<int?> NewerDraftAsync(CmsDatabase db, int contentId, int languageId, int? publishedVersion, CancellationToken cancellationToken)
     {

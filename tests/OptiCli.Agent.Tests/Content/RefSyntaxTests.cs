@@ -26,6 +26,15 @@ public class RefSyntaxTests
     }
 
     [Theory]
+    [InlineData("63__dam-assets-provider", 63, "dam-assets-provider")]
+    [InlineData(" 7__dam ", 7, "dam")]
+    public void Parses_content_provider_refs(string input, int id, string provider)
+    {
+        Assert.True(RefSyntax.TryParse(input, out var parsed));
+        Assert.Equal(new ParsedRef(id, null, null, provider), parsed);
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData(null)]
     [InlineData("0")]
@@ -39,5 +48,9 @@ public class RefSyntaxTests
     [InlineData("12a")]
     [InlineData("00000000-0000-0000-0000-000000000000")]
     [InlineData("/en/about/")]
+    [InlineData("63_5__dam")]
+    [InlineData("0__dam")]
+    [InlineData("63__")]
+    [InlineData("63___dam")]
     public void Rejects_everything_else(string? input) => Assert.False(RefSyntax.TryParse(input, out _));
 }
