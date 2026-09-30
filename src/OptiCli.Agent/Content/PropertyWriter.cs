@@ -9,13 +9,28 @@ using OptiCli.Protocol;
 namespace OptiCli.Agent.Content;
 
 /// <summary>Applies a request's property map to a writable content instance.</summary>
-internal sealed class PropertyWriter(ContentLocator locator)
+internal sealed class PropertyWriter(ContentLocator locator, BlockFactory blocks)
 {
     /// <summary>Pseudo-property for the content name in snapshots and diffs.</summary>
     public const string NameKey = "Name";
 
     /// <summary>Built-in metadata an agent may reasonably need to set; all other metadata is refused.</summary>
     public static readonly HashSet<string> WritableMetadata = new(StringComparer.OrdinalIgnoreCase) { "PageURLSegment", "PageVisibleInMenu" };
+
+    public const string StartPublishKey = "StartPublish";
+    public const string StopPublishKey = "StopPublish";
+
+    /// <summary>
+    /// The publish dates of versionable content (<see cref="IVersionable"/>), by their own names and the pages' metadata
+    /// names. Lists and archives often sort and filter by <c>StartPublish</c>.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> PublishDates = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        [StartPublishKey] = StartPublishKey,
+        ["PageStartPublish"] = StartPublishKey,
+        [StopPublishKey] = StopPublishKey,
+        ["PageStopPublish"] = StopPublishKey,
+    };
 
     public void Apply(IContentData content, IReadOnlyDictionary<string, JsonElement>? values)
     {
@@ -54,6 +69,13 @@ internal sealed class PropertyWriter(ContentLocator locator)
             return;
         }
 
+        if (PublishDates.TryGetValue(name, out var date) && content is IVersionable versionable
+            && content.Property.All(p => p.IsMetaData || !p.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+        {
+            SetPublishDate(versionable, date, value);
+            return;
+        }
+
         var property = Find(content, name);
         if (content is ILocalizable { Language: { } language, MasterLanguage: { } master }
             && !language.Equals(master) && !property.IsLanguageSpecific)
@@ -68,6 +90,29 @@ internal sealed class PropertyWriter(ContentLocator locator)
         catch (Exception ex) when (ex is FormatException or ArgumentException or InvalidCastException or JsonException or OverflowException or InvalidPropertyValueException)
         {
             throw AgentException.Usage($"Can't set '{property.Name}' ({property.GetType().Name}): {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// An ISO 8601 date or time; without an offset it is the site's local time. <c>null</c> clears it: a cleared
+    /// <c>StartPublish</c> is set to the time of publishing by the CMS.
+    /// </summary>
+    private static void SetPublishDate(IVersionable versionable, string which, JsonElement value)
+    {
+        DateTime? parsed = value.ValueKind switch
+        {
+            JsonValueKind.Null => null,
+            JsonValueKind.String when value.GetString() is { Length: 0 } => null,
+            JsonValueKind.String when DateTimeOffset.TryParse(value.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var at) => at.LocalDateTime,
+            _ => throw AgentException.Usage($"{which} must be a date or time like 2025-02-14 or 2025-02-14T08:00:00+01:00, or null."),
+        };
+        if (which == StartPublishKey)
+        {
+            versionable.StartPublish = parsed;
+        }
+        else
+        {
+            versionable.StopPublish = parsed;
         }
     }
 
@@ -117,6 +162,10 @@ internal sealed class PropertyWriter(ContentLocator locator)
         var type = property.PropertyValueType;
         var element = type.IsGenericType && type.GetGenericArguments() is [var arg] && typeof(IEnumerable<>).MakeGenericType(arg).IsAssignableFrom(type) ? arg : null;
 
+        if (element is not null && typeof(BlockData).IsAssignableFrom(element) && value.ValueKind == JsonValueKind.Array)
+        {
+            return BlockList(property, element, value);
+        }
         if (element == typeof(ContentReference) && value.ValueKind == JsonValueKind.Array)
         {
             return value.EnumerateArray()
@@ -127,6 +176,25 @@ internal sealed class PropertyWriter(ContentLocator locator)
         // Interfaces like IList<string> can't be instantiated; a List<T> satisfies them.
         var target = element is not null && type.IsInterface ? typeof(List<>).MakeGenericType(element) : type;
         return value.Deserialize(target, AgentJson.Options);
+    }
+
+    /// <summary>A block list: one new block per object, with the object's values set like a local block's.</summary>
+    private System.Collections.IList BlockList(PropertyData property, Type element, JsonElement value)
+    {
+        var list = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(element))!;
+        var index = 0;
+        foreach (var item in value.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                throw AgentException.Usage($"{property.Name}[{index}] must be an object of {element.Name} property names to values, e.g. {{\"Name\": \"...\"}}.");
+            }
+            var block = blocks.Create(element);
+            Apply(block, item.Deserialize<Dictionary<string, JsonElement>>(AgentJson.Options));
+            list.Add(block);
+            index++;
+        }
+        return list;
     }
 
     public ContentArea BuildArea(IEnumerable<AreaItemValue> items)

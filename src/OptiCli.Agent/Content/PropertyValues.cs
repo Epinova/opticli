@@ -24,6 +24,11 @@ internal static class PropertyValues
         {
             values[PropertyWriter.NameKey] = ToJson(Format(named.Name));
         }
+        if (content is IVersionable versionable)
+        {
+            values[PropertyWriter.StartPublishKey] = ToJson(versionable.StartPublish);
+            values[PropertyWriter.StopPublishKey] = ToJson(versionable.StopPublish);
+        }
         foreach (var property in content.Property)
         {
             if (!property.IsMetaData || PropertyWriter.WritableMetadata.Contains(property.Name))

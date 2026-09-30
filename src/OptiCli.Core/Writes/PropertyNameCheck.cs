@@ -11,8 +11,11 @@ namespace OptiCli.Core.Writes;
 /// </summary>
 public static class PropertyNameCheck
 {
-    /// <summary>Names the agent accepts that are not property definitions: the content name and the writable built-in metadata.</summary>
-    public static readonly IReadOnlyList<string> BuiltIn = ["Name", "PageURLSegment", "PageVisibleInMenu"];
+    /// <summary>
+    /// Names the agent accepts that are not property definitions: the content name, the writable built-in metadata and
+    /// the publish dates (<c>StartPublish</c>, <c>StopPublish</c>, also under their page metadata names).
+    /// </summary>
+    public static readonly IReadOnlyList<string> BuiltIn = ["Name", "PageURLSegment", "PageVisibleInMenu", "StartPublish", "StopPublish", "PageStartPublish", "PageStopPublish"];
 
     /// <exception cref="UsageException">A name is not a property of the type (or of the local block it is nested in).</exception>
     public static void Check(CmsModel model, int contentTypeId, JsonObject? properties)
@@ -43,6 +46,20 @@ public static class PropertyNameCheck
             if (value is JsonObject nested && definition?.BlockType is { } blockType)
             {
                 Check(model, blockType, nested, $"{prefix}{definition.Name}.", topLevel: false);
+            }
+            else if (value is JsonArray items && definition is { IsList: true, BlockType: { } itemType })
+            {
+                // A block list: every item is an object of the block type's properties.
+                for (var i = 0; i < items.Count; i++)
+                {
+                    if (items[i] is not JsonObject item)
+                    {
+                        throw new UsageException(
+                            $"'{prefix}{definition.Name}[{i}]' must be an object of {model.TypeName(itemType)} property names to values.",
+                            $"A block list is an array of objects, e.g. [{{\"Name\": \"...\"}}]; see `opticli type {model.TypeName(itemType)}`.");
+                    }
+                    Check(model, itemType, item, $"{prefix}{definition.Name}[{i}].", topLevel: false);
+                }
             }
         }
     }

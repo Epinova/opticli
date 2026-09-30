@@ -53,4 +53,25 @@ public class PropertyNameCheckTests
         Assert.Contains("not a ContentArea", error.Message);
         Assert.Contains("MainArea", error.Hint);
     }
+
+    [Fact]
+    public void Block_list_items_are_checked_against_the_item_type()
+    {
+        PropertyNameCheck.Check(Model, ModelFixture.ArticlePage, JsonNode.Parse("""{"Facts": [{"Label": "a"}, {"label": "b", "Sources": ["1"]}]}""")!.AsObject());
+
+        var typo = Assert.Throws<UsageException>(() => PropertyNameCheck.Check(Model, ModelFixture.ArticlePage,
+            JsonNode.Parse("""{"Facts": [{"Label": "a"}, {"Lable": "b"}]}""")!.AsObject()));
+        Assert.Contains("'Facts[1].Lable' is not a property of FactBlock", typo.Message);
+
+        var notAnObject = Assert.Throws<UsageException>(() => PropertyNameCheck.Check(Model, ModelFixture.ArticlePage,
+            JsonNode.Parse("""{"Facts": ["just text"]}""")!.AsObject()));
+        Assert.Contains("'Facts[0]' must be an object of FactBlock property names", notAnObject.Message);
+    }
+
+    [Fact]
+    public void Publish_dates_are_built_in()
+    {
+        PropertyNameCheck.Check(Model, ModelFixture.ArticlePage,
+            JsonNode.Parse("""{"StartPublish": "2025-02-14", "StopPublish": null, "PageStartPublish": "2025-02-14T08:00:00+01:00"}""")!.AsObject());
+    }
 }
