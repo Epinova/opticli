@@ -193,6 +193,7 @@ Don't point opticli at such a connection unless you mean to write to what is beh
 | `resolve <url>`, `url <ref>` | URL to content, and content to URL per language |
 | `versions <ref>`, `drafts [--since] [--by] [--kind] [--type]` | version history; unpublished changes |
 | `blob <ref>` | where a media file lives on disk |
+| `access <ref>` | who may read and edit an item: its access rights, and the ancestor they are inherited from |
 | `sql "<SELECT …>"` | anything else, read-only |
 
 A `<ref>` is a content id (`123`), a version (`123_456`), a content GUID, or a URL or path (`/en/about/`,
@@ -207,6 +208,10 @@ These commands write:
 - `set`, `create`, `area` (add, remove or move ContentArea items), `block create` and `translate` save a draft
   unless `--publish` is given.
 - `publish`, `move` and `delete` (to the recycle bin).
+- `access <ref>` with `--grant Role=Levels`, `--user Name=Levels`, `--revoke Name`, `--break-inheritance` or
+  `--inherit` changes one item's access rights. Children that inherit follow; nothing is applied to descendants.
+  Access rights aren't versioned, so the output shows them before and after. The root, the recycle bin, start pages
+  and asset roots are refused, and so is a change that leaves no role with Administer.
 - `apply plan.json` runs several operations validated together. Later operations can refer to an item an earlier
   one created as `$id`.
 

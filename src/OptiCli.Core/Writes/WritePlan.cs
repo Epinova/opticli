@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using OptiCli.Core.Errors;
+using OptiCli.Protocol;
 
 namespace OptiCli.Core.Writes;
 
@@ -33,6 +34,7 @@ public sealed partial class WritePlan
         ["publish"] = ["ref*", "version", "lang"],
         ["move"] = ["ref*", "to*"],
         ["delete"] = ["ref*"],
+        ["access"] = ["ref*", "grant", "grantUsers", "revoke", "breakInheritance", "inherit", "allowUnknownRole"],
     };
 
     private WritePlan(IReadOnlyList<PlanStep> steps) => Steps = steps;
@@ -181,12 +183,24 @@ public sealed partial class WritePlan
             "translate" => new TranslateOperation(reader.Ref("ref"), reader.String("lang") ?? "", reader.String("name"), reader.Object("properties"), reader.Bool("publish")),
             "publish" => new PublishOperation(reader.Ref("ref"), reader.Int("version"), reader.String("lang")),
             "move" => new MoveOperation(reader.Ref("ref"), reader.Ref("to")),
+            "access" => new AccessOperation(reader.Ref("ref"), reader.Levels("grant"), reader.Levels("grantUsers"), reader.Strings("revoke"),
+                reader.Bool("breakInheritance"), reader.Bool("inherit"), reader.Bool("allowUnknownRole")),
             _ => new DeleteOperation(reader.Ref("ref")),
         };
 
         if (operation is AreaEdit area && area.Action is not ("add" or "remove" or "move") && step["action"] is not null)
         {
             problems.Add($"{reader.Where}: \"action\" must be add, remove or move.");
+        }
+        if (operation is AccessOperation access)
+        {
+            foreach (var (name, levels) in (access.Grant ?? new Dictionary<string, string>()).Concat(access.GrantUsers ?? new Dictionary<string, string>()))
+            {
+                if (!AccessLevels.TryParse(levels, out _, out var error))
+                {
+                    problems.Add($"{reader.Where}: {name}: {error}");
+                }
+            }
         }
         if (operation is BlockCreateOperation block && (block.For is null) == (block.Parent is null))
         {
@@ -233,6 +247,48 @@ public sealed partial class WritePlan
             null => false,
             JsonValue value when value.TryGetValue<bool>(out var flag) => flag,
             _ => Problem<bool>(name, "true or false"),
+        };
+
+        /// <summary>Name to levels: <c>{"Authenticated": "Read"}</c>, or the levels as an array (<c>["Read", "Edit"]</c>).</summary>
+        public IReadOnlyDictionary<string, string>? Levels(string name)
+        {
+            if (step[name] is null)
+            {
+                return null;
+            }
+            if (step[name] is not JsonObject obj)
+            {
+                return Problem<IReadOnlyDictionary<string, string>>(name, """an object of names to levels, e.g. {"Authenticated": "Read"}""");
+            }
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (key, value) in obj)
+            {
+                string? levels = value switch
+                {
+                    JsonValue text when text.TryGetValue<string>(out var single) => single,
+                    JsonArray array when array.All(a => a is JsonValue v && v.TryGetValue<string>(out _)) => string.Join(',', array.Select(a => a!.GetValue<string>())),
+                    _ => null,
+                };
+                if (levels is null)
+                {
+                    problems.Add($"{Where}: \"{name}\".{key} must be levels as a string (\"Read,Edit\") or an array of strings.");
+                    continue;
+                }
+                if (!result.TryAdd(key, levels))
+                {
+                    problems.Add($"{Where}: \"{name}\" names '{key}' more than once.");
+                }
+            }
+            return result;
+        }
+
+        /// <summary>An array of strings, or one string.</summary>
+        public IReadOnlyList<string>? Strings(string name) => step[name] switch
+        {
+            null => null,
+            JsonValue value when value.TryGetValue<string>(out var single) => [single],
+            JsonArray array when array.All(a => a is JsonValue v && v.TryGetValue<string>(out _)) => array.Select(a => a!.GetValue<string>()).ToList(),
+            _ => Problem<IReadOnlyList<string>>(name, "an array of strings"),
         };
 
         public JsonObject? Object(string name) => step[name] switch

@@ -16,6 +16,7 @@ public class AgentRouterTests
     [InlineData("POST", "/v1/content/123/languages", "Languages", "123")]
     [InlineData("POST", "/v1/content/123/publish", "Publish", "123")]
     [InlineData("POST", "/v1/content/123/move", "Move", "123")]
+    [InlineData("POST", "/v1/content/123/access", "Access", "123")]
     [InlineData("DELETE", "/v1/content/123", "Delete", "123")]
     [InlineData("GET", "/v1/content/123", "Read", "123")]
     [InlineData("GET", "/v1/content/123_456", "Read", "123_456")]

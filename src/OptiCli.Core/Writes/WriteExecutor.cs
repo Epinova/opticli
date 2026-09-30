@@ -42,6 +42,7 @@ public sealed class WriteExecutor(ContentSession session, Func<CancellationToken
             PublishOperation publish => await PublishAsync(publish, dryRun, cancellationToken),
             MoveOperation move => await MoveAsync(move, dryRun, cancellationToken),
             DeleteOperation delete => await DeleteAsync(delete, dryRun, cancellationToken),
+            AccessOperation access => await AccessAsync(access, dryRun, cancellationToken),
             _ => throw new InvalidOperationException($"Unknown operation {operation.GetType().Name}."),
         };
 
@@ -273,6 +274,49 @@ public sealed class WriteExecutor(ContentSession session, Func<CancellationToken
         var agent = await AgentAsync(cancellationToken);
         var result = await agent.SendAsync<MoveResult>(HttpMethod.Delete, AgentRoutes.Delete(target.ContentRef), null, cancellationToken);
         return new WriteOutcome(Moved(result, descendants, recycleBin: true), AgentSource, null, []);
+    }
+
+    private async Task<WriteOutcome> AccessAsync(AccessOperation op, bool dryRun, CancellationToken cancellationToken)
+    {
+        var target = await EditableAsync(op.Ref, cancellationToken);
+        var grants = op.Grant ?? new Dictionary<string, string>();
+        var userGrants = op.GrantUsers ?? new Dictionary<string, string>();
+        foreach (var (name, levels) in grants.Concat(userGrants))
+        {
+            if (!AccessLevels.TryParse(levels, out _, out var error))
+            {
+                throw new UsageException($"{name}: {error}");
+            }
+        }
+        var changes = grants.Count + userGrants.Count + (op.Revoke?.Count ?? 0) > 0;
+        if (op.Inherit && (changes || op.BreakInheritance))
+        {
+            throw new UsageException("--inherit drops the item's own entries; it can't be combined with --grant, --user, --revoke or --break-inheritance.");
+        }
+        if (!changes && !op.Inherit && !op.BreakInheritance)
+        {
+            throw new UsageException("Nothing to change.", "Give --grant Role=Levels, --user Name=Levels, --revoke Name, --break-inheritance or --inherit.");
+        }
+
+        var request = new AccessRequest
+        {
+            Grant = grants.Count > 0 ? grants : null,
+            GrantUsers = userGrants.Count > 0 ? userGrants : null,
+            Revoke = op.Revoke is { Count: > 0 } revoke ? revoke : null,
+            BreakInheritance = op.BreakInheritance,
+            Inherit = op.Inherit,
+            AllowUnknownRole = op.AllowUnknownRole,
+            DryRun = dryRun,
+        };
+        var result = await PostAsync<AccessResult>(AgentRoutes.Access(target.ContentRef), request, cancellationToken);
+        var output = new AccessOutput(WriteOutput.Id(result.Content.Id), result.Content.Guid, result.Content.Type, result.Content.Name,
+            result.Saved, result.DryRun, result.Before, result.After);
+        var warnings = (result.Validation ?? []).Select(v => v.Message).ToList();
+        if (!dryRun && !result.Saved)
+        {
+            warnings.Add("The access rights were already like that, so nothing was saved.");
+        }
+        return new WriteOutcome(output, AgentSource, null, warnings);
     }
 
     /// <summary>

@@ -1,4 +1,5 @@
 using OptiCli.Core.Writes;
+using OptiCli.Protocol;
 
 namespace OptiCli.Core.Tests.Writes;
 
@@ -51,5 +52,46 @@ public class UndoHintsTests
     {
         Assert.Null(UndoHints.For(new SetOperation("123"), Output(saved: false)));
         Assert.Null(UndoHints.For(new MoveOperation("123", "20"), Moved(moved: false)));
+    }
+
+    private static AccessEntry Role(string name, int mask) => new(name, AccessKinds.Role, AccessLevels.Describe(mask), mask);
+
+    private static AccessOutput Access(AccessList before, AccessList after, bool saved = true) =>
+        new("123", Guid.Empty, "ArticlePage", "Name", saved, DryRun: false, before, after);
+
+    private static readonly AccessList Parent = new(true, "10", [Role("Administrators", 63), Role("Everyone", 1)]);
+
+    [Fact]
+    public void Breaking_inheritance_is_undone_by_inheriting_again()
+    {
+        var after = new AccessList(false, "123", [Role("Administrators", 63), Role("Authenticated", 1)]);
+
+        Assert.Equal("opticli access 123 --inherit (it inherited from 10 before)",
+            UndoHints.For(new AccessOperation("123", BreakInheritance: true), Access(Parent, after)));
+    }
+
+    [Fact]
+    public void An_explicit_change_is_undone_by_the_inverse_grants_and_revokes()
+    {
+        var before = new AccessList(false, "123", [Role("Administrators", 63), Role("Authenticated", 1), Role("Web Editors", 63)]);
+        var after = new AccessList(false, "123", [Role("Administrators", 63), Role("Everyone", 3), Role("Web Editors", 7)]);
+
+        Assert.Equal("opticli access 123 --revoke Everyone --grant Authenticated=Read --grant 'Web Editors=FullAccess'",
+            UndoHints.For(new AccessOperation("123"), Access(before, after)));
+    }
+
+    [Fact]
+    public void Going_back_to_inheriting_is_undone_by_breaking_inheritance_and_restoring_the_entries()
+    {
+        var before = new AccessList(false, "123", [Role("Administrators", 63), Role("Authenticated", 1)]);
+
+        Assert.Equal("opticli access 123 --break-inheritance --revoke Everyone --grant Authenticated=Read",
+            UndoHints.For(new AccessOperation("123", Inherit: true), Access(before, Parent)));
+    }
+
+    [Fact]
+    public void An_unchanged_acl_needs_no_undo()
+    {
+        Assert.Null(UndoHints.For(new AccessOperation("123", Grant: new Dictionary<string, string> { ["Everyone"] = "Read" }), Access(Parent, Parent, saved: false)));
     }
 }

@@ -200,3 +200,27 @@ public sealed record DeleteOperation(string Ref) : WriteOperation
 
     public override WriteOperation MapRefs(Func<string, string> map) => this with { Ref = map(Ref) };
 }
+
+/// <summary>
+/// Changes one item's access rights. <paramref name="Grant"/> and <paramref name="GrantUsers"/> map a role or user name
+/// to levels (<c>Read,Edit</c>, <c>FullAccess</c>) and set that entry to exactly those; <paramref name="Revoke"/> removes
+/// entries by name.
+/// </summary>
+/// <param name="BreakInheritance">Copy the inherited entries onto the item first; needed to change an inherited ACL.</param>
+/// <param name="Inherit">Drop the item's own entries so it inherits from its parent again.</param>
+public sealed record AccessOperation(
+    string Ref,
+    IReadOnlyDictionary<string, string>? Grant = null,
+    IReadOnlyDictionary<string, string>? GrantUsers = null,
+    IReadOnlyList<string>? Revoke = null,
+    bool BreakInheritance = false,
+    bool Inherit = false,
+    bool AllowUnknownRole = false) : WriteOperation
+{
+    public override string Kind => "access";
+
+    public override IEnumerable<string?> Refs => [Ref];
+
+    // Role and user names are never refs, so only the target is mapped.
+    public override WriteOperation MapRefs(Func<string, string> map) => this with { Ref = map(Ref) };
+}

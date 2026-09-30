@@ -48,6 +48,7 @@ remote default, disagreeing launch profiles, or only other environments' `appset
 | `versions <ref> [--lang]` | Newest first: `ref` (`id_version`), `language`, `status`, `name`, `saved`, `changedBy`, `startPublish`, `primary`. |
 | `drafts [--since <date>] [--by <user>] [--kind K] [--type T] [--lang]` | One row per item and language with unpublished changes: `status` and `version` of the newest draft, `saved`, `changedBy`, `drafts` (unpublished versions newer than the published one). `--since` is UTC. |
 | `blob <ref>` | Media only: blob URI, file path on disk, `exists`; same for the thumbnail. |
+| `access <ref>` | `inherited`, `from` (the item the entries are stored on: itself, or the nearest ancestor with its own), `entries[]` (`name`, `kind`: role, user or visitorGroup, `levels`: `FullAccess` or e.g. `["Read","Edit"]`, `mask`). Read from the database; no `serve` needed. |
 | `sql "<SELECT ...>" [--limit N] [--full] [--include-personal-data]` | One SELECT/WITH statement, run in a rolled-back transaction; returns 100 rows unless `--limit` (`truncated: true` when there were more); `--jsonl` prints rows. Forms submissions and user/membership tables need `--include-personal-data`. Put a space between a number and a following word (`1 AS x`, not `1AS x`). |
 
 ### Shape of `get`
@@ -85,10 +86,11 @@ primary draft, the version edit mode opens.
 | `publish <ref> [--version id]` | `opticli publish 123_456` (only when the user asked) |
 | `move <ref> --to <parent-ref>` | `opticli move 123 --to 45` |
 | `delete <ref>` | `opticli delete 123 --dry-run` (recycle bin; only when the user asked) |
+| `access <ref> [--grant Role=Levels] [--user Name=Levels] [--revoke Name] [--break-inheritance \| --inherit]` | `opticli access 123 --break-inheritance --revoke Everyone --grant Authenticated=Read --dry-run` (only when the user asked) |
+| `apply <plan.json\|->` | `opticli apply plan.json --dry-run` |
 
 `move` and `delete` refuse start pages, site and asset roots, the recycle bin and anything that contains them.
 `--dry-run` on `publish`, `move` and `delete` checks the arguments and the item without asking the site.
-| `apply <plan.json\|->` | `opticli apply plan.json --dry-run` |
 
 Positions in `area` are zero-based; a plain number is a position, `ref:789` (or a GUID) names the item by the
 content it shows. `--at` and `--display` only apply to `add`.
@@ -103,10 +105,27 @@ content it shows. `--at` and `--display` only apply to `add`.
   - ContentArea: `{"MainArea":[{"ref":"456"},{"ref":"789","displayOption":"wide"}]}` (replaces the whole area;
     use `area` to add/remove single items). An item may name its content by `"guid"` instead of `"ref"`.
   - Local block: `{"Hero":{"Heading":"Hi","Link":"/en/about/"}}`.
+  - Content provider content (e.g. DAM images, shown by `get` as `63__provider`) works wherever a content ref does:
+    `HeroImage=63__provider`, a ContentArea item `{"ref":"63__provider"}`, or its GUID.
   - Link (`LinkItem`): `{"Button":{"href":"456","text":"Read more"}}`, optionally with `title` and `target`. `Button=456` or `Button=/en/about/` changes
     only the href and keeps the text. Link collections take an array of the same objects. A content ref as `href`
     is stored as a permanent link, like the editor stores it.
 - Property names are checked against the content type before anything is sent; a typo fails with a suggestion.
+
+### Access rights
+
+- Levels: a comma list of `Read`, `Create`, `Edit`, `Delete`, `Publish`, `Administer`, or `FullAccess`.
+  `--grant Role=Levels` (roles) and `--user Name=Levels` (users) set that entry to exactly those levels;
+  `--revoke Name` removes the entry. Options repeat; revokes apply before grants.
+- An item that inherits can only be changed with `--break-inheritance`, which first copies the inherited entries onto
+  it. `--inherit` drops the item's own entries. Children that inherit follow; descendants are never rewritten.
+- Role names are checked against the site's virtual roles (Everyone, Authenticated, ...), its role provider and the
+  item's current entries; a typo fails with a suggestion. `--allow-unknown-role` accepts a role that only exists in
+  an identity provider so far.
+- Refused (exit 3): the root, the recycle bin, the global block folder, start pages, asset roots, and any change after
+  which no role that had Administer (or Administrators, WebAdmins, CmsAdmins) keeps it.
+- Output: `saved`, `dryRun`, `before` and `after` (both as `access <ref>` prints them). Access rights aren't
+  versioned: `before` is the only record, and an `apply` step's `undo` is the inverse `access` command.
 
 ### Concurrency
 
@@ -123,8 +142,10 @@ explicitly; `--force` skips the check.
   {"op": "area", "ref": "$page", "property": "MainArea", "action": "add", "item": "$teaser"}]}
 ```
 
-Ops: `set`, `create`, `area`, `block`, `translate`, `publish`, `move`, `delete`, with the same fields as the
-commands (`opticli apply --help` lists them). `"$id"` refers to what an earlier `create`/`block` with that `id` made.
+Ops: `set`, `create`, `area`, `block`, `translate`, `publish`, `move`, `delete`, `access`, with the same fields as
+the commands (`opticli apply --help` lists them). An `access` step:
+`{"op": "access", "ref": "$page", "grant": {"Authenticated": "Read"}, "revoke": ["Everyone"], "breakInheritance": true}`
+(`grantUsers` for users, `inherit`, `allowUnknownRole`). `"$id"` refers to what an earlier `create`/`block` with that `id` made.
 Every operation is validated before anything is written; on a failure opticli stops and reports what was saved and
 how to undo it. `--publish` on `apply` publishes every operation: only when the user asked.
 

@@ -53,6 +53,7 @@ internal static class AgentMiddleware
         AgentEndpoint.Languages => Created(LanguageEndpoint.Handle(request, await request.ReadBodyAsync<LanguageBranchRequest>())),
         AgentEndpoint.Publish => (200, PublishEndpoint.Handle(request, await request.ReadOptionalBodyAsync<PublishRequest>() ?? new PublishRequest())),
         AgentEndpoint.Move => (200, MoveEndpoint.Move(request, await request.ReadBodyAsync<MoveRequest>())),
+        AgentEndpoint.Access => (200, await AccessEndpoint.HandleAsync(request, await request.ReadBodyAsync<AccessRequest>())),
         AgentEndpoint.Delete => (200, MoveEndpoint.Delete(request)),
         AgentEndpoint.Read => (200, ReadEndpoint.Handle(request)),
         _ => throw new InvalidOperationException($"Unhandled endpoint {endpoint}."),

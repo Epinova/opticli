@@ -51,16 +51,8 @@ internal static class MoveEndpoint
     /// </summary>
     private static IContent Movable(AgentRequest request, WriteFlow flow, ContentReference link)
     {
-        var protectedLinks = new List<ContentReference>
-        {
-            ContentReference.RootPage, ContentReference.WasteBasket, ContentReference.GlobalBlockFolder,
-        };
-        foreach (var site in request.Service<ISiteDefinitionRepository>().List())
-        {
-            protectedLinks.AddRange([site.StartPage, site.SiteAssetsRoot, site.GlobalAssetsRoot, site.ContentAssetsRoot]);
-        }
-        protectedLinks.RemoveAll(ContentReference.IsNullOrEmpty);
-        if (protectedLinks.Any(p => p.CompareToIgnoreWorkID(link)))
+        var protectedLinks = ProtectedContent.Links(request.Service<ISiteDefinitionRepository>());
+        if (ProtectedContent.Contains(protectedLinks, link))
         {
             throw AgentException.Refused($"Content {link.ID} is a site root, start page, asset root or the recycle bin; opticli won't move or delete it.");
         }

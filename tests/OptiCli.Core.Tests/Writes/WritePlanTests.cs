@@ -129,4 +129,46 @@ public class WritePlanTests
         var move = new MoveOperation("1", "2");
         Assert.Same(move, move.WithPublish());
     }
+
+    [Fact]
+    public void Parses_access_operations_and_keeps_role_names_out_of_ref_mapping()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "create", "id": "root", "parent": "200", "type": "ArticlePage", "name": "Members"},
+              {"op": "access", "ref": "$root", "grant": {"Authenticated": "Read", "$root": ["Read", "Edit"]}, "revoke": ["Everyone"], "breakInheritance": true},
+              {"op": "access", "ref": "123", "grantUsers": {"someone@example.com": "FullAccess"}, "revoke": "Everyone", "allowUnknownRole": true}
+            ]}
+            """);
+
+        var access = Assert.IsType<AccessOperation>(plan.Steps[1].Operation);
+        Assert.Equal("Read", access.Grant!["Authenticated"]);
+        Assert.Equal("Read,Edit", access.Grant["$root"]);
+        Assert.Equal(["Everyone"], access.Revoke);
+        Assert.True(access.BreakInheritance);
+        Assert.Equal(["root"], plan.Steps[1].DependsOn);
+
+        var resolved = Assert.IsType<AccessOperation>(WritePlan.Resolve(plan.Steps[1], new Dictionary<string, int> { ["root"] = 900 }));
+        Assert.Equal("900", resolved.Ref);
+        Assert.True(resolved.Grant!.ContainsKey("$root"));
+
+        var users = Assert.IsType<AccessOperation>(plan.Steps[2].Operation);
+        Assert.Equal("FullAccess", users.GrantUsers!["someone@example.com"]);
+        Assert.Equal(["Everyone"], users.Revoke);
+        Assert.True(users.AllowUnknownRole);
+    }
+
+    [Fact]
+    public void Access_levels_and_shapes_are_checked_when_the_plan_is_parsed()
+    {
+        var error = Assert.Throws<UsageException>(() => WritePlan.Parse("""
+            {"operations": [
+              {"op": "access", "ref": "123", "grant": {"Authenticated": "Raed", "Everyone": 1}, "revoke": [1]}
+            ]}
+            """));
+
+        Assert.Contains("'Raed' is not an access level", error.Message);
+        Assert.Contains("\"grant\".Everyone must be levels", error.Message);
+        Assert.Contains("\"revoke\" must be an array of strings", error.Message);
+    }
 }

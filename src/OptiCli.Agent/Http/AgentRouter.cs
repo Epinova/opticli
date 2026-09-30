@@ -12,6 +12,7 @@ internal enum AgentEndpoint
     Languages,
     Publish,
     Move,
+    Access,
     Delete,
     Read,
 }
@@ -29,7 +30,7 @@ internal static partial class AgentRouter
 
     private static readonly string RouteList =
         $"GET {AgentRoutes.Prefix}/ping, GET {AgentRoutes.Prefix}/types/{{name}}, POST {AgentRoutes.Prefix}/content, " +
-        $"POST {AgentRoutes.Prefix}/content/{{ref}}/draft|languages|publish|move, GET|DELETE {AgentRoutes.Prefix}/content/{{ref}}";
+        $"POST {AgentRoutes.Prefix}/content/{{ref}}/draft|languages|publish|move|access, GET|DELETE {AgentRoutes.Prefix}/content/{{ref}}";
 
     /// <exception cref="AgentException">No route matches, or it belongs to another protocol version.</exception>
     public static RouteMatch Match(string method, string? path)
@@ -61,6 +62,7 @@ internal static partial class AgentRouter
             ["content", var reference, "languages"] => (AgentEndpoint.Languages, reference, "POST"),
             ["content", var reference, "publish"] => (AgentEndpoint.Publish, reference, "POST"),
             ["content", var reference, "move"] => (AgentEndpoint.Move, reference, "POST"),
+            ["content", var reference, "access"] => (AgentEndpoint.Access, reference, "POST"),
             _ => throw NotFound(shown),
         };
 

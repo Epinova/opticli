@@ -14,7 +14,7 @@ var root = new RootCommand($$$"""
 
     Refs: {{{ContentRefParser.Syntax}}}
     Reads query the database directly and need nothing running.
-    Writes (set, create, area, block, translate, publish, move, delete, apply) go through the CMS inside the running site:
+    Writes (set, create, area, block, translate, publish, move, delete, access, apply) go through the CMS inside the running site:
       `opticli serve` first, `opticli serve --stop` when done. They save drafts unless --publish, delete only moves to the
       recycle bin, and every write takes --dry-run.
     Output: compact JSON {"ok": true, "data": ..., "meta": {"source", "version", "next", "warnings", "database"}} when
@@ -57,6 +57,7 @@ root.Subcommands.Add(TranslateCommand.Create(options));
 root.Subcommands.Add(PublishCommand.Create(options));
 root.Subcommands.Add(MoveCommand.Create(options));
 root.Subcommands.Add(DeleteCommand.Create(options));
+root.Subcommands.Add(AccessCommand.Create(options));
 root.Subcommands.Add(ApplyCommand.Create(options));
 root.Subcommands.Add(SkillCommand.Create(options));
 

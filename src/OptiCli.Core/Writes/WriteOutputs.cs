@@ -70,7 +70,19 @@ public sealed record MoveOutput(
     int Descendants,
     bool? RecycleBin = null);
 
-/// <param name="Output">A <see cref="WriteOutput"/> or <see cref="MoveOutput"/>.</param>
+/// <summary>Result of <c>access</c>: the item's effective ACL before and after.</summary>
+/// <param name="Saved">False for a dry run, and when the change was already in place.</param>
+public sealed record AccessOutput(
+    string Ref,
+    Guid Guid,
+    string? Type,
+    string? Name,
+    bool Saved,
+    bool DryRun,
+    AccessList Before,
+    AccessList After);
+
+/// <param name="Output">A <see cref="WriteOutput"/>, <see cref="MoveOutput"/> or <see cref="AccessOutput"/>.</param>
 /// <param name="Source"><c>agent</c> when the site did the work, <c>db</c> for dry runs opticli checks itself.</param>
 /// <param name="CreatedId">Content id of what a create made (for plans' <c>$id</c>).</param>
 public sealed record WriteOutcome(object Output, string Source, int? CreatedId, IReadOnlyList<string> Warnings);

@@ -59,6 +59,7 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
 | Items of a type, filtered | `opticli find --type ArticlePage --where Heading~news --under /en/` |
 | Where a block, page or file is used | `opticli where-used 456` (`--pages`: follow nested blocks up to the pages) |
 | Text anywhere in names or text properties | `opticli search "opening hours" --in strings` |
+| Who may read or edit an item (access rights) | `opticli access 123` (`inherited`, `from`: where they come from) |
 | Version history / unpublished work | `opticli versions 123` / `opticli drafts --since 2024-06-01 --kind page` |
 | Anything else (read-only) | `opticli sql "SELECT TOP 10 ... FROM tblContent ..."` |
 
@@ -133,6 +134,10 @@ writes can run as one validated plan with `opticli apply plan.json`. Syntax for 
 - Never run `delete` unless the user explicitly asked to delete that content. (It only moves content to the recycle
   bin; undo with `opticli move <ref> --to <previousParent>`. Start pages, site and asset roots, and anything that
   contains them, are refused.)
+- Never change access rights (`access` with `--grant`, `--user`, `--revoke`, `--break-inheritance`, `--inherit`) unless
+  the user explicitly asked for it. They aren't versioned: report the `before` from the output, which is the only
+  record of what they were. Root, start pages and asset roots, and changes that leave no role with Administer, are
+  refused.
 - Always `--dry-run` a multi-step `apply` plan first, and a single write when you are unsure of its effect.
 - Start `serve` only when a write is needed, and stop it (`opticli serve --stop`) when you are done.
 - Never run `opticli db use` or pass `--db`/`--connection`/`OPTICLI_DB` on your own initiative: which database is

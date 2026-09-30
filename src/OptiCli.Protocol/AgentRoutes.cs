@@ -72,6 +72,16 @@ public static class AgentRoutes
     public static string Move(string contentRef) => $"{Content(contentRef)}/move";
 
     /// <summary>
+    /// <c>POST /v1/content/{ref}/access</c>. Body: <see cref="AccessRequest"/>. Response: <see cref="AccessResult"/>.
+    /// Replaces the item's ACL (<c>SecuritySaveType.Replace</c>); descendants that inherit follow, nothing else is changed.
+    /// Access rights aren't versioned: <see cref="AccessResult.Before"/> is the only record of the previous state.
+    /// Errors: <c>refused</c> for protected content (root, recycle bin, start pages, asset roots, the global block
+    /// folder) and for a change that leaves no admin role with Administer; <c>usage</c> for an inherited ACL changed
+    /// without <c>breakInheritance</c>, unknown roles (unless <c>allowUnknownRole</c>) and bad levels.
+    /// </summary>
+    public static string Access(string contentRef) => $"{Content(contentRef)}/access";
+
+    /// <summary>
     /// <c>DELETE /v1/content/{ref}</c>. Moves the content (and its descendants) to the recycle bin; nothing
     /// is ever deleted permanently. Response: <see cref="MoveResult"/>. Errors: <c>refused</c> for
     /// protected content, <c>conflict</c> when it is already in the recycle bin.
