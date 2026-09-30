@@ -60,18 +60,48 @@ public class SkillTests
     }
 
     [Fact]
-    public void A_different_installed_copy_is_only_replaced_with_force()
+    public void A_copy_opticli_installed_and_nobody_edited_is_replaced_without_force()
     {
         using var temp = new TempDirectory();
         var target = temp.Combine("skills/opticli");
         SkillInstaller.Install(Bundle("1.0.0"), target, force: false);
 
+        var updated = SkillInstaller.Install(Bundle("1.2.0"), target, force: false);
+
+        Assert.Equal(("updated", "1.0.0", "1.2.0"), (updated.Status, updated.PreviousVersion, updated.Version));
+        Assert.Contains("1.2.0", File.ReadAllText(Path.Combine(target, "SKILL.md")), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_copy_with_local_edits_is_only_replaced_with_force()
+    {
+        using var temp = new TempDirectory();
+        var target = temp.Combine("skills/opticli");
+        SkillInstaller.Install(Bundle("1.0.0"), target, force: false);
+        File.AppendAllText(Path.Combine(target, "reference.md"), "\nmy notes");
+
         var error = Assert.Throws<ConflictException>(() => SkillInstaller.Install(Bundle("1.2.0"), target, force: false));
         var forced = SkillInstaller.Install(Bundle("1.2.0"), target, force: true);
 
-        Assert.Contains("1.0.0", error.Message, StringComparison.Ordinal);
+        Assert.Contains("local edits in reference.md", error.Message, StringComparison.Ordinal);
         Assert.Contains("--force", error.Hint, StringComparison.Ordinal);
         Assert.Equal(("updated", "1.0.0", "1.2.0"), (forced.Status, forced.PreviousVersion, forced.Version));
+    }
+
+    [Fact]
+    public void A_copy_without_a_manifest_needs_force_once()
+    {
+        using var temp = new TempDirectory();
+        var target = temp.Combine("skills/opticli");
+        SkillInstaller.Install(Bundle("1.0.0"), target, force: false);
+        File.Delete(Path.Combine(target, SkillInstaller.ManifestFile));
+
+        var error = Assert.Throws<ConflictException>(() => SkillInstaller.Install(Bundle("1.2.0"), target, force: false));
+        SkillInstaller.Install(Bundle("1.2.0"), target, force: true);
+        var next = SkillInstaller.Install(Bundle("1.3.0"), target, force: false);
+
+        Assert.Contains("no record of what opticli installed", error.Message, StringComparison.Ordinal);
+        Assert.Equal("updated", next.Status);
     }
 
     [Theory]
