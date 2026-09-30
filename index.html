@@ -133,15 +133,15 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
     <h1><span class="prompt">❯</span>opticli</h1>
     <p class="lead">A command-line tool for the content in your Optimizely CMS 12 site. Look up pages and blocks, trace them
       to the code that renders them, and change them through the CMS API, from your terminal or through your coding agent.</p>
-    <div class="actions"><a class="btn" href="https://github.com/epinova/opticli">View on GitHub</a><a href="#get-started">Get started</a><a href="#whats-new">What's new in 0.4</a><a href="#changelog">Changelog</a></div>
+    <div class="actions"><a class="btn" href="https://github.com/epinova/opticli">View on GitHub</a><a href="#get-started">Get started</a><a href="#changelog">Changelog</a></div>
   </div>
 
   <div class="stage">
     <div class="term">
       <div class="term-bar"><i></i><i></i><i></i><span>opticli on the Alloy sample site</span></div>
-      <div class="player" id="player-demo"></div>
+      <div class="player" id="player"></div>
     </div>
-    <ol class="chapters" data-player="demo"><li><button type="button" data-index="0" aria-current="false"><span class="meta"><span class="n">1</span><span class="time">0:04</span></span><span class="t">No setup</span></button></li><li><button type="button" data-index="1" aria-current="false"><span class="meta"><span class="n">2</span><span class="time">0:28</span></span><span class="t">Find the content</span></button></li><li><button type="button" data-index="2" aria-current="false"><span class="meta"><span class="n">3</span><span class="time">0:57</span></span><span class="t">Find the code</span></button></li><li><button type="button" data-index="3" aria-current="false"><span class="meta"><span class="n">4</span><span class="time">1:14</span></span><span class="t">Make the change</span></button></li><li><button type="button" data-index="4" aria-current="false"><span class="meta"><span class="n">5</span><span class="time">2:35</span></span><span class="t">Let an agent do it</span></button></li></ol>
+    <ol class="chapters" id="chapters"><li><button type="button" data-index="0" aria-current="false"><span class="meta"><span class="n">1</span><span class="time">0:04</span></span><span class="t">No setup</span></button></li><li><button type="button" data-index="1" aria-current="false"><span class="meta"><span class="n">2</span><span class="time">0:28</span></span><span class="t">Find the content</span></button></li><li><button type="button" data-index="2" aria-current="false"><span class="meta"><span class="n">3</span><span class="time">0:57</span></span><span class="t">Find the code</span></button></li><li><button type="button" data-index="3" aria-current="false"><span class="meta"><span class="n">4</span><span class="time">1:14</span></span><span class="t">Make the change</span></button></li><li><button type="button" data-index="4" aria-current="false"><span class="meta"><span class="n">5</span><span class="time">2:36</span></span><span class="t">A section as a plan</span></button></li><li><button type="button" data-index="5" aria-current="false"><span class="meta"><span class="n">6</span><span class="time">3:47</span></span><span class="t">Run it again</span></button></li><li><button type="button" data-index="6" aria-current="false"><span class="meta"><span class="n">7</span><span class="time">4:15</span></span><span class="t">Let an agent do it</span></button></li></ol>
   </div>
 
   <section>
@@ -161,29 +161,6 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
       <li><h3>Change content through the CMS API</h3>
         <p>Writes go through <code>IContentRepository</code> inside your running site, so validation, versioning, events and caches all work. Changes are saved as drafts unless you publish, and every write command takes <code>--dry-run</code>.</p>
         <code class="eg">opticli set 123 Heading="New title" --dry-run</code></li>
-      <li><h3>Nothing to add to your solution</h3>
-        <p><code>serve</code> starts your existing build with a small agent injected at startup, through a .NET startup hook and a hosting startup. Your site's code and config stay as they are.</p>
-        <code class="eg">opticli serve</code></li>
-      <li><h3>Built for coding agents</h3>
-        <p>Piped output is compact JSON. Every item has a ref you can pass to the next command, and errors come with a code and a hint. A Claude Code skill tells the agent when to use opticli and how to use it safely.</p>
-        <code class="eg">opticli skill install</code></li>
-    </ul>
-  </section>
-
-  <section id="whats-new">
-    <div class="head">
-      <h2>What's new in 0.4</h2>
-      <p>File uploads, access rights, the page settings editors use, and plans you can run again. The screencast builds a
-        members-only area for Alloy resellers with one plan, checks it with a dry run, applies it and runs it again.</p>
-    </div>
-    <div class="stage">
-      <div class="term">
-        <div class="term-bar"><i></i><i></i><i></i><span>opticli 0.4 on the Alloy sample site</span></div>
-        <div class="player" id="player-whatsnew"></div>
-      </div>
-      <ol class="chapters" data-player="whatsnew"><li><button type="button" data-index="0" aria-current="false"><span class="meta"><span class="n">1</span><span class="time">0:04</span></span><span class="t">One plan</span></button></li><li><button type="button" data-index="1" aria-current="false"><span class="meta"><span class="n">2</span><span class="time">0:36</span></span><span class="t">Dry run</span></button></li><li><button type="button" data-index="2" aria-current="false"><span class="meta"><span class="n">3</span><span class="time">1:05</span></span><span class="t">Apply</span></button></li><li><button type="button" data-index="3" aria-current="false"><span class="meta"><span class="n">4</span><span class="time">1:45</span></span><span class="t">Run it again</span></button></li><li><button type="button" data-index="4" aria-current="false"><span class="meta"><span class="n">5</span><span class="time">2:19</span></span><span class="t">Ask an agent</span></button></li></ol>
-    </div>
-    <ul class="features">
       <li><h3>Upload files as media</h3>
         <p>A file becomes a media item of the type the site registers for its extension, in a page's own folder or any other.
           The output says where the site stored it.</p>
@@ -208,6 +185,12 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
         <p>Shortcuts and external links, simple addresses, categories, child sort order and sort index, and publish dates.
           <code>get</code> shows them, and diffs name what changed.</p>
         <code class="eg">opticli set 123 Shortcut=https://example.com SimpleAddress=campaign Category=News</code></li>
+      <li><h3>Nothing to add to your solution</h3>
+        <p><code>serve</code> starts your existing build with a small agent injected at startup, through a .NET startup hook and a hosting startup. Your site's code and config stay as they are.</p>
+        <code class="eg">opticli serve</code></li>
+      <li><h3>Built for coding agents</h3>
+        <p>Piped output is compact JSON. Every item has a ref you can pass to the next command, and errors come with a code and a hint. A Claude Code skill tells the agent when to use opticli and how to use it safely.</p>
+        <code class="eg">opticli skill install</code></li>
     </ul>
   </section>
 
@@ -283,46 +266,39 @@ opticli skill install                   <span class="c"># teach Claude Code to u
 
   <footer>
     <p>opticli is open source under the MPL-2.0. It is an independent project, not affiliated with or endorsed by Optimizely.
-      The screencasts were recorded on Optimizely's Alloy sample site, with long pauses shortened.</p>
+      The screencast was recorded on Optimizely's Alloy sample site, with long pauses shortened.</p>
   </footer>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/asciinema-player@3.17.0/dist/bundle/asciinema-player.min.js"></script>
 <script>
-const players = {};
+let player;
 
 function start() {
-  for (const [name, file] of [['demo', 'opticli-demo.cast'], ['whatsnew', 'opticli-whatsnew.cast']]) {
-    const player = AsciinemaPlayer.create(file, document.getElementById(`player-${name}`), {
-      theme: 'opti',
-      fit: 'width',
-      poster: 'npt:0:4.5',
-      terminalFontFamily: '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace',
-      terminalLineHeight: 1.3,
-    });
-    player.addEventListener('marker', ({ index }) => highlight(name, index));
-    players[name] = player;
-  }
+  player = AsciinemaPlayer.create('opticli-demo.cast', document.getElementById('player'), {
+    theme: 'opti',
+    fit: 'width',
+    poster: 'npt:0:4.5',
+    terminalFontFamily: '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace',
+    terminalLineHeight: 1.3,
+  });
+  player.addEventListener('marker', ({ index }) => highlight(index));
 }
 
-function highlight(name, index) {
-  document.querySelectorAll(`.chapters[data-player="${name}"] button`).forEach((b, i) => b.setAttribute('aria-current', i === index ? 'true' : 'false'));
+function highlight(index) {
+  document.querySelectorAll('#chapters button').forEach((b, i) => b.setAttribute('aria-current', i === index ? 'true' : 'false'));
 }
 
-document.querySelectorAll('.chapters[data-player]').forEach(list => list.addEventListener('click', async e => {
+document.getElementById('chapters').addEventListener('click', async e => {
   const button = e.target.closest('button[data-index]');
-  const name = list.dataset.player;
-  const player = players[name];
   if (!button || !player) return;
   const index = Number(button.dataset.index);
-  // Only one screencast plays at a time.
-  for (const [other, p] of Object.entries(players)) if (other !== name) p.pause();
   await player.seek({ marker: index });
-  highlight(name, index);
+  highlight(index);
   player.play();
-}));
+});
 
-// The terminals measure their font when they are created, so wait for the font (at most 1.5 s).
+// The terminal measures its font when it is created, so wait for the font (at most 1.5 s).
 Promise.race([
   document.fonts ? document.fonts.load('14px "JetBrains Mono"') : Promise.resolve(),
   new Promise(r => setTimeout(r, 1500)),
