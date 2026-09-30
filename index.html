@@ -63,7 +63,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .term-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,.06); color: #8793a1; font: 12px var(--mono); }
 .term-bar i { width: 10px; height: 10px; border-radius: 50%; background: #2b3642; display: block; }
 .term-bar span { margin-left: 8px; }
-#player { min-height: 200px; }
+.player { min-height: 200px; }
 .asciinema-player-theme-opti {
   --term-color-foreground: #d7dee6;
   --term-color-background: #121a22;
@@ -112,6 +112,16 @@ section > .head p { color: var(--muted); max-width: 70ch; }
 pre.cmd { margin: 0; background: var(--term-bg); color: var(--term-fg); border-radius: 8px; padding: 16px 18px; overflow-x: auto; font: .88rem/1.7 var(--mono); }
 pre.cmd .c { color: #7c8896; }
 
+.changelog { display: grid; gap: 22px; margin: 0; padding: 0; list-style: none; }
+.changelog > li { display: grid; grid-template-columns: 9.5rem 1fr; gap: 6px 24px; border-top: 1px solid var(--rule); padding-top: 14px; }
+.changelog .v { display: grid; gap: 2px; align-content: start; }
+.changelog .v b { font: 700 1.05rem var(--mono); color: var(--accent); }
+.changelog .v span { color: var(--muted); font-size: .85rem; }
+.changelog ul { margin: 0; padding-left: 1.1em; display: grid; gap: 6px; }
+.changelog li li { color: var(--muted); font-size: .95rem; }
+.changelog li li b { color: var(--ink); font-weight: 600; }
+@media (max-width: 640px) { .changelog > li { grid-template-columns: 1fr; } }
+
 footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rule); padding-top: 18px; max-width: 80ch; display: grid; gap: 8px; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -123,15 +133,15 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
     <h1><span class="prompt">❯</span>opticli</h1>
     <p class="lead">A command-line tool for the content in your Optimizely CMS 12 site. Look up pages and blocks, trace them
       to the code that renders them, and change them through the CMS API, from your terminal or through your coding agent.</p>
-    <div class="actions"><a class="btn" href="https://github.com/epinova/opticli">View on GitHub</a><a href="#get-started">Get started</a></div>
+    <div class="actions"><a class="btn" href="https://github.com/epinova/opticli">View on GitHub</a><a href="#get-started">Get started</a><a href="#whats-new">What's new in 0.4</a><a href="#changelog">Changelog</a></div>
   </div>
 
   <div class="stage">
     <div class="term">
       <div class="term-bar"><i></i><i></i><i></i><span>opticli on the Alloy sample site</span></div>
-      <div id="player"></div>
+      <div class="player" id="player-demo"></div>
     </div>
-    <ol class="chapters" id="chapters"><li><button type="button" data-index="0" aria-current="false"><span class="meta"><span class="n">1</span><span class="time">0:04</span></span><span class="t">No setup</span></button></li><li><button type="button" data-index="1" aria-current="false"><span class="meta"><span class="n">2</span><span class="time">0:28</span></span><span class="t">Find the content</span></button></li><li><button type="button" data-index="2" aria-current="false"><span class="meta"><span class="n">3</span><span class="time">0:57</span></span><span class="t">Find the code</span></button></li><li><button type="button" data-index="3" aria-current="false"><span class="meta"><span class="n">4</span><span class="time">1:14</span></span><span class="t">Make the change</span></button></li><li><button type="button" data-index="4" aria-current="false"><span class="meta"><span class="n">5</span><span class="time">2:35</span></span><span class="t">Let an agent do it</span></button></li></ol>
+    <ol class="chapters" data-player="demo"><li><button type="button" data-index="0" aria-current="false"><span class="meta"><span class="n">1</span><span class="time">0:04</span></span><span class="t">No setup</span></button></li><li><button type="button" data-index="1" aria-current="false"><span class="meta"><span class="n">2</span><span class="time">0:28</span></span><span class="t">Find the content</span></button></li><li><button type="button" data-index="2" aria-current="false"><span class="meta"><span class="n">3</span><span class="time">0:57</span></span><span class="t">Find the code</span></button></li><li><button type="button" data-index="3" aria-current="false"><span class="meta"><span class="n">4</span><span class="time">1:14</span></span><span class="t">Make the change</span></button></li><li><button type="button" data-index="4" aria-current="false"><span class="meta"><span class="n">5</span><span class="time">2:35</span></span><span class="t">Let an agent do it</span></button></li></ol>
   </div>
 
   <section>
@@ -160,6 +170,47 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
     </ul>
   </section>
 
+  <section id="whats-new">
+    <div class="head">
+      <h2>What's new in 0.4</h2>
+      <p>File uploads, access rights, the page settings editors use, and plans you can run again. The screencast builds a
+        members-only area for Alloy resellers with one plan, checks it with a dry run, applies it and runs it again.</p>
+    </div>
+    <div class="stage">
+      <div class="term">
+        <div class="term-bar"><i></i><i></i><i></i><span>opticli 0.4 on the Alloy sample site</span></div>
+        <div class="player" id="player-whatsnew"></div>
+      </div>
+      <ol class="chapters" data-player="whatsnew"><li><button type="button" data-index="0" aria-current="false"><span class="meta"><span class="n">1</span><span class="time">0:04</span></span><span class="t">One plan</span></button></li><li><button type="button" data-index="1" aria-current="false"><span class="meta"><span class="n">2</span><span class="time">0:36</span></span><span class="t">Dry run</span></button></li><li><button type="button" data-index="2" aria-current="false"><span class="meta"><span class="n">3</span><span class="time">1:05</span></span><span class="t">Apply</span></button></li><li><button type="button" data-index="3" aria-current="false"><span class="meta"><span class="n">4</span><span class="time">1:45</span></span><span class="t">Run it again</span></button></li><li><button type="button" data-index="4" aria-current="false"><span class="meta"><span class="n">5</span><span class="time">2:19</span></span><span class="t">Ask an agent</span></button></li></ol>
+    </div>
+    <ul class="features">
+      <li><h3>Upload files as media</h3>
+        <p>A file becomes a media item of the type the site registers for its extension, in a page's own folder or any other.
+          The output says where the site stored it.</p>
+        <code class="eg">opticli upload price-list.pdf --for 123 --type GenericMedia</code></li>
+      <li><h3>Read and change access rights</h3>
+        <p>See who may read and edit an item and where that is inherited from. Changes apply to that one item and never leave
+          the site without an administering role.</p>
+        <code class="eg">opticli access 123 --break-inheritance --revoke Everyone --grant Authenticated=Read</code></li>
+      <li><h3>Plans you can run again</h3>
+        <p>With <code>"guidNamespace"</code> every item a plan creates gets the same GUID in every database.
+          <code>--update-existing</code> then updates what is there, restores it from the recycle bin, and leaves finished steps alone.</p>
+        <code class="eg">opticli apply content/section/plan.json --update-existing</code></li>
+      <li><h3>Rich text from files</h3>
+        <p>A plan value of <code>"@body.html"</code> is that file's text, so long rich text stays in reviewable files next to
+          the plan instead of inside its JSON.</p>
+        <code class="eg">{"op": "set", "ref": "123", "properties": {"MainBody": "@body.html"}}</code></li>
+      <li><h3>Dry runs that reach every step</h3>
+        <p>Steps on content the plan hasn't created yet run against stand-ins, so validators, required properties and
+          <code>[AllowedTypes]</code> are checked before anything is written.</p>
+        <code class="eg">opticli apply plan.json --publish --dry-run</code></li>
+      <li><h3>The page settings editors use</h3>
+        <p>Shortcuts and external links, simple addresses, categories, child sort order and sort index, and publish dates.
+          <code>get</code> shows them, and diffs name what changed.</p>
+        <code class="eg">opticli set 123 Shortcut=https://example.com SimpleAddress=campaign Category=News</code></li>
+    </ul>
+  </section>
+
   <section>
     <div class="head">
       <h2>How it works</h2>
@@ -178,12 +229,12 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
   <section id="get-started">
     <div class="head">
       <h2>Get started</h2>
-      <p>You need the .NET 8 SDK or newer. Run opticli from anywhere inside a CMS 12 site's repository.</p>
+      <p>You need the .NET 8 SDK or newer. Install opticli from <a href="https://www.nuget.org/packages/OptiCli">nuget.org</a>
+        as a global tool, then run it from anywhere inside a CMS 12 site's repository.</p>
     </div>
-    <pre class="cmd"><span class="c"># build and install as a global tool</span>
-git clone https://github.com/epinova/opticli.git &amp;&amp; cd opticli
-dotnet pack src/OptiCli -c Release -o artifacts
-dotnet tool install -g OptiCli --add-source ./artifacts
+    <pre class="cmd"><span class="c"># install, or update to the latest version</span>
+dotnet tool install -g OptiCli
+dotnet tool update -g OptiCli
 
 <span class="c"># then, in your site's repository</span>
 opticli doctor                          <span class="c"># what it found: project, database, content types</span>
@@ -191,41 +242,87 @@ opticli resolve https://example.com/en/about/
 opticli skill install                   <span class="c"># teach Claude Code to use it</span></pre>
   </section>
 
+  <section id="changelog">
+    <div class="head">
+      <h2>Changelog</h2>
+      <p>Every release is on <a href="https://www.nuget.org/packages/OptiCli">nuget.org</a>. After updating, run
+        <code>opticli skill install</code> again to update the skill.</p>
+    </div>
+    <ol class="changelog">
+      <li><div class="v"><b>0.4.1</b><span>30 September 2026</span></div>
+        <ul>
+          <li><b>Fixed:</b> <code>serve --status</code>, <code>--logs</code> and <code>--stop</code>, which 0.4.0 refused, and
+            <code>"https": true</code> in the user config, which 0.4.0 ignored.</li>
+        </ul></li>
+      <li><div class="v"><b>0.4.0</b><span>30 September 2026</span></div>
+        <ul>
+          <li><b>Upload:</b> <code>opticli upload</code> creates media from files up to 50 MB, also as a plan step.</li>
+          <li><b>Access rights:</b> <code>opticli access</code> shows and changes an item's ACL: grants for roles and users,
+            revokes, breaking and restoring inheritance, with a lock-out check.</li>
+          <li><b>Plans:</b> <code>"@file"</code> values, fixed GUIDs with <code>"guidNamespace"</code>,
+            <code>apply --update-existing</code>, and dry runs that check steps on planned content against stand-ins.</li>
+          <li><b>Page settings:</b> Shortcut, SimpleAddress, Category, ChildSortOrder, SortIndex, StartPublish and
+            StopPublish, in <code>get</code> and as values to set. Block list properties can be written.</li>
+          <li><b>Refs:</b> content provider refs (<code>63__provider</code>) work as <code>get</code> prints them.</li>
+          <li><b>serve:</b> <code>--https</code> also binds <code>https://localhost</code> for sites that redirect to HTTPS.</li>
+          <li><b>Skill:</b> <code>skill install</code> replaces a copy it installed when the files are unedited, without <code>--force</code>.</li>
+          <li><b>delete</b> lists the "For this page" folders that stay behind, as in the CMS.</li>
+        </ul></li>
+      <li><div class="v"><b>0.3.0</b><span>30 September 2026</span></div>
+        <ul>
+          <li>First release on nuget.org. Reads straight from the database: <code>doctor</code>, <code>get</code>,
+            <code>tree</code>, <code>find</code>, <code>search</code>, <code>where-used</code>, <code>resolve</code>,
+            <code>type</code>, <code>allowed-in</code>, <code>versions</code>, <code>drafts</code>, <code>sql</code> and more.</li>
+          <li>Writes through the running site with <code>serve</code>: <code>set</code>, <code>create</code>,
+            <code>block</code>, <code>area</code>, <code>publish</code>, <code>translate</code>, <code>move</code>,
+            <code>delete</code> and <code>apply</code>.</li>
+          <li>A Claude Code skill, installed with <code>opticli skill install</code>.</li>
+        </ul></li>
+    </ol>
+  </section>
+
   <footer>
     <p>opticli is open source under the MPL-2.0. It is an independent project, not affiliated with or endorsed by Optimizely.
-      The screencast was recorded on Optimizely's Alloy sample site, with long pauses shortened.</p>
+      The screencasts were recorded on Optimizely's Alloy sample site, with long pauses shortened.</p>
   </footer>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/asciinema-player@3.17.0/dist/bundle/asciinema-player.min.js"></script>
 <script>
-let player;
+const players = {};
 
 function start() {
-  player = AsciinemaPlayer.create('opticli-demo.cast', document.getElementById('player'), {
-    theme: 'opti',
-    fit: 'width',
-    poster: 'npt:0:4.5',
-    terminalFontFamily: '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace',
-    terminalLineHeight: 1.3,
-  });
-  player.addEventListener('marker', ({ index }) => highlight(index));
+  for (const [name, file] of [['demo', 'opticli-demo.cast'], ['whatsnew', 'opticli-whatsnew.cast']]) {
+    const player = AsciinemaPlayer.create(file, document.getElementById(`player-${name}`), {
+      theme: 'opti',
+      fit: 'width',
+      poster: 'npt:0:4.5',
+      terminalFontFamily: '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace',
+      terminalLineHeight: 1.3,
+    });
+    player.addEventListener('marker', ({ index }) => highlight(name, index));
+    players[name] = player;
+  }
 }
 
-function highlight(index) {
-  document.querySelectorAll('#chapters button').forEach((b, i) => b.setAttribute('aria-current', i === index ? 'true' : 'false'));
+function highlight(name, index) {
+  document.querySelectorAll(`.chapters[data-player="${name}"] button`).forEach((b, i) => b.setAttribute('aria-current', i === index ? 'true' : 'false'));
 }
 
-document.getElementById('chapters').addEventListener('click', async e => {
+document.querySelectorAll('.chapters[data-player]').forEach(list => list.addEventListener('click', async e => {
   const button = e.target.closest('button[data-index]');
+  const name = list.dataset.player;
+  const player = players[name];
   if (!button || !player) return;
   const index = Number(button.dataset.index);
+  // Only one screencast plays at a time.
+  for (const [other, p] of Object.entries(players)) if (other !== name) p.pause();
   await player.seek({ marker: index });
-  highlight(index);
+  highlight(name, index);
   player.play();
-});
+}));
 
-// The terminal measures its font when it is created, so wait for the font (at most 1.5 s).
+// The terminals measure their font when they are created, so wait for the font (at most 1.5 s).
 Promise.race([
   document.fonts ? document.fonts.load('14px "JetBrains Mono"') : Promise.resolve(),
   new Promise(r => setTimeout(r, 1500)),
