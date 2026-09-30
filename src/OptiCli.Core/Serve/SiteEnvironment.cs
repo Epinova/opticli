@@ -17,6 +17,7 @@ public static class SiteEnvironment
     /// <param name="existingStartupHooks">The caller's own <c>DOTNET_STARTUP_HOOKS</c>, kept ahead of the agent.</param>
     /// <param name="includeUrls">False for launch profiles, whose applicationUrl sets the URLs instead.</param>
     /// <param name="approvedRemote">The remote development database the site may use (the agent refuses other remote ones); null for a local one.</param>
+    /// <param name="httpsPort">Also listen on <c>https://localhost:&lt;port&gt;</c> (with the development certificate), for browsing a site that redirects to HTTPS.</param>
     public static IReadOnlyList<KeyValuePair<string, string>> Build(
         string agentDll,
         string token,
@@ -25,7 +26,8 @@ public static class SiteEnvironment
         VerifiedConnectionString? connection,
         string? existingStartupHooks = null,
         bool includeUrls = true,
-        VerifiedConnectionString? approvedRemote = null)
+        VerifiedConnectionString? approvedRemote = null,
+        int? httpsPort = null)
     {
         var variables = new List<KeyValuePair<string, string>>
         {
@@ -33,7 +35,12 @@ public static class SiteEnvironment
         };
         if (includeUrls)
         {
-            variables.Add(new("ASPNETCORE_URLS", Url(port)));
+            variables.Add(new("ASPNETCORE_URLS", httpsPort is { } secure ? $"{Url(port)};{HttpsUrl(secure)}" : Url(port)));
+            if (httpsPort is { } redirectPort)
+            {
+                // Where UseHttpsRedirection sends browsers; the agent answers on plain HTTP ahead of it.
+                variables.Add(new("ASPNETCORE_HTTPS_PORT", redirectPort.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+            }
         }
         variables.Add(new(StartupHooksVariable, StartupHooks(existingStartupHooks, agentDll)));
         variables.Add(new(AgentProtocol.TokenVariable, token));
@@ -68,4 +75,7 @@ public static class SiteEnvironment
     }
 
     public static string Url(int port) => $"http://127.0.0.1:{port}";
+
+    /// <summary><c>localhost</c>, the name the ASP.NET Core development certificate is issued for.</summary>
+    public static string HttpsUrl(int port) => $"https://localhost:{port}";
 }

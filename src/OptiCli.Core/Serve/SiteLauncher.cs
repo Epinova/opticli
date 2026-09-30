@@ -16,7 +16,8 @@ public sealed record LaunchRequest(
     SiteOutput Output,
     string AgentDll,
     int Port,
-    TimeSpan Timeout);
+    TimeSpan Timeout,
+    int? HttpsPort = null);
 
 /// <summary>Starts the site with the agent injected, waits until the agent answers and checks it uses the pinned database.</summary>
 public static class SiteLauncher
@@ -119,7 +120,8 @@ public static class SiteLauncher
             request.ConnectionName,
             request.Connection,
             System.Environment.GetEnvironmentVariable(SiteEnvironment.StartupHooksVariable),
-            approvedRemote: request.Connection);
+            approvedRemote: request.Connection,
+            httpsPort: request.HttpsPort);
         // The site inherits this process's environment: blank what this run doesn't set, so a stale export from
         // `opticli env` can't approve another remote database or pin another connection name.
         string[] owned = [AgentProtocol.TokenVariable, AgentProtocol.DatabaseVariable, AgentProtocol.ConnectionNameVariable, AgentProtocol.RemoteDatabaseVariable];
@@ -140,7 +142,8 @@ public static class SiteLauncher
             process.Id,
             SiteProcess.StartTime(process),
             request.Output.Dll,
-            request.AgentDll);
+            request.AgentDll,
+            request.HttpsPort);
         store.Write(state);
         return state;
     }
@@ -195,6 +198,12 @@ public static class SiteLauncher
         {
             return new RefusedException($"{message} The opticli agent refused to start the site: {lines.Last(l => l.Contains(RefusalMarker, StringComparison.Ordinal)).Trim()}",
                 "The site's effective database is not the one opticli pinned; details.lines has the site's output.") { Details = details };
+        }
+        if (lines.Any(l => l.Contains("Unable to configure HTTPS endpoint", StringComparison.Ordinal) || l.Contains("developer certificate could not be found", StringComparison.Ordinal)))
+        {
+            return new UnreachableException($"{message} The site found no HTTPS development certificate.",
+                "Create one with `dotnet dev-certs https --trust`, in the same environment the site runs in, or start without --https.")
+            { Details = details };
         }
         return new UnreachableException(message,
             timedOut ? "Raise --timeout if the site is just slow; details.lines has its latest output." : "details.lines has the site's last output; fix the error and start again.")

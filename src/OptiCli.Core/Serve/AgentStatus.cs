@@ -37,6 +37,9 @@ public sealed record AgentStatus(AgentState State, string Message)
 
     public string? Url { get; init; }
 
+    /// <summary>Where to open the site in a browser, when it isn't <see cref="Url"/> (<c>serve --https</c>).</summary>
+    public string? BrowseUrl { get; init; }
+
     public DateTimeOffset? StartedAt { get; init; }
 
     public string? LogPath { get; init; }
@@ -154,6 +157,7 @@ public static class AgentProbe
         Pid = state.Pid,
         Port = state.Port,
         Url = state.BaseUrl.ToString().TrimEnd('/'),
+        BrowseUrl = state.HttpsPort is null ? null : state.BrowseUrl,
         StartedAt = state.StartedAt,
         LogPath = state.Mode == ServeMode.External ? null : state.LogPath,
         StatePath = store.StatePath,

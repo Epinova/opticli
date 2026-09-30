@@ -26,16 +26,22 @@ internal static class ServeCommand
         var logs = new Option<bool>("--logs") { Description = "Show the site's log (its console output)." };
         var tail = new Option<int?>("--tail") { Description = $"With --logs: only the last N lines (default {DefaultLogLines}).", HelpName = "n" };
         var stop = new Option<bool>("--stop") { Description = "Stop the site (SIGTERM, then kill after 20 s) and forget its token." };
+        var https = new Option<bool>("--https")
+        {
+            Description = "Also listen on https://localhost:<next free port> with the ASP.NET Core development certificate, to browse a site that redirects to HTTPS. Default: \"https\": true in the user config.",
+        };
 
         var command = new Command("serve", """
             Start, inspect or stop the local site with the opticli agent injected; write commands need it running.
             Runs the site's build output (its code is not changed) in Development on http://127.0.0.1:<port>, pinned to the
             database opticli reads; the agent refuses to start against anything else (exit 3). Starts in the background and
             returns once the agent answers (30-60 s is normal); state (pid, port, a fresh token) is kept in a user-only file.
-            Warns when source files are newer than the build output (--build rebuilds first). Stop it when done.
+            Warns when source files are newer than the build output (--build rebuilds first). A site that redirects to HTTPS
+            can't be browsed on that address: --https adds https://localhost:<port> (browseUrl), while opticli keeps using HTTP.
+            Stop it when done.
             Example: opticli serve    then: opticli serve --status | opticli serve --logs --tail 40 | opticli serve --stop
             """);
-        foreach (var option in new Option[] { build, port, foreground, output, timeout, status, logs, tail, stop })
+        foreach (var option in new Option[] { build, port, foreground, output, timeout, https, status, logs, tail, stop })
         {
             command.Options.Add(option);
         }
@@ -44,7 +50,7 @@ internal static class ServeCommand
         {
             var parse = context.Parse;
             var modes = new[] { parse.GetValue(status), parse.GetValue(logs), parse.GetValue(stop) }.Count(m => m);
-            var starting = parse.GetValue(build) || parse.GetValue(port) is not null || parse.GetValue(foreground) || parse.GetValue(output) is not null;
+            var starting = parse.GetValue(build) || parse.GetValue(port) is not null || parse.GetValue(foreground) || parse.GetValue(output) is not null || parse.GetValue(https);
             if (modes > 1 || (modes == 1 && starting))
             {
                 throw new UsageException("--status, --logs and --stop are separate actions; don't combine them with each other or with start options.");
@@ -73,12 +79,12 @@ internal static class ServeCommand
             {
                 throw new UsageException("--timeout must be a positive number of seconds.");
             }
-            return await StartAsync(context, parse.GetValue(build), parse.GetValue(port), parse.GetValue(foreground), parse.GetValue(output), TimeSpan.FromSeconds(seconds), cancellationToken);
+            return await StartAsync(context, parse.GetValue(build), parse.GetValue(port), parse.GetValue(foreground), parse.GetValue(output), parse.GetValue(https), TimeSpan.FromSeconds(seconds), cancellationToken);
         });
         return command;
     }
 
-    private static async Task<CommandResult> StartAsync(CliContext context, bool build, int? port, bool foreground, string? output, TimeSpan timeout, CancellationToken cancellationToken)
+    private static async Task<CommandResult> StartAsync(CliContext context, bool build, int? port, bool foreground, string? output, bool https, TimeSpan timeout, CancellationToken cancellationToken)
     {
         var project = context.Project;
         // The database check comes before anything is started or even looked for.
@@ -119,18 +125,24 @@ internal static class ServeCommand
         {
             warnings.Add($"{Path.GetRelativePath(project.Directory, newer)} is newer than the build output {Path.GetRelativePath(project.Directory, siteOutput.Dll)}; the site may be out of date (use --build).");
         }
+        var httpPort = PortSelector.Select(port, settings?.Port, PortSelector.IsFree);
         var request = new LaunchRequest(
             project,
             connection,
             context.ConnectionRequest.Name,
             siteOutput,
             AgentLocator.Locate(AppContext.BaseDirectory),
-            PortSelector.Select(port, settings?.Port, PortSelector.IsFree),
-            timeout);
+            httpPort,
+            timeout,
+            https || settings?.Https == true ? PortSelector.Select(null, null, p => p != httpPort && PortSelector.IsFree(p)) : null);
 
         if (!foreground)
         {
             var started = await SiteLauncher.StartBackgroundAsync(store, request, cancellationToken);
+            if (request.HttpsPort is null && started.Url is { } url && await RedirectsToHttpsAsync(url, cancellationToken))
+            {
+                warnings.Add($"The site redirects {url} to HTTPS, so it can't be browsed there (opticli itself is unaffected). `opticli serve --stop`, then `opticli serve --https` adds an HTTPS address.");
+            }
             return new CommandResult(started, Warnings: warnings.Count > 0 ? warnings : null, Source: WriteExecutor.AgentSource);
         }
 
@@ -139,7 +151,7 @@ internal static class ServeCommand
             Console.Error.WriteLine($"warning: {warning}");
         }
         await SiteLauncher.RunForegroundAsync(store, request, Console.Out,
-            ready => Console.Error.WriteLine($"[opticli] agent ready at {ready.Url} (pid {ready.Pid}, database '{ready.Database?.Name}'); Ctrl+C stops the site."),
+            ready => Console.Error.WriteLine($"[opticli] agent ready at {ready.Url}{(ready.BrowseUrl is { } browse ? $", browse the site at {browse}" : "")} (pid {ready.Pid}, database '{ready.Database?.Name}'); Ctrl+C stops the site."),
             cancellationToken);
         return new CommandResult(new { stopped = true });
     }
@@ -166,6 +178,22 @@ internal static class ServeCommand
         $"The site runs against the remote development database '{connection.Database}' on '{connection.Server}', which others may use too. "
         + "For this run opticli turned off its scheduler, automatic database schema updates and content type sync, so content types "
         + "or properties that exist only in your local code are not added to the database (writes to them fail).";
+
+    /// <summary>Whether the site answers its start page with a redirect to HTTPS; false when it can't tell quickly.</summary>
+    private static async Task<bool> RedirectsToHttpsAsync(string url, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(15) };
+            using var response = await http.GetAsync(url + "/", HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            return (int)response.StatusCode is >= 300 and < 400 && response.Headers.Location is { } location
+                && location.IsAbsoluteUri && location.Scheme == Uri.UriSchemeHttps;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            return false;
+        }
+    }
 
     private static async Task<AgentStatus> StatusAsync(CliContext context, CancellationToken cancellationToken)
     {

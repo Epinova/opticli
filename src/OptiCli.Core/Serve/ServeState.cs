@@ -32,7 +32,12 @@ public sealed record ServeState(
     int? Pid = null,
     DateTimeOffset? ProcessStartTime = null,
     string? OutputDll = null,
-    string? AgentDll = null)
+    string? AgentDll = null,
+    int? HttpsPort = null)
 {
+    /// <summary>Where the CLI talks to the agent: always plain HTTP on the loopback address.</summary>
     public Uri BaseUrl => new($"http://127.0.0.1:{Port}");
+
+    /// <summary>Where to open the site in a browser: the HTTPS address when it has one.</summary>
+    public string BrowseUrl => HttpsPort is { } secure ? SiteEnvironment.HttpsUrl(secure) : BaseUrl.ToString().TrimEnd('/');
 }

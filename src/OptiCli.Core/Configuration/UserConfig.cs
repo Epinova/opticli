@@ -9,7 +9,8 @@ namespace OptiCli.Core.Configuration;
 /// <summary>Per-project settings from the user-level opticli config file, keyed by project directory.</summary>
 /// <param name="Output">Site build output DLL, relative to the project directory (used by <c>serve</c>).</param>
 /// <param name="Database">The development database the user chose (<c>opticli db use</c>).</param>
-public sealed record ProjectSettings(string? Connection, string? Output, int? Port, SavedDatabase? Database = null);
+/// <param name="Https">Run <c>serve</c> with <c>--https</c> by default.</param>
+public sealed record ProjectSettings(string? Connection, string? Output, int? Port, SavedDatabase? Database = null, bool Https = false);
 
 /// <summary>
 /// The candidate the user chose as the project's development database. <see cref="Id"/> is what counts; the rest
@@ -82,7 +83,8 @@ public static class UserConfig
                     GetString(entry.Value, "connection"),
                     GetString(entry.Value, "output"),
                     entry.Value.TryGetProperty("port", out var port) && port.TryGetInt32(out var number) ? number : null,
-                    entry.Value.TryGetProperty(DatabaseKey, out var database) ? ReadDatabase(database) : null);
+                    entry.Value.TryGetProperty(DatabaseKey, out var database) ? ReadDatabase(database) : null,
+                    entry.Value.TryGetProperty("https", out var https) && https.ValueKind == JsonValueKind.True);
             }
         }
         return null;
