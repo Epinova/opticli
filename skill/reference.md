@@ -160,8 +160,11 @@ explicitly; `--force` skips the check.
 Ops: `set`, `create`, `area`, `block`, `upload`, `translate`, `publish`, `move`, `delete`, `access`, with the same
 fields as the commands (`opticli apply --help` lists them). `"$id"` refers to what an earlier `create`, `block` or
 `upload` with that `id` made.
-- `{"op": "upload", "id": "q1", "file": "files/q1.pdf", "parent": "$reports"}` reads `file` relative to the plan
-  file (the working directory for `-`) and refuses paths outside that folder unless `apply --allow-outside`.
+- A string value `"@path"` anywhere in `properties` is that file's text, like `Prop=@file`:
+  `"MainBody": "@texts/article.html"`. `"@@..."` is a literal `@`.
+- `{"op": "upload", "id": "q1", "file": "files/q1.pdf", "parent": "$reports"}`.
+- Plan files (`@path` values and upload files) are relative to the plan file (the working directory for `-`) and must
+  stay inside its folder, also through symlinks, unless `apply --allow-outside`.
 - `{"op": "access", "ref": "$page", "grant": {"Authenticated": "Read"}, "revoke": ["Everyone"], "breakInheritance": true}`
   (also `grantUsers`, `inherit`, `allowUnknownRole`).
 

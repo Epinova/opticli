@@ -214,7 +214,8 @@ These commands write:
   Access rights aren't versioned, so the output shows them before and after. The root, the recycle bin, start pages
   and asset roots are refused, and so is a change that leaves no role with Administer.
 - `apply plan.json` runs several operations validated together. Later operations can refer to an item an earlier
-  one created as `$id`. Upload files in a plan are relative to the plan file and must stay inside its folder.
+  one created as `$id`. A property value `"@texts/body.html"` is that file's text, as `Prop=@file` is on the command
+  line. Files in a plan are relative to the plan file and must stay inside its folder.
 
 Every write command takes `--dry-run`. Structured values use `--values`, e.g.
 `--values '{"MainArea":[{"ref":"456"}]}'`. `set` and `area` check that nobody saved a newer version in the meantime

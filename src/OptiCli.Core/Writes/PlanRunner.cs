@@ -37,8 +37,8 @@ public sealed record PlanRun(bool DryRun, IReadOnlyList<PlanStepResult> Operatio
 /// Runs a <see cref="WritePlan"/>: validates every step first (nothing is written if any fails), then
 /// executes them in order, stopping at the first failure with what was saved and how to undo it.
 /// </summary>
-/// <param name="planDirectory">The plan file's folder, which upload files are relative to (the working directory for stdin).</param>
-/// <param name="allowOutside">Allow upload files outside <paramref name="planDirectory"/>.</param>
+/// <param name="planDirectory">The plan file's folder, which files in the plan are relative to (the working directory for stdin).</param>
+/// <param name="allowOutside">Allow files outside <paramref name="planDirectory"/> (see <see cref="PlanFiles"/>).</param>
 public sealed class PlanRunner(ContentSession session, WriteExecutor executor, string planDirectory, bool allowOutside = false)
 {
     /// <exception cref="OptiCliException">
@@ -47,7 +47,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     /// </exception>
     public async Task<PlanRun> RunAsync(WritePlan plan, bool dryRun, bool publishAll, CancellationToken cancellationToken)
     {
-        var steps = PlanFiles(plan.Steps.Select(s => publishAll ? s with { Operation = s.Operation.WithPublish() } : s));
+        var steps = PlanFiles.Resolve(plan.Steps.Select(s => publishAll ? s with { Operation = s.Operation.WithPublish() } : s), planDirectory, allowOutside);
 
         var checks = new List<PlanStepResult>();
         OptiCliException? firstFailure = null;
@@ -99,33 +99,6 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             }
         }
         return new PlanRun(false, results, Refs(created));
-    }
-
-    /// <summary>Upload files resolved against the plan's folder; every file that escapes it is reported at once.</summary>
-    private List<PlanStep> PlanFiles(IEnumerable<PlanStep> steps)
-    {
-        var problems = new List<string>();
-        var resolved = steps.Select(step =>
-        {
-            if (step.Operation is not UploadOperation upload)
-            {
-                return step;
-            }
-            try
-            {
-                return step with { Operation = upload with { File = MediaFiles.ForPlan(upload.File, planDirectory, allowOutside) } };
-            }
-            catch (UsageException ex)
-            {
-                problems.Add($"operations[{step.Index}]: {ex.Message}");
-                return step;
-            }
-        }).ToList();
-        return problems.Count == 0
-            ? resolved
-            : throw new UsageException($"The plan has {problems.Count} problem(s): {string.Join(" ", problems)}",
-                "Plan files are relative to the plan and stay inside its folder; pass --allow-outside to apply if this is intended.")
-            { Details = new { problems } };
     }
 
     private async Task<(PlanStepResult Result, OptiCliException? Failure)> ValidateAsync(PlanStep step, IReadOnlyList<PlanStep> steps, CancellationToken cancellationToken)

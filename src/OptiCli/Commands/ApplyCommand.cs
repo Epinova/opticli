@@ -12,7 +12,7 @@ internal static class ApplyCommand
         var file = new Argument<string>("plan.json") { Description = "The plan file, or - for stdin." };
         var allowOutside = new Option<bool>("--allow-outside")
         {
-            Description = "Allow upload operations to read files outside the plan file's folder.",
+            Description = "Allow the plan to read files (uploads, @file values) outside the plan file's folder.",
         };
         var write = new WriteOptions();
         write.Publish.Description = "Publish every set, create, area, block, upload and translate operation (as if each had \"publish\": true).";
@@ -23,8 +23,9 @@ internal static class ApplyCommand
             opticli stops and reports what was saved (refs and versions), what failed, and how to undo each saved operation.
             Plan: {"operations": [ {"op": "...", ...}, ... ]}. A create, block or upload operation may have an "id"; later
             operations refer to what it created as "$id", in ref fields and as a whole string value in "properties".
-            An upload's "file" is relative to the plan file (the working directory for stdin) and must stay inside its
-            folder unless --allow-outside.
+            A string value "@path" in "properties" is that file's text (e.g. "MainBody": "@texts/article.html"; "@@" for a
+            literal @). These files and an upload's "file" are relative to the plan file (the working directory for stdin)
+            and must stay inside its folder unless --allow-outside.
             Operations and fields (* required; the same as the matching command):
             {{{string.Join(Environment.NewLine, WritePlan.Fields.Select(f => $"  {f.Key}: {string.Join(", ", f.Value)}"))}}}
             area: action is add (item = block ref, at, display), remove (index or item) or move (index or item, to).
