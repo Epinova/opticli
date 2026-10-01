@@ -49,7 +49,7 @@ dotnet tool install -g OptiCli
 opticli --version
 ```
 
-To update, run `dotnet tool update -g OptiCli`.
+To update, run `dotnet tool update -g OptiCli`. [CHANGELOG.md](CHANGELOG.md) lists what changed in each release.
 
 To install from source instead, build the package and install it from the output folder:
 
@@ -91,7 +91,7 @@ When stdout is redirected, every command prints a single JSON line:
 
 ```json
 {"ok":true,"data":{"ref":"123","type":"ArticlePage","name":"News","status":"published","url":"/en/news/",
- "properties":{"Heading":{"type":"String","value":"Hello"}}},"meta":{"source":"db","version":"0.4.1"}}
+ "properties":{"Heading":{"type":"String","value":"Hello"}}},"meta":{"source":"db","version":"0.5.0"}}
 ```
 
 ## Using opticli with coding agents
@@ -428,10 +428,10 @@ reads, also run the integration test against a site you have.
 ### Releasing
 
 Set the new version as `<Version>` in [Directory.Build.props](Directory.Build.props) and as `opticli-version` in
-[skill/SKILL.md](skill/SKILL.md). Commit, then push a matching tag:
+[skill/SKILL.md](skill/SKILL.md), and add the release to [CHANGELOG.md](CHANGELOG.md). Commit, then push a matching tag:
 
 ```sh
-git tag v0.4.1 && git push origin v0.4.1
+git tag v0.5.0 && git push origin v0.5.0
 ```
 
 The [release workflow](.github/workflows/release.yml) checks that the tag matches both versions and is on `main`,
