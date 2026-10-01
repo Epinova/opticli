@@ -244,6 +244,31 @@ opticli skill install                   <span class="c"># teach Claude Code to u
         <code>opticli skill install</code> again to update the skill.</p>
     </div>
     <ol class="changelog">
+      <li><div class="v"><b>0.5.0</b><span>1 October 2026</span></div>
+        <ul>
+          <li><b>Publishing someone else's changes</b> needs confirmation: a publish whose version holds changes another
+            editor saved shows who saved what and asks, or fails with <code>conflict</code> until you pass
+            <code>--include-draft</code>. Undo hints name the version that was live before.</li>
+          <li><b>sql:</b> closed a way around the read-only check (a lone carriage return ending a comment). Server-wide
+            views, logs and traces are refused, and in <code>sys</code> only the database's own schema views are allowed.</li>
+          <li><b>ContentAreas</b> keep each item's visitor groups when written whole; <code>group</code> and
+            <code>visitorGroups</code> can be set, and unknown display options are refused.</li>
+          <li><b>Which database:</b> <code>UserSecretsId</code> is read through <code>Directory.Build.props</code>, and an
+            exported <code>ConnectionStrings__EPiServerDB</code> counts, in ASP.NET Core's order.</li>
+          <li><b>Plans:</b> <code>set</code> then <code>publish</code> (or <code>translate</code> then <code>set</code>) on
+            the same content validates; a failing or interrupted <code>apply</code> still reports what it saved.
+            <code>create</code> and <code>move</code> check where content may go.</li>
+          <li><b>serve:</b> a lock against starting a site twice, a graceful <code>--stop</code> on every OS, sites with
+            <code>Kestrel:Endpoints</code>, one log per run, and more build output layouts.</li>
+          <li><b>Reads:</b> fixes for <code>allowed-in</code> on media, shared values under <code>--lang</code>, fetch-data
+            and nested-site URLs, simple addresses, <code>/globalassets/</code> URLs and <code>PageType</code> values.
+            Faster <code>children</code> and <code>where-used --pages</code> on large sites.</li>
+          <li><b>Output changes:</b> ContentArea items in <code>get</code> have <code>group</code> and
+            <code>visitorGroups</code> as their own fields (they were under <code>personalization</code>), the
+            <code>OPTICLI_DB</code> source is <code>optiCliDb</code>, and an interrupted command exits 130
+            (<code>cancelled</code>). Details in the
+            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
+        </ul></li>
       <li><div class="v"><b>0.4.1</b><span>30 September 2026</span></div>
         <ul>
           <li><b>Fixed:</b> <code>serve --status</code>, <code>--logs</code> and <code>--stop</code>, which 0.4.0 refused, and
