@@ -262,7 +262,9 @@ public sealed class SiteMap(IReadOnlyList<SiteInfo> sites, IReadOnlyList<Languag
 
     private (int? Root, string Keyword, SiteInfo? Owner) AssetRoot(IReadOnlyList<int> path)
     {
-        if (All.FirstOrDefault(s => AssetsRootId(s) is { } assets && path.Contains(assets)) is { } site)
+        // A site whose assets root is the global one (a common single-site setup) has no site assets of its own: the CMS
+        // gives that media /globalassets/ URLs.
+        if (All.FirstOrDefault(s => AssetsRootId(s) is { } assets && assets != GlobalAssetsRoot && path.Contains(assets)) is { } site)
         {
             return (AssetsRootId(site), "siteassets", site);
         }

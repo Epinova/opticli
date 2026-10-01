@@ -32,6 +32,7 @@ internal static class ModelFixture
     public const int MoreLink = 111;
     public const int RelatedItems = 112;
     public const int Topics = 113;
+    public const int ListedType = 114;
     public const int TeaserText = 201;
     public const int TeaserOptions = 202;
     public const int TeaserStart = 203;
@@ -72,6 +73,7 @@ internal static class ModelFixture
             new(MoreLink, ArticlePage, "MoreLink", "LinkItem", PropertyBaseType.LongString, null, false, false),
             new(RelatedItems, ArticlePage, "RelatedItems", "ContentReferenceList", PropertyBaseType.Json, null, false, false),
             new(Topics, ArticlePage, "Topics", "Category", PropertyBaseType.Category, null, false, false),
+            new(ListedType, ArticlePage, "ListedType", "PageType", PropertyBaseType.PageType, null, false, false),
             new(TeaserText, TeaserBlock, "Text", "XhtmlString", PropertyBaseType.LongString, null, true, false),
             new(TeaserOptions, TeaserBlock, "Options", "OptionList", PropertyBaseType.LongString, null, false, false),
             new(TeaserStart, TeaserBlock, "StartDate", "Date", PropertyBaseType.Date, null, false, false),

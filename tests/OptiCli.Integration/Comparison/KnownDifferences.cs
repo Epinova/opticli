@@ -58,6 +58,13 @@ internal static class KnownDifferences
             "whichever site the request came in on, or add-on routing code serves it."),
 
         new(
+            "url-external-shortcut",
+            m => m is { Difference: MismatchKind.Identity, Field: "url", Facts.ExternalShortcutUrl: { } external }
+                && m.Agent == Canonical.Text(JsonValue.Create(external)),
+            "A page whose shortcut is an external link gets that link as its URL from the CMS. opticli keeps the page's own " +
+            "path in url (so resolve and where-used work on it) and shows the link as shortcut.url."),
+
+        new(
             "url-segments-left-out",
             m => m is { Difference: MismatchKind.Identity, Field: "url" } && LeavesOutSegments(m.Db, m.Agent),
             "Sites can leave ancestors out of URLs in code (custom URL segment generation or partial routing, e.g. grouping " +

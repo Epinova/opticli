@@ -69,7 +69,7 @@ internal static class PropertyValues
     }
 
     /// <summary>Category names, as the writer takes them; null when there are none.</summary>
-    private static string[]? Categories(CategoryList? categories)
+    internal static string[]? Categories(CategoryList? categories)
     {
         if (categories is not { Count: > 0 })
         {

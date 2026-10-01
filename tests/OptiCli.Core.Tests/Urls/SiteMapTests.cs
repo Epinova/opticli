@@ -137,6 +137,15 @@ public class SiteMapTests
     }
 
     [Fact]
+    public void A_site_whose_assets_root_is_the_global_one_gets_globalassets_urls()
+    {
+        var map = Map(Site() with { AssetsRoot = "3" });
+        string? Segment(int id) => id switch { 3 => "SysGlobalAssets", 201 => "logo.png", _ => null };
+
+        Assert.Equal("/globalassets/logo.png", map.Compose([1, 3, 201], Segment, null, ContentKind.Media)!.Path);
+    }
+
+    [Fact]
     public void Urls_end_in_a_slash_unless_the_last_segment_has_an_extension()
     {
         var map = Map();

@@ -59,6 +59,11 @@ internal sealed class ReadValues(IContentTypeRepository types)
                 {
                     BlockType = BlockType((BlockData)list[0]!),
                 };
+            // By name, as get prints them; the stored ids are local to one database.
+            case CategoryList categories:
+                return new ContentItemProperty(typeName, Json(PropertyValues.Categories(categories)));
+            case int typeId when property is PropertyPageType:
+                return new ContentItemProperty(typeName, Json(types.Load(typeId)?.Name ?? typeId.ToString(System.Globalization.CultureInfo.InvariantCulture)));
             case var value:
                 var formatted = Format(value);
                 return new ContentItemProperty(typeName, formatted == Unrecognised ? Stored(property, owner) : Json(formatted));

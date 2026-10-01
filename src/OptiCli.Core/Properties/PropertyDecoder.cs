@@ -119,7 +119,8 @@ public sealed class PropertyDecoder(
                     ? WithNode(result, new JsonArray(categories.Select(id => (JsonNode?)JsonValue.Create(model.CategoryName(id))).ToArray()))
                     : null;
             case PropertyBaseType.PageType:
-                return row.Number is { } typeId ? With(result, model.TypeName(typeId)) : null;
+                // The CMS stores the type id in the ContentType column; Number is read for values saved elsewhere.
+                return (row.ContentType ?? row.Number) is { } typeId ? With(result, model.TypeName(typeId)) : null;
             case PropertyBaseType.Date:
                 // Stored in UTC, like every CMS 12 date.
                 return row.Date is { } date ? With(result, date.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)) : null;

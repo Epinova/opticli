@@ -37,6 +37,14 @@ public class PropertyDecoderTests
             .Decode(ArticlePage, PropertyTree.Build(rows));
 
     [Fact]
+    public void A_page_type_is_read_from_the_content_type_column_by_name()
+    {
+        var properties = Decode([new PropertyRow(123, ListedType, English, ContentType: ArticlePage)]);
+
+        Assert.Equal("""{"type":"PageType","value":"ArticlePage","culture":"en"}""", properties["ListedType"]!.ToJsonString());
+    }
+
+    [Fact]
     public void Scalars_are_typed_and_marked_with_their_culture()
     {
         var properties = Decode(
@@ -176,7 +184,7 @@ public class PropertyDecoderTests
         Assert.Equal(["Heading"], Decode(rows).Select(p => p.Key));
 
         var all = Decode(rows, new DecodeOptions(AllProperties: true));
-        Assert.Equal(13, all.Count);
+        Assert.Equal(14, all.Count);
         Assert.Equal("""{"type":"ContentArea","value":null}""", all["MainArea"]!.ToJsonString());
     }
 
