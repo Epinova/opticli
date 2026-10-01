@@ -29,10 +29,18 @@ jobs:
       - name: Build
         run: dotnet build opticli.slnx -c Release
 
+      # One results folder per project: run from the solution, they would share one .trx name and overwrite it.
       - name: Test
-        run: dotnet test opticli.slnx -c Release --no-build --logger trx --results-directory TestResults
+        shell: pwsh
+        run: |
+          $failed = $false
+          foreach ($project in Get-ChildItem tests -Recurse -Filter *.csproj) {
+            dotnet test $project.FullName -c Release --no-build --logger trx --results-directory "TestResults/$($project.BaseName)"
+            if ($LASTEXITCODE -ne 0) { $failed = $true }
+          }
+          if ($failed) { exit 1 }
 
-      # Annotations show on the run's summary page without signing in; the log needs it.
+      # Annotations show on the run's summary page without signing in; the log needs it. GitHub keeps 10 errors a step.
       - name: Report failed tests
         if: failure()
         shell: pwsh
@@ -42,9 +50,10 @@ jobs:
           foreach ($file in $files) {
             [xml]$trx = Get-Content $file.FullName
             $summary = $trx.TestRun.ResultSummary
-            Write-Output "::notice title=$($file.Name)::$($summary.outcome): $($summary.Counters.passed) passed, $($summary.Counters.failed) failed of $($summary.Counters.total)"
-            foreach ($info in @($summary.RunInfos.RunInfo)) {
-              if ($info) { Write-Output "::error title=Test run ($($file.Name))::$(($info.Text -replace "`r?`n", ' | ').Substring(0, [Math]::Min(900, $info.Text.Length)))" }
+            $project = $file.Directory.Name
+            Write-Output "::notice title=$project::$($summary.outcome): $($summary.Counters.passed) passed, $($summary.Counters.failed) failed of $($summary.Counters.total)"
+            foreach ($info in @($summary.RunInfos.RunInfo | Where-Object { $_ -and $_.outcome -eq 'Error' -and $_.Text -notmatch '\[SKIP\]' })) {
+              Write-Output "::error title=$project run::$(($info.Text -replace "`r?`n", ' | '))"
             }
             foreach ($result in @($trx.TestRun.Results.UnitTestResult | Where-Object outcome -eq 'Failed')) {
               $info = $result.Output.ErrorInfo
