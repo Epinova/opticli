@@ -37,13 +37,19 @@ jobs:
         if: failure()
         shell: pwsh
         run: |
-          Get-ChildItem TestResults -Recurse -Filter *.trx | ForEach-Object {
-            [xml]$trx = Get-Content $_.FullName
-            $trx.TestRun.Results.UnitTestResult | Where-Object outcome -eq 'Failed' | ForEach-Object {
-              $info = $_.Output.ErrorInfo
+          $files = @(Get-ChildItem TestResults -Recurse -Filter *.trx -ErrorAction SilentlyContinue)
+          if ($files.Count -eq 0) { Write-Output "::error title=No test results::dotnet test wrote no .trx file" }
+          foreach ($file in $files) {
+            [xml]$trx = Get-Content $file.FullName
+            $summary = $trx.TestRun.ResultSummary
+            Write-Output "::notice title=$($file.Name)::$($summary.outcome): $($summary.Counters.passed) passed, $($summary.Counters.failed) failed of $($summary.Counters.total)"
+            foreach ($info in @($summary.RunInfos.RunInfo)) {
+              if ($info) { Write-Output "::error title=Test run ($($file.Name))::$(($info.Text -replace "`r?`n", ' | ').Substring(0, [Math]::Min(900, $info.Text.Length)))" }
+            }
+            foreach ($result in @($trx.TestRun.Results.UnitTestResult | Where-Object outcome -eq 'Failed')) {
+              $info = $result.Output.ErrorInfo
               $trace = ($info.StackTrace -split "`n" | Select-Object -First 4) -join ' | '
-              $message = "$($info.Message) | $trace" -replace "`r?`n", ' '
-              Write-Output "::error title=$($_.testName)::$message"
+              Write-Output "::error title=$($result.testName)::$("$($info.Message) | $trace" -replace "`r?`n", ' ')"
             }
           }
 
