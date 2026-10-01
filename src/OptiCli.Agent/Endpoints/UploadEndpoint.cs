@@ -61,7 +61,8 @@ internal static class UploadEndpoint
         try
         {
             return flow.Save(media, before, body.Publish ? SaveAction.Publish : SaveAction.Save, body.DryRun,
-                shown: null, baseVersion: null, saveUnchanged: true) with { MediaType = type.Name };
+                shown: null, baseVersion: null, saveUnchanged: true,
+                precheck: CreateEndpoint.Availability(request, parent, body.ForContent is not null, type, flow.Types)) with { MediaType = type.Name };
         }
         catch when (blob is not null && flow.Saved(media) is null)
         {

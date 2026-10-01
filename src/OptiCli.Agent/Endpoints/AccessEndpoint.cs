@@ -111,6 +111,7 @@ internal static class AccessEndpoint
         var saved = false;
         if (!body.DryRun && !AccessRules.SameAccess(before, after))
         {
+            flow.ThrowIfAborted();
             security.Save(link, (IContentSecurityDescriptor)writable, SecuritySaveType.Replace);
             after = Effective(flow, security, link);
             saved = true;

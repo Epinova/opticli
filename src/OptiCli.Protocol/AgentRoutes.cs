@@ -86,7 +86,8 @@ public static class AgentRoutes
     /// <summary>
     /// <c>POST /v1/content/{ref}/move</c>. Body: <see cref="MoveRequest"/>. Response: <see cref="MoveResult"/>.
     /// Errors: <c>refused</c> for protected content (root, recycle bin, start pages) or a move into the
-    /// recycle bin (use delete), <c>usage</c> for a move below itself.
+    /// recycle bin (use delete), <c>usage</c> for a move below itself, <c>validation</c> when the content's type isn't
+    /// allowed below the new parent.
     /// </summary>
     public static string Move(string contentRef) => $"{Content(contentRef)}/move";
 

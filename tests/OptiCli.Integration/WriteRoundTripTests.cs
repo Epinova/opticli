@@ -269,6 +269,40 @@ public sealed class WriteRoundTripTests
         Assert.Equal(mapped[0].Guid, loaded.Guid);
     }
 
+    [SiteFact]
+    public async Task A_plan_publish_after_a_set_is_simulated_and_content_only_goes_where_it_can()
+    {
+        var cancellationToken = CancellationToken.None;
+        await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
+        var writes = new WriteExecutor(site.Session, _ => Task.FromResult(site.Agent), projectDirectory: site.ProjectDirectory);
+
+        var folder = await ScratchFolderAsync(site, writes, cancellationToken);
+        var file = Path.Combine(Path.GetTempPath(), $"opticli-it-{Guid.NewGuid():N}.png");
+        await File.WriteAllBytesAsync(file, Convert.FromBase64String(OnePixelPng), cancellationToken);
+        try
+        {
+            var media = Assert.IsType<WriteOutput>((await writes.RunAsync(new UploadOperation(file, Parent: folder, Publish: true), dryRun: false, cancellationToken)).Output).Ref!;
+
+            // Today's database has the published version as the latest; the publish is checked as it will be after the set.
+            var plan = WritePlan.Parse($$"""{"operations": [{"op": "set", "ref": "{{media}}", "name": "renamed"}, {"op": "publish", "ref": "{{media}}"}]}""");
+            var dry = await new PlanRunner(site.Session, writes, Path.GetTempPath()).RunAsync(plan, dryRun: true, publishAll: false, cancellationToken);
+            Assert.Equal([PlanStepStatus.Valid, PlanStepStatus.Simulated], dry.Operations.Select(o => o.Status));
+            var run = await new PlanRunner(site.Session, writes, Path.GetTempPath()).RunAsync(plan, dryRun: false, publishAll: false, cancellationToken);
+            Assert.True(Assert.IsType<WriteOutput>(run.Operations[1].Result).Published);
+            Assert.Equal("renamed", (await GetAsync(site, int.Parse(media, System.Globalization.CultureInfo.InvariantCulture), VersionSelector.Published, cancellationToken)).Name);
+
+            var page = site.Session.Model.Types.First(t => t.Kind == Core.Cms.ContentKind.Page && !t.Name.StartsWith("Sys", StringComparison.Ordinal));
+            var inFolder = await Assert.ThrowsAsync<Core.Errors.ContentValidationException>(() => writes.RunAsync(new CreateOperation(folder, page.Name, "page in a folder"), dryRun: true, cancellationToken));
+            Assert.Contains("pages go in the page tree", inFolder.Message);
+            await Assert.ThrowsAsync<Core.Errors.UsageException>(() => writes.RunAsync(new CreateOperation(folder, site.Session.Model.RequireType(Assert.IsType<WriteOutput>(run.Operations[1].Result).Type!).Name, "media without a file"), dryRun: true, cancellationToken));
+        }
+        finally
+        {
+            File.Delete(file);
+            await writes.RunAsync(new DeleteOperation(folder), dryRun: false, cancellationToken);
+        }
+    }
+
     /// <summary>A 1x1 transparent PNG.</summary>
     private const string OnePixelPng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 

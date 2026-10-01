@@ -27,7 +27,9 @@ internal static class ApplyCommand
             Each operation gets a dry run first; nothing is written unless all pass. Operations on content the plan creates
             are dry-run against a stand-in: the content as it will be after that operation, under its nearest existing
             ancestor (status "simulated"; values that refer to other planned content are checked when the plan runs, and
-            their ContentArea placements against [AllowedTypes] in the code). The rest get their names checked ("deferred"). Then they run in order; on a failure
+            their ContentArea placements against [AllowedTypes] in the code). So is a publish after earlier set, area or
+            translate operations on the same content and language (those changes, published), and a set on a language
+            branch an earlier translate creates. The rest get their names checked ("deferred"). Then they run in order; on a failure
             opticli stops and reports what was saved (refs and versions), what failed, and how to undo each saved operation.
             Plan: {"operations": [ {"op": "...", ...}, ... ]}. A create, block or upload operation may have an "id"; later
             operations refer to what it created as "$id", in ref fields and as a whole string value in "properties".
@@ -77,7 +79,7 @@ internal static class ApplyCommand
         int Count(string status) => run.Operations.Count(o => o.Status == status);
         var deferred = Count(PlanStepStatus.Deferred);
         return $"Dry run of {run.Operations.Count} operation(s): {Count(PlanStepStatus.Valid)} checked by the site, "
-            + $"{Count(PlanStepStatus.Simulated)} checked against stand-ins for content the plan creates (their warnings say what wasn't), "
+            + $"{Count(PlanStepStatus.Simulated)} checked as their content will be after earlier operations, or against stand-ins for content the plan creates (their warnings say what wasn't), "
             + $"{deferred} only name-checked{(deferred > 0 ? " (the site validates them when the plan runs)" : "")}.";
     }
 

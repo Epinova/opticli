@@ -266,4 +266,7 @@ public sealed record MoveRequest
 {
     /// <summary>New parent content id or GUID.</summary>
     public required string Parent { get; init; }
+
+    /// <summary>Run every check (protected content, the type allowed below the new parent) without moving.</summary>
+    public bool DryRun { get; init; }
 }

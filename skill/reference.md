@@ -97,9 +97,15 @@ primary draft, the version edit mode opens. A write that publishes existing cont
 | `apply <plan.json\|->` | `opticli apply plan.json --dry-run` |
 
 `move` and `delete` refuse start pages, site and asset roots, the recycle bin and anything that contains them.
+`create`, `block create`, `upload` and `move` put content only where it can go, or fail with `validation` (exit 5):
+pages below pages (not in asset folders), blocks, media and folders in asset folders (not below pages: a page's own
+go in its "For this page" folder, `--for <page>`), nothing below blocks or media, and only types the parent's type
+allows (`[AvailableContentTypes]`, admin mode's settings, as the CMS's availability service answers). `create` refuses
+media types: `upload` makes media.
 As in the CMS, `delete` leaves the "For this page" folders of the item and its descendants where they are (they go
 when the recycle bin is emptied, and are there if the item is restored); a warning lists them.
-`--dry-run` on `publish`, `move` and `delete` checks the arguments and the item without asking the site.
+`--dry-run` on `publish` and `delete` checks the arguments and the item without asking the site; `move --dry-run`
+asks the site, which checks the type below the new parent.
 
 Positions in `area` are zero-based; a plain number is a position, `ref:789` (or a GUID) names the item by the
 content it shows. `--at` and `--display` only apply to `add`; `--display` is checked like `displayOption` below.
@@ -171,8 +177,9 @@ property of the same name wins). All are versioned, show in `changes`, and are r
   that page's or block's "For this page" folder.
 - Output: as `create`, plus `upload` (`file`, `bytes`, `blob`: where the site stored it, as `opticli blob` shows it).
   A draft medium is only visible to editors; `--publish` (only when asked) makes it public.
-- If the site's own code fails after the save (e.g. a search indexer that can't parse the file), the error says the
-  item was saved and gives its id.
+- If the site's own code fails after the save (e.g. a search indexer that can't parse the file), the save stands: the
+  write succeeds with a warning that names the error (`siteError` in the output), so a plan keeps the new `ref`. The
+  same goes for every write.
 
 ### Access rights
 
@@ -234,7 +241,11 @@ fields as the commands (`opticli apply --help` lists them). `"$id"` refers to wh
   (also `grantUsers`, `inherit`, `allowUnknownRole`).
 
 Every operation is validated before anything is written; on a failure opticli stops and reports what was saved and
-how to undo it. `--publish` on `apply` publishes every operation: only when the user asked.
+how to undo it, also when it is interrupted (Ctrl+C: `cancelled`, exit 130) or something unexpected fails:
+`details.partial: true`, `details.operations` with each step's status and undo, `details.created`. The step that was
+running when the plan was interrupted, or whose answer timed out (`unreachable`), may still have been saved: check with
+`opticli versions <ref>` before running the plan again. `--publish` on `apply` publishes every operation: only when the
+user asked.
 
 How far the dry run gets (`meta.warnings` sums it up; step statuses):
 - `valid`: the site dry-ran the operation as is.
@@ -244,6 +255,12 @@ How far the dry run gets (`meta.warnings` sums it up; step statuses):
   Its warnings name the stand-ins and the values not checked yet: those that refer to other planned content. A
   required property or a site validator that fails at publish shows up here. Area placements and references to
   planned content are checked against `[AllowedTypes]` in the code.
+  Also simulated, on existing content: a `publish` after `set`, `area`, `translate` (or `create`/`block`/`upload`
+  updating existing content) on the same content and language is dry-run as those changes, published, so its
+  pending-draft check (`includeDraft`) sees what will go live. A `publish` right after a step that already publishes
+  it fails validation (`conflict`): there is nothing left to publish. A `set` on a language branch that an earlier
+  `translate` creates is dry-run as the new branch with every value set on it so far; an `area` edit there is dry-run
+  on the master branch.
 - `deferred`: only names were checked (`access`, `translate`, `move`, `delete` on planned content); the site validates
   them when the plan runs.
 
@@ -293,7 +310,7 @@ Plans that run again (a section rebuilt after a database refresh, or repaired af
 | `needs_selection` (exit 6) | Show the user `error.details.choices`, ask which is their development database, run `opticli db use <id>`. |
 | `refused` (exit 3) | A safety rule: serving against a remote database that isn't the development one, SQL the `sql` guard won't run, or a request the site agent won't do (e.g. moving or deleting a start page or a folder that contains one). Don't work around it; tell the user. |
 | `unreachable` (exit 4) on a remote database | Firewall (Azure SQL allows only listed client IPs), VPN, or login; for Entra ID auth, `az login`. Tell the user. |
-| `unreachable` (exit 4) on a write | The site isn't running: `opticli serve`; if it was, `opticli serve --status` and `--logs --tail 80`. |
+| `unreachable` (exit 4) on a write | The site isn't running: `opticli serve`; if it was, `opticli serve --status` and `--logs --tail 80`. If the write timed out ("no response within"), it may still have been saved: `opticli versions <ref>` before you retry. |
 | `serve` times out or exits | `opticli serve --logs --tail 80`. Typical: the site needs a build (`--build`), a port is taken (`--port`), or the site's own startup fails. |
 | `validation` (exit 5) | `error.details` lists each failing property; drafts may leave required properties empty, publishing may not. |
 | `conflict` (exit 5) | A newer version exists: `opticli versions <ref> --limit 3`, then re-run. With `details.reason: "pendingDraft"`: someone else's unpublished changes would go live too; show `details.draft` and ask the user before `--include-draft`. |

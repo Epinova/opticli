@@ -18,6 +18,9 @@ public enum ErrorCode
     /// <summary>opticli needs the user to choose something first (the project's development database).</summary>
     NeedsSelection,
     Internal,
+
+    /// <summary>Interrupted (Ctrl+C) while it ran; a plan reports what it saved before that.</summary>
+    Cancelled,
 }
 
 public static class ExitCodes
@@ -30,6 +33,9 @@ public static class ExitCodes
     public const int Conflict = 5;
     public const int NeedsSelection = 6;
 
+    /// <summary>128 + SIGINT, as shells report a process stopped by Ctrl+C.</summary>
+    public const int Cancelled = 130;
+
     public static int For(ErrorCode code) => code switch
     {
         ErrorCode.Usage => Usage,
@@ -38,6 +44,7 @@ public static class ExitCodes
         ErrorCode.Unreachable => Unreachable,
         ErrorCode.Conflict or ErrorCode.Validation => Conflict,
         ErrorCode.NeedsSelection => NeedsSelection,
+        ErrorCode.Cancelled => Cancelled,
         // Unexpected failures share the usage code: the spec reserves 2-5 for specific outcomes.
         _ => Usage,
     };
@@ -52,6 +59,7 @@ public static class ExitCodes
         ErrorCode.Conflict => "conflict",
         ErrorCode.Validation => "validation",
         ErrorCode.NeedsSelection => "needs_selection",
+        ErrorCode.Cancelled => "cancelled",
         _ => "internal",
     };
 }

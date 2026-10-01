@@ -13,8 +13,8 @@ public static class PlanStepStatus
     public const string Deferred = "deferred";
 
     /// <summary>
-    /// Refers to content an earlier step creates, and was dry-run against a stand-in (see <see cref="PlanSimulation"/>);
-    /// its warnings say what could not be checked yet.
+    /// Refers to content an earlier step creates, or to content earlier steps change first, and was dry-run as that
+    /// content will be (see <see cref="PlanSimulation"/>); its warnings say against what, and what could not be checked yet.
     /// </summary>
     public const string Simulated = "simulated";
 
@@ -42,7 +42,11 @@ public sealed record PlanStepResult(
     Guid? Guid = null);
 
 /// <param name="Created">Plan id to content ref, for every created item.</param>
-public sealed record PlanRun(bool DryRun, IReadOnlyList<PlanStepResult> Operations, IReadOnlyDictionary<string, string> Created);
+public sealed record PlanRun(bool DryRun, IReadOnlyList<PlanStepResult> Operations, IReadOnlyDictionary<string, string> Created)
+{
+    /// <summary>True when the plan stopped before its last operation; <see cref="Operations"/> says which were saved.</summary>
+    public bool? Partial { get; init; }
+}
 
 /// <summary>
 /// Runs a <see cref="WritePlan"/>: validates every step first (nothing is written if any fails), then
@@ -62,11 +66,13 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         var steps = PlanFiles.Resolve(plan.Steps.Select(s => publishAll ? s with { Operation = s.Operation.WithPublish() } : s), planDirectory, allowOutside);
 
         var existing = executor.UpdateExisting ? await ExistingAsync(steps, cancellationToken) : new Dictionary<string, int>();
+        var resolved = steps.Select(s => s with { Operation = WritePlan.Resolve(s, existing) }).ToList();
+        var targets = await TargetsAsync(resolved, existing, cancellationToken);
         var checks = new List<PlanStepResult>();
         OptiCliException? firstFailure = null;
         foreach (var step in steps)
         {
-            var (result, failure) = await ValidateAsync(step, steps, existing, cancellationToken);
+            var (result, failure) = await ValidateAsync(step, steps, existing, resolved, targets, cancellationToken);
             checks.Add(result);
             firstFailure ??= failure;
         }
@@ -100,8 +106,10 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                     outcome.Output, Undo: UndoHints.For(operation, outcome.Output), Warnings: outcome.Warnings.Count > 0 ? outcome.Warnings : null,
                     Guid: operation.ContentGuid));
             }
-            catch (OptiCliException ex)
+            catch (Exception caught)
             {
+                // Whatever stopped the plan (Ctrl+C, a file that went away, a bug), the report of what was saved must survive.
+                var ex = Stopped(caught, cancellationToken);
                 results.Add(new PlanStepResult(step.Index, operation.Kind, operation.Id, PlanStepStatus.Failed, ex.Details, Error(ex), Guid: operation.ContentGuid));
                 results.AddRange(steps.Where(s => s.Index > step.Index).Select(s => new PlanStepResult(s.Index, s.Operation.Kind, s.Operation.Id, PlanStepStatus.NotRun, Guid: s.Operation.ContentGuid)));
                 var saved = results.Count(r => r.Status == PlanStepStatus.Saved);
@@ -109,11 +117,22 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                     ex.Code,
                     $"Operation {step.Index} ({operation.Kind}) failed: {ex.Message.TrimEnd('.')}. {saved} earlier operation(s) were saved; details lists them with undo hints.",
                     ex.Hint,
-                    new PlanRun(false, results, Refs(created)));
+                    new PlanRun(false, results, Refs(created)) { Partial = true });
             }
         }
         return new PlanRun(false, results, Refs(created));
     }
+
+    /// <summary>What stopped a running step, as the error the plan reports it with.</summary>
+    internal static OptiCliException Stopped(Exception ex, CancellationToken cancellationToken) => ex switch
+    {
+        OptiCliException known => known,
+        OperationCanceledException when cancellationToken.IsCancellationRequested =>
+            new CancelledException("interrupted (Ctrl+C) before it finished", Serve.AgentClient.MayHaveSavedHint),
+        FileNotFoundException or DirectoryNotFoundException => new NotFoundException(ex.Message, "Check the path."),
+        IOException or UnauthorizedAccessException => new UsageException(ex.Message, "Check that the file exists and that you can read it."),
+        _ => new InternalException($"{ex.GetType().Name}: {ex.Message}", "This is a bug in opticli; please report it with the plan you ran."),
+    };
 
     /// <summary>Plan id to content id, for steps whose GUID already exists outside the recycle bin (<c>--update-existing</c>).</summary>
     private async Task<Dictionary<string, int>> ExistingAsync(IReadOnlyList<PlanStep> steps, CancellationToken cancellationToken)
@@ -126,6 +145,54 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             .ToDictionary(s => s.Operation.Id!, s => ids[s.Operation.ContentGuid!.Value], StringComparer.Ordinal);
     }
 
+    /// <summary>
+    /// For plans that publish or translate, the existing content (and branch) each step writes, so that a step can be
+    /// dry-run with what earlier steps change on the same content (<see cref="PlanSimulation.OnExisting"/>). Steps whose
+    /// ref can't be resolved are left out; their own dry run reports why.
+    /// </summary>
+    private async Task<Dictionary<int, PlanTarget>> TargetsAsync(IReadOnlyList<PlanStep> resolved, IReadOnlyDictionary<string, int> existing, CancellationToken cancellationToken)
+    {
+        var targets = new Dictionary<int, PlanTarget>();
+        if (!resolved.Any(s => s.Operation is PublishOperation or TranslateOperation))
+        {
+            return targets;
+        }
+        foreach (var step in resolved)
+        {
+            var (reference, lang) = step.Operation switch
+            {
+                SetOperation set => (set.Ref, set.Lang),
+                AreaEdit area => (area.Ref, area.Lang),
+                TranslateOperation translate => (translate.Ref, translate.Lang),
+                PublishOperation publish => (publish.Ref, publish.Lang),
+                // A create step whose GUID exists updates that content (--update-existing).
+                CreateOperation { Id: { } id } create when existing.TryGetValue(id, out var found) => (WriteOutput.Id(found), create.Lang),
+                BlockCreateOperation { Id: { } id } block when existing.TryGetValue(id, out var found) => (WriteOutput.Id(found), block.Lang),
+                UploadOperation { Id: { } id } when existing.TryGetValue(id, out var found) => (WriteOutput.Id(found), null),
+                _ => ((string?)null, (string?)null),
+            };
+            if (reference is null || PlanSimulation.PlanId(reference) is not null)
+            {
+                continue;
+            }
+            try
+            {
+                var located = await session.LocateAsync(reference, null, cancellationToken);
+                var header = await session.HeaderAsync(located.Id, cancellationToken);
+                var master = session.Model.Language(header.MasterLanguageId);
+                var language = session.Language(lang) ?? located.Url?.Language ?? master;
+                targets[step.Index] = new PlanTarget(located.Id, language?.Code, master?.Code,
+                    BranchExists: language is null || header.Languages.ContainsKey(language.Id),
+                    Versioned: located.VersionId is not null || step.Operation is PublishOperation { Version: not null });
+            }
+            catch (OptiCliException)
+            {
+                // Not found, or not a ref: the step's own dry run says so.
+            }
+        }
+        return targets;
+    }
+
     private static bool Changed(object output) => output switch
     {
         WriteOutput write => write.Saved || write.Restored == true,
@@ -135,16 +202,25 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     };
 
     /// <param name="existing">Content that steps' GUIDs already name; steps that only depend on it get a full dry run.</param>
-    private async Task<(PlanStepResult Result, OptiCliException? Failure)> ValidateAsync(PlanStep step, IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing, CancellationToken cancellationToken)
+    /// <param name="resolved">The steps with <paramref name="existing"/> resolved.</param>
+    /// <param name="targets">The existing content each step writes (<see cref="TargetsAsync"/>).</param>
+    private async Task<(PlanStepResult Result, OptiCliException? Failure)> ValidateAsync(PlanStep step, IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing,
+        IReadOnlyList<PlanStep> resolved, IReadOnlyDictionary<int, PlanTarget> targets, CancellationToken cancellationToken)
     {
         var op = step.Operation;
         try
         {
-            if (step.DependsOn.Count > 0 && step.DependsOn.All(existing.ContainsKey))
+            if (step.DependsOn.Count == 0 || step.DependsOn.All(existing.ContainsKey))
             {
-                op = WritePlan.Resolve(step, existing);
+                var resolvedStep = resolved.First(s => s.Index == step.Index);
+                op = resolvedStep.Operation;
+                // Earlier steps change this content first; today's database doesn't have their changes yet.
+                if (PlanSimulation.OnExisting(resolvedStep, resolved, targets, existing, executor.UpdateExisting) is { } onExisting)
+                {
+                    return await SimulateAsync(step, onExisting, steps, cancellationToken);
+                }
             }
-            else if (step.DependsOn.Count > 0)
+            else
             {
                 CheckNamesOfPlannedContent(op, steps);
                 if (op is UploadOperation upload)
@@ -179,14 +255,14 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     private async Task<(PlanStepResult Result, OptiCliException? Failure)> SimulateAsync(PlanStep step, Simulation simulation, IReadOnlyList<PlanStep> steps, CancellationToken cancellationToken)
     {
         var op = step.Operation;
-        var notes = new List<string>();
+        var notes = new List<string>(simulation.Notes ?? []);
         if (simulation.StandIns.Count > 0)
         {
             notes.Add($"Dry-run under stand-in parents, since the plan creates the real ones: {string.Join(", ", simulation.StandIns.Select(s => $"{s.Value} for {s.Key}"))}.");
         }
         if (simulation.Unchecked.Count > 0)
         {
-            notes.Add($"Not checked until the plan runs: {string.Join(", ", simulation.Unchecked)} (refer to content the plan creates).");
+            notes.Add($"Not checked until the plan runs: {string.Join(", ", simulation.Unchecked)} (they refer to content the plan creates, or are area edits the dry run can't apply).");
         }
         var owner = simulation.Target is { } target ? PlanSimulation.TypeOf(target, steps) : null;
         owner ??= (simulation.Operation as CreateOperation)?.Type ?? (simulation.Operation as BlockCreateOperation)?.Type;
@@ -221,6 +297,12 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             }
         }
 
+        if (outcome?.Output is WriteOutput { PendingDraft: { } draft } && !op.IncludeDraft)
+        {
+            // As for a step that is dry-run as is: the publish would put someone else's changes live unconfirmed.
+            var unconfirmed = WriteExecutor.UnconfirmedDraft(draft);
+            return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Invalid, unconfirmed.Details, Error(unconfirmed), Warnings: notes, Guid: op.ContentGuid), unconfirmed);
+        }
         var messages = errors.Select(v => v.Property is null ? v.Message : $"{v.Property}: {v.Message}").Concat(placements).ToList();
         if (messages.Count > 0)
         {

@@ -17,7 +17,8 @@ namespace OptiCli.Core.Writes;
 /// <remarks>
 /// The agent only accepts ids, versions and GUIDs, so URLs are resolved here; content from a content provider (not in
 /// this database) is passed to the site by GUID, also when it was given as <c>63__provider</c>.
-/// Publish, move and delete have no dry run in the agent; for those the checks run here, against the database.
+/// Publish and delete have no dry run in the agent; for those the checks run here, against the database. A move's dry run
+/// asks the agent, which knows which types may go below the new parent.
 /// </remarks>
 /// <param name="projectDirectory">The site project, to show where an uploaded file landed on disk.</param>
 /// <param name="updateExisting">
@@ -93,17 +94,23 @@ public sealed class WriteExecutor(
         var target = await EditableAsync(op.Ref, cancellationToken);
         PropertyNameCheck.Check(session.Model, target.Header.TypeId, op.Properties);
         var language = LanguageFor(op.Lang, target);
+        var areaOps = new List<AreaOperation>();
+        foreach (var edit in op.AreaEdits ?? [])
+        {
+            areaOps.Add(await AreaOperationAsync(edit, target, cancellationToken));
+        }
         var request = new DraftRequest
         {
             Lang = language?.Code,
             Name = op.Name,
             Properties = PropertyArguments.ToRequest(op.Properties),
+            AreaOps = areaOps.Count > 0 ? areaOps : null,
             Publish = op.Publish,
             IncludeDraft = op.IncludeDraft,
             DryRun = dryRun,
             BaseVersion = await BaseVersionAsync(target, language, op.BaseVersion, op.Force, cancellationToken),
         };
-        if (request.Properties is null && request.Name is null)
+        if (request.Properties is null && request.Name is null && op.AreaEdits is null)
         {
             throw new UsageException("Nothing to set.", $"Give properties ({PropertyArguments.Syntax}), --values or --name.");
         }
@@ -113,9 +120,24 @@ public sealed class WriteExecutor(
     private async Task<WriteOutcome> AreaAsync(AreaEdit op, bool dryRun, CancellationToken cancellationToken)
     {
         var target = await EditableAsync(op.Ref, cancellationToken);
-        var property = PropertyNameCheck.RequireContentArea(session.Model, target.Header.TypeId, op.Property);
+        var edit = await AreaOperationAsync(op, target, cancellationToken);
         var language = LanguageFor(op.Lang, target);
+        var request = new DraftRequest
+        {
+            Lang = language?.Code,
+            AreaOps = [edit],
+            Publish = op.Publish,
+            IncludeDraft = op.IncludeDraft,
+            DryRun = dryRun,
+            BaseVersion = await BaseVersionAsync(target, language, op.BaseVersion, op.Force, cancellationToken),
+        };
+        return await DraftAsync(target, request, cancellationToken);
+    }
 
+    /// <summary>An area edit as the agent takes it, with its property and item checked.</summary>
+    private async Task<AreaOperation> AreaOperationAsync(AreaEdit op, Target target, CancellationToken cancellationToken)
+    {
+        var property = PropertyNameCheck.RequireContentArea(session.Model, target.Header.TypeId, op.Property);
         var edit = op.Action switch
         {
             AreaOps.Add => new AreaOperation
@@ -141,17 +163,7 @@ public sealed class WriteExecutor(
         {
             throw new UsageException($"area {op.Action} needs the item: its index or the content it references.");
         }
-
-        var request = new DraftRequest
-        {
-            Lang = language?.Code,
-            AreaOps = [edit],
-            Publish = op.Publish,
-            IncludeDraft = op.IncludeDraft,
-            DryRun = dryRun,
-            BaseVersion = await BaseVersionAsync(target, language, op.BaseVersion, op.Force, cancellationToken),
-        };
-        return await DraftAsync(target, request, cancellationToken);
+        return edit;
     }
 
     private async Task<WriteOutcome> DraftAsync(Target target, DraftRequest request, CancellationToken cancellationToken)
@@ -188,6 +200,11 @@ public sealed class WriteExecutor(
     {
         var parent = await ResolveAsync(op.Parent, "parent", cancellationToken);
         var type = session.Model.RequireType(op.Type);
+        if (type.Kind == ContentKind.Media)
+        {
+            throw new UsageException($"{type.Name} is a media type; created this way it would be a media item without a file.",
+                "Use `opticli upload <file> --parent <folder>` (or --for <page>); --type picks the media type.");
+        }
         PropertyNameCheck.Check(session.Model, type.Id, op.Properties);
         var request = new CreateRequest
         {
@@ -404,24 +421,31 @@ public sealed class WriteExecutor(
 
     private async Task<WriteOutcome> MoveAsync(MoveOperation op, bool dryRun, CancellationToken cancellationToken)
     {
-        var target = Movable(await EditableAsync(op.Ref, cancellationToken));
+        var target = await MovableAsync(await EditableAsync(op.Ref, cancellationToken), cancellationToken);
         var destination = await EditableAsync(op.To, cancellationToken, "--to");
         if (destination.Id == target.Id || destination.Header.AncestorIds.Contains(target.Id))
         {
             throw new UsageException($"Can't move {target.Id} below itself.");
         }
         var descendants = await DescendantCountAsync(target.Header, cancellationToken);
-        if (dryRun)
+        // A dry run asks the site too: whether the type may go below the new parent is the CMS's answer.
+        MoveResult result;
+        try
         {
-            return new WriteOutcome(DryMove(target, WriteOutput.Id(destination.Id), descendants, recycleBin: null), DbSource, null, []);
+            result = await PostAsync<MoveResult>(AgentRoutes.Move(target.ContentRef), new MoveRequest { Parent = destination.ContentRef, DryRun = dryRun }, cancellationToken);
         }
-        var result = await PostAsync<MoveResult>(AgentRoutes.Move(target.ContentRef), new MoveRequest { Parent = destination.ContentRef }, cancellationToken);
-        return new WriteOutcome(Moved(result, descendants, recycleBin: null), AgentSource, null, []);
+        catch (ContentValidationException ex)
+        {
+            throw new ContentValidationException(ex.Message,
+                "Move it below a parent whose type allows it (the parent type's [AvailableContentTypes], or its settings in admin mode); nothing was moved.")
+            { Details = ex.Details };
+        }
+        return new WriteOutcome(Moved(result, descendants, recycleBin: null, dryRun), AgentSource, null, []);
     }
 
     private async Task<WriteOutcome> DeleteAsync(DeleteOperation op, bool dryRun, CancellationToken cancellationToken)
     {
-        var target = Movable(await EditableAsync(op.Ref, cancellationToken));
+        var target = await MovableAsync(await EditableAsync(op.Ref, cancellationToken), cancellationToken);
         if (target.Header.Deleted)
         {
             if (updateExisting)
@@ -439,7 +463,7 @@ public sealed class WriteExecutor(
         }
         var agent = await AgentAsync(cancellationToken);
         var result = await agent.SendAsync<MoveResult>(HttpMethod.Delete, AgentRoutes.Delete(target.ContentRef), null, cancellationToken);
-        return new WriteOutcome(Moved(result, descendants, recycleBin: true), AgentSource, null, warnings);
+        return new WriteOutcome(Moved(result, descendants, recycleBin: true, dryRun: false), AgentSource, null, warnings);
     }
 
     private async Task<WriteOutcome> AccessAsync(AccessOperation op, bool dryRun, CancellationToken cancellationToken)
@@ -487,21 +511,33 @@ public sealed class WriteExecutor(
 
     /// <summary>
     /// The same rule the agent enforces, checked up front so a dry run gives the same answer: the root, the
-    /// recycle bin, site start pages and asset roots are never moved or deleted.
+    /// recycle bin, site start pages and asset roots, and anything that contains one, are never moved or deleted.
     /// </summary>
-    private Target Movable(Target target)
+    private async Task<Target> MovableAsync(Target target, CancellationToken cancellationToken)
     {
         var sites = session.Model.Sites;
         var protectedIds = sites.All.SelectMany(site => new[] { SiteMap.StartPageId(site), SiteMap.AssetsRootId(site) })
             .Append(sites.GlobalAssetsRoot)
-            .Append(sites.ContentAssetsRoot);
+            .Append(sites.ContentAssetsRoot)
+            .OfType<int>()
+            .Distinct()
+            .ToList();
         var header = target.Header;
         if (header.ParentId is null || session.Model.TypeName(header.TypeId) == RecycleBinType || protectedIds.Contains(header.Id))
         {
             throw new RefusedException($"Content {header.Id} is a site root, start page, asset root or the recycle bin; opticli won't move or delete it.");
         }
+        var headers = await ContentHeaderReader.ByIdsAsync(session.Db, protectedIds, cancellationToken);
+        if (ContainedProtected(header.Id, protectedIds.Select(id => headers.GetValueOrDefault(id))) is { } below)
+        {
+            throw new RefusedException($"Content {header.Id} contains {below}, a site root, start page or asset root; opticli won't move or delete it.");
+        }
         return target;
     }
+
+    /// <returns>The first of <paramref name="protectedContent"/> that has <paramref name="id"/> among its ancestors; null for none.</returns>
+    public static int? ContainedProtected(int id, IEnumerable<ContentHeader?> protectedContent) =>
+        protectedContent.OfType<ContentHeader>().FirstOrDefault(p => p.AncestorIds.Contains(id))?.Id;
 
     private MoveOutput DryMove(Target target, string? parent, int descendants, bool? recycleBin)
     {
@@ -512,9 +548,9 @@ public sealed class WriteExecutor(
             Moved: false, DryRun: true, descendants, recycleBin);
     }
 
-    private static MoveOutput Moved(MoveResult result, int descendants, bool? recycleBin) => new(
+    private static MoveOutput Moved(MoveResult result, int descendants, bool? recycleBin, bool dryRun) => new(
         WriteOutput.Id(result.Content.Id), result.Content.Guid, result.Content.Type, result.Content.Name, result.Content.Language, result.Content.Status,
-        result.Parent, result.PreviousParent, Moved: true, DryRun: false, descendants, recycleBin);
+        result.Parent, result.PreviousParent, Moved: !dryRun, DryRun: dryRun, descendants, recycleBin);
 
     private static WriteOutcome Outcome(WriteOutput output, int? createdId)
     {
@@ -522,6 +558,10 @@ public sealed class WriteExecutor(
         if (!output.DryRun && !output.Saved)
         {
             warnings.Add("Nothing changed, so no new version was saved.");
+        }
+        if (output.SiteError is { } siteError)
+        {
+            warnings.Add($"{output.Version ?? output.Ref} was saved, but the site's own code failed after saving it: {siteError}. The save stands; the site's log has the details (`opticli serve --logs`).");
         }
         return new WriteOutcome(output, AgentSource, createdId, warnings);
     }

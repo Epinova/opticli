@@ -225,8 +225,12 @@ language, or the language the URL selects.
 These commands write:
 - `set`, `create`, `area` (add, remove or move ContentArea items), `block create`, `upload` and `translate` save a
   draft unless `--publish` is given. `upload <file>` adds a PDF, image or other file (up to 50 MB) as media, as the
-  type the site maps its extension to, and prints where the file was stored.
+  type the site maps its extension to, and prints where the file was stored. `create` doesn't take media types (that
+  would be media without a file).
 - `publish`, `move` and `delete` (to the recycle bin).
+- `create`, `block create`, `upload` and `move` put content only where it can go: pages below pages, blocks, media and
+  folders in asset folders, and only where the parent type allows the type (`[AvailableContentTypes]` and admin mode's
+  settings, as the CMS answers it).
 - `access <ref>` with `--grant Role=Levels`, `--user Name=Levels`, `--revoke Name`, `--break-inheritance` or
   `--inherit` changes one item's access rights. Children that inherit follow; nothing is applied to descendants.
   Access rights aren't versioned, so the output shows them before and after. The root, the recycle bin, start pages
@@ -235,7 +239,8 @@ These commands write:
   one created as `$id`. A property value `"@texts/body.html"` is that file's text, as `Prop=@file` is on the command
   line. Files in a plan are relative to the plan file and must stay inside its folder. With `"guidNamespace"`, what a
   plan creates gets the same GUIDs in every database, and `apply --update-existing` runs it again: existing content is
-  updated (and moved back out of the recycle bin), and steps that are already done change nothing.
+  updated (and moved back out of the recycle bin), and steps that are already done change nothing. A plan that stops
+  halfway (a failure, Ctrl+C) still reports what it saved, with undo hints and `details.partial: true`.
 
 Every write command takes `--dry-run`. Structured values use `--values`, e.g.
 `--values '{"MainArea":[{"ref":"456"}]}'`. `set` and `area` check that nobody saved a newer version in the meantime
@@ -333,9 +338,10 @@ runtime. It ships no copies of them.
 | 1 | `usage` / `internal` | bad arguments (or a bug in opticli) |
 | 2 | `not_found` | project, connection string, content, type or version not found |
 | 3 | `refused` | a safety rule blocked it |
-| 4 | `unreachable` | database or site agent not reachable, or a query failed on the server |
+| 4 | `unreachable` | database or site agent not reachable, or a query failed on the server (a write that timed out may still have been saved) |
 | 5 | `conflict` / `validation` | a newer version exists, a publish would include someone else's unpublished changes (`details.reason: "pendingDraft"`), or the CMS rejected the values |
 | 6 | `needs_selection` | the user must choose the development database first (`error.details.choices`) |
+| 130 | `cancelled` | interrupted (Ctrl+C); an `apply` reports what it saved until then |
 
 ## Files
 

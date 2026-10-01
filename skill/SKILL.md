@@ -104,7 +104,7 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
   says what to do next (a "Did you mean ...?" for mistyped types, properties or commands; which option to add).
 - Exit codes: `0` ok, `1` usage (bad arguments), `2` not found, `3` refused by a safety rule, `4` database or site
   not reachable, `5` write conflict or validation failure (`error.details` lists every issue), `6` the user must
-  choose the development database (see "Which database").
+  choose the development database (see "Which database"), `130` interrupted (Ctrl+C).
 - `meta.warnings` means the result is valid but you should know something (e.g. a search was capped).
 - Statuses: `published`, `checkedOut` (draft), `checkedIn` (ready to publish), `previouslyPublished`,
   `delayedPublish` (scheduled), `awaitingApproval`, `rejected`. Deleted items (in the recycle bin) say `deleted: true`.
@@ -153,6 +153,8 @@ order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a cod
   record of what they were. Root, start pages and asset roots, and changes that leave no role with Administer, are
   refused.
 - Always `--dry-run` a multi-step `apply` plan first, and a single write when you are unsure of its effect.
+- A write that timed out (`unreachable`, "no response within") or a plan that stopped halfway (`details.partial`) may
+  have saved more than it reports: check with `opticli versions <ref>` before running it again.
 - Start `serve` only when a write is needed, and stop it (`opticli serve --stop`) when you are done.
 - Never run `opticli db use` or pass `--db`/`--connection`/`OPTICLI_DB` on your own initiative: which database is
   the development one, and whether to touch any other, is the user's decision. Writes to anything but the development

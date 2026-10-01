@@ -26,7 +26,23 @@ internal static class MoveEndpoint
         {
             throw AgentException.Usage($"Can't move {link.ID} below itself.");
         }
+        // The same rule as for new content: the edit UI doesn't let content be moved where it couldn't be created.
+        if (flow.Types.Load(content.ContentTypeID) is { } type && flow.Types.Load(target.ContentTypeID) is { } targetType
+            && CreateEndpoint.Placement(request, type, targetType, target.ContentLink.ID) is { Count: > 0 } issues)
+        {
+            throw AgentException.Invalid(issues);
+        }
+        if (body.DryRun)
+        {
+            return new MoveResult
+            {
+                Content = ContentSummaries.Describe(content, flow.Types),
+                PreviousParent = content.ParentLink.ToReferenceWithoutVersion().ToString(),
+                Parent = destination.ToReferenceWithoutVersion().ToString(),
+            };
+        }
 
+        flow.ThrowIfAborted();
         flow.Repository.Move(link, destination, AccessLevel.NoAccess, AccessLevel.NoAccess);
         return Result(flow, link, content.ParentLink);
     }
@@ -41,6 +57,7 @@ internal static class MoveEndpoint
             throw AgentException.Conflict($"Content {link.ID} is already in the recycle bin.");
         }
 
+        flow.ThrowIfAborted();
         flow.Repository.MoveToWastebasket(link, AgentProtocol.PrincipalName);
         return Result(flow, link, content.ParentLink);
     }

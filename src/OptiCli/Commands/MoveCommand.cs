@@ -13,8 +13,9 @@ internal static class MoveCommand
         var write = new WriteOptions();
         var command = new Command("move", """
             Move content, with everything below it, under a new parent. Needs `opticli serve`.
-            Site roots, start pages and the recycle bin can't be moved; `opticli delete` moves to the recycle bin. Prints the new
-            and previous parent and how many descendants moved along. --dry-run checks without asking the site.
+            Site roots, start pages and the recycle bin can't be moved; `opticli delete` moves to the recycle bin. The content's
+            type must be allowed below the new parent, as for `create`. Prints the new and previous parent and how many
+            descendants moved along. --dry-run runs every check, the site's included, without moving.
             Example: opticli move 123 --to 45 --dry-run
             """);
         content.AddTo(command, withLang: false);

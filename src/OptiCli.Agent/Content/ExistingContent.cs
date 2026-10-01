@@ -65,11 +65,6 @@ internal static class ExistingContent
                 includeDraft, dryRun, $"{link.ID} ('{existing.Name}')", branch?.Name)
             : null;
 
-        if (deleted && !dryRun)
-        {
-            flow.Repository.Move(link, parent.ContentLink, AccessLevel.NoAccess, AccessLevel.NoAccess);
-        }
-
         var current = versions is not null
             ? flow.Repository.Get<IContent>(ContentLocator.Latest(versions, link, branch).ContentLink)
             : branch is null ? flow.Repository.Get<IContent>(link) : flow.Repository.Get<IContent>(link, branch);
@@ -78,22 +73,45 @@ internal static class ExistingContent
         var writable = (IContent)((IReadOnly)current).CreateWritableClone();
         writable.Name = name;
         flow.Writer.Apply(writable, properties);
+        if (deleted)
+        {
+            // Validated where it will be once restored, not in the recycle bin.
+            writable.ParentLink = parent.ContentLink;
+        }
+
+        // Restored last, once the values and validation passed, and moved back if the save fails after all.
+        var restored = false;
+        void Restore()
+        {
+            flow.Repository.Move(link, parent.ContentLink, AccessLevel.NoAccess, AccessLevel.NoAccess);
+            restored = true;
+        }
 
         var action = writable is IVersionable ? WriteFlow.DraftAction(publish) : publish ? SaveAction.Publish : SaveAction.Save;
-        var result = flow.Save(
-            writable,
-            before,
-            action,
-            dryRun,
-            ContentSummaries.Describe(current, flow.Types),
-            current.ContentLink.WorkID > 0 ? current.ContentLink.WorkID : null,
-            saveUnchanged: publish && current is IVersionable { Status: not VersionStatus.Published });
+        WriteResult result;
+        try
+        {
+            result = flow.Save(
+                writable,
+                before,
+                action,
+                dryRun,
+                ContentSummaries.Describe(current, flow.Types),
+                current.ContentLink.WorkID > 0 ? current.ContentLink.WorkID : null,
+                saveUnchanged: publish && current is IVersionable { Status: not VersionStatus.Published },
+                beforeSave: deleted ? Restore : null);
+        }
+        catch when (restored)
+        {
+            flow.Repository.MoveToWastebasket(link, AgentProtocol.PrincipalName);
+            throw;
+        }
         return result with
         {
             // Unsaved, the result describes the version as loaded, which was still in the recycle bin.
-            Content = deleted && !dryRun && !result.Saved ? ContentSummaries.Describe(flow.Repository.Get<IContent>(current.ContentLink), flow.Types) : result.Content,
+            Content = restored && !result.Saved ? ContentSummaries.Describe(flow.Repository.Get<IContent>(current.ContentLink), flow.Types) : result.Content,
             Existing = true,
-            Restored = deleted && !dryRun,
+            Restored = restored,
             PendingDraft = pending,
             PreviouslyPublished = result is { Saved: true, Published: true } && versions is not null ? ContentLocator.PublishedVersion(versions) : null,
         };

@@ -19,6 +19,11 @@ internal static class CreateEndpoint
         }
 
         var type = TypeEndpoint.Find(flow.Types, body.Type);
+        if (Kind(type) == PlacementKind.Media)
+        {
+            throw AgentException.Usage($"{type.Name} is a media type; created this way it would be a media item without a file.",
+                $"Upload the file instead (POST {AgentRoutes.Media}, opticli upload), which picks or checks the media type.");
+        }
         var (parent, owner) = Parent(request, flow, body.Parent, body.ForContent, body.DryRun);
         var culture = body.Lang is { } lang ? flow.Locator.EnabledLanguage(lang) : MasterLanguage(owner);
 
@@ -46,7 +51,7 @@ internal static class CreateEndpoint
             shown: null,
             baseVersion: null,
             saveUnchanged: true,
-            precheck: Availability(request, parent, type, flow.Types, ParentType(flow, body)));
+            precheck: Availability(request, parent, body.ForContent is not null, type, flow.Types, ParentType(flow, body)));
     }
 
     /// <summary>
@@ -77,23 +82,43 @@ internal static class CreateEndpoint
     private static CultureInfo? MasterLanguage(IContent content) =>
         content is ILocalizable { MasterLanguage: { } master } ? master : null;
 
-    /// <summary>The editor's "allowed types" rule for pages, reported as a validation error rather than an exception.</summary>
+    /// <summary>The type the real parent will have, for a dry run under a stand-in parent (see <see cref="Availability"/>).</summary>
     private static ContentType? ParentType(WriteFlow flow, CreateRequest body) =>
         body.ParentType is null ? null
         : body.DryRun ? TypeEndpoint.Find(flow.Types, body.ParentType)
         : throw AgentException.Usage("parentType only applies to a dry run.");
 
+    /// <summary>
+    /// Whether new content of <paramref name="type"/> may go below <paramref name="parent"/> (<see cref="Placement"/>),
+    /// reported as a validation error rather than an exception, so a dry run lists it with the rest.
+    /// </summary>
+    /// <param name="assetsFolder">The parent is a "For this page" folder; in a dry run it may be its owner, as the folder doesn't exist yet.</param>
     /// <param name="plannedParent">The type the real parent will have, when the dry run uses a stand-in parent.</param>
-    private static IEnumerable<ValidationIssue> Availability(AgentRequest request, IContent parent, ContentType type, IContentTypeRepository types, ContentType? plannedParent = null)
+    internal static IReadOnlyList<ValidationIssue> Availability(AgentRequest request, IContent parent, bool assetsFolder, ContentType type, IContentTypeRepository types, ContentType? plannedParent = null)
     {
-        if (type is not PageType || (plannedParent is null ? parent is not PageData : plannedParent is not PageType))
-        {
-            yield break;
-        }
-        var parentType = plannedParent ?? types.Load(parent.ContentTypeID);
-        if (parentType is not null && !request.Service<ContentTypeAvailabilityService>().IsAllowed(parentType.Name, type.Name))
-        {
-            yield return new ValidationIssue(null, $"{type.Name} is not allowed below {parentType.Name} ({parent.ContentLink.ID}).");
-        }
+        var parentType = plannedParent
+            ?? (assetsFolder && parent is not ContentFolder ? types.Load(typeof(ContentAssetFolder)) : types.Load(parent.ContentTypeID));
+        return parentType is null ? [] : Placement(request, type, parentType, parent.ContentLink.ID);
     }
+
+    /// <summary>
+    /// Where content of <paramref name="type"/> may go (<see cref="ContentPlacement"/>), with the parent type's availability
+    /// as the CMS's <see cref="ContentTypeAvailabilityService"/> answers it, for create, upload and move alike.
+    /// </summary>
+    internal static IReadOnlyList<ValidationIssue> Placement(AgentRequest request, ContentType type, ContentType parentType, int parentId)
+    {
+        var allowed = request.Service<ContentTypeAvailabilityService>().IsAllowed(parentType.Name, type.Name);
+        return ContentPlacement.Problem(Kind(type), type.Name, Kind(parentType), parentType.Name, parentId, allowed) is { } problem
+            ? [new ValidationIssue(null, problem)]
+            : [];
+    }
+
+    internal static PlacementKind Kind(ContentType type) => type switch
+    {
+        PageType => PlacementKind.Page,
+        BlockType => PlacementKind.Block,
+        { ModelType: { } model } when typeof(MediaData).IsAssignableFrom(model) => PlacementKind.Media,
+        { ModelType: { } model } when typeof(ContentFolder).IsAssignableFrom(model) => PlacementKind.Folder,
+        _ => PlacementKind.Other,
+    };
 }

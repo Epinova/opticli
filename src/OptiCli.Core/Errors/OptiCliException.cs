@@ -24,6 +24,7 @@ public abstract class OptiCliException(ErrorCode code, string message, string? h
         ErrorCode.Conflict => new ConflictException(message, hint) { Details = details },
         ErrorCode.Validation => new ContentValidationException(message, hint) { Details = details },
         ErrorCode.NeedsSelection => new NeedsSelectionException(message, hint) { Details = details },
+        ErrorCode.Cancelled => new CancelledException(message, hint) { Details = details },
         _ => new InternalException(message, hint) { Details = details },
     };
 }
@@ -58,6 +59,10 @@ public sealed class ContentValidationException(string message, string? hint = nu
 /// </summary>
 public sealed class NeedsSelectionException(string message, string? hint = null)
     : OptiCliException(ErrorCode.NeedsSelection, message, hint);
+
+/// <summary>The user interrupted the command (Ctrl+C).</summary>
+public sealed class CancelledException(string message, string? hint = null)
+    : OptiCliException(ErrorCode.Cancelled, message, hint);
 
 /// <summary>Something unexpected failed, e.g. inside the site.</summary>
 public sealed class InternalException(string message, string? hint = null)

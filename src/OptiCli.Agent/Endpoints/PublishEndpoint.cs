@@ -54,10 +54,24 @@ internal static class PublishEndpoint
             throw AgentException.Invalid(issues);
         }
 
-        var published = flow.Repository.Save(writable, SaveAction.Publish, AccessLevel.NoAccess);
+        flow.ThrowIfAborted();
+        ContentReference published;
+        string? siteError = null;
+        try
+        {
+            published = flow.Repository.Save(writable, SaveAction.Publish, AccessLevel.NoAccess);
+        }
+        catch (Exception ex) when (ex is not AgentException && flow.Repository.Get<IContent>(version.ContentLink) is IVersionable { Status: VersionStatus.Published })
+        {
+            // A handler of the publishing events failed after the version went live (see WriteFlow.Save).
+            Console.Error.WriteLine($"[opticli] the site failed after publishing {version.ContentLink}: {ex}");
+            published = version.ContentLink;
+            siteError = $"{ex.Message} ({ex.GetType().FullName})";
+        }
         return new WriteResult
         {
             Content = ContentSummaries.Describe(flow.Repository.Get<IContent>(published), flow.Types),
+            SiteError = siteError,
             Saved = true,
             Published = true,
             BaseVersion = versionId,

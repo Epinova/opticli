@@ -31,6 +31,7 @@ public class OutputTests
     [InlineData(ErrorCode.Conflict, "conflict", 5)]
     [InlineData(ErrorCode.Validation, "validation", 5)]
     [InlineData(ErrorCode.Internal, "internal", 1)]
+    [InlineData(ErrorCode.Cancelled, "cancelled", 130)]
     public void Error_envelope_carries_code_message_hint_and_exit_code(ErrorCode code, string name, int exitCode)
     {
         var (writer, stdout, stderr) = Create(OutputFormat.Json);

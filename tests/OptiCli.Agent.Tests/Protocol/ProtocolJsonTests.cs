@@ -71,7 +71,7 @@ public class ProtocolJsonTests
         Assert.Equal(language, RoundTrip(language, out _));
         Assert.Equal(publish, RoundTrip(publish, out _));
         Assert.Equal(move, RoundTrip(move, out var json));
-        Assert.Equal("""{"parent":"789"}""", json);
+        Assert.Equal("""{"parent":"789","dryRun":false}""", json);
 
         var confirmed = new PublishRequest { IncludeDraft = true };
         Assert.Equal(confirmed, RoundTrip(confirmed, out json));

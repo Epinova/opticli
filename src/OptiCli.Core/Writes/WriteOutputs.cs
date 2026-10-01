@@ -47,6 +47,9 @@ public sealed record WriteOutput(
     /// </summary>
     public string? PreviouslyPublished { get; init; }
 
+    /// <summary>The site's own code failed after the save (a handler of the CMS's events): its message. The save stands.</summary>
+    public string? SiteError { get; init; }
+
     /// <param name="type">Shown when the agent returns no content (a dry-run create).</param>
     public static WriteOutput From(WriteResult result, string? type = null, string? name = null, string? parent = null)
     {
@@ -70,6 +73,7 @@ public sealed record WriteOutput(
         {
             PendingDraft = result.PendingDraft,
             PreviouslyPublished = content is not null && result.PreviouslyPublished is { } previous ? VersionRef(content.Id, previous) : null,
+            SiteError = result.SiteError,
         };
     }
 

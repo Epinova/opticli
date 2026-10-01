@@ -75,6 +75,12 @@ public sealed record WriteResult
     /// back. Null when the content (in this language) had never been published.
     /// </summary>
     public int? PreviouslyPublished { get; init; }
+
+    /// <summary>
+    /// The content was saved, but the site's own code failed after that (a handler of the CMS's save or publish events,
+    /// such as a search indexer): its message. The save stands; details are in the site's log.
+    /// </summary>
+    public string? SiteError { get; init; }
 }
 
 /// <summary>

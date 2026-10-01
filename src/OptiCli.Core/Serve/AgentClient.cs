@@ -16,6 +16,13 @@ public sealed class AgentClient : IDisposable
     // First writes after a start compile views and warm caches inside the CMS.
     private static readonly TimeSpan WriteTimeout = TimeSpan.FromMinutes(3);
 
+    /// <summary>
+    /// For a write the CLI stopped waiting for: the agent doesn't save once the caller has gone, but a save already
+    /// under way finishes.
+    /// </summary>
+    public const string MayHaveSavedHint =
+        "The site may still have saved the change if it was already saving: check with `opticli versions <ref>` (or `opticli get`) before running it again.";
+
     private readonly HttpClient _http;
 
     public AgentClient(Uri baseUrl, string token, HttpMessageHandler? handler = null)
@@ -63,9 +70,12 @@ public sealed class AgentClient : IDisposable
         }
         catch (Exception ex) when (ex is HttpRequestException || (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested))
         {
+            var timedOut = ex is OperationCanceledException;
             throw new UnreachableException(
-                $"The site's opticli agent at {_http.BaseAddress} did not answer ({(ex is OperationCanceledException ? $"no response within {timeout.TotalSeconds:0} s" : ex.Message)}).",
-                "Check it with `opticli serve --status` and `opticli serve --logs`; start it with `opticli serve`.",
+                $"The site's opticli agent at {_http.BaseAddress} did not answer ({(timedOut ? $"no response within {timeout.TotalSeconds:0} s" : ex.Message)}).",
+                timedOut && method != HttpMethod.Get
+                    ? $"{MayHaveSavedHint} Check the site with `opticli serve --status` and `opticli serve --logs`."
+                    : "Check it with `opticli serve --status` and `opticli serve --logs`; start it with `opticli serve`.",
                 ex);
         }
 

@@ -96,6 +96,13 @@ public sealed record SetOperation(
 {
     public override string Kind => "set";
 
+    /// <summary>
+    /// Dry run only: area edits applied after the properties, for a plan step dry-run as the content will be after
+    /// earlier steps (<see cref="PlanSimulation.OnExisting"/>). Not null also allows a set of nothing, which dry-runs the
+    /// latest version as it is.
+    /// </summary>
+    public IReadOnlyList<AreaEdit>? AreaEdits { get; init; }
+
     public override IEnumerable<string?> Refs => [Ref];
 
     public override WriteOperation MapRefs(Func<string, string> map) => this with { Ref = map(Ref), Properties = MapValues(Properties, map) };

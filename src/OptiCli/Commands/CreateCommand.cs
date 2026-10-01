@@ -17,7 +17,8 @@ internal static class CreateCommand
         var write = new WriteOptions();
         var command = new Command("create", """
             Create a page, block or folder under a parent, as a draft unless --publish. Needs `opticli serve`.
-            The type must be allowed below the parent's type; required properties must be set before it can be published (a draft
+            Pages go below pages, blocks and folders in asset folders, and the type must be allowed below the parent's type;
+            media are made with `opticli upload`. Required properties must be set before it can be published (a draft
             may leave them empty). Prints the new content's ref, version and every property set.
             Example: opticli create 123 --type ArticlePage --name "News" Heading="Hello" --dry-run
             """);
