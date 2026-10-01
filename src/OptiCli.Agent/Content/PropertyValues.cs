@@ -115,6 +115,9 @@ internal static class PropertyValues
             Ref = ContentReference.IsNullOrEmpty(item.ContentLink) ? null : item.ContentLink.ToString(),
             Guid = ContentReference.IsNullOrEmpty(item.ContentLink) && item.ContentGuid != Guid.Empty ? item.ContentGuid : null,
             DisplayOption = DisplayOption(item),
+            // So a change of personalization shows in the diff.
+            Group = string.IsNullOrWhiteSpace(item.ContentGroup) ? null : item.ContentGroup,
+            VisitorGroups = item.AllowedRoles is { } roles && roles.Any() ? roles.ToList() : null,
         }).ToList(),
         ContentReference reference => ContentReference.IsNullOrEmpty(reference) ? null : reference.ToString(),
         LinkItemCollection links => links.Select(link => new LinkItemValue

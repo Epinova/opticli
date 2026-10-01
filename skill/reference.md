@@ -15,9 +15,9 @@ Companion to [SKILL.md](SKILL.md). `opticli <command> --help` is always the auth
 
 Which database: `--connection`/`OPTICLI_DB`, `--db` or `--profile` for one run; otherwise the development database:
 the one saved with `opticli db use`, else `connection` in the user config (`~/.config/opticli/config.json`,
-`%APPDATA%\opticli\config.json` on Windows), else the first of `launchSettings.json` profiles, user secrets,
-`appsettings.Development.json`, `appsettings.json` (ASP.NET Core's order) if it is local. A
-remote default, disagreeing launch profiles, or only other environments' `appsettings.{Env}.json` files give
+`%APPDATA%\opticli\config.json` on Windows), else the first of `launchSettings.json` profiles, an exported
+`ConnectionStrings__EPiServerDB` (source `environment`), user secrets, `appsettings.Development.json`, `appsettings.json`
+(ASP.NET Core's order) if it is local. A remote default, disagreeing launch profiles, or only other environments' `appsettings.{Env}.json` files give
 `needs_selection` (exit 6) with `error.details.choices`. The user picks, then `opticli db use <id>`.
 `opticli doctor` shows every candidate and why it was or wasn't used.
 
@@ -49,7 +49,7 @@ remote default, disagreeing launch profiles, or only other environments' `appset
 | `drafts [--since <date>] [--by <user>] [--kind K] [--type T] [--lang]` | One row per item and language with unpublished changes: `status` and `version` of the newest draft, `saved`, `changedBy`, `drafts` (unpublished versions newer than the published one). `--since` is UTC. |
 | `blob <ref>` | Media only: blob URI, file path on disk, `exists`; same for the thumbnail. |
 | `access <ref>` | `inherited`, `from` (the item the entries are stored on: itself, or the nearest ancestor with its own), `entries[]` (`name`, `kind`: role, user or visitorGroup, `levels`: `FullAccess` or e.g. `["Read","Edit"]`, `mask`). Read from the database; no `serve` needed. |
-| `sql "<SELECT ...>" [--limit N] [--full] [--include-personal-data]` | One SELECT/WITH statement, run in a rolled-back transaction; returns 100 rows unless `--limit` (`truncated: true` when there were more); `--jsonl` prints rows. Forms submissions and user/membership tables need `--include-personal-data`. Put a space between a number and a following word (`1 AS x`, not `1AS x`). |
+| `sql "<SELECT ...>" [--limit N] [--full] [--include-personal-data]` | One SELECT/WITH statement, run in a rolled-back transaction; returns 100 rows unless `--limit` (`truncated: true` when there were more); `--jsonl` prints rows. Forms submissions and user/membership tables need `--include-personal-data`. In `sys`, only the views that describe this database's schema (`sys.objects`, `tables`, `columns`, `indexes`, `index_columns`, `types`, `schemas`, `foreign_keys`, `sql_modules`, ...) are allowed, and `INFORMATION_SCHEMA` views; `sys.dm_*`, `fn_*`, `sys*` compatibility views and server-wide views are refused. Put a space between a number and a following word (`1 AS x`, not `1AS x`). |
 
 ### Shape of `get`
 
@@ -61,7 +61,8 @@ remote default, disagreeing launch profiles, or only other environments' `appset
  "shortcut":{"type":"shortcut","to":{"ref":"456","type":"NewsPage","name":"News archive","url":"/en/archive/"}},
  "properties":{
    "Heading":{"type":"String","value":"Hello","culture":"en"},
-   "MainArea":{"type":"ContentArea","value":[{"ref":"789","type":"TeaserBlock","name":"Teaser","displayOption":"wide"}]},
+   "MainArea":{"type":"ContentArea","value":[{"ref":"789","type":"TeaserBlock","name":"Teaser","displayOption":"wide",
+     "group":"g1","visitorGroups":["<visitor group id>"]}]},
    "Hero":{"type":"Block","blockType":"HeroBlock","value":{"Heading":{"type":"String","value":"..."}}}}}
 ```
 
@@ -75,7 +76,9 @@ plus its resolved links and embedded blocks.
 All take `--dry-run`. `set`, `create`, `area`, `block create`, `translate` save a draft unless `--publish`.
 `--lang <code>` picks the branch. Output: `ref`, `version` (the new version ref), `baseVersion`, `status`, `saved`,
 `published`, `valid`, `changes[]` (`property`, `before`, `after`), `validation[]`. A saved draft becomes the
-primary draft, the version edit mode opens.
+primary draft, the version edit mode opens. A write that publishes existing content also has `previouslyPublished`
+(the version live until then; absent after a first publish) and, when it put other people's changes live,
+`pendingDraft` (see [Other people's drafts](#other-peoples-drafts)).
 
 | Command | Example |
 |---|---|
@@ -87,7 +90,7 @@ primary draft, the version edit mode opens.
 | `block create --type T --name N (--for <page-ref> \| --parent <folder-ref>)` | `opticli block create --type TeaserBlock --name Teaser --for 123` |
 | `upload <file> (--for <ref> \| --parent <folder-ref>) [--name N] [--type T] [Prop=value...]` | `opticli upload report.pdf --parent 456 --name "Annual report" --dry-run` |
 | `translate <ref> --lang <code> [--name N] [Prop=value...]` | `opticli translate 123 --lang de --name "Neuigkeiten"` |
-| `publish <ref> [--version id]` | `opticli publish 123_456` (only when the user asked) |
+| `publish <ref> [--version id] [--include-draft]` | `opticli publish 123_456` (only when the user asked) |
 | `move <ref> --to <parent-ref>` | `opticli move 123 --to 45` |
 | `delete <ref>` | `opticli delete 123 --dry-run` (recycle bin; only when the user asked) |
 | `access <ref> [--grant Role=Levels] [--user Name=Levels] [--revoke Name] [--break-inheritance \| --inherit]` | `opticli access 123 --break-inheritance --revoke Everyone --grant Authenticated=Read --dry-run` (only when the user asked) |
@@ -99,7 +102,8 @@ when the recycle bin is emptied, and are there if the item is restored); a warni
 `--dry-run` on `publish`, `move` and `delete` checks the arguments and the item without asking the site.
 
 Positions in `area` are zero-based; a plain number is a position, `ref:789` (or a GUID) names the item by the
-content it shows. `--at` and `--display` only apply to `add`.
+content it shows. `--at` and `--display` only apply to `add`; `--display` is checked like `displayOption` below.
+`remove` and `move` leave the items' display options and personalization as they are.
 
 ### Property values
 
@@ -110,6 +114,12 @@ content it shows. `--at` and `--display` only apply to `add`.
 - `--values '<json object>'` is merged on top, for structured values:
   - ContentArea: `{"MainArea":[{"ref":"456"},{"ref":"789","displayOption":"wide"}]}` (replaces the whole area;
     use `area` to add/remove single items). An item may name its content by `"guid"` instead of `"ref"`.
+    `displayOption` is the id of one of the site's display options (its name or tag works too); an unknown one is
+    refused with the list. Personalization: `"group":"g1"` and `"visitorGroups":["<visitor group id>"]`, as `get`
+    shows them. An item without them keeps those of the item for the same content it replaces, and that item's other
+    render settings: the n-th item for some content keeps the n-th current one's, so inserting, removing or reordering
+    items doesn't move personalization to another item. `"group":""` and `"visitorGroups":[]` remove it. The
+    ContentArea value `get` shows can be sent back as is.
   - Local block: `{"Hero":{"Heading":"Hi","Link":"/en/about/"}}`.
   - Block list (`IList<SomeBlock>`, shown by `get` as `BlockList`): an array of such objects, replacing the whole list:
     `{"Persons":[{"Name":"Kari","Biography":"<p>...</p>","Image":"63__provider"},{"Name":"Per"}]}`.
@@ -185,6 +195,23 @@ property of the same name wins). All are versioned, show in `changes`, and are r
 `set` and `area` base the draft on the latest version, read just before saving. If someone saved a newer version
 meanwhile the write fails with `conflict` (exit 5); look at it, then run again. `--base-version <id>` pins the base
 explicitly; `--force` skips the check.
+
+### Other people's drafts
+
+A publish puts the whole version live, so with `set`/`area --publish` also every unpublished change in the version it
+is based on. If a version saved after the published one (in that language) was saved by someone other than `opticli`,
+these stop unless confirmed: `set`, `area` and plan steps with `publish`, `publish` without `--version`, and
+`create`/`block`/`upload`/`translate` steps that publish existing content (`apply --update-existing`).
+- Not on a terminal: `conflict` (exit 5), `error.details.reason: "pendingDraft"`, `error.details.draft`: `version`
+  (the newest such version), `savedBy` (empty for saves without a user, e.g. a scheduled job), `saved`, `changes[]`
+  (published version to the version that would go live). On a terminal opticli shows the same and asks.
+- `--include-draft` confirms (`set`, `area`, `publish`); a plan step needs `"includeDraft": true`, or the plan fails
+  validation. `publish --version <id>` (or `publish 123_456`) publishes that version as it is and needs no
+  confirmation. Ask the user before confirming.
+- `--dry-run` reports `pendingDraft` with a warning and doesn't fail. `publish --dry-run` reads it from the database:
+  `changes` there are in `get`'s value shape.
+- Versions saved by `opticli` itself never need it, so "save a draft, check it, publish" works as before.
+- To go back after a publish: `opticli publish <ref> --version <previouslyPublished>`.
 
 ### Plans (`apply`)
 
@@ -268,5 +295,5 @@ Plans that run again (a section rebuilt after a database refresh, or repaired af
 | `unreachable` (exit 4) on a write | The site isn't running: `opticli serve`; if it was, `opticli serve --status` and `--logs --tail 80`. |
 | `serve` times out or exits | `opticli serve --logs --tail 80`. Typical: the site needs a build (`--build`), a port is taken (`--port`), or the site's own startup fails. |
 | `validation` (exit 5) | `error.details` lists each failing property; drafts may leave required properties empty, publishing may not. |
-| `conflict` (exit 5) | A newer version exists: `opticli versions <ref> --limit 3`, then re-run. |
+| `conflict` (exit 5) | A newer version exists: `opticli versions <ref> --limit 3`, then re-run. With `details.reason: "pendingDraft"`: someone else's unpublished changes would go live too; show `details.draft` and ask the user before `--include-draft`. |
 | Values look cut off | `truncated: true`: use `get <ref> --fields Prop` or `--full`. |

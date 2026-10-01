@@ -162,6 +162,10 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                 return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Deferred, Guid: op.ContentGuid), null);
             }
             var outcome = await executor.RunAsync(op, dryRun: true, cancellationToken);
+            if (outcome.Output is WriteOutput { PendingDraft: { } draft } && !op.IncludeDraft)
+            {
+                throw WriteExecutor.UnconfirmedDraft(draft);
+            }
             return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Valid, outcome.Output,
                 Warnings: outcome.Warnings.Count > 0 ? outcome.Warnings : null, Guid: op.ContentGuid), null);
         }

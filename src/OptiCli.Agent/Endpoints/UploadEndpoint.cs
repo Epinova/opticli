@@ -30,7 +30,7 @@ internal static class UploadEndpoint
         if (body.Guid is { } guid && ExistingContent.Find(flow, guid) is { } existing)
         {
             var name = string.IsNullOrWhiteSpace(body.Name) ? body.FileName.Trim() : body.Name;
-            var updated = ExistingContent.Update(flow, existing, body.UpdateExisting, type, parent, null, name, body.Properties, body.Publish, body.DryRun);
+            var updated = ExistingContent.Update(flow, existing, body.UpdateExisting, type, parent, null, name, body.Properties, body.Publish, body.IncludeDraft, body.DryRun);
             return updated with
             {
                 MediaType = type.Name,

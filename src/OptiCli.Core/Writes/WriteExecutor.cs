@@ -25,12 +25,18 @@ namespace OptiCli.Core.Writes;
 /// an <c>area add</c> of an item already there, a <c>translate</c> to an existing branch (which becomes a <c>set</c>),
 /// a <c>publish</c> of a published version and a <c>delete</c> of deleted content change nothing.
 /// </param>
+/// <param name="confirmDraft">
+/// Asks a person at a terminal whether a publish should also put live the unpublished changes someone else saved
+/// (the agent's message and <see cref="PendingDraft"/>); true sends the write again, confirmed. Null: such a publish
+/// fails with a <c>conflict</c> whose details list the changes.
+/// </param>
 public sealed class WriteExecutor(
     ContentSession session,
     Func<CancellationToken, Task<AgentClient>> connect,
     string? site = null,
     string? projectDirectory = null,
-    bool updateExisting = false)
+    bool updateExisting = false,
+    Func<string, PendingDraft, bool>? confirmDraft = null)
 {
     public bool UpdateExisting => updateExisting;
 
@@ -39,6 +45,10 @@ public sealed class WriteExecutor(
 
     /// <summary>Content type of the recycle bin (<c>ContentReference.WasteBasket</c>).</summary>
     private const string RecycleBinType = "SysRecycleBin";
+
+    /// <summary>What to do about a publish that would include someone else's unpublished changes.</summary>
+    public const string PendingDraftHint =
+        "details.draft lists the unpublished changes and who saved them. Ask the user whether they should go live too, and only if so run again with --include-draft (in a plan: \"includeDraft\": true on the step). Without --publish the change is saved as a draft and nothing goes live; `opticli publish <ref> --version <id>` publishes one version as it is.";
 
     private AgentClient? _agent;
 
@@ -60,6 +70,13 @@ public sealed class WriteExecutor(
             _ => throw new InvalidOperationException($"Unknown operation {operation.GetType().Name}."),
         };
 
+        if (outcome.Output is WriteOutput { DryRun: true, PendingDraft: { } draft })
+        {
+            var then = operation.IncludeDraft
+                ? "--include-draft publishes them too"
+                : "the real run fails with a conflict unless --include-draft (ask the user first)";
+            outcome = outcome with { Warnings = [.. outcome.Warnings, $"pendingDraft: publishing would also put live {draft.Describe()}; {then}."] };
+        }
         if (outcome.Output is WriteOutput { DryRun: true, Valid: false } invalid)
         {
             var errors = invalid.Validation?.Where(v => v.Severity == "error").Select(v => v.Property is null ? v.Message : $"{v.Property}: {v.Message}") ?? [];
@@ -82,6 +99,7 @@ public sealed class WriteExecutor(
             Name = op.Name,
             Properties = PropertyArguments.ToRequest(op.Properties),
             Publish = op.Publish,
+            IncludeDraft = op.IncludeDraft,
             DryRun = dryRun,
             BaseVersion = await BaseVersionAsync(target, language, op.BaseVersion, op.Force, cancellationToken),
         };
@@ -129,6 +147,7 @@ public sealed class WriteExecutor(
             Lang = language?.Code,
             AreaOps = [edit],
             Publish = op.Publish,
+            IncludeDraft = op.IncludeDraft,
             DryRun = dryRun,
             BaseVersion = await BaseVersionAsync(target, language, op.BaseVersion, op.Force, cancellationToken),
         };
@@ -140,7 +159,7 @@ public sealed class WriteExecutor(
         WriteResult result;
         try
         {
-            result = await PostAsync<WriteResult>(AgentRoutes.Draft(target.AgentRef), request, cancellationToken);
+            result = await PublishingPostAsync(AgentRoutes.Draft(target.AgentRef), request, r => r with { IncludeDraft = true }, cancellationToken);
         }
         catch (ConflictException ex) when (ex.Details is AgentErrorDetails { CurrentVersion: { } current })
         {
@@ -181,6 +200,7 @@ public sealed class WriteExecutor(
             DryRun = dryRun,
             Guid = op.ContentGuid,
             UpdateExisting = updateExisting,
+            IncludeDraft = op.IncludeDraft,
             ParentType = dryRun ? op.PlannedParentType : null,
         };
         return await CreatedAsync(request, type.Name, cancellationToken, parent.Stored);
@@ -210,6 +230,7 @@ public sealed class WriteExecutor(
             DryRun = dryRun,
             Guid = op.ContentGuid,
             UpdateExisting = updateExisting,
+            IncludeDraft = op.IncludeDraft,
         };
         return await CreatedAsync(request, type.Name, cancellationToken);
     }
@@ -245,9 +266,10 @@ public sealed class WriteExecutor(
             DryRun = dryRun,
             Guid = op.ContentGuid,
             UpdateExisting = updateExisting,
+            IncludeDraft = op.IncludeDraft,
         };
 
-        var result = await PostAsync<WriteResult>(AgentRoutes.Media, request, cancellationToken);
+        var result = await PublishingPostAsync(AgentRoutes.Media, request, r => r with { IncludeDraft = true }, cancellationToken);
         var output = Created(result, result.MediaType ?? type?.Name, request.Name ?? request.FileName, request.Parent, request.Guid) with
         {
             Upload = new UploadInfo(file.FullName, file.Length, result.Saved && !result.Existing && result.Content is { } saved ? await BlobAsync(saved.Id, cancellationToken) : null),
@@ -265,7 +287,7 @@ public sealed class WriteExecutor(
     /// <param name="parent">The parent's header, for the simple address check.</param>
     private async Task<WriteOutcome> CreatedAsync(CreateRequest request, string typeName, CancellationToken cancellationToken, ContentHeader? parent = null)
     {
-        var result = await PostAsync<WriteResult>(AgentRoutes.Create, request, cancellationToken);
+        var result = await PublishingPostAsync(AgentRoutes.Create, request, r => r with { IncludeDraft = true }, cancellationToken);
         return await WithSimpleAddressCheckAsync(
             Outcome(Created(result, typeName, request.Name, request.Parent, request.Guid), CreatedId(result)), result, parent, self: false, cancellationToken);
     }
@@ -293,9 +315,9 @@ public sealed class WriteExecutor(
         if (updateExisting && target.Header.Languages.ContainsKey(language.Id))
         {
             var existing = op.Properties is not null || op.Name is not null
-                ? await SetAsync(new SetOperation(op.Ref, op.Properties, op.Name, language.Code, op.Publish, Force: true), dryRun, cancellationToken)
+                ? await SetAsync(new SetOperation(op.Ref, op.Properties, op.Name, language.Code, op.Publish, Force: true) { IncludeDraft = op.IncludeDraft }, dryRun, cancellationToken)
                 : op.Publish
-                    ? await PublishAsync(new PublishOperation(op.Ref, Lang: language.Code), dryRun, cancellationToken)
+                    ? await PublishAsync(new PublishOperation(op.Ref, Lang: language.Code) { IncludeDraft = op.IncludeDraft }, dryRun, cancellationToken)
                     : await LatestUnchangedAsync(target, language, dryRun, $"The {language.Code} branch already exists; nothing to do.", cancellationToken);
             return existing with { Output = ((WriteOutput)existing.Output) with { Existing = true } };
         }
@@ -322,9 +344,10 @@ public sealed class WriteExecutor(
         var language = LanguageFor(op.Lang, target);
         var versionId = op.Version ?? target.Version;
 
+        var request = new PublishRequest { Version = versionId, Lang = language?.Code, IncludeDraft = op.IncludeDraft };
         if (!dryRun && !updateExisting)
         {
-            var result = await PostAsync<WriteResult>(AgentRoutes.Publish(target.ContentRef), new PublishRequest { Version = versionId, Lang = language?.Code }, cancellationToken);
+            var result = await PublishingPostAsync(AgentRoutes.Publish(target.ContentRef), request, r => r with { IncludeDraft = true }, cancellationToken);
             return Outcome(WriteOutput.From(result), null);
         }
 
@@ -345,14 +368,18 @@ public sealed class WriteExecutor(
         }
         if (!dryRun)
         {
-            var result = await PostAsync<WriteResult>(AgentRoutes.Publish(target.ContentRef), new PublishRequest { Version = versionId, Lang = language?.Code }, cancellationToken);
+            var result = await PublishingPostAsync(AgentRoutes.Publish(target.ContentRef), request, r => r with { IncludeDraft = true }, cancellationToken);
             return Outcome(WriteOutput.From(result), null);
         }
         var identity = session.Identities.Describe(target.Header, session.Model.Language(version.LanguageId), version.Id, version.StatusValue, version.Name);
         var output = new WriteOutput(
             WriteOutput.Id(target.Id), version.Ref, identity.Guid, identity.Type, identity.Name, identity.Language, identity.Status,
             target.Header.ParentId is { } parent ? WriteOutput.Id(parent) : null,
-            Saved: false, Published: false, DryRun: true, Valid: true, BaseVersion: version.Ref, Changes: [], Validation: null);
+            Saved: false, Published: false, DryRun: true, Valid: true, BaseVersion: version.Ref, Changes: [], Validation: null)
+        {
+            // A named version is what the user chose to put live; the latest may hold someone else's draft.
+            PendingDraft = versionId is null ? await PendingDraftReader.FindAsync(session, version, cancellationToken) : null,
+        };
         return new WriteOutcome(output, DbSource, null,
             ["Dry-run publish checks only that the version exists and isn't published yet; the CMS validates it when it is actually published."]);
     }
@@ -556,6 +583,40 @@ public sealed class WriteExecutor(
             r => r.GetInt32(0), cancellationToken, new SqlParameter("@prefix", prefix));
         return rows[0];
     }
+
+    /// <summary>
+    /// Posts a write that may publish. When the agent answers that the publish would also put someone else's unpublished
+    /// changes live, <c>confirmDraft</c> asks (and the write is sent again, confirmed); otherwise that is a conflict
+    /// whose hint names the option that confirms.
+    /// </summary>
+    private async Task<WriteResult> PublishingPostAsync<TRequest>(string route, TRequest request, Func<TRequest, TRequest> confirmed, CancellationToken cancellationToken)
+        where TRequest : notnull
+    {
+        try
+        {
+            return await PostAsync<WriteResult>(route, request, cancellationToken);
+        }
+        catch (ConflictException ex) when (ex.Details is AgentErrorDetails { Draft: { } draft })
+        {
+            if (confirmDraft is null)
+            {
+                throw new ConflictException(ex.Message, PendingDraftHint) { Details = ex.Details };
+            }
+            if (!confirmDraft(ex.Message, draft))
+            {
+                throw new ConflictException("Not published, as answered; nothing was saved.",
+                    "Without --publish the change is saved as a draft and nothing goes live; `opticli publish <ref> --version <id>` publishes one version as it is.")
+                { Details = ex.Details };
+            }
+            return await PostAsync<WriteResult>(route, confirmed(request), cancellationToken);
+        }
+    }
+
+    /// <summary>A plan step whose dry run found someone else's unpublished changes, without <c>"includeDraft": true</c>.</summary>
+    public static ConflictException UnconfirmedDraft(PendingDraft draft) => new($"Publishing would also put live {draft.Describe()}.", PendingDraftHint)
+    {
+        Details = new AgentErrorDetails(null, null) { Reason = PendingDraft.Reason, Draft = draft },
+    };
 
     private async Task<T> PostAsync<T>(string route, object body, CancellationToken cancellationToken)
     {

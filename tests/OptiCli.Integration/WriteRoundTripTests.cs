@@ -112,6 +112,73 @@ public sealed class WriteRoundTripTests
     }
 
     [SiteFact]
+    public async Task Publishing_someone_elses_draft_needs_confirmation_and_the_undo_names_the_previously_published_version()
+    {
+        var cancellationToken = CancellationToken.None;
+        await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
+        var writes = new WriteExecutor(site.Session, _ => Task.FromResult(site.Agent));
+
+        var folder = await ScratchFolderAsync(site, writes, cancellationToken);
+        // An image: media is versioned, and every site has an image type.
+        var file = Path.Combine(Path.GetTempPath(), $"opticli-it-{Guid.NewGuid():N}.png");
+        await File.WriteAllBytesAsync(file, Convert.FromBase64String(OnePixelPng), cancellationToken);
+        try
+        {
+            var uploaded = Assert.IsType<WriteOutput>((await writes.RunAsync(new UploadOperation(file, Parent: folder, Publish: true), dryRun: false, cancellationToken)).Output);
+            var media = uploaded.Ref!;
+            var stop = new System.Text.Json.Nodes.JsonObject { ["StopPublish"] = "2099-01-01T00:00:00Z" };
+            var draft = Assert.IsType<WriteOutput>((await writes.RunAsync(new SetOperation(media, stop), dryRun: false, cancellationToken)).Output);
+            var rename = new SetOperation(media, Name: "renamed", Publish: true);
+
+            // opticli's own draft goes live without asking (checked from the database, which leaves the CMS's version
+            // list uncached for the change below).
+            Assert.Null(Assert.IsType<WriteOutput>((await writes.RunAsync(new PublishOperation(media), dryRun: true, cancellationToken)).Output).PendingDraft);
+
+            // The agent saves only as opticli, so the draft becomes another user's in the database. The CMS caches
+            // version lists until the next save, so this has to come before the agent lists them again.
+            await site.Session.Db.QueryAsync("UPDATE tblWorkContent SET ChangedByName = 'someone-else@example.com' WHERE pkID = @version; SELECT @@ROWCOUNT",
+                r => r.GetInt32(0), cancellationToken, new Microsoft.Data.SqlClient.SqlParameter("@version", int.Parse(draft.Version!.Split('_')[1], System.Globalization.CultureInfo.InvariantCulture)));
+
+            var dry = await writes.RunAsync(rename, dryRun: true, cancellationToken);
+            var pending = Assert.IsType<WriteOutput>(dry.Output).PendingDraft;
+            Assert.Equal((draft.Version, "someone-else@example.com"), (pending?.Version, pending?.SavedBy));
+            Assert.Contains(pending!.Changes, c => c.Property == "StopPublish");
+            Assert.Contains(dry.Warnings, w => w.StartsWith("pendingDraft:", StringComparison.Ordinal));
+            var dryPublish = Assert.IsType<WriteOutput>((await writes.RunAsync(new PublishOperation(media), dryRun: true, cancellationToken)).Output).PendingDraft;
+            Assert.Equal(draft.Version, dryPublish?.Version);
+            Assert.Contains(dryPublish!.Changes, c => c.Property == "StopPublish");
+
+            var refused = await Assert.ThrowsAsync<Core.Errors.ConflictException>(() => writes.RunAsync(rename, dryRun: false, cancellationToken));
+            Assert.Equal(PendingDraft.Reason, Assert.IsType<Core.Serve.AgentErrorDetails>(refused.Details).Reason);
+            Assert.Contains("--include-draft", refused.Hint);
+            await Assert.ThrowsAsync<Core.Errors.ConflictException>(() => writes.RunAsync(new PublishOperation(media), dryRun: false, cancellationToken));
+
+            var plan = WritePlan.Parse($$"""{"operations": [{"op": "set", "ref": "{{media}}", "name": "renamed", "publish": true}]}""");
+            var invalid = await Assert.ThrowsAnyAsync<Core.Errors.OptiCliException>(() => new PlanRunner(site.Session, writes, Path.GetTempPath()).RunAsync(plan, dryRun: true, publishAll: false, cancellationToken));
+            Assert.Equal(Core.Errors.ErrorCode.Conflict, invalid.Code);
+            var confirmedPlan = WritePlan.Parse($$"""{"operations": [{"op": "set", "ref": "{{media}}", "name": "renamed", "publish": true, "includeDraft": true}]}""");
+            Assert.Equal(PlanStepStatus.Valid, (await new PlanRunner(site.Session, writes, Path.GetTempPath()).RunAsync(confirmedPlan, dryRun: true, publishAll: false, cancellationToken)).Operations[0].Status);
+
+            var published = Assert.IsType<WriteOutput>((await writes.RunAsync(rename with { IncludeDraft = true }, dryRun: false, cancellationToken)).Output);
+            Assert.True(published.Published);
+            Assert.Equal(draft.Version, published.PendingDraft?.Version);
+            Assert.Equal(uploaded.Version, published.PreviouslyPublished);
+            Assert.Equal($"{published.Version} is now published; to go back, publish the previously published version: opticli publish {media} --version {uploaded.Version!.Split('_')[1]}",
+                UndoHints.For(rename, published));
+            Assert.Equal(new DateTime(2099, 1, 1, 0, 0, 0, DateTimeKind.Utc), (await GetAsync(site, int.Parse(media, System.Globalization.CultureInfo.InvariantCulture), VersionSelector.Published, cancellationToken)).StopPublish?.ToUniversalTime());
+
+            // Publishing a named version counts as confirmation, and the undo goes back to the version before.
+            var older = Assert.IsType<WriteOutput>((await writes.RunAsync(new PublishOperation(media, Version: int.Parse(uploaded.Version.Split('_')[1], System.Globalization.CultureInfo.InvariantCulture)), dryRun: false, cancellationToken)).Output);
+            Assert.Equal(published.Version, older.PreviouslyPublished);
+        }
+        finally
+        {
+            File.Delete(file);
+            await writes.RunAsync(new DeleteOperation(folder), dryRun: false, cancellationToken);
+        }
+    }
+
+    [SiteFact]
     public async Task An_uploaded_pdf_is_media_whose_blob_is_on_disk()
     {
         var cancellationToken = CancellationToken.None;
@@ -201,6 +268,9 @@ public sealed class WriteRoundTripTests
         var loaded = await site.Agent.SendAsync<ContentItem>(HttpMethod.Get, AgentRoutes.Read(reference.ToString()), null, cancellationToken);
         Assert.Equal(mapped[0].Guid, loaded.Guid);
     }
+
+    /// <summary>A 1x1 transparent PNG.</summary>
+    private const string OnePixelPng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
     /// <summary>A one-page PDF with a line of text and a valid cross-reference table.</summary>
     private static byte[] MinimalPdf()

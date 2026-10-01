@@ -20,7 +20,8 @@ public static class SiteProcess
     /// started by .NET never is), so the returned process is the site itself. Its stdio points at the log
     /// and /dev/null, never at this process's pipes, so a caller capturing opticli's output isn't held open.
     /// </remarks>
-    public static Process StartDetached(string dotnet, string dll, string workingDirectory, IEnumerable<KeyValuePair<string, string>> environment, string logPath)
+    /// <param name="environment">Set over the inherited environment, in order; a null value removes the variable.</param>
+    public static Process StartDetached(string dotnet, string dll, string workingDirectory, IEnumerable<KeyValuePair<string, string?>> environment, string logPath)
     {
         ProcessStartInfo info;
         if (OperatingSystem.IsWindows())
@@ -48,7 +49,7 @@ public static class SiteProcess
     }
 
     /// <summary>Starts the site as a child whose output the caller reads (foreground mode).</summary>
-    public static Process StartAttached(string dotnet, string dll, string workingDirectory, IEnumerable<KeyValuePair<string, string>> environment)
+    public static Process StartAttached(string dotnet, string dll, string workingDirectory, IEnumerable<KeyValuePair<string, string?>> environment)
     {
         var info = new ProcessStartInfo(dotnet)
         {
@@ -59,13 +60,20 @@ public static class SiteProcess
         return Start(info, workingDirectory, environment);
     }
 
-    private static Process Start(ProcessStartInfo info, string workingDirectory, IEnumerable<KeyValuePair<string, string>> environment)
+    private static Process Start(ProcessStartInfo info, string workingDirectory, IEnumerable<KeyValuePair<string, string?>> environment)
     {
         info.UseShellExecute = false;
         info.WorkingDirectory = workingDirectory;
         foreach (var (name, value) in environment)
         {
-            info.Environment[name] = value;
+            if (value is null)
+            {
+                info.Environment.Remove(name);
+            }
+            else
+            {
+                info.Environment[name] = value;
+            }
         }
         return Process.Start(info) ?? throw new InvalidOperationException($"Could not start {info.FileName}.");
     }

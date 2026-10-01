@@ -26,13 +26,13 @@ public sealed partial class WritePlan
     /// <summary>Allowed fields per op; required ones end with <c>*</c>.</summary>
     public static readonly IReadOnlyDictionary<string, string[]> Fields = new Dictionary<string, string[]>
     {
-        ["set"] = ["ref*", "properties", "name", "lang", "publish", "baseVersion", "force"],
-        ["create"] = ["parent*", "type*", "name*", "properties", "lang", "publish", "id", "guid"],
-        ["area"] = ["ref*", "property*", "action*", "item", "index", "at", "to", "display", "lang", "publish", "baseVersion", "force"],
-        ["block"] = ["type*", "name*", "for", "parent", "properties", "lang", "publish", "id", "guid"],
-        ["upload"] = ["file*", "for", "parent", "name", "type", "properties", "publish", "id", "guid"],
-        ["translate"] = ["ref*", "lang*", "name", "properties", "publish"],
-        ["publish"] = ["ref*", "version", "lang"],
+        ["set"] = ["ref*", "properties", "name", "lang", "publish", "includeDraft", "baseVersion", "force"],
+        ["create"] = ["parent*", "type*", "name*", "properties", "lang", "publish", "includeDraft", "id", "guid"],
+        ["area"] = ["ref*", "property*", "action*", "item", "index", "at", "to", "display", "lang", "publish", "includeDraft", "baseVersion", "force"],
+        ["block"] = ["type*", "name*", "for", "parent", "properties", "lang", "publish", "includeDraft", "id", "guid"],
+        ["upload"] = ["file*", "for", "parent", "name", "type", "properties", "publish", "includeDraft", "id", "guid"],
+        ["translate"] = ["ref*", "lang*", "name", "properties", "publish", "includeDraft"],
+        ["publish"] = ["ref*", "version", "lang", "includeDraft"],
         ["move"] = ["ref*", "to*"],
         ["delete"] = ["ref*"],
         ["access"] = ["ref*", "grant", "grantUsers", "revoke", "breakInheritance", "inherit", "allowUnknownRole"],
@@ -236,7 +236,7 @@ public sealed partial class WritePlan
         {
             problems.Add($"{reader.Where}: give exactly one of \"for\" and \"parent\".");
         }
-        return operation with { Id = id, ContentGuid = ContentGuid(reader, op, id, guidNamespace) };
+        return operation with { Id = id, ContentGuid = ContentGuid(reader, op, id, guidNamespace), IncludeDraft = reader.Bool("includeDraft") };
     }
 
     /// <summary>The step's <c>guid</c>, else one derived from the plan's namespace and the step's id.</summary>

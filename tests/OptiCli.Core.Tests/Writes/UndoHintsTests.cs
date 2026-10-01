@@ -21,11 +21,46 @@ public class UndoHintsTests
     }
 
     [Fact]
-    public void A_published_edit_is_undone_by_republishing_its_base_version()
+    public void A_published_edit_is_undone_by_republishing_the_previously_published_version()
     {
+        // Based on a draft (455) that was never live: going back means the version that was published before (450).
+        var published = Output(published: true) with { PreviouslyPublished = "123_450" };
+
         Assert.Equal(
-            "123_456 was published; to go back, re-publish the version it was based on: opticli publish 123 --version 455",
-            UndoHints.For(new SetOperation("123", Publish: true), Output(published: true)));
+            "123_456 is now published; to go back, publish the previously published version: opticli publish 123 --version 450",
+            UndoHints.For(new SetOperation("123", Publish: true), published));
+        Assert.Equal(
+            "123_456 is now published; to go back, publish the previously published version: opticli publish 123 --version 450",
+            UndoHints.For(new AreaEdit("123", "MainArea", "add", "5", Publish: true), published));
+    }
+
+    [Fact]
+    public void The_agents_previously_published_version_id_becomes_a_version_ref()
+    {
+        var result = new WriteResult
+        {
+            Content = new ContentSummary { Ref = "123_456", Id = 123, Version = 456, Guid = Guid.Empty, Name = "Name", Language = "en", Status = "published" },
+            Saved = true,
+            Published = true,
+            BaseVersion = 455,
+            PreviouslyPublished = 450,
+        };
+
+        var output = WriteOutput.From(result);
+
+        Assert.Equal(("123_455", "123_450"), (output.BaseVersion, output.PreviouslyPublished));
+        Assert.EndsWith("opticli publish 123 --version 450", UndoHints.For(new SetOperation("123", Publish: true), output));
+        Assert.Null(WriteOutput.From(result with { PreviouslyPublished = null }).PreviouslyPublished);
+    }
+
+    [Fact]
+    public void A_first_publish_says_it_can_only_be_unpublished_in_the_edit_ui()
+    {
+        var hint = UndoHints.For(new SetOperation("123", Publish: true), Output(published: true));
+
+        Assert.Equal("123_456 is now published, and it is the first published version in 'en'; opticli can't unpublish, so unpublish it in the CMS edit UI if it shouldn't be live.", hint);
+        Assert.DoesNotContain("--version", hint);
+        Assert.DoesNotContain("in '", UndoHints.For(new PublishOperation("123"), Output(published: true, language: null)));
     }
 
     [Fact]
@@ -45,7 +80,9 @@ public class UndoHintsTests
     public void Translate_and_publish_explain_what_to_do()
     {
         Assert.Contains("Language branch 'en'", UndoHints.For(new TranslateOperation("123", "en"), Output()));
-        Assert.Contains("opticli versions 123", UndoHints.For(new PublishOperation("123"), Output(published: true)));
+        Assert.Equal(
+            "123_456 is now published; to go back, publish the previously published version: opticli publish 123 --version 450",
+            UndoHints.For(new PublishOperation("123"), Output(published: true) with { PreviouslyPublished = "123_450" }));
     }
 
     [Fact]

@@ -34,7 +34,7 @@ public class ConnectionResolverTests : IDisposable
 
         var result = Resolve(new ConnectionRequest(), new() { ["OPTICLI_DB"] = "Server=localhost;Database=FromEnv" });
 
-        AssertChosen(result, ConnectionSource.Environment, "FromEnv");
+        AssertChosen(result, ConnectionSource.OptiCliDb, "FromEnv");
     }
 
     [Fact]
@@ -58,7 +58,7 @@ public class ConnectionResolverTests : IDisposable
 
         var result = Resolve(new ConnectionRequest(), new() { ["OPTICLI_DB"] = RemoteDb });
 
-        AssertChosen(result, ConnectionSource.Environment, "Shared");
+        AssertChosen(result, ConnectionSource.OptiCliDb, "Shared");
         Assert.Single(result.Warnings());
     }
 
@@ -150,6 +150,122 @@ public class ConnectionResolverTests : IDisposable
         AssertChosen(result, ConnectionSource.LaunchProfile, "FromProfile");
         Assert.Equal("Web", result.Chosen!.Profile);
         Assert.Equal("ConnectionStrings__EPiServerDB", result.Chosen.Key);
+    }
+
+    [Fact]
+    public void An_exported_connection_string_wins_over_user_secrets_and_appsettings()
+    {
+        WriteAllSources();
+        WriteLaunchSettings();
+
+        var result = Resolve(new ConnectionRequest(), new() { ["ConnectionStrings__EPiServerDB"] = "Server=localhost;Database=FromShell" });
+
+        AssertChosen(result, ConnectionSource.Environment, "FromShell");
+        Assert.Equal(SelectionMode.Automatic, result.Mode);
+        Assert.Equal("ConnectionStrings__EPiServerDB", result.Chosen!.Location);
+        Assert.Equal("environment (ConnectionStrings__EPiServerDB)", result.Describe(result.Chosen));
+        Assert.Contains(result.Candidates, c => c.Source == ConnectionSource.UserSecrets && c.Status == CandidateStatus.Shadowed);
+        Assert.Contains("\"source\":\"environment\"", JsonOutput.Serialize(result.Chosen), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_launch_profile_that_sets_the_variable_wins_over_the_shell()
+    {
+        WriteAllSources();
+
+        var result = Resolve(new ConnectionRequest(), new() { ["ConnectionStrings__EPiServerDB"] = "Server=localhost;Database=FromShell" });
+
+        AssertChosen(result, ConnectionSource.LaunchProfile, "FromProfile");
+        Assert.Contains(result.Candidates, c => c.Source == ConnectionSource.Environment && c.Status == CandidateStatus.Shadowed);
+    }
+
+    [Fact]
+    public void The_colon_form_any_case_and_the_connection_name_count()
+    {
+        var colon = Resolve(new ConnectionRequest(), new() { ["ConnectionStrings:EPiServerDB"] = "Server=localhost;Database=Colon" });
+        var lower = Resolve(new ConnectionRequest(), new() { ["connectionstrings__episerverdb"] = "Server=localhost;Database=Lower" });
+        var named = Resolve(new ConnectionRequest(Name: "CmsDb"), new()
+        {
+            ["ConnectionStrings__EPiServerDB"] = "Server=localhost;Database=Other",
+            ["ConnectionStrings__CmsDb"] = "Server=localhost;Database=Named",
+        });
+
+        AssertChosen(colon, ConnectionSource.Environment, "Colon");
+        AssertChosen(lower, ConnectionSource.Environment, "Lower");
+        AssertChosen(named, ConnectionSource.Environment, "Named");
+        Assert.Single(named.Candidates);
+    }
+
+    [Fact]
+    public void A_remote_exported_connection_string_needs_selection_and_can_be_chosen()
+    {
+        WriteAllSources();
+        WriteLaunchSettings();
+        var variables = new Dictionary<string, string> { ["ConnectionStrings__EPiServerDB"] = RemoteDb };
+
+        var result = Resolve(new ConnectionRequest(), variables);
+
+        var failure = Assert.IsType<NeedsSelectionException>(result.Failure);
+        Assert.Contains("remote database 'Shared'", failure.Message, StringComparison.Ordinal);
+        var details = Assert.IsType<SelectionDetails>(failure.Details);
+        Assert.Equal("environment (ConnectionStrings__EPiServerDB)", details.Choices[0].From);
+
+        Save(result.Candidates.Single(c => c.Source == ConnectionSource.Environment));
+        var saved = Resolve(new ConnectionRequest(), variables);
+
+        AssertChosen(saved, ConnectionSource.Environment, "Shared");
+        Assert.Equal(SelectionMode.Saved, saved.Mode);
+        Assert.IsType<NeedsSelectionException>(Resolve(new ConnectionRequest()).Failure);
+    }
+
+    [Fact]
+    public void Exported_spellings_pointing_at_different_databases_need_selection()
+    {
+        var result = Resolve(new ConnectionRequest(), new()
+        {
+            ["ConnectionStrings__EPiServerDB"] = "Server=localhost;Database=One",
+            ["ConnectionStrings:EPiServerDB"] = "Server=localhost;Database=Two",
+        });
+
+        var failure = Assert.IsType<NeedsSelectionException>(result.Failure);
+        Assert.Contains("2 environment variables", failure.Message, StringComparison.Ordinal);
+        Assert.Equal(2, result.Candidates.Count(c => c.Status == CandidateStatus.Ambiguous));
+    }
+
+    [Fact]
+    public void Opticli_db_is_its_own_source_and_not_selectable()
+    {
+        var result = Resolve(new ConnectionRequest(), new() { ["OPTICLI_DB"] = "Server=localhost;Database=FromEnv" });
+
+        AssertChosen(result, ConnectionSource.OptiCliDb, "FromEnv");
+        Assert.Empty(result.Selectable);
+    }
+
+    [Fact]
+    public void User_secrets_id_from_directory_build_props_is_used()
+    {
+        _site.WriteProjectFile("Web.csproj", SiteFixture.Csproj(userSecretsId: null));
+        _site.Write("repo/Directory.Build.props", $"""
+            <Project>
+              <PropertyGroup><UserSecretsId>{SiteFixture.SecretsId}</UserSecretsId></PropertyGroup>
+            </Project>
+            """);
+        _site.WriteSecrets($$"""{ "ConnectionStrings:EPiServerDB": "{{SecretsDb}}" }""");
+        _site.WriteProjectFile("appsettings.json", $$"""{ "ConnectionStrings": { "EPiServerDB": "{{BaseDb}}" } }""");
+
+        AssertChosen(Resolve(new ConnectionRequest()), ConnectionSource.UserSecrets, "FromSecrets");
+    }
+
+    [Fact]
+    public void An_unexpandable_user_secrets_id_is_not_read()
+    {
+        _site.WriteProjectFile("Web.csproj", SiteFixture.Csproj(userSecretsId: "$(SolutionName)-secrets"));
+        _site.WriteProjectFile("appsettings.json", $$"""{ "ConnectionStrings": { "EPiServerDB": "{{BaseDb}}" } }""");
+
+        var result = Resolve(new ConnectionRequest());
+
+        AssertChosen(result, ConnectionSource.AppSettings, "FromAppSettings");
+        Assert.DoesNotContain(result.Candidates, c => c.Source == ConnectionSource.UserSecrets);
     }
 
     [Fact]

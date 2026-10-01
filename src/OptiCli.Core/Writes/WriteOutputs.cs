@@ -35,6 +35,18 @@ public sealed record WriteOutput(
     /// <summary>True when that content was in the recycle bin and was moved back.</summary>
     public bool? Restored { get; init; }
 
+    /// <summary>
+    /// For a write that publishes: changes someone else saved after the published version, which it puts live too (a dry
+    /// run reports them; a real write needs <see cref="WriteOperation.IncludeDraft"/>).
+    /// </summary>
+    public PendingDraft? PendingDraft { get; init; }
+
+    /// <summary>
+    /// For a write that published existing content: the version that was published until then (<c>id_version</c>), to
+    /// publish again to go back. Null after the first publish of the content in its language.
+    /// </summary>
+    public string? PreviouslyPublished { get; init; }
+
     /// <param name="type">Shown when the agent returns no content (a dry-run create).</param>
     public static WriteOutput From(WriteResult result, string? type = null, string? name = null, string? parent = null)
     {
@@ -54,7 +66,11 @@ public sealed record WriteOutput(
             result.Valid,
             content is not null && result.BaseVersion is { } baseVersion ? VersionRef(content.Id, baseVersion) : null,
             result.Changes,
-            result.Validation);
+            result.Validation)
+        {
+            PendingDraft = result.PendingDraft,
+            PreviouslyPublished = content is not null && result.PreviouslyPublished is { } previous ? VersionRef(content.Id, previous) : null,
+        };
     }
 
     public static string Id(int id) => id.ToString(CultureInfo.InvariantCulture);

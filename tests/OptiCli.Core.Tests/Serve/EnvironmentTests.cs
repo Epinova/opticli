@@ -37,6 +37,21 @@ public class EnvironmentTests
     }
 
     [Fact]
+    public void Other_spellings_of_the_pinned_connection_string_are_removed_from_the_inherited_environment()
+    {
+        string[] inherited =
+        [
+            "ConnectionStrings__EPiServerDB", "ConnectionStrings:EPiServerDB", "connectionstrings__episerverdb",
+            "SQLCONNSTR_EPiServerDB", "ConnectionStrings__Other", "OPTICLI_DB", "PATH",
+        ];
+
+        Assert.Equal(
+            ["ConnectionStrings:EPiServerDB", "SQLCONNSTR_EPiServerDB", "connectionstrings__episerverdb"],
+            SiteEnvironment.CompetingConnectionVariables("EPiServerDB", inherited));
+        Assert.Empty(SiteEnvironment.CompetingConnectionVariables("CmsDb", ["ConnectionStrings__EPiServerDB", "ConnectionStrings__CmsDb"]));
+    }
+
+    [Fact]
     public void A_stale_agent_hook_from_an_exported_env_is_replaced()
     {
         var stale = string.Join(Path.PathSeparator, "/old/tool/agent/OptiCli.Agent.dll", "/other/Hook.dll");

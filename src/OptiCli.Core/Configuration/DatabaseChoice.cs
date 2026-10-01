@@ -21,6 +21,7 @@ public sealed record DatabaseChoice(int N, string Id, string? Server, string? Da
         {
             ConnectionSource.UserSecrets => "user secrets",
             ConnectionSource.UserConfig => "opticli user config",
+            ConnectionSource.Environment => $"environment ({location})",
             _ when projectDirectory is not null && location.StartsWith(projectDirectory + Path.DirectorySeparatorChar, StringComparison.Ordinal)
                 => Path.GetRelativePath(projectDirectory, location).Replace('\\', '/'),
             _ => location,

@@ -20,6 +20,13 @@ public abstract record WriteOperation
     /// </summary>
     public Guid? ContentGuid { get; init; }
 
+    /// <summary>
+    /// For an operation that publishes: also publish the unpublished changes someone other than opticli saved after the
+    /// published version (<c>--include-draft</c>, a plan's <c>includeDraft</c>). Without it such a publish fails with a
+    /// <c>conflict</c> whose details say what they are.
+    /// </summary>
+    public bool IncludeDraft { get; init; }
+
     /// <summary>Every ref-valued field, so a plan can resolve <c>$id</c>s in them.</summary>
     public abstract IEnumerable<string?> Refs { get; }
 

@@ -42,6 +42,11 @@ internal sealed class WriteOptions
         Description = "Skip the concurrency check (save even if someone saved a newer version meanwhile).",
     };
 
+    public Option<bool> IncludeDraft { get; } = new("--include-draft")
+    {
+        Description = "Also publish unpublished changes someone else saved after the published version. Without it such a publish asks on a terminal, and elsewhere fails with a conflict (exit 5) that lists them.",
+    };
+
     public void AddCommon(Command command, bool publish = true)
     {
         command.Options.Add(DryRun);
@@ -50,6 +55,9 @@ internal sealed class WriteOptions
             command.Options.Add(Publish);
         }
     }
+
+    /// <summary>For commands that publish existing content, which may hold someone else's draft.</summary>
+    public void AddIncludeDraft(Command command) => command.Options.Add(IncludeDraft);
 
     public void AddProperties(Command command)
     {

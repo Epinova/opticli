@@ -1,6 +1,8 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using OptiCli.Core.Content;
 using OptiCli.Core.Properties;
+using OptiCli.Protocol;
 using static OptiCli.Core.Tests.Content.ModelFixture;
 
 namespace OptiCli.Core.Tests.Properties;
@@ -70,10 +72,28 @@ public class PropertyDecoderTests
         Assert.Equal("half", items[0]!["displayOption"]!.GetValue<string>());
         Assert.True(items[1]!["missing"]!.GetValue<bool>());
         Assert.Equal("Gone", items[1]!["name"]!.GetValue<string>());
-        Assert.Equal("""{"group":"members","visitorGroups":["44444444-4444-4444-4444-444444444444"]}""", items[1]!["personalization"]!.ToJsonString());
+        Assert.Equal("members", items[1]!["group"]!.GetValue<string>());
+        Assert.Equal("""["44444444-4444-4444-4444-444444444444"]""", items[1]!["visitorGroups"]!.ToJsonString());
+        Assert.Null(items[0]!["group"]);
+        Assert.Null(items[0]!["visitorGroups"]);
         Assert.True(items[2]!["inline"]!.GetValue<bool>());
         Assert.Equal("TeaserBlock", items[2]!["type"]!.GetValue<string>());
         Assert.Equal("<p>Inline text</p>", items[2]!["properties"]!["Text"]!["value"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Content_area_items_read_back_as_the_values_set_takes()
+    {
+        var xhtml = $"""<div data-contentgroup="members" data-groups="44444444-4444-4444-4444-444444444444,55555555-5555-5555-5555-555555555555" data-contentguid="{TeaserGuid}" data-epi-content-display-option="half">{Body}</div>""";
+        var properties = Decode([new PropertyRow(123, MainArea, English, LongString: xhtml)]);
+
+        var items = properties["MainArea"]!["value"].Deserialize<List<AreaItemValue>>(AgentJson.Options)!;
+
+        var item = Assert.Single(items);
+        Assert.Equal("789", item.Ref);
+        Assert.Equal("half", item.DisplayOption);
+        Assert.Equal("members", item.Group);
+        Assert.Equal(["44444444-4444-4444-4444-444444444444", "55555555-5555-5555-5555-555555555555"], item.VisitorGroups);
     }
 
     [Fact]

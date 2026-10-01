@@ -16,8 +16,7 @@ public static class UndoHints
             $"opticli delete {created.Ref} (moves it to the recycle bin)",
         (TranslateOperation, WriteOutput { Existing: not true } branch) =>
             $"Language branch '{branch.Language}' was created ({branch.Version}); opticli can't remove a branch, delete it in the CMS edit UI if unwanted.",
-        (PublishOperation, WriteOutput published) =>
-            $"{published.Version} is now published; to go back, publish the previously published version: opticli versions {published.Ref}, then opticli publish {published.Ref} --version <id>",
+        (PublishOperation, WriteOutput published) => Republish(published),
         (_, WriteOutput saved) => Version(saved),
         (DeleteOperation, MoveOutput deleted) =>
             $"opticli move {deleted.Ref} --to {deleted.PreviousParent} (restores it from the recycle bin)",
@@ -27,8 +26,16 @@ public static class UndoHints
     };
 
     private static string Version(WriteOutput saved) => saved.Published
-        ? $"{saved.Version} was published; to go back, re-publish the version it was based on: opticli publish {saved.Ref} --version {VersionId(saved.BaseVersion)}"
+        ? Republish(saved)
         : $"{saved.Version} is an unpublished draft, so nothing live changed; the version it was based on ({saved.BaseVersion}) is unchanged.";
+
+    /// <summary>
+    /// Going back means publishing the version that was live before, which isn't necessarily the one the change was
+    /// based on (that may have been a draft).
+    /// </summary>
+    private static string Republish(WriteOutput published) => published.PreviouslyPublished is { } previous
+        ? $"{published.Version} is now published; to go back, publish the previously published version: opticli publish {published.Ref} --version {VersionId(previous)}"
+        : $"{published.Version} is now published, and it is the first published version{(published.Language is { } language ? $" in '{language}'" : "")}; opticli can't unpublish, so unpublish it in the CMS edit UI if it shouldn't be live.";
 
     /// <summary>
     /// The command that turns <c>after</c> back into <c>before</c>: access rights aren't versioned, so this is the only

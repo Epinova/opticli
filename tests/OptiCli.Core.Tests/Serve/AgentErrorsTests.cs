@@ -41,6 +41,34 @@ public class AgentErrorsTests
     }
 
     [Fact]
+    public void A_pending_draft_is_a_conflict_whose_details_name_the_reason_and_the_draft()
+    {
+        var draft = new PendingDraft("123_457", "editor@example.com", new DateTime(2025, 1, 31, 10, 0, 0, DateTimeKind.Utc),
+            [new PropertyChange("Heading", System.Text.Json.JsonSerializer.SerializeToElement("Old"), System.Text.Json.JsonSerializer.SerializeToElement("New"))]);
+
+        var conflict = AgentErrors.ToException(new AgentError(AgentErrorCodes.Conflict, "Publishing 123 would also put live ...") { PendingDraft = draft });
+
+        Assert.IsType<ConflictException>(conflict);
+        Assert.Equal(5, ExitCodes.For(conflict.Code));
+        var json = System.Text.Json.Nodes.JsonNode.Parse(Core.Output.JsonOutput.Serialize(conflict.Details))!;
+        Assert.Equal("pendingDraft", (string?)json["reason"]);
+        Assert.Equal("123_457", (string?)json["draft"]!["version"]);
+        Assert.Equal("editor@example.com", (string?)json["draft"]!["savedBy"]);
+        Assert.Equal("2025-01-31T10:00:00Z", (string?)json["draft"]!["saved"]);
+        Assert.Equal("New", (string?)json["draft"]!["changes"]![0]!["after"]);
+        Assert.Null(json["validation"]);
+        Assert.Null(json["currentVersion"]);
+
+        // A plan step whose dry run found the draft fails validation with the same details, and the same hint as a write.
+        var step = Core.Writes.WriteExecutor.UnconfirmedDraft(draft);
+        Assert.Equal(Core.Output.JsonOutput.Serialize(conflict.Details), Core.Output.JsonOutput.Serialize(step.Details));
+        Assert.Equal(ErrorCode.Conflict, step.Code);
+        Assert.Contains("--include-draft", step.Hint);
+        Assert.Contains("\"includeDraft\": true", step.Hint);
+        Assert.StartsWith("Publishing would also put live changes saved by editor@example.com in 123_457 (2025-01-31 10:00:00Z)", step.Message);
+    }
+
+    [Fact]
     public void An_out_of_date_agent_says_how_to_restart_it()
     {
         Assert.Equal(AgentErrors.OutOfDateHint, AgentErrors.ToException(new AgentError(AgentErrorCodes.UnsupportedProtocol, "v2")).Hint);

@@ -29,12 +29,23 @@ public static class AgentErrors
             AgentErrorCodes.Validation => "Fix the properties listed in details.validation and retry; --dry-run checks without saving.",
             _ => error.Hint,
         };
-        object? details = error.Validation is not null || error.CurrentVersion is not null
+        object? details = error.Validation is not null || error.CurrentVersion is not null || error.PendingDraft is not null
             ? new AgentErrorDetails(error.Validation, error.CurrentVersion)
+            {
+                Reason = error.PendingDraft is null ? null : PendingDraft.Reason,
+                Draft = error.PendingDraft,
+            }
             : null;
         return OptiCliException.Create(CodeFor(error.Code), error.Message, hint, details);
     }
 }
 
 /// <param name="CurrentVersion">For conflicts: the version that is latest now.</param>
-public sealed record AgentErrorDetails(IReadOnlyList<ValidationIssue>? Validation, int? CurrentVersion);
+public sealed record AgentErrorDetails(IReadOnlyList<ValidationIssue>? Validation, int? CurrentVersion)
+{
+    /// <summary>What kind of conflict, when it isn't a newer version: <see cref="PendingDraft.Reason"/>.</summary>
+    public string? Reason { get; init; }
+
+    /// <summary>For <see cref="PendingDraft.Reason"/>: the changes by someone else the publish would put live.</summary>
+    public PendingDraft? Draft { get; init; }
+}

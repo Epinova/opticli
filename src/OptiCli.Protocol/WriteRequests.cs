@@ -36,6 +36,13 @@ public sealed record DraftRequest
     /// <summary>Publish the new version instead of leaving it as a draft.</summary>
     public bool Publish { get; init; }
 
+    /// <summary>
+    /// With <see cref="Publish"/>: also publish the unpublished changes that someone other than opticli saved after the
+    /// published version (see <see cref="PendingDraft"/>). Without it such a publish fails with <c>conflict</c> and
+    /// <see cref="AgentError.PendingDraft"/>; a dry run reports them in <see cref="WriteResult.PendingDraft"/>.
+    /// </summary>
+    public bool IncludeDraft { get; init; }
+
     /// <summary>Apply and validate without saving; the response shows what would change.</summary>
     public bool DryRun { get; init; }
 
@@ -86,8 +93,11 @@ public static class AreaOps
 
 /// <summary>A ContentArea item as a property value. Give <see cref="Ref"/> or <see cref="Guid"/>.</summary>
 /// <remarks>
-/// In responses, inline blocks (CMS 12.20+, stored inside the area rather than as shared content)
-/// have neither; they can be moved or removed by index but not created through opticli.
+/// <para>In responses, inline blocks (CMS 12.20+, stored inside the area rather than as shared content)
+/// have neither; they can be moved or removed by index but not created through opticli.</para>
+/// <para>Writing a whole area, an item without <see cref="Group"/> or <see cref="VisitorGroups"/> keeps those of the
+/// item it takes over: the n-th item for some content takes over the n-th current item for that content. It also
+/// keeps that item's other render settings. <see cref="DisplayOption"/> is always as given.</para>
 /// </remarks>
 public sealed record AreaItemValue
 {
@@ -95,7 +105,14 @@ public sealed record AreaItemValue
 
     public Guid? Guid { get; init; }
 
+    /// <summary>A display option id the site registers (<c>EPiServer.Web.DisplayOptions</c>); null for none.</summary>
     public string? DisplayOption { get; init; }
+
+    /// <summary>Personalization group: items sharing one are alternatives for different visitor groups. <c>""</c> for none.</summary>
+    public string? Group { get; init; }
+
+    /// <summary>Visitor group ids (or roles) the item is shown to. <c>[]</c> for everyone.</summary>
+    public IReadOnlyList<string>? VisitorGroups { get; init; }
 }
 
 /// <summary>A LinkItemCollection entry. <see cref="Href"/> may be a URL or a content ref (<c>123</c>).</summary>
@@ -156,6 +173,13 @@ public sealed record CreateRequest
     /// bin is moved back under the parent first. The response has <see cref="WriteResult.Existing"/>.
     /// </summary>
     public bool UpdateExisting { get; init; }
+
+    /// <summary>
+    /// When <see cref="UpdateExisting"/> publishes existing content: also publish the unpublished changes that someone other than opticli saved after the
+    /// published version (see <see cref="PendingDraft"/>). Without it such a publish fails with <c>conflict</c> and
+    /// <see cref="AgentError.PendingDraft"/>; a dry run reports them in <see cref="WriteResult.PendingDraft"/>.
+    /// </summary>
+    public bool IncludeDraft { get; init; }
 }
 
 /// <summary>Body of <see cref="AgentRoutes.Media"/>: upload a file as a new media item (image, PDF, video, ...).</summary>
@@ -197,6 +221,9 @@ public sealed record UploadRequest
 
     /// <summary>As <see cref="CreateRequest.UpdateExisting"/>; existing media keeps its file.</summary>
     public bool UpdateExisting { get; init; }
+
+    /// <summary>As <see cref="CreateRequest.IncludeDraft"/>.</summary>
+    public bool IncludeDraft { get; init; }
 }
 
 /// <summary>Body of <see cref="AgentRoutes.Languages"/>: create a language branch as a draft.</summary>
@@ -218,10 +245,20 @@ public sealed record LanguageBranchRequest
 /// <summary>Body of <see cref="AgentRoutes.Publish"/> (may be empty).</summary>
 public sealed record PublishRequest
 {
-    /// <summary>Version id to publish; default is the latest version in <see cref="Lang"/>.</summary>
+    /// <summary>
+    /// Version id to publish; default is the latest version in <see cref="Lang"/>. Naming the version confirms what goes
+    /// live, so it needs no <see cref="IncludeDraft"/>.
+    /// </summary>
     public int? Version { get; init; }
 
     public string? Lang { get; init; }
+
+    /// <summary>
+    /// Without <see cref="Version"/>: also publish the unpublished changes that someone other than opticli saved after the
+    /// published version (see <see cref="PendingDraft"/>). Without it such a publish fails with <c>conflict</c> and
+    /// <see cref="AgentError.PendingDraft"/>; a dry run reports them in <see cref="WriteResult.PendingDraft"/>.
+    /// </summary>
+    public bool IncludeDraft { get; init; }
 }
 
 /// <summary>Body of <see cref="AgentRoutes.Move"/>.</summary>

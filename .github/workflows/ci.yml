@@ -1,0 +1,39 @@
+# Builds and runs the unit tests on every push and pull request, on the three operating systems opticli supports.
+# The integration test skips itself: it needs a running site.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      # SDK 10 reads opticli.slnx; the 8 runtime runs the net8.0 test projects.
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Build
+        run: dotnet build opticli.slnx -c Release
+
+      - name: Test
+        run: dotnet test opticli.slnx -c Release --no-build
+
+      - name: Check the package
+        if: runner.os == 'Linux'
+        run: |
+          dotnet pack src/OptiCli/OptiCli.csproj -c Release --no-build -o artifacts
+          .github/scripts/check-package.sh artifacts

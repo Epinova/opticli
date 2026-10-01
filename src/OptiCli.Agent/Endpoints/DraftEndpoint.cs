@@ -16,7 +16,8 @@ internal static class DraftEndpoint
         var language = flow.Locator.ContentLanguage(flow.Locator.LoadAnyLanguage(link), body.Lang);
 
         // Optimistic concurrency: the caller must have seen the latest version.
-        var latest = flow.Locator.LatestVersion(link, language);
+        var branch = flow.Locator.Versions(link, language);
+        var latest = ContentLocator.Latest(branch, link, language);
         if (body.BaseVersion is { } expected && expected != latest.ContentLink.WorkID)
         {
             throw new AgentException(
@@ -39,6 +40,12 @@ internal static class DraftEndpoint
             throw AgentException.Usage($"Version {baseLink} is in '{versionLanguage.Name}', not '{language.Name}'.");
         }
 
+        // Read before saving: the publish changes which version is published.
+        var pending = body.Publish
+            ? PendingDrafts.Require(flow.Locator.PendingDraft(branch, current), body.IncludeDraft, body.DryRun, $"{link.ID} ('{current.Name}')", language?.Name)
+            : null;
+        var published = ContentLocator.PublishedVersion(branch);
+
         var before = PropertyValues.Snapshot(current);
         var writable = (IContent)((IReadOnly)current).CreateWritableClone();
         if (body.Name is { } name)
@@ -48,7 +55,7 @@ internal static class DraftEndpoint
         flow.Writer.Apply(writable, body.Properties);
         flow.Areas.Apply(writable, body.AreaOps);
 
-        return flow.Save(
+        var result = flow.Save(
             writable,
             before,
             WriteFlow.DraftAction(body.Publish),
@@ -57,5 +64,10 @@ internal static class DraftEndpoint
             baseLink.WorkID,
             // Publishing a draft saves it even unchanged; an unchanged published version stays as it is.
             saveUnchanged: body.Publish && current is IVersionable { Status: not VersionStatus.Published });
+        return result with
+        {
+            PendingDraft = pending,
+            PreviouslyPublished = result is { Saved: true, Published: true } ? published : null,
+        };
     }
 }

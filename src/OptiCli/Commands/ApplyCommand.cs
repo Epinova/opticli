@@ -61,7 +61,8 @@ internal static class ApplyCommand
             var plan = WritePlan.Parse(await ReadPlanAsync(path, context.Environment.CurrentDirectory, cancellationToken));
             var planDirectory = path == "-" ? context.Environment.CurrentDirectory : Path.GetDirectoryName(Path.GetFullPath(path, context.Environment.CurrentDirectory))!;
             await using var session = await context.OpenContentAsync(cancellationToken);
-            var writes = context.Writes(session, updateExisting: parse.GetValue(updateExisting));
+            // A plan confirms other people's drafts per step ("includeDraft"), never by a prompt halfway through.
+            var writes = context.Writes(session, updateExisting: parse.GetValue(updateExisting), ask: false);
             var project = context.TryGetProject(out _);
             var allowedTypes = project is null ? null : new AllowedTypesCheck(session.Model, () => CSharpSourceIndex.Build(project.SourceRoot));
             var run = await new PlanRunner(session, writes, planDirectory, parse.GetValue(allowOutside), allowedTypes).RunAsync(plan, parse.GetValue(write.DryRun), parse.GetValue(write.Publish), cancellationToken);

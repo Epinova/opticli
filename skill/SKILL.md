@@ -138,6 +138,13 @@ order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a cod
 ## Rules
 
 - Never pass `--publish` and never run `publish` unless the user explicitly asked for the change to go live.
+- A publish puts the whole version live, including changes someone else saved since the published version. When
+  there are any, it fails with `conflict` (exit 5) and `error.details.reason: "pendingDraft"` (a `--dry-run` reports
+  `pendingDraft` with a warning). Show the user `details.draft` (`savedBy`, `saved`, `changes`) and **ask whether those changes
+  should go live too**. Pass `--include-draft` (in a plan, `"includeDraft": true` on the step) only after they said
+  yes; never on your own initiative. Drafts opticli saved itself don't need this.
+- After a publish, `previouslyPublished` is the version that was live before; `opticli publish <ref> --version <id>`
+  with it goes back. Without it, that was the first publish: only the CMS edit UI can unpublish it.
 - Never run `delete` unless the user explicitly asked to delete that content. (It only moves content to the recycle
   bin; undo with `opticli move <ref> --to <previousParent>`. Start pages, site and asset roots, and anything that
   contains them, are refused.)

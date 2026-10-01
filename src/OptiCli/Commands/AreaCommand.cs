@@ -19,7 +19,7 @@ internal static class AreaCommand
             Arity = new ArgumentArity(1, 2),
         };
         var at = new Option<int?>("--at") { Description = "add: insert at this zero-based position. Default: the end.", HelpName = "n" };
-        var display = new Option<string?>("--display") { Description = "add: display option (a tag like 'wide', as the site defines them).", HelpName = "option" };
+        var display = new Option<string?>("--display") { Description = "add: display option (an id like 'wide', as the site registers them; an unknown one is refused).", HelpName = "option" };
         var write = new WriteOptions();
         var command = new Command("area", """
             Add, remove or reorder ContentArea items on a new version, a draft unless --publish. Needs `opticli serve`.
@@ -35,6 +35,7 @@ internal static class AreaCommand
         command.Options.Add(at);
         command.Options.Add(display);
         write.AddCommon(command);
+        write.AddIncludeDraft(command);
         write.AddConcurrency(command);
 
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
@@ -65,7 +66,10 @@ internal static class AreaCommand
                 parse.GetValue(content.Lang),
                 parse.GetValue(write.Publish),
                 write.ParseBaseVersion(context),
-                parse.GetValue(write.Force));
+                parse.GetValue(write.Force))
+            {
+                IncludeDraft = parse.GetValue(write.IncludeDraft),
+            };
             await using var session = await context.OpenContentAsync(cancellationToken);
             return WriteOptions.Result(await context.Writes(session, parse.GetValue(content.Site)).RunAsync(operation, parse.GetValue(write.DryRun), cancellationToken));
         });

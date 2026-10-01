@@ -48,11 +48,25 @@ public class OutputLocatorTests : IDisposable
     {
         _site.WriteProjectFile("Web.csproj", """
             <Project Sdk="Microsoft.NET.Sdk.Web">
-              <PropertyGroup><AssemblyName>$(MSBuildProjectName).Custom</AssemblyName></PropertyGroup>
+              <PropertyGroup><AssemblyName>$(SolutionName).Custom</AssemblyName></PropertyGroup>
               <ItemGroup><PackageReference Include="EPiServer.CMS.AspNetCore" Version="12.0.0" /></ItemGroup>
             </Project>
             """);
         var dll = Output("bin/Debug/net10.0/Web.dll");
+
+        Assert.Equal(dll, OutputLocator.Locate(_site.Project(), null, null, _site.ProjectPath).Dll);
+    }
+
+    [Fact]
+    public void An_assembly_name_built_from_the_project_name_is_expanded()
+    {
+        _site.WriteProjectFile("Web.csproj", """
+            <Project Sdk="Microsoft.NET.Sdk.Web">
+              <PropertyGroup><TargetFramework>net8.0</TargetFramework><AssemblyName>$(MSBuildProjectName).Custom</AssemblyName></PropertyGroup>
+              <ItemGroup><PackageReference Include="EPiServer.CMS.AspNetCore" Version="12.0.0" /></ItemGroup>
+            </Project>
+            """);
+        var dll = Output("bin/Debug/net8.0/Web.Custom.dll");
 
         Assert.Equal(dll, OutputLocator.Locate(_site.Project(), null, null, _site.ProjectPath).Dll);
     }

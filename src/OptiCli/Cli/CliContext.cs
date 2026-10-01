@@ -99,8 +99,10 @@ internal sealed class CliContext(ParseResult parse, GlobalOptions options, OptiC
         _agent ??= await AgentProbe.ConnectAsync(StateStore, UseConnection(), cancellationToken);
 
     /// <summary>Runs write operations against <paramref name="session"/>'s database and the project's agent.</summary>
-    public WriteExecutor Writes(ContentSession session, string? site = null, bool updateExisting = false) =>
-        new(session, ConnectAgentAsync, site, TryGetProject(out _)?.Directory, updateExisting);
+    /// <param name="ask">On a terminal, ask whether a publish may include someone else's unpublished changes.</param>
+    public WriteExecutor Writes(ContentSession session, string? site = null, bool updateExisting = false, bool ask = true) =>
+        new(session, ConnectAgentAsync, site, TryGetProject(out _)?.Directory, updateExisting,
+            ask && DatabasePrompt.CanAsk ? PendingDraftPrompt.Ask : null);
 
     private (ProjectInfo?, OptiCliException?) LocateProject()
     {

@@ -16,6 +16,8 @@ jobs:
       id-token: write # lets NuGet/login exchange the workflow's OIDC token for a short-lived API key
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # the main check below needs the branch history
 
       # SDK 10 reads opticli.slnx and builds the net8.0 projects.
       - uses: actions/setup-dotnet@v5
@@ -33,11 +35,21 @@ jobs:
             exit 1
           fi
 
+      - name: Check the tag is on main
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $GITHUB_REF_NAME points at a commit that isn't on main."
+            exit 1
+          fi
+
       - name: Test
         run: dotnet test opticli.slnx -c Release
 
       - name: Pack
         run: dotnet pack src/OptiCli/OptiCli.csproj -c Release -o artifacts
+
+      - name: Check the package
+        run: .github/scripts/check-package.sh artifacts
 
       - name: Log in to nuget.org
         id: login

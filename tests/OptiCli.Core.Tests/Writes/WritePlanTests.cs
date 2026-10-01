@@ -256,6 +256,29 @@ public class WritePlanTests
     }
 
     [Fact]
+    public void Steps_that_publish_can_confirm_other_peoples_drafts()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "set", "ref": "1", "properties": {"A": "b"}, "publish": true, "includeDraft": true},
+              {"op": "publish", "ref": "2", "includeDraft": true},
+              {"op": "translate", "ref": "3", "lang": "sv", "publish": true},
+              {"op": "area", "ref": "4", "property": "MainArea", "action": "add", "item": "5", "publish": true, "includeDraft": false}
+            ]}
+            """);
+
+        Assert.Equal([true, true, false, false], plan.Steps.Select(s => s.Operation.IncludeDraft));
+        // Kept through $id resolution and apply --publish.
+        Assert.True(WritePlan.Resolve(plan.Steps[0], new Dictionary<string, int>()).WithPublish().IncludeDraft);
+
+        var error = Assert.Throws<UsageException>(() => WritePlan.Parse("""
+            {"operations": [{"op": "move", "ref": "1", "to": "2", "includeDraft": true}, {"op": "set", "ref": "1", "properties": {"A": "b"}, "includeDraft": "yes"}]}
+            """));
+        Assert.Contains("operations[0] (move): unknown field \"includeDraft\"", error.Message);
+        Assert.Contains("operations[1] (set): \"includeDraft\" must be true or false", error.Message);
+    }
+
+    [Fact]
     public void With_a_namespace_a_creating_step_needs_an_id()
     {
         var error = Assert.Throws<UsageException>(() => WritePlan.Parse("""

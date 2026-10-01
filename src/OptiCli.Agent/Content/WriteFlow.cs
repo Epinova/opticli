@@ -23,7 +23,7 @@ internal sealed class WriteFlow
         Locator = new ContentLocator(request.Service<IContentRepository>(), Versions, request.Service<ILanguageBranchRepository>());
         Writer = new PropertyWriter(Locator, new BlockFactory(
             request.Service<EPiServer.Construction.IContentDataFactory<BlockData>>(), request.Service<EPiServer.Construction.IContentDataBuilder>(), Types),
-            request.Service<CategoryRepository>(), request.Service<IFrameRepository>());
+            request.Service<CategoryRepository>(), request.Service<IFrameRepository>(), request.Service<EPiServer.Web.DisplayOptions>());
         Areas = new AreaEditor(Locator, Writer);
         Validation = request.Service<IValidationService>();
     }

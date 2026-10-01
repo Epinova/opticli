@@ -73,6 +73,32 @@ public static class VersionReader
         (await db.QueryAsync($"SELECT TOP 1 {Columns} {From} WHERE wc.fkContentID = @id AND wc.fkLanguageBranchID = @lang ORDER BY wc.pkID DESC",
             r => Map(r, model), cancellationToken, new SqlParameter("@id", contentId), new SqlParameter("@lang", languageId))).FirstOrDefault();
 
+    /// <summary>The branch's published version; null when it isn't published.</summary>
+    public static async Task<VersionInfo?> PublishedAsync(CmsDatabase db, CmsModel model, int contentId, int languageId, CancellationToken cancellationToken) =>
+        (await db.QueryAsync($"SELECT TOP 1 {Columns} {From} WHERE wc.fkContentID = @id AND wc.fkLanguageBranchID = @lang AND wc.Status = {(int)VersionStatus.Published} ORDER BY wc.pkID DESC",
+            r => Map(r, model), cancellationToken, new SqlParameter("@id", contentId), new SqlParameter("@lang", languageId))).FirstOrDefault();
+
+    /// <summary>
+    /// The newest version of the branch after its published version (any version, when it was never published) up to
+    /// <paramref name="upTo"/>, saved by someone other than <paramref name="except"/>: what the site agent asks to confirm
+    /// before publishing <paramref name="upTo"/>.
+    /// </summary>
+    public static async Task<VersionInfo?> NewestSavedByOtherAsync(
+        CmsDatabase db, CmsModel model, int contentId, int languageId, int upTo, string except, CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            SELECT TOP 1 {Columns} {From}
+            WHERE wc.fkContentID = @id AND wc.fkLanguageBranchID = @lang AND wc.pkID <= @upTo
+              AND wc.pkID > ISNULL((SELECT MAX(p.pkID) FROM tblWorkContent p
+                                    WHERE p.fkContentID = @id AND p.fkLanguageBranchID = @lang AND p.Status = {(int)VersionStatus.Published}), 0)
+              AND ISNULL(LTRIM(RTRIM(wc.ChangedByName)), '') <> @except
+            ORDER BY wc.pkID DESC
+            """;
+        return (await db.QueryAsync(sql, r => Map(r, model), cancellationToken,
+            new SqlParameter("@id", contentId), new SqlParameter("@lang", languageId), new SqlParameter("@upTo", upTo),
+            new SqlParameter("@except", except))).FirstOrDefault();
+    }
+
     /// <summary>Newest first; fetches one row more than <paramref name="limit"/> so callers can tell whether more exist.</summary>
     public static Task<IReadOnlyList<VersionInfo>> ListAsync(
         CmsDatabase db, CmsModel model, int contentId, int? languageId, int offset, int limit, CancellationToken cancellationToken)

@@ -9,10 +9,17 @@ namespace OptiCli.Core.Configuration;
 public enum ConnectionSource
 {
     Flag,
-    Environment,
+
+    /// <summary><c>OPTICLI_DB</c>: like <see cref="Flag"/>, for this run.</summary>
+    OptiCliDb,
+
     UserConfig,
-    UserSecrets,
     LaunchProfile,
+
+    /// <summary>An exported <c>ConnectionStrings__&lt;Name&gt;</c> (or <c>ConnectionStrings:&lt;Name&gt;</c>), which the site reads too.</summary>
+    Environment,
+
+    UserSecrets,
     AppSettingsDevelopment,
     AppSettings,
 
@@ -111,9 +118,9 @@ public sealed class ConnectionCandidate
 
     internal bool IsUsable => IsValid && Status != CandidateStatus.Unselected;
 
-    /// <summary>Can be chosen with <c>--db</c> or <c>db use</c>: valid and from a file (not a flag or variable of this run).</summary>
+    /// <summary>Can be chosen with <c>--db</c> or <c>db use</c>: valid and part of the site's configuration (not <c>--connection</c> or <c>OPTICLI_DB</c>).</summary>
     [JsonIgnore]
-    public bool IsSelectable => IsValid && Source is not (ConnectionSource.Flag or ConnectionSource.Environment);
+    public bool IsSelectable => IsValid && Source is not (ConnectionSource.Flag or ConnectionSource.OptiCliDb);
 
     internal bool SameTarget(string? server, string? database) =>
         string.Equals(Server?.Trim(), server?.Trim(), StringComparison.OrdinalIgnoreCase)
@@ -124,7 +131,7 @@ public sealed class ConnectionCandidate
 
     private static string? MakeId(ConnectionSource source, string location, string? key, string? profile, string? server, string? database)
     {
-        if (server is null || source is ConnectionSource.Flag or ConnectionSource.Environment)
+        if (server is null || source is ConnectionSource.Flag or ConnectionSource.OptiCliDb)
         {
             return null;
         }

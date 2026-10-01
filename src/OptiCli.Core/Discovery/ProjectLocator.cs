@@ -27,7 +27,7 @@ public static class ProjectLocator
         {
             if (path.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
             {
-                var project = CsprojFile.TryLoad(path)
+                var project = CsprojFile.TryLoad(path, evaluateBuildProps: false)
                     ?? throw new UsageException($"'{path}' is not a readable project file.");
                 return Create(project, FindSolutionAbove(Path.GetDirectoryName(path)!), "--project");
             }
@@ -96,6 +96,8 @@ public static class ProjectLocator
 
     private static ProjectInfo Create(CsprojFile project, string? solution, string howFound)
     {
+        // Candidates are read from their project file alone; only the chosen one is worth its Directory.Build.props.
+        project = CsprojFile.TryLoad(project.Path) ?? project;
         var directory = Path.GetDirectoryName(project.Path)!;
         var sourceRoot = solution is null ? directory : Path.GetDirectoryName(solution)!;
         return new ProjectInfo(project, directory, solution, sourceRoot, howFound);
@@ -117,7 +119,7 @@ public static class ProjectLocator
         SolutionPatterns.SelectMany(p => Directory.GetFiles(directory, p)).Order(StringComparer.Ordinal).FirstOrDefault();
 
     private static List<CsprojFile> LoadProjects(IEnumerable<string> paths) =>
-        paths.Select(CsprojFile.TryLoad).OfType<CsprojFile>().ToList();
+        paths.Select(path => CsprojFile.TryLoad(path, evaluateBuildProps: false)).OfType<CsprojFile>().ToList();
 
     private static bool IsSolutionFile(string path) =>
         path.EndsWith(".sln", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase);

@@ -24,7 +24,7 @@ internal static class CreateEndpoint
 
         if (body.Guid is { } guid && ExistingContent.Find(flow, guid) is { } existing)
         {
-            return ExistingContent.Update(flow, existing, body.UpdateExisting, type, parent, body.Lang is null ? null : culture, body.Name, body.Properties, body.Publish, body.DryRun);
+            return ExistingContent.Update(flow, existing, body.UpdateExisting, type, parent, body.Lang is null ? null : culture, body.Name, body.Properties, body.Publish, body.IncludeDraft, body.DryRun);
         }
 
         var content = culture is null

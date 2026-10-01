@@ -63,6 +63,40 @@ public sealed record WriteResult
 
     /// <summary>For an upload: the media type the file is created as (also for a dry run, which has no <see cref="Content"/>).</summary>
     public string? MediaType { get; init; }
+
+    /// <summary>
+    /// For a write that publishes: unpublished changes by someone else that it puts live too. A dry run reports them
+    /// without failing; a real write only gets this far with <see cref="DraftRequest.IncludeDraft"/>.
+    /// </summary>
+    public PendingDraft? PendingDraft { get; init; }
+
+    /// <summary>
+    /// For a write that published existing content: the version that was published until then, to publish again to go
+    /// back. Null when the content (in this language) had never been published.
+    /// </summary>
+    public int? PreviouslyPublished { get; init; }
+}
+
+/// <summary>
+/// Changes a publish would put live besides its own: versions saved after the published version, in the language, by
+/// someone other than <see cref="AgentProtocol.PrincipalName"/>.
+/// </summary>
+/// <param name="Version">The newest such version, as <c>id_version</c>.</param>
+/// <param name="SavedBy">Who saved it, as the CMS recorded it; empty when nobody was signed in (a scheduled job or import).</param>
+/// <param name="Saved">When it was saved, UTC.</param>
+/// <param name="Changes">Every property that differs between the published version and the version the publish is based on.</param>
+public sealed record PendingDraft(string Version, string? SavedBy, DateTime Saved, IReadOnlyList<PropertyChange> Changes)
+{
+    /// <summary>The CLI's <c>details.reason</c> for the conflict.</summary>
+    public const string Reason = "pendingDraft";
+
+    /// <summary>"changes saved by X in 123_456 (2025-01-31 10:00:00Z) that aren't published yet (Heading, MainArea)".</summary>
+    public string Describe()
+    {
+        var who = string.IsNullOrWhiteSpace(SavedBy) ? "without a user name (a scheduled job or import)" : $"by {SavedBy}";
+        var properties = Changes.Count == 0 ? "" : $" ({string.Join(", ", Changes.Select(c => c.Property))})";
+        return $"changes saved {who} in {Version} ({Saved.ToUniversalTime().ToString("u", System.Globalization.CultureInfo.InvariantCulture)}) that aren't published yet{properties}";
+    }
 }
 
 /// <summary>A property value before and after, in the same JSON shape the draft endpoint accepts.</summary>

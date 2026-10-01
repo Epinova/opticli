@@ -65,8 +65,8 @@ internal static class Canonical
             result["ref"] = RefOf(item);
         }
         result["displayOption"] = item["displayOption"]?.DeepClone();
-        result["group"] = item["personalization"]?["group"]?.DeepClone();
-        result["visitorGroups"] = item["personalization"]?["visitorGroups"]?.DeepClone();
+        result["group"] = item["group"]?.DeepClone();
+        result["visitorGroups"] = item["visitorGroups"]?.DeepClone();
         return Prune(result);
     }
 

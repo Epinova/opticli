@@ -72,6 +72,22 @@ public class ProtocolJsonTests
         Assert.Equal(publish, RoundTrip(publish, out _));
         Assert.Equal(move, RoundTrip(move, out var json));
         Assert.Equal("""{"parent":"789"}""", json);
+
+        var confirmed = new PublishRequest { IncludeDraft = true };
+        Assert.Equal(confirmed, RoundTrip(confirmed, out json));
+        Assert.Equal("""{"includeDraft":true}""", json);
+        Assert.True(RoundTrip(new DraftRequest { Publish = true, IncludeDraft = true }, out _).IncludeDraft);
+        Assert.True(RoundTrip(create with { Guid = Guid.NewGuid(), UpdateExisting = true, IncludeDraft = true }, out _).IncludeDraft);
+    }
+
+    [Fact]
+    public void A_publishing_write_result_names_the_previously_published_version()
+    {
+        var copy = RoundTrip(new WriteResult { Saved = true, Published = true, BaseVersion = 457, PreviouslyPublished = 450 }, out var json);
+
+        Assert.Equal(450, copy.PreviouslyPublished);
+        Assert.Contains("\"previouslyPublished\":450", json);
+        Assert.DoesNotContain("pendingDraft", json);
     }
 
     [Fact]

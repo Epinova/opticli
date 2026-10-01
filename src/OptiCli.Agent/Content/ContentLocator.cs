@@ -3,6 +3,7 @@ using EPiServer;
 using EPiServer.Core;
 using EPiServer.DataAbstraction;
 using OptiCli.Agent.Http;
+using OptiCli.Protocol;
 
 namespace OptiCli.Agent.Content;
 
@@ -95,17 +96,56 @@ internal sealed class ContentLocator(IContentRepository repository, IContentVers
 
     private static LoaderOptions AnyLanguage() => new() { LanguageLoaderOption.FallbackWithMaster() };
 
-    /// <summary>
-    /// The most recently created version (highest version id) in <paramref name="language"/>: the one
-    /// <c>baseVersion</c> is checked against and a draft is based on.
-    /// </summary>
-    public ContentVersion LatestVersion(ContentReference link, CultureInfo? language)
+    /// <summary>Every version in <paramref name="language"/> (all of them for content that isn't localizable), newest first.</summary>
+    public IReadOnlyList<ContentVersion> Versions(ContentReference link, CultureInfo? language)
     {
         var all = versions.List(link.ToReferenceWithoutVersion());
         var inLanguage = language is null
             ? all
             : all.Where(v => string.Equals(v.LanguageBranch, language.Name, StringComparison.OrdinalIgnoreCase));
-        return inLanguage.OrderByDescending(v => v.ContentLink.WorkID).FirstOrDefault()
-            ?? throw AgentException.NotFound($"Content {link.ID} has no versions{(language is null ? "" : $" in '{language.Name}'")}.");
+        return inLanguage.OrderByDescending(v => v.ContentLink.WorkID).ToList();
+    }
+
+    /// <summary>
+    /// The most recently created version (highest version id) in <paramref name="language"/>: the one
+    /// <c>baseVersion</c> is checked against and a draft is based on.
+    /// </summary>
+    public ContentVersion LatestVersion(ContentReference link, CultureInfo? language) => Latest(Versions(link, language), link, language);
+
+    /// <param name="branch">The versions of one branch, newest first (<see cref="Versions"/>).</param>
+    public static ContentVersion Latest(IReadOnlyList<ContentVersion> branch, ContentReference link, CultureInfo? language) =>
+        branch.FirstOrDefault()
+        ?? throw AgentException.NotFound($"Content {link.ID} has no versions{(language is null ? "" : $" in '{language.Name}'")}.");
+
+    /// <summary>The branch's published version id; null when it has never been published (or isn't now).</summary>
+    public static int? PublishedVersion(IReadOnlyList<ContentVersion> branch) =>
+        branch.FirstOrDefault(v => v.Status == VersionStatus.Published)?.ContentLink.WorkID;
+
+    /// <summary>
+    /// What publishing <paramref name="based"/> would put live besides the request's own change: the versions of its
+    /// branch after the published one, up to <paramref name="based"/>, when someone other than opticli saved one.
+    /// </summary>
+    /// <param name="branch">The versions of <paramref name="based"/>'s branch (<see cref="Versions"/>).</param>
+    /// <param name="based">The version the publish is based on, as loaded.</param>
+    /// <returns>Null when there is nothing by someone else (or the content isn't versioned).</returns>
+    public PendingDraft? PendingDraft(IReadOnlyList<ContentVersion> branch, IContent based)
+    {
+        if (based is not IVersionable)
+        {
+            return null;
+        }
+        var stamps = branch.Select(v => new VersionStamp(v.ContentLink.WorkID, v.Status == VersionStatus.Published, v.Saved, v.SavedBy));
+        if (PendingDrafts.NewestByOthers(stamps, based.ContentLink.WorkID) is not { } newest)
+        {
+            return null;
+        }
+        var published = PublishedVersion(branch) is { } publishedId
+            ? PropertyValues.Snapshot(Repository.Get<IContent>(new ContentReference(based.ContentLink.ID, publishedId)))
+            : new Dictionary<string, System.Text.Json.JsonElement?>();
+        return new PendingDraft(
+            $"{based.ContentLink.ID.ToString(CultureInfo.InvariantCulture)}_{newest.Id.ToString(CultureInfo.InvariantCulture)}",
+            newest.SavedBy,
+            newest.Saved.ToUniversalTime(),
+            PropertyValues.Diff(published, PropertyValues.Snapshot(based)));
     }
 }

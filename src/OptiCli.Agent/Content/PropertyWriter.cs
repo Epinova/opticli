@@ -5,6 +5,7 @@ using EPiServer.Core;
 using EPiServer.DataAbstraction;
 using EPiServer.Filters;
 using EPiServer.SpecializedProperties;
+using EPiServer.Web;
 using OptiCli.Agent.Http;
 using OptiCli.Core.Text;
 using OptiCli.Protocol;
@@ -12,7 +13,8 @@ using OptiCli.Protocol;
 namespace OptiCli.Agent.Content;
 
 /// <summary>Applies a request's property map to a writable content instance.</summary>
-internal sealed class PropertyWriter(ContentLocator locator, BlockFactory blocks, CategoryRepository categories, IFrameRepository frames)
+internal sealed class PropertyWriter(
+    ContentLocator locator, BlockFactory blocks, CategoryRepository categories, IFrameRepository frames, DisplayOptions displayOptions)
 {
     /// <summary>Pseudo-property for the content name in snapshots and diffs.</summary>
     public const string NameKey = "Name";
@@ -338,7 +340,7 @@ internal sealed class PropertyWriter(ContentLocator locator, BlockFactory blocks
                 }
                 return;
             case JsonValueKind.Array when property is PropertyContentArea:
-                property.Value = BuildArea(value.Deserialize<List<AreaItemValue>>(AgentJson.Options)!);
+                property.Value = BuildArea(value.Deserialize<List<AreaItemValue>>(AgentJson.Options)!, property.Value as ContentArea);
                 return;
             case JsonValueKind.Array when property is PropertyLinkCollection:
                 property.Value = BuildLinks(value.Deserialize<List<LinkItemValue>>(AgentJson.Options)!);
@@ -411,29 +413,80 @@ internal sealed class PropertyWriter(ContentLocator locator, BlockFactory blocks
         return list;
     }
 
-    public ContentArea BuildArea(IEnumerable<AreaItemValue> items)
+    /// <summary>
+    /// The area of <paramref name="items"/>, replacing <paramref name="current"/>. Each item takes over the current item
+    /// for the same content that <see cref="AreaItemRules.Match"/> pairs it with: its group and visitor groups unless
+    /// the item gives them, and its other render settings. Without that, writing back what <c>get</c> shows would lose
+    /// the area's personalization.
+    /// </summary>
+    public ContentArea BuildArea(IReadOnlyList<AreaItemValue> items, ContentArea? current)
     {
+        var links = items.Select(item => Target(item.Guid?.ToString() ?? item.Ref)).ToList();
+        var currentItems = current?.Items.ToList() ?? [];
+        var matches = AreaItemRules.Match(
+            currentItems.Select(item => ContentReference.IsNullOrEmpty(item.ContentLink) ? null : item.ContentLink.ToReferenceWithoutVersion().ToString()).ToList(),
+            links.Select(link => link.ToString()).ToList());
+
         var area = new ContentArea();
-        foreach (var item in items)
+        for (var i = 0; i < items.Count; i++)
         {
-            area.Items.Add(NewAreaItem(item.Guid?.ToString() ?? item.Ref, item.DisplayOption));
+            var takenOver = matches[i] < 0 ? null : currentItems[matches[i]];
+            var item = NewAreaItem(links[i], items[i].DisplayOption, takenOver);
+            var (group, visitorGroups) = AreaItemRules.Personalization(items[i], takenOver?.ContentGroup, takenOver?.AllowedRoles);
+            if (group is not null)
+            {
+                item.ContentGroup = group;
+            }
+            if (visitorGroups.Count > 0)
+            {
+                item.AllowedRoles = visitorGroups;
+            }
+            area.Items.Add(item);
         }
         return area;
     }
 
-    public ContentAreaItem NewAreaItem(string? reference, string? displayOption)
+    public ContentAreaItem NewAreaItem(string? reference, string? displayOption) => NewAreaItem(Target(reference), displayOption, null);
+
+    /// <summary>The content an item shows, without version.</summary>
+    private ContentReference Target(string? reference) =>
+        locator.LoadAnyLanguage(locator.ResolveContent(reference, "ContentArea item")).ContentLink.ToReferenceWithoutVersion();
+
+    /// <param name="takenOver">The current item this one replaces: its render settings other than the display option are kept.</param>
+    private ContentAreaItem NewAreaItem(ContentReference link, string? displayOption, ContentAreaItem? takenOver)
     {
-        var link = locator.ResolveContent(reference, "ContentArea item");
-        var target = locator.LoadAnyLanguage(link);
         // Link only: on newer CMS versions setting ContentGuid clears ContentLink (they are alternatives).
-        var item = new ContentAreaItem { ContentLink = target.ContentLink.ToReferenceWithoutVersion() };
-        if (!string.IsNullOrWhiteSpace(displayOption))
+        var item = new ContentAreaItem { ContentLink = link };
+        foreach (var (key, value) in takenOver?.RenderSettings ?? new Dictionary<string, object>())
         {
-            // Null until something is set on a new item.
+            if (key != PropertyValues.DisplayOptionKey)
+            {
+                // Null until something is set on a new item.
+                item.RenderSettings ??= new Dictionary<string, object>();
+                item.RenderSettings[key] = value;
+            }
+        }
+        if (DisplayOptionId(displayOption, takenOver is null ? null : PropertyValues.DisplayOption(takenOver)) is { } id)
+        {
             item.RenderSettings ??= new Dictionary<string, object>();
-            item.RenderSettings[PropertyValues.DisplayOptionKey] = displayOption;
+            item.RenderSettings[PropertyValues.DisplayOptionKey] = id;
         }
         return item;
+    }
+
+    /// <summary>The registered display option <paramref name="given"/> names; the one stored on the item it replaces passes as is.</summary>
+    private string? DisplayOptionId(string? given, string? stored)
+    {
+        if (string.IsNullOrWhiteSpace(given))
+        {
+            return null;
+        }
+        // So a value read back with get can be written back even if the site no longer registers it.
+        if (given == stored)
+        {
+            return given;
+        }
+        return AreaItemRules.DisplayOption(given, displayOptions.Select(o => new AreaItemRules.Option(o.Id, o.Name, o.Tag)).ToList());
     }
 
     private LinkItemCollection BuildLinks(IEnumerable<LinkItemValue> links)

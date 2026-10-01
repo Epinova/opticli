@@ -9,8 +9,8 @@ namespace OptiCli.Core.Configuration;
 /// Decides which database opticli uses. For this run only: <c>--connection</c> / <c>OPTICLI_DB</c>, <c>--db</c>
 /// or <c>--profile</c>. Otherwise the project's development database: the one the user chose (<c>opticli db
 /// use</c>), else the user config's <c>connection</c>, else what the site's Development configuration uses
-/// (launch profiles, user secrets, <c>appsettings.Development.json</c>, <c>appsettings.json</c>, first hit wins),
-/// provided it is local.
+/// (launch profiles, exported <c>ConnectionStrings__&lt;Name&gt;</c>, user secrets, <c>appsettings.Development.json</c>,
+/// <c>appsettings.json</c>, first hit wins), provided it is local.
 /// </summary>
 /// <remarks>
 /// opticli never guesses a remote database: when the Development configuration points at one, several launch
@@ -48,8 +48,10 @@ public static class ConnectionResolver
         {
             (userConfig, saved) = UserConfigStep(project, environment);
             profiles = LaunchProfileStep(request, project);
-            // ASP.NET Core's precedence: a launch profile's environment variables override user secrets.
+            // ASP.NET Core's precedence: environment variables override user secrets and appsettings. A launch profile's
+            // environmentVariables are environment variables too, set over the shell's when the site runs with the profile.
             chain.Add(profiles.Step);
+            chain.Add(EnvironmentStep(request, environment));
             chain.Add(UserSecretsStep(request, project, environment));
             chain.Add(AppSettingsStep(request, project, "appsettings.Development.json", ConnectionSource.AppSettingsDevelopment));
             chain.Add(AppSettingsStep(request, project, "appsettings.json", ConnectionSource.AppSettings));
@@ -233,7 +235,7 @@ public static class ConnectionResolver
         }
         if (environment.Variable(ConnectionRequest.EnvironmentVariable) is { } fromEnvironment)
         {
-            candidates.Add(new ConnectionCandidate(ConnectionSource.Environment, ConnectionRequest.EnvironmentVariable, null, null, fromEnvironment));
+            candidates.Add(new ConnectionCandidate(ConnectionSource.OptiCliDb, ConnectionRequest.EnvironmentVariable, null, null, fromEnvironment));
         }
         return new Step(candidates);
     }
@@ -255,9 +257,18 @@ public static class ConnectionResolver
         }
     }
 
+    /// <summary>The variables ASP.NET Core's environment configuration reads as this connection string, by name.</summary>
+    private static Step EnvironmentStep(ConnectionRequest request, OptiCliEnvironment environment) =>
+        new(environment.Variables
+            .Where(v => ConnectionVariables.Sets(v.Key, request.Name))
+            .OrderBy(v => v.Key, StringComparer.Ordinal)
+            .Select(v => new ConnectionCandidate(ConnectionSource.Environment, v.Key, null, null, v.Value))
+            .ToList());
+
     private static Step UserSecretsStep(ConnectionRequest request, ProjectInfo project, OptiCliEnvironment environment)
     {
-        if (project.Project.UserSecretsId is not { } id)
+        // An id opticli couldn't expand names no secrets file; doctor shows the project's warning.
+        if (project.Project.UserSecretsId is not { } id || id.Contains("$(", StringComparison.Ordinal))
         {
             return new Step([]);
         }
@@ -361,10 +372,13 @@ public static class ConnectionResolver
         return null;
     }
 
-    /// <summary>Several launch profiles pointing at different databases: ask, never guess.</summary>
+    /// <summary>
+    /// Several launch profiles, or several environment variables (whose order ASP.NET Core leaves open), pointing at
+    /// different databases: ask, never guess.
+    /// </summary>
     private static string? Ambiguity(Step step, ConnectionRequest request)
     {
-        var usable = step.Candidates.Where(c => c.Source == ConnectionSource.LaunchProfile && c.IsUsable).ToList();
+        var usable = step.Candidates.Where(c => c.Source is ConnectionSource.LaunchProfile or ConnectionSource.Environment && c.IsUsable).ToList();
         var distinct = usable
             .Select(c => $"{c.Server}|{c.Database}".ToLowerInvariant())
             .Distinct()
@@ -377,6 +391,11 @@ public static class ConnectionResolver
         foreach (var candidate in usable)
         {
             candidate.Status = CandidateStatus.Ambiguous;
+        }
+        if (usable[0].Source == ConnectionSource.Environment)
+        {
+            return $"{usable.Count} environment variables set ConnectionStrings:{request.Name} to different databases: "
+                + string.Join("; ", usable.Select(c => $"{c.Location} ({c.Server}/{c.Database})")) + ".";
         }
         return $"{usable.Count} launch profiles set ConnectionStrings:{request.Name} to different databases: "
             + string.Join("; ", usable.Select(c => $"'{c.Profile}' ({c.Server}/{c.Database})")) + ".";
@@ -395,7 +414,7 @@ public static class ConnectionResolver
 
         var where = project is null
             ? "no CMS project was found and neither --connection nor OPTICLI_DB is set"
-            : "checked --connection, OPTICLI_DB, the opticli user config, launch profiles, user secrets and appsettings";
+            : $"checked --connection, OPTICLI_DB, the opticli user config, launch profiles, ConnectionStrings__{request.Name}, user secrets and appsettings";
         return new NotFoundException(
             $"No connection string '{request.Name}' found ({where}).",
             $"Pass --connection \"Server=localhost;Database=...;...\", or set it in user secrets: dotnet user-secrets set \"ConnectionStrings:{request.Name}\" \"...\"");

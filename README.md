@@ -124,12 +124,26 @@ opticli works with the project's **development database**: the one the site uses
 `Development`.
 
 1. opticli reads the connection string (`EPiServerDB` unless `--connection-name` says otherwise) from the site's
-   Development configuration, in ASP.NET Core's order. The first source that has it wins: launch profiles, user
-   secrets, `appsettings.Development.json`, `appsettings.json`. If that database is **local**, opticli uses it
-   without asking.
+   Development configuration, in ASP.NET Core's order. The first source that has it wins:
+   - launch profiles;
+   - `ConnectionStrings__EPiServerDB` (or `ConnectionStrings:EPiServerDB`) exported in the shell, shown as source
+     `environment`. A launch profile that sets the same variable replaces it when the site runs with that profile,
+     so profiles come first;
+   - user secrets;
+   - `appsettings.Development.json`;
+   - `appsettings.json`.
+
+   If that database is **local**, opticli uses it without asking.
+
+   User secrets are found by the project's `UserSecretsId`. opticli reads it, like `TargetFramework` and
+   `AssemblyName`, from the project file and the nearest `Directory.Build.props` (and the files that one imports).
+   The project file wins. `$(Name)` references to properties set earlier are expanded. Conditions are evaluated
+   when they are simple comparisons or `Exists(...)`, with `Configuration` taken as `Debug`. A value opticli can't
+   expand is left as written (such a `UserSecretsId` reads no user secrets), a condition it can't evaluate is
+   skipped, and `doctor` warns about both.
 2. Otherwise opticli asks once. That happens when:
    - the connection string points at a remote server such as Azure SQL;
-   - several launch profiles disagree;
+   - several launch profiles (or exported variables) disagree;
    - only other environments' `appsettings.{Env}.json` files have one.
 
    On a terminal it shows a numbered list. Anywhere else, commands fail with `needs_selection` (exit 6), and
@@ -147,8 +161,9 @@ opticli get 123 --db e02d9b   # another database, for one run (a remote one is f
 When the database in use is remote, every response carries `meta.database` (`server`, `name`, `local`,
 `development`). A remote database that isn't the development one also adds a warning.
 
-`serve` runs the site only against a local database or the chosen development database. Against a remote one it
-turns off, for that run:
+`serve` runs the site only against a local database or the chosen development database. It sets
+`ConnectionStrings__<Name>` to that database and removes other spellings of it inherited from the shell, so an
+exported one can't win over the pin. Against a remote one it turns off, for that run:
 - the site's scheduler;
 - automatic schema updates;
 - content type sync.
@@ -163,8 +178,9 @@ So a local build can't change a shared database just by starting.
 | The site started by `serve` is pinned to the database the CLI reads. It refuses to start against any remote database except the approved development one. There it runs without scheduler, schema updates or content type sync. If the site turns hosting startups off in its code, so the pin can't run, it refuses to start. | CLI + site agent at startup |
 | The site agent answers only loopback callers that send the per-run token, and only in `Development`. The token is kept in a state file only your user can read. | Site agent, per request |
 | Writes create drafts; publishing needs `--publish` (or `publish`). Saves are attributed to the user `opticli`. | CLI + site agent |
+| A publish that would also put live changes someone else saved after the published version stops: on a terminal it shows who saved what and asks, elsewhere it fails with `conflict` (exit 5) listing them. `--include-draft` (a plan step's `"includeDraft": true`) confirms; `publish --version <id>` publishes that version as it is. | Site agent |
 | `delete` moves content to the recycle bin; nothing empties it. Site roots, start pages, asset roots and anything above them can't be moved or deleted. | Site agent |
-| Reads use fixed queries. `sql` accepts a single SELECT, refuses anything that writes, runs code or reaches another database, and always runs in a rolled-back transaction. Personal-data tables (form submissions, users) need `--include-personal-data`. | CLI |
+| Reads use fixed queries. `sql` accepts a single SELECT, refuses anything that writes, runs code, reaches another database or reads server-wide views, logs and traces (in `sys`, only the views that describe the database's own schema), and always runs in a rolled-back transaction. Personal-data tables (form submissions, users) need `--include-personal-data`. | CLI |
 | Passwords are never printed; `doctor` redacts connection strings. The exception is `opticli env`: it prints the per-run token, and with `--include-connection` the connection string too. | CLI |
 
 Things these rules can't see:
@@ -224,6 +240,9 @@ These commands write:
 Every write command takes `--dry-run`. Structured values use `--values`, e.g.
 `--values '{"MainArea":[{"ref":"456"}]}'`. `set` and `area` check that nobody saved a newer version in the meantime
 (exit 5 on a conflict). `--base-version <id>` pins the version the change is based on, and `--force` skips the check.
+A publish puts the whole version live. When someone else saved unpublished changes in it, opticli shows them and asks on
+a terminal; elsewhere it fails with `conflict` and `details.reason: "pendingDraft"`, and `--include-draft` confirms.
+Output after a publish names `previouslyPublished`, the version to publish again to go back.
 [skill/reference.md](skill/reference.md) documents value syntax and the plan format.
 
 ## serve and env
@@ -265,6 +284,7 @@ are often committed, so keep the token out of git.
 | `OPTICLI_TOKEN` | always | the per-run token the site agent requires |
 | `OPTICLI_DB` | `serve`, `env --include-connection` | the connection string to pin the site to (read by the CLI, it is the same as `--connection`) |
 | `OPTICLI_CONNECTION_NAME` | when not `EPiServerDB` | which connection string to pin |
+| `ConnectionStrings__<Name>` | `serve`, `env --include-connection` | the same connection string, for code that reads it before the agent's pin; `serve` also removes other spellings of it (`ConnectionStrings:<Name>`, another case) |
 | `OPTICLI_REMOTE_DB` | against a remote development database | the one remote database the site agent accepts; turns on shared-database mode |
 
 ### How the injection works
@@ -302,7 +322,7 @@ runtime. It ships no copies of them.
 | 2 | `not_found` | project, connection string, content, type or version not found |
 | 3 | `refused` | a safety rule blocked it |
 | 4 | `unreachable` | database or site agent not reachable, or a query failed on the server |
-| 5 | `conflict` / `validation` | a newer version exists, or the CMS rejected the values |
+| 5 | `conflict` / `validation` | a newer version exists, a publish would include someone else's unpublished changes (`details.reason: "pendingDraft"`), or the CMS rejected the values |
 | 6 | `needs_selection` | the user must choose the development database first (`error.details.choices`) |
 
 ## Files
@@ -382,6 +402,7 @@ dotnet test tests/OptiCli.Integration
 Some differences the database can't reproduce by design, such as URL segments a site drops in code. Those are listed
 with the reason in `tests/OptiCli.Integration/Comparison/KnownDifferences.cs`; any other mismatch fails the run.
 
+[CI](.github/workflows/ci.yml) runs the unit tests on Linux, Windows and macOS for every push and pull request.
 Issues and pull requests are welcome. Please run the unit tests before sending a change. When a change touches
 reads, also run the integration test against a site you have.
 
@@ -394,8 +415,8 @@ Set the new version as `<Version>` in [Directory.Build.props](Directory.Build.pr
 git tag v0.4.1 && git push origin v0.4.1
 ```
 
-The [release workflow](.github/workflows/release.yml) checks that the tag matches both versions, runs the unit
-tests and publishes the package to nuget.org.
+The [release workflow](.github/workflows/release.yml) checks that the tag matches both versions and is on `main`,
+runs the unit tests, checks that the package holds the site agent and starts, and publishes it to nuget.org.
 
 ## Licence
 

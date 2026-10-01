@@ -1,4 +1,5 @@
 using EPiServer.Core;
+using EPiServer.DataAbstraction;
 using EPiServer.Data.Entity;
 using EPiServer.DataAccess;
 using EPiServer.Security;
@@ -19,11 +20,15 @@ internal static class PublishEndpoint
             throw AgentException.Usage($"The ref names version {link.WorkID} but the body says {explicitVersion}.");
         }
 
-        var versionId = body.Version ?? (link.WorkID > 0 ? link.WorkID : 0);
-        if (versionId == 0)
+        // A named version is the caller's choice of what goes live; the latest one may hold someone else's draft.
+        var named = body.Version ?? (link.WorkID > 0 ? link.WorkID : (int?)null);
+        IReadOnlyList<ContentVersion>? branch = null;
+        var versionId = named ?? 0;
+        if (named is null)
         {
             var language = flow.Locator.ContentLanguage(flow.Locator.LoadAnyLanguage(link), body.Lang);
-            versionId = flow.Locator.LatestVersion(link, language).ContentLink.WorkID;
+            branch = flow.Locator.Versions(link, language);
+            versionId = ContentLocator.Latest(branch, link, language).ContentLink.WorkID;
         }
 
         var version = flow.Repository.Get<IContent>(new ContentReference(link.ID, versionId));
@@ -35,6 +40,12 @@ internal static class PublishEndpoint
         {
             throw AgentException.Conflict($"Version {version.ContentLink} is already the published version.");
         }
+
+        var versionLanguage = version is ILocalizable { Language: { } own } ? own : null;
+        branch ??= flow.Locator.Versions(link, versionLanguage);
+        var pending = PendingDrafts.Require(
+            flow.Locator.PendingDraft(branch, version), body.IncludeDraft || named is not null, dryRun: false, $"{link.ID} ('{version.Name}')", versionLanguage?.Name);
+        var previouslyPublished = ContentLocator.PublishedVersion(branch);
 
         var writable = (IContent)((IReadOnly)version).CreateWritableClone();
         var issues = ValidationErrors.Validate(flow.Validation, writable, SaveAction.Publish);
@@ -51,6 +62,8 @@ internal static class PublishEndpoint
             Published = true,
             BaseVersion = versionId,
             Validation = issues.Count > 0 ? issues : null,
+            PendingDraft = pending,
+            PreviouslyPublished = previouslyPublished,
         };
     }
 }

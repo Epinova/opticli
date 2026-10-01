@@ -23,6 +23,9 @@ public sealed record AgentError(string Code, string Message, string? Hint = null
 
     /// <summary>For <c>conflict</c> errors: the version that is currently latest, to re-read and retry with as <c>baseVersion</c>.</summary>
     public int? CurrentVersion { get; init; }
+
+    /// <summary>For <c>conflict</c> errors: the publish would also put these changes by someone else live; retry with <c>includeDraft</c> to confirm.</summary>
+    public PendingDraft? PendingDraft { get; init; }
 }
 
 /// <summary>Error codes and the HTTP status each one is sent with.</summary>
@@ -43,7 +46,10 @@ public static class AgentErrorCodes
     /// <summary>404: the route is for a protocol version this agent does not speak.</summary>
     public const string UnsupportedProtocol = "unsupported_protocol";
 
-    /// <summary>409: <c>baseVersion</c> is not the latest version, or the operation doesn't apply to the content's current state.</summary>
+    /// <summary>
+    /// 409: <c>baseVersion</c> is not the latest version, a publish would include someone else's unpublished changes
+    /// (<see cref="AgentError.PendingDraft"/>), or the operation doesn't apply to the content's current state.
+    /// </summary>
     public const string Conflict = "conflict";
 
     /// <summary>422: the CMS's validation rejected the content; see <see cref="AgentError.Validation"/>.</summary>

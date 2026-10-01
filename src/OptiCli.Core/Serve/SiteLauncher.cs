@@ -111,7 +111,7 @@ public static class SiteLauncher
         return result;
     }
 
-    private static IReadOnlyList<KeyValuePair<string, string>> Environment(LaunchRequest request, string token)
+    private static IReadOnlyList<KeyValuePair<string, string?>> Environment(LaunchRequest request, string token)
     {
         var variables = SiteEnvironment.Build(
             request.AgentDll,
@@ -122,10 +122,17 @@ public static class SiteLauncher
             System.Environment.GetEnvironmentVariable(SiteEnvironment.StartupHooksVariable),
             approvedRemote: request.Connection,
             httpsPort: request.HttpsPort);
-        // The site inherits this process's environment: blank what this run doesn't set, so a stale export from
-        // `opticli env` can't approve another remote database or pin another connection name.
+        // The site inherits this process's environment. Other spellings of the pinned ConnectionStrings variable go first
+        // (removed, not blanked: an empty one would still be read). Then blank what this run doesn't set, so a stale export
+        // from `opticli env` can't approve another remote database or pin another connection name.
+        var competing = SiteEnvironment.CompetingConnectionVariables(request.ConnectionName, System.Environment.GetEnvironmentVariables().Keys.OfType<string>());
         string[] owned = [AgentProtocol.TokenVariable, AgentProtocol.DatabaseVariable, AgentProtocol.ConnectionNameVariable, AgentProtocol.RemoteDatabaseVariable];
-        return [.. variables, .. owned.Where(name => variables.All(v => v.Key != name)).Select(name => new KeyValuePair<string, string>(name, ""))];
+        return
+        [
+            .. competing.Select(name => new KeyValuePair<string, string?>(name, null)),
+            .. variables.Select(v => new KeyValuePair<string, string?>(v.Key, v.Value)),
+            .. owned.Where(name => variables.All(v => v.Key != name)).Select(name => new KeyValuePair<string, string?>(name, "")),
+        ];
     }
 
     private static ServeState Record(StateStore store, LaunchRequest request, string token, ServeMode mode, Process process)

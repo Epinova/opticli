@@ -206,13 +206,14 @@ public sealed class PropertyDecoder(
             {
                 item["displayOption"] = displayOption;
             }
-            if (fragment.ContentGroup is not null || fragment.VisitorGroups.Count > 0)
+            // Named as set --values takes them, so a ContentArea read here can be written back as is.
+            if (fragment.ContentGroup is { } group)
             {
-                item["personalization"] = new JsonObject
-                {
-                    ["group"] = fragment.ContentGroup,
-                    ["visitorGroups"] = new JsonArray(fragment.VisitorGroups.Select(g => (JsonNode?)g).ToArray()),
-                };
+                item["group"] = group;
+            }
+            if (fragment.VisitorGroups.Count > 0)
+            {
+                item["visitorGroups"] = new JsonArray(fragment.VisitorGroups.Select(g => (JsonNode?)g).ToArray());
             }
             if (fragment.RenderSettings.Count > 0)
             {

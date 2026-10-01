@@ -20,6 +20,7 @@ internal static class ExistingContent
         flow.Repository.TryGet<IContent>(guid, new LoaderOptions { LanguageLoaderOption.FallbackWithMaster() }, out var content) ? content : null;
 
     /// <param name="parent">Where the request puts the content; existing content must be there (or in the recycle bin).</param>
+    /// <param name="includeDraft">Confirms that a publish also puts other people's unpublished changes live.</param>
     public static WriteResult Update(
         WriteFlow flow,
         IContent existing,
@@ -30,6 +31,7 @@ internal static class ExistingContent
         string name,
         IReadOnlyDictionary<string, JsonElement>? properties,
         bool publish,
+        bool includeDraft,
         bool dryRun)
     {
         var link = existing.ContentLink.ToReferenceWithoutVersion();
@@ -54,14 +56,22 @@ internal static class ExistingContent
                 $"Move it back (opticli move {link.ID} --to {parent.ContentLink.ID}) or change the plan's parent.");
         }
 
+        var branch = flow.Locator.ContentLanguage(flow.Locator.LoadAnyLanguage(link), language?.Name);
+        var versions = existing is IVersionable ? flow.Locator.Versions(link, branch) : null;
+        // Checked before anything changes, including the move out of the recycle bin.
+        var pending = publish && versions is not null
+            ? PendingDrafts.Require(
+                flow.Locator.PendingDraft(versions, flow.Repository.Get<IContent>(ContentLocator.Latest(versions, link, branch).ContentLink)),
+                includeDraft, dryRun, $"{link.ID} ('{existing.Name}')", branch?.Name)
+            : null;
+
         if (deleted && !dryRun)
         {
             flow.Repository.Move(link, parent.ContentLink, AccessLevel.NoAccess, AccessLevel.NoAccess);
         }
 
-        var branch = flow.Locator.ContentLanguage(flow.Locator.LoadAnyLanguage(link), language?.Name);
-        var current = existing is IVersionable
-            ? flow.Repository.Get<IContent>(flow.Locator.LatestVersion(link, branch).ContentLink)
+        var current = versions is not null
+            ? flow.Repository.Get<IContent>(ContentLocator.Latest(versions, link, branch).ContentLink)
             : branch is null ? flow.Repository.Get<IContent>(link) : flow.Repository.Get<IContent>(link, branch);
 
         var before = PropertyValues.Snapshot(current);
@@ -84,6 +94,8 @@ internal static class ExistingContent
             Content = deleted && !dryRun && !result.Saved ? ContentSummaries.Describe(flow.Repository.Get<IContent>(current.ContentLink), flow.Types) : result.Content,
             Existing = true,
             Restored = deleted && !dryRun,
+            PendingDraft = pending,
+            PreviouslyPublished = result is { Saved: true, Published: true } && versions is not null ? ContentLocator.PublishedVersion(versions) : null,
         };
     }
 }

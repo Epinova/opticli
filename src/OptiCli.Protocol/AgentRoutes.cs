@@ -36,7 +36,8 @@ public static class AgentRoutes
     /// <summary>
     /// <c>POST /v1/content</c>. Body: <see cref="CreateRequest"/>. Response: <see cref="WriteResult"/>
     /// (201 when saved). Errors: <c>not_found</c> (parent, type), <c>usage</c> (unknown property, bad value),
-    /// <c>validation</c> 422 (required property, type not allowed under the parent, ...).
+    /// <c>validation</c> 422 (required property, type not allowed under the parent, ...), <c>conflict</c> 409 (the GUID
+    /// exists, or <see cref="CreateRequest.UpdateExisting"/> would publish someone else's unpublished changes).
     /// </summary>
     public static readonly string Create = $"{Prefix}/content";
 
@@ -53,7 +54,9 @@ public static class AgentRoutes
     /// based on the ref's version if it has one, else the latest version in the language. A saved draft
     /// becomes the primary (common) draft, the version edit mode opens.
     /// Errors: <c>conflict</c> 409 when <see cref="DraftRequest.BaseVersion"/> is not the latest
-    /// (<see cref="AgentError.CurrentVersion"/> says which is), <c>validation</c> 422, <c>usage</c> 400.
+    /// (<see cref="AgentError.CurrentVersion"/> says which is), or when a publish would include someone else's
+    /// unpublished changes without <see cref="DraftRequest.IncludeDraft"/> (<see cref="AgentError.PendingDraft"/>);
+    /// <c>validation</c> 422, <c>usage</c> 400.
     /// </summary>
     public static string Draft(string contentRef) => $"{Content(contentRef)}/draft";
 
@@ -67,7 +70,9 @@ public static class AgentRoutes
     /// <summary>
     /// <c>POST /v1/content/{ref}/publish</c>. Body: <see cref="PublishRequest"/> (optional). Publishes the
     /// given version, the ref's version, or the latest version in the language. Response: <see cref="WriteResult"/>.
-    /// Errors: <c>conflict</c> when that version is already published, <c>validation</c> 422.
+    /// Errors: <c>conflict</c> when that version is already published, or when the latest version includes someone
+    /// else's unpublished changes and neither a version nor <see cref="PublishRequest.IncludeDraft"/> was given
+    /// (<see cref="AgentError.PendingDraft"/>); <c>validation</c> 422.
     /// </summary>
     public static string Publish(string contentRef) => $"{Content(contentRef)}/publish";
 

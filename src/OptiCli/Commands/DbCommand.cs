@@ -43,9 +43,9 @@ internal static class DbCommand
     private static Command List(GlobalOptions options)
     {
         var command = new Command("list", """
-            List every connection string the project has (launch profiles, user secrets, every appsettings file) with an id,
-            server, database, whether it is local and where it was found, and which one is the development database.
-            Passwords are never shown. Example: opticli db list
+            List every connection string the project has (launch profiles, exported ConnectionStrings__<Name>, user secrets,
+            every appsettings file) with an id, server, database, whether it is local and where it was found, and which one is
+            the development database. Passwords are never shown. Example: opticli db list
             """);
         CommandRunner.SetHandler(command, options, (context, _) =>
         {

@@ -38,6 +38,9 @@ public sealed class OptiCliEnvironment
     public string? Variable(string name) =>
         _variables.TryGetValue(name, out var value) && !string.IsNullOrEmpty(value) ? value : null;
 
+    /// <summary>Every variable, empty ones included, for lookups by pattern rather than by name.</summary>
+    public IEnumerable<KeyValuePair<string, string>> Variables => _variables;
+
     /// <summary>
     /// Same rule as Microsoft.Extensions.Configuration.UserSecrets: <c>%APPDATA%\Microsoft\UserSecrets</c>
     /// when APPDATA is set (Windows), otherwise <c>~/.microsoft/usersecrets</c>.

@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using OptiCli.Core.Configuration;
 using OptiCli.Core.Safety;
 using OptiCli.Protocol;
 
@@ -55,11 +56,23 @@ public static class SiteEnvironment
             {
                 variables.Add(new(AgentProtocol.ConnectionNameVariable, connectionName));
             }
-            // For sites that read the connection before hosting startups run (the agent's pin can't reach those).
-            variables.Add(new($"ConnectionStrings__{connectionName}", connection.Value));
+            // For sites that read the connection before hosting startups run (the agent's pin can't reach those), and over
+            // one exported in the shell, which the site would otherwise read ahead of user secrets.
+            variables.Add(new(ConnectionVariables.Name(connectionName), connection.Value));
         }
         return variables;
     }
+
+    /// <summary>
+    /// The inherited variables, other than <c>ConnectionStrings__&lt;Name&gt;</c> itself, that the site would also read as
+    /// connection string <paramref name="connectionName"/> (<c>ConnectionStrings:&lt;Name&gt;</c>, another case, an Azure
+    /// prefix). ASP.NET Core reads them in no set order, so one could beat the pinned value: <c>serve</c> removes them.
+    /// </summary>
+    public static IReadOnlyList<string> CompetingConnectionVariables(string connectionName, IEnumerable<string> inherited) =>
+        inherited
+            .Where(name => ConnectionVariables.Sets(name, connectionName) && !string.Equals(name, ConnectionVariables.Name(connectionName), StringComparison.Ordinal))
+            .Order(StringComparer.Ordinal)
+            .ToList();
 
     /// <summary>
     /// The caller's hooks, then the agent. Any other OptiCli.Agent.dll (left over from an <c>opticli env</c> exported in

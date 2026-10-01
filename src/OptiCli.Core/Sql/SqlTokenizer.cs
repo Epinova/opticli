@@ -28,7 +28,9 @@ public sealed record SqlToken(SqlTokenKind Kind, string Text)
 /// </summary>
 public static class SqlTokenizer
 {
-    /// <exception cref="RefusedException">An unterminated string, quoted name or comment.</exception>
+    /// <exception cref="RefusedException">
+    /// An unterminated string, quoted name or comment, or a control character outside string literals and quoted names.
+    /// </exception>
     public static IReadOnlyList<SqlToken> Tokenize(string sql)
     {
         var tokens = new List<SqlToken>();
@@ -36,14 +38,14 @@ public static class SqlTokenizer
         while (i < sql.Length)
         {
             var c = sql[i];
+            CheckCharacter(sql, i);
             if (char.IsWhiteSpace(c))
             {
                 i++;
             }
             else if (c == '-' && Peek(sql, i + 1) == '-')
             {
-                var end = sql.IndexOf('\n', i);
-                i = end < 0 ? sql.Length : end + 1;
+                i = SkipLineComment(sql, i);
             }
             else if (c == '/' && Peek(sql, i + 1) == '*')
             {
@@ -100,6 +102,34 @@ public static class SqlTokenizer
 
     private static char Peek(string sql, int index) => index < sql.Length ? sql[index] : '\0';
 
+    /// <summary>
+    /// Refuses what real queries don't need and lexers may disagree on: a lone CR (SQL Server ends a <c>--</c> comment
+    /// at one), any other control character but tab and line feed, and the Unicode line and paragraph separators.
+    /// </summary>
+    private static void CheckCharacter(string sql, int i)
+    {
+        var c = sql[i];
+        if (c == '\r' && Peek(sql, i + 1) != '\n')
+        {
+            throw new RefusedException("Refusing SQL with a carriage return (\\r) that isn't followed by a line feed.", "End lines with \\n or \\r\\n.");
+        }
+        if ((char.IsControl(c) && c is not ('\t' or '\n' or '\r')) || c is (char)0x2028 or (char)0x2029)
+        {
+            throw new RefusedException($"Refusing SQL with the character U+{(int)c:X4} outside a string literal.", "Remove it: only spaces, tabs and line breaks (\\n, \\r\\n) may separate words.");
+        }
+    }
+
+    /// <summary>SQL Server ends a <c>--</c> comment at the first CR or LF.</summary>
+    private static int SkipLineComment(string sql, int i)
+    {
+        while (i < sql.Length && sql[i] is not ('\r' or '\n'))
+        {
+            CheckCharacter(sql, i);
+            i++;
+        }
+        return i;
+    }
+
     /// <summary>A T-SQL numeric literal: <c>0x</c> + hex digits, or digits, optional <c>.digits</c>, optional <c>e[+-]digits</c>.</summary>
     private static int SkipNumber(string sql, int i)
     {
@@ -145,6 +175,7 @@ public static class SqlTokenizer
         var depth = 0;
         while (i < sql.Length)
         {
+            CheckCharacter(sql, i);
             if (sql[i] == '/' && Peek(sql, i + 1) == '*')
             {
                 depth++;

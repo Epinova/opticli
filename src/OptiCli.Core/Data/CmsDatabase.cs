@@ -106,10 +106,45 @@ public sealed class CmsDatabase : IAsyncDisposable
     /// <param name="maxRows">Rows returned; one more is read to tell whether the result was cut.</param>
     /// <param name="convert">Turns each non-null value into its output form.</param>
     /// <exception cref="UsageException">SQL Server rejected the query.</exception>
+    /// <exception cref="InternalException">The transaction was gone before the rollback.</exception>
     internal async Task<Sql.SqlResult> QueryRolledBackAsync(string sql, int maxRows, Func<object, object?> convert, CancellationToken cancellationToken)
     {
         await using var transaction = (SqlTransaction)await _connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+        Sql.SqlResult result;
         try
+        {
+            result = await ReadAsync();
+        }
+        catch (SqlException ex)
+        {
+            await TryRollbackAsync(transaction);
+            throw new UsageException($"SQL Server rejected the query: {ex.Message}", "Check table and column names with `opticli sql \"SELECT name FROM sys.tables\"`.");
+        }
+        catch
+        {
+            await TryRollbackAsync(transaction);
+            throw;
+        }
+
+        // A SELECT never ends the transaction it runs in. If this one is gone, something in the statement committed or
+        // rolled it back, and what it changed may have been kept: say so rather than return the rows.
+        if (transaction.Connection is not null)
+        {
+            try
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                return result;
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or SqlException)
+            {
+                // The server found no transaction to roll back.
+            }
+        }
+        throw new InternalException(
+            "The transaction around the query ended before opticli rolled it back, so its changes may have been kept.",
+            "This should never happen for a SELECT; check the database for changes and report it as an opticli bug.");
+
+        async Task<Sql.SqlResult> ReadAsync()
         {
             await using var command = new SqlCommand(sql, _connection, transaction) { CommandType = CommandType.Text, CommandTimeout = 60 };
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -144,21 +179,18 @@ public sealed class CmsDatabase : IAsyncDisposable
             }
             return new Sql.SqlResult(columns, rows, rows.Count, truncated ? true : null, RolledBack: true);
         }
-        catch (SqlException ex)
+    }
+
+    private static async Task TryRollbackAsync(SqlTransaction transaction)
+    {
+        try
         {
-            throw new UsageException($"SQL Server rejected the query: {ex.Message}", "Check table and column names with `opticli sql \"SELECT name FROM sys.tables\"`.");
+            await transaction.RollbackAsync(CancellationToken.None);
         }
-        finally
+        catch (Exception ex) when (ex is InvalidOperationException or SqlException)
         {
-            try
-            {
-                await transaction.RollbackAsync(CancellationToken.None);
-            }
-            catch (Exception ex) when (ex is InvalidOperationException or SqlException)
-            {
-                // The server already ended the transaction (deadlock victim, dropped connection): nothing is left to
-                // roll back, and the original error is the one worth reporting.
-            }
+            // The query failed and the server already ended the transaction (deadlock victim, dropped connection):
+            // nothing is left to roll back, and the original error is the one worth reporting.
         }
     }
 

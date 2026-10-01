@@ -29,6 +29,7 @@ internal static class DoctorCommand
 
     private sealed record ToolSection(string Version, string Runtime);
 
+    /// <param name="Imports">The files besides the project file read for its properties (Directory.Build.props and imports).</param>
     private sealed record ProjectSection(
         bool Found,
         string? Path = null,
@@ -38,6 +39,7 @@ internal static class DoctorCommand
         string? TargetFramework = null,
         string? CmsVersion = null,
         string? UserSecretsId = null,
+        IReadOnlyList<string>? Imports = null,
         Problem? Error = null);
 
     /// <param name="Development">The project's development database and how it was found (<c>saved</c>, <c>configured</c>, <c>automatic</c>).</param>
@@ -93,7 +95,9 @@ internal static class DoctorCommand
                     project.HowFound,
                     project.Project.TargetFramework,
                     PackageVersions.FindCms(project.Project),
-                    project.Project.UserSecretsId);
+                    project.Project.UserSecretsId,
+                    project.Project.Imports.Count > 0 ? project.Project.Imports : null);
+            warnings.AddRange(project?.Project.Warnings ?? []);
             if (project is not null && projectSection.CmsVersion is null)
             {
                 warnings.Add(File.Exists(PackageVersions.AssetsFile(project.Project))
