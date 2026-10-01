@@ -73,7 +73,7 @@ internal static class TypeCommand
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
         {
             await using var db = await context.OpenDatabaseAsync(cancellationToken);
-            var types = await ContentTypeReader.ListAsync(db, cancellationToken);
+            var types = await ContentTypeReader.ListAsync(db, cancellationToken, countInstances: true);
             var type = ContentTypeLookup.Find(types, context.Parse.GetValue(name)!);
             var properties = await ContentTypeReader.ListPropertiesAsync(db, type.Id, cancellationToken);
 
@@ -143,7 +143,7 @@ internal static class TypeCommand
             type.DisplayName,
             type.Description,
             type.ModelType,
-            type.Instances,
+            type.Instances ?? 0,
             details,
             root,
             root is null ? null : classes.Select(c => new ClassFile(Relative(root, c.Class.File), c.Class.Line, c.MatchedBy, c.Class.BaseTypes)).ToList(),

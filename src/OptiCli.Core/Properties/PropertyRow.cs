@@ -46,4 +46,13 @@ public static class PropertyRows
         rows.Where(row => row.BranchSpecific ?? isCultureSpecific(row.DefinitionId)
             ? row.LanguageId == languageId
             : row.LanguageId == masterLanguageId);
+
+    /// <summary>
+    /// <see cref="Effective"/> as a SQL condition on the <c>tblContentProperty</c> row <paramref name="row"/>: its branch is
+    /// <paramref name="language"/> when the value is branch-specific, else <paramref name="masterLanguage"/>.
+    /// </summary>
+    /// <param name="cultureSpecific">SQL that is 1 when the row's own property is culture-specific, else 0: what
+    /// decides when <c>BranchSpecificScope</c> is null.</param>
+    public static string EffectiveSql(string row, string cultureSpecific, string language, string masterLanguage) =>
+        $"{row}.fkLanguageBranchID = CASE WHEN ISNULL({row}.BranchSpecificScope, {cultureSpecific}) = 1 THEN {language} ELSE {masterLanguage} END";
 }

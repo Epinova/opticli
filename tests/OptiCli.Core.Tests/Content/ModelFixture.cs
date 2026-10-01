@@ -16,6 +16,7 @@ internal static class ModelFixture
     public const int FactBlock = 40;
     public const int ImageFile = 50;
     public const int StartPage = 60;
+    public const int DocumentFile = 70;
 
     // Property definition ids.
     public const int Heading = 101;
@@ -55,6 +56,7 @@ internal static class ModelFixture
             Type(FactBlock, "FactBlock", "Block"),
             Type(ImageFile, "ImageFile", "Image"),
             Type(StartPage, "StartPage", "Page"),
+            Type(DocumentFile, "DocumentFile", "Media"),
         ],
         [
             new(Heading, ArticlePage, "Heading", "String", PropertyBaseType.String, null, true, false),

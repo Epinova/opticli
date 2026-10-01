@@ -37,15 +37,17 @@ public class ContentHeaderTests
     }
 
     [Theory]
-    [InlineData(true, true, null, true, null)]
-    [InlineData(null, true, null, true, null)]
-    [InlineData(true, false, null, false, null)]
-    [InlineData(false, false, "~/link/44444444444444444444444444444444.aspx#contact", true, "contact")]
-    [InlineData(false, false, "https://www.example.com/", false, null)]
-    [InlineData(false, false, null, false, null)]
-    public void Link_targets_come_from_shortcuts_and_links_to_content(bool? automaticLink, bool shortcut, string? linkUrl, bool expected, string? anchor)
+    [InlineData(true, false, true, null, true, null)]
+    [InlineData(null, null, true, null, true, null)]
+    [InlineData(true, false, false, null, false, null)]
+    // Fetch data from another page: the page keeps its own URL.
+    [InlineData(true, true, true, null, false, null)]
+    [InlineData(false, false, false, "~/link/44444444444444444444444444444444.aspx#contact", true, "contact")]
+    [InlineData(false, false, false, "https://www.example.com/", false, null)]
+    [InlineData(false, false, false, null, false, null)]
+    public void Link_targets_come_from_shortcuts_and_links_to_content(bool? automaticLink, bool? fetchData, bool shortcut, string? linkUrl, bool expected, string? anchor)
     {
-        var link = LinkTarget.From(automaticLink, shortcut ? TargetGuid : null, linkUrl);
+        var link = LinkTarget.From(automaticLink, fetchData, shortcut ? TargetGuid : null, linkUrl);
 
         Assert.Equal(expected, link is not null);
         if (link is not null)

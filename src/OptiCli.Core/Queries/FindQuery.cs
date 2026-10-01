@@ -5,6 +5,7 @@ using OptiCli.Core.Cms;
 using OptiCli.Core.Content;
 using OptiCli.Core.Data;
 using OptiCli.Core.Errors;
+using OptiCli.Core.Properties;
 using OptiCli.Core.Refs;
 using OptiCli.Core.Text;
 
@@ -98,7 +99,7 @@ public sealed class FindQuery(ContentSession session)
 
         var definition = outer ?? throw UnknownProperty(type, path[0], properties.Select(p => p.Name).Append(NamePseudoProperty));
         var scope = "p.ScopeName IS NULL";
-        var cultureSpecific = definition.CultureSpecific;
+        var inBlock = false;
         if (path.Length > 1)
         {
             if (definition.BaseType != PropertyBaseType.Block || definition.IsList || definition.BlockType is not { } blockType)
@@ -110,7 +111,7 @@ public sealed class FindQuery(ContentSession session)
                 ?? throw UnknownProperty(session.Model.Type(blockType)!, path[1], innerProperties.Select(p => p.Name));
             scope = $"p.ScopeName = @s{index}";
             parameters.Add(new SqlParameter($"@s{index}", $".{definition.Id.ToString(CultureInfo.InvariantCulture)}.{inner.Id.ToString(CultureInfo.InvariantCulture)}."));
-            cultureSpecific |= inner.CultureSpecific;
+            inBlock = true;
             definition = inner;
         }
         else if (definition.BaseType == PropertyBaseType.Block)
@@ -122,11 +123,20 @@ public sealed class FindQuery(ContentSession session)
         var exists = $"""
             EXISTS (SELECT 1 FROM tblContentProperty p
                     WHERE p.fkContentID = c.pkID AND p.fkPropertyDefinitionID = {definition.Id.ToString(CultureInfo.InvariantCulture)}
-                      AND p.fkLanguageBranchID = {(cultureSpecific ? "cl.fkLanguageBranchID" : "c.fkMasterLanguageBranchID")}
+                      AND {LanguageCondition(definition, inBlock)}
                       AND {scope} AND {condition})
             """;
         return negate ? "NOT " + exists : exists;
     }
+
+    /// <summary>
+    /// The branch <c>p</c> must be stored on to be the value <c>get</c> shows in <c>cl</c>'s language: culture-specific
+    /// values on that branch, shared ones on the master branch. Inside a local block the row's <c>BranchSpecificScope</c>
+    /// decides (a shared block keeps even its culture-specific values on the master branch), as in <see cref="PropertyRows.Effective"/>.
+    /// </summary>
+    internal static string LanguageCondition(PropertyDefinition definition, bool inBlock) => inBlock
+        ? PropertyRows.EffectiveSql("p", definition.CultureSpecific ? "1" : "0", "cl.fkLanguageBranchID", "c.fkMasterLanguageBranchID")
+        : $"p.fkLanguageBranchID = {(definition.CultureSpecific ? "cl.fkLanguageBranchID" : "c.fkMasterLanguageBranchID")}";
 
     /// <returns>The SQL condition on <c>p</c>, and whether the EXISTS must be negated (false booleans are often not stored).</returns>
     private async Task<(string Condition, bool Negate)> ValueConditionAsync(

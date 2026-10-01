@@ -30,7 +30,7 @@ internal static class TypesCommand
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
         {
             await using var db = await context.OpenDatabaseAsync(cancellationToken);
-            IEnumerable<ContentTypeInfo> types = await ContentTypeReader.ListAsync(db, cancellationToken);
+            IEnumerable<ContentTypeInfo> types = await ContentTypeReader.ListAsync(db, cancellationToken, countInstances: true);
 
             if (context.Parse.GetValue(kind) is { } wanted)
             {
@@ -46,7 +46,7 @@ internal static class TypesCommand
             {
                 types = types.OrderByDescending(t => t.Instances).ThenBy(t => t.Name, StringComparer.Ordinal);
             }
-            var summaries = types.Select(t => new TypeSummary(t.Name, t.Kind, t.Instances, t.DisplayName, t.Guid)).ToList();
+            var summaries = types.Select(t => new TypeSummary(t.Name, t.Kind, t.Instances ?? 0, t.DisplayName, t.Guid)).ToList();
             return CommandResult.From(list.Apply(context.Parse, summaries));
         });
         return command;

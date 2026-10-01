@@ -24,8 +24,9 @@ internal static class ChildrenCommand
             var located = await content.LocateAsync(context, session, cancellationToken);
             var language = content.Language(context, session, located);
             var reader = new TreeReader(session);
-            var page = list.Apply(context.Parse, await reader.ChildrenAsync(located.Id, language, cancellationToken));
-            return new CommandResult(await reader.NodesAsync(page.Items, language, cancellationToken, sortIndex: true), page.Next);
+            var page = list.Apply(context.Parse, await reader.ChildIdsAsync(located.Id, language, cancellationToken));
+            var headers = await reader.HeadersAsync(page.Items, cancellationToken);
+            return new CommandResult(await reader.NodesAsync(headers, language, cancellationToken, sortIndex: true), page.Next);
         });
         return command;
     }

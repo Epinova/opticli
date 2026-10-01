@@ -36,6 +36,19 @@ public sealed class TreeReader(ContentSession session)
         ORDER BY NestingLevel, fkChildID
         """;
 
+    // The branch ContentHeader.LanguageRow picks: the language asked for, else the master branch, else the lowest id.
+    private const string ChildKeysSql = """
+        SELECT c.pkID, ISNULL(c.PeerOrder, 0) AS PeerOrder, l.Name, l.Created, l.Saved, l.StartPublish
+        FROM tblTree t
+        JOIN tblContent c ON c.pkID = t.fkChildID
+        OUTER APPLY (
+            SELECT TOP 1 cl.Name, cl.Created, cl.Saved, cl.StartPublish FROM tblContentLanguage cl
+            WHERE cl.fkContentID = c.pkID
+            ORDER BY CASE WHEN cl.fkLanguageBranchID = @lang THEN 0 WHEN cl.fkLanguageBranchID = c.fkMasterLanguageBranchID THEN 1 ELSE 2 END,
+                     cl.fkLanguageBranchID) l
+        WHERE t.fkParentID = @id AND t.NestingLevel = 1
+        """;
+
     private const string ChildCountsSql = """
         SELECT fkParentID, COUNT(*) AS Children FROM tblTree
         WHERE NestingLevel = 1 AND fkParentID IN ({0})
@@ -73,14 +86,28 @@ public sealed class TreeReader(ContentSession session)
         return (Build(root, 0), capped);
     }
 
-    /// <summary>All direct children, sorted by the parent's rule.</summary>
-    public async Task<IReadOnlyList<ContentHeader>> ChildrenAsync(int parentId, LanguageBranch? language, CancellationToken cancellationToken)
+    /// <summary>
+    /// The ids of all direct children, sorted by the parent's rule. Only what sorting needs is read (from the branch
+    /// <see cref="ContentHeader.LanguageRow"/> picks), so a page of a big folder loads the headers of that page alone
+    /// (<see cref="HeadersAsync"/>).
+    /// </summary>
+    public async Task<IReadOnlyList<int>> ChildIdsAsync(int parentId, LanguageBranch? language, CancellationToken cancellationToken)
     {
         var parent = await session.HeaderAsync(parentId, cancellationToken);
-        var ids = await session.Db.QueryAsync("SELECT fkChildID FROM tblTree WHERE fkParentID = @id AND NestingLevel = 1",
-            r => r.GetInt32("fkChildID"), cancellationToken, new SqlParameter("@id", parentId));
+        var keys = await session.Db.QueryAsync(ChildKeysSql, r => new ChildOrder.Key(
+                r.GetInt32("pkID"), r.GetInt32("PeerOrder"), r.GetStringOrNull("Name"),
+                r.GetDateTimeOrNull("Created"), r.GetDateTimeOrNull("Saved"), r.GetDateTimeOrNull("StartPublish")),
+            cancellationToken,
+            new SqlParameter("@id", parentId),
+            new SqlParameter("@lang", System.Data.SqlDbType.Int) { Value = (object?)language?.Id ?? DBNull.Value });
+        return ChildOrder.Sort(keys, k => k, parent.ChildOrderRule).Select(k => k.Id).ToList();
+    }
+
+    /// <summary>The headers of <paramref name="ids"/>, in that order.</summary>
+    public async Task<IReadOnlyList<ContentHeader>> HeadersAsync(IReadOnlyList<int> ids, CancellationToken cancellationToken)
+    {
         await session.Identities.LoadAsync(ids, [], cancellationToken);
-        return ChildOrder.Sort(ids.Select(session.Identities.Header).OfType<ContentHeader>(), parent.ChildOrderRule, language?.Id);
+        return ids.Select(session.Identities.Header).OfType<ContentHeader>().ToList();
     }
 
     /// <summary>Tree nodes (without nested children) for a page of headers.</summary>

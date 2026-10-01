@@ -13,7 +13,7 @@ internal static class SearchCommand
         var scope = new Option<string>("--in") { Description = "names, strings (text properties incl. rich text) or all.", DefaultValueFactory = _ => "all", HelpName = "names|strings|all" };
         scope.AcceptOnlyFromAmong("names", "strings", "all");
         var content = new ContentOptions();
-        content.Lang.Description = "Only this language (code). Default: all languages.";
+        content.Lang.Description = "Only this language (code), with the shared values it shows from the master language. Default: all languages, shared values under the master language.";
         var list = new ListOptions(options);
         var command = new Command("search", $"""
             Search content names and text properties (incl. rich text) for a string, in every language (or --lang).

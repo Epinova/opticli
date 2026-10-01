@@ -74,13 +74,14 @@ public sealed record LinkTarget(Guid Guid, string? Anchor)
     /// <summary>
     /// From <c>tblContentLanguage</c>: <c>ContentLinkGUID</c> is the shortcut target while <c>AutomaticLink</c> is
     /// set; with <c>AutomaticLink</c> off, <c>LinkURL</c> is the link. Links to other sites and inactive links
-    /// give null (the page keeps its own URL here).
+    /// give null (the page keeps its own URL here), and so do pages that fetch data from the linked page
+    /// (<c>FetchData</c>): they only borrow its values for empty properties and keep their own URL in the CMS.
     /// </summary>
-    public static LinkTarget? From(bool? automaticLink, Guid? contentLinkGuid, string? linkUrl)
+    public static LinkTarget? From(bool? automaticLink, bool? fetchData, Guid? contentLinkGuid, string? linkUrl)
     {
         if (automaticLink != false)
         {
-            return contentLinkGuid is { } target && target != Guid.Empty ? new LinkTarget(target, null) : null;
+            return fetchData != true && contentLinkGuid is { } target && target != Guid.Empty ? new LinkTarget(target, null) : null;
         }
         return Properties.PermanentLinks.Find(linkUrl) is [var link] && linkUrl!.Trim().StartsWith(link.Raw, StringComparison.OrdinalIgnoreCase)
             ? new LinkTarget(link.Guid, link.Anchor)

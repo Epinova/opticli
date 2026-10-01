@@ -165,6 +165,22 @@ public class SiteMapTests
     }
 
     [Fact]
+    public void A_site_whose_start_page_is_below_another_sites_owns_that_part_of_the_tree()
+    {
+        // The outer site comes first in id order; the inner site's start page (100) is one of its pages.
+        var inner = Site(new HostInfo("inner.example.org", HostType.Primary, "en", true)) with { Id = 2, Name = "Inner", StartPage = "100" };
+        var map = Map(Site(), inner);
+        string Segment(int id) => id switch { 100 => "campaign", 101 => "offer", _ => "home" };
+
+        var url = map.Compose([1, 5, 100, 101], Segment, En, ContentKind.Page)!;
+
+        Assert.Equal(("/offer/", "https://inner.example.org/offer/", "Inner"), (url.Path, url.Absolute, url.Site));
+        Assert.Equal("Inner", map.SiteOf([1, 5, 100])?.Name);
+        Assert.Equal("Example", map.SiteOf([1, 5, 102])?.Name);
+        Assert.Equal("/", map.Compose([1, 5, 100], Segment, En, ContentKind.Page)!.Path);
+    }
+
+    [Fact]
     public void Round_trip_between_compose_and_parse()
     {
         var map = Map(Site(new HostInfo("www.example.com", HostType.Primary, "en", true)));

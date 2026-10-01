@@ -23,7 +23,7 @@ public static class ContentHeaderReader
                ISNULL(c.fkMasterLanguageBranchID, 0) AS MasterLanguageId, c.Deleted, ISNULL(c.ChildOrderRule, 0) AS ChildOrderRule,
                ISNULL(c.PeerOrder, 0) AS PeerOrder,
                cl.fkLanguageBranchID, cl.Name, cl.URLSegment, cl.Status, cl.Version, cd.CommonDraftId, cl.Created, cl.Saved, cl.StartPublish,
-               cl.StopPublish, cl.ChangedByName, cl.BlobUri, cl.ThumbnailUri, cl.ExternalURL, cl.AutomaticLink, cl.ContentLinkGUID, cl.LinkURL
+               cl.StopPublish, cl.ChangedByName, cl.BlobUri, cl.ThumbnailUri, cl.ExternalURL, cl.AutomaticLink, cl.FetchData, cl.ContentLinkGUID, cl.LinkURL
         FROM tblContent c
         LEFT JOIN tblContentLanguage cl ON cl.fkContentID = c.pkID
         {{CommonDraftApply}}
@@ -62,7 +62,7 @@ public static class ContentHeaderReader
                         r.GetStringOrNull("BlobUri"),
                         r.GetStringOrNull("ThumbnailUri"),
                         r.GetStringOrNull("ExternalURL"),
-                        LinkTarget.From(r.GetBooleanOrNull("AutomaticLink"), r.GetGuidOrNull("ContentLinkGUID"), r.GetStringOrNull("LinkURL")))
+                        LinkTarget.From(r.GetBooleanOrNull("AutomaticLink"), r.GetBooleanOrNull("FetchData"), r.GetGuidOrNull("ContentLinkGUID"), r.GetStringOrNull("LinkURL")))
                     : null), cancellationToken);
 
             foreach (var group in rows.GroupBy(r => r.Id))

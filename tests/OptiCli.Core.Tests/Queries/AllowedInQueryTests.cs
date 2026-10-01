@@ -67,6 +67,55 @@ public class AllowedInQueryTests : IDisposable
         Assert.Equal(allowed, AllowedInQuery.Allows(model, CSharpSourceIndex.Build(_root.Path), model.RequireType("ArticlePage"), property, model.RequireType(target)));
     }
 
+    [Theory]
+    [InlineData("ImageFile", "explicit", "ImageData")]
+    [InlineData("DocumentFile", null, null)]
+    public void Media_types_match_ImageData_only_when_the_CMS_records_them_as_images(string target, string? allowed, string? matchedBy)
+    {
+        // Neither media class is in the sources (as for a type from a package): tblContentType.Base says which is an image.
+        _root.Write("Web/ArticlePage.cs", """
+            namespace Example.Web;
+
+            public class ArticlePage : PageData
+            {
+                [AllowedTypes(typeof(ImageData))]
+                public virtual ContentReference RelatedPage { get; set; }
+
+                [AllowedTypes(RestrictedTypes = new[] { typeof(ImageData) })]
+                public virtual ContentArea MainArea { get; set; }
+            }
+            """);
+        var model = ModelFixture.Create();
+        var index = CSharpSourceIndex.Build(_root.Path);
+
+        var row = Find(target, explicitOnly: true).SingleOrDefault();
+
+        Assert.Equal((allowed, matchedBy), (row?.Allowed, row?.MatchedBy));
+        Assert.Equal(allowed is not null, AllowedInQuery.Allows(model, index, model.RequireType("ArticlePage"), "RelatedPage", model.RequireType(target)));
+        Assert.Equal(allowed is null, AllowedInQuery.Allows(model, index, model.RequireType("ArticlePage"), "MainArea", model.RequireType(target)));
+    }
+
+    [Fact]
+    public void A_media_class_in_the_sources_matches_through_its_own_base_chain()
+    {
+        _root.Write("Web/Media.cs", """
+            namespace Example.Web;
+
+            public class DocumentFile : MediaData { }
+            """);
+        _root.Write("Web/ArticlePage.cs", """
+            namespace Example.Web;
+
+            public class ArticlePage : PageData
+            {
+                [AllowedTypes(typeof(VideoData), typeof(MediaData))]
+                public virtual ContentReference RelatedPage { get; set; }
+            }
+            """);
+
+        Assert.Equal([("RelatedPage", "MediaData")], Find("DocumentFile", explicitOnly: true).Select(r => (r.Property, r.MatchedBy)));
+    }
+
     public void Dispose() => _root.Dispose();
 
     private List<AllowedIn> Find(string target, bool explicitOnly)

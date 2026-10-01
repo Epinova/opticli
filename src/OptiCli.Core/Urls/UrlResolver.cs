@@ -25,7 +25,7 @@ public sealed class UrlResolver(CmsDatabase db, CmsModel model)
         """;
 
     private const string SimpleAddressSql = """
-        SELECT TOP 1 cl.fkContentID, cl.fkLanguageBranchID
+        SELECT cl.fkContentID, cl.fkLanguageBranchID, ISNULL(c.ContentPath, '') AS ContentPath
         FROM tblContentLanguage cl
         JOIN tblContent c ON c.pkID = cl.fkContentID AND c.Deleted = 0
         WHERE cl.ExternalURL IN (@address, @addressWithSlash)
@@ -55,9 +55,12 @@ public sealed class UrlResolver(CmsDatabase db, CmsModel model)
             var match = SegmentMatcher.Match(candidates, segment, pagesOnly ? parsed.Language?.Id : null);
             if (match is null)
             {
-                if (walked.Count == 0 && pagesOnly && await SimpleAddressAsync(parsed.Segments, cancellationToken) is { } simple)
+                // The CMS tries simple addresses after the page tree, for the whole path after the language prefix.
+                if (pagesOnly && await SimpleAddressAsync(parsed, cancellationToken) is { } simple)
                 {
-                    return new ResolvedUrl(simple.ContentId, model.Language(simple.LanguageId), "simpleAddress", parsed.Site, parsed.Host, "simpleAddress");
+                    return parsed.LanguageSource == "path"
+                        ? new ResolvedUrl(simple.ContentId, parsed.Language, "path", parsed.Site, parsed.Host, "simpleAddress")
+                        : new ResolvedUrl(simple.ContentId, model.Language(simple.LanguageId), "simpleAddress", parsed.Site, parsed.Host, "simpleAddress");
                 }
                 throw NotFound(url, parsed, walked, current, segment, candidates);
             }
@@ -69,13 +72,28 @@ public sealed class UrlResolver(CmsDatabase db, CmsModel model)
         return new ResolvedUrl(current, pagesOnly ? parsed.Language : null, parsed.LanguageSource, parsed.Site, parsed.Host, "path");
     }
 
-    private async Task<(int ContentId, int LanguageId)?> SimpleAddressAsync(IReadOnlyList<string> segments, CancellationToken cancellationToken)
+    private async Task<(int ContentId, int LanguageId)?> SimpleAddressAsync(ParsedUrl parsed, CancellationToken cancellationToken)
     {
-        var address = "~/" + string.Join("/", segments);
-        var rows = await db.QueryAsync(SimpleAddressSql, r => (r.GetInt32("fkContentID"), r.GetInt32("fkLanguageBranchID")), cancellationToken,
-            new SqlParameter("@address", address), new SqlParameter("@addressWithSlash", address + "/"));
-        return rows.Count > 0 ? rows[0] : null;
+        var address = "~/" + string.Join("/", parsed.Segments);
+        var rows = await db.QueryAsync(SimpleAddressSql, r => new SimpleAddressRow(
+                r.GetInt32("fkContentID"), r.GetInt32("fkLanguageBranchID"), ContentPaths.Parse(r.GetString("ContentPath")).Append(r.GetInt32("fkContentID")).ToList()),
+            cancellationToken, new SqlParameter("@address", address), new SqlParameter("@addressWithSlash", address + "/"));
+        return BestSimpleAddress(model.Sites, rows, parsed.Site, parsed.Language) is { } best ? (best.ContentId, best.LanguageId) : null;
     }
+
+    /// <param name="Path">Ids from the root to the page itself.</param>
+    internal sealed record SimpleAddressRow(int ContentId, int LanguageId, IReadOnlyList<int> Path);
+
+    /// <summary>
+    /// The page a simple address leads to on <paramref name="site"/>, as the CMS picks it: only pages of that site (or of
+    /// no site) count, and a branch in the requested language goes before others; then the lowest id.
+    /// </summary>
+    internal static SimpleAddressRow? BestSimpleAddress(SiteMap sites, IEnumerable<SimpleAddressRow> rows, SiteInfo? site, LanguageBranch? language) =>
+        rows
+            .Where(row => sites.SiteOf(row.Path) is not { } owner || site is null || owner.Id == site.Id)
+            .OrderBy(row => row.LanguageId == language?.Id ? 0 : 1)
+            .ThenBy(row => row.ContentId)
+            .FirstOrDefault();
 
     private NotFoundException NotFound(string url, ParsedUrl parsed, List<string> walked, int current, string segment, IReadOnlyList<ChildSegment> candidates)
     {

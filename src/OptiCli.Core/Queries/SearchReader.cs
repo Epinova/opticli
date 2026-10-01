@@ -42,9 +42,11 @@ public sealed partial class SearchReader(ContentSession session)
 
     // ContentArea markup only carries block names, which the names search already covers. Values are
     // lower-cased and compared binary, which is an order of magnitude faster than the database's
-    // case-insensitive collation over tens of megabytes of text, with the same matches.
-    private const string StringsSql = """
-        SELECT TOP (@cap) p.fkContentID, p.fkLanguageBranchID, p.fkPropertyDefinitionID, p.ScopeName,
+    // case-insensitive collation over tens of megabytes of text, with the same matches. With --lang, values come
+    // from the rows get shows in that language: shared ones from the master branch (attributed to the language asked
+    // for), culture-specific ones (LanguageSpecific 4) from its own branch.
+    private static readonly string StringsSql = $"""
+        SELECT TOP (@cap) p.fkContentID, ISNULL(@lang, p.fkLanguageBranchID) AS fkLanguageBranchID, p.fkPropertyDefinitionID, p.ScopeName,
                SUBSTRING(x.v, CASE WHEN y.pos > @radius THEN y.pos - @radius ELSE 1 END, 2 * @radius + LEN(@text) + 200) AS Snippet
         FROM tblContentProperty p
         JOIN tblContent c ON c.pkID = p.fkContentID AND c.Deleted = 0
@@ -54,7 +56,8 @@ public sealed partial class SearchReader(ContentSession session)
         CROSS APPLY (SELECT CHARINDEX(@text, x.v) AS pos) y
         WHERE t.Property IN (6, 7) AND t.Name <> 'ContentArea'
           AND LOWER(COALESCE(p.String, p.LongString)) COLLATE Latin1_General_BIN2 LIKE @lowerPattern ESCAPE '\'
-          AND (@lang IS NULL OR p.fkLanguageBranchID = @lang)
+          AND (@lang IS NULL OR ({PropertyRows.EffectiveSql("p", "CASE WHEN pd.LanguageSpecific = 4 THEN 1 ELSE 0 END", "@lang", "c.fkMasterLanguageBranchID")}
+               AND EXISTS (SELECT 1 FROM tblContentLanguage cl WHERE cl.fkContentID = c.pkID AND cl.fkLanguageBranchID = @lang)))
         ORDER BY p.fkContentID
         """;
 

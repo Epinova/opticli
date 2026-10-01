@@ -35,24 +35,38 @@ public static class ChildOrder
     /// <summary>Whether children under this rule are listed by their sort index.</summary>
     public static bool ByIndex(int rule) => rule is Index or Rank;
 
-    public static IReadOnlyList<ContentHeader> Sort(IEnumerable<ContentHeader> children, int parentRule, int? languageId)
+    /// <summary>What children are sorted by: the item's id and sort index, and the name and dates of the branch shown.</summary>
+    public sealed record Key(int Id, int PeerOrder, string? Name, DateTime? Created, DateTime? Saved, DateTime? StartPublish);
+
+    /// <summary>The sort key of <paramref name="child"/> in the branch <see cref="ContentHeader.LanguageRow"/> picks.</summary>
+    public static Key KeyOf(ContentHeader child, int? languageId)
     {
-        string Name(ContentHeader h) => h.LanguageRow(languageId)?.Name ?? "";
-        DateTime Created(ContentHeader h) => h.LanguageRow(languageId)?.Created ?? DateTime.MinValue;
-        DateTime Changed(ContentHeader h) => h.LanguageRow(languageId)?.Saved ?? DateTime.MinValue;
-        DateTime Published(ContentHeader h) => h.LanguageRow(languageId)?.StartPublish ?? DateTime.MaxValue;
+        var row = child.LanguageRow(languageId);
+        return new Key(child.Id, child.PeerOrder, row?.Name, row?.Created, row?.Saved, row?.StartPublish);
+    }
+
+    public static IReadOnlyList<ContentHeader> Sort(IEnumerable<ContentHeader> children, int parentRule, int? languageId) =>
+        Sort(children, h => KeyOf(h, languageId), parentRule);
+
+    public static IReadOnlyList<T> Sort<T>(IEnumerable<T> children, Func<T, Key> keyOf, int parentRule)
+    {
+        var keyed = children.Select(c => (Item: c, Key: keyOf(c)));
+        string Name((T, Key Key) c) => c.Key.Name ?? "";
+        DateTime Created((T, Key Key) c) => c.Key.Created ?? DateTime.MinValue;
+        DateTime Changed((T, Key Key) c) => c.Key.Saved ?? DateTime.MinValue;
+        DateTime Published((T, Key Key) c) => c.Key.StartPublish ?? DateTime.MaxValue;
 
         var sorted = parentRule switch
         {
-            CreatedDescending => children.OrderByDescending(Created),
-            CreatedAscending => children.OrderBy(Created),
-            Alphabetical => children.OrderBy(Name, StringComparer.CurrentCultureIgnoreCase),
-            _ when ByIndex(parentRule) => children.OrderBy(h => h.PeerOrder),
-            ChangedDescending => children.OrderByDescending(Changed),
-            PublishedAscending => children.OrderBy(Published),
-            PublishedDescending => children.OrderByDescending(Published),
-            _ => children.OrderBy(h => h.Id),
+            CreatedDescending => keyed.OrderByDescending(Created),
+            CreatedAscending => keyed.OrderBy(Created),
+            Alphabetical => keyed.OrderBy(Name, StringComparer.CurrentCultureIgnoreCase),
+            _ when ByIndex(parentRule) => keyed.OrderBy(c => c.Key.PeerOrder),
+            ChangedDescending => keyed.OrderByDescending(Changed),
+            PublishedAscending => keyed.OrderBy(Published),
+            PublishedDescending => keyed.OrderByDescending(Published),
+            _ => keyed.OrderBy(c => c.Key.Id),
         };
-        return sorted.ThenBy(h => h.Id).ToList();
+        return sorted.ThenBy(c => c.Key.Id).Select(c => c.Item).ToList();
     }
 }

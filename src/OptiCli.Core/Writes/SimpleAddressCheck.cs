@@ -28,12 +28,8 @@ public static class SimpleAddressCheck
             ? "~" + path
             : null;
 
-    /// <summary>The site whose start page is on the path (ancestors and the item itself), if any.</summary>
-    public static SiteInfo? SiteOf(SiteMap sites, IEnumerable<int> path)
-    {
-        var ids = path.ToHashSet();
-        return sites.All.FirstOrDefault(site => SiteMap.StartPageId(site) is { } start && ids.Contains(start));
-    }
+    /// <summary>The site whose start page is the nearest on the path (ancestors and the item itself), if any.</summary>
+    public static SiteInfo? SiteOf(SiteMap sites, IEnumerable<int> path) => sites.SiteOf(path.ToList());
 
     /// <param name="path">Ids from the root to the page (or, for new content, to its parent).</param>
     /// <param name="self">The page itself; null for new content.</param>

@@ -7,6 +7,14 @@ public static class ContentTypeReader
 {
     private const string TypesSql = """
         SELECT ct.pkID, ct.ContentTypeGUID, ct.Name, ct.DisplayName, ct.Description, ct.ContentType, ct.Base,
+               ct.ModelType, NULL AS Instances
+        FROM tblContentType ct
+        ORDER BY ct.Name
+        """;
+
+    // A scan of tblContent: only for the commands that show the counts, not for every model load.
+    private const string TypesWithInstancesSql = """
+        SELECT ct.pkID, ct.ContentTypeGUID, ct.Name, ct.DisplayName, ct.Description, ct.ContentType, ct.Base,
                ct.ModelType, ISNULL(n.Instances, 0) AS Instances
         FROM tblContentType ct
         LEFT JOIN (
@@ -32,8 +40,9 @@ public static class ContentTypeReader
     /// <summary><c>tblPropertyDefinition.LanguageSpecific</c> value for culture-specific properties.</summary>
     private const int CultureSpecificFlag = 4;
 
-    public static Task<IReadOnlyList<ContentTypeInfo>> ListAsync(CmsDatabase db, CancellationToken cancellationToken) =>
-        db.QueryAsync(TypesSql, r => new ContentTypeInfo(
+    /// <param name="countInstances">Also count each type's content (<see cref="ContentTypeInfo.Instances"/>).</param>
+    public static Task<IReadOnlyList<ContentTypeInfo>> ListAsync(CmsDatabase db, CancellationToken cancellationToken, bool countInstances = false) =>
+        db.QueryAsync(countInstances ? TypesWithInstancesSql : TypesSql, r => new ContentTypeInfo(
             r.GetInt32("pkID"),
             r.GetGuid("ContentTypeGUID"),
             r.GetString("Name"),
@@ -42,7 +51,7 @@ public static class ContentTypeReader
             ContentKinds.From(r.GetInt32("ContentType"), r.GetStringOrNull("Base")),
             r.GetStringOrNull("Base"),
             r.GetStringOrNull("ModelType"),
-            r.GetInt32("Instances")), cancellationToken);
+            r.GetInt32OrNull("Instances")), cancellationToken);
 
     public static Task<IReadOnlyList<PropertyDefinitionInfo>> ListPropertiesAsync(CmsDatabase db, int contentTypeId, CancellationToken cancellationToken) =>
         db.QueryAsync(PropertiesSql, r => new PropertyDefinitionInfo(

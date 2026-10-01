@@ -19,7 +19,8 @@ public sealed record Usage(
 /// link and reference properties of saved versions) with a scan of primary property values
 /// (ContentLink columns and GUIDs inside ContentArea, rich text and list markup).
 /// </summary>
-public sealed class WhereUsedReader(ContentSession session)
+/// <param name="index">Look the scanned values up here instead of scanning for each item.</param>
+public sealed class WhereUsedReader(ContentSession session, PropertyReferenceIndex? index = null)
 {
     private const string SoftlinksSql = """
         SELECT s.fkOwnerContentID, s.OwnerLanguageID, s.fkOwnerPropertyDefinitionID, s.LinkType
@@ -55,13 +56,13 @@ public sealed class WhereUsedReader(ContentSession session)
                 Definition: r.GetInt32OrNull("fkOwnerPropertyDefinitionID"),
                 LinkType: r.GetInt32OrNull("LinkType")),
             cancellationToken, new SqlParameter("@guid", target.Guid));
-        var rows = await session.Db.QueryAsync(PropertiesSql, r => (
-                Owner: r.GetInt32("fkContentID"),
-                Language: r.GetInt32("fkLanguageBranchID"),
-                Definition: r.GetInt32("fkPropertyDefinitionID"),
-                Scope: r.GetStringOrNull("ScopeName"),
-                ByLink: r.GetInt32("ByLink") == 1,
-                AsFragment: r.GetInt32("AsFragment") == 1),
+        var rows = index is not null ? index.For(target).ToList() : await session.Db.QueryAsync(PropertiesSql, r => new PropertyHit(
+                r.GetInt32("fkContentID"),
+                r.GetInt32("fkLanguageBranchID"),
+                r.GetInt32("fkPropertyDefinitionID"),
+                r.GetStringOrNull("ScopeName"),
+                r.GetInt32("ByLink") == 1,
+                r.GetInt32("AsFragment") == 1),
             cancellationToken,
             new SqlParameter("@id", target.Id),
             new SqlParameter("@guid", target.Guid),
@@ -147,15 +148,29 @@ public sealed class PageUsageReader(ContentSession session)
     /// <summary>How many blocks deep to follow; nesting deeper than this is almost always a reference cycle.</summary>
     public const int MaxDepth = 6;
 
+    /// <summary>
+    /// Blocks looked up with a scan of their own; past that, all values are read once (<see cref="PropertyReferenceIndex"/>),
+    /// which takes about as long as this many scans.
+    /// </summary>
+    public const int ScansBeforeIndex = 3;
+
     public async Task<IReadOnlyList<PageUsage>> FindAsync(ContentHeader target, CancellationToken cancellationToken)
     {
         var reader = new WhereUsedReader(session);
+        var indexed = false;
+        var scans = 0;
         var result = new List<PageUsage>();
         var visited = new HashSet<int> { target.Id };
         var level = new List<(ContentHeader Block, IReadOnlyList<string> Via)> { (target, []) };
 
         for (var depth = 0; depth < MaxDepth && level.Count > 0; depth++)
         {
+            scans += level.Count;
+            if (!indexed && scans > ScansBeforeIndex)
+            {
+                reader = new WhereUsedReader(session, await PropertyReferenceIndex.LoadAsync(session.Db, cancellationToken));
+                indexed = true;
+            }
             var next = new List<(ContentHeader, IReadOnlyList<string>)>();
             foreach (var (block, via) in level)
             {

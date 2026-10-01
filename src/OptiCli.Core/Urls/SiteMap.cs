@@ -132,23 +132,14 @@ public sealed class SiteMap(IReadOnlyList<SiteInfo> sites, IReadOnlyList<Languag
     {
         if (kind == ContentKind.Page)
         {
-            foreach (var site in All)
+            if (Nearest(pathIncludingSelf) is not (var site, var at) || Segments(pathIncludingSelf, at, segmentOf) is not { } segments)
             {
-                var at = StartPageId(site) is { } start ? IndexOf(pathIncludingSelf, start) : -1;
-                if (at < 0)
-                {
-                    continue;
-                }
-                if (Segments(pathIncludingSelf, at, segmentOf) is not { } segments)
-                {
-                    return null;
-                }
-                var (host, mapped) = HostFor(site, language);
-                var prefix = mapped || language is null ? "" : "/" + language.UrlPrefix;
-                var path = prefix + SlashPath(segments);
-                return new ContentUrl(path, Absolute(site, host, path), site.Name);
+                return null;
             }
-            return null;
+            var (host, mapped) = HostFor(site, language);
+            var prefix = mapped || language is null ? "" : "/" + language.UrlPrefix;
+            var path = prefix + SlashPath(segments);
+            return new ContentUrl(path, Absolute(site, host, path), site.Name);
         }
 
         var (rootId, keyword, owner) = AssetRoot(pathIncludingSelf);
@@ -160,6 +151,27 @@ public sealed class SiteMap(IReadOnlyList<SiteInfo> sites, IReadOnlyList<Languag
         var assetPath = "/" + keyword + SlashPath(assetSegments);
         var assetSite = owner ?? (All.Count == 1 ? All[0] : null);
         return new ContentUrl(assetPath, assetSite is null ? null : Absolute(assetSite, HostFor(assetSite, null).Host, assetPath), assetSite?.Name);
+    }
+
+    /// <summary>
+    /// The site content belongs to: the one whose start page is the nearest on <paramref name="pathIncludingSelf"/> (ids
+    /// from the root to the item), so a site whose start page is below another site's owns that part of the tree, as
+    /// in the CMS. Null when no start page is on the path.
+    /// </summary>
+    public SiteInfo? SiteOf(IReadOnlyList<int> pathIncludingSelf) => Nearest(pathIncludingSelf)?.Site;
+
+    private (SiteInfo Site, int At)? Nearest(IReadOnlyList<int> path)
+    {
+        (SiteInfo Site, int At)? nearest = null;
+        foreach (var site in All)
+        {
+            // Strictly greater: of two sites with the same start page, the first (lowest id) wins, as in the CMS.
+            if (StartPageId(site) is { } start && IndexOf(path, start) is var at && at > (nearest?.At ?? -1))
+            {
+                nearest = (site, at);
+            }
+        }
+        return nearest;
     }
 
     /// <summary><c>/a/b/</c>, or <c>/a/b.txt</c> when the last segment has an extension; <c>/</c> for none.</summary>

@@ -149,7 +149,7 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
             return null;
         }
         var external = type == "external";
-        var permanent = external ? LinkTarget.From(automaticLink: false, contentLinkGuid: null, version!.LinkUrl) : null;
+        var permanent = external ? LinkTarget.From(automaticLink: false, fetchData: false, contentLinkGuid: null, version!.LinkUrl) : null;
         var target = external ? permanent?.Guid : version!.ShortcutGuid is { } guid && guid != Guid.Empty ? guid : null;
         ContentIdentity? to = null;
         if (target is { } targetGuid)

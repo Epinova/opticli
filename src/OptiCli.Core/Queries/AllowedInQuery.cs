@@ -24,8 +24,18 @@ public static class AllowedInQuery
     {
         [ContentKind.Page] = ["PageData"],
         [ContentKind.Block] = ["BlockData"],
-        [ContentKind.Media] = ["MediaData", "ImageData", "VideoData"],
+        [ContentKind.Media] = ["MediaData", "IContentMedia"],
         [ContentKind.Folder] = ["ContentFolder"],
+    };
+
+    /// <summary>
+    /// The CMS media classes below <c>MediaData</c>, by <c>tblContentType.Base</c>: the CMS records there whether a media
+    /// type derives from <c>ImageData</c> or <c>VideoData</c>, so this holds for types from packages too.
+    /// </summary>
+    private static readonly Dictionary<string, string[]> MediaBases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Image"] = ["ImageData", "IContentImage"],
+        ["Video"] = ["VideoData", "IContentVideo"],
     };
 
     private static readonly string[] ContentBases = ["IContent", "IContentData", "ContentData"];
@@ -102,11 +112,18 @@ public static class AllowedInQuery
         property.TypeName is "ContentArea" or "ContentReferenceList"
         || property.BaseType is PropertyBaseType.ContentReference or PropertyBaseType.PageReference;
 
-    /// <summary>The target's type and class name, its base classes and interfaces found in the sources, and its kind's CMS bases.</summary>
+    /// <summary>
+    /// The target's type and class name, its base classes and interfaces found in the sources, its kind's CMS bases and,
+    /// for media, the CMS media class its <c>Base</c> names.
+    /// </summary>
     private static HashSet<string> TargetNames(CSharpSourceIndex index, ContentTypeInfo target)
     {
         var names = new HashSet<string>(StringComparer.Ordinal) { target.Name, target.ClassName ?? target.Name };
         names.UnionWith(KindBases.GetValueOrDefault(target.Kind, []));
+        if (target.Kind == ContentKind.Media && target.Base is not null)
+        {
+            names.UnionWith(MediaBases.GetValueOrDefault(target.Base, []));
+        }
         names.UnionWith(ContentBases);
 
         var pending = new Queue<ClassDeclaration>(ContentTypeSources.FindClasses(index, target.Guid, target.ClassName ?? target.Name, target.Namespace).Select(c => c.Class));
