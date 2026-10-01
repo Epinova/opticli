@@ -38,6 +38,20 @@ public class ConnectionResolverTests : IDisposable
     }
 
     [Fact]
+    public void An_exported_variable_with_db_says_where_the_variable_comes_from()
+    {
+        WriteAllSources();
+
+        var fromShell = Assert.IsType<UsageException>(Resolve(new ConnectionRequest(Database: "FromAppSettings"), new() { ["OPTICLI_DB"] = "Server=localhost;Database=FromEnv" }).Failure);
+        var both = Assert.IsType<UsageException>(Resolve(new ConnectionRequest(Explicit: "Server=localhost;Database=FromFlag", Database: "FromAppSettings")).Failure);
+
+        Assert.Contains("OPTICLI_DB is set in this shell", fromShell.Message, StringComparison.Ordinal);
+        Assert.Contains("--db", fromShell.Message, StringComparison.Ordinal);
+        Assert.Contains("unset OPTICLI_DB", fromShell.Hint, StringComparison.Ordinal);
+        Assert.Contains("use only one", both.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Remote_explicit_string_is_used_for_the_run_with_a_warning()
     {
         WriteAllSources();

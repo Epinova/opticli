@@ -143,9 +143,41 @@ public static class UserConfig
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(configFile)!);
-        var temporary = configFile + ".tmp";
-        File.WriteAllText(temporary, root.ToJsonString(WriteOptions) + System.Environment.NewLine);
-        File.Move(temporary, configFile, overwrite: true);
+        Replace(configFile, root.ToJsonString(WriteOptions) + System.Environment.NewLine);
+    }
+
+    /// <summary>
+    /// Writes through a temporary file next to it (unique, so two opticli runs can't mix their writes) that is renamed
+    /// over it. On Unix the temporary file is created with the config file's mode, user-only for a new one: the config
+    /// may hold a connection string.
+    /// </summary>
+    internal static void Replace(string configFile, string content)
+    {
+        var temporary = $"{configFile}.{Guid.NewGuid():N}.tmp";
+        var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
+        UnixFileMode? mode = null;
+        if (!OperatingSystem.IsWindows())
+        {
+            mode = File.Exists(configFile) ? File.GetUnixFileMode(configFile) : UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            options.UnixCreateMode = mode.Value & (UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+        try
+        {
+            using (var writer = new StreamWriter(new FileStream(temporary, options), new System.Text.UTF8Encoding(false)))
+            {
+                writer.Write(content);
+            }
+            if (mode is { } original && !OperatingSystem.IsWindows())
+            {
+                // Exactly the original mode, which the umask may have narrowed at creation; never wider before this.
+                File.SetUnixFileMode(temporary, original);
+            }
+            File.Move(temporary, configFile, overwrite: true);
+        }
+        finally
+        {
+            File.Delete(temporary);
+        }
     }
 
     private static T Invalid<T>(string configFile, Func<T> parse)

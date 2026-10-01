@@ -13,6 +13,11 @@ public static class OutputLocator
     private static readonly string[] SourceExtensions = [".cs", ".cshtml", ".razor", ".csproj"];
     private static readonly string[] SkippedDirectories = ["bin", "obj", "node_modules", ".git", ".vs", ".idea"];
 
+    /// <summary>Folders below <c>&lt;tfm&gt;/</c> that hold something other than a RuntimeIdentifier build.</summary>
+    private static readonly string[] NotRuntimeDirectories = ["publish", "runtimes", "refs", "wwwroot"];
+
+    private static readonly StringComparer PathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+
     /// <param name="explicitOutput"><c>--output</c>, relative to the working directory.</param>
     /// <param name="configuredOutput">The user config's <c>output</c>, relative to the project directory.</param>
     /// <exception cref="NotFoundException">No build output exists.</exception>
@@ -41,28 +46,93 @@ public static class OutputLocator
         return new SiteOutput(newest, $"build output ({Path.GetRelativePath(project.Directory, newest)})");
     }
 
-    /// <summary><c>bin/{Debug,Release}/&lt;tfm&gt;/&lt;AssemblyName&gt;.dll</c> for every target framework in the csproj.</summary>
+    /// <summary>
+    /// Where MSBuild puts <c>&lt;AssemblyName&gt;.dll</c> in Debug and Release, as the project sets it up:
+    /// <list type="bullet">
+    /// <item><c>bin/&lt;cfg&gt;/&lt;tfm&gt;/</c> for every target framework, or the <c>OutputPath</c> or <c>BaseOutputPath</c>
+    /// the project sets, with a <c>&lt;rid&gt;/</c> folder below it when it builds for a RuntimeIdentifier;</item>
+    /// <item><c>artifacts/bin/&lt;project&gt;/&lt;cfg&gt;[_&lt;tfm&gt;][_&lt;rid&gt;]/</c> with <c>UseArtifactsOutput</c>.</item>
+    /// </list>
+    /// The most likely path comes first.
+    /// </summary>
     public static IEnumerable<string> Candidates(ProjectInfo project)
     {
         var name = AssemblyName(project.Project);
-        var frameworks = (project.Project.TargetFramework ?? "")
+        var seen = new HashSet<string>(PathComparer);
+        foreach (var configuration in Configurations)
+        {
+            foreach (var directory in OutputDirectories(project, configuration))
+            {
+                var dll = Path.Combine(directory, $"{name}.dll");
+                if (seen.Add(dll))
+                {
+                    yield return dll;
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<string> OutputDirectories(ProjectInfo project, string configuration)
+    {
+        var csproj = project.Project;
+        if (string.Equals(csproj.UseArtifactsOutput, "true", StringComparison.OrdinalIgnoreCase))
+        {
+            var artifacts = ExpandPath(csproj.ArtifactsPath, configuration, project.Directory) ?? Path.Combine(ArtifactsBase(project), "artifacts");
+            var root = Path.Combine(artifacts, "bin", Path.GetFileNameWithoutExtension(csproj.Path));
+            // The configuration in lower case, then _<tfm> when multi-targeting and _<rid> with a RuntimeIdentifier.
+            var pivot = configuration.ToLowerInvariant();
+            return Subdirectories(root)
+                .Where(d => Path.GetFileName(d).StartsWith(pivot + "_", StringComparison.OrdinalIgnoreCase))
+                .Prepend(Path.Combine(root, pivot));
+        }
+
+        var output = ExpandPath(csproj.OutputPath, configuration, project.Directory)
+            ?? Path.Combine(ExpandPath(csproj.BaseOutputPath, configuration, project.Directory) ?? Path.Combine(project.Directory, "bin"), configuration);
+        var frameworks = (csproj.TargetFramework ?? "")
             .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(f => !f.Contains("$(", StringComparison.Ordinal))
             .ToList();
+        // Framework set where opticli can't read it: take whatever was built.
+        var tfmDirectories = frameworks.Count > 0
+            ? frameworks.Select(tfm => Path.Combine(output, tfm.ToLowerInvariant())).ToList()
+            : Subdirectories(output).ToList();
+        return
+        [
+            .. tfmDirectories,
+            .. tfmDirectories.SelectMany(Subdirectories).Where(d => !NotRuntimeDirectories.Contains(Path.GetFileName(d), StringComparer.OrdinalIgnoreCase)),
+            // AppendTargetFrameworkToOutputPath=false.
+            output,
+        ];
+    }
 
-        foreach (var configuration in Configurations)
+    /// <summary>Where the default <c>artifacts</c> folder goes: next to the <c>Directory.Build.props</c>, else in the project.</summary>
+    private static string ArtifactsBase(ProjectInfo project) =>
+        project.Project.Imports.FirstOrDefault(f => Path.GetFileName(f).Equals(MsBuildProperties.DirectoryBuildProps, StringComparison.OrdinalIgnoreCase)) is { } props
+            ? Path.GetDirectoryName(props)!
+            : project.Directory;
+
+    /// <summary>An MSBuild path property for one configuration; null when unset or still an expression opticli can't expand.</summary>
+    private static string? ExpandPath(string? value, string configuration, string projectDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(value))
         {
-            var configurationDirectory = Path.Combine(project.Directory, "bin", configuration);
-            // Framework set outside the csproj (Directory.Build.props): take whatever was built.
-            var tfms = frameworks.Count > 0
-                ? frameworks
-                : System.IO.Directory.Exists(configurationDirectory)
-                    ? System.IO.Directory.GetDirectories(configurationDirectory).Select(Path.GetFileName).OfType<string>().ToList()
-                    : [];
-            foreach (var tfm in tfms)
-            {
-                yield return Path.Combine(configurationDirectory, tfm, $"{name}.dll");
-            }
+            return null;
+        }
+        var expanded = value.Replace("$(Configuration)", configuration, StringComparison.OrdinalIgnoreCase);
+        return expanded.Contains("$(", StringComparison.Ordinal)
+            ? null
+            : Path.TrimEndingDirectorySeparator(Path.GetFullPath(expanded.Replace('\\', Path.DirectorySeparatorChar), projectDirectory));
+    }
+
+    private static IEnumerable<string> Subdirectories(string directory)
+    {
+        try
+        {
+            return Directory.Exists(directory) ? Directory.GetDirectories(directory) : [];
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return [];
         }
     }
 
@@ -72,16 +142,51 @@ public static class OutputLocator
             ? name
             : Path.GetFileNameWithoutExtension(project.Path);
 
-    /// <summary>The newest source file under the project directory that was changed after <paramref name="dll"/> was built, if any.</summary>
-    public static string? NewerSource(string projectDirectory, string dll)
+    /// <summary>
+    /// The newest source file of the project, or of a project it references (directly or not), that was changed after
+    /// <paramref name="dll"/> was built, if any.
+    /// </summary>
+    public static string? NewerSource(ProjectInfo project, string dll)
     {
         var built = File.GetLastWriteTimeUtc(dll);
-        return SourceFiles(projectDirectory)
+        return SourceDirectories(project.Project)
+            .SelectMany(SourceFiles)
             .Select(file => (File: file, Time: File.GetLastWriteTimeUtc(file)))
             .Where(f => f.Time > built)
             .OrderByDescending(f => f.Time)
             .Select(f => f.File)
             .FirstOrDefault();
+    }
+
+    /// <summary>The directories of the project and of every project it references; one inside another is scanned with it.</summary>
+    internal static IReadOnlyList<string> SourceDirectories(CsprojFile project)
+    {
+        var projects = new HashSet<string>(PathComparer) { project.Path };
+        var pending = new Queue<string>(project.ProjectReferences);
+        while (pending.Count > 0)
+        {
+            var reference = pending.Dequeue();
+            if (!projects.Add(reference))
+            {
+                continue;
+            }
+            // Only its references are needed, which don't depend on Directory.Build.props.
+            foreach (var next in CsprojFile.TryLoad(reference, evaluateBuildProps: false)?.ProjectReferences ?? [])
+            {
+                pending.Enqueue(next);
+            }
+        }
+
+        var directories = projects
+            .Select(p => Path.GetDirectoryName(p)!)
+            .Where(Directory.Exists)
+            .Distinct(PathComparer)
+            .OrderBy(d => d.Length)
+            .ToList();
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        return directories
+            .Where((directory, i) => !directories.Take(i).Any(outer => directory.StartsWith(outer + Path.DirectorySeparatorChar, comparison)))
+            .ToList();
     }
 
     private static IEnumerable<string> SourceFiles(string directory)

@@ -44,10 +44,22 @@ internal static class EnvCommand
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
+            var chosen = parse.GetValue(format)!;
+            if (parse.GetValue(options.Json))
+            {
+                // --json is the envelope, like everywhere else; it only conflicts with another format asked for by name.
+                if (parse.GetResult(format) is { Implicit: false } && chosen != EnvFormat.Json)
+                {
+                    throw new UsageException($"--json and --format {chosen} ask for different output; use one.");
+                }
+                chosen = EnvFormat.Json;
+            }
             var project = context.Project;
             var connection = ServeCommand.RequireServable(context);
             var store = context.StateStore;
 
+            // As for `serve`: no other start may decide nothing runs while this one writes its token.
+            using var startLock = await store.LockAsync(TimeSpan.FromMinutes(10), cancellationToken);
             var existing = await AgentProbe.ProbeAsync(store, connection, cancellationToken);
             if (existing.Mode is ServeMode.Background or ServeMode.Foreground && existing.State != AgentState.Stale)
             {
@@ -58,12 +70,32 @@ internal static class EnvCommand
             var agentDll = AgentLocator.Locate(AppContext.BaseDirectory);
             var selectedPort = PortSelector.Select(parse.GetValue(port), settings?.Port, PortSelector.IsFree);
             var token = SiteEnvironment.NewToken();
-            var chosen = parse.GetValue(format)!;
             var pinned = parse.GetValue(includeConnection) ? connection : null;
-            var variables = SiteEnvironment.Build(agentDll, token, selectedPort, context.ConnectionRequest.Name, pinned, includeUrls: chosen != EnvFormat.LaunchSettings, approvedRemote: connection);
+            var siteEndpoints = KestrelEndpoints.Configured(project, context.Environment);
+            var built = SiteEnvironment.Build(agentDll, token, selectedPort, context.ConnectionRequest.Name, pinned,
+                includeUrls: chosen != EnvFormat.LaunchSettings, approvedRemote: connection, kestrelEndpoints: siteEndpoints.Count > 0);
+            // Blank what this run leaves out but an earlier `opticli env` exported in this shell, as `serve` does for its
+            // site: a stale OPTICLI_DB would still pin the site, a stale OPTICLI_REMOTE_DB still approve that database.
+            var stale = SiteEnvironment.NotSet(built).Where(name => context.Environment.Variable(name) is not null).ToList();
+            IReadOnlyList<KeyValuePair<string, string>> variables = [.. built, .. stale.Select(name => KeyValuePair.Create(name, ""))];
 
             store.Write(new ServeState(ServeMode.External, store.ProjectDirectory, selectedPort, token, DateTimeOffset.UtcNow, store.LogPath,
                 connection.Server, connection.Database, AgentDll: agentDll));
+            startLock.Dispose();
+
+            var warnings = new List<string>();
+            if (!connection.IsLocal)
+            {
+                warnings.Add(ServeCommand.SharedDatabaseWarning(connection));
+            }
+            if (siteEndpoints.Count > 0)
+            {
+                warnings.Add(KestrelEndpoints.Warning(siteEndpoints));
+            }
+            if (stale.Count > 0)
+            {
+                warnings.Add($"{string.Join(", ", stale)} {(stale.Count == 1 ? "is" : "are")} set in this shell (an earlier `opticli env`?) and blanked here; run the site from a subshell so they don't linger.");
+            }
 
             if (chosen == EnvFormat.Json)
             {
@@ -73,7 +105,7 @@ internal static class EnvCommand
                     url = SiteEnvironment.Url(selectedPort),
                     statePath = store.StatePath,
                     connectionPinned = pinned is not null,
-                }, Warnings: connection.IsLocal ? null : [ServeCommand.SharedDatabaseWarning(connection)]);
+                }, Warnings: warnings.Count > 0 ? warnings : null);
             }
 
             var comments = new List<string>
@@ -81,10 +113,7 @@ internal static class EnvCommand
                 $"opticli env for {project.ProjectFile}: start the site with these, then write commands reach it at {SiteEnvironment.Url(selectedPort)}.",
                 "The token is new; restart the site after running opticli env again.",
             };
-            if (!connection.IsLocal)
-            {
-                comments.Add(ServeCommand.SharedDatabaseWarning(connection));
-            }
+            comments.AddRange(warnings);
             if (pinned is null)
             {
                 comments.Add($"{AgentProtocol.DatabaseVariable} omitted: the site uses its own connection string (must be '{connection.Database}' on '{connection.Server}'); --include-connection pins it.");

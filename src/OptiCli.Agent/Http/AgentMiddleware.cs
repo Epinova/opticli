@@ -47,6 +47,7 @@ internal static class AgentMiddleware
     private static async Task<(int Status, object Data)> DispatchAsync(AgentRequest request, AgentEndpoint endpoint) => endpoint switch
     {
         AgentEndpoint.Ping => (200, PingEndpoint.Handle(request)),
+        AgentEndpoint.Shutdown => (200, ShutdownEndpoint.Handle(request)),
         AgentEndpoint.Type => (200, TypeEndpoint.Handle(request)),
         AgentEndpoint.Create => Created(CreateEndpoint.Handle(request, await request.ReadBodyAsync<CreateRequest>())),
         AgentEndpoint.Upload => Created(UploadEndpoint.Handle(request, await request.ReadBodyAsync<UploadRequest>(UploadEndpoint.MaxBodyBytes))),

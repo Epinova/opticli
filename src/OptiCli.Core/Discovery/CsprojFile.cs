@@ -40,6 +40,9 @@ public sealed record CsprojFile(
     /// <summary>The files read for the properties besides the project file: the nearest <c>Directory.Build.props</c> and what it imports, then what the project imports, in that order.</summary>
     public IReadOnlyList<string> Imports { get; init; } = [];
 
+    /// <summary>Full paths of the projects this one references (<c>ProjectReference</c>; ones written as MSBuild expressions are left out).</summary>
+    public IReadOnlyList<string> ProjectReferences { get; init; } = [];
+
     /// <summary>Properties opticli couldn't work out (left as written, or ignored), for <c>doctor</c>.</summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];
 
@@ -80,6 +83,16 @@ public sealed record CsprojFile(
             packages[id.Trim()] = string.IsNullOrWhiteSpace(version) ? null : version.Trim();
         }
 
+        var directory = System.IO.Path.GetDirectoryName(path)!;
+        var references = root.Descendants()
+            .Where(e => e.Name.LocalName == "ProjectReference")
+            .Select(e => ((string?)e.Attribute("Include"))?.Trim())
+            .Where(include => !string.IsNullOrEmpty(include) && !include.Contains("$(", StringComparison.Ordinal) && !include.Contains('*', StringComparison.Ordinal))
+            // Project files are mostly written on Windows.
+            .Select(include => System.IO.Path.GetFullPath(include!.Replace('\\', System.IO.Path.DirectorySeparatorChar), directory))
+            .Distinct()
+            .ToList();
+
         var properties = MsBuildProperties.Evaluate(path, root, evaluateBuildProps);
         return new CsprojFile(
             path,
@@ -94,6 +107,7 @@ public sealed record CsprojFile(
             UseArtifactsOutput = properties["UseArtifactsOutput"],
             ArtifactsPath = properties["ArtifactsPath"],
             Imports = properties.Imported,
+            ProjectReferences = references,
             Warnings = properties.Warnings,
         };
     }

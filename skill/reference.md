@@ -268,7 +268,8 @@ Plans that run again (a section rebuilt after a database refresh, or repaired af
   `http://127.0.0.1:<port>` (default 5199, else the first free port up to 5299), waiting up to `--timeout`
   (default 180 s) for it to answer. A warning says when sources are newer than the
   build; `--build` runs `dotnet build` first. The site's code and files are not changed.
-- `opticli serve --status | --logs [--tail N] | --stop`.
+- `opticli serve --status | --logs [--tail N] | --stop`. `--logs` shows the latest run; `data.previous` lists the
+  logs of the two runs before it. A `serve` started while another is starting the same site waits for that one.
 - A site that redirects HTTP to HTTPS can't be browsed on the agent's address (`serve` warns). `--https` also binds
   `https://localhost:<port>` with the ASP.NET Core development certificate and prints it as `browseUrl`; opticli keeps
   talking to the agent over HTTP. Without a certificate the site fails to start: `dotnet dev-certs https --trust`.

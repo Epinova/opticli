@@ -19,6 +19,7 @@ public static class SiteEnvironment
     /// <param name="includeUrls">False for launch profiles, whose applicationUrl sets the URLs instead.</param>
     /// <param name="approvedRemote">The remote development database the site may use (the agent refuses other remote ones); null for a local one.</param>
     /// <param name="httpsPort">Also listen on <c>https://localhost:&lt;port&gt;</c> (with the development certificate), for browsing a site that redirects to HTTPS.</param>
+    /// <param name="kestrelEndpoints">The site configures <c>Kestrel:Endpoints</c>, which replace the URLs: add opticli's addresses as endpoints too.</param>
     public static IReadOnlyList<KeyValuePair<string, string>> Build(
         string agentDll,
         string token,
@@ -28,7 +29,8 @@ public static class SiteEnvironment
         string? existingStartupHooks = null,
         bool includeUrls = true,
         VerifiedConnectionString? approvedRemote = null,
-        int? httpsPort = null)
+        int? httpsPort = null,
+        bool kestrelEndpoints = false)
     {
         var variables = new List<KeyValuePair<string, string>>
         {
@@ -41,6 +43,15 @@ public static class SiteEnvironment
             {
                 // Where UseHttpsRedirection sends browsers; the agent answers on plain HTTP ahead of it.
                 variables.Add(new("ASPNETCORE_HTTPS_PORT", redirectPort.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+            }
+        }
+        if (kestrelEndpoints)
+        {
+            // Also for launch profiles: Kestrel ignores their applicationUrl as well.
+            variables.Add(new(KestrelEndpoints.UrlVariable(KestrelEndpoints.Http), Url(port)));
+            if (httpsPort is { } secure)
+            {
+                variables.Add(new(KestrelEndpoints.UrlVariable(KestrelEndpoints.Https), HttpsUrl(secure)));
             }
         }
         variables.Add(new(StartupHooksVariable, StartupHooks(existingStartupHooks, agentDll)));
@@ -61,6 +72,14 @@ public static class SiteEnvironment
             variables.Add(new(ConnectionVariables.Name(connectionName), connection.Value));
         }
         return variables;
+    }
+
+    /// <summary>The variables opticli gives the site that <paramref name="variables"/> leaves out, which must not be inherited from an earlier <c>opticli env</c>.</summary>
+    public static IReadOnlyList<string> NotSet(IEnumerable<KeyValuePair<string, string>> variables)
+    {
+        string[] owned = [AgentProtocol.TokenVariable, AgentProtocol.DatabaseVariable, AgentProtocol.ConnectionNameVariable, AgentProtocol.RemoteDatabaseVariable];
+        var set = variables.Select(v => v.Key).ToHashSet(StringComparer.Ordinal);
+        return owned.Where(name => !set.Contains(name)).ToList();
     }
 
     /// <summary>

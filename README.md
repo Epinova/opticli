@@ -252,18 +252,30 @@ agent injected, and returns once the site agent answers.
 
 | Option | Default |
 |---|---|
-| `--output <dll>` | the newest `bin/{Debug,Release}/<tfm>/<AssemblyName>.dll`, or `output` from the user config |
+| `--output <dll>` | the newest `bin/{Debug,Release}/<tfm>/<AssemblyName>.dll` (also below a `<rid>/` folder, under the project's `OutputPath`/`BaseOutputPath`, or under `artifacts/` with `UseArtifactsOutput`), or `output` from the user config |
 | `--port <n>` | `port` from the user config, else 5199, else the first free port up to 5299 |
-| `--build` | off: opticli warns when sources are newer than the build, and `--build` runs `dotnet build` first |
+| `--build` | off: opticli warns when sources (the site's or a referenced project's) are newer than the build, and `--build` runs `dotnet build` first |
 | `--timeout <s>` | 180 seconds to wait for the site to answer |
-| `--foreground` | off: the site runs in the background; with it, the site's output streams until Ctrl+C |
+| `--foreground` | off: the site runs in the background; with it, the site's output streams until Ctrl+C (to stderr when stdout is redirected, so stdout stays one JSON envelope) |
 | `--https` | off (or `"https": true` in the user config, which `--https false` overrides): also listen on `https://localhost:<next free port>` with the development certificate, printed as `browseUrl`, for sites that redirect to HTTPS. `serve` warns when a site does |
 
-`serve --status`, `serve --logs [--tail N]` and `serve --stop` manage the running site.
+`serve --status`, `serve --logs [--tail N]` and `serve --stop` manage the running site:
+- `--stop` asks the site to shut down through the site agent, on every OS, and falls back to SIGTERM on Linux and
+  macOS. A site that hasn't exited after 20 s is killed. On Windows that kill is all there is when the agent doesn't
+  answer.
+- Each start writes a new log. `--logs` reads the latest from its end, and `data.previous` lists the two before it.
+- A state file opticli can't read is treated as stale: `--status` and `--stop` remove it, `doctor` reports it.
+- Two `serve` runs for the same project don't start two sites: the second waits for the first and reports its site.
+- Ctrl+C while `serve` waits for the site stops the site again.
+- A site that configures `Kestrel:Endpoints` ignores `ASPNETCORE_URLS`. `serve` and `env` then add opticli's address
+  as one more endpoint (`Kestrel__Endpoints__OptiCli__Url`) and warn. If the site sets its addresses in code, a
+  timeout names the addresses it listens on instead.
 
 To run the site yourself (IDE, `dotnet run`, hot reload), `opticli env` prints the variables `serve` would set:
-- `--format shell|powershell|dotenv|json|launchSettings` picks the format.
+- `--format shell|powershell|dotenv|json|launchSettings` picks the format. `--json` is the same as `--format json`.
 - `--port` picks the port.
+- `OPTICLI_*` variables that this run leaves out but the shell still exports (from an earlier `opticli env`) are set
+  to empty, so they can't pin or approve another database.
 
 The connection string is left out unless `--include-connection` is given. Without it the site uses its own
 configuration, which is still checked to be local (or the approved development database) and the same database
@@ -330,9 +342,10 @@ runtime. It ships no copies of them.
 | What | Linux / macOS | Windows |
 |---|---|---|
 | User config | `$XDG_CONFIG_HOME/opticli/config.json` (default `~/.config/opticli/config.json`) | `%APPDATA%\opticli\config.json` |
-| `serve` state and logs | `$XDG_STATE_HOME/opticli/` (default `~/.local/state/opticli/`) | `%LOCALAPPDATA%\opticli\` |
+| `serve` state, start lock and logs (the last 3 runs) | `$XDG_STATE_HOME/opticli/` (default `~/.local/state/opticli/`) | `%LOCALAPPDATA%\opticli\` |
 
-You can set per-project defaults in the user config. `opticli db use` adds the chosen `database` there.
+You can set per-project defaults in the user config. `opticli db use` adds the chosen `database` there. opticli
+keeps the file's permissions when it rewrites it, and creates it readable by you only on Linux and macOS.
 
 ```json
 {"projects": {"/abs/path/to/Site": {"connection": "...", "output": "bin/Debug/net8.0/Site.dll", "port": 5199, "https": true}}}

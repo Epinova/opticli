@@ -13,40 +13,61 @@ public static class SiteProcess
 
     /// <summary>
     /// Starts <c>dotnet &lt;dll&gt;</c> so that it outlives this CLI process and its terminal: in a new
-    /// session (<c>setsid</c>) on Unix, with all output appended to <paramref name="logPath"/>.
+    /// session on Unix, with all output appended to <paramref name="logPath"/>.
     /// </summary>
     /// <remarks>
-    /// The shell execs the site, and <c>setsid</c> only forks when it is a process group leader (a child
-    /// started by .NET never is), so the returned process is the site itself. Its stdio points at the log
+    /// On Unix the new session comes from <c>setsid</c> (Linux) or, where there is none (macOS), Perl's
+    /// <c>POSIX::setsid</c>; so neither Ctrl+C in opticli's terminal nor a signal to opticli's process group reaches
+    /// the site. Both exec the shell, which execs the site, and setsid only forks when it is a process group leader (a
+    /// child started by .NET never is), so the returned process is the site itself. Its stdio points at the log
     /// and /dev/null, never at this process's pipes, so a caller capturing opticli's output isn't held open.
+    /// On Windows the returned process is the <c>cmd.exe</c> that runs the site, in a console of its own.
     /// </remarks>
     /// <param name="environment">Set over the inherited environment, in order; a null value removes the variable.</param>
     public static Process StartDetached(string dotnet, string dll, string workingDirectory, IEnumerable<KeyValuePair<string, string?>> environment, string logPath)
     {
-        ProcessStartInfo info;
-        if (OperatingSystem.IsWindows())
-        {
+        var info = OperatingSystem.IsWindows()
             // cmd has its own quoting rules, so the command line is written out rather than escaped per argument.
-            info = new ProcessStartInfo("cmd.exe", $"/d /c \"\"{dotnet}\" \"{dll}\" >> \"{logPath}\" 2>&1 < NUL\"") { CreateNoWindow = true };
+            ? new ProcessStartInfo("cmd.exe", $"/d /c \"\"{dotnet}\" \"{dll}\" >> \"{logPath}\" 2>&1 < NUL\"") { CreateNoWindow = true }
+            : DetachedUnix(dotnet, dll, logPath, FirstExisting("/usr/bin/setsid", "/bin/setsid"), FirstExisting("/usr/bin/perl", "/bin/perl"));
+        return Start(info, workingDirectory, environment);
+    }
+
+    /// <summary>The Unix command line of <see cref="StartDetached"/>, with the detaching tools found (null: missing).</summary>
+    internal static ProcessStartInfo DetachedUnix(string dotnet, string dll, string logPath, string? setsid, string? perl)
+    {
+        ProcessStartInfo info;
+        if (setsid is not null)
+        {
+            info = new ProcessStartInfo(setsid);
+        }
+        else if (perl is not null)
+        {
+            info = new ProcessStartInfo(perl);
+            info.ArgumentList.Add("-MPOSIX");
+            info.ArgumentList.Add("-e");
+            info.ArgumentList.Add("POSIX::setsid(); exec { $ARGV[0] } @ARGV or die \"opticli: cannot start $ARGV[0]: $!\\n\";");
+            info.ArgumentList.Add("--");
         }
         else
         {
-            var setsid = new[] { "/usr/bin/setsid", "/bin/setsid" }.FirstOrDefault(File.Exists);
-            info = new ProcessStartInfo(setsid ?? "/bin/sh");
-            if (setsid is not null)
-            {
-                info.ArgumentList.Add("/bin/sh");
-            }
-            info.ArgumentList.Add("-c");
-            // Without setsid, at least ignore the terminal's hangup.
-            info.ArgumentList.Add($"{(setsid is null ? "trap '' HUP; " : "")}log=$1; shift; exec \"$@\" >>\"$log\" 2>&1 </dev/null");
-            info.ArgumentList.Add("opticli-site");
-            info.ArgumentList.Add(logPath);
-            info.ArgumentList.Add(dotnet);
-            info.ArgumentList.Add(dll);
+            info = new ProcessStartInfo("/bin/sh");
         }
-        return Start(info, workingDirectory, environment);
+        if (info.FileName != "/bin/sh")
+        {
+            info.ArgumentList.Add("/bin/sh");
+        }
+        info.ArgumentList.Add("-c");
+        // Without a new session, at least ignore the terminal's hangup.
+        info.ArgumentList.Add($"{(setsid is null && perl is null ? "trap '' HUP; " : "")}log=$1; shift; exec \"$@\" >>\"$log\" 2>&1 </dev/null");
+        info.ArgumentList.Add("opticli-site");
+        info.ArgumentList.Add(logPath);
+        info.ArgumentList.Add(dotnet);
+        info.ArgumentList.Add(dll);
+        return info;
     }
+
+    private static string? FirstExisting(params string[] paths) => paths.FirstOrDefault(File.Exists);
 
     /// <summary>Starts the site as a child whose output the caller reads (foreground mode).</summary>
     public static Process StartAttached(string dotnet, string dll, string workingDirectory, IEnumerable<KeyValuePair<string, string?>> environment)
@@ -120,15 +141,25 @@ public static class SiteProcess
         return process;
     }
 
-    /// <summary>Asks the site to shut down (SIGTERM on Unix), then kills it if it hasn't exited in time.</summary>
+    /// <summary>
+    /// Asks the site to shut down, through <paramref name="requestShutdown"/> (the agent's shutdown endpoint) or else
+    /// SIGTERM on Unix, then kills it (and what it started) if it hasn't exited within <paramref name="grace"/>.
+    /// On Windows, with no endpoint to ask, that is a kill straight away.
+    /// </summary>
+    /// <param name="requestShutdown">True when the site accepted the request.</param>
     /// <returns>True when it exited gracefully.</returns>
-    public static async Task<bool> StopAsync(Process process, TimeSpan grace)
+    public static async Task<bool> StopAsync(Process process, TimeSpan grace, Func<Task<bool>>? requestShutdown = null)
     {
         if (process.HasExited)
         {
             return true;
         }
-        if (!OperatingSystem.IsWindows() && Kill(process.Id, SigTerm) == 0)
+        var asked = requestShutdown is not null && await requestShutdown();
+        if (!asked && !OperatingSystem.IsWindows())
+        {
+            asked = Kill(process.Id, SigTerm) == 0;
+        }
+        if (asked)
         {
             using var timeout = new CancellationTokenSource(grace);
             try
@@ -141,7 +172,14 @@ public static class SiteProcess
                 // Fall through to a hard kill.
             }
         }
-        process.Kill(entireProcessTree: true);
+        try
+        {
+            process.Kill(entireProcessTree: true);
+        }
+        catch (InvalidOperationException)
+        {
+            // It exited just now.
+        }
         await process.WaitForExitAsync();
         return false;
     }

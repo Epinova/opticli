@@ -20,7 +20,17 @@ public sealed record PingResponse
 
     /// <summary>The database the CMS actually uses. The CLI stops the site if this is not the one it pinned.</summary>
     public required DatabaseTarget Database { get; init; }
+
+    /// <summary>
+    /// The site's own process id. On Windows <c>serve</c> starts the site through <c>cmd.exe</c>, so this is the process
+    /// to stop. Null from agents older than this field.
+    /// </summary>
+    public int? ProcessId { get; init; }
 }
+
+/// <summary>Response of <see cref="AgentRoutes.Shutdown"/>.</summary>
+/// <param name="Stopping">The site has been asked to stop; it exits once running requests finish.</param>
+public sealed record ShutdownResponse(bool Stopping);
 
 /// <summary>Server and database only; credentials never leave the site.</summary>
 /// <param name="ConnectionName">Connection string name the CMS resolves, normally <c>EPiServerDB</c>.</param>

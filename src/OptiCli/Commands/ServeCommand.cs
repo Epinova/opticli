@@ -15,17 +15,20 @@ internal static class ServeCommand
     private const int DefaultTimeoutSeconds = 180;
     private const int DefaultLogLines = 200;
 
+    /// <summary>How long a start waits for another one (which may be running <c>--build</c>) to release the project's start lock.</summary>
+    private static readonly TimeSpan StartLockWait = TimeSpan.FromMinutes(10);
+
     public static Command Create(GlobalOptions options)
     {
         var build = new Option<bool>("--build") { Description = "Run `dotnet build` on the site project first." };
         var port = new Option<int?>("--port") { Description = $"Port on 127.0.0.1. Default: the user config's port, else {PortSelector.DefaultPort}, else the first free one up to {PortSelector.RangeEnd}.", HelpName = "n" };
-        var foreground = new Option<bool>("--foreground") { Description = "Run attached, streaming the site's output, until Ctrl+C." };
+        var foreground = new Option<bool>("--foreground") { Description = "Run attached, streaming the site's output (to stderr when stdout is redirected), until Ctrl+C." };
         var output = new Option<string?>("--output") { Description = "The site DLL to run. Default: bin/{Debug,Release}/<tfm>/<AssemblyName>.dll (newest), or the user config's output.", HelpName = "dll" };
         var timeout = new Option<int>("--timeout") { Description = "Seconds to wait for the site to answer.", DefaultValueFactory = _ => DefaultTimeoutSeconds, HelpName = "seconds" };
         var status = new Option<bool>("--status") { Description = "Show whether the site runs, its port, pid, database and agent version." };
-        var logs = new Option<bool>("--logs") { Description = "Show the site's log (its console output)." };
+        var logs = new Option<bool>("--logs") { Description = $"Show the latest run's log (the site's console output); data.previous lists the logs of up to {StateStore.LogsKept - 1} runs before it." };
         var tail = new Option<int?>("--tail") { Description = $"With --logs: only the last N lines (default {DefaultLogLines}).", HelpName = "n" };
-        var stop = new Option<bool>("--stop") { Description = "Stop the site (SIGTERM, then kill after 20 s) and forget its token." };
+        var stop = new Option<bool>("--stop") { Description = "Stop the site (asks it to shut down through the agent, else SIGTERM on Unix; kills it after 20 s) and forget its token." };
         var https = new Option<bool>("--https")
         {
             Description = "Also listen on https://localhost:<next free port> with the ASP.NET Core development certificate, to browse a site that redirects to HTTPS. Default: \"https\" in the user config; --https false turns it off.",
@@ -70,8 +73,7 @@ internal static class ServeCommand
             }
             if (parse.GetValue(stop))
             {
-                var stopped = await SiteLauncher.StopAsync(context.StateStore);
-                return new CommandResult(stopped ?? (object)new { stopped = false, message = "Nothing was running for this project." }, Source: WriteExecutor.AgentSource);
+                return await StopAsync(context);
             }
 
             var seconds = parse.GetValue(timeout);
@@ -91,6 +93,8 @@ internal static class ServeCommand
         var connection = RequireServable(context);
         var store = context.StateStore;
 
+        // Held until the new state file is written, so a second `serve` started meanwhile sees this one's site.
+        using var startLock = await store.LockAsync(StartLockWait, cancellationToken);
         var existing = await AgentProbe.ProbeAsync(store, connection, cancellationToken);
         switch (existing.State)
         {
@@ -106,6 +110,10 @@ internal static class ServeCommand
                 throw new UsageException(
                     $"A site started with the variables from `opticli env` is running on port {existing.Port}.",
                     "Use it as it is, or stop it (and `opticli serve --stop` to forget its token) before `opticli serve`.");
+            case AgentState.Unresponsive when existing.StartedAt > DateTimeOffset.UtcNow - timeout:
+                // Another `serve` started it moments ago and is waiting for it: wait too, rather than start a second site.
+                startLock.Dispose();
+                return await WaitForOtherStartAsync(store, connection, existing, timeout, cancellationToken);
             default:
                 throw new UsageException($"A site is already registered for this project: {existing.Message}", "Check `opticli serve --status` and `--logs`; `opticli serve --stop` stops it.");
         }
@@ -121,9 +129,14 @@ internal static class ServeCommand
         {
             warnings.Add(SharedDatabaseWarning(connection));
         }
-        if (OutputLocator.NewerSource(project.Directory, siteOutput.Dll) is { } newer)
+        if (OutputLocator.NewerSource(project, siteOutput.Dll) is { } newer)
         {
             warnings.Add($"{Path.GetRelativePath(project.Directory, newer)} is newer than the build output {Path.GetRelativePath(project.Directory, siteOutput.Dll)}; the site may be out of date (use --build).");
+        }
+        var siteEndpoints = KestrelEndpoints.Configured(project, context.Environment);
+        if (siteEndpoints.Count > 0)
+        {
+            warnings.Add(KestrelEndpoints.Warning(siteEndpoints));
         }
         var httpPort = PortSelector.Select(port, settings?.Port, PortSelector.IsFree);
         var request = new LaunchRequest(
@@ -134,11 +147,12 @@ internal static class ServeCommand
             AgentLocator.Locate(AppContext.BaseDirectory),
             httpPort,
             timeout,
-            (https ?? settings?.Https == true) ? PortSelector.Select(null, null, p => p != httpPort && PortSelector.IsFree(p)) : null);
+            (https ?? settings?.Https == true) ? PortSelector.Select(null, null, p => p != httpPort && PortSelector.IsFree(p)) : null,
+            siteEndpoints);
 
         if (!foreground)
         {
-            var started = await SiteLauncher.StartBackgroundAsync(store, request, cancellationToken);
+            var started = await SiteLauncher.StartBackgroundAsync(store, request, startLock, cancellationToken);
             if (request.HttpsPort is null && started.Url is { } url && await RedirectsToHttpsAsync(url, cancellationToken))
             {
                 warnings.Add($"The site redirects {url} to HTTPS, so it can't be browsed there (opticli itself is unaffected). `opticli serve --stop`, then `opticli serve --https` adds an HTTPS address.");
@@ -150,10 +164,50 @@ internal static class ServeCommand
         {
             Console.Error.WriteLine($"warning: {warning}");
         }
-        await SiteLauncher.RunForegroundAsync(store, request, Console.Out,
+        // Redirected stdout carries the one JSON envelope at the end, so the site's output goes to stderr then.
+        await SiteLauncher.RunForegroundAsync(store, request, startLock, Console.IsOutputRedirected ? Console.Error : Console.Out,
             ready => Console.Error.WriteLine($"[opticli] agent ready at {ready.Url}{(ready.BrowseUrl is { } browse ? $", browse the site at {browse}" : "")} (pid {ready.Pid}, database '{ready.Database?.Name}'); Ctrl+C stops the site."),
             cancellationToken);
         return new CommandResult(new { stopped = true });
+    }
+
+    /// <summary>Waits for a site another <c>serve</c> is starting, and reports it like one that was already running.</summary>
+    private static async Task<CommandResult> WaitForOtherStartAsync(StateStore store, Core.Safety.VerifiedConnectionString connection, AgentStatus starting, TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        var waited = System.Diagnostics.Stopwatch.StartNew();
+        var status = starting;
+        while (status.State == AgentState.Unresponsive && waited.Elapsed < timeout)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+            status = await AgentProbe.ProbeAsync(store, connection, cancellationToken);
+        }
+        return status.State switch
+        {
+            AgentState.Running => new CommandResult(status, Warnings: ["Another `opticli serve` was starting the site; this one waited for it and started nothing."], Source: WriteExecutor.AgentSource),
+            AgentState.Stopped or AgentState.Stale => throw new UnreachableException(
+                "Another `opticli serve` was starting the site, and it didn't start.",
+                "Its error is in that command's output and in `opticli serve --logs`; fix it, then run `opticli serve` again."),
+            _ => throw new UsageException($"Another `opticli serve` is starting the site, which still doesn't answer: {status.Message}", "Check `opticli serve --status` and `--logs`; `opticli serve --stop` stops it."),
+        };
+    }
+
+    private static async Task<CommandResult> StopAsync(CliContext context)
+    {
+        var store = context.StateStore;
+        StopResult? stopped;
+        try
+        {
+            stopped = await SiteLauncher.StopAsync(store);
+        }
+        catch (CorruptStateException ex)
+        {
+            store.Delete();
+            return new CommandResult(
+                new { stopped = false, message = "Removed the corrupt state file; nothing is known to run for this project." },
+                Warnings: [$"{ex.Message} If a site opticli started earlier still runs, stop it yourself."],
+                Source: WriteExecutor.AgentSource);
+        }
+        return new CommandResult(stopped ?? (object)new { stopped = false, message = "Nothing was running for this project." }, Source: WriteExecutor.AgentSource);
     }
 
     /// <summary>
@@ -199,7 +253,14 @@ internal static class ServeCommand
     {
         var resolution = context.ResolveConnection();
         var expected = resolution.Chosen is null ? null : resolution.Require();
-        return await AgentProbe.ProbeAsync(context.StateStore, expected, cancellationToken);
+        var status = await AgentProbe.ProbeAsync(context.StateStore, expected, cancellationToken);
+        if (status.CorruptState)
+        {
+            // Nothing in it can be used, and it would block `serve`: treat it as stale and remove it.
+            context.StateStore.Delete();
+            return status with { Message = $"{status.Message} It was removed.", Hint = $"If a site opticli started earlier still runs, stop it yourself. {AgentProbe.StartHint}" };
+        }
+        return status;
     }
 
     private static CommandResult Logs(CliContext context, int lines)
@@ -214,6 +275,7 @@ internal static class ServeCommand
             throw new NotFoundException("There is no site log for this project yet.", "Start the site with `opticli serve`.");
         }
         var tail = LogTail.Read(store.LogPath, lines);
-        return new CommandResult(new { log = store.LogPath, lines = tail }, Text: string.Concat(tail.Select(l => l + Environment.NewLine)));
+        var previous = Enumerable.Range(1, StateStore.LogsKept - 1).Select(store.PreviousLogPath).Where(File.Exists).ToList();
+        return new CommandResult(new { log = store.LogPath, lines = tail, previous = previous.Count > 0 ? previous : null }, Text: string.Concat(tail.Select(l => l + Environment.NewLine)));
     }
 }

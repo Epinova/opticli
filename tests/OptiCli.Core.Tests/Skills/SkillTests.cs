@@ -89,6 +89,24 @@ public class SkillTests
     }
 
     [Fact]
+    public void A_copy_checked_out_with_crlf_line_endings_is_not_an_edit()
+    {
+        using var temp = new TempDirectory();
+        var target = temp.Combine("skills/opticli");
+        SkillInstaller.Install(Bundle("1.0.0"), target, force: false);
+        foreach (var file in Directory.GetFiles(target, "*.md"))
+        {
+            File.WriteAllText(file, File.ReadAllText(file).Replace("\n", "\r\n", StringComparison.Ordinal));
+        }
+
+        var same = SkillInstaller.Install(Bundle("1.0.0"), target, force: false);
+        var updated = SkillInstaller.Install(Bundle("1.2.0"), target, force: false);
+
+        Assert.Equal("unchanged", same.Status);
+        Assert.Equal("updated", updated.Status);
+    }
+
+    [Fact]
     public void A_copy_without_a_manifest_needs_force_once()
     {
         using var temp = new TempDirectory();

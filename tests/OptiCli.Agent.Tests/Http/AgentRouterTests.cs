@@ -7,6 +7,7 @@ public class AgentRouterTests
 {
     [Theory]
     [InlineData("GET", "/v1/ping", "Ping", null)]
+    [InlineData("POST", "/v1/shutdown", "Shutdown", null)]
     [InlineData("GET", "/v1/types/ArticlePage", "Type", "ArticlePage")]
     [InlineData("GET", "/v1/types/0b1c2d3e-0000-4000-8000-000000000001", "Type", "0b1c2d3e-0000-4000-8000-000000000001")]
     [InlineData("POST", "/v1/content", "Create", null)]
@@ -65,6 +66,7 @@ public class AgentRouterTests
 
     [Theory]
     [InlineData("POST", "/v1/ping", "GET")]
+    [InlineData("GET", "/v1/shutdown", "POST")]
     [InlineData("GET", "/v1/content/123/draft", "POST")]
     [InlineData("POST", "/v1/content/123", "GET or DELETE")]
     [InlineData("PUT", "/v1/content/123", "GET or DELETE")]
@@ -82,6 +84,7 @@ public class AgentRouterTests
     public void Protocol_route_builders_produce_routes_the_router_matches()
     {
         Assert.Equal(AgentEndpoint.Ping, AgentRouter.Match("GET", AgentRoutes.Ping).Endpoint);
+        Assert.Equal(AgentEndpoint.Shutdown, AgentRouter.Match("POST", AgentRoutes.Shutdown).Endpoint);
         Assert.Equal(new RouteMatch(AgentEndpoint.Type, "ArticlePage"), AgentRouter.Match("GET", AgentRoutes.Type("ArticlePage")));
         Assert.Equal(AgentEndpoint.Create, AgentRouter.Match("POST", AgentRoutes.Create).Endpoint);
         Assert.Equal(new RouteMatch(AgentEndpoint.Draft, "123_456"), AgentRouter.Match("POST", AgentRoutes.Draft("123_456")));

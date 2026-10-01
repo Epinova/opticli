@@ -34,6 +34,12 @@ public sealed class AgentClient : IDisposable
     public Task<PingResponse> PingAsync(CancellationToken cancellationToken) =>
         SendAsync<PingResponse>(HttpMethod.Get, AgentRoutes.Ping, null, PingTimeout, cancellationToken);
 
+    /// <summary>Asks the site to stop gracefully; it exits once running requests finish.</summary>
+    /// <exception cref="UnreachableException">Nothing answers.</exception>
+    /// <exception cref="OptiCliException">The agent answered with an error (an agent older than the endpoint answers not_found).</exception>
+    public Task<ShutdownResponse> ShutdownAsync(CancellationToken cancellationToken) =>
+        SendAsync<ShutdownResponse>(HttpMethod.Post, AgentRoutes.Shutdown, null, PingTimeout, cancellationToken);
+
     public Task<T> SendAsync<T>(HttpMethod method, string route, object? body, CancellationToken cancellationToken) =>
         SendAsync<T>(method, route, body, WriteTimeout, cancellationToken);
 

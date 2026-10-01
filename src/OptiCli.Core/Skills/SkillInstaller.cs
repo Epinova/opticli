@@ -26,7 +26,7 @@ public static class SkillInstaller
     {
         var existing = bundle.Files.Keys.Where(name => File.Exists(Path.Combine(directory, name))).ToList();
         var previousVersion = ReadInstalledVersion(directory);
-        var differs = bundle.Files.Any(file => !File.Exists(Path.Combine(directory, file.Key)) || File.ReadAllText(Path.Combine(directory, file.Key)) != file.Value);
+        var differs = bundle.Files.Any(file => !File.Exists(Path.Combine(directory, file.Key)) || Normalize(File.ReadAllText(Path.Combine(directory, file.Key))) != Normalize(file.Value));
 
         if (existing.Count > 0 && !differs)
         {
@@ -56,8 +56,11 @@ public static class SkillInstaller
         return new SkillInstallResult(directory, existing.Count > 0 ? "updated" : "installed", bundle.Version, existing.Count > 0 ? previousVersion : null, [.. bundle.Files.Keys]);
     }
 
+    /// <summary>Of the content with LF line endings, so a copy checked out with CRLF (Windows) doesn't count as edited.</summary>
     private static string Hash(string content) =>
-        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(content))).ToLowerInvariant();
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Normalize(content)))).ToLowerInvariant();
+
+    private static string Normalize(string content) => content.Replace("\r\n", "\n", StringComparison.Ordinal);
 
     private static void WriteManifest(SkillBundle bundle, string directory)
     {

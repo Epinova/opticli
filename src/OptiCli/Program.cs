@@ -3,6 +3,7 @@ using OptiCli.Cli;
 using OptiCli.Commands;
 using OptiCli.Core.Errors;
 using OptiCli.Core.Refs;
+using OptiCli.Core.Serve;
 using OptiCli.Core.Text;
 
 var options = new GlobalOptions();
@@ -86,4 +87,6 @@ if (parse.Errors.Count > 0)
     return writer.Failure(ErrorCode.Usage, message, $"{(typo is null ? "" : typo + " ")}Run `{usage} --help` for usage.");
 }
 
-return await parse.InvokeAsync();
+// Ctrl+C (or SIGTERM) cancels the command; System.CommandLine's default of 2 s before it exits anyway would cut short
+// `serve` stopping the site it started, which may take SiteLauncher.StopGrace.
+return await parse.InvokeAsync(new InvocationConfiguration { ProcessTerminationTimeout = SiteLauncher.StopGrace + TimeSpan.FromSeconds(10) });

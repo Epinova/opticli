@@ -101,9 +101,82 @@ public class OutputLocatorTests : IDisposable
         {
             Output(ignored);
         }
-        Assert.Null(OutputLocator.NewerSource(_site.ProjectPath, dll));
+        Assert.Null(OutputLocator.NewerSource(_site.Project(), dll));
 
         var changed = Output("Features/Article/ArticlePage.cshtml");
-        Assert.Equal(changed, OutputLocator.NewerSource(_site.ProjectPath, dll));
+        Assert.Equal(changed, OutputLocator.NewerSource(_site.Project(), dll));
+    }
+
+    [Fact]
+    public void A_runtime_identifier_build_is_found_below_the_framework_folder_but_publish_output_is_not()
+    {
+        Output("bin/Release/net8.0/publish/Web.dll", DateTime.UtcNow);
+        var rid = Output("bin/Debug/net8.0/linux-x64/Web.dll", DateTime.UtcNow.AddMinutes(-5));
+        Output("bin/Debug/net8.0/en/Web.resources.dll");
+
+        Assert.Equal(rid, OutputLocator.Locate(_site.Project(), null, null, _site.ProjectPath).Dll);
+    }
+
+    [Theory]
+    [InlineData(@"<OutputPath>build\$(Configuration)\</OutputPath>", "build/Debug/net8.0/Web.dll")]
+    [InlineData("<BaseOutputPath>../out/</BaseOutputPath>", "../out/Debug/net8.0/Web.dll")]
+    [InlineData("<OutputPath>build/</OutputPath><AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>", "build/Web.dll")]
+    public void Output_and_base_output_paths_are_followed(string property, string expected)
+    {
+        _site.WriteProjectFile("Web.csproj", $"""
+            <Project Sdk="Microsoft.NET.Sdk.Web">
+              <PropertyGroup><TargetFramework>net8.0</TargetFramework>{property}</PropertyGroup>
+              <ItemGroup><PackageReference Include="EPiServer.CMS.AspNetCore" Version="12.0.0" /></ItemGroup>
+            </Project>
+            """);
+        Output("bin/Debug/net8.0/Web.dll", DateTime.UtcNow.AddDays(-1));
+        var dll = Output(expected);
+
+        Assert.Equal(Path.GetFullPath(dll), OutputLocator.Locate(_site.Project(), null, null, _site.ProjectPath).Dll);
+    }
+
+    [Fact]
+    public void Artifacts_output_goes_next_to_the_directory_build_props()
+    {
+        _site.Write("repo/Directory.Build.props", "<Project><PropertyGroup><UseArtifactsOutput>true</UseArtifactsOutput></PropertyGroup></Project>");
+
+        var missing = Assert.Throws<NotFoundException>(() => OutputLocator.Locate(_site.Project(), null, null, _site.ProjectPath));
+        Assert.Contains(Path.Combine("artifacts", "bin", "Web", "debug", "Web.dll"), missing.Message);
+
+        var debug = _site.Write("repo/artifacts/bin/Web/debug/Web.dll", "dll");
+        File.SetLastWriteTimeUtc(debug, DateTime.UtcNow.AddHours(-1));
+        Assert.Equal(debug, OutputLocator.Locate(_site.Project(), null, null, _site.ProjectPath).Dll);
+
+        var rid = _site.Write("repo/artifacts/bin/Web/release_linux-x64/Web.dll", "dll");
+        Assert.Equal(rid, OutputLocator.Locate(_site.Project(), null, null, _site.ProjectPath).Dll);
+    }
+
+    [Fact]
+    public void Sources_of_referenced_projects_count_too()
+    {
+        _site.WriteProjectFile("Web.csproj", """
+            <Project Sdk="Microsoft.NET.Sdk.Web">
+              <PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="EPiServer.CMS.AspNetCore" Version="12.0.0" />
+                <ProjectReference Include="..\Core\Core.csproj" />
+              </ItemGroup>
+            </Project>
+            """);
+        _site.Write("repo/src/Core/Core.csproj", """<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><ProjectReference Include="../Shared/Shared.csproj" /></ItemGroup></Project>""");
+        _site.Write("repo/src/Shared/Shared.csproj", """<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><ProjectReference Include="../Core/Core.csproj" /></ItemGroup></Project>""");
+        _site.Write("repo/src/Unrelated/Unrelated.csproj", """<Project Sdk="Microsoft.NET.Sdk" />""");
+        var built = DateTime.UtcNow.AddHours(-1);
+        foreach (var file in Directory.GetFiles(Path.Combine(_site.Root, "repo", "src"), "*.csproj", SearchOption.AllDirectories))
+        {
+            File.SetLastWriteTimeUtc(file, built.AddHours(-1));
+        }
+        var dll = Output("bin/Debug/net8.0/Web.dll", built);
+        _site.Write("repo/src/Unrelated/Newer.cs", "class Newer;");
+        Assert.Null(OutputLocator.NewerSource(_site.Project(), dll));
+
+        // Shared is referenced through Core (which Shared references back).
+        var changed = _site.Write("repo/src/Shared/Helper.cs", "class Helper;");
+        Assert.Equal(changed, OutputLocator.NewerSource(_site.Project(), dll));
     }
 }

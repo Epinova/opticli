@@ -71,7 +71,14 @@ public static class ConnectionResolver
         OptiCliException? failure = null;
         var pickers = (explicitStep.Candidates.Count > 0 ? 1 : 0) + (request.Database is null ? 0 : 1) + (request.Profile is null ? 0 : 1);
 
-        if (pickers > 1)
+        if (pickers > 1 && request.Explicit is null && explicitStep.Candidates.Count > 0)
+        {
+            // Mostly left over from `eval "$(opticli env --include-connection)"` in this shell, not a choice made now.
+            failure = new UsageException(
+                $"{ConnectionRequest.EnvironmentVariable} is set in this shell, and picks the database just like {(request.Database is null ? "--profile" : "--db")}, so opticli can't tell which one you mean.",
+                $"If an earlier `opticli env --include-connection` left it there, remove it (`unset {ConnectionRequest.EnvironmentVariable}`; PowerShell: `Remove-Item Env:{ConnectionRequest.EnvironmentVariable}`) and run the site from a subshell; otherwise leave out {(request.Database is null ? "--profile" : "--db")}.");
+        }
+        else if (pickers > 1)
         {
             failure = new UsageException("--connection (or OPTICLI_DB), --db and --profile each pick the database; use only one.");
         }

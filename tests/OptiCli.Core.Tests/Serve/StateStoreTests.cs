@@ -56,7 +56,7 @@ public class StateStoreTests : IDisposable
     }
 
     [Fact]
-    public void An_existing_world_readable_log_is_tightened_and_truncated()
+    public void An_existing_world_readable_log_is_kept_as_the_previous_one_and_tightened()
     {
         if (OperatingSystem.IsWindows())
         {
@@ -69,8 +69,56 @@ public class StateStoreTests : IDisposable
 
         store.PrepareLog();
 
-        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(store.LogPath));
+        const UnixFileMode userOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        Assert.Equal(userOnly, File.GetUnixFileMode(store.LogPath));
         Assert.Equal("", File.ReadAllText(store.LogPath));
+        Assert.Equal(userOnly, File.GetUnixFileMode(store.PreviousLogPath(1)));
+        Assert.Equal("old run", File.ReadAllText(store.PreviousLogPath(1)));
+    }
+
+    [Fact]
+    public void Each_run_starts_a_new_log_and_only_the_last_three_are_kept()
+    {
+        var store = Store();
+        for (var run = 1; run <= 5; run++)
+        {
+            using var log = new StreamWriter(store.CreateLog());
+            log.Write($"run {run}");
+        }
+
+        Assert.Equal("run 5", File.ReadAllText(store.LogPath));
+        Assert.Equal("run 4", File.ReadAllText(store.PreviousLogPath(1)));
+        Assert.Equal("run 3", File.ReadAllText(store.PreviousLogPath(2)));
+        Assert.Equal(StateStore.LogsKept, Directory.GetFiles(store.Directory, "*.log").Length);
+    }
+
+    [Fact]
+    public async Task The_start_lock_is_exclusive_until_released()
+    {
+        var store = Store();
+        var first = await store.LockAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+
+        var error = await Assert.ThrowsAsync<UsageException>(() => store.LockAsync(TimeSpan.FromMilliseconds(300), CancellationToken.None));
+        Assert.Contains("still starting", error.Message);
+
+        var waiting = store.LockAsync(TimeSpan.FromSeconds(10), CancellationToken.None);
+        await Task.Delay(300);
+        Assert.False(waiting.IsCompleted);
+        first.Dispose();
+        (await waiting).Dispose();
+    }
+
+    [Fact]
+    public void A_run_only_removes_the_state_file_it_wrote()
+    {
+        var store = Store();
+        store.Write(State(store) with { Token = "other-run" });
+
+        store.DeleteIfOwned("secret-token");
+        Assert.NotNull(store.Read());
+
+        store.DeleteIfOwned("other-run");
+        Assert.Null(store.Read());
     }
 
     [Fact]
@@ -86,15 +134,35 @@ public class StateStoreTests : IDisposable
         Assert.Equal(Path.ChangeExtension(web.StatePath, ".log"), web.LogPath);
     }
 
+    [Theory]
+    [InlineData("{ not json")]
+    [InlineData("null")]
+    [InlineData("{}")]
+    public void A_corrupt_state_file_is_a_usage_error_that_says_how_to_recover(string content)
+    {
+        var store = Store();
+        Directory.CreateDirectory(store.Directory);
+        File.WriteAllText(store.StatePath, content);
+
+        var error = Assert.Throws<CorruptStateException>(() => store.Read());
+        Assert.Equal(ErrorCode.Usage, error.Code);
+        Assert.Contains("serve --stop", error.Hint);
+    }
+
     [Fact]
-    public void A_corrupt_state_file_is_a_usage_error_that_says_how_to_recover()
+    public async Task A_corrupt_state_file_probes_as_stale_and_is_left_for_the_caller()
     {
         var store = Store();
         Directory.CreateDirectory(store.Directory);
         File.WriteAllText(store.StatePath, "{ not json");
 
-        var error = Assert.Throws<UsageException>(() => store.Read());
-        Assert.Contains("serve --stop", error.Hint);
+        var status = await AgentProbe.ProbeAsync(store, null, CancellationToken.None);
+
+        Assert.Equal(AgentState.Stale, status.State);
+        Assert.True(status.CorruptState);
+        Assert.Contains("corrupt", status.Message);
+        Assert.True(File.Exists(store.StatePath));
+        await Assert.ThrowsAsync<CorruptStateException>(() => SiteLauncher.StopAsync(store));
     }
 
     [Fact]

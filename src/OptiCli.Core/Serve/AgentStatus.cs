@@ -56,6 +56,9 @@ public sealed record AgentStatus(AgentState State, string Message)
 
     public string? Hint { get; init; }
 
+    /// <summary>For <see cref="AgentState.Stale"/>: the state file itself is unreadable, so nothing is known about the site.</summary>
+    [JsonIgnore] public bool CorruptState { get; init; }
+
     /// <summary>For <see cref="AgentState.Incompatible"/>: the error the agent answered with.</summary>
     [JsonIgnore] public ErrorCode? Failure { get; init; }
 }
@@ -73,9 +76,23 @@ public static class AgentProbe
     public const string StartHint = "Start it with `opticli serve`.";
 
     /// <param name="expected">The database opticli reads; when given, a site on another database is reported as <see cref="AgentState.WrongDatabase"/>.</param>
+    /// <remarks>An unreadable state file is <see cref="AgentState.Stale"/> with <see cref="AgentStatus.CorruptState"/> set; it is left in place.</remarks>
     public static async Task<AgentStatus> ProbeAsync(StateStore store, VerifiedConnectionString? expected, CancellationToken cancellationToken)
     {
-        var state = store.Read();
+        ServeState? state;
+        try
+        {
+            state = store.Read();
+        }
+        catch (CorruptStateException ex)
+        {
+            return new AgentStatus(AgentState.Stale, ex.Message)
+            {
+                StatePath = store.StatePath,
+                Hint = "`opticli serve --stop` or `opticli serve --status` removes it; a site opticli started before it broke has to be stopped by hand.",
+                CorruptState = true,
+            };
+        }
         if (state is null)
         {
             return new AgentStatus(AgentState.Stopped, "No opticli agent is running for this project.") { StatePath = store.StatePath, Hint = StartHint };

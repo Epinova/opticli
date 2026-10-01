@@ -52,4 +52,22 @@ public class StartupFailureTests : IDisposable
     {
         Assert.Contains("--timeout", SiteLauncher.StartupFailure(StoreWithLog(), "No answer.", timedOut: true).Hint);
     }
+
+    [Fact]
+    public void A_timeout_names_the_addresses_a_site_listens_on_instead()
+    {
+        var elsewhere = StoreWithLog(
+            "info: Microsoft.Hosting.Lifetime[14]",
+            "      Now listening on: http://localhost:5000",
+            "info: Microsoft.Hosting.Lifetime[14]",
+            "      Now listening on: https://localhost:5001");
+        var error = SiteLauncher.StartupFailure(elsewhere, "No answer.", timedOut: true, port: 5199);
+
+        Assert.Contains("listens on http://localhost:5000, https://localhost:5001 instead of http://127.0.0.1:5199", error.Message);
+        Assert.Contains("UseUrls", error.Hint);
+
+        var ours = StoreWithLog("      Now listening on: http://127.0.0.1:5199", "      Now listening on: http://localhost:5000");
+        Assert.Empty(SiteLauncher.ListeningElsewhere(ours.LogPath, 5199));
+        Assert.Contains("--timeout", SiteLauncher.StartupFailure(ours, "No answer.", timedOut: true, port: 5199).Hint);
+    }
 }

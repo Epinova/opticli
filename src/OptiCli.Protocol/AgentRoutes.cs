@@ -28,6 +28,13 @@ public static class AgentRoutes
     public static readonly string Ping = $"{Prefix}/ping";
 
     /// <summary>
+    /// <c>POST /v1/shutdown</c>, no body. Response: <see cref="ShutdownResponse"/>. Stops the site gracefully
+    /// (<c>IHostApplicationLifetime.StopApplication</c>) once the response is sent: <c>serve --stop</c> uses it on every
+    /// OS, before a signal or a kill.
+    /// </summary>
+    public static readonly string Shutdown = $"{Prefix}/shutdown";
+
+    /// <summary>
     /// <c>GET /v1/types/{name}</c>, name or GUID. Response: <see cref="ContentTypeModel"/>.
     /// Errors: <c>not_found</c> with close matches in the hint.
     /// </summary>

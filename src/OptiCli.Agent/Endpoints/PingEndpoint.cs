@@ -33,6 +33,7 @@ internal static class PingEndpoint
                 verdict.Database,
                 verdict.IsLocal,
                 settings.PinnedConnection is not null && string.Equals(used?.ConnectionString, settings.PinnedConnection, StringComparison.Ordinal)),
+            ProcessId = Environment.ProcessId,
         };
     }
 
