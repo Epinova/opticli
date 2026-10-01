@@ -16,8 +16,8 @@ namespace OptiCli.Agent.Hosting;
 /// </remarks>
 internal static class HostingStartupCheck
 {
-    private const string ListenerName = "Microsoft.Extensions.Hosting";
-    private const string HostBuiltEvent = "HostBuilt";
+    internal const string ListenerName = "Microsoft.Extensions.Hosting";
+    internal const string HostBuiltEvent = "HostBuilt";
 
     private static int _configured;
     private static IDisposable? _subscription;
@@ -26,9 +26,13 @@ internal static class HostingStartupCheck
 
     public static void Install() => _subscription ??= DiagnosticListener.AllListeners.Subscribe(new Listeners());
 
+    /// <summary>A web host (not a generic host without one, e.g. a worker) was built without the hosting startup.</summary>
+    internal static bool Refuses(bool configured, object? payload) =>
+        !configured && payload is IHost host && host.Services.GetService(typeof(IWebHostEnvironment)) is not null;
+
     private static void OnHostBuilt(object? payload)
     {
-        if (Volatile.Read(ref _configured) == 1 || payload is not IHost host || host.Services.GetService(typeof(IWebHostEnvironment)) is null)
+        if (!Refuses(Volatile.Read(ref _configured) == 1, payload))
         {
             return;
         }

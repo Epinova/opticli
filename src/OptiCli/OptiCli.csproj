@@ -36,6 +36,10 @@
     <ProjectReference Include="..\OptiCli.Agent\OptiCli.Agent.csproj" ReferenceOutputAssembly="false" OutputItemType="OptiCliAgent" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="OptiCli.Tests" />
+  </ItemGroup>
+
   <Target Name="IncludeOptiCliAgent" AfterTargets="ResolveProjectReferences">
     <ItemGroup>
       <ContentWithTargetPath Include="@(OptiCliAgent)" TargetPath="agent\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

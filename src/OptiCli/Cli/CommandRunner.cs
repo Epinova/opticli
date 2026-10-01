@@ -56,6 +56,12 @@ internal static class CommandRunner
                 {
                     return writer.Failure(ex);
                 }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    // Left to System.CommandLine, Ctrl+C would exit 1 with no envelope.
+                    return writer.Failure(ErrorCode.Cancelled, "Interrupted (Ctrl+C) before it finished.",
+                        "A write that was under way may still have been saved: check with `opticli versions <ref>` before running it again.");
+                }
                 catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
                 {
                     return writer.Failure(ErrorCode.NotFound, ex.Message, "Check the path.");
@@ -64,7 +70,7 @@ internal static class CommandRunner
                 {
                     return writer.Failure(ErrorCode.Usage, ex.Message, "Check that the file exists and that you can read (or write) it.");
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                catch (Exception ex)
                 {
                     return writer.Failure(ErrorCode.Internal, $"{ex.GetType().Name}: {ex.Message}", "This is a bug in opticli; please report it with the command you ran.");
                 }

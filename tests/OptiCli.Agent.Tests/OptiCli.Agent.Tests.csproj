@@ -5,11 +5,16 @@
     <RollForward>Major</RollForward>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- CMS 12.0's EPiServer.Framework asks for SqlClient 3.x; the tests never connect, so the newer one is fine. -->
+    <NoWarn>$(NoWarn);NU1608</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- Ground truth for the agent's own connection string parser; never used to connect. -->
     <PackageReference Include="Microsoft.Data.SqlClient" />
+    <!-- At runtime too, for the CMS options types the hosting startup configures (DataAccessOptions and co.); no CMS
+         starts: the tests only build hosts and read options. -->
+    <PackageReference Include="EPiServer.CMS.Core" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
@@ -20,7 +25,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Only EPiServer-free types are tested; the CMS assemblies are compile-only in the agent and absent here. -->
     <ProjectReference Include="..\..\src\OptiCli.Agent\OptiCli.Agent.csproj" />
     <Compile Include="..\Shared\ConnectionStringCases.cs" Link="Shared\ConnectionStringCases.cs" />
   </ItemGroup>

@@ -39,8 +39,11 @@ public sealed class AgentHostingStartup : IHostingStartup
     public void Configure(IWebHostBuilder builder)
     {
         HostingStartupCheck.MarkConfigured();
-        var settings = AgentSettings.FromEnvironment();
+        Configure(builder, AgentSettings.FromEnvironment());
+    }
 
+    internal static void Configure(IWebHostBuilder builder, AgentSettings settings)
+    {
         if (settings.PinnedConnection is { } pinned)
         {
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>

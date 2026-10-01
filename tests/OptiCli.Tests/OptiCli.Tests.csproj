@@ -8,16 +8,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Direct reference for cross-checking the safety check against SqlClient's own parser. -->
-    <PackageReference Include="Microsoft.Data.SqlClient" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Ground truth for JsonConfigFile: ASP.NET Core's own JSON configuration provider. -->
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <ItemGroup>
@@ -25,7 +18,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\OptiCli.Core\OptiCli.Core.csproj" />
+    <!-- The command tree and CommandRunner through InternalsVisibleTo; the built opticli.dll also runs as a child process. -->
+    <ProjectReference Include="..\..\src\OptiCli\OptiCli.csproj" />
   </ItemGroup>
 
 </Project>
