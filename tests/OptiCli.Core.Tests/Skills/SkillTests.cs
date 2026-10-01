@@ -96,7 +96,8 @@ public class SkillTests
         SkillInstaller.Install(Bundle("1.0.0"), target, force: false);
         foreach (var file in Directory.GetFiles(target, "*.md"))
         {
-            File.WriteAllText(file, File.ReadAllText(file).Replace("\n", "\r\n", StringComparison.Ordinal));
+            // From LF first: on Windows this file, and so the bundle's text, may already be checked out with CRLF.
+            File.WriteAllText(file, File.ReadAllText(file).Replace("\r\n", "\n", StringComparison.Ordinal).Replace("\n", "\r\n", StringComparison.Ordinal));
         }
 
         var same = SkillInstaller.Install(Bundle("1.0.0"), target, force: false);
