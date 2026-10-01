@@ -10,6 +10,7 @@ internal static class SiteSettings
     public const string DraftsVariable = "OPTICLI_IT_DRAFTS";
     public const string SeedVariable = "OPTICLI_IT_SEED";
     public const string ReportVariable = "OPTICLI_IT_REPORT";
+    public const string PlanVariable = "OPTICLI_IT_PLAN";
 
     public static string? ProjectDirectory => Variable(ProjectVariable);
 
@@ -24,6 +25,12 @@ internal static class SiteSettings
 
     /// <summary>Optional file the mismatch report is written to (it also goes to the test output); every mismatch goes next to it as .jsonl.</summary>
     public static string? ReportPath => Variable(ReportVariable);
+
+    /// <summary>
+    /// Optional plan whose content is always compared (every branch of every item it creates), on top of the sample:
+    /// tests/fixtures/edge-cases/edge-cases.plan.json, once setup.sh has built it.
+    /// </summary>
+    public static string? PlanPath => Variable(PlanVariable);
 
     private static string? Variable(string name) =>
         Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value.Trim() : null;

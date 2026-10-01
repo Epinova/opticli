@@ -27,6 +27,22 @@ public abstract record WriteOperation
     /// </summary>
     public bool IncludeDraft { get; init; }
 
+    /// <summary>
+    /// Where a content approval sequence applies: start it instead of publishing (<c>--request-approval</c>, a plan's
+    /// <c>requestApproval</c>). A publish there is refused without it. With a publish, content without a sequence is
+    /// published as usual; alone, it is an error there.
+    /// </summary>
+    public bool RequestApproval { get; init; }
+
+    /// <summary>
+    /// set, area, create and publish: schedule the publish for this time instead of publishing now (<c>--publish-at</c>, a
+    /// plan's <c>publishAt</c>). The rules for a publish apply.
+    /// </summary>
+    public DateTimeOffset? PublishAt { get; init; }
+
+    /// <summary>True for an operation that publishes, now or at <see cref="PublishAt"/> (or would, but for an approval sequence).</summary>
+    public virtual bool Publishes => PublishAt is not null;
+
     /// <summary>Every ref-valued field, so a plan can resolve <c>$id</c>s in them.</summary>
     public abstract IEnumerable<string?> Refs { get; }
 
@@ -35,6 +51,9 @@ public abstract record WriteOperation
 
     /// <summary>A copy that publishes, for ops that can (<c>apply --publish</c>).</summary>
     public virtual WriteOperation WithPublish() => this;
+
+    /// <summary>A copy that requests approval where it publishes (<c>apply --request-approval</c>).</summary>
+    public WriteOperation WithRequestApproval() => Publishes ? this with { RequestApproval = true } : this;
 
     protected static string? Map(string? value, Func<string, string> map) => value is null ? null : map(value);
 
@@ -107,7 +126,10 @@ public sealed record SetOperation(
 
     public override WriteOperation MapRefs(Func<string, string> map) => this with { Ref = map(Ref), Properties = MapValues(Properties, map) };
 
-    public override WriteOperation WithPublish() => this with { Publish = true };
+    // A step scheduled for later stays scheduled.
+    public override WriteOperation WithPublish() => PublishAt is null ? this with { Publish = true } : this;
+
+    public override bool Publishes => Publish || PublishAt is not null;
 }
 
 public sealed record CreateOperation(
@@ -130,7 +152,10 @@ public sealed record CreateOperation(
 
     public override WriteOperation MapRefs(Func<string, string> map) => this with { Parent = map(Parent), Properties = MapValues(Properties, map) };
 
-    public override WriteOperation WithPublish() => this with { Publish = true };
+    // A step scheduled for later stays scheduled.
+    public override WriteOperation WithPublish() => PublishAt is null ? this with { Publish = true } : this;
+
+    public override bool Publishes => Publish || PublishAt is not null;
 }
 
 /// <summary><c>area &lt;ref&gt; &lt;Prop&gt; add|remove|move</c>.</summary>
@@ -159,7 +184,10 @@ public sealed record AreaEdit(
 
     public override WriteOperation MapRefs(Func<string, string> map) => this with { Ref = map(Ref), Item = Map(Item, map) };
 
-    public override WriteOperation WithPublish() => this with { Publish = true };
+    // A step scheduled for later stays scheduled.
+    public override WriteOperation WithPublish() => PublishAt is null ? this with { Publish = true } : this;
+
+    public override bool Publishes => Publish || PublishAt is not null;
 }
 
 /// <summary>A shared block: in <paramref name="For"/>'s "For this page" folder, or under <paramref name="Parent"/>.</summary>
@@ -179,7 +207,10 @@ public sealed record BlockCreateOperation(
     public override WriteOperation MapRefs(Func<string, string> map) =>
         this with { For = Map(For, map), Parent = Map(Parent, map), Properties = MapValues(Properties, map) };
 
-    public override WriteOperation WithPublish() => this with { Publish = true };
+    // A step scheduled for later stays scheduled.
+    public override WriteOperation WithPublish() => PublishAt is null ? this with { Publish = true } : this;
+
+    public override bool Publishes => Publish || PublishAt is not null;
 }
 
 /// <summary>A file as new media, in <paramref name="For"/>'s "For this page" folder or under the folder <paramref name="Parent"/>.</summary>
@@ -197,12 +228,21 @@ public sealed record UploadOperation(
 {
     public override string Kind => "upload";
 
-    public override IEnumerable<string?> Refs => [For, Parent];
+    /// <summary>
+    /// Replace the file of this existing media item instead (<c>--replace</c>): a new version with the file, of the same
+    /// media type. Without <see cref="For"/> and <see cref="Parent"/>.
+    /// </summary>
+    public string? Replace { get; init; }
+
+    public override IEnumerable<string?> Refs => [For, Parent, Replace];
 
     public override WriteOperation MapRefs(Func<string, string> map) =>
-        this with { For = Map(For, map), Parent = Map(Parent, map), Properties = MapValues(Properties, map) };
+        this with { For = Map(For, map), Parent = Map(Parent, map), Replace = Map(Replace, map), Properties = MapValues(Properties, map) };
 
-    public override WriteOperation WithPublish() => this with { Publish = true };
+    // A step scheduled for later stays scheduled.
+    public override WriteOperation WithPublish() => PublishAt is null ? this with { Publish = true } : this;
+
+    public override bool Publishes => Publish || PublishAt is not null;
 }
 
 public sealed record TranslateOperation(
@@ -214,17 +254,58 @@ public sealed record TranslateOperation(
 {
     public override string Kind => "translate";
 
+    /// <summary>
+    /// Also give every block in the content's "For this page" folder the branch (a copy of its master language, saved or
+    /// published as the content is), so the new branch doesn't show blocks in another language.
+    /// </summary>
+    public bool WithBlocks { get; init; }
+
+    /// <summary>Delete the branch with all its versions instead of creating it. It can't be undone.</summary>
+    public bool Remove { get; init; }
+
+    /// <summary>Confirms <see cref="Remove"/> (<c>--confirm</c>); without it a removal asks on a terminal, and elsewhere fails with a <c>conflict</c>.</summary>
+    public bool Confirm { get; init; }
+
     public override IEnumerable<string?> Refs => [Ref];
 
     public override WriteOperation MapRefs(Func<string, string> map) => this with { Ref = map(Ref), Properties = MapValues(Properties, map) };
 
-    public override WriteOperation WithPublish() => this with { Publish = true };
+    // A step scheduled for later stays scheduled.
+    public override WriteOperation WithPublish() => PublishAt is null ? this with { Publish = true } : this;
+
+    public override bool Publishes => Publish || PublishAt is not null;
 }
 
 /// <param name="Version">Version id to publish; default: the ref's version, else the latest in the language.</param>
 public sealed record PublishOperation(string Ref, int? Version = null, string? Lang = null) : WriteOperation
 {
     public override string Kind => "publish";
+
+    public override bool Publishes => true;
+
+    public override IEnumerable<string?> Refs => [Ref];
+
+    public override WriteOperation MapRefs(Func<string, string> map) => this with { Ref = map(Ref) };
+}
+
+/// <summary>
+/// Takes a published branch offline, as the edit UI's expiry does: a copy of the published version that stops publishing
+/// now is published. Drafts are left as they are.
+/// </summary>
+public sealed record UnpublishOperation(string Ref, string? Lang = null) : WriteOperation
+{
+    public override string Kind => "unpublish";
+
+    public override IEnumerable<string?> Refs => [Ref];
+
+    public override WriteOperation MapRefs(Func<string, string> map) => this with { Ref = map(Ref) };
+}
+
+/// <summary>Deletes one unpublished version, which can't be undone.</summary>
+/// <param name="Version">The version; default: the ref's version, else the newest version in the language.</param>
+public sealed record DiscardOperation(string Ref, int? Version = null, string? Lang = null) : WriteOperation
+{
+    public override string Kind => "discard";
 
     public override IEnumerable<string?> Refs => [Ref];
 
@@ -241,7 +322,11 @@ public sealed record MoveOperation(string Ref, string To) : WriteOperation
 }
 
 /// <summary>Moves content (and its descendants) to the recycle bin.</summary>
-public sealed record DeleteOperation(string Ref) : WriteOperation
+/// <param name="IgnoreReferences">
+/// Delete even when other content references it or its descendants (<c>--ignore-references</c>, a plan's
+/// <c>ignoreReferences</c>); without it such a delete asks on a terminal, and elsewhere fails with a <c>conflict</c>.
+/// </param>
+public sealed record DeleteOperation(string Ref, bool IgnoreReferences = false) : WriteOperation
 {
     public override string Kind => "delete";
 

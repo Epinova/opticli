@@ -53,6 +53,18 @@ public class CsprojFileTests : IDisposable
     }
 
     [Fact]
+    public void Directory_build_targets_is_read_after_the_project_and_wins()
+    {
+        var props = Props("repo/Directory.Build.props", "<PropertyGroup><AssemblyName>From.Props</AssemblyName></PropertyGroup>");
+        var targets = Props("repo/Directory.Build.targets", "<PropertyGroup><UserSecretsId>from-targets</UserSecretsId></PropertyGroup>");
+
+        var project = Load("<UserSecretsId>from-project</UserSecretsId>");
+
+        Assert.Equal(("from-targets", "From.Props"), (project.UserSecretsId, project.AssemblyName));
+        Assert.Equal([props, targets], project.Imports);
+    }
+
+    [Fact]
     public void The_project_file_wins_over_directory_build_props()
     {
         Props("repo/Directory.Build.props", "<PropertyGroup><UserSecretsId>from-props</UserSecretsId></PropertyGroup>");

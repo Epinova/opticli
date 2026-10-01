@@ -31,8 +31,10 @@ internal static class ExistingContent
         string name,
         IReadOnlyDictionary<string, JsonElement>? properties,
         bool publish,
+        bool requestApproval,
         bool includeDraft,
-        bool dryRun)
+        bool dryRun,
+        DateTime? publishAt = null)
     {
         var link = existing.ContentLink.ToReferenceWithoutVersion();
         var existingType = flow.Types.Load(existing.ContentTypeID)?.Name ?? existing.ContentTypeID.ToString(CultureInfo.InvariantCulture);
@@ -59,10 +61,17 @@ internal static class ExistingContent
         var branch = flow.Locator.ContentLanguage(flow.Locator.LoadAnyLanguage(link), language?.Name);
         var versions = existing is IVersionable ? flow.Locator.Versions(link, branch) : null;
         // Checked before anything changes, including the move out of the recycle bin.
-        var pending = publish && versions is not null
+        var what = $"{link.ID} ('{existing.Name}')";
+        if (versions is not null)
+        {
+            Approvals.RequireNotInReview(versions, what, branch?.Name);
+        }
+        // In the recycle bin, the sequence of where it is restored to applies.
+        var decision = WriteFlow.Publishing(flow.Request, deleted ? parent.ContentLink : link, publish, requestApproval, publishAt, what);
+        var pending = (decision is SaveAction.Publish or SaveAction.Schedule) && versions is not null
             ? PendingDrafts.Require(
                 flow.Locator.PendingDraft(versions, flow.Repository.Get<IContent>(ContentLocator.Latest(versions, link, branch).ContentLink)),
-                includeDraft, dryRun, $"{link.ID} ('{existing.Name}')", branch?.Name)
+                includeDraft, dryRun, what, branch?.Name)
             : null;
 
         var current = versions is not null
@@ -87,7 +96,9 @@ internal static class ExistingContent
             restored = true;
         }
 
-        var action = writable is IVersionable ? WriteFlow.DraftAction(publish) : publish ? SaveAction.Publish : SaveAction.Save;
+        var action = writable is IVersionable ? WriteFlow.DraftAction(decision) : decision ?? SaveAction.Save;
+        WriteFlow.ScheduleAt(writable, decision, publishAt);
+        var cleared = WriteFlow.ClearExpiredStopPublish(writable, decision, properties);
         WriteResult result;
         try
         {
@@ -98,7 +109,8 @@ internal static class ExistingContent
                 dryRun,
                 ContentSummaries.Describe(current, flow.Types),
                 current.ContentLink.WorkID > 0 ? current.ContentLink.WorkID : null,
-                saveUnchanged: publish && current is IVersionable { Status: not VersionStatus.Published },
+                saveUnchanged: decision is not null && current is IVersionable { Status: not VersionStatus.Published },
+                precheck: cleared is null ? null : [cleared],
                 beforeSave: deleted ? Restore : null);
         }
         catch when (restored)

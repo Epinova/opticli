@@ -222,6 +222,7 @@ public static class PlanSimulation
     /// <summary>Steps that save values of the content they target, or publish its latest version.</summary>
     private static bool Writes(WriteOperation op, PlanTarget target) => op switch
     {
+        TranslateOperation { Remove: true } => false,
         PublishOperation publish => publish.Version is null && !target.Versioned,
         _ => op is SetOperation or AreaEdit or TranslateOperation or CreateOperation or BlockCreateOperation or UploadOperation,
     };
@@ -290,6 +291,51 @@ public static class PlanSimulation
             _ => null,
         };
 
+    /// <summary>
+    /// A step on existing content whose only references to planned content are links in rich text: dry-run with those
+    /// links pointing at the content's GUID (fixed by the plan, or a stand-in), so the HTML is checked.
+    /// </summary>
+    /// <returns>Null when the step refers to planned content in any other way (a ref, a ContentArea item, a block in text).</returns>
+    public static WriteOperation? WithStandInLinks(WriteOperation op, IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing)
+    {
+        var planned = steps.Select(s => s.Operation.Id).OfType<string>().Where(id => !existing.ContainsKey(id)).ToHashSet(StringComparer.Ordinal);
+        var guids = WritePlan.FixedGuids(steps);
+        var other = false;
+        var links = false;
+        var mapped = op.MapRefs(value =>
+        {
+            if (PlanId(value) is { } id)
+            {
+                other |= planned.Contains(id);
+                return existing.TryGetValue(id, out var existingId) ? WriteOutput.Id(existingId) : value;
+            }
+            return TextRefs.Map(value, reference =>
+            {
+                if (existing.TryGetValue(reference.Id, out var existingId))
+                {
+                    return TextRefs.Value(reference.Attribute, existingId, guids.TryGetValue(reference.Id, out var known) ? known : null);
+                }
+                if (!planned.Contains(reference.Id))
+                {
+                    return null;
+                }
+                if (reference.Attribute != TextRefs.Href)
+                {
+                    other = true;
+                    return null;
+                }
+                links = true;
+                return TextRefs.PermanentLink(guids.TryGetValue(reference.Id, out var fixedGuid) ? fixedGuid : StandInGuid(reference.Id));
+            });
+        });
+        return links && !other ? mapped : null;
+    }
+
+    /// <summary>A GUID for planned content whose own isn't known until it is created; nothing has it.</summary>
+    private static Guid StandInGuid(string id) => StableGuids.Create(StandInNamespace, id);
+
+    private static readonly Guid StandInNamespace = Guid.Parse("8f3c0b9e-2d47-4a51-9e6b-0c5a7d3e1f42");
+
     public static string? PlanId(string? reference) => reference is { Length: > 1 } && reference[0] == '$' ? reference[1..] : null;
 
     private static bool IsPublishing(WriteOperation op) => op switch
@@ -357,13 +403,14 @@ public static class PlanSimulation
     private static (JsonObject? Values, List<string> Skipped, List<(string, string)> References) Strip(JsonObject properties, IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing)
     {
         var planned = steps.Select(s => s.Operation.Id).OfType<string>().Where(id => !existing.ContainsKey(id)).ToHashSet(StringComparer.Ordinal);
+        var guids = WritePlan.FixedGuids(steps);
         var values = new JsonObject();
         var skipped = new List<string>();
         var references = new List<(string, string)>();
         foreach (var (name, value) in properties)
         {
             var found = new List<string>();
-            var resolved = Resolve(value?.DeepClone(), existing, planned, found);
+            var resolved = Resolve(value?.DeepClone(), existing, planned, guids, found);
             if (found.Count > 0)
             {
                 skipped.Add(name);
@@ -377,10 +424,29 @@ public static class PlanSimulation
         return (values.Count > 0 ? values : null, skipped, references);
     }
 
-    private static JsonNode? Resolve(JsonNode? node, IReadOnlyDictionary<string, int> existing, IReadOnlySet<string> planned, List<string> found)
+    private static JsonNode? Resolve(JsonNode? node, IReadOnlyDictionary<string, int> existing, IReadOnlySet<string> planned, IReadOnlyDictionary<string, Guid> guids, List<string> found)
     {
         switch (node)
         {
+            case JsonValue text when text.TryGetValue<string>(out var markup) && PlanId(markup) is null && TextRefs.Find(markup).Any():
+                // Rich text: links to content that doesn't exist yet get a stand-in GUID, so the dry run validates the
+                // HTML; a block in the text needs the content itself, so the property is left out.
+                return JsonValue.Create(TextRefs.Map(markup, reference =>
+                {
+                    if (existing.TryGetValue(reference.Id, out var existingId))
+                    {
+                        return TextRefs.Value(reference.Attribute, existingId, guids.TryGetValue(reference.Id, out var known) ? known : null);
+                    }
+                    if (planned.Contains(reference.Id) && reference.Attribute == TextRefs.Href)
+                    {
+                        return TextRefs.PermanentLink(guids.TryGetValue(reference.Id, out var fixedGuid) ? fixedGuid : StandInGuid(reference.Id));
+                    }
+                    if (planned.Contains(reference.Id))
+                    {
+                        found.Add(reference.Id);
+                    }
+                    return null;
+                }));
             case JsonValue leaf when leaf.TryGetValue<string>(out var text) && PlanId(text) is { } id:
                 if (existing.TryGetValue(id, out var existingId))
                 {
@@ -394,13 +460,13 @@ public static class PlanSimulation
             case JsonObject obj:
                 foreach (var (key, value) in obj.ToList())
                 {
-                    obj[key] = Resolve(value?.DeepClone(), existing, planned, found);
+                    obj[key] = Resolve(value?.DeepClone(), existing, planned, guids, found);
                 }
                 return obj;
             case JsonArray array:
                 for (var i = 0; i < array.Count; i++)
                 {
-                    array[i] = Resolve(array[i]?.DeepClone(), existing, planned, found);
+                    array[i] = Resolve(array[i]?.DeepClone(), existing, planned, guids, found);
                 }
                 return array;
             default:

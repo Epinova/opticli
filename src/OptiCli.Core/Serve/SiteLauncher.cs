@@ -33,6 +33,9 @@ public static class SiteLauncher
     /// <summary>How long a stop waits for the site to shut down cleanly before killing it.</summary>
     public static readonly TimeSpan StopGrace = TimeSpan.FromSeconds(20);
 
+    /// <summary>For a site stopped before its agent ever answered: SIGTERM, then a kill after this long.</summary>
+    public static readonly TimeSpan StartupStopGrace = TimeSpan.FromSeconds(5);
+
     /// <summary>What ASP.NET Core logs for each address it binds.</summary>
     private const string ListeningMarker = "Now listening on:";
 
@@ -224,8 +227,17 @@ public static class SiteLauncher
         }
         catch (Exception)
         {
-            // Ctrl+C included: a site nobody waits for any more is stopped, not left half started.
-            await SiteProcess.StopAsync(process, StopGrace, () => RequestShutdownAsync(state));
+            // Ctrl+C included: a site nobody waits for any more is stopped, not left half started. One that never answered
+            // has no requests to finish: it gets a short grace and no shutdown request, so a Ctrl+C ends well within the
+            // time System.CommandLine waits for the cancelled envelope.
+            if (ping is null)
+            {
+                await SiteProcess.StopAsync(process, StartupStopGrace);
+            }
+            else
+            {
+                await SiteProcess.StopAsync(process, StopGrace, () => RequestShutdownAsync(state));
+            }
             store.DeleteIfOwned(state.Token);
             throw;
         }

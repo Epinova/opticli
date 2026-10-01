@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace OptiCli.Protocol;
 
@@ -37,6 +38,28 @@ public sealed record WriteResult
     public bool Saved { get; init; }
 
     public bool Published { get; init; }
+
+    /// <summary>
+    /// Unpublish: the published version was copied with its stop-publish date set to now and that copy published, so the
+    /// content is offline (expired). <see cref="PreviouslyPublished"/> is the version that was live.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Unpublished { get; init; }
+
+    /// <summary>
+    /// Discard: <see cref="Content"/> is the version that was deleted (or would be, for a dry run), and
+    /// <see cref="Changes"/> what it held compared with the version that stays (the published one, else the one before).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Discarded { get; init; }
+
+    /// <summary>The version was scheduled to be published at this time (UTC); nothing went live yet.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? ScheduledFor { get; init; }
+
+    /// <summary>The version was saved for review: its approval sequence started (<c>requestApproval</c>), and nothing went live.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ApprovalRequested { get; init; }
 
     public bool DryRun { get; init; }
 
@@ -109,6 +132,12 @@ public sealed record PendingDraft(string Version, string? SavedBy, DateTime Save
 /// <param name="Before">Omitted when the property was empty.</param>
 /// <param name="After">Omitted when the property is now empty.</param>
 public sealed record PropertyChange(string Property, JsonElement? Before, JsonElement? After);
+
+/// <summary>Response of <see cref="AgentRoutes.RemoveLanguage"/>.</summary>
+/// <param name="Content">The content, in its master language.</param>
+/// <param name="Versions">The branch's versions, which are deleted with it.</param>
+/// <param name="Published">The branch had a published version, so it was live.</param>
+public sealed record RemoveLanguageResult(ContentSummary Content, string Language, int Versions, bool Published, bool Removed, bool DryRun);
 
 /// <summary>Response of move and delete (delete is a move to the recycle bin).</summary>
 public sealed record MoveResult

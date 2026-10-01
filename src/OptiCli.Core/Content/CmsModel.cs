@@ -38,6 +38,19 @@ public sealed class CmsModel
 
     private const string CategoriesSql = "SELECT pkID, CategoryName FROM tblCategory";
 
+    // Only the ids and names of visitor groups: their criteria and notes can name people, so they stay unread.
+    private const string VisitorGroupsSql = """
+        SELECT i.Guid, b.String01 AS Name
+        FROM tblSystemBigTable b
+        JOIN tblBigTableIdentity i ON i.pkId = b.pkId
+        WHERE b.StoreName = N'VisitorGroup'
+        """;
+
+    private const string LanguageSettingsSql = """
+        SELECT fkContentID, fkLanguageBranchID, fkReplacementBranchID, LanguageBranchFallback, Active
+        FROM tblContentLanguageSetting
+        """;
+
     /// <summary><c>tblPropertyDefinition.LanguageSpecific</c> value for culture-specific properties.</summary>
     private const int CultureSpecificFlag = 4;
 
@@ -52,16 +65,29 @@ public sealed class CmsModel
         IReadOnlyList<SiteInfo> sites,
         int? globalAssetsRoot,
         int? contentAssetsRoot,
-        IReadOnlyDictionary<int, string>? categories = null)
+        IReadOnlyDictionary<int, string>? categories = null,
+        LanguageSettings? languageSettings = null,
+        IReadOnlyDictionary<Guid, string>? visitorGroups = null)
     {
+        VisitorGroups = visitorGroups ?? new Dictionary<Guid, string>();
+        LanguageSettings = languageSettings ?? LanguageSettings.None;
         _categories = categories ?? new Dictionary<int, string>();
         _types = types.ToDictionary(t => t.Id);
         Types = types;
         Properties = properties.ToDictionary(p => p.Id);
         _propertiesByType = properties.ToLookup(p => p.ContentTypeId);
         Languages = languages;
-        Sites = new SiteMap(sites, languages, globalAssetsRoot, contentAssetsRoot);
+        Sites = new SiteMap(sites, languages, globalAssetsRoot, contentAssetsRoot, LanguageSettings);
     }
+
+    /// <summary>Visitor group names by id, from the Dynamic Data Store's visitor group store (names only).</summary>
+    public IReadOnlyDictionary<Guid, string> VisitorGroups { get; }
+
+    /// <summary>The name of a visitor group id as ContentAreas and rich text store it; null when it isn't a known group (or is a role).</summary>
+    public string? VisitorGroupName(string id) => Guid.TryParse(id, out var guid) && VisitorGroups.TryGetValue(guid, out var name) ? name : null;
+
+    /// <summary>Replacement and fallback languages per subtree (<c>tblContentLanguageSetting</c>).</summary>
+    public LanguageSettings LanguageSettings { get; }
 
     public IReadOnlyList<ContentTypeInfo> Types { get; }
 
@@ -93,10 +119,18 @@ public sealed class CmsModel
         var roots = await db.QueryAsync(AssetRootsSql, r => (Id: r.GetInt32("pkID"), Name: r.GetString("Name")), cancellationToken);
 
         var categories = await db.QueryAsync(CategoriesSql, r => (Id: r.GetInt32("pkID"), Name: r.GetString("CategoryName")), cancellationToken);
+        var settings = await db.QueryAsync(LanguageSettingsSql, r => new LanguageSetting(
+            r.GetInt32("fkContentID"),
+            r.GetInt32("fkLanguageBranchID"),
+            r.GetInt32OrNull("fkReplacementBranchID"),
+            LanguageSettings.ParseFallback(r.GetStringOrNull("LanguageBranchFallback")),
+            r.GetBooleanOrNull("Active") ?? true), cancellationToken);
+        var visitorGroups = await db.QueryAsync(VisitorGroupsSql, r => (Id: r.GetGuid(0), Name: r.GetStringOrNull("Name") ?? ""), cancellationToken);
 
         int? Root(string name) => roots.Where(r => r.Name == name).Select(r => (int?)r.Id).FirstOrDefault();
         return new CmsModel(types, properties, languages, sites, Root("SysGlobalAssets"), Root("SysContentAssets"),
-            categories.ToDictionary(c => c.Id, c => c.Name));
+            categories.ToDictionary(c => c.Id, c => c.Name), new LanguageSettings(settings),
+            visitorGroups.GroupBy(g => g.Id).ToDictionary(g => g.Key, g => g.First().Name));
     }
 
     public ContentTypeInfo? Type(int id) => _types.GetValueOrDefault(id);

@@ -307,7 +307,7 @@ public sealed class WriteRoundTripTests
     private const string OnePixelPng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
     /// <summary>A one-page PDF with a line of text and a valid cross-reference table.</summary>
-    private static byte[] MinimalPdf()
+    internal static byte[] MinimalPdf()
     {
         const string text = "BT /F1 12 Tf 20 50 Td (opticli integration test) Tj ET";
         string[] objects =

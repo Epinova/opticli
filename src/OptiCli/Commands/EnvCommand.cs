@@ -92,6 +92,14 @@ internal static class EnvCommand
             {
                 warnings.Add(KestrelEndpoints.Warning(siteEndpoints));
             }
+            // serve removes these from the site's environment; env can only say so. ASP.NET Core reads them in no set order.
+            var competing = SiteEnvironment.CompetingConnectionVariables(context.ConnectionRequest.Name, context.Environment.Variables.Select(v => v.Key));
+            if (competing.Count > 0)
+            {
+                warnings.Add($"{string.Join(", ", competing)} {(competing.Count == 1 ? "is" : "are")} exported in this shell, and the site reads {(competing.Count == 1 ? "it" : "them")} as its {context.ConnectionRequest.Name} connection string, possibly over "
+                    + (pinned is null ? "its own configuration" : ConnectionVariables.Name(context.ConnectionRequest.Name))
+                    + $": unset {(competing.Count == 1 ? "it" : "them")} before starting the site (or use `opticli serve`, which does).");
+            }
             if (stale.Count > 0)
             {
                 warnings.Add($"{string.Join(", ", stale)} {(stale.Count == 1 ? "is" : "are")} set in this shell (an earlier `opticli env`?) and blanked here; run the site from a subshell so they don't linger.");

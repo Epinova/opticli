@@ -9,7 +9,8 @@ namespace OptiCli.Commands;
 
 internal static class AccessCommand
 {
-    private sealed record AccessView(string Ref, Guid Guid, string? Type, string? Name, bool Inherited, string? From, IReadOnlyList<AccessEntry> Entries);
+    /// <param name="Approval">The content approval sequence publishing goes through, when one applies.</param>
+    private sealed record AccessView(string Ref, Guid Guid, string? Type, string? Name, bool Inherited, string? From, IReadOnlyList<AccessEntry> Entries, ApprovalSequence? Approval);
 
     public static Command Create(GlobalOptions options)
     {
@@ -88,7 +89,8 @@ internal static class AccessCommand
             var header = await session.HeaderAsync(located.Id, cancellationToken);
             var identity = session.Identities.Describe(header, null);
             var access = await AccessReader.ReadAsync(session.Db, header, cancellationToken);
-            return new CommandResult(new AccessView(identity.Ref!, header.Guid, identity.Type, identity.Name, access.Inherited, access.From, access.Entries));
+            var approval = await ApprovalReader.ResolveAsync(session.Db, session.Model, header, cancellationToken);
+            return new CommandResult(new AccessView(identity.Ref!, header.Guid, identity.Type, identity.Name, access.Inherited, access.From, access.Entries, approval));
         });
         return command;
     }

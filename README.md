@@ -91,7 +91,7 @@ When stdout is redirected, every command prints a single JSON line:
 
 ```json
 {"ok":true,"data":{"ref":"123","type":"ArticlePage","name":"News","status":"published","url":"/en/news/",
- "properties":{"Heading":{"type":"String","value":"Hello"}}},"meta":{"source":"db","version":"0.5.0"}}
+ "properties":{"Heading":{"type":"String","value":"Hello"}}},"meta":{"source":"db","version":"0.6.0"}}
 ```
 
 ## Using opticli with coding agents
@@ -207,9 +207,10 @@ Don't point opticli at such a connection unless you mean to write to what is beh
 | `tree`, `children`, `ancestors` | the content tree |
 | `find --type T [--where Prop=value] [--under] [--status]` | items of a type, filtered |
 | `search <text> [--in names\|strings\|all]` | names and text properties containing a string |
-| `where-used <ref> [--pages]` | ContentAreas, references, links and rich text pointing at an item (`--pages`: through nested blocks up to pages) |
+| `where-used <ref> [--pages]`, `where-used --type T` | ContentAreas, references, links and rich text pointing at an item (`--pages`: through nested blocks up to pages); `--type`: for every instance of a type |
 | `resolve <url>`, `url <ref>` | URL to content, and content to URL per language |
 | `versions <ref>`, `drafts [--since] [--by] [--kind] [--type]` | version history; unpublished changes |
+| `projects [<id>]` | projects, and the versions in one |
 | `blob <ref>` | where a media file lives on disk |
 | `access <ref>` | who may read and edit an item: its access rights, and the ancestor they are inherited from |
 | `sql "<SELECT …>"` | anything else, read-only |
@@ -227,7 +228,9 @@ These commands write:
   draft unless `--publish` is given. `upload <file>` adds a PDF, image or other file (up to 50 MB) as media, as the
   type the site maps its extension to, and prints where the file was stored. `create` doesn't take media types (that
   would be media without a file).
-- `publish`, `move` and `delete` (to the recycle bin).
+- `publish`, `unpublish` (takes a published branch offline, as the edit UI's expiry does), `discard` (deletes one
+  unpublished version; it can't be undone), `move` and `delete` (to the recycle bin). `delete` stops when other content
+  references what it deletes, unless `--ignore-references`.
 - `create`, `block create`, `upload` and `move` put content only where it can go: pages below pages, blocks, media and
   folders in asset folders, and only where the parent type allows the type (`[AvailableContentTypes]` and admin mode's
   settings, as the CMS answers it).
@@ -247,7 +250,8 @@ Every write command takes `--dry-run`. Structured values use `--values`, e.g.
 (exit 5 on a conflict). `--base-version <id>` pins the version the change is based on, and `--force` skips the check.
 A publish puts the whole version live. When someone else saved unpublished changes in it, opticli shows them and asks on
 a terminal; elsewhere it fails with `conflict` and `details.reason: "pendingDraft"`, and `--include-draft` confirms.
-Output after a publish names `previouslyPublished`, the version to publish again to go back.
+Output after a publish names `previouslyPublished`, the version to publish again to go back. Content with an approval
+sequence isn't published directly (exit 3); `--request-approval` sends it for review instead, as the edit UI does.
 [skill/reference.md](skill/reference.md) documents value syntax and the plan format.
 
 ## serve and env
@@ -417,9 +421,29 @@ dotnet test tests/OptiCli.Integration
 | `OPTICLI_IT_DRAFTS` | most recent drafts to compare as well (default 10) |
 | `OPTICLI_IT_SEED` | sampling seed (fixed by default, so runs repeat) |
 | `OPTICLI_IT_REPORT` | write the mismatch report here, with every mismatch as `.jsonl` next to it |
+| `OPTICLI_IT_PLAN` | a plan whose content is always compared, on top of the sample (the edge-case plan below) |
 
 Some differences the database can't reproduce by design, such as URL segments a site drops in code. Those are listed
 with the reason in `tests/OptiCli.Integration/Comparison/KnownDifferences.cs`; any other mismatch fails the run.
+
+#### The edge-case site
+
+A sample site lacks much of what real sites have: fetch-data pages, a site whose start page is under another site's,
+simple addresses on several sites, culture-specific properties in shared and local blocks, personalized ContentAreas,
+an approval sequence, language fallback settings, and a media type for PDF files. `tests/fixtures/edge-cases/` builds
+them from an Alloy site (`dotnet new epi-alloy-mvc`) without changing it. `setup.sh` copies the site and its
+database, adds `EdgeCasesFixture.cs` (the extra content types, plus a startup module for what a plan can't create),
+and applies `edge-cases.plan.json`. Run it again to update the content: the plan is applied with
+`--update-existing`, and the database copy is kept unless `FRESH=1`.
+
+```sh
+SQLCMDPASSWORD=... tests/fixtures/edge-cases/setup.sh path/to/Alloy path/to/AlloyEdge alloy alloy-edge
+OPTICLI_IT_PROJECT=path/to/AlloyEdge \
+OPTICLI_IT_PLAN=tests/fixtures/edge-cases/edge-cases.plan.json \
+dotnet test tests/OptiCli.Integration
+```
+
+The integration tests run one at a time, since the write tests make and remove scratch content on the same site.
 
 [CI](.github/workflows/ci.yml) runs the unit tests on Linux, Windows and macOS for every push and pull request.
 Issues and pull requests are welcome. Please run the unit tests before sending a change. When a change touches
@@ -431,7 +455,7 @@ Set the new version as `<Version>` in [Directory.Build.props](Directory.Build.pr
 [skill/SKILL.md](skill/SKILL.md), and add the release to [CHANGELOG.md](CHANGELOG.md). Commit, then push a matching tag:
 
 ```sh
-git tag v0.5.0 && git push origin v0.5.0
+git tag v0.6.0 && git push origin v0.6.0
 ```
 
 The [release workflow](.github/workflows/release.yml) checks that the tag matches both versions and is on `main`,

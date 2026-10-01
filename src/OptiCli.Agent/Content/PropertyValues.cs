@@ -21,6 +21,12 @@ internal static class PropertyValues
     /// <summary>Content name plus every editable property, keyed by name (case-insensitive).</summary>
     public static Dictionary<string, JsonElement?> Snapshot(IContentData content)
     {
+        // Loaded read-only, a fetch-data page shows the other page's values where its own are empty; a writable clone
+        // has only its own, which is what a save writes, so a diff against the loaded page would always see changes.
+        if (content is PageData { LinkType: PageShortcutType.FetchData, IsReadOnly: true } fetchData)
+        {
+            content = fetchData.CreateWritableClone();
+        }
         var values = new Dictionary<string, JsonElement?>(StringComparer.OrdinalIgnoreCase);
         if (content is IContent named)
         {
@@ -62,10 +68,30 @@ internal static class PropertyValues
             var previous = before.GetValueOrDefault(name);
             if (previous?.GetRawText() != value?.GetRawText())
             {
-                changes.Add(new PropertyChange(name, previous, value));
+                changes.Add(new PropertyChange(name, ExplicitPersonalization(previous), value));
             }
         }
         return changes;
+    }
+
+    /// <summary>
+    /// ContentArea items in a <c>before</c> say <c>"group": ""</c> and <c>"visitorGroups": []</c> when they had none:
+    /// written back as is, an item without them would keep personalization someone added since.
+    /// </summary>
+    internal static JsonElement? ExplicitPersonalization(JsonElement? value)
+    {
+        if (value is not { ValueKind: JsonValueKind.Array } array
+            || !array.EnumerateArray().Any(item => item.ValueKind == JsonValueKind.Object && (item.TryGetProperty("ref", out _) || item.TryGetProperty("guid", out _)) && !item.TryGetProperty("href", out _)))
+        {
+            return value;
+        }
+        var items = System.Text.Json.Nodes.JsonNode.Parse(array.GetRawText())!.AsArray();
+        foreach (var item in items.OfType<System.Text.Json.Nodes.JsonObject>().Where(i => !i.ContainsKey("href")))
+        {
+            item.TryAdd("group", "");
+            item.TryAdd("visitorGroups", new System.Text.Json.Nodes.JsonArray());
+        }
+        return JsonSerializer.SerializeToElement(items);
     }
 
     /// <summary>Category names, as the writer takes them; null when there are none.</summary>

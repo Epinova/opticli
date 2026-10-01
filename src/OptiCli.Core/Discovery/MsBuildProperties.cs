@@ -7,7 +7,8 @@ namespace OptiCli.Core.Discovery;
 /// <summary>
 /// A small stand-in for MSBuild's property evaluation, enough for the few properties opticli reads. Like MSBuild it
 /// reads the nearest <c>Directory.Build.props</c> above the project (and whatever that imports, where the import
-/// says), then the project file, in document order; the last definition wins. <c>$(Name)</c> is expanded from
+/// says), then the project file, then the nearest <c>Directory.Build.targets</c> (which the SDK imports after the
+/// project), in document order; the last definition wins. <c>$(Name)</c> is expanded from
 /// properties defined so far. Conditions are evaluated when they are plain <c>'a' == 'b'</c> / <c>!=</c>
 /// comparisons, <c>Exists('…')</c>, or <c>and</c>/<c>or</c> chains of those, with <c>Configuration</c> taken as
 /// <c>Debug</c>; anything else (property functions, items, <c>Choose</c>) is left alone, and when that touches a
@@ -16,6 +17,8 @@ namespace OptiCli.Core.Discovery;
 internal sealed partial class MsBuildProperties
 {
     public const string DirectoryBuildProps = "Directory.Build.props";
+
+    public const string DirectoryBuildTargets = "Directory.Build.targets";
 
     /// <summary>Guards against import cycles and runaway chains.</summary>
     private const int MaxImportDepth = 16;
@@ -65,7 +68,10 @@ internal sealed partial class MsBuildProperties
     /// <summary>The value as evaluated, null when unset or empty. An unexpandable reference is left as written.</summary>
     public string? this[string name] => _values.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value) ? value.Trim() : null;
 
-    /// <summary>Evaluates the nearest <c>Directory.Build.props</c>, then <paramref name="project"/> (the loaded project file).</summary>
+    /// <summary>
+    /// Evaluates the nearest <c>Directory.Build.props</c>, then <paramref name="project"/> (the loaded project file), then
+    /// the nearest <c>Directory.Build.targets</c>, whose properties win over the project's.
+    /// </summary>
     /// <param name="readBuildProps">False evaluates the project file alone.</param>
     public static MsBuildProperties Evaluate(string projectPath, XElement project, bool readBuildProps = true)
     {
@@ -75,6 +81,10 @@ internal sealed partial class MsBuildProperties
             properties.Import(props, 0);
         }
         properties.ReadFile(projectPath, project, 0);
+        if (readBuildProps && FindAbove(properties._projectDirectory, DirectoryBuildTargets) is { } targets)
+        {
+            properties.Import(targets, 0);
+        }
         properties.CheckReported();
         return properties;
     }

@@ -12,6 +12,12 @@ namespace OptiCli.Core.Content;
 /// <param name="Shortcut">Pages only: where its link goes instead of the page itself, when it isn't a normal page.</param>
 /// <param name="Category">Pages, shared blocks and media: the built-in category's names, when it has any.</param>
 /// <param name="RequestedLanguage">Set when the item has no branch in the requested language and another is shown.</param>
+/// <param name="LanguageRule">
+/// <c>fallback</c> or <c>replacement</c> when language settings (<c>tblContentLanguageSetting</c>) chose the branch shown
+/// for the requested language.
+/// </param>
+/// <param name="Projects">The projects that hold a version of the item.</param>
+/// <param name="Approval">The content approval sequence publishing goes through, when one applies (its own or inherited).</param>
 public sealed record ContentDocument(
     string Ref,
     Guid Guid,
@@ -37,6 +43,9 @@ public sealed record ContentDocument(
     string? LatestDraft,
     bool? Deleted,
     string? RequestedLanguage,
+    string? LanguageRule,
+    Queries.ApprovalSequence? Approval,
+    IReadOnlyList<Queries.ItemProject>? Projects,
     IReadOnlyList<string>? Notes,
     JsonObject Properties);
 

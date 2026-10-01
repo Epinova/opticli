@@ -65,6 +65,13 @@ internal static class KnownDifferences
             "path in url (so resolve and where-used work on it) and shows the link as shortcut.url."),
 
         new(
+            "fetch-data-borrowed",
+            m => m is { Difference: MismatchKind.AgentOnly, Facts.FetchData: true },
+            "A page that fetches data from another page is loaded by the CMS with that page's values in the properties it " +
+            "leaves empty. opticli shows the page's own values, which are what set changes, and says in notes where the rest " +
+            "comes from."),
+
+        new(
             "url-segments-left-out",
             m => m is { Difference: MismatchKind.Identity, Field: "url" } && LeavesOutSegments(m.Db, m.Agent),
             "Sites can leave ancestors out of URLs in code (custom URL segment generation or partial routing, e.g. grouping " +

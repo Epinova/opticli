@@ -1,6 +1,7 @@
 using System.Text.Json;
 using EPiServer.Core;
 using EPiServer.Data.Entity;
+using EPiServer.DataAccess;
 using OptiCli.Agent.Content;
 using OptiCli.Agent.Http;
 using OptiCli.Protocol;
@@ -40,9 +41,13 @@ internal static class DraftEndpoint
             throw AgentException.Usage($"Version {baseLink} is in '{versionLanguage.Name}', not '{language.Name}'.");
         }
 
+        var what = $"{link.ID} ('{current.Name}')";
+        Approvals.RequireNotInReview(branch, what, language?.Name);
+        var action = WriteFlow.Publishing(request, link, body.Publish, body.RequestApproval, body.PublishAt, what);
+
         // Read before saving: the publish changes which version is published.
-        var pending = body.Publish
-            ? PendingDrafts.Require(flow.Locator.PendingDraft(branch, current), body.IncludeDraft, body.DryRun, $"{link.ID} ('{current.Name}')", language?.Name)
+        var pending = action is SaveAction.Publish or SaveAction.Schedule
+            ? PendingDrafts.Require(flow.Locator.PendingDraft(branch, current), body.IncludeDraft, body.DryRun, what, language?.Name)
             : null;
         var published = ContentLocator.PublishedVersion(branch);
 
@@ -54,16 +59,19 @@ internal static class DraftEndpoint
         }
         flow.Writer.Apply(writable, body.Properties);
         flow.Areas.Apply(writable, body.AreaOps);
+        WriteFlow.ScheduleAt(writable, action, body.PublishAt);
+        var cleared = WriteFlow.ClearExpiredStopPublish(writable, action, body.Properties);
 
         var result = flow.Save(
             writable,
             before,
-            WriteFlow.DraftAction(body.Publish),
+            WriteFlow.DraftAction(action),
             body.DryRun,
             ContentSummaries.Describe(current, flow.Types),
             baseLink.WorkID,
-            // Publishing a draft saves it even unchanged; an unchanged published version stays as it is.
-            saveUnchanged: body.Publish && current is IVersionable { Status: not VersionStatus.Published });
+            // Publishing a draft (or sending it for review) saves it even unchanged; an unchanged published version stays as it is.
+            saveUnchanged: action is not null && current is IVersionable { Status: not VersionStatus.Published },
+            precheck: cleared is null ? null : [cleared]);
         return result with
         {
             PendingDraft = pending,

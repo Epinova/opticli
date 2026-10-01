@@ -25,6 +25,7 @@ internal static class SetCommand
         write.AddProperties(command);
         command.Options.Add(name);
         write.AddCommon(command);
+        write.AddPublishAt(command);
         write.AddIncludeDraft(command);
         write.AddConcurrency(command);
 
@@ -43,7 +44,7 @@ internal static class SetCommand
                 IncludeDraft = parse.GetValue(write.IncludeDraft),
             };
             await using var session = await context.OpenContentAsync(cancellationToken);
-            var outcome = await context.Writes(session, parse.GetValue(content.Site)).RunAsync(operation, parse.GetValue(write.DryRun), cancellationToken);
+            var outcome = await context.Writes(session, parse.GetValue(content.Site)).RunAsync(write.WithApproval(operation, parse), parse.GetValue(write.DryRun), cancellationToken);
             return WriteOptions.Result(outcome);
         });
         return command;

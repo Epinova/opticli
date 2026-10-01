@@ -35,6 +35,7 @@ internal static class AreaCommand
         command.Options.Add(at);
         command.Options.Add(display);
         write.AddCommon(command);
+        write.AddPublishAt(command);
         write.AddIncludeDraft(command);
         write.AddConcurrency(command);
 
@@ -71,7 +72,7 @@ internal static class AreaCommand
                 IncludeDraft = parse.GetValue(write.IncludeDraft),
             };
             await using var session = await context.OpenContentAsync(cancellationToken);
-            return WriteOptions.Result(await context.Writes(session, parse.GetValue(content.Site)).RunAsync(operation, parse.GetValue(write.DryRun), cancellationToken));
+            return WriteOptions.Result(await context.Writes(session, parse.GetValue(content.Site)).RunAsync(write.WithApproval(operation, parse), parse.GetValue(write.DryRun), cancellationToken));
         });
         return command;
     }

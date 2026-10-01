@@ -7,9 +7,10 @@ namespace OptiCli.Core.Queries;
 /// <param name="Ref">The content item.</param>
 /// <param name="Version">The newest unpublished version, as a ref.</param>
 /// <param name="Drafts">How many unpublished versions of this branch are newer than the published one.</param>
+/// <param name="PublishAt">For a scheduled version (<c>delayedPublish</c>): when the CMS publishes it, UTC.</param>
 public sealed record DraftInfo(
     string Ref, Guid Guid, string Type, string? Name, string? Language, string Status, string? Url,
-    string Version, DateTime? Saved, string? ChangedBy, int Drafts);
+    string Version, DateTime? Saved, string? ChangedBy, int Drafts, DateTime? PublishAt = null);
 
 /// <summary>
 /// <c>drafts</c>: branches with changes nobody has published: never published, or with versions newer
@@ -25,11 +26,11 @@ public sealed class DraftReader(ContentSession session)
     private static string Sql(string typeFilter) => $"""
         WITH newest AS (
             SELECT cl.fkContentID, cl.fkLanguageBranchID, cl.Status AS BranchStatus, cl.Version AS BranchVersion,
-                   d.pkID, d.Status, d.Name, d.Saved, d.ChangedByName
+                   d.pkID, d.Status, d.Name, d.Saved, d.ChangedByName, d.DelayPublishUntil
             FROM tblContentLanguage cl
             JOIN tblContent c ON c.pkID = cl.fkContentID AND c.Deleted = 0{typeFilter}
             CROSS APPLY (
-                SELECT TOP 1 wc.pkID, wc.Status, wc.Name, wc.Saved, wc.ChangedByName
+                SELECT TOP 1 wc.pkID, wc.Status, wc.Name, wc.Saved, wc.ChangedByName, wc.DelayPublishUntil
                 FROM tblWorkContent wc
                 WHERE wc.fkContentID = cl.fkContentID AND wc.fkLanguageBranchID = cl.fkLanguageBranchID
                   AND wc.Status IN ({VersionStatuses.UnpublishedSql})
@@ -37,7 +38,7 @@ public sealed class DraftReader(ContentSession session)
                 ORDER BY wc.pkID DESC) d
             WHERE (@lang IS NULL OR cl.fkLanguageBranchID = @lang)
         )
-        SELECT n.pkID, n.fkContentID, n.fkLanguageBranchID, n.Status, n.Name, n.Saved, n.ChangedByName,
+        SELECT n.pkID, n.fkContentID, n.fkLanguageBranchID, n.Status, n.Name, n.Saved, n.ChangedByName, n.DelayPublishUntil,
                (SELECT COUNT(*) FROM tblWorkContent w
                 WHERE w.fkContentID = n.fkContentID AND w.fkLanguageBranchID = n.fkLanguageBranchID
                   AND w.Status IN ({VersionStatuses.UnpublishedSql})
@@ -68,7 +69,8 @@ public sealed class DraftReader(ContentSession session)
                 Name: r.GetStringOrNull("Name"),
                 Saved: r.GetDateTimeOrNull("Saved"),
                 ChangedBy: r.GetStringOrNull("ChangedByName"),
-                Drafts: r.GetInt32("Drafts")),
+                Drafts: r.GetInt32("Drafts"),
+                PublishAt: r.GetDateTimeOrNull("DelayPublishUntil")),
             cancellationToken,
             new SqlParameter("@lang", System.Data.SqlDbType.Int) { Value = (object?)language?.Id ?? DBNull.Value },
             new SqlParameter("@since", System.Data.SqlDbType.DateTime) { Value = (object?)since ?? DBNull.Value },
@@ -82,7 +84,8 @@ public sealed class DraftReader(ContentSession session)
             var header = session.Identities.Header(r.ContentId)!;
             var identity = session.Identities.Describe(header, session.Model.Language(r.LanguageId), status: r.Status, name: r.Name);
             return new DraftInfo(identity.Ref!, identity.Guid, identity.Type!, identity.Name, identity.Language, identity.Status!, identity.Url,
-                ContentIdentity.RefFor(r.ContentId, r.Version), r.Saved, r.ChangedBy, r.Drafts);
+                ContentIdentity.RefFor(r.ContentId, r.Version), r.Saved, r.ChangedBy, r.Drafts,
+                r.Status == VersionStatus.DelayedPublish ? r.PublishAt : null);
         }).ToList();
     }
 }

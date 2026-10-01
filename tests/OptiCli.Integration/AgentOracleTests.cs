@@ -17,8 +17,11 @@ public sealed class AgentOracleTests(ITestOutputHelper output)
         var cancellationToken = CancellationToken.None;
         await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
 
-        var sample = (await ContentSampler.BranchesAsync(site.Session, SiteSettings.Sample, SiteSettings.Seed, cancellationToken))
+        var planned = SiteSettings.PlanPath is { } plan ? await ContentSampler.PlanAsync(site.Session, plan, cancellationToken) : [];
+        var sample = planned
+            .Concat(await ContentSampler.BranchesAsync(site.Session, SiteSettings.Sample, SiteSettings.Seed, cancellationToken))
             .Concat(await ContentSampler.RecentDraftsAsync(site.Session, SiteSettings.Drafts, cancellationToken))
+            .Distinct()
             .ToList();
 
         var comparer = new ItemComparer(site);

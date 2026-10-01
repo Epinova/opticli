@@ -3,6 +3,7 @@ using Microsoft.Data.SqlClient;
 using OptiCli.Core.Cms;
 using OptiCli.Core.Content;
 using OptiCli.Core.Errors;
+using OptiCli.Core.Queries;
 using OptiCli.Core.Refs;
 using OptiCli.Core.Serve;
 using OptiCli.Core.Urls;
@@ -27,17 +28,24 @@ namespace OptiCli.Core.Writes;
 /// a <c>publish</c> of a published version and a <c>delete</c> of deleted content change nothing.
 /// </param>
 /// <param name="confirmDraft">
-/// Asks a person at a terminal whether a publish should also put live the unpublished changes someone else saved
-/// (the agent's message and <see cref="PendingDraft"/>); true sends the write again, confirmed. Null: such a publish
+/// Asks a person at a terminal whether a publish should also put live the unpublished changes someone else saved, or a
+/// discard delete them (the agent's message, <see cref="PendingDraft"/> and the question); true sends the write again, confirmed. Null: such a publish
 /// fails with a <c>conflict</c> whose details list the changes.
 /// </param>
+/// <param name="confirmReferences">
+/// Asks a person at a terminal whether to delete content that other content references (the message and the
+/// references); true deletes it. Null: such a delete fails with a <c>conflict</c> whose details list them.
+/// </param>
+/// <param name="confirm">Asks a person at a terminal a yes/no question (the message, then the question). Null: fail with a <c>conflict</c> instead.</param>
 public sealed class WriteExecutor(
     ContentSession session,
     Func<CancellationToken, Task<AgentClient>> connect,
     string? site = null,
     string? projectDirectory = null,
     bool updateExisting = false,
-    Func<string, PendingDraft, bool>? confirmDraft = null)
+    Func<string, PendingDraft, string, bool>? confirmDraft = null,
+    Func<string, Queries.IncomingReferences, bool>? confirmReferences = null,
+    Func<string, string, bool>? confirm = null)
 {
     public bool UpdateExisting => updateExisting;
 
@@ -56,6 +64,21 @@ public sealed class WriteExecutor(
     /// <exception cref="ContentValidationException">A dry run found the change would fail validation (details: the dry-run result).</exception>
     public async Task<WriteOutcome> RunAsync(WriteOperation operation, bool dryRun, CancellationToken cancellationToken)
     {
+        if (operation.PublishAt is not null)
+        {
+            if (operation is not (SetOperation or AreaEdit or CreateOperation or PublishOperation))
+            {
+                throw new UsageException($"{operation.Kind} can't be scheduled; --publish-at works on set, area, create and publish.");
+            }
+            if (operation is SetOperation { Publish: true } or AreaEdit { Publish: true } or CreateOperation { Publish: true })
+            {
+                throw new UsageException("Give --publish (now) or --publish-at (later), not both.");
+            }
+            if (operation.RequestApproval)
+            {
+                throw new UsageException("A review request can't be scheduled: the reviewers decide when it is published.", "Give --publish-at or --request-approval, not both.");
+            }
+        }
         var outcome = operation switch
         {
             SetOperation set => await SetAsync(set, dryRun, cancellationToken),
@@ -65,6 +88,8 @@ public sealed class WriteExecutor(
             UploadOperation upload => await UploadAsync(upload, dryRun, cancellationToken),
             TranslateOperation translate => await TranslateAsync(translate, dryRun, cancellationToken),
             PublishOperation publish => await PublishAsync(publish, dryRun, cancellationToken),
+            UnpublishOperation unpublish => await UnpublishAsync(unpublish, dryRun, cancellationToken),
+            DiscardOperation discard => await DiscardAsync(discard, dryRun, cancellationToken),
             MoveOperation move => await MoveAsync(move, dryRun, cancellationToken),
             DeleteOperation delete => await DeleteAsync(delete, dryRun, cancellationToken),
             AccessOperation access => await AccessAsync(access, dryRun, cancellationToken),
@@ -74,9 +99,10 @@ public sealed class WriteExecutor(
         if (outcome.Output is WriteOutput { DryRun: true, PendingDraft: { } draft })
         {
             var then = operation.IncludeDraft
-                ? "--include-draft publishes them too"
+                ? $"--include-draft {(operation is DiscardOperation ? "discards it all the same" : "publishes them too")}"
                 : "the real run fails with a conflict unless --include-draft (ask the user first)";
-            outcome = outcome with { Warnings = [.. outcome.Warnings, $"pendingDraft: publishing would also put live {draft.Describe()}; {then}."] };
+            var what = operation is DiscardOperation ? $"discarding would delete {draft.Describe()} for good" : $"publishing would also put live {draft.Describe()}";
+            outcome = outcome with { Warnings = [.. outcome.Warnings, $"pendingDraft: {what}; {then}."] };
         }
         if (outcome.Output is WriteOutput { DryRun: true, Valid: false } invalid)
         {
@@ -107,6 +133,8 @@ public sealed class WriteExecutor(
             AreaOps = areaOps.Count > 0 ? areaOps : null,
             Publish = op.Publish,
             IncludeDraft = op.IncludeDraft,
+            RequestApproval = op.RequestApproval,
+            PublishAt = op.PublishAt?.UtcDateTime,
             DryRun = dryRun,
             BaseVersion = await BaseVersionAsync(target, language, op.BaseVersion, op.Force, cancellationToken),
         };
@@ -128,6 +156,8 @@ public sealed class WriteExecutor(
             AreaOps = [edit],
             Publish = op.Publish,
             IncludeDraft = op.IncludeDraft,
+            RequestApproval = op.RequestApproval,
+            PublishAt = op.PublishAt?.UtcDateTime,
             DryRun = dryRun,
             BaseVersion = await BaseVersionAsync(target, language, op.BaseVersion, op.Force, cancellationToken),
         };
@@ -218,6 +248,8 @@ public sealed class WriteExecutor(
             Guid = op.ContentGuid,
             UpdateExisting = updateExisting,
             IncludeDraft = op.IncludeDraft,
+            RequestApproval = op.RequestApproval,
+            PublishAt = op.PublishAt?.UtcDateTime,
             ParentType = dryRun ? op.PlannedParentType : null,
         };
         return await CreatedAsync(request, type.Name, cancellationToken, parent.Stored);
@@ -248,12 +280,17 @@ public sealed class WriteExecutor(
             Guid = op.ContentGuid,
             UpdateExisting = updateExisting,
             IncludeDraft = op.IncludeDraft,
+            RequestApproval = op.RequestApproval,
         };
         return await CreatedAsync(request, type.Name, cancellationToken);
     }
 
     private async Task<WriteOutcome> UploadAsync(UploadOperation op, bool dryRun, CancellationToken cancellationToken)
     {
+        if (op.Replace is not null)
+        {
+            return await ReplaceAsync(op, dryRun, cancellationToken);
+        }
         if ((op.For is null) == (op.Parent is null))
         {
             throw new UsageException("Give exactly one of --for <ref> (the content's \"For this page\" folder) or --parent <folder>.");
@@ -284,6 +321,7 @@ public sealed class WriteExecutor(
             Guid = op.ContentGuid,
             UpdateExisting = updateExisting,
             IncludeDraft = op.IncludeDraft,
+            RequestApproval = op.RequestApproval,
         };
 
         var result = await PublishingPostAsync(AgentRoutes.Media, request, r => r with { IncludeDraft = true }, cancellationToken);
@@ -292,6 +330,44 @@ public sealed class WriteExecutor(
             Upload = new UploadInfo(file.FullName, file.Length, result.Saved && !result.Existing && result.Content is { } saved ? await BlobAsync(saved.Id, cancellationToken) : null),
         };
         return Outcome(output, CreatedId(result));
+    }
+
+    private async Task<WriteOutcome> ReplaceAsync(UploadOperation op, bool dryRun, CancellationToken cancellationToken)
+    {
+        if (op.For is not null || op.Parent is not null || op.Type is not null || op.ContentGuid is not null)
+        {
+            throw new UsageException("--replace replaces the file of existing media; it takes no --for, --parent or --type (the media keeps its type).");
+        }
+        var file = MediaFiles.Check(op.File);
+        var target = await EditableAsync(op.Replace!, cancellationToken, "--replace");
+        if (session.Model.Kind(target.Header.TypeId) != ContentKind.Media)
+        {
+            throw new UsageException($"{target.Id} is a {session.Model.Kind(target.Header.TypeId).ToString().ToLowerInvariant()}, not media, so it has no file to replace.");
+        }
+        PropertyNameCheck.Check(session.Model, target.Header.TypeId, op.Properties);
+        var request = new UploadRequest
+        {
+            Replace = target.ContentRef,
+            FileName = Path.GetFileName(op.File),
+            Name = op.Name,
+            Properties = PropertyArguments.ToRequest(op.Properties),
+            Data = dryRun ? null : Convert.ToBase64String(await File.ReadAllBytesAsync(file.FullName, cancellationToken)),
+            Publish = op.Publish,
+            DryRun = dryRun,
+            IncludeDraft = op.IncludeDraft,
+            RequestApproval = op.RequestApproval,
+        };
+        var result = await PublishingPostAsync(AgentRoutes.Media, request, r => r with { IncludeDraft = true }, cancellationToken);
+        var output = WriteOutput.From(result) with
+        {
+            // The database's file is the published version's: only shown once the new one is.
+            Upload = new UploadInfo(file.FullName, file.Length, result is { Saved: true, Published: true } && result.Content is { } saved ? await BlobAsync(saved.Id, cancellationToken) : null),
+        };
+        var outcome = Outcome(output, null);
+        var note = dryRun
+            ? $"The file of {target.Id} would be replaced by {Path.GetFileName(op.File)} ({file.Length} bytes) in a new version{(op.Publish ? ", published" : ", a draft")}; changes lists only properties."
+            : $"{output.Version} has the new file{(output.Published ? "" : "; the published version keeps the old one until it is published")}.";
+        return outcome with { Warnings = [note, .. outcome.Warnings.Where(w => !w.StartsWith("Nothing changed", StringComparison.Ordinal))] };
     }
 
     /// <summary>Where the site stored a media item's file, read back from the database.</summary>
@@ -329,27 +405,134 @@ public sealed class WriteExecutor(
     {
         var target = await EditableAsync(op.Ref, cancellationToken);
         var language = session.Language(op.Lang) ?? throw new UsageException("translate needs --lang <code>.");
+        if (op.Remove)
+        {
+            return await RemoveLanguageAsync(op, target, language, dryRun, cancellationToken);
+        }
+        var blocks = op.WithBlocks ? await AssetBlocksAsync(target.Header, cancellationToken) : [];
+        if (op.WithBlocks && !dryRun)
+        {
+            // Every block is checked before anything is saved, so a block that can't be translated stops it all.
+            await TranslateBlocksAsync(blocks, op, language, dryRun: true, cancellationToken);
+        }
+
+        WriteOutcome outcome;
         if (updateExisting && target.Header.Languages.ContainsKey(language.Id))
         {
             var existing = op.Properties is not null || op.Name is not null
-                ? await SetAsync(new SetOperation(op.Ref, op.Properties, op.Name, language.Code, op.Publish, Force: true) { IncludeDraft = op.IncludeDraft }, dryRun, cancellationToken)
-                : op.Publish
-                    ? await PublishAsync(new PublishOperation(op.Ref, Lang: language.Code) { IncludeDraft = op.IncludeDraft }, dryRun, cancellationToken)
+                ? await SetAsync(new SetOperation(op.Ref, op.Properties, op.Name, language.Code, op.Publish, Force: true) { IncludeDraft = op.IncludeDraft, RequestApproval = op.RequestApproval }, dryRun, cancellationToken)
+                : op.Publish || op.RequestApproval
+                    ? await PublishAsync(new PublishOperation(op.Ref, Lang: language.Code) { IncludeDraft = op.IncludeDraft, RequestApproval = op.RequestApproval }, dryRun, cancellationToken)
                     : await LatestUnchangedAsync(target, language, dryRun, $"The {language.Code} branch already exists; nothing to do.", cancellationToken);
-            return existing with { Output = ((WriteOutput)existing.Output) with { Existing = true } };
+            outcome = existing with { Output = ((WriteOutput)existing.Output) with { Existing = true } };
         }
-        PropertyNameCheck.Check(session.Model, target.Header.TypeId, op.Properties);
-        var request = new LanguageBranchRequest
+        else
         {
-            Lang = language.Code,
-            Name = op.Name,
-            Properties = PropertyArguments.ToRequest(op.Properties),
-            Publish = op.Publish,
-            DryRun = dryRun,
-        };
-        var result = await PostAsync<WriteResult>(AgentRoutes.Languages(target.ContentRef), request, cancellationToken);
-        return await WithSimpleAddressCheckAsync(Outcome(WriteOutput.From(result), null), result, target.Header, self: true, cancellationToken);
+            PropertyNameCheck.Check(session.Model, target.Header.TypeId, op.Properties);
+            var request = new LanguageBranchRequest
+            {
+                Lang = language.Code,
+                Name = op.Name,
+                Properties = PropertyArguments.ToRequest(op.Properties),
+                Publish = op.Publish,
+                RequestApproval = op.RequestApproval,
+                DryRun = dryRun,
+            };
+            var result = await PostAsync<WriteResult>(AgentRoutes.Languages(target.ContentRef), request, cancellationToken);
+            outcome = await WithSimpleAddressCheckAsync(Outcome(WriteOutput.From(result), null), result, target.Header, self: true, cancellationToken);
+        }
+        if (!op.WithBlocks)
+        {
+            return outcome;
+        }
+        var translated = await TranslateBlocksAsync(blocks, op, language, dryRun, cancellationToken);
+        return outcome with { Output = ((WriteOutput)outcome.Output) with { Blocks = translated } };
     }
+
+    /// <summary>The blocks in the content's "For this page" folder, and in folders below it.</summary>
+    private async Task<IReadOnlyList<ContentHeader>> AssetBlocksAsync(ContentHeader owner, CancellationToken cancellationToken)
+    {
+        var ids = await session.Db.QueryAsync("""
+            SELECT a.pkID
+            FROM tblContent f
+            JOIN tblContent a ON a.ContentPath LIKE f.ContentPath + CAST(f.pkID AS varchar(12)) + '.%'
+            WHERE f.ContentOwnerID = @owner AND f.Deleted = 0 AND a.Deleted = 0
+            """, r => r.GetInt32(0), cancellationToken, new SqlParameter("@owner", owner.Guid));
+        var headers = await ContentHeaderReader.ByIdsAsync(session.Db, ids, cancellationToken);
+        return headers.Values.Where(h => session.Model.Kind(h.TypeId) == ContentKind.Block).OrderBy(h => h.Id).ToList();
+    }
+
+    /// <summary>
+    /// Each block without the branch gets it, published with the content's <c>--publish</c> (and through its own approval
+    /// sequence with <c>--request-approval</c>); a review request alone leaves the blocks as drafts.
+    /// </summary>
+    private async Task<IReadOnlyList<BlockTranslation>> TranslateBlocksAsync(IReadOnlyList<ContentHeader> blocks, TranslateOperation op, LanguageBranch language, bool dryRun, CancellationToken cancellationToken)
+    {
+        var results = new List<BlockTranslation>();
+        foreach (var block in blocks)
+        {
+            var identity = session.Identities.Describe(block, null);
+            var reference = WriteOutput.Id(block.Id);
+            if (block.Languages.ContainsKey(language.Id))
+            {
+                results.Add(new BlockTranslation(reference, identity.Name, identity.Type, null, "exists"));
+                continue;
+            }
+            try
+            {
+                var result = await PostAsync<WriteResult>(AgentRoutes.Languages(reference),
+                    new LanguageBranchRequest { Lang = language.Code, Publish = op.Publish, RequestApproval = op.RequestApproval && op.Publish, DryRun = dryRun }, cancellationToken);
+                var output = WriteOutput.From(result);
+                results.Add(new BlockTranslation(reference, identity.Name, identity.Type, output.Version, "translated"));
+            }
+            catch (UsageException ex) when (ex.Message.Contains("not localizable", StringComparison.Ordinal))
+            {
+                results.Add(new BlockTranslation(reference, identity.Name, identity.Type, null, "notLocalizable"));
+            }
+            catch (OptiCliException ex)
+            {
+                throw OptiCliException.Create(ex.Code, $"Block {reference} ('{identity.Name}') in the \"For this page\" folder can't be translated: {ex.Message}", ex.Hint, ex.Details);
+            }
+        }
+        return results;
+    }
+
+    private async Task<WriteOutcome> RemoveLanguageAsync(TranslateOperation op, Target target, LanguageBranch language, bool dryRun, CancellationToken cancellationToken)
+    {
+        if (op.Properties is not null || op.Name is not null || op.Publish || op.RequestApproval || op.WithBlocks)
+        {
+            throw new UsageException("--remove deletes the branch; it takes no properties, --name, --publish, --request-approval or --with-blocks.");
+        }
+        var route = AgentRoutes.RemoveLanguage(target.ContentRef);
+        var result = await PostAsync<RemoveLanguageResult>(route, new RemoveLanguageRequest { Lang = language.Code, DryRun = true }, cancellationToken);
+        var message = $"Removing the '{result.Language}' branch of {target.Id} deletes its {result.Versions} version(s) for good{(result.Published ? ", and takes the content offline in that language" : "")}.";
+        if (!dryRun)
+        {
+            if (!op.Confirm)
+            {
+                if (confirm is null)
+                {
+                    throw new ConflictException(message, RemoveBranchHint)
+                    {
+                        Details = new { reason = RemoveBranchReason, language = result.Language, result.Versions, result.Published },
+                    };
+                }
+                if (!confirm(message, $"Remove the '{result.Language}' branch?"))
+                {
+                    throw new ConflictException("Not removed, as answered; nothing was changed.", "The branch stays as it is.");
+                }
+            }
+            result = await PostAsync<RemoveLanguageResult>(route, new RemoveLanguageRequest { Lang = language.Code }, cancellationToken);
+        }
+        var output = new RemoveLanguageOutput(WriteOutput.Id(result.Content.Id), result.Content.Guid, result.Content.Type, result.Content.Name,
+            result.Language, result.Versions, result.Published, result.Removed, result.DryRun);
+        return new WriteOutcome(output, AgentSource, null, dryRun ? [$"{message} This can't be undone; the real run needs --confirm (ask the user first)."] : []);
+    }
+
+    public const string RemoveBranchReason = "removesBranch";
+
+    public const string RemoveBranchHint =
+        "Removing a language branch can't be undone. Ask the user, and only if so run again with --confirm (in a plan: \"confirm\": true on the step).";
 
     private async Task<WriteOutcome> PublishAsync(PublishOperation op, bool dryRun, CancellationToken cancellationToken)
     {
@@ -361,7 +544,7 @@ public sealed class WriteExecutor(
         var language = LanguageFor(op.Lang, target);
         var versionId = op.Version ?? target.Version;
 
-        var request = new PublishRequest { Version = versionId, Lang = language?.Code, IncludeDraft = op.IncludeDraft };
+        var request = new PublishRequest { Version = versionId, Lang = language?.Code, IncludeDraft = op.IncludeDraft, RequestApproval = op.RequestApproval, PublishAt = op.PublishAt?.UtcDateTime };
         if (!dryRun && !updateExisting)
         {
             var result = await PublishingPostAsync(AgentRoutes.Publish(target.ContentRef), request, r => r with { IncludeDraft = true }, cancellationToken);
@@ -375,7 +558,11 @@ public sealed class WriteExecutor(
         {
             throw new NotFoundException($"Content {target.Id} has no version {(versionId is { } missing ? missing.ToString(CultureInfo.InvariantCulture) : "in that language")}.", $"List them with `opticli versions {target.Id}`.");
         }
-        if (version.StatusValue == VersionStatus.Published)
+        if (op.PublishAt is { } at)
+        {
+            PublishTimes.Future(at, "--publish-at", DateTimeOffset.UtcNow);
+        }
+        if (version.StatusValue == VersionStatus.Published && !(version.StopPublish <= DateTime.UtcNow))
         {
             if (updateExisting)
             {
@@ -388,6 +575,16 @@ public sealed class WriteExecutor(
             var result = await PublishingPostAsync(AgentRoutes.Publish(target.ContentRef), request, r => r with { IncludeDraft = true }, cancellationToken);
             return Outcome(WriteOutput.From(result), null);
         }
+        var what = $"{target.Id} ('{version.Name}')";
+        var sequence = await ApprovalReader.ResolveAsync(session.Db, session.Model, target.Header, cancellationToken);
+        var forReview = ApprovalRules.Check(sequence, op, what);
+        if (forReview && version.StatusValue == VersionStatus.AwaitingApproval)
+        {
+            throw new ConflictException($"{what} is in review: version {version.Ref} already awaits approval.", ApprovalRules.InReviewHint)
+            {
+                Details = new AgentErrorDetails(null, null) { Reason = AgentErrorReasons.InReview },
+            };
+        }
         var identity = session.Identities.Describe(target.Header, session.Model.Language(version.LanguageId), version.Id, version.StatusValue, version.Name);
         var output = new WriteOutput(
             WriteOutput.Id(target.Id), version.Ref, identity.Guid, identity.Type, identity.Name, identity.Language, identity.Status,
@@ -395,10 +592,23 @@ public sealed class WriteExecutor(
             Saved: false, Published: false, DryRun: true, Valid: true, BaseVersion: version.Ref, Changes: [], Validation: null)
         {
             // A named version is what the user chose to put live; the latest may hold someone else's draft.
-            PendingDraft = versionId is null ? await PendingDraftReader.FindAsync(session, version, cancellationToken) : null,
+            PendingDraft = versionId is null && !forReview ? await PendingDraftReader.FindAsync(session, version, cancellationToken) : null,
         };
-        return new WriteOutcome(output, DbSource, null,
-            ["Dry-run publish checks only that the version exists and isn't published yet; the CMS validates it when it is actually published."]);
+        List<string> notes = ["Dry-run publish checks only that the version exists and isn't published yet; the CMS validates it when it is actually published."];
+        if (forReview)
+        {
+            notes.Add($"It would be sent for review instead of published: its approval sequence ({sequence!.Describe()}) starts, and nothing goes live.");
+        }
+        if (op.PublishAt is { } scheduled)
+        {
+            notes.Add($"It would be scheduled: the CMS's scheduled job publishes it at {scheduled.UtcDateTime.ToString("u", CultureInfo.InvariantCulture)}.");
+        }
+        // A named version needs no confirmation, but what else it puts live is worth knowing.
+        if (versionId is not null && !forReview && await PendingDraftReader.FindAsync(session, version, cancellationToken) is { } others)
+        {
+            notes.Add($"For information: {version.Ref} also holds {others.Describe()}; naming the version confirms that they go live.");
+        }
+        return new WriteOutcome(output, DbSource, null, notes);
     }
 
     /// <summary>The latest version of <paramref name="language"/>, reported as a step that changed nothing.</summary>
@@ -417,6 +627,35 @@ public sealed class WriteExecutor(
                 target.Header.ParentId is { } parentId ? WriteOutput.Id(parentId) : null,
                 Saved: false, Published: false, DryRun: dryRun, Valid: true, BaseVersion: version.Ref, Changes: [], Validation: null),
             DbSource, null, [message]);
+    }
+
+    private async Task<WriteOutcome> UnpublishAsync(UnpublishOperation op, bool dryRun, CancellationToken cancellationToken)
+    {
+        var target = await EditableAsync(op.Ref, cancellationToken);
+        var language = LanguageFor(op.Lang, target);
+        var result = await PostAsync<WriteResult>(AgentRoutes.Unpublish(target.ContentRef), new UnpublishRequest { Lang = language?.Code, DryRun = dryRun }, cancellationToken);
+        var output = WriteOutput.From(result);
+        List<string> warnings = dryRun
+            ? [$"It would be offline from the moment it runs: a copy of {output.BaseVersion} that stops publishing then is published. Drafts stay as they are."]
+            : [$"Offline now: {output.Version}, a copy of {output.PreviouslyPublished} that stops publishing now, is published. Drafts stay as they are."];
+        return new WriteOutcome(output, AgentSource, null, warnings);
+    }
+
+    private async Task<WriteOutcome> DiscardAsync(DiscardOperation op, bool dryRun, CancellationToken cancellationToken)
+    {
+        var target = await EditableAsync(op.Ref, cancellationToken);
+        if (op.Version is { } given && target.Version is { } inRef && given != inRef)
+        {
+            throw new UsageException($"The ref names version {inRef} but --version says {given}.");
+        }
+        var request = new DiscardRequest { Version = op.Version ?? target.Version, Lang = LanguageFor(op.Lang, target)?.Code, IncludeDraft = op.IncludeDraft, DryRun = dryRun };
+        var result = await PublishingPostAsync(AgentRoutes.Discard(target.ContentRef), request, r => r with { IncludeDraft = true }, cancellationToken,
+            "Discard these changes for good?", "Not discarded, as answered; nothing was changed.");
+        var output = WriteOutput.From(result);
+        List<string> warnings = dryRun
+            ? [$"Discarding can't be undone: {output.Version} would be deleted for good; changes shows what it holds compared with {output.BaseVersion}."]
+            : [];
+        return new WriteOutcome(output, AgentSource, null, warnings);
     }
 
     private async Task<WriteOutcome> MoveAsync(MoveOperation op, bool dryRun, CancellationToken cancellationToken)
@@ -457,13 +696,34 @@ public sealed class WriteExecutor(
         }
         var descendants = await DescendantCountAsync(target.Header, cancellationToken);
         var warnings = await AssetFolderWarningAsync(target.Header, cancellationToken);
+        var references = await IncomingReferenceReader.FindAsync(session, target.Header, cancellationToken);
+        if (references.Count > 0)
+        {
+            warnings.Add($"referenced: {references.Describe()}; they would point into the recycle bin (broken links, missing blocks). "
+                + (op.IgnoreReferences ? "--ignore-references deletes it all the same." : "The real run stops unless --ignore-references (ask the user first)."));
+        }
         if (dryRun)
         {
-            return new WriteOutcome(DryMove(target, null, descendants, recycleBin: true), DbSource, null, warnings);
+            return new WriteOutcome(DryMove(target, null, descendants, recycleBin: true).WithReferences(references), DbSource, null, warnings);
+        }
+        if (references.Count > 0 && !op.IgnoreReferences)
+        {
+            var message = $"Content {target.Id}{(descendants > 0 ? $" or its {descendants} descendant(s)" : "")} is referenced: {references.Describe()}. Deleting it leaves them pointing into the recycle bin.";
+            if (confirmReferences is null)
+            {
+                throw Referenced(message, references);
+            }
+            if (!confirmReferences(message, references))
+            {
+                throw new ConflictException("Not deleted, as answered; nothing was changed.", ReferencedHint)
+                {
+                    Details = new ReferencedDetails(IncomingReferences.Reason, references.References, references.Count),
+                };
+            }
         }
         var agent = await AgentAsync(cancellationToken);
         var result = await agent.SendAsync<MoveResult>(HttpMethod.Delete, AgentRoutes.Delete(target.ContentRef), null, cancellationToken);
-        return new WriteOutcome(Moved(result, descendants, recycleBin: true, dryRun: false), AgentSource, null, warnings);
+        return new WriteOutcome(Moved(result, descendants, recycleBin: true, dryRun: false).WithReferences(references), AgentSource, null, warnings);
     }
 
     private async Task<WriteOutcome> AccessAsync(AccessOperation op, bool dryRun, CancellationToken cancellationToken)
@@ -629,7 +889,9 @@ public sealed class WriteExecutor(
     /// changes live, <c>confirmDraft</c> asks (and the write is sent again, confirmed); otherwise that is a conflict
     /// whose hint names the option that confirms.
     /// </summary>
-    private async Task<WriteResult> PublishingPostAsync<TRequest>(string route, TRequest request, Func<TRequest, TRequest> confirmed, CancellationToken cancellationToken)
+    /// <param name="question">What the prompt asks, and the hint says when the answer is no.</param>
+    private async Task<WriteResult> PublishingPostAsync<TRequest>(string route, TRequest request, Func<TRequest, TRequest> confirmed, CancellationToken cancellationToken,
+        string question = "Publish these changes too?", string declined = "Not published, as answered; nothing was saved.")
         where TRequest : notnull
     {
         try
@@ -638,22 +900,41 @@ public sealed class WriteExecutor(
         }
         catch (ConflictException ex) when (ex.Details is AgentErrorDetails { Draft: { } draft })
         {
+            var discarding = request is DiscardRequest;
             if (confirmDraft is null)
             {
-                throw new ConflictException(ex.Message, PendingDraftHint) { Details = ex.Details };
+                throw new ConflictException(ex.Message, discarding ? DiscardDraftHint : PendingDraftHint) { Details = ex.Details };
             }
-            if (!confirmDraft(ex.Message, draft))
+            if (!confirmDraft(ex.Message, draft, question))
             {
-                throw new ConflictException("Not published, as answered; nothing was saved.",
-                    "Without --publish the change is saved as a draft and nothing goes live; `opticli publish <ref> --version <id>` publishes one version as it is.")
+                throw new ConflictException(declined, discarding
+                    ? "The version stays as it is."
+                    : "Without --publish the change is saved as a draft and nothing goes live; `opticli publish <ref> --version <id>` publishes one version as it is.")
                 { Details = ex.Details };
             }
             return await PostAsync<WriteResult>(route, confirmed(request), cancellationToken);
         }
     }
 
+    public const string ReferencedHint =
+        "details.references lists what references it (`opticli where-used <ref>` shows more). Ask the user whether to delete it anyway, and only if so run again with --ignore-references (in a plan: \"ignoreReferences\": true on the step); or first remove the references (`opticli area <ref> <Prop> remove ref:<id>`, `opticli set`).";
+
+    /// <summary>The conflict a delete of referenced content fails with.</summary>
+    public static ConflictException Referenced(string message, IncomingReferences references) => new(message, ReferencedHint)
+    {
+        Details = new ReferencedDetails(IncomingReferences.Reason, references.References, references.Count),
+    };
+
+    public const string DiscardDraftHint =
+        "details.draft shows the version, who saved it and what it changed. Discarding deletes it for good: ask the user, and only if so run again with --include-draft (in a plan: \"includeDraft\": true on the step).";
+
     /// <summary>A plan step whose dry run found someone else's unpublished changes, without <c>"includeDraft": true</c>.</summary>
-    public static ConflictException UnconfirmedDraft(PendingDraft draft) => new($"Publishing would also put live {draft.Describe()}.", PendingDraftHint)
+    public static ConflictException UnconfirmedDraft(PendingDraft draft, WriteOperation operation) => operation is DiscardOperation
+        ? new($"Discarding would delete {draft.Describe()} for good.", DiscardDraftHint)
+        {
+            Details = new AgentErrorDetails(null, null) { Reason = PendingDraft.Reason, Draft = draft },
+        }
+        : new($"Publishing would also put live {draft.Describe()}.", PendingDraftHint)
     {
         Details = new AgentErrorDetails(null, null) { Reason = PendingDraft.Reason, Draft = draft },
     };
@@ -661,7 +942,14 @@ public sealed class WriteExecutor(
     private async Task<T> PostAsync<T>(string route, object body, CancellationToken cancellationToken)
     {
         var agent = await AgentAsync(cancellationToken);
-        return await agent.SendAsync<T>(HttpMethod.Post, route, body, cancellationToken);
+        try
+        {
+            return await agent.SendAsync<T>(HttpMethod.Post, route, body, cancellationToken);
+        }
+        catch (OptiCliException ex) when (ApprovalRules.Translate(ex) is { } translated)
+        {
+            throw translated;
+        }
     }
 
     private async Task<AgentClient> AgentAsync(CancellationToken cancellationToken) => _agent ??= await connect(cancellationToken);

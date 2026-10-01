@@ -17,6 +17,9 @@ internal enum AgentEndpoint
     Access,
     Delete,
     Read,
+    Unpublish,
+    Discard,
+    RemoveLanguage,
 }
 
 /// <param name="Argument">The <c>{name}</c> or <c>{ref}</c> segment, when the route has one.</param>
@@ -32,7 +35,7 @@ internal static partial class AgentRouter
 
     private static readonly string RouteList =
         $"GET {AgentRoutes.Prefix}/ping, POST {AgentRoutes.Prefix}/shutdown, GET {AgentRoutes.Prefix}/types/{{name}}, POST {AgentRoutes.Prefix}/content, POST {AgentRoutes.Prefix}/media, " +
-        $"POST {AgentRoutes.Prefix}/content/{{ref}}/draft|languages|publish|move|access, GET|DELETE {AgentRoutes.Prefix}/content/{{ref}}";
+        $"POST {AgentRoutes.Prefix}/content/{{ref}}/draft|languages|remove-language|publish|unpublish|discard|move|access, GET|DELETE {AgentRoutes.Prefix}/content/{{ref}}";
 
     /// <exception cref="AgentException">No route matches, or it belongs to another protocol version.</exception>
     public static RouteMatch Match(string method, string? path)
@@ -65,6 +68,9 @@ internal static partial class AgentRouter
             ["content", var reference, "draft"] => (AgentEndpoint.Draft, reference, "POST"),
             ["content", var reference, "languages"] => (AgentEndpoint.Languages, reference, "POST"),
             ["content", var reference, "publish"] => (AgentEndpoint.Publish, reference, "POST"),
+            ["content", var reference, "remove-language"] => (AgentEndpoint.RemoveLanguage, reference, "POST"),
+            ["content", var reference, "unpublish"] => (AgentEndpoint.Unpublish, reference, "POST"),
+            ["content", var reference, "discard"] => (AgentEndpoint.Discard, reference, "POST"),
             ["content", var reference, "move"] => (AgentEndpoint.Move, reference, "POST"),
             ["content", var reference, "access"] => (AgentEndpoint.Access, reference, "POST"),
             _ => throw NotFound(shown),

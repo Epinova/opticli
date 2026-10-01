@@ -98,6 +98,12 @@ public sealed class AgentClient : IDisposable
             envelope = null;
         }
 
+        if (envelope?.Meta is null && TooLarge(text, status))
+        {
+            throw new UsageException(
+                $"The site's web server refused the request as too large (HTTP {status}{(text.Contains("404.13", StringComparison.Ordinal) ? ", IIS request filtering 404.13" : "")}) before the agent saw it.",
+                "Upload a smaller file, or raise the site's limit (IIS: requestLimits maxAllowedContentLength in web.config; Kestrel: MaxRequestBodySize) for local development.");
+        }
         if (envelope?.Meta is null)
         {
             // Something other than the agent answered: the site's own error page, a proxy, another app on the port.
@@ -107,6 +113,13 @@ public sealed class AgentClient : IDisposable
         }
         if (!envelope!.Ok || envelope.Error is not null)
         {
+            // An agent older than this CLI rejects request fields it doesn't know.
+            if (envelope.Error is { Code: AgentErrorCodes.Usage } unknown && unknown.Message.Contains("could not be mapped", StringComparison.Ordinal))
+            {
+                throw new UsageException(
+                    $"The site's agent ({envelope.Meta.Version}) doesn't know a field this opticli sends: {unknown.Message}",
+                    AgentErrors.OutOfDateHint);
+            }
             throw AgentErrors.ToException(envelope.Error ?? new AgentError(AgentErrorCodes.Internal, $"HTTP {status} without error details."));
         }
         if (envelope.Meta.Protocol != AgentProtocol.Version)
@@ -117,6 +130,10 @@ public sealed class AgentClient : IDisposable
         }
         return envelope.Data ?? throw new InternalException("The agent returned no data.");
     }
+
+    /// <summary>A server's own answer to a body over its limit: 413, or IIS request filtering's 404.13 page.</summary>
+    internal static bool TooLarge(string text, int status) =>
+        status == 413 || (status == 404 && (text.Contains("404.13", StringComparison.Ordinal) || text.Contains("maxAllowedContentLength", StringComparison.Ordinal)));
 
     public void Dispose() => _http.Dispose();
 }

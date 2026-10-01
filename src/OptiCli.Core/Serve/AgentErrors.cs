@@ -29,10 +29,10 @@ public static class AgentErrors
             AgentErrorCodes.Validation => "Fix the properties listed in details.validation and retry; --dry-run checks without saving.",
             _ => error.Hint,
         };
-        object? details = error.Validation is not null || error.CurrentVersion is not null || error.PendingDraft is not null
+        object? details = error.Validation is not null || error.CurrentVersion is not null || error.PendingDraft is not null || error.Reason is not null
             ? new AgentErrorDetails(error.Validation, error.CurrentVersion)
             {
-                Reason = error.PendingDraft is null ? null : PendingDraft.Reason,
+                Reason = error.Reason ?? (error.PendingDraft is null ? null : PendingDraft.Reason),
                 Draft = error.PendingDraft,
             }
             : null;
@@ -43,7 +43,7 @@ public static class AgentErrors
 /// <param name="CurrentVersion">For conflicts: the version that is latest now.</param>
 public sealed record AgentErrorDetails(IReadOnlyList<ValidationIssue>? Validation, int? CurrentVersion)
 {
-    /// <summary>What kind of conflict, when it isn't a newer version: <see cref="PendingDraft.Reason"/>.</summary>
+    /// <summary>What kind of refusal or conflict, when it isn't a newer version: one of <see cref="AgentErrorReasons"/>.</summary>
     public string? Reason { get; init; }
 
     /// <summary>For <see cref="PendingDraft.Reason"/>: the changes by someone else the publish would put live.</summary>

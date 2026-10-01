@@ -1,7 +1,7 @@
 ---
 name: opticli
 description: Inspect and change content of an Optimizely CMS 12 (EPiServer) site the user develops locally (against its local or development database) with the opticli CLI instead of hand-written SQL or guessing from code. Use when you need to know what CMS content exists (pages, blocks, media, folders), what a page or block contains (properties, ContentArea items, rich text), which page type or block type something is and which C# class and Razor view render it, where a block or page is used, which content a URL shows, what drafts and versions exist, or when the user asks you to create or edit CMS content (set properties, add a block to a ContentArea, create a page or block, translate, publish) in their development site.
-opticli-version: 0.5.0
+opticli-version: 0.6.0
 ---
 
 # opticli: Optimizely CMS content from the command line
@@ -16,7 +16,7 @@ The database says what *does* exist (content items, their values, where blocks a
 opticli for the second kind of question, and to find the code: `opticli type <Name>` gives the class file, views and
 per-property `allowedTypes`; `opticli allowed-in <Type>` answers "where may this block go" across all types.
 
-This file was written for opticli 0.5.0 (`opticli --version`). Longer material (every command and option, value
+This file was written for opticli 0.6.0 (`opticli --version`). Longer material (every command and option, value
 syntax, plan files, output fields, troubleshooting) is in [reference.md](reference.md): read it when you write, or
 when a command below doesn't cover your question.
 
@@ -143,11 +143,20 @@ order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a cod
   `pendingDraft` with a warning). Show the user `details.draft` (`savedBy`, `saved`, `changes`) and **ask whether those changes
   should go live too**. Pass `--include-draft` (in a plan, `"includeDraft": true` on the step) only after they said
   yes; never on your own initiative. Drafts opticli saved itself don't need this.
+- Content with an approval sequence (`approval` in `get`) is never published directly: such a publish is refused
+  (exit 3, `details.reason: "approvalSequence"`). Ask the user whether to send it for review, and only then pass
+  `--request-approval`. opticli never approves or rejects; reviewers do that in the CMS.
 - After a publish, `previouslyPublished` is the version that was live before; `opticli publish <ref> --version <id>`
-  with it goes back. Without it, that was the first publish: only the CMS edit UI can unpublish it.
+  with it goes back. Without it, that was the first publish: `opticli unpublish <ref>` takes it offline again.
+- Never run `unpublish`, `discard` or `translate --remove` unless the user asked for it. `discard` deletes a version
+  for good: show the dry run's `changes` first; a version someone else saved needs `--include-draft`, only after the
+  user said yes. `translate --remove` deletes every version of the branch: pass `--confirm` only after the user
+  confirmed.
 - Never run `delete` unless the user explicitly asked to delete that content. (It only moves content to the recycle
   bin; undo with `opticli move <ref> --to <previousParent>`. Start pages, site and asset roots, and anything that
-  contains them, are refused.)
+  contains them, are refused.) When other content references it, the delete stops (`conflict`,
+  `details.reason: "referenced"`): show the user `details.references`, and pass `--ignore-references` only after they
+  said to delete it anyway.
 - Never change access rights (`access` with `--grant`, `--user`, `--revoke`, `--break-inheritance`, `--inherit`) unless
   the user explicitly asked for it. They aren't versioned: report the `before` from the output, which is the only
   record of what they were. Root, start pages and asset roots, and changes that leave no role with Administer, are

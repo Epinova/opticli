@@ -39,7 +39,8 @@ public sealed record ContentUrl(string Path, string? Absolute, string? Site);
 /// is mapped to that language. Media: <c>/globalassets/...</c>, <c>/siteassets/...</c> or
 /// <c>/contentassets/...</c>, no language prefix.
 /// </remarks>
-public sealed class SiteMap(IReadOnlyList<SiteInfo> sites, IReadOnlyList<LanguageBranch> languages, int? globalAssetsRoot, int? contentAssetsRoot)
+/// <param name="settings">Language settings: a site whose start page has them only takes its active languages as prefixes.</param>
+public sealed class SiteMap(IReadOnlyList<SiteInfo> sites, IReadOnlyList<LanguageBranch> languages, int? globalAssetsRoot, int? contentAssetsRoot, LanguageSettings? settings = null)
 {
     public const string Wildcard = "*";
 
@@ -209,7 +210,10 @@ public sealed class SiteMap(IReadOnlyList<SiteInfo> sites, IReadOnlyList<Languag
         }
 
         var start = StartPageId(site) ?? throw new NotFoundException($"Site '{site.Name}' has no start page.");
+        // The site's own languages, when its start page's language settings say which; else every enabled one.
+        var siteLanguages = settings?.ActiveOn(start);
         if (segments.Count > 0 && languages.FirstOrDefault(l => l.Enabled && !l.IsInvariant
+                && (siteLanguages is null || siteLanguages.Contains(l.Id))
                 && string.Equals(l.UrlPrefix, segments[0], StringComparison.OrdinalIgnoreCase)) is { } prefixed)
         {
             return new ParsedUrl(site, host?.Name, UrlRoot.StartPage, start, prefixed, "path", segments.Skip(1).ToList());

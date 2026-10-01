@@ -10,12 +10,25 @@ public static class UndoHints
     {
         (_, WriteOutput { Restored: true } restored) =>
             $"{restored.Ref} was moved back out of the recycle bin (opticli delete {restored.Ref} returns it there){(restored.Saved ? $"; {Version(restored)}" : ".")}",
+        (DiscardOperation, WriteOutput { Discarded: true } discarded) =>
+            $"None: {discarded.Version} was deleted for good, and opticli can't bring it back (changes shows what it held).",
         (_, WriteOutput { Saved: false }) or (_, MoveOutput { Moved: false }) or (_, AccessOutput { Saved: false }) => null,
+        (UnpublishOperation, WriteOutput { Unpublished: true } offline) =>
+            $"{offline.Ref} is offline{In(offline)}; to put it back, publish the version that was live: opticli publish {offline.Ref} --version {VersionId(offline.PreviouslyPublished)}",
         (AccessOperation, AccessOutput access) => Access(access),
+        (UploadOperation { Replace: not null }, WriteOutput replaced) => Version(replaced),
         (CreateOperation or BlockCreateOperation or UploadOperation, WriteOutput { Existing: not true } created) =>
             $"opticli delete {created.Ref} (moves it to the recycle bin)",
+        (_, WriteOutput { ScheduledFor: { } at } scheduled) =>
+            $"{scheduled.Version} is scheduled to be published {at.ToString("u", System.Globalization.CultureInfo.InvariantCulture)}, so nothing live changed yet; to cancel, discard it: opticli discard {scheduled.Ref} --version {VersionId(scheduled.Version)}",
+        (_, WriteOutput { ApprovalRequested: true } review) =>
+            $"{review.Version} was sent for review (its approval sequence started), so nothing live changed. A reviewer approves or rejects it in the CMS edit UI, where the request can also be withdrawn.",
+        (_, RemoveLanguageOutput { Removed: true } removed) =>
+            $"None: the '{removed.Language}' branch of {removed.Ref} and its {removed.Versions} version(s) were deleted for good.",
+        (_, RemoveLanguageOutput) => null,
         (TranslateOperation, WriteOutput { Existing: not true } branch) =>
-            $"Language branch '{branch.Language}' was created ({branch.Version}); opticli can't remove a branch, delete it in the CMS edit UI if unwanted.",
+            $"Language branch '{branch.Language}' was created ({branch.Version}); to remove it again: opticli translate {branch.Ref} --lang {branch.Language} --remove --confirm"
+            + (branch.Blocks?.Any(b => b.Status == "translated") == true ? $" (and the same for the blocks it translated: {string.Join(", ", branch.Blocks.Where(b => b.Status == "translated").Select(b => b.Ref))})" : ""),
         (PublishOperation, WriteOutput published) => Republish(published),
         (_, WriteOutput saved) => Version(saved),
         (DeleteOperation, MoveOutput deleted) =>
@@ -35,7 +48,9 @@ public static class UndoHints
     /// </summary>
     private static string Republish(WriteOutput published) => published.PreviouslyPublished is { } previous
         ? $"{published.Version} is now published; to go back, publish the previously published version: opticli publish {published.Ref} --version {VersionId(previous)}"
-        : $"{published.Version} is now published, and it is the first published version{(published.Language is { } language ? $" in '{language}'" : "")}; opticli can't unpublish, so unpublish it in the CMS edit UI if it shouldn't be live.";
+        : $"{published.Version} is now published, and it is the first published version{In(published)}; to take it offline again: opticli unpublish {published.Ref}{(published.Language is { } code ? $" --lang {code}" : "")}";
+
+    private static string In(WriteOutput output) => output.Language is { } language ? $" in '{language}'" : "";
 
     /// <summary>
     /// The command that turns <c>after</c> back into <c>before</c>: access rights aren't versioned, so this is the only

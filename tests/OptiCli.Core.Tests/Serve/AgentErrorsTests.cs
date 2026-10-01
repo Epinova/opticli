@@ -60,7 +60,7 @@ public class AgentErrorsTests
         Assert.Null(json["currentVersion"]);
 
         // A plan step whose dry run found the draft fails validation with the same details, and the same hint as a write.
-        var step = Core.Writes.WriteExecutor.UnconfirmedDraft(draft);
+        var step = Core.Writes.WriteExecutor.UnconfirmedDraft(draft, new Core.Writes.PublishOperation("123"));
         Assert.Equal(Core.Output.JsonOutput.Serialize(conflict.Details), Core.Output.JsonOutput.Serialize(step.Details));
         Assert.Equal(ErrorCode.Conflict, step.Code);
         Assert.Contains("--include-draft", step.Hint);

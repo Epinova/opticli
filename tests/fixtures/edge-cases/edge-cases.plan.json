@@ -1,0 +1,54 @@
+// Edge cases the Alloy demo site doesn't have, for opticli's integration tests. Run by setup.sh, with
+// --update-existing so it can run again; EdgeCasesFixture.cs (copied into the site) adds the types used here and
+// the parts a plan can't make. The integration tests find this content through OPTICLI_IT_PLAN.
+{
+  "guidNamespace": "0f6c2a8e-5b1d-4e7a-9a43-7d2c8e1b5f60",
+  "operations": [
+    {"op": "create", "id": "edge", "parent": "/en/", "type": "StandardPage", "name": "Edge cases", "publish": true,
+     "properties": {"SimpleAddress": "edge-one", "MainBody": "<p>Content for opticli's integration tests.</p>"}},
+
+    {"op": "upload", "id": "document", "file": "sample.pdf", "for": "$edge", "type": "EdgeDocument", "publish": true,
+     "properties": {"Description": "A one-page PDF"}},
+
+    {"op": "create", "id": "source", "parent": "$edge", "type": "StandardPage", "name": "Fetch-data source", "publish": true,
+     "properties": {"MainBody": "<p>Shown by the fetch-data page too.</p>"}},
+    {"op": "create", "id": "fetch", "parent": "$edge", "type": "StandardPage", "name": "Fetch-data page", "publish": true,
+     "properties": {"Shortcut": {"type": "fetchData", "to": "$source"}}},
+    {"op": "create", "id": "external", "parent": "$edge", "type": "StandardPage", "name": "External shortcut", "publish": true,
+     "properties": {"Shortcut": "https://www.example.com/"}},
+
+    {"op": "block", "id": "teaser", "for": "$edge", "type": "TeaserBlock", "name": "Edge teaser", "publish": true,
+     "properties": {"Heading": "Teaser heading", "Text": "Teaser text", "Image": "$document"}},
+    {"op": "translate", "ref": "$teaser", "lang": "sv", "publish": true,
+     "properties": {"Heading": "Rubrik", "Text": "Text på svenska", "Image": "$document"}},
+    {"op": "block", "id": "fallbackTeaser", "for": "$edge", "type": "TeaserBlock", "name": "Edge teaser for everyone", "publish": true,
+     "properties": {"Heading": "For everyone else", "Text": "Shown when the visitor group doesn't match", "Image": "$document"}},
+
+    {"op": "create", "id": "personalized", "parent": "$edge", "type": "EdgePage", "name": "Personalized", "publish": true,
+     "properties": {
+       "MainContentArea": [
+         {"ref": "$teaser", "group": "edge", "visitorGroups": ["6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e10"]},
+         {"ref": "$fallbackTeaser", "group": "edge"},
+         {"ref": "$teaser"}
+       ],
+       "MainBody": "<p>Everyone sees this.</p><div contenteditable=\"false\" class=\"epi_pc\" data-groups=\"6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e10\"><div class=\"epi_pc_h\"><div class=\"epi_vg\">Edge visitors</div></div><section contenteditable=\"true\" class=\"epi_pc_content\"><p>Only edge visitors see <a href=\"$source\">this link</a>.</p></section></div>",
+       "Local": {"Title": "Local title", "Code": "L1"}
+     }},
+    {"op": "translate", "ref": "$personalized", "lang": "sv", "publish": true,
+     "properties": {"Local": {"Title": "Lokal rubrik"}}},
+
+    {"op": "create", "id": "nested", "guid": "6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e01", "parent": "$edge", "type": "EdgePage", "name": "Nested site", "publish": true,
+     "properties": {"Local": {"Title": "Nested site title", "Code": "N1"}}},
+    {"op": "translate", "ref": "$nested", "lang": "sv", "publish": true,
+     "properties": {"Local": {"Title": "Nästlad webbplats"}}},
+    {"op": "create", "id": "nestedChild", "parent": "$nested", "type": "StandardPage", "name": "Nested child", "publish": true,
+     "properties": {"SimpleAddress": "edge-two", "MainBody": "<p>A page on the nested site.</p>"}},
+
+    {"op": "create", "id": "approval", "guid": "6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e02", "parent": "$edge", "type": "StandardPage", "name": "Approval root"},
+
+    {"op": "create", "id": "languages", "guid": "6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e03", "parent": "$edge", "type": "EdgePage", "name": "Language settings root", "publish": true,
+     "properties": {"Local": {"Title": "Only in English", "Code": "F1"}}},
+    {"op": "create", "id": "languageChild", "parent": "$languages", "type": "StandardPage", "name": "Falls back to English", "publish": true,
+     "properties": {"MainBody": "<p>No Swedish branch; Swedish visitors get this.</p>"}}
+  ]
+}

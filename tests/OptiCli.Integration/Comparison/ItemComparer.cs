@@ -82,7 +82,8 @@ internal sealed class ItemComparer(SiteUnderTest site)
             CmsChangeTracked: agent.Saved is not null,
             DbMasterBranch: db.Language is null || db.Language == db.MasterLanguage,
             UnderSiteOrAssets: path.Any(roots.Contains),
-            ExternalShortcutUrl: db.Shortcut is { Type: "external", Url: { } external } ? external : null);
+            ExternalShortcutUrl: db.Shortcut is { Type: "external", Url: { } external } ? external : null,
+            FetchData: db.Shortcut is { Type: "fetchData" });
     }
 
     private void CompareIdentity(Context context, ContentDocument db, ContentItem agent, LanguageBranch? language, List<Mismatch> mismatches)

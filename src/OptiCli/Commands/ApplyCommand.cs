@@ -67,7 +67,7 @@ internal static class ApplyCommand
             var writes = context.Writes(session, updateExisting: parse.GetValue(updateExisting), ask: false);
             var project = context.TryGetProject(out _);
             var allowedTypes = project is null ? null : new AllowedTypesCheck(session.Model, () => CSharpSourceIndex.Build(project.SourceRoot));
-            var run = await new PlanRunner(session, writes, planDirectory, parse.GetValue(allowOutside), allowedTypes).RunAsync(plan, parse.GetValue(write.DryRun), parse.GetValue(write.Publish), cancellationToken);
+            var run = await new PlanRunner(session, writes, planDirectory, parse.GetValue(allowOutside), allowedTypes, parse.GetValue(write.RequestApproval)).RunAsync(plan, parse.GetValue(write.DryRun), parse.GetValue(write.Publish), cancellationToken);
             return new CommandResult(run, Warnings: run.DryRun ? [Coverage(run)] : null, Source: WriteExecutor.AgentSource);
         });
         return command;

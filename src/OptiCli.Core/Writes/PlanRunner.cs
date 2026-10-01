@@ -55,7 +55,8 @@ public sealed record PlanRun(bool DryRun, IReadOnlyList<PlanStepResult> Operatio
 /// <param name="planDirectory">The plan file's folder, which files in the plan are relative to (the working directory for stdin).</param>
 /// <param name="allowOutside">Allow files outside <paramref name="planDirectory"/> (see <see cref="PlanFiles"/>).</param>
 /// <param name="allowedTypes">Checks ContentArea placements of planned content against <c>[AllowedTypes]</c> in the code; null skips that.</param>
-public sealed class PlanRunner(ContentSession session, WriteExecutor executor, string planDirectory, bool allowOutside = false, Queries.AllowedTypesCheck? allowedTypes = null)
+/// <param name="requestApproval">Every step that publishes requests approval where a sequence applies (<c>apply --request-approval</c>).</param>
+public sealed class PlanRunner(ContentSession session, WriteExecutor executor, string planDirectory, bool allowOutside = false, Queries.AllowedTypesCheck? allowedTypes = null, bool requestApproval = false)
 {
     /// <exception cref="OptiCliException">
     /// Validation failed (nothing written), or a step failed during execution; <c>details</c> is the
@@ -63,10 +64,14 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     /// </exception>
     public async Task<PlanRun> RunAsync(WritePlan plan, bool dryRun, bool publishAll, CancellationToken cancellationToken)
     {
-        var steps = PlanFiles.Resolve(plan.Steps.Select(s => publishAll ? s with { Operation = s.Operation.WithPublish() } : s), planDirectory, allowOutside);
+        // Rich text from @file values only has its $ids once the files are read.
+        var steps = WritePlan.LinkText(PlanFiles.Resolve(plan.Steps
+            .Select(s => publishAll ? s with { Operation = s.Operation.WithPublish() } : s)
+            .Select(s => requestApproval ? s with { Operation = s.Operation.WithRequestApproval() } : s), planDirectory, allowOutside));
+        var guids = WritePlan.FixedGuids(steps);
 
         var existing = executor.UpdateExisting ? await ExistingAsync(steps, cancellationToken) : new Dictionary<string, int>();
-        var resolved = steps.Select(s => s with { Operation = WritePlan.Resolve(s, existing) }).ToList();
+        var resolved = steps.Select(s => s with { Operation = WritePlan.Resolve(s, existing, guids) }).ToList();
         var targets = await TargetsAsync(resolved, existing, cancellationToken);
         var checks = new List<PlanStepResult>();
         OptiCliException? firstFailure = null;
@@ -94,13 +99,17 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         var results = new List<PlanStepResult>();
         foreach (var step in steps)
         {
-            var operation = WritePlan.Resolve(step, created);
+            var operation = WritePlan.Resolve(step, created, guids);
             try
             {
                 var outcome = await executor.RunAsync(operation, dryRun: false, cancellationToken);
                 if (step.Operation.Id is { } id && outcome.CreatedId is { } createdId)
                 {
                     created[id] = createdId;
+                    if (outcome.Output is WriteOutput { Guid: { } guid })
+                    {
+                        guids[id] = guid;
+                    }
                 }
                 results.Add(new PlanStepResult(step.Index, operation.Kind, operation.Id, Changed(outcome.Output) ? PlanStepStatus.Saved : PlanStepStatus.Unchanged,
                     outcome.Output, Undo: UndoHints.For(operation, outcome.Output), Warnings: outcome.Warnings.Count > 0 ? outcome.Warnings : null,
@@ -195,9 +204,10 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
 
     private static bool Changed(object output) => output switch
     {
-        WriteOutput write => write.Saved || write.Restored == true,
+        WriteOutput write => write.Saved || write.Restored == true || write.Discarded == true,
         MoveOutput move => move.Moved,
         AccessOutput access => access.Saved,
+        RemoveLanguageOutput removed => removed.Removed,
         _ => true,
     };
 
@@ -223,6 +233,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             else
             {
                 CheckNamesOfPlannedContent(op, steps);
+                await CheckPlannedApprovalAsync(step, steps, cancellationToken);
                 if (op is UploadOperation upload)
                 {
                     MediaFiles.Check(upload.File);
@@ -230,6 +241,17 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                 if (PlanSimulation.For(step, steps, existing, executor.UpdateExisting) is { } simulation)
                 {
                     return await SimulateAsync(step, simulation, steps, cancellationToken);
+                }
+                if (PlanSimulation.WithStandInLinks(op, steps, existing) is { } linking)
+                {
+                    var linked = await executor.RunAsync(linking, dryRun: true, cancellationToken);
+                    if (linked.Output is WriteOutput { PendingDraft: { } pending } && !op.IncludeDraft)
+                    {
+                        throw WriteExecutor.UnconfirmedDraft(pending, op);
+                    }
+                    return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Simulated, linked.Output,
+                        Warnings: ["Its rich text links to content the plan creates; the dry run checked them with that content's GUID (or a stand-in), and the plan links them when it runs.", .. linked.Warnings],
+                        Guid: op.ContentGuid), null);
                 }
                 if (op is AreaEdit { Action: Protocol.AreaOps.Add } add && await AreaPlacementAsync(add, steps, cancellationToken) is { } checkedAdd)
                 {
@@ -240,15 +262,64 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             var outcome = await executor.RunAsync(op, dryRun: true, cancellationToken);
             if (outcome.Output is WriteOutput { PendingDraft: { } draft } && !op.IncludeDraft)
             {
-                throw WriteExecutor.UnconfirmedDraft(draft);
+                throw WriteExecutor.UnconfirmedDraft(draft, op);
+            }
+            var warnings = outcome.Warnings.ToList();
+            if (op is DeleteOperation { IgnoreReferences: false } && outcome.Output is MoveOutput { ReferenceCount: > 0 } deleted)
+            {
+                await CheckReferencesAsync(step, steps, deleted, warnings, cancellationToken);
             }
             return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Valid, outcome.Output,
-                Warnings: outcome.Warnings.Count > 0 ? outcome.Warnings : null, Guid: op.ContentGuid), null);
+                Warnings: warnings.Count > 0 ? warnings : null, Guid: op.ContentGuid), null);
         }
         catch (OptiCliException ex) when (ex.Code is not (ErrorCode.Unreachable or ErrorCode.Internal))
         {
             return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Invalid, ex.Details, Error(ex), Guid: op.ContentGuid), ex);
         }
+    }
+
+    /// <summary>
+    /// A delete of referenced content needs <c>"ignoreReferences": true</c>, except for references from content an earlier
+    /// step changes, which may remove them: those only warn, and the real run checks again.
+    /// </summary>
+    /// <exception cref="ConflictException">References that no earlier step can have removed.</exception>
+    private async Task CheckReferencesAsync(PlanStep step, IReadOnlyList<PlanStep> steps, MoveOutput deleted, List<string> warnings, CancellationToken cancellationToken)
+    {
+        var changed = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var earlier in steps.Where(s => s.Index < step.Index))
+        {
+            var reference = earlier.Operation switch
+            {
+                SetOperation set => set.Ref,
+                AreaEdit area => area.Ref,
+                DeleteOperation delete => delete.Ref,
+                MoveOperation move => move.Ref,
+                _ => null,
+            };
+            if (reference is null || PlanSimulation.PlanId(reference) is not null)
+            {
+                continue;
+            }
+            try
+            {
+                changed.Add(WriteOutput.Id((await session.LocateAsync(reference, null, cancellationToken)).Id));
+            }
+            catch (OptiCliException)
+            {
+                // That step's own dry run says what is wrong with it.
+            }
+        }
+        var references = deleted.References ?? [];
+        var remaining = references.Where(r => !changed.Contains(r.From)).ToList();
+        // Past the first Queries.IncomingReferences.Max, it can't be told which ones earlier steps change.
+        var unseen = deleted.ReferenceCount!.Value - references.Count;
+        if (remaining.Count + unseen > 0)
+        {
+            throw WriteExecutor.Referenced(
+                $"Content {deleted.Ref} is referenced by content the plan doesn't change first ({string.Join(", ", remaining.Take(5).Select(r => $"{r.From} {r.Property}"))}{(unseen > 0 ? $", and {unseen} more" : "")}).",
+                new Queries.IncomingReferences(remaining, remaining.Count + unseen));
+        }
+        warnings.Add($"The references to {deleted.Ref} are all from content that earlier operations change ({string.Join(", ", changed.Intersect(references.Select(r => r.From)))}); the delete checks again when it runs, and stops if they are still there.");
     }
 
     /// <summary>The step as a dry run against stand-ins; validation errors on the properties it had to leave out don't count.</summary>
@@ -300,7 +371,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         if (outcome?.Output is WriteOutput { PendingDraft: { } draft } && !op.IncludeDraft)
         {
             // As for a step that is dry-run as is: the publish would put someone else's changes live unconfirmed.
-            var unconfirmed = WriteExecutor.UnconfirmedDraft(draft);
+            var unconfirmed = WriteExecutor.UnconfirmedDraft(draft, op);
             return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Invalid, unconfirmed.Details, Error(unconfirmed), Warnings: notes, Guid: op.ContentGuid), unconfirmed);
         }
         var messages = errors.Select(v => v.Property is null ? v.Message : $"{v.Property}: {v.Message}").Concat(placements).ToList();
@@ -373,6 +444,57 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             return null;
         }
     }
+
+    /// <summary>
+    /// A step that publishes content the plan creates: the approval sequence that will apply is the nearest existing
+    /// ancestor's, since a plan can't define one. The agent can't check it before the content exists.
+    /// </summary>
+    /// <exception cref="OptiCliException">The rules of <see cref="ApprovalRules.Check"/>.</exception>
+    private async Task CheckPlannedApprovalAsync(PlanStep step, IReadOnlyList<PlanStep> steps, CancellationToken cancellationToken)
+    {
+        var op = step.Operation;
+        if (!op.Publishes && !op.RequestApproval)
+        {
+            return;
+        }
+        var reference = op switch
+        {
+            SetOperation set => set.Ref,
+            AreaEdit area => area.Ref,
+            TranslateOperation translate => translate.Ref,
+            PublishOperation publish => publish.Ref,
+            _ => ParentOf(op),
+        };
+        // Up through the planned content to the first item that exists.
+        for (var hops = 0; reference is not null && PlanSimulation.PlanId(reference) is { } id && hops <= steps.Count; hops++)
+        {
+            reference = steps.Select(s => s.Operation).FirstOrDefault(o => o.Id == id) is { } creating ? ParentOf(creating) : null;
+        }
+        if (reference is null || PlanSimulation.PlanId(reference) is not null)
+        {
+            return;
+        }
+        try
+        {
+            var located = await session.LocateAsync(reference, null, cancellationToken);
+            var header = await session.HeaderAsync(located.Id, cancellationToken);
+            var sequence = await Queries.ApprovalReader.ResolveAsync(session.Db, session.Model, header, cancellationToken);
+            ApprovalRules.Check(sequence, op, $"The content operations[{step.Index}] publishes");
+        }
+        catch (NotFoundException)
+        {
+            // The step's own checks say so.
+        }
+    }
+
+    /// <summary>Where a creating step puts its content; null for a "For this page" folder, which only exists once it runs.</summary>
+    private static string? ParentOf(WriteOperation op) => op switch
+    {
+        CreateOperation create => create.Parent,
+        BlockCreateOperation { Parent: { } parent } => parent,
+        UploadOperation { Parent: { } parent } => parent,
+        _ => null,
+    };
 
     /// <summary>For a step on content an earlier step creates, the property names can still be checked against that step's type.</summary>
     private void CheckNamesOfPlannedContent(WriteOperation op, IReadOnlyList<PlanStep> steps)

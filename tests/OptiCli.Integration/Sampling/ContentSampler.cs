@@ -1,5 +1,6 @@
 using OptiCli.Core.Content;
 using OptiCli.Core.Queries;
+using OptiCli.Core.Writes;
 
 namespace OptiCli.Integration.Sampling;
 
@@ -20,6 +21,27 @@ internal static class ContentSampler
             return new SampleItem(r.GetInt32(0), typeId, session.Model.Kind(typeId), r.GetInt32(2));
         }, cancellationToken);
         return Stratified.Take(candidates, count, seed);
+    }
+
+    /// <summary>Every branch of every item a plan creates (its steps' GUIDs), so its edge cases are compared every run.</summary>
+    /// <exception cref="InvalidOperationException">Some of the plan's content isn't in the database.</exception>
+    public static async Task<IReadOnlyList<SampleItem>> PlanAsync(ContentSession session, string planPath, CancellationToken cancellationToken)
+    {
+        var plan = WritePlan.Parse(await File.ReadAllTextAsync(planPath, cancellationToken));
+        var guids = plan.Steps.Select(s => s.Operation.ContentGuid).OfType<Guid>().ToList();
+        var ids = await ContentHeaderReader.IdsByGuidsAsync(session.Db, guids, cancellationToken);
+        if (guids.Where(g => !ids.ContainsKey(g)).ToList() is { Count: > 0 } missing)
+        {
+            throw new InvalidOperationException(
+                $"{missing.Count} item(s) of {planPath} aren't in the database ({string.Join(", ", missing)}); build them with tests/fixtures/edge-cases/setup.sh.");
+        }
+        var items = new List<SampleItem>();
+        foreach (var id in ids.Values.Order())
+        {
+            var header = await session.HeaderAsync(id, cancellationToken);
+            items.AddRange(header.Languages.Keys.Order().Select(language => new SampleItem(id, header.TypeId, session.Model.Kind(header.TypeId), language)));
+        }
+        return items;
     }
 
     /// <summary>The newest unpublished version of the most recently changed branches, as <c>drafts</c> lists them.</summary>

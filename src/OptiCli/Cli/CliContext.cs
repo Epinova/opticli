@@ -102,7 +102,9 @@ internal sealed class CliContext(ParseResult parse, GlobalOptions options, OptiC
     /// <param name="ask">On a terminal, ask whether a publish may include someone else's unpublished changes.</param>
     public WriteExecutor Writes(ContentSession session, string? site = null, bool updateExisting = false, bool ask = true) =>
         new(session, ConnectAgentAsync, site, TryGetProject(out _)?.Directory, updateExisting,
-            ask && DatabasePrompt.CanAsk ? PendingDraftPrompt.Ask : null);
+            ask && DatabasePrompt.CanAsk ? PendingDraftPrompt.Ask : null,
+            ask && DatabasePrompt.CanAsk ? ReferencesPrompt.Ask : null,
+            ask && DatabasePrompt.CanAsk ? ConfirmPrompt.Ask : null);
 
     private (ProjectInfo?, OptiCliException?) LocateProject()
     {

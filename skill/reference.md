@@ -37,16 +37,18 @@ the one saved with `opticli db use`, else `connection` in the user config (`~/.c
 | `types [--kind page\|block\|media\|folder\|other] [--unused] [--sort name\|instances]` | `instances` = non-deleted items. Sorted by name unless `--sort instances`. |
 | `type <name\|class\|guid>` | `properties[]` (name, type, blockType, list, cultureSpecific, required, tab, order, displayName, `source` file:line, `declaredIn`, `allowedTypes`/`restrictedTypes` from `[AllowedTypes]`, `uiHint`), `classes[]` (file, line, `baseTypes`), `views[]` (file, `matchedBy`: fileName, partialName, viewComponent, model), `sourceRoot`. `existsOnModel: false` = in the DB but gone from code. Controllers are not listed. |
 | `allowed-in <type> [--kind K] [--explicit]` | ContentArea/reference properties of every type that can hold `<type>`, from `[AllowedTypes]` in code: `allowed` (`explicit` + `matchedBy`, or `any` for a ContentArea/reference list without the attribute), `allowedTypes`, `uiHint`, `source`. Base classes and interfaces declared in the sources count. Editor descriptors (`uiHint`) and metadata extenders can change the rules at runtime; they are not evaluated. |
-| `get <ref>` | `--lang`, `--version published\|latest\|<id>` (default: published, or the latest draft if the branch was never published), `--fields A,B` (whole values; identity fields like `name`, `saved` are always shown, so `--fields name` gives just those), `--full`, `--all-properties`, `--expand` (inline ContentArea items / referenced content one level). `saved`/`changedBy` belong to the version shown. |
+| `get <ref>` | `--lang`, `--version published\|latest\|<id>` (default: published, or the latest draft if the branch was never published), `--fields A,B` (whole values; identity fields like `name`, `saved` are always shown, so `--fields name` gives just those), `--full`, `--all-properties`, `--expand` (inline ContentArea items / referenced content one level). `saved`/`changedBy` belong to the version shown. With `--lang`, language settings apply: a replacement language, or (no branch) the first fallback language that has one; `languageRule` (`replacement`, `fallback`, `none`) and `notes` say so. `projects` lists the projects that hold a version of it. |
 | `resolve <url>` | `--site`. Result has `site`, `host`, `languageSource`, `matchedBy`. |
 | `url <ref>` | Per language: `path` (site-relative), `url` (absolute), `site`. |
 | `tree <ref> [--depth N] [--limit N]` | Default depth 2, max 5000 nodes (`capped`). `--limit` is children per node; the rest are counted in `more`. |
 | `children <ref>` / `ancestors <ref>` | One level down, in the parent's `childSortOrder` / the path from the root. Children show `sortIndex` when the parent sorts by `Index`. |
 | `find --type T [--where ...] [--under <ref>] [--status published\|draft\|any] [--lang]` | `--where` is repeatable: `Prop=value` exact, `Prop~value` contains, `Block.Prop=...` inside a local block, `Name~...` on the name, `Area=<ref>` for ContentAreas/references containing that content. Deleted items excluded. |
 | `search <text> [--in names\|strings\|all] [--lang]` | One row per item and language with `matches[]` (`property`, `snippet`). Capped at 2000 values per source (`meta.warnings`). |
-| `where-used <ref> [--pages]` | Rows: owner identity + `saved`, `changedBy` + `property` (e.g. `MainArea`, `Hero.Link`, `MainArea[2].Text`), `kind` (`contentArea`, `contentReference`, `contentReferenceList`, `richTextLink`, `richTextBlock`, `link`, `linkCollection`, `url`, `text`, `softlink`), `sources` (`softlink` = CMS link index, `property` = value scan). Deleted owners last, `deleted: true`. The value scan reads each branch's primary values (published, else the latest draft); the link index covers saved versions. `--pages` follows block owners up to the pages (rows get `via`: the blocks in between), newest `saved` first. |
+| `where-used --type T` | Every instance of a type (outside the recycle bin): `ref`, `name`, `count`, `usages[]` (as below), the most used first, unused ones last; `meta.warnings` sums it up. |
+| `where-used <ref> [--pages]` | Rows: owner identity + `saved`, `changedBy` + `property` (e.g. `MainArea`, `Hero.Link`, `MainArea[2].Text`), `kind` (`contentArea`, `contentReference`, `contentReferenceList`, `richTextLink`, `richTextBlock`, `link`, `linkCollection`, `url`, `text`, `softlink`), `sources` (`softlink` = CMS link index, `property` = value scan). Deleted owners last, `deleted: true`. The value scan reads each branch's primary values (published, else the latest draft); the link index covers saved versions. `--pages` follows block owners up to the pages (rows get `via`: the blocks in between), newest `saved` first. A reference only inside personalized rich text has `visitorGroups` (and `visitorGroupNames`): only those visitors see it. |
 | `versions <ref> [--lang]` | Newest first: `ref` (`id_version`), `language`, `status`, `name`, `saved`, `changedBy`, `startPublish`, `primary`. |
-| `drafts [--since <date>] [--by <user>] [--kind K] [--type T] [--lang]` | One row per item and language with unpublished changes: `status` and `version` of the newest draft, `saved`, `changedBy`, `drafts` (unpublished versions newer than the published one). `--since` is UTC. |
+| `drafts [--since <date>] [--by <user>] [--kind K] [--type T] [--lang]` | One row per item and language with unpublished changes: `status` and `version` of the newest draft, `saved`, `changedBy`, `drafts` (unpublished versions newer than the published one), `publishAt` for a scheduled one. `--since` is UTC. |
+| `projects [<id>]` | Projects (versions of several items published together): `id`, `name`, `status`, `created`, `createdBy`, `publishAt`, `items`. With an id, its items: `ref`, `version`, `type`, `name`, `language`, `status`. Read-only. |
 | `blob <ref>` | Media only: blob URI, file path on disk, `exists`; same for the thumbnail. |
 | `access <ref>` | `inherited`, `from` (the item the entries are stored on: itself, or the nearest ancestor with its own), `entries[]` (`name`, `kind`: role, user or visitorGroup, `levels`: `FullAccess` or e.g. `["Read","Edit"]`, `mask`). Read from the database; no `serve` needed. |
 | `sql "<SELECT ...>" [--limit N] [--full] [--include-personal-data]` | One SELECT/WITH statement, run in a rolled-back transaction; returns 100 rows unless `--limit` (`truncated: true` when there were more); `--jsonl` prints rows. Forms submissions and user/membership tables need `--include-personal-data`. In `sys`, only the views that describe this database's schema (`sys.objects`, `tables`, `columns`, `indexes`, `index_columns`, `types`, `schemas`, `foreign_keys`, `sql_modules`, ...) are allowed, and `INFORMATION_SCHEMA` views; `sys.dm_*`, `fn_*`, `sys*` compatibility views and server-wide views are refused. Put a space between a number and a following word (`1 AS x`, not `1AS x`). |
@@ -62,14 +64,18 @@ the one saved with `opticli db use`, else `connection` in the user config (`~/.c
  "properties":{
    "Heading":{"type":"String","value":"Hello","culture":"en"},
    "MainArea":{"type":"ContentArea","value":[{"ref":"789","type":"TeaserBlock","name":"Teaser","displayOption":"wide",
-     "group":"g1","visitorGroups":["<visitor group id>"]}]},
+     "group":"g1","visitorGroups":["<visitor group id>"],"visitorGroupNames":["Returning visitors"]}]},
    "Hero":{"type":"Block","blockType":"HeroBlock","value":{"Heading":{"type":"String","value":"..."}}}}}
 ```
 
 `simpleAddress`, `shortcut` (absent on a normal page; an external link also has `url`, and `to`/`anchor` when it is
-a permanent link to a page) and `category` appear when set. `culture` on a top-level property is the branch its value came from (shared properties come from the master
+a permanent link to a page), `category` and `approval` (see [Approval sequences](#approval-sequences)) appear when
+set. A fetch-data page (`shortcut.type: "fetchData"`) shows its own values; `notes` says the site fills the empty ones
+from the page in `shortcut.to`. `culture` on a top-level property is the branch its value came from (shared properties come from the master
 language). Empty properties are omitted unless `--all-properties`. Rich text gives the (possibly truncated) HTML
-plus its resolved links and embedded blocks.
+plus its resolved links and embedded blocks, and `personalized[]` for the sections only some visitor groups see
+(`visitorGroups`, `visitorGroupNames`, `group`, their `value` and `links`). `visitorGroupNames` sit beside the ids, which
+are what `set` takes back; a visitor group id that doesn't exist is refused on write.
 
 ## Write commands (need `opticli serve`)
 
@@ -78,7 +84,8 @@ All take `--dry-run`. `set`, `create`, `area`, `block create`, `translate` save 
 `published`, `valid`, `changes[]` (`property`, `before`, `after`), `validation[]`. A saved draft becomes the
 primary draft, the version edit mode opens. A write that publishes existing content also has `previouslyPublished`
 (the version live until then; absent after a first publish) and, when it put other people's changes live,
-`pendingDraft` (see [Other people's drafts](#other-peoples-drafts)).
+`pendingDraft` (see [Other people's drafts](#other-peoples-drafts)). Content with an approval sequence isn't published
+directly: see [Approval sequences](#approval-sequences).
 
 | Command | Example |
 |---|---|
@@ -89,14 +96,45 @@ primary draft, the version edit mode opens. A write that publishes existing cont
 | `area <ref> <Prop> move <position\|ref:id> <to>` | `opticli area 123 MainArea move 0 2` |
 | `block create --type T --name N (--for <page-ref> \| --parent <folder-ref>)` | `opticli block create --type TeaserBlock --name Teaser --for 123` |
 | `upload <file> (--for <ref> \| --parent <folder-ref>) [--name N] [--type T] [Prop=value...]` | `opticli upload report.pdf --parent 456 --name "Annual report" --dry-run` |
-| `translate <ref> --lang <code> [--name N] [Prop=value...]` | `opticli translate 123 --lang de --name "Neuigkeiten"` |
-| `publish <ref> [--version id] [--include-draft]` | `opticli publish 123_456` (only when the user asked) |
+| `upload <file> --replace <media-ref> [Prop=value...]` | `opticli upload report-v2.pdf --replace 789 --dry-run` |
+| `translate <ref> --lang <code> [--name N] [--with-blocks] [Prop=value...]` | `opticli translate 123 --lang de --name "Neuigkeiten" --with-blocks` |
+| `translate <ref> --lang <code> --remove [--confirm]` | `opticli translate 123 --lang de --remove --dry-run` (only when the user asked) |
+| `publish <ref> [--version id] [--include-draft] [--request-approval] [--publish-at time]` | `opticli publish 123_456` (only when the user asked) |
+| `unpublish <ref> [--lang]` | `opticli unpublish 123 --dry-run` (only when the user asked) |
+| `discard <ref> [--version id] [--lang] [--include-draft]` | `opticli discard 123_457 --dry-run` (only when the user asked) |
 | `move <ref> --to <parent-ref>` | `opticli move 123 --to 45` |
-| `delete <ref>` | `opticli delete 123 --dry-run` (recycle bin; only when the user asked) |
+| `delete <ref> [--ignore-references]` | `opticli delete 123 --dry-run` (recycle bin; only when the user asked) |
 | `access <ref> [--grant Role=Levels] [--user Name=Levels] [--revoke Name] [--break-inheritance \| --inherit]` | `opticli access 123 --break-inheritance --revoke Everyone --grant Authenticated=Read --dry-run` (only when the user asked) |
 | `apply <plan.json\|->` | `opticli apply plan.json --dry-run` |
 
+`unpublish` takes a published branch offline as the edit UI's expiry does: a copy of the published version with
+`StopPublish` set to now is published (`unpublished: true`), drafts stay as they are, and `get` notes that it is offline.
+`previouslyPublished` is the version that was live; `opticli publish <ref> --version <it>` puts it back. Any publish
+clears a stop-publish date that has passed (with a warning), unless the change sets one. Start pages, site and asset
+roots are refused, and so is content with an approval sequence (save a draft with `StopPublish=<now>` and send it with
+`--request-approval`).
+`discard` deletes one version that was never published (default: the newest in the language) and can't be undone; its
+`changes` show what the version holds compared with the published version (or the one before). The published version,
+versions published before, the only version and a version in review are refused (exit 3 or 5). A version someone else
+saved needs confirming as for a publish ([Other people's drafts](#other-peoples-drafts)): `--include-draft`.
+`--publish-at <time>` (`set`, `area`, `create`, `publish`; in a plan `"publishAt"`) schedules the publish instead: ISO
+8601, UTC unless it has an offset (`2025-03-01T08:00Z`), in the future. The version is saved as `delayedPublish` with
+`scheduledFor`, and the CMS's scheduled job ("Publish delayed content versions") publishes it then; `drafts` shows it
+with `publishAt`, `versions` with `delayPublishUntil`. The rules for a publish apply (other people's drafts, approval
+sequences). Not with `--publish` or `--request-approval`. To cancel: `opticli discard <ref> --version <id>`.
+`translate --with-blocks` also gives every block in the content's "For this page" folder the new branch (a copy of the
+block's master language, published with `--publish`), so the new branch doesn't show blocks in another language;
+`blocks[]` says per block `translated`, `exists` or `notLocalizable`. Blocks elsewhere (shared folders) are left alone.
+`translate --remove` deletes a branch with all its versions; it can't be undone. Not the master language, nor a site's
+start page. The dry run shows `versions` and whether it was `published`; the real run needs `--confirm` (a prompt on a
+terminal; elsewhere `conflict`, `details.reason: "removesBranch"`).
 `move` and `delete` refuse start pages, site and asset roots, the recycle bin and anything that contains them.
+`delete` (and its dry run) lists references from other content to the item or its descendants, which would point into
+the recycle bin: `references[]` (`from`, `name`, `type`, `language`, `to`, `property`, `kind`; the first 50) and
+`referenceCount`. A real delete with references stops: on a terminal it asks; elsewhere `conflict` (exit 5),
+`details.reason: "referenced"`, `details.references`. `--ignore-references` (in a plan `"ignoreReferences": true`)
+deletes all the same. In a plan, references from content that earlier steps change (an `area remove`, say) only warn;
+the delete checks again when it runs. A `move` keeps references working (they follow the content by id).
 `create`, `block create`, `upload` and `move` put content only where it can go, or fail with `validation` (exit 5):
 pages below pages (not in asset folders), blocks, media and folders in asset folders (not below pages: a page's own
 go in its "For this page" folder, `--for <page>`), nothing below blocks or media, and only types the parent's type
@@ -173,6 +211,9 @@ property of the same name wins). All are versioned, show in `changes`, and are r
   are only used with `--type`.
 - At most 50 MB; only regular files (a symlink is followed to its file). `--dry-run` checks type, parent, name and
   properties without sending the file.
+- `--replace <media-ref>` gives existing media a new file: a new version (a draft unless `--publish`) of the same media
+  type, which must accept the file's extension; the published version keeps the old file until the new one is
+  published. In a plan: `{"op": "upload", "file": "q1-v2.pdf", "replace": "$q1"}`.
 - Media folders: `opticli create <folder-ref> --type SysContentFolder --name Reports`. `--for <ref>` puts the file in
   that page's or block's "For this page" folder.
 - Output: as `create`, plus `upload` (`file`, `bytes`, `blob`: where the site stored it, as `opticli blob` shows it).
@@ -220,6 +261,23 @@ these stop unless confirmed: `set`, `area` and plan steps with `publish`, `publi
 - Versions saved by `opticli` itself never need it, so "save a draft, check it, publish" works as before.
 - To go back after a publish: `opticli publish <ref> --version <previouslyPublished>`.
 
+### Approval sequences
+
+Content can have an approval sequence (its own, or inherited from an ancestor): publishing it goes through reviewers,
+step by step. `get` and `access` show it as `approval`: `definedOn`, `inherited`, `steps[]` (`name`, `reviewers[]` with
+`name`, `kind` `role`/`user`, `languages`).
+- A write that would publish such content is refused (exit 3, `error.details.reason: "approvalSequence"`), also as a
+  dry run and as a plan step: publishing directly would skip its reviewers. Ask the user whether to send it for
+  review instead.
+- `--request-approval` (`set`, `area`, `create`, `block create`, `upload`, `translate`, `publish`; in a plan
+  `"requestApproval": true`, or `apply --request-approval` for every step that publishes) saves the version and starts
+  the sequence, as the edit UI's Ready for Review: status `awaitingApproval`, `approvalRequested: true`, nothing live
+  changes. With `--publish` too, content without a sequence is published as usual; alone, it fails there (exit 1,
+  `details.reason: "noApprovalSequence"`).
+- opticli doesn't approve or reject: that is a reviewer's decision, in the CMS edit UI. `drafts` lists what awaits it.
+- Content in review can't be changed until a reviewer decides: writes fail with `conflict` (exit 5,
+  `details.reason: "inReview"`).
+
 ### Plans (`apply`)
 
 ```json
@@ -229,9 +287,14 @@ these stop unless confirmed: `set`, `area` and plan steps with `publish`, `publi
   {"op": "area", "ref": "$page", "property": "MainArea", "action": "add", "item": "$teaser"}]}
 ```
 
-Ops: `set`, `create`, `area`, `block`, `upload`, `translate`, `publish`, `move`, `delete`, `access`, with the same
-fields as the commands (`opticli apply --help` lists them). `"$id"` refers to what an earlier `create`, `block` or
-`upload` with that `id` made.
+Ops: `set`, `create`, `area`, `block`, `upload`, `translate`, `publish`, `unpublish`, `discard`, `move`, `delete`,
+`access`, with the same fields as the commands (`opticli apply --help` lists them). `"$id"` refers to what an earlier
+`create`, `block` or `upload` with that `id` made.
+- In rich text (and `@file` HTML), `href="$id"` (or `"$id#anchor"`) links to planned content: it is stored as its
+  permanent link, `~/link/<guid>.aspx`, as the CMS does. A block in the text takes `data-contentguid="$id"` (or
+  `data-contentlink="$id"`, its id). A link to content a later step creates (or the same step) needs its GUID up front:
+  `"guidNamespace"` on the plan or `"guid"` on that step; `data-contentlink` always needs the content to come first.
+  The dry run checks the HTML with that GUID, or a stand-in.
 - A string value `"@path"` anywhere in `properties` is that file's text, like `Prop=@file`:
   `"MainBody": "@texts/article.html"`. `"@@..."` is a literal `@`.
 - `{"op": "upload", "id": "q1", "file": "files/q1.pdf", "parent": "$reports"}`.
@@ -261,6 +324,8 @@ How far the dry run gets (`meta.warnings` sums it up; step statuses):
   it fails validation (`conflict`): there is nothing left to publish. A `set` on a language branch that an earlier
   `translate` creates is dry-run as the new branch with every value set on it so far; an `area` edit there is dry-run
   on the master branch.
+  A step on existing content whose rich text links to planned content is dry-run with those links pointing at the
+  content's GUID (or a stand-in).
 - `deferred`: only names were checked (`access`, `translate`, `move`, `delete` on planned content); the site validates
   them when the plan runs.
 
@@ -313,5 +378,8 @@ Plans that run again (a section rebuilt after a database refresh, or repaired af
 | `unreachable` (exit 4) on a write | The site isn't running: `opticli serve`; if it was, `opticli serve --status` and `--logs --tail 80`. If the write timed out ("no response within"), it may still have been saved: `opticli versions <ref>` before you retry. |
 | `serve` times out or exits | `opticli serve --logs --tail 80`. Typical: the site needs a build (`--build`), a port is taken (`--port`), or the site's own startup fails. |
 | `validation` (exit 5) | `error.details` lists each failing property; drafts may leave required properties empty, publishing may not. |
+| `refused` (exit 3), `details.reason: "approvalSequence"` | The content has an approval sequence. Ask the user whether to send it for review; if so, run again with `--request-approval`. |
+| `conflict` (exit 5), `details.reason: "inReview"` | The content awaits a reviewer's decision; tell the user, who decides in the CMS edit UI. |
+| `conflict` (exit 5), `details.reason: "referenced"` | Other content references what `delete` would remove (`details.references`). Show them; remove the references, or ask the user before `--ignore-references`. |
 | `conflict` (exit 5) | A newer version exists: `opticli versions <ref> --limit 3`, then re-run. With `details.reason: "pendingDraft"`: someone else's unpublished changes would go live too; show `details.draft` and ask the user before `--include-draft`. |
 | Values look cut off | `truncated: true`: use `get <ref> --fields Prop` or `--full`. |

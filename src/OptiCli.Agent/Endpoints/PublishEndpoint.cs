@@ -36,48 +36,74 @@ internal static class PublishEndpoint
         {
             throw AgentException.NotFound($"Content {link.ID} has no version {versionId}.");
         }
-        if (version is IVersionable { Status: VersionStatus.Published })
+        // The published version taken offline (unpublish) is published again as a new version, without its stop date.
+        var expired = version is IVersionable { Status: VersionStatus.Published, StopPublish: { } stop } && stop <= DateTime.Now;
+        if (version is IVersionable { Status: VersionStatus.Published } && !expired)
         {
             throw AgentException.Conflict($"Version {version.ContentLink} is already the published version.");
         }
 
         var versionLanguage = version is ILocalizable { Language: { } own } ? own : null;
         branch ??= flow.Locator.Versions(link, versionLanguage);
-        var pending = PendingDrafts.Require(
-            flow.Locator.PendingDraft(branch, version), body.IncludeDraft || named is not null, dryRun: false, $"{link.ID} ('{version.Name}')", versionLanguage?.Name);
+        var what = $"{link.ID} ('{version.Name}')";
+        var action = WriteFlow.Publishing(request, link, publish: true, body.RequestApproval, body.PublishAt, what) ?? SaveAction.Publish;
+        var publishing = action == SaveAction.Publish;
+        var scheduling = action == SaveAction.Schedule;
+        if (action == SaveAction.RequestApproval && version is IVersionable { Status: VersionStatus.AwaitingApproval })
+        {
+            Approvals.RequireNotInReview([.. branch.Where(v => v.ContentLink.WorkID == version.ContentLink.WorkID)], what, versionLanguage?.Name);
+        }
+        var pending = publishing || scheduling
+            ? PendingDrafts.Require(flow.Locator.PendingDraft(branch, version), body.IncludeDraft || named is not null, dryRun: false, what, versionLanguage?.Name)
+            : null;
         var previouslyPublished = ContentLocator.PublishedVersion(branch);
 
         var writable = (IContent)((IReadOnly)version).CreateWritableClone();
-        var issues = ValidationErrors.Validate(flow.Validation, writable, SaveAction.Publish);
+        WriteFlow.ScheduleAt(writable, action, body.PublishAt);
+        var cleared = WriteFlow.ClearExpiredStopPublish(writable, action, null);
+        if (expired)
+        {
+            action |= SaveAction.ForceNewVersion;
+        }
+        var issues = ValidationErrors.Validate(flow.Validation, writable, action);
+        if (cleared is not null)
+        {
+            issues = [.. issues, cleared];
+        }
         if (ValidationErrors.HasErrors(issues))
         {
             throw AgentException.Invalid(issues);
         }
 
         flow.ThrowIfAborted();
-        ContentReference published;
+        ContentReference saved;
         string? siteError = null;
         try
         {
-            published = flow.Repository.Save(writable, SaveAction.Publish, AccessLevel.NoAccess);
+            saved = flow.Repository.Save(writable, action, AccessLevel.NoAccess);
         }
-        catch (Exception ex) when (ex is not AgentException && flow.Repository.Get<IContent>(version.ContentLink) is IVersionable { Status: VersionStatus.Published })
+        catch (Exception ex) when (ex is not AgentException
+            && !expired
+            && flow.Repository.Get<IContent>(version.ContentLink) is IVersionable { Status: var status }
+            && status == (publishing ? VersionStatus.Published : scheduling ? VersionStatus.DelayedPublish : VersionStatus.AwaitingApproval))
         {
             // A handler of the publishing events failed after the version went live (see WriteFlow.Save).
-            Console.Error.WriteLine($"[opticli] the site failed after publishing {version.ContentLink}: {ex}");
-            published = version.ContentLink;
+            Console.Error.WriteLine($"[opticli] the site failed after saving {version.ContentLink}: {ex}");
+            saved = version.ContentLink;
             siteError = $"{ex.Message} ({ex.GetType().FullName})";
         }
         return new WriteResult
         {
-            Content = ContentSummaries.Describe(flow.Repository.Get<IContent>(published), flow.Types),
+            Content = ContentSummaries.Describe(flow.Repository.Get<IContent>(saved), flow.Types),
             SiteError = siteError,
             Saved = true,
-            Published = true,
+            Published = publishing,
+            ApprovalRequested = action == SaveAction.RequestApproval,
+            ScheduledFor = scheduling ? body.PublishAt!.Value.ToUniversalTime() : null,
             BaseVersion = versionId,
             Validation = issues.Count > 0 ? issues : null,
             PendingDraft = pending,
-            PreviouslyPublished = previouslyPublished,
+            PreviouslyPublished = publishing ? previouslyPublished : null,
         };
     }
 }

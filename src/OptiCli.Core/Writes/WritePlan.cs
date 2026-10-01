@@ -26,15 +26,17 @@ public sealed partial class WritePlan
     /// <summary>Allowed fields per op; required ones end with <c>*</c>.</summary>
     public static readonly IReadOnlyDictionary<string, string[]> Fields = new Dictionary<string, string[]>
     {
-        ["set"] = ["ref*", "properties", "name", "lang", "publish", "includeDraft", "baseVersion", "force"],
-        ["create"] = ["parent*", "type*", "name*", "properties", "lang", "publish", "includeDraft", "id", "guid"],
-        ["area"] = ["ref*", "property*", "action*", "item", "index", "at", "to", "display", "lang", "publish", "includeDraft", "baseVersion", "force"],
-        ["block"] = ["type*", "name*", "for", "parent", "properties", "lang", "publish", "includeDraft", "id", "guid"],
-        ["upload"] = ["file*", "for", "parent", "name", "type", "properties", "publish", "includeDraft", "id", "guid"],
-        ["translate"] = ["ref*", "lang*", "name", "properties", "publish", "includeDraft"],
-        ["publish"] = ["ref*", "version", "lang", "includeDraft"],
+        ["set"] = ["ref*", "properties", "name", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "baseVersion", "force"],
+        ["create"] = ["parent*", "type*", "name*", "properties", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "id", "guid"],
+        ["area"] = ["ref*", "property*", "action*", "item", "index", "at", "to", "display", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "baseVersion", "force"],
+        ["block"] = ["type*", "name*", "for", "parent", "properties", "lang", "publish", "includeDraft", "requestApproval", "id", "guid"],
+        ["upload"] = ["file*", "for", "parent", "replace", "name", "type", "properties", "publish", "includeDraft", "requestApproval", "id", "guid"],
+        ["translate"] = ["ref*", "lang*", "name", "properties", "publish", "includeDraft", "requestApproval", "withBlocks", "remove", "confirm"],
+        ["publish"] = ["ref*", "version", "lang", "publishAt", "includeDraft", "requestApproval"],
+        ["unpublish"] = ["ref*", "lang"],
+        ["discard"] = ["ref*", "version", "lang", "includeDraft"],
         ["move"] = ["ref*", "to*"],
-        ["delete"] = ["ref*"],
+        ["delete"] = ["ref*", "ignoreReferences"],
         ["access"] = ["ref*", "grant", "grantUsers", "revoke", "breakInheritance", "inherit", "allowUnknownRole"],
     };
 
@@ -123,12 +125,70 @@ public sealed partial class WritePlan
     public const string PlanHint =
         """Example: {"operations": [{"op": "create", "id": "page", "parent": "123", "type": "ArticlePage", "name": "News"}, {"op": "set", "ref": "$page", "properties": {"Heading": "Hello"}}]}. Run `opticli apply --help` for every op's fields.""";
 
-    /// <summary>The step's operation with <c>$id</c>s replaced by the ids of the content created for them.</summary>
-    public static WriteOperation Resolve(PlanStep step, IReadOnlyDictionary<string, int> created) =>
-        step.DependsOn.Count == 0
-            ? step.Operation
-            : step.Operation.MapRefs(value =>
-                value.StartsWith('$') && created.TryGetValue(value[1..], out var id) ? id.ToString(CultureInfo.InvariantCulture) : value);
+    /// <summary>
+    /// The step's operation with <c>$id</c>s replaced by the ids of the content created for them, and those in rich text
+    /// (<see cref="TextRefs"/>) by what the CMS stores, once the id or GUID they need is known.
+    /// </summary>
+    /// <param name="guids">The GUID of each plan id: fixed by the plan, or of content created so far.</param>
+    public static WriteOperation Resolve(PlanStep step, IReadOnlyDictionary<string, int> created, IReadOnlyDictionary<string, Guid>? guids = null) =>
+        step.Operation.MapRefs(value =>
+            value.StartsWith('$') && created.TryGetValue(value[1..], out var id)
+                ? id.ToString(CultureInfo.InvariantCulture)
+                : TextRefs.Map(value, found => TextRefs.Value(
+                    found.Attribute,
+                    created.TryGetValue(found.Id, out var contentId) ? contentId : null,
+                    guids is not null && guids.TryGetValue(found.Id, out var guid) ? guid : null)));
+
+    /// <summary>The GUIDs a plan fixes for its content (a step's <c>guid</c>, or from <c>guidNamespace</c>), by plan id.</summary>
+    public static Dictionary<string, Guid> FixedGuids(IEnumerable<PlanStep> steps) => steps
+        .Where(s => s.Operation is { Id: not null, ContentGuid: not null })
+        .ToDictionary(s => s.Operation.Id!, s => s.Operation.ContentGuid!.Value, StringComparer.Ordinal);
+
+    /// <summary>
+    /// The <c>$id</c>s in rich text (<see cref="TextRefs"/>), once <c>@file</c> values have been read: an earlier step's
+    /// content becomes a dependency; a later step's (or this one's) only works where its GUID is fixed in advance and
+    /// the GUID is all the text needs.
+    /// </summary>
+    /// <exception cref="UsageException">References that can't work; <c>details.problems</c> lists every one.</exception>
+    public static IReadOnlyList<PlanStep> LinkText(IReadOnlyList<PlanStep> steps)
+    {
+        var creating = steps.Where(s => s.Operation.Id is not null).GroupBy(s => s.Operation.Id!).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var problems = new List<string>();
+        var linked = new List<PlanStep>();
+        foreach (var step in steps)
+        {
+            var dependsOn = new HashSet<string>(step.DependsOn, StringComparer.Ordinal);
+            var where = $"operations[{step.Index}]";
+            step.Operation.MapRefs(value =>
+            {
+                foreach (var found in TextRefs.Find(value).Distinct())
+                {
+                    var reference = $"{found.Attribute}=\"${found.Id}\"";
+                    if (!creating.TryGetValue(found.Id, out var target))
+                    {
+                        problems.Add($"{where}: {reference} in text is not the id of a create, block or upload operation.");
+                    }
+                    else if (target.Index < step.Index)
+                    {
+                        dependsOn.Add(found.Id);
+                    }
+                    else if (!TextRefs.NeedsOnlyGuid(found.Attribute))
+                    {
+                        problems.Add($"{where}: {reference} needs the content's id, which only exists once operations[{target.Index}] has run; move that operation before this one.");
+                    }
+                    else if (target.Operation.ContentGuid is null)
+                    {
+                        problems.Add($"{where}: the text links to '${found.Id}', which {(target.Index == step.Index ? "this operation" : $"a later operation (operations[{target.Index}])")} creates. Its GUID is only known in advance with a \"guidNamespace\" on the plan (or a \"guid\" on that operation): add one, or move that operation before this one.");
+                    }
+                }
+                return value;
+            });
+            linked.Add(step with { DependsOn = dependsOn });
+        }
+        return problems.Count == 0
+            ? linked
+            : throw new UsageException($"The plan has {problems.Count} problem(s): {string.Join(" ", problems)}", PlanHint) { Details = new { problems } };
+    }
 
     private static IReadOnlySet<string> Dependencies(WriteOperation op, int index, IReadOnlyDictionary<string, int> defined, IReadOnlySet<string> allIds, List<string> problems)
     {
@@ -208,13 +268,23 @@ public sealed partial class WritePlan
             "create" => new CreateOperation(reader.Ref("parent"), reader.String("type") ?? "", reader.String("name") ?? "", reader.Object("properties"), reader.String("lang"), reader.Bool("publish")),
             "area" => new AreaEdit(reader.Ref("ref"), reader.String("property") ?? "", reader.String("action") ?? "", reader.OptionalRef("item"), reader.Int("index"), reader.Int("at"), reader.Int("to"), reader.String("display"), reader.String("lang"), reader.Bool("publish"), reader.Int("baseVersion"), reader.Bool("force")),
             "block" => new BlockCreateOperation(reader.String("type") ?? "", reader.String("name") ?? "", reader.OptionalRef("for"), reader.OptionalRef("parent"), reader.Object("properties"), reader.String("lang"), reader.Bool("publish")),
-            "upload" => new UploadOperation(reader.String("file") ?? "", reader.OptionalRef("for"), reader.OptionalRef("parent"), reader.String("name"), reader.String("type"), reader.Object("properties"), reader.Bool("publish")),
-            "translate" => new TranslateOperation(reader.Ref("ref"), reader.String("lang") ?? "", reader.String("name"), reader.Object("properties"), reader.Bool("publish")),
+            "upload" => new UploadOperation(reader.String("file") ?? "", reader.OptionalRef("for"), reader.OptionalRef("parent"), reader.String("name"), reader.String("type"), reader.Object("properties"), reader.Bool("publish"))
+            {
+                Replace = reader.OptionalRef("replace"),
+            },
+            "translate" => new TranslateOperation(reader.Ref("ref"), reader.String("lang") ?? "", reader.String("name"), reader.Object("properties"), reader.Bool("publish"))
+            {
+                WithBlocks = reader.Bool("withBlocks"),
+                Remove = reader.Bool("remove"),
+                Confirm = reader.Bool("confirm"),
+            },
             "publish" => new PublishOperation(reader.Ref("ref"), reader.Int("version"), reader.String("lang")),
+            "unpublish" => new UnpublishOperation(reader.Ref("ref"), reader.String("lang")),
+            "discard" => new DiscardOperation(reader.Ref("ref"), reader.Int("version"), reader.String("lang")),
             "move" => new MoveOperation(reader.Ref("ref"), reader.Ref("to")),
             "access" => new AccessOperation(reader.Ref("ref"), reader.Levels("grant"), reader.Levels("grantUsers"), reader.Strings("revoke"),
                 reader.Bool("breakInheritance"), reader.Bool("inherit"), reader.Bool("allowUnknownRole")),
-            _ => new DeleteOperation(reader.Ref("ref")),
+            _ => new DeleteOperation(reader.Ref("ref"), reader.Bool("ignoreReferences")),
         };
 
         if (operation is AreaEdit area && area.Action is not ("add" or "remove" or "move") && step["action"] is not null)
@@ -231,12 +301,26 @@ public sealed partial class WritePlan
                 }
             }
         }
-        if ((operation is BlockCreateOperation block && (block.For is null) == (block.Parent is null))
+        if (operation is UploadOperation { Replace: not null } replacing)
+        {
+            if (replacing.For is not null || replacing.Parent is not null || replacing.Type is not null || step["id"] is not null || step["guid"] is not null)
+            {
+                problems.Add($"{reader.Where}: \"replace\" replaces the file of existing media; it takes no \"for\", \"parent\", \"type\", \"id\" or \"guid\".");
+            }
+        }
+        else if ((operation is BlockCreateOperation block && (block.For is null) == (block.Parent is null))
             || (operation is UploadOperation upload && (upload.For is null) == (upload.Parent is null)))
         {
-            problems.Add($"{reader.Where}: give exactly one of \"for\" and \"parent\".");
+            problems.Add($"{reader.Where}: give exactly one of \"for\" and \"parent\" (or, for an upload, \"replace\").");
         }
-        return operation with { Id = id, ContentGuid = ContentGuid(reader, op, id, guidNamespace), IncludeDraft = reader.Bool("includeDraft") };
+        return operation with
+        {
+            Id = id,
+            ContentGuid = ContentGuid(reader, op, id, guidNamespace),
+            IncludeDraft = reader.Bool("includeDraft"),
+            RequestApproval = reader.Bool("requestApproval"),
+            PublishAt = reader.Time("publishAt"),
+        };
     }
 
     /// <summary>The step's <c>guid</c>, else one derived from the plan's namespace and the step's id.</summary>
@@ -298,6 +382,14 @@ public sealed partial class WritePlan
             null => null,
             JsonValue value when value.TryGetValue<int>(out var number) => number,
             _ => Problem<int?>(name, "an integer"),
+        };
+
+        /// <summary>A time with an offset, or in UTC without one: <c>"2025-03-01T08:00:00Z"</c>.</summary>
+        public DateTimeOffset? Time(string name) => step[name] switch
+        {
+            null => null,
+            JsonValue value when value.TryGetValue<string>(out var text) && PublishTimes.TryParse(text, out var at) => at,
+            _ => Problem<DateTimeOffset?>(name, "a date and time, e.g. \"2025-03-01T08:00:00Z\" (UTC unless it has an offset)"),
         };
 
         public bool Bool(string name) => step[name] switch

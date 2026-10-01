@@ -54,11 +54,11 @@ public class UndoHintsTests
     }
 
     [Fact]
-    public void A_first_publish_says_it_can_only_be_unpublished_in_the_edit_ui()
+    public void A_first_publish_is_undone_by_unpublish()
     {
         var hint = UndoHints.For(new SetOperation("123", Publish: true), Output(published: true));
 
-        Assert.Equal("123_456 is now published, and it is the first published version in 'en'; opticli can't unpublish, so unpublish it in the CMS edit UI if it shouldn't be live.", hint);
+        Assert.Equal("123_456 is now published, and it is the first published version in 'en'; to take it offline again: opticli unpublish 123 --lang en", hint);
         Assert.DoesNotContain("--version", hint);
         Assert.DoesNotContain("in '", UndoHints.For(new PublishOperation("123"), Output(published: true, language: null)));
     }

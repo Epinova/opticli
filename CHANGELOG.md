@@ -3,6 +3,69 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.6.0 (1 October 2026)
+
+### Behaviour changes
+
+These can break scripts and plans that relied on the old behaviour:
+- **Approval sequences are respected.** A publish of content with an approval sequence (its own or inherited) is
+  refused (exit 3, `details.reason: "approvalSequence"`), also as a dry run and as a plan step. It skipped the
+  reviewers before. `--request-approval` sends it for review instead. Content in review can't be changed until a
+  reviewer decides (`conflict`, `details.reason: "inReview"`).
+- **`delete` stops when other content references what it deletes** (`conflict`, `details.reason: "referenced"`,
+  `details.references`), and asks on a terminal. `--ignore-references` (a plan's `"ignoreReferences": true`) deletes all
+  the same. In a plan, references from content that earlier steps change only warn.
+- `get --lang` follows the language settings: a replacement language, or the first fallback language that has a
+  branch, before the master language. `languageRule` says when they decided.
+- A diff's `before` gives ContentArea items an explicit `"group": ""` and `"visitorGroups": []`, so sending it back
+  takes away personalization added since.
+- Any publish clears a stop-publish date that has passed (with a warning), unless the change sets one.
+
+### Writes
+
+- `opticli unpublish <ref>` takes a published branch offline, as the edit UI's expiry does. Undo with
+  `opticli publish <ref> --version <previouslyPublished>`.
+- `opticli discard <ref> [--version <id>]` deletes a version that was never published. It can't be undone; a version
+  someone else saved needs `--include-draft`.
+- `--publish-at <time>` on `set`, `area`, `create` and `publish` schedules the publish. `drafts` and `versions` show the
+  time.
+- `--request-approval` on every write that can publish, and `apply --request-approval`.
+- `translate --with-blocks` also translates the blocks in the content's "For this page" folder.
+  `translate --remove --confirm` deletes a language branch.
+- `upload <file> --replace <media-ref>` gives existing media a new file, as a new version of the same type.
+- Plans: `href="$id"` (and `data-contentguid`/`data-contentlink`) in rich text and `@file` HTML link to content the
+  plan creates, as permanent links. Links to later steps need a `guidNamespace`. New ops `unpublish` and `discard`.
+- Visitor group ids in ContentAreas are checked: an unknown id is refused.
+- Saving a fetch-data page no longer always counts as a change.
+
+### Reads
+
+- `get` and `access` show the approval sequence that applies (`approval`).
+- `get` shows `visitorGroupNames` beside visitor group ids, `personalized[]` for rich text only some visitor groups
+  see, and `projects`. A fetch-data page notes where its empty properties come from.
+- `where-used --type <T>` lists every instance of a type with its usages. A reference only inside personalized rich
+  text says which `visitorGroups` see it.
+- `opticli projects [<id>]` lists projects and their items.
+- URLs: a site whose start page has language settings only takes its active languages as a prefix.
+- `get` notes when published content is offline because its stop-publish date has passed.
+
+### serve, env and configuration
+
+- The site agent refuses requests that came through a proxy or tunnel (`X-Forwarded-For`, `Forwarded`, ...), and stops
+  reading a body at the size limit.
+- A body the site's web server refuses as too large (IIS 404.13, 413) is reported as such, and an agent that rejects a
+  field this CLI sends says to restart `serve`.
+- Ctrl+C while the site starts stops it within 5 s, so the `cancelled` envelope is printed.
+- `env` warns about another spelling of the connection string exported in the shell.
+- `Directory.Build.targets` is read too (it can set `UserSecretsId`). JSON configuration values come out as ASP.NET Core
+  reads them (`True`/`False`, `""` for null, empty sections).
+
+### Project
+
+- `tests/fixtures/edge-cases/` builds an edge-case site from an Alloy site for the integration tests: fetch-data pages,
+  a nested site, approvals, language settings, personalization, a project and PDF media. The integration tests run
+  one at a time.
+
 ## 0.5.0 (1 October 2026)
 
 ### Output changes

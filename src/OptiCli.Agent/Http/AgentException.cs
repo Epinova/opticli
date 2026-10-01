@@ -18,12 +18,15 @@ internal sealed class AgentException(string code, string message, string? hint =
 
     public PendingDraft? PendingDraft { get; init; }
 
+    /// <summary>One of <see cref="AgentErrorReasons"/>.</summary>
+    public string? Reason { get; init; }
+
     /// <summary>Overrides the code's usual status, e.g. 503 rather than 403 for a disabled agent.</summary>
     public int? ForcedStatus { get; init; }
 
     public int Status => ForcedStatus ?? AgentErrorCodes.HttpStatus(Code);
 
-    public AgentError ToError() => new(Code, Message, Hint) { Validation = Validation, CurrentVersion = CurrentVersion, PendingDraft = PendingDraft };
+    public AgentError ToError() => new(Code, Message, Hint) { Validation = Validation, CurrentVersion = CurrentVersion, PendingDraft = PendingDraft, Reason = Reason ?? (PendingDraft is null ? null : AgentErrorReasons.PendingDraft) };
 
     public static AgentException Usage(string message, string? hint = null) => new(AgentErrorCodes.Usage, message, hint);
 

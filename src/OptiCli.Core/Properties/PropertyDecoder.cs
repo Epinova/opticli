@@ -150,6 +150,10 @@ public sealed class PropertyDecoder(
                 {
                     result["blocks"] = blocks;
                 }
+                if (Personalized(text, full) is { Count: > 0 } personalized)
+                {
+                    result["personalized"] = personalized;
+                }
                 return result;
             case (PropertyBaseType.LongString, "LinkItem"):
                 return LinkMarkup.Parse(text) is [var link, ..] ? WithNode(result, Link(link)) : Text(result, text, full);
@@ -215,6 +219,8 @@ public sealed class PropertyDecoder(
             if (fragment.VisitorGroups.Count > 0)
             {
                 item["visitorGroups"] = new JsonArray(fragment.VisitorGroups.Select(g => (JsonNode?)g).ToArray());
+                // Beside the ids, which set takes back as they are: the names, null for roles and groups that are gone.
+                item["visitorGroupNames"] = new JsonArray(fragment.VisitorGroups.Select(g => (JsonNode?)model.VisitorGroupName(g)).ToArray());
             }
             if (fragment.RenderSettings.Count > 0)
             {
@@ -237,6 +243,28 @@ public sealed class PropertyDecoder(
             AddLinks(result, text);
         }
         return result;
+    }
+
+    /// <summary>Sections of rich text only some visitor groups see, so text there doesn't look like it shows to everyone.</summary>
+    private JsonArray Personalized(string text, bool full)
+    {
+        var sections = new JsonArray();
+        foreach (var section in PersonalizedText.Find(text))
+        {
+            var entry = new JsonObject
+            {
+                ["visitorGroups"] = new JsonArray(section.VisitorGroups.Select(g => (JsonNode?)g).ToArray()),
+                ["visitorGroupNames"] = new JsonArray(section.VisitorGroups.Select(g => (JsonNode?)model.VisitorGroupName(g)).ToArray()),
+            };
+            if (section.Group is { } group)
+            {
+                entry["group"] = group;
+            }
+            TextValues.Put(entry, section.Html, full);
+            AddLinks(entry, section.Html);
+            sections.Add(entry);
+        }
+        return sections;
     }
 
     private void AddLinks(JsonObject result, string text)

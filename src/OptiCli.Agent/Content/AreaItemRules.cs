@@ -82,4 +82,20 @@ internal static class AreaItemRules
         var list = $"Display options: {string.Join(", ", ids)}.";
         throw AgentException.Usage($"No display option '{text}'.", suggestion is null ? list : $"{suggestion} {list}");
     }
+
+    /// <summary>
+    /// Visitor group ids must name a visitor group; anything that isn't a GUID is a role name, which the CMS also takes
+    /// there, and is left as it is.
+    /// </summary>
+    /// <param name="name">The group's name by id; null for no such group.</param>
+    /// <exception cref="AgentException"><c>usage</c> for an id no visitor group has.</exception>
+    public static void RequireVisitorGroups(IEnumerable<string> visitorGroups, Func<Guid, string?> name)
+    {
+        var unknown = visitorGroups.Where(g => Guid.TryParse(g, out var id) && name(id) is null).ToList();
+        if (unknown.Count > 0)
+        {
+            throw AgentException.Usage($"No visitor group has the id {string.Join(", ", unknown)}.",
+                "Visitor group ids are in get's visitorGroups (with visitorGroupNames), and in admin mode's Visitor Groups.");
+        }
+    }
 }

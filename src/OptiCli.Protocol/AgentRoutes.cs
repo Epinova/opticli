@@ -75,6 +75,14 @@ public static class AgentRoutes
     public static string Languages(string contentRef) => $"{Content(contentRef)}/languages";
 
     /// <summary>
+    /// <c>POST /v1/content/{ref}/remove-language</c>. Body: <see cref="RemoveLanguageRequest"/>. Deletes a language branch
+    /// with all its versions (<c>IContentRepository.DeleteLanguageBranch</c>); it can't be undone. Response:
+    /// <see cref="RemoveLanguageResult"/>. Errors: <c>refused</c> for the master language and site start pages;
+    /// <c>not_found</c> when there is no such branch.
+    /// </summary>
+    public static string RemoveLanguage(string contentRef) => $"{Content(contentRef)}/remove-language";
+
+    /// <summary>
     /// <c>POST /v1/content/{ref}/publish</c>. Body: <see cref="PublishRequest"/> (optional). Publishes the
     /// given version, the ref's version, or the latest version in the language. Response: <see cref="WriteResult"/>.
     /// Errors: <c>conflict</c> when that version is already published, or when the latest version includes someone
@@ -82,6 +90,24 @@ public static class AgentRoutes
     /// (<see cref="AgentError.PendingDraft"/>); <c>validation</c> 422.
     /// </summary>
     public static string Publish(string contentRef) => $"{Content(contentRef)}/publish";
+
+    /// <summary>
+    /// <c>POST /v1/content/{ref}/unpublish</c>. Body: <see cref="UnpublishRequest"/> (optional). Takes the branch offline as
+    /// the edit UI does: a copy of the published version with its stop-publish date set to now is published, and the
+    /// common draft stays the one edit mode opens. Response: <see cref="WriteResult"/> with
+    /// <see cref="WriteResult.Unpublished"/>. Errors: <c>refused</c> for start pages, site and asset roots, and content
+    /// with an approval sequence; <c>conflict</c> when the branch isn't published or already expired.
+    /// </summary>
+    public static string Unpublish(string contentRef) => $"{Content(contentRef)}/unpublish";
+
+    /// <summary>
+    /// <c>POST /v1/content/{ref}/discard</c>. Body: <see cref="DiscardRequest"/> (optional). Deletes one unpublished version
+    /// (<c>IContentVersionRepository.Delete</c>); it can't be undone. Response: <see cref="WriteResult"/> with
+    /// <see cref="WriteResult.Discarded"/>. Errors: <c>refused</c> for the published version and the only version;
+    /// <c>conflict</c> for a version in review, or one someone else saved without <see cref="DiscardRequest.IncludeDraft"/>
+    /// (<see cref="AgentError.PendingDraft"/>).
+    /// </summary>
+    public static string Discard(string contentRef) => $"{Content(contentRef)}/discard";
 
     /// <summary>
     /// <c>POST /v1/content/{ref}/move</c>. Body: <see cref="MoveRequest"/>. Response: <see cref="MoveResult"/>.

@@ -47,7 +47,7 @@ internal static class BlockCommand
                 ContentGuid = parse.GetValue(guid),
             };
             await using var session = await context.OpenContentAsync(cancellationToken);
-            return WriteOptions.Result(await context.Writes(session).RunAsync(operation, parse.GetValue(write.DryRun), cancellationToken));
+            return WriteOptions.Result(await context.Writes(session).RunAsync(write.WithApproval(operation, parse), parse.GetValue(write.DryRun), cancellationToken));
         });
         return command;
     }

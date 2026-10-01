@@ -12,7 +12,16 @@ namespace OptiCli.Core.Queries;
 /// <param name="Saved">When the owner's branch was last saved (its primary version), so owners can be sorted by recency.</param>
 public sealed record Usage(
     string Ref, Guid Guid, string Type, string? Name, string? Language, string Status, string? Url, bool? Deleted,
-    string Property, string Kind, IReadOnlyList<string> Sources, DateTime? Saved, string? ChangedBy);
+    string Property, string Kind, IReadOnlyList<string> Sources, DateTime? Saved, string? ChangedBy)
+{
+    /// <summary>
+    /// For a reference in rich text that is only inside personalized sections: the visitor groups that see it (ids, and
+    /// <see cref="VisitorGroupNames"/>). Null when everyone does.
+    /// </summary>
+    public IReadOnlyList<string>? VisitorGroups { get; init; }
+
+    public IReadOnlyList<string?>? VisitorGroupNames { get; init; }
+}
 
 /// <summary>
 /// <c>where-used</c>: combines the CMS's soft link index (<c>tblContentSoftlink</c>, which covers rich text,
@@ -92,6 +101,7 @@ public sealed class WhereUsedReader(ContentSession session, PropertyReferenceInd
         }
 
         await session.Identities.LoadAsync(found.Select(f => f.OwnerId), [], cancellationToken);
+        var texts = await RichTextAsync(found.Where(f => f.Kind is "richTextLink" or "richTextBlock").ToList(), cancellationToken);
         return found
             .GroupBy(f => (f.OwnerId, f.LanguageId, Path: PropertyPaths.Describe(session.Model, f.DefinitionId, f.Scope)))
             .Select(group =>
@@ -102,19 +112,46 @@ public sealed class WhereUsedReader(ContentSession session, PropertyReferenceInd
                     ? ContentIdentity.MissingId(first.OwnerId)
                     : session.Identities.Describe(header, session.Model.Language(first.LanguageId));
                 var branch = header?.LanguageRow(first.LanguageId);
+                var visitorGroups = texts.GetValueOrDefault((first.OwnerId, first.LanguageId, first.DefinitionId, first.Scope ?? "")) is { } text
+                    ? PersonalizedText.GroupsAround(text, guidD) ?? PersonalizedText.GroupsAround(text, guidN)
+                    : null;
                 return new Usage(
                     identity.Ref!, identity.Guid, identity.Type ?? "", identity.Name, identity.Language, identity.Status ?? "", identity.Url, identity.Deleted,
                     first.DefinitionId == 0 ? "(unknown)" : group.Key.Path,
                     first.Kind,
                     group.Select(f => f.Source).Distinct().Order().ToList(),
                     branch?.Saved,
-                    string.IsNullOrEmpty(branch?.ChangedBy) ? null : branch.ChangedBy);
+                    string.IsNullOrEmpty(branch?.ChangedBy) ? null : branch.ChangedBy)
+                {
+                    VisitorGroups = visitorGroups,
+                    VisitorGroupNames = visitorGroups?.Select(session.Model.VisitorGroupName).ToList(),
+                };
             })
             .OrderBy(u => u.Deleted == true ? 1 : 0)
             .ThenBy(u => u.Type, StringComparer.Ordinal)
             .ThenBy(u => u.Name, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(u => u.Language, StringComparer.Ordinal)
             .ToList();
+    }
+
+    /// <summary>The primary text of the rich-text values found, to tell whether the reference is in a personalized section.</summary>
+    private async Task<Dictionary<(int, int, int, string), string>> RichTextAsync(IReadOnlyList<Found> rich, CancellationToken cancellationToken)
+    {
+        var texts = new Dictionary<(int, int, int, string), string>();
+        foreach (var key in rich.Select(f => (f.OwnerId, f.LanguageId, f.DefinitionId, Scope: f.Scope ?? "")).Distinct())
+        {
+            var rows = await session.Db.QueryAsync("""
+                SELECT LongString FROM tblContentProperty
+                WHERE fkContentID = @owner AND fkLanguageBranchID = @language AND fkPropertyDefinitionID = @definition AND ISNULL(ScopeName, '') = @scope
+                """, r => r.GetStringOrNull("LongString"), cancellationToken,
+                new SqlParameter("@owner", key.OwnerId), new SqlParameter("@language", key.LanguageId),
+                new SqlParameter("@definition", key.DefinitionId), new SqlParameter("@scope", key.Scope));
+            if (rows.FirstOrDefault() is { } text && text.Contains("epi_pc", StringComparison.Ordinal))
+            {
+                texts[key] = text;
+            }
+        }
+        return texts;
     }
 
     private string Kind(int definitionId, bool byLink, bool asFragment)

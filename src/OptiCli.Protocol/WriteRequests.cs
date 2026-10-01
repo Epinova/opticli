@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace OptiCli.Protocol;
 
@@ -42,6 +43,23 @@ public sealed record DraftRequest
     /// <see cref="AgentError.PendingDraft"/>; a dry run reports them in <see cref="WriteResult.PendingDraft"/>.
     /// </summary>
     public bool IncludeDraft { get; init; }
+
+    /// <summary>
+    /// Where a content approval sequence applies: save the version and start the sequence (<c>SaveAction.RequestApproval</c>)
+    /// instead of publishing, which is refused there (<c>refused</c>, <see cref="AgentErrorReasons.ApprovalSequence"/>).
+    /// With <see cref="Publish"/>, content without a sequence is published as usual; without it, such content is a <c>usage</c> error.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool RequestApproval { get; init; }
+
+    /// <summary>
+    /// Schedule the publish for this time (UTC) instead of publishing now (<c>SaveAction.Schedule</c>, with the version's
+    /// start-publish date set to it): it stays a draft (<c>delayedPublish</c>) until the CMS's scheduled job publishes it.
+    /// Must be in the future. The rules for a publish apply: other people's drafts (<see cref="IncludeDraft"/>), approval
+    /// sequences (refused there).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? PublishAt { get; init; }
 
     /// <summary>Apply and validate without saving; the response shows what would change.</summary>
     public bool DryRun { get; init; }
@@ -153,6 +171,14 @@ public sealed record CreateRequest
 
     public bool Publish { get; init; }
 
+    /// <summary>As <see cref="DraftRequest.RequestApproval"/>; for new content, the parent's sequence applies.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool RequestApproval { get; init; }
+
+    /// <summary>As <see cref="DraftRequest.PublishAt"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? PublishAt { get; init; }
+
     public bool DryRun { get; init; }
 
     /// <summary>
@@ -213,11 +239,23 @@ public sealed record UploadRequest
 
     public bool Publish { get; init; }
 
+    /// <summary>As <see cref="CreateRequest.RequestApproval"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool RequestApproval { get; init; }
+
     /// <summary>Validate type, parent, name and properties without storing a file.</summary>
     public bool DryRun { get; init; }
 
     /// <summary>As <see cref="CreateRequest.Guid"/>.</summary>
     public Guid? Guid { get; init; }
+
+    /// <summary>
+    /// Replace the file of this existing media item instead (content id or GUID): a new version with the new file, of the
+    /// same media type, which must accept the file's extension. Give no <see cref="Parent"/>, <see cref="ForContent"/>,
+    /// <see cref="Type"/> or <see cref="Guid"/>. With <see cref="Publish"/>, the rules for publishing existing content apply.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Replace { get; init; }
 
     /// <summary>As <see cref="CreateRequest.UpdateExisting"/>; existing media keeps its file.</summary>
     public bool UpdateExisting { get; init; }
@@ -239,6 +277,19 @@ public sealed record LanguageBranchRequest
 
     public bool Publish { get; init; }
 
+    /// <summary>As <see cref="DraftRequest.RequestApproval"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool RequestApproval { get; init; }
+
+    public bool DryRun { get; init; }
+}
+
+/// <summary>Body of <see cref="AgentRoutes.RemoveLanguage"/>.</summary>
+public sealed record RemoveLanguageRequest
+{
+    /// <summary>The branch to delete, with all its versions. Not the master language.</summary>
+    public required string Lang { get; init; }
+
     public bool DryRun { get; init; }
 }
 
@@ -259,6 +310,44 @@ public sealed record PublishRequest
     /// <see cref="AgentError.PendingDraft"/>; a dry run reports them in <see cref="WriteResult.PendingDraft"/>.
     /// </summary>
     public bool IncludeDraft { get; init; }
+
+    /// <summary>
+    /// Start the content's approval sequence for the version instead of publishing it, where one applies; a publish is
+    /// refused there. Content without a sequence is published as usual.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool RequestApproval { get; init; }
+
+    /// <summary>As <see cref="DraftRequest.PublishAt"/>: schedule the version's publish instead.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? PublishAt { get; init; }
+}
+
+/// <summary>Body of <see cref="AgentRoutes.Unpublish"/> (may be empty).</summary>
+public sealed record UnpublishRequest
+{
+    /// <summary>The branch to take offline; default is the content's master language.</summary>
+    public string? Lang { get; init; }
+
+    public bool DryRun { get; init; }
+}
+
+/// <summary>Body of <see cref="AgentRoutes.Discard"/> (may be empty).</summary>
+public sealed record DiscardRequest
+{
+    /// <summary>The unpublished version to delete; default: the ref's version, else the newest version in <see cref="Lang"/>.</summary>
+    public int? Version { get; init; }
+
+    public string? Lang { get; init; }
+
+    /// <summary>
+    /// Confirms discarding a version someone other than opticli saved. Without it that fails with <c>conflict</c> and
+    /// <see cref="AgentError.PendingDraft"/> (the version and its changes); a dry run reports it in
+    /// <see cref="WriteResult.PendingDraft"/>.
+    /// </summary>
+    public bool IncludeDraft { get; init; }
+
+    public bool DryRun { get; init; }
 }
 
 /// <summary>Body of <see cref="AgentRoutes.Move"/>.</summary>

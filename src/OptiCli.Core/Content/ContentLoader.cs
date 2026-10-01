@@ -26,6 +26,7 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
 
         VersionInfo? shownVersion = null;
         int branch;
+        string? languageRule = null;
         if (version.Kind == VersionKind.Specific)
         {
             shownVersion = await VersionReader.ByIdAsync(db, Model, version.Id!.Value, cancellationToken);
@@ -43,7 +44,7 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
         }
         else
         {
-            branch = ChooseBranch(header, language, notes);
+            (branch, languageRule) = ChooseBranch(header, language, notes);
             if (version.Kind == VersionKind.Latest)
             {
                 shownVersion = await VersionReader.LatestAsync(db, Model, contentId, branch, cancellationToken);
@@ -71,6 +72,10 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
         var facts = shownVersion ?? (isPage && row?.VersionId is { } primary ? await VersionReader.ByIdAsync(db, Model, primary, cancellationToken) : null);
         var sortingVersion = facts?.LanguageId == header.MasterLanguageId ? facts : null;
         var shortcut = isPage ? await ShortcutAsync(facts, branchLanguage, cancellationToken) : null;
+        if (shortcut is { Type: "fetchData" })
+        {
+            notes.Add($"This page fetches data from {shortcut.To?.Ref ?? "another page"}: the site shows that page's values for the properties left empty here. These are the page's own values, which set changes.");
+        }
         var category = kind is Cms.ContentKind.Page or Cms.ContentKind.Block or Cms.ContentKind.Media
             ? await PropertyRowReader.BuiltInCategoriesAsync(db, contentId, branch, shownVersion?.Id, cancellationToken)
             : [];
@@ -79,6 +84,11 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
             branchLanguage,
             status: shownVersion?.StatusValue ?? row?.Status,
             name: shownVersion?.Name);
+        var stopPublish = shownVersion is not null ? shownVersion.StopPublish : row?.StopPublish;
+        if ((shownVersion?.StatusValue ?? row?.Status) == VersionStatus.Published && stopPublish <= DateTime.UtcNow)
+        {
+            notes.Add($"Offline: its stop-publish date ({stopPublish.Value.ToString("u", System.Globalization.CultureInfo.InvariantCulture)}) has passed, so visitors don't see it. Publishing a version without a past stop date puts it back.");
+        }
 
         return new ContentDocument(
             identity.Ref!,
@@ -97,7 +107,7 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
             shownVersion?.ChangedBy ?? row?.ChangedBy,
             shownVersion?.StartPublish ?? row?.StartPublish,
             // Not ?? as for StartPublish: a draft without a stop date isn't stopped by the published version's.
-            shownVersion is not null ? shownVersion.StopPublish : row?.StopPublish,
+            stopPublish,
             isPage ? Queries.ChildOrder.Name(sortingVersion?.ChildOrderRule ?? header.ChildOrderRule) : null,
             isPage ? sortingVersion?.PeerOrder ?? header.PeerOrder : null,
             isPage ? ShortcutInfo.SimpleAddressPath(facts?.ExternalUrl ?? row?.ExternalUrl) : null,
@@ -106,6 +116,9 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
             latestDraft is { } draft ? ContentIdentity.RefFor(contentId, draft) : null,
             header.Deleted ? true : null,
             language is not null && language.Id != branch && version.Kind != VersionKind.Specific ? language.Code : null,
+            languageRule,
+            await Queries.ApprovalReader.ResolveAsync(db, Model, header, cancellationToken),
+            await Queries.ProjectReader.ForContentAsync(db, contentId, cancellationToken) is { Count: > 0 } projects ? projects : null,
             notes.Count == 0 ? null : notes,
             properties);
     }
@@ -165,21 +178,39 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
             ShortcutInfo.FrameTarget(version!.FrameName));
     }
 
-    private int ChooseBranch(ContentHeader header, LanguageBranch? language, List<string> notes)
+    /// <returns>The branch, and the language settings' rule when they chose it (<see cref="LanguageChoice.Rule"/>).</returns>
+    private (int Branch, string? Rule) ChooseBranch(ContentHeader header, LanguageBranch? language, List<string> notes)
     {
+        if (language is not null && Model.LanguageSettings.Choose(header.Id, header.AncestorIds, header.Languages.Keys.ToList(), language.Id, Model.LanguageByCode) is { } choice)
+        {
+            var source = choice.DefinedOn == header.Id ? "its language settings" : $"the language settings of {choice.DefinedOn}";
+            if (choice.Branch is { } chosen)
+            {
+                var shown = Model.Language(chosen)?.Code;
+                notes.Add(choice.Rule == "replacement"
+                    ? $"'{language.Code}' is replaced by '{shown}' here ({source}), so visitors in '{language.Code}' see the '{shown}' branch."
+                    : $"No '{language.Code}' branch; showing '{shown}', its fallback language ({source}), as the site does.");
+                return (chosen, choice.Rule);
+            }
+            var master = Master(header);
+            notes.Add($"No '{language.Code}' branch, and {source} give no fallback that has one, so the site doesn't show it in '{language.Code}'; showing '{Model.Language(master)?.Code ?? "invariant"}' here.");
+            return (master, choice.Rule);
+        }
         if (language is not null && header.Languages.ContainsKey(language.Id))
         {
-            return language.Id;
+            return (language.Id, null);
         }
-        var fallback = header.Languages.ContainsKey(header.MasterLanguageId)
-            ? header.MasterLanguageId
-            : header.Languages.Keys.DefaultIfEmpty(header.MasterLanguageId).Min();
+        var fallback = Master(header);
         if (language is not null)
         {
             notes.Add($"No '{language.Code}' branch; showing '{Model.Language(fallback)?.Code ?? "invariant"}'.");
         }
-        return fallback;
+        return (fallback, null);
     }
+
+    private static int Master(ContentHeader header) => header.Languages.ContainsKey(header.MasterLanguageId)
+        ? header.MasterLanguageId
+        : header.Languages.Keys.DefaultIfEmpty(header.MasterLanguageId).Min();
 
     /// <summary>
     /// Primary values from <c>tblContentProperty</c>; for a specific version its own rows, plus shared

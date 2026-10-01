@@ -57,7 +57,8 @@ public sealed record Mismatch(
 /// <param name="DbMasterBranch">The DB side shows the item's master branch, or the item has no language.</param>
 /// <param name="UnderSiteOrAssets">The item is below a site's start page or an asset root, the places opticli builds URLs for.</param>
 /// <param name="ExternalShortcutUrl">For a page whose shortcut is an external link, that link (the DB side's <c>shortcut.url</c>).</param>
-public sealed record ItemFacts(bool CmsLocalizable, bool CmsVersionable, bool CmsChangeTracked, bool DbMasterBranch, bool UnderSiteOrAssets, string? ExternalShortcutUrl = null)
+/// <param name="FetchData">The page fetches data from another page (its shortcut type is <c>fetchData</c>).</param>
+public sealed record ItemFacts(bool CmsLocalizable, bool CmsVersionable, bool CmsChangeTracked, bool DbMasterBranch, bool UnderSiteOrAssets, string? ExternalShortcutUrl = null, bool FetchData = false)
 {
     public static readonly ItemFacts Unknown = new(true, true, true, true, true);
 }

@@ -5,6 +5,7 @@ using EPiServer.Core;
 using EPiServer.DataAbstraction;
 using EPiServer.Filters;
 using EPiServer.SpecializedProperties;
+using EPiServer.ServiceLocation;
 using EPiServer.Web;
 using OptiCli.Agent.Http;
 using OptiCli.Core.Text;
@@ -432,6 +433,10 @@ internal sealed class PropertyWriter(
         {
             var takenOver = matches[i] < 0 ? null : currentItems[matches[i]];
             var item = NewAreaItem(links[i], items[i].DisplayOption, takenOver);
+            if (items[i].VisitorGroups is { } given)
+            {
+                AreaItemRules.RequireVisitorGroups(given, VisitorGroupName);
+            }
             var (group, visitorGroups) = AreaItemRules.Personalization(items[i], takenOver?.ContentGroup, takenOver?.AllowedRoles);
             if (group is not null)
             {
@@ -445,6 +450,10 @@ internal sealed class PropertyWriter(
         }
         return area;
     }
+
+    /// <summary>The name of the visitor group with this id; null when there is none (or the site has no personalization).</summary>
+    private static string? VisitorGroupName(Guid id) =>
+        ServiceLocator.Current.TryGetExistingInstance(out EPiServer.Personalization.VisitorGroups.IVisitorGroupRepository? groups) && groups is not null ? groups.Load(id)?.Name : null;
 
     public ContentAreaItem NewAreaItem(string? reference, string? displayOption) => NewAreaItem(Target(reference), displayOption, null);
 

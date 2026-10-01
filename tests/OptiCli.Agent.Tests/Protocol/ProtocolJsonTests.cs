@@ -76,6 +76,11 @@ public class ProtocolJsonTests
         var confirmed = new PublishRequest { IncludeDraft = true };
         Assert.Equal(confirmed, RoundTrip(confirmed, out json));
         Assert.Equal("""{"includeDraft":true}""", json);
+
+        // Left out unless set, so an agent from before it was added still takes every other request.
+        var review = new PublishRequest { RequestApproval = true };
+        Assert.Equal(review, RoundTrip(review, out json));
+        Assert.Equal("""{"includeDraft":false,"requestApproval":true}""", json);
         Assert.True(RoundTrip(new DraftRequest { Publish = true, IncludeDraft = true }, out _).IncludeDraft);
         Assert.True(RoundTrip(create with { Guid = Guid.NewGuid(), UpdateExisting = true, IncludeDraft = true }, out _).IncludeDraft);
     }

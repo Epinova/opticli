@@ -18,6 +18,7 @@ internal sealed class WriteFlow
 {
     public WriteFlow(AgentRequest request)
     {
+        Request = request;
         Types = request.Service<IContentTypeRepository>();
         Versions = request.Service<IContentVersionRepository>();
         Locator = new ContentLocator(request.Service<IContentRepository>(), Versions, request.Service<ILanguageBranchRepository>());
@@ -28,6 +29,8 @@ internal sealed class WriteFlow
         Validation = request.Service<IValidationService>();
         Aborted = request.Context.RequestAborted;
     }
+
+    public AgentRequest Request { get; }
 
     /// <summary>Signalled when the caller gave up (a timeout or Ctrl+C in the CLI): nothing is saved after that.</summary>
     public CancellationToken Aborted { get; }
@@ -50,8 +53,65 @@ internal sealed class WriteFlow
     public IContent? Saved(IContent writable) =>
         writable.ContentGuid != Guid.Empty && Repository.TryGet<IContent>(writable.ContentGuid, out var stored) ? stored : null;
 
-    public static SaveAction DraftAction(bool publish) =>
-        (publish ? SaveAction.Publish : SaveAction.Save) | SaveAction.ForceNewVersion;
+    /// <param name="action">From <see cref="Approvals.Decide"/>: null saves a draft.</param>
+    public static SaveAction DraftAction(SaveAction? action) => (action ?? SaveAction.Save) | SaveAction.ForceNewVersion;
+
+    /// <summary>
+    /// How a write that may publish saves: <see cref="Approvals.Decide"/>, or <see cref="SaveAction.Schedule"/> for a
+    /// publish at a later time, to which the same rules apply.
+    /// </summary>
+    /// <exception cref="AgentException"><c>usage</c> for a time that isn't in the future, or scheduled with requestApproval.</exception>
+    public static SaveAction? Publishing(AgentRequest request, ContentReference link, bool publish, bool requestApproval, DateTime? publishAt, string what)
+    {
+        if (publishAt is not { } at)
+        {
+            return Approvals.Decide(request, link, publish, requestApproval, what);
+        }
+        if (requestApproval)
+        {
+            throw AgentException.Usage("A review request can't be scheduled: the reviewers decide when it is published.", "Give publishAt or requestApproval, not both.");
+        }
+        if (at.ToUniversalTime() <= DateTime.UtcNow)
+        {
+            throw AgentException.Usage($"publishAt ({at.ToUniversalTime():u}) isn't in the future.", "Publish it now (publish) instead, or give a later time.");
+        }
+        Approvals.Decide(request, link, publish: true, requestApproval: false, what);
+        return SaveAction.Schedule;
+    }
+
+    /// <summary>For a scheduled save: the version's start-publish date, which the CMS publishes it at.</summary>
+    public static void ScheduleAt(IContent writable, SaveAction? action, DateTime? publishAt)
+    {
+        if (action is not { } scheduled || Kind(scheduled) != SaveAction.Schedule)
+        {
+            return;
+        }
+        if (writable is not IVersionable versionable)
+        {
+            throw AgentException.Usage($"Content {writable.ContentLink.ID} has no versions, so its publish can't be scheduled.");
+        }
+        versionable.StartPublish = publishAt!.Value.ToLocalTime();
+    }
+
+    /// <summary>
+    /// A publish of a version whose stop-publish date has passed (a draft saved after an unpublish carries it) would put
+    /// it live already expired, so nothing would show; the date is cleared, unless the request sets it.
+    /// </summary>
+    /// <returns>A warning saying so; null when nothing was cleared.</returns>
+    public static ValidationIssue? ClearExpiredStopPublish(IContent writable, SaveAction? action, IReadOnlyDictionary<string, JsonElement>? properties)
+    {
+        if (action is not { } publishing || Kind(publishing) is not (SaveAction.Publish or SaveAction.Schedule) || writable is not IVersionable { StopPublish: { } stop } versionable || stop > DateTime.Now
+            || properties?.Keys.Any(k => PropertyWriter.PublishDates.TryGetValue(k, out var date) && date == PropertyWriter.StopPublishKey) == true)
+        {
+            return null;
+        }
+        versionable.StopPublish = null;
+        return new ValidationIssue(PropertyWriter.StopPublishKey,
+            $"Its stop-publish date ({stop.ToUniversalTime():u}) had passed, which would have kept it offline, so it was cleared.", "warning");
+    }
+
+    /// <summary>The action without its flags (<c>ForceNewVersion</c>, ...).</summary>
+    public static SaveAction Kind(SaveAction action) => action & SaveAction.ActionMask;
 
     /// <summary>
     /// Stops a write whose caller has gone: the CLI reports such a step as possibly saved, so it must not be saved
@@ -88,7 +148,7 @@ internal sealed class WriteFlow
         var changes = PropertyValues.Diff(before, PropertyValues.Snapshot(writable));
         var issues = (precheck ?? []).Concat(ValidationErrors.Validate(Validation, writable, action)).ToList();
         var valid = !ValidationErrors.HasErrors(issues);
-        var published = (action & SaveAction.Publish) == SaveAction.Publish;
+        var published = Kind(action) == SaveAction.Publish;
 
         if (dryRun)
         {
@@ -97,6 +157,7 @@ internal sealed class WriteFlow
                 Content = shown,
                 DryRun = true,
                 Valid = valid,
+                ScheduledFor = Kind(action) == SaveAction.Schedule && writable is IVersionable { StartPublish: { } scheduled } ? scheduled.ToUniversalTime() : null,
                 BaseVersion = baseVersion,
                 Changes = changes,
                 Validation = issues.Count > 0 ? issues : null,
@@ -141,6 +202,8 @@ internal sealed class WriteFlow
             Saved = true,
             // A handler of the publishing events may have failed before the version went live.
             Published = published && (siteError is null || result is not IVersionable { Status: not VersionStatus.Published }),
+            ApprovalRequested = Kind(action) == SaveAction.RequestApproval,
+            ScheduledFor = Kind(action) == SaveAction.Schedule && result is IVersionable { StartPublish: { } at } ? at.ToUniversalTime() : null,
             BaseVersion = baseVersion,
             Changes = changes,
             Validation = issues.Count > 0 ? issues : null,

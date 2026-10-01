@@ -45,15 +45,21 @@ internal sealed class AgentRequest(HttpContext context, string? argument)
             limit.MaxRequestBodySize = maxBytes;
         }
 
+        // Read in chunks and stop at the limit: a chunked body has no Content-Length to check up front.
         using var buffer = new MemoryStream();
-        await Context.Request.Body.CopyToAsync(buffer, Context.RequestAborted);
+        var chunk = new byte[81920];
+        int read;
+        while ((read = await Context.Request.Body.ReadAsync(chunk, Context.RequestAborted)) > 0)
+        {
+            if (buffer.Length + read > maxBytes)
+            {
+                throw AgentException.Usage($"The request body is larger than {maxBytes / (1024 * 1024)} MB.");
+            }
+            buffer.Write(chunk, 0, read);
+        }
         if (buffer.Length == 0)
         {
             return null;
-        }
-        if (buffer.Length > maxBytes)
-        {
-            throw AgentException.Usage($"The request body is larger than {maxBytes / (1024 * 1024)} MB.");
         }
         buffer.Position = 0;
         return JsonSerializer.Deserialize<T>(buffer, RequestOptions);

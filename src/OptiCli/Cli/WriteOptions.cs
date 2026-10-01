@@ -47,13 +47,44 @@ internal sealed class WriteOptions
         Description = "Also publish unpublished changes someone else saved after the published version. Without it such a publish asks on a terminal, and elsewhere fails with a conflict (exit 5) that lists them.",
     };
 
+    public Option<bool> RequestApproval { get; } = new("--request-approval")
+    {
+        Description = "Where an approval sequence applies (get shows approval), send the change for review instead of publishing: it is saved and the sequence starts, as the edit UI's Ready for Review does; publishing there is refused (exit 3). With --publish, content without a sequence is published as usual.",
+    };
+
     public void AddCommon(Command command, bool publish = true)
     {
         command.Options.Add(DryRun);
         if (publish)
         {
             command.Options.Add(Publish);
+            command.Options.Add(RequestApproval);
         }
+    }
+
+    public Option<string?> PublishAt { get; } = new("--publish-at")
+    {
+        Description = $"Schedule the publish instead of publishing now: {PublishTimes.Syntax}. The version stays a draft (delayedPublish) until the CMS's scheduled job publishes it; the rules for --publish apply (other people's drafts, approval sequences).",
+        HelpName = "time",
+    };
+
+    /// <summary>For set, area, create and publish.</summary>
+    public void AddPublishAt(Command command) => command.Options.Add(PublishAt);
+
+    /// <summary>The operation with <c>--publish-at</c> applied.</summary>
+    public T WithSchedule<T>(T operation, ParseResult parse) where T : WriteOperation =>
+        parse.CommandResult.Command.Options.Contains(PublishAt) && parse.GetValue(PublishAt) is { } text
+            ? (T)(operation with { PublishAt = PublishTimes.Parse(text, "--publish-at", DateTimeOffset.UtcNow) })
+            : operation;
+
+    /// <summary>For publish, which has no --publish.</summary>
+    public void AddRequestApproval(Command command) => command.Options.Add(RequestApproval);
+
+    /// <summary>The operation with <c>--request-approval</c> applied.</summary>
+    public T WithApproval<T>(T operation, ParseResult parse) where T : WriteOperation
+    {
+        var scheduled = WithSchedule(operation, parse);
+        return parse.GetValue(RequestApproval) ? (T)(scheduled with { RequestApproval = true }) : scheduled;
     }
 
     /// <summary>For commands that publish existing content, which may hold someone else's draft.</summary>

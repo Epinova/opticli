@@ -18,11 +18,16 @@ internal static class UploadCommand
             HelpName = "type",
         };
         var guid = new Option<Guid?>("--guid") { Description = "The new content's GUID (default: a new one). Fails with a conflict if it exists.", HelpName = "guid" };
+        var replace = new Option<string?>("--replace")
+        {
+            Description = "Replace the file of this existing media item instead: a new version (a draft unless --publish) with the file, of the same media type, which must accept its extension. No --for, --parent or --type.",
+            HelpName = "media-ref",
+        };
         var write = new WriteOptions();
         var command = new Command("upload", """
             Upload a file (PDF, image, video, ...) as a new media item, as a draft unless --publish. Needs `opticli serve`.
             Give exactly one of --for (a page's or block's own "For this page" assets folder) or --parent (a media folder; make
-            one with `opticli create <parent> --type SysContentFolder --name ...`). Properties such as alt text are set as for
+            one with `opticli create <parent> --type SysContentFolder --name ...`), or --replace to give existing media a new file. Properties such as alt text are set as for
             `create`. Prints the new item's ref and version, and where the site stored the file (as `opticli blob` does).
             Example: opticli upload report.pdf --parent 456 --name "Annual report" --dry-run
             """);
@@ -32,6 +37,7 @@ internal static class UploadCommand
         command.Options.Add(name);
         command.Options.Add(type);
         command.Options.Add(guid);
+        command.Options.Add(replace);
         write.AddProperties(command);
         write.AddCommon(command);
 
@@ -44,9 +50,10 @@ internal static class UploadCommand
                 write.ParseProperties(context), parse.GetValue(write.Publish))
             {
                 ContentGuid = parse.GetValue(guid),
+                Replace = parse.GetValue(replace),
             };
             await using var session = await context.OpenContentAsync(cancellationToken);
-            return WriteOptions.Result(await context.Writes(session).RunAsync(operation, parse.GetValue(write.DryRun), cancellationToken));
+            return WriteOptions.Result(await context.Writes(session).RunAsync(write.WithApproval(operation, parse), parse.GetValue(write.DryRun), cancellationToken));
         });
         return command;
     }

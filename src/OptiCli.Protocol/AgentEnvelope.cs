@@ -26,6 +26,28 @@ public sealed record AgentError(string Code, string Message, string? Hint = null
 
     /// <summary>For <c>conflict</c> errors: the publish would also put these changes by someone else live; retry with <c>includeDraft</c> to confirm.</summary>
     public PendingDraft? PendingDraft { get; init; }
+
+    /// <summary>What kind of refusal or conflict, when a caller may act on it: one of <see cref="AgentErrorReasons"/>.</summary>
+    public string? Reason { get; init; }
+}
+
+/// <summary>Values of <see cref="AgentError.Reason"/>, which the CLI passes on as <c>details.reason</c>.</summary>
+public static class AgentErrorReasons
+{
+    /// <summary>A publish would put someone else's unpublished changes live (<see cref="AgentError.PendingDraft"/>).</summary>
+    public const string PendingDraft = Protocol.PendingDraft.Reason;
+
+    /// <summary>
+    /// Refused: the content has an approval sequence, so it can't be published directly. Retry with
+    /// <c>requestApproval</c> to start the sequence.
+    /// </summary>
+    public const string ApprovalSequence = "approvalSequence";
+
+    /// <summary>Usage: <c>requestApproval</c> without <c>publish</c>, for content no approval sequence applies to.</summary>
+    public const string NoApprovalSequence = "noApprovalSequence";
+
+    /// <summary>Conflict: the content is in review; a reviewer must approve or reject it before it can be changed.</summary>
+    public const string InReview = "inReview";
 }
 
 /// <summary>Error codes and the HTTP status each one is sent with.</summary>

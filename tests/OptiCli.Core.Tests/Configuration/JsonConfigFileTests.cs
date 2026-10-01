@@ -93,6 +93,25 @@ public class JsonConfigFileTests : IDisposable
         Assert.ThrowsAny<Exception>(() => new ConfigurationBuilder().AddJsonFile(file).Build());
     }
 
+    [Fact]
+    public void Booleans_nulls_and_empty_sections_come_out_as_aspnet_core_reads_them()
+    {
+        var file = _root.Write("appsettings.json", """
+            { "On": true, "Off": false, "Missing": null, "Empty": {}, "None": [], "Number": 1.50,
+              "Nested": { "Flag": true, "Gone": null, "Inner": {} } }
+            """);
+        using var document = JsonConfigFile.Parse(file);
+
+        var ours = JsonConfigFile.Flatten(document.RootElement);
+        var configuration = new ConfigurationBuilder().AddJsonFile(file).Build().AsEnumerable().ToList();
+        // Leaves only: AsEnumerable also lists the sections that have children.
+        var theirs = configuration.Where(p => !configuration.Any(c => c.Key.StartsWith(p.Key + ":", StringComparison.OrdinalIgnoreCase)))
+            .ToDictionary(p => p.Key, p => p.Value, StringComparer.OrdinalIgnoreCase);
+
+        Assert.Equal(theirs.OrderBy(p => p.Key, StringComparer.OrdinalIgnoreCase), ours.OrderBy(p => p.Key, StringComparer.OrdinalIgnoreCase));
+        Assert.Equal(("True", "", null), (ours["On"], ours["Missing"], ours["Empty"]));
+    }
+
     /// <summary>The leaf values ASP.NET Core's JSON provider reads from <paramref name="file"/>.</summary>
     private static Dictionary<string, string?> AspNetCore(string file) =>
         new ConfigurationBuilder().AddJsonFile(file).Build().AsEnumerable()

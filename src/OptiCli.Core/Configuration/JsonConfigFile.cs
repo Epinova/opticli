@@ -22,7 +22,9 @@ public static class JsonConfigFile
 
     /// <summary>
     /// Flattens to configuration keys (<c>ConnectionStrings:EPiServerDB</c>), case-insensitive like
-    /// IConfiguration. Keys that already contain ':' (common in secrets.json) are kept as-is.
+    /// IConfiguration. Keys that already contain ':' (common in secrets.json) are kept as-is. Values come out as
+    /// ASP.NET Core's JSON provider gives them: <c>True</c>/<c>False</c> for booleans, <c>""</c> for JSON null, and an
+    /// empty object or array sets its key to null.
     /// </summary>
     public static IReadOnlyDictionary<string, string?> Flatten(JsonElement root)
     {
@@ -36,9 +38,15 @@ public static class JsonConfigFile
         switch (element.ValueKind)
         {
             case JsonValueKind.Object:
+                var empty = true;
                 foreach (var property in element.EnumerateObject())
                 {
+                    empty = false;
                     Visit(property.Value, prefix is null ? property.Name : $"{prefix}:{property.Name}", result);
+                }
+                if (empty && prefix is not null)
+                {
+                    result[prefix] = null;
                 }
                 break;
             case JsonValueKind.Array:
@@ -48,9 +56,7 @@ public static class JsonConfigFile
                     Visit(item, $"{prefix}:{index.ToString(CultureInfo.InvariantCulture)}", result);
                     index++;
                 }
-                break;
-            case JsonValueKind.Null:
-                if (prefix is not null)
+                if (index == 0 && prefix is not null)
                 {
                     result[prefix] = null;
                 }
@@ -58,7 +64,8 @@ public static class JsonConfigFile
             default:
                 if (prefix is not null)
                 {
-                    result[prefix] = element.ValueKind == JsonValueKind.String ? element.GetString() : element.GetRawText();
+                    // JsonElement.ToString(): a string's value, "True"/"False", a number as written, "" for null.
+                    result[prefix] = element.ToString();
                 }
                 break;
         }

@@ -12,6 +12,16 @@ namespace OptiCli.Agent.Http;
 /// <summary>Checks that run before any route: Development only, loopback only, per-run token.</summary>
 internal static class RequestGuard
 {
+    /// <summary>Headers that proxies, load balancers and tunnels (ngrok, Cloudflare, dev tunnels) add.</summary>
+    internal static readonly string[] ProxyHeaders =
+    [
+        "Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Real-IP", "X-Original-For", "X-Client-IP",
+        "True-Client-IP", "CF-Connecting-IP", "CF-Ray", "Via", "X-Ms-Forwarded-Host", "Ngrok-Trace-Id",
+    ];
+
+    /// <returns>The first proxy header the request has; null for none.</returns>
+    internal static string? ProxyHeader(IHeaderDictionary headers) => ProxyHeaders.FirstOrDefault(headers.ContainsKey);
+
     /// <exception cref="AgentException">The request is refused.</exception>
     public static void Check(HttpContext context, AgentSettings settings)
     {
@@ -26,6 +36,14 @@ internal static class RequestGuard
         if (context.Connection.RemoteIpAddress is not { } remote || !IPAddress.IsLoopback(remote))
         {
             throw AgentException.Refused("The opticli agent only accepts connections from this machine.");
+        }
+
+        // Behind a proxy or tunnel on this machine, a remote caller looks local: only the token would still stop it.
+        if (ProxyHeader(context.Request.Headers) is { } header)
+        {
+            throw AgentException.Refused(
+                $"The opticli agent refuses requests that came through a proxy or tunnel (they carry {header}).",
+                "Call the site directly on 127.0.0.1, as the opticli CLI does.");
         }
 
         if (settings.Token is null)

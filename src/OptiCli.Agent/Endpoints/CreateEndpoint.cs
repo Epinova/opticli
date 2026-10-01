@@ -29,7 +29,7 @@ internal static class CreateEndpoint
 
         if (body.Guid is { } guid && ExistingContent.Find(flow, guid) is { } existing)
         {
-            return ExistingContent.Update(flow, existing, body.UpdateExisting, type, parent, body.Lang is null ? null : culture, body.Name, body.Properties, body.Publish, body.IncludeDraft, body.DryRun);
+            return ExistingContent.Update(flow, existing, body.UpdateExisting, type, parent, body.Lang is null ? null : culture, body.Name, body.Properties, body.Publish, body.RequestApproval, body.IncludeDraft, body.DryRun, body.PublishAt);
         }
 
         var content = culture is null
@@ -42,11 +42,14 @@ internal static class CreateEndpoint
         var before = PropertyValues.Snapshot(content);
         content.Name = body.Name;
         flow.Writer.Apply(content, body.Properties);
+        // For a plan's dry run under a stand-in parent, that is the nearest existing ancestor, whose sequence is inherited.
+        var action = WriteFlow.Publishing(request, parent.ContentLink, body.Publish, body.RequestApproval, body.PublishAt, $"New {type.Name} '{body.Name}'");
+        WriteFlow.ScheduleAt(content, action, body.PublishAt);
 
         return flow.Save(
             content,
             before,
-            body.Publish ? SaveAction.Publish : SaveAction.Save,
+            action ?? SaveAction.Save,
             body.DryRun,
             shown: null,
             baseVersion: null,
