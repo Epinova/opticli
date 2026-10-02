@@ -145,7 +145,7 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
     <h1><span class="prompt">❯</span>opticli</h1>
     <p class="lead">A command-line tool for the content in your Optimizely CMS 12 site. Look up pages and blocks, trace them
       to the code that renders them, and change them through the CMS API, from your terminal or through your coding agent.</p>
-    <div class="actions"><a class="btn" href="https://github.com/epinova/opticli">View on GitHub</a><a href="#get-started">Get started</a><a href="#changelog">Changelog</a></div>
+    <div class="actions"><a class="btn" href="https://github.com/epinova/opticli">View on GitHub</a><a href="#get-started">Get started</a><a href="#safety">Safety</a><a href="#changelog">Changelog</a></div>
   </div>
 
   <div class="stage">
@@ -227,10 +227,19 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
       <div class="lane"><span class="tag">Reads</span><span class="node hot">opticli</span><span class="arrow">── fixed read-only SQL ─▶</span><span class="node">CMS database</span></div>
       <div class="lane"><span class="tag">Writes</span><span class="node hot">opticli</span><span class="arrow">── 127.0.0.1 + token ─▶</span><span class="node">agent in your running site</span><span class="arrow">── IContentRepository ─▶</span><span class="node">CMS database</span></div>
     </div>
+  </section>
+
+  <section id="safety">
+    <div class="head">
+      <h2>Safety</h2>
+    </div>
     <ul class="points">
-      <li><b>Your local database by default</b><span>opticli reads the connection string from the site's Development config. To use a remote database you have to choose it explicitly, and every response then carries a warning.</span></li>
-      <li><b>Read-only reads</b><span>Reads use fixed queries. <code>opticli sql</code> accepts a single <code>SELECT</code> against the site's own database and runs it in a transaction that is rolled back.</span></li>
-      <li><b>Nothing permanent by accident</b><span>Changes are saved as drafts by the user <code>opticli</code>. Publishing needs <code>--publish</code>, and <code>delete</code> only moves content to the recycle bin, and not while other content still references it.</span></li>
+      <li><b>Which database does it use?</b><span>Your local one by default: opticli reads the connection string from the site's Development config. To use a remote database you have to choose it explicitly, and every response then carries a warning.</span></li>
+      <li><b>Can a read change anything?</b><span>No. Reads use fixed queries. <code>opticli sql</code> accepts a single <code>SELECT</code> against the site's own database and runs it in a transaction that is rolled back.</span></li>
+      <li><b>Can it publish or delete by accident?</b><span>Changes are saved as drafts by the user <code>opticli</code>. Publishing needs <code>--publish</code>, and <code>delete</code> only moves content to the recycle bin, and not while other content still references it.</span></li>
+      <li><b>Can starting it change a shared database?</b><span>Against a remote development database, the scheduler, schema updates, content type sync and store remapping are off, and <code>serve</code> won't start a build with EF Core migrations the database lacks. The CMS still registers the build's scheduled jobs and add-on content roots there, and the site's own startup code still runs, so use a login without DDL rights where your add-ons allow it.</span></li>
+      <li><b>What if my branch isn't what's deployed?</b><span>opticli compares the build with the shared database: content types, properties, migrations. While they differ, writes stop until you confirm with <code>--accept-drift</code>, and it says which side is ahead. Reads keep working.</span></li>
+      <li><b>Can anyone else reach the site agent?</b><span>It answers only on 127.0.0.1, only in Development, and only with the token of that run, which sits in a file only you can read. Requests that came through a proxy or tunnel are refused.</span></li>
     </ul>
   </section>
 
@@ -257,6 +266,15 @@ opticli skill install                   <span class="c"># teach Claude Code to u
         <code>opticli skill install</code> again to update the skill.</p>
     </div>
     <ol class="changelog">
+      <li><div class="v"><b>0.7.0</b><span>2 October 2026</span></div>
+        <ul>
+          <li><b>Shared databases:</b> writes stop while the build and the remote development database differ (drift),
+            with what differs and which side is ahead. <code>--accept-drift</code> confirms, and <code>opticli drift</code>
+            lists the differences.</li>
+          <li><b>serve</b> won't start a build with EF Core migrations the shared database lacks
+            (<code>--allow-pending-migrations</code>), says when the CMS schema version doesn't fit, and also turns off
+            Dynamic Data Store remapping there.</li>
+        </ul></li>
       <li><div class="v"><b>0.6.0</b><span>1 October 2026</span></div>
         <ul>
           <li><b>Approval sequences</b> are respected: publishing content that has one is refused (exit 3), and
