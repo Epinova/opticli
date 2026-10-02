@@ -266,6 +266,12 @@ opticli skill install                   <span class="c"># teach Claude Code to u
         <code>opticli skill install</code> again to update the skill.</p>
     </div>
     <ol class="changelog">
+      <li><div class="v"><b>0.7.1</b><span>2 October 2026</span></div>
+        <ul>
+          <li><b>Fixed:</b> classes declared without a body (<code>class AboutBlock : SiteBlockData;</code>) were left out
+            of the source scan, so a plan's <code>area add</code> could be refused by <code>[AllowedTypes]</code> although
+            the CMS allowed it, and <code>allowed-in</code> and <code>type</code> missed them.</li>
+        </ul></li>
       <li><div class="v"><b>0.7.0</b><span>2 October 2026</span></div>
         <ul>
           <li><b>Shared databases:</b> writes stop while the build and the remote development database differ (drift),
