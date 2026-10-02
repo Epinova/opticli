@@ -3,6 +3,41 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.8.0 (2 October 2026)
+
+### Behaviour changes
+
+- **The pending-draft check looks at content, not version numbers.** A publish asked for confirmation whenever
+  someone else had saved a version between the published one and the one going live. It now asks only when the
+  version going live still has that draft's value for at least one property the draft changed. A change based on the
+  published version (see `--from`) therefore doesn't ask about drafts it leaves out, and nor do later publishes
+  built on it. A draft by someone else that changed nothing no longer asks either.
+
+### New
+
+- `set` and `area` take **`--from <version|published>`** (`"from"` on plan steps): the change is based on that
+  version instead of the latest, while the concurrency check still compares against the latest. With
+  `--from published --publish` a change goes live without someone else's older draft. Newer versions the change leaves
+  out are listed in `leftOut` with a warning: they stay as they are, and edit mode opens the new version instead.
+  The conflict hint suggests `--from` when a newer version is in the way.
+
+### Fixed
+
+- **Publishing a language branch before its master language.** The CMS publishes a branch other than the master
+  only once the master branch has been published, and refuses at save time, so every dry run missed it and a plan
+  stopped halfway. `set`, `area`, `translate` and `publish` with `--lang` now refuse before saving (`validation`,
+  exit 5, `details.reason: "masterNotPublished"`), also as a dry run. A plan's dry run checks the order of its
+  publishes, and the hint names the step to move. A scheduled publish or a review request only warns, since the CMS
+  saves those and fails when they come due. When the CMS refuses on its own, the hint now says to publish the master
+  first instead of suggesting `--dry-run`.
+- A plan's `publish` or `set` of another language of content the plan creates was dry-run as a publish of the master
+  branch, so it always passed; it is now `deferred`.
+
+### Skill
+
+- Agents name content next to its ref ("About us" (page 10, draft 10_1473)) and say who saved a version and when,
+  instead of giving bare ids.
+
 ## 0.7.1 (2 October 2026)
 
 - Fixed: classes declared without a body (`public class AboutBlock : SiteBlockData;`, C# 12) were left out of the
