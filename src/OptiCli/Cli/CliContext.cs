@@ -4,6 +4,7 @@ using OptiCli.Core.Configuration;
 using OptiCli.Core.Content;
 using OptiCli.Core.Data;
 using OptiCli.Core.Discovery;
+using OptiCli.Core.Drift;
 using OptiCli.Core.Errors;
 using OptiCli.Core.Output;
 using OptiCli.Core.Safety;
@@ -99,12 +100,48 @@ internal sealed class CliContext(ParseResult parse, GlobalOptions options, OptiC
         _agent ??= await AgentProbe.ConnectAsync(StateStore, UseConnection(), cancellationToken);
 
     /// <summary>Runs write operations against <paramref name="session"/>'s database and the project's agent.</summary>
-    /// <param name="ask">On a terminal, ask whether a publish may include someone else's unpublished changes.</param>
+    /// <param name="ask">
+    /// On a terminal, ask whether a publish may include someone else's unpublished changes (and the like). Drift is
+    /// asked about either way: once, before anything is written.
+    /// </param>
     public WriteExecutor Writes(ContentSession session, string? site = null, bool updateExisting = false, bool ask = true) =>
         new(session, ConnectAgentAsync, site, TryGetProject(out _)?.Directory, updateExisting,
             ask && DatabasePrompt.CanAsk ? PendingDraftPrompt.Ask : null,
             ask && DatabasePrompt.CanAsk ? ReferencesPrompt.Ask : null,
-            ask && DatabasePrompt.CanAsk ? ConfirmPrompt.Ask : null);
+            ask && DatabasePrompt.CanAsk ? ConfirmPrompt.Ask : null,
+            AcceptedDrift,
+            DatabasePrompt.CanAsk ? DriftPrompt.Ask : null);
+
+    /// <summary>The command's <c>--accept-drift</c>, on the write commands that have it.</summary>
+    private string? AcceptedDrift =>
+        Parse.CommandResult.Command.Options.FirstOrDefault(o => o.Name == WriteOptions.AcceptDriftName) is Option<string?> option ? Parse.GetValue(option) : null;
+
+    /// <summary>
+    /// Against a shared database: what <c>serve</c> found differs between the site's code and the database, as one short
+    /// warning for every response, reads included.
+    /// </summary>
+    public IReadOnlyList<string> DriftWarnings
+    {
+        get
+        {
+            if (!_databaseUsed || ResolveConnection().Chosen is not { IsLocal: false } chosen || TryGetProject(out _) is null)
+            {
+                return [];
+            }
+            try
+            {
+                return StateStore.Read() is { Drift: { Fingerprint: not null } drift } state
+                    && string.Equals(state.DbServer?.Trim(), chosen.Server?.Trim(), StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(state.DbName?.Trim(), chosen.Database?.Trim(), StringComparison.OrdinalIgnoreCase)
+                        ? [DriftText.Warning(drift)]
+                        : [];
+            }
+            catch (CorruptStateException)
+            {
+                return [];
+            }
+        }
+    }
 
     private (ProjectInfo?, OptiCliException?) LocateProject()
     {

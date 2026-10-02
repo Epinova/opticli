@@ -60,7 +60,7 @@ public class KestrelEndpointsTests : IDisposable
         var local = SiteEnvironment.Build("/a/OptiCli.Agent.dll", "token", 5199, "EPiServerDB", null);
         var pinned = SiteEnvironment.Build("/a/OptiCli.Agent.dll", "token", 5199, "CmsDb", ConnectionSafety.Verify("Server=localhost;Database=ExampleDb;Integrated Security=True"));
 
-        Assert.Equal(["OPTICLI_DB", "OPTICLI_CONNECTION_NAME", "OPTICLI_REMOTE_DB"], SiteEnvironment.NotSet(local));
-        Assert.Equal(["OPTICLI_REMOTE_DB"], SiteEnvironment.NotSet(pinned));
+        Assert.Equal(["OPTICLI_DB", "OPTICLI_CONNECTION_NAME", "OPTICLI_REMOTE_DB", "OPTICLI_DRIFT_FILE"], SiteEnvironment.NotSet(local));
+        Assert.Equal(["OPTICLI_REMOTE_DB", "OPTICLI_DRIFT_FILE"], SiteEnvironment.NotSet(pinned));
     }
 }

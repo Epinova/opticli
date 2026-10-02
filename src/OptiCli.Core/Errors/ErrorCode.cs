@@ -21,6 +21,9 @@ public enum ErrorCode
 
     /// <summary>Interrupted (Ctrl+C) while it ran; a plan reports what it saved before that.</summary>
     Cancelled,
+
+    /// <summary>A write in shared mode while the local build and the database differ, which the user hasn't confirmed.</summary>
+    Drift,
 }
 
 public static class ExitCodes
@@ -42,7 +45,7 @@ public static class ExitCodes
         ErrorCode.NotFound => NotFound,
         ErrorCode.Refused => Refused,
         ErrorCode.Unreachable => Unreachable,
-        ErrorCode.Conflict or ErrorCode.Validation => Conflict,
+        ErrorCode.Conflict or ErrorCode.Validation or ErrorCode.Drift => Conflict,
         ErrorCode.NeedsSelection => NeedsSelection,
         ErrorCode.Cancelled => Cancelled,
         // Unexpected failures share the usage code: the spec reserves 2-5 for specific outcomes.
@@ -60,6 +63,7 @@ public static class ExitCodes
         ErrorCode.Validation => "validation",
         ErrorCode.NeedsSelection => "needs_selection",
         ErrorCode.Cancelled => "cancelled",
+        ErrorCode.Drift => "drift",
         _ => "internal",
     };
 }

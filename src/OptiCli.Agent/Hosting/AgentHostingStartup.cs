@@ -1,10 +1,12 @@
 using EPiServer.Data;
+using EPiServer.Data.Dynamic;
 using EPiServer.DataAbstraction.RuntimeModel.Internal;
 using EPiServer.Scheduler;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using OptiCli.Agent.Drift;
 using OptiCli.Agent.Hosting;
 using OptiCli.Agent.Safety;
 
@@ -30,8 +32,10 @@ namespace OptiCli.Agent.Hosting;
 /// it later, e.g. configuration sources a minimal-hosting site adds after the builder is created).
 /// <para>
 /// Against a remote database (shared mode) the site must not change it for others just by starting: the scheduler
-/// (jobs would run alongside the deployed site's), automatic schema updates (a newer CMS package in the local build)
-/// and the commit phase of content type sync (the local branch's models) are turned off.
+/// (jobs would run alongside the deployed site's), automatic schema updates (a newer CMS package in the local build),
+/// the commit phase of content type sync (the local branch's models) and the remapping of Dynamic Data Store types
+/// whose properties changed are turned off. What the local code would have changed is reported as drift instead
+/// (<see cref="DriftCheck"/>).
 /// </para>
 /// </remarks>
 public sealed class AgentHostingStartup : IHostingStartup
@@ -72,10 +76,25 @@ public sealed class AgentHostingStartup : IHostingStartup
                 });
                 services.PostConfigure<SchedulerOptions>(options => options.Enabled = false);
                 services.PostConfigure<ContentModelOptions>(options => options.EnableModelSyncCommit = false);
-                Console.Error.WriteLine("[opticli] Shared database: scheduler, automatic schema updates and content type sync are off for this run.");
+                services.PostConfigure<DynamicDataStoreOptions>(TurnOffStoreChanges);
+                Console.Error.WriteLine("[opticli] Shared database: scheduler, automatic schema updates, content type sync and store remapping are off for this run.");
             }
             services.AddSingleton<IValidateOptions<DataAccessOptions>, DataAccessOptionsGuard>();
+            services.AddSingleton<DriftCheck>();
             services.AddTransient<IStartupFilter, AgentStartupFilter>();
         });
+    }
+
+    /// <summary>
+    /// A store whose type changed is then not remapped (or upgraded) in the database: using it fails instead, and drift
+    /// reports it. <c>SeamlessUpgradeStores</c> came after CMS 12.0, so it is set by name where it exists.
+    /// </summary>
+    internal static void TurnOffStoreChanges(DynamicDataStoreOptions options)
+    {
+        options.AutoRemapStores = false;
+        if (typeof(DynamicDataStoreOptions).GetProperty("SeamlessUpgradeStores") is { CanWrite: true, PropertyType: var type } upgrade && type == typeof(bool))
+        {
+            upgrade.SetValue(options, false);
+        }
     }
 }

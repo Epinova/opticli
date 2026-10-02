@@ -4,6 +4,7 @@ using EPiServer.Core;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using OptiCli.Agent.Content;
+using OptiCli.Agent.Drift;
 using OptiCli.Agent.Endpoints;
 using OptiCli.Agent.Hosting;
 using OptiCli.Agent.Safety;
@@ -44,25 +45,53 @@ internal static class AgentMiddleware
         }
     }
 
-    private static async Task<(int Status, object Data)> DispatchAsync(AgentRequest request, AgentEndpoint endpoint) => endpoint switch
+    private static async Task<(int Status, object Data)> DispatchAsync(AgentRequest request, AgentEndpoint endpoint) =>
+        Handlers.TryGetValue(endpoint, out var handler) ? await handler.Run(request) : throw new InvalidOperationException($"Unhandled endpoint {endpoint}.");
+
+    /// <summary>
+    /// What runs each endpoint. Every write is made with <see cref="Write{T}"/>, which passes <see cref="DriftGate"/> once
+    /// the body says whether it is a dry run; the tests check that each route that changes something is one.
+    /// </summary>
+    internal static readonly IReadOnlyDictionary<AgentEndpoint, EndpointHandler> Handlers = new Dictionary<AgentEndpoint, EndpointHandler>
     {
-        AgentEndpoint.Ping => (200, PingEndpoint.Handle(request)),
-        AgentEndpoint.Shutdown => (200, ShutdownEndpoint.Handle(request)),
-        AgentEndpoint.Type => (200, TypeEndpoint.Handle(request)),
-        AgentEndpoint.Create => Created(CreateEndpoint.Handle(request, await request.ReadBodyAsync<CreateRequest>())),
-        AgentEndpoint.Upload => Created(UploadEndpoint.Handle(request, await request.ReadBodyAsync<UploadRequest>(UploadEndpoint.MaxBodyBytes))),
-        AgentEndpoint.Draft => (200, DraftEndpoint.Handle(request, await request.ReadBodyAsync<DraftRequest>())),
-        AgentEndpoint.Languages => Created(LanguageEndpoint.Handle(request, await request.ReadBodyAsync<LanguageBranchRequest>())),
-        AgentEndpoint.Publish => (200, PublishEndpoint.Handle(request, await request.ReadOptionalBodyAsync<PublishRequest>() ?? new PublishRequest())),
-        AgentEndpoint.RemoveLanguage => (200, LanguageEndpoint.Remove(request, await request.ReadBodyAsync<RemoveLanguageRequest>())),
-        AgentEndpoint.Unpublish => (200, VersionEndpoints.Unpublish(request, await request.ReadOptionalBodyAsync<UnpublishRequest>() ?? new UnpublishRequest())),
-        AgentEndpoint.Discard => (200, VersionEndpoints.Discard(request, await request.ReadOptionalBodyAsync<DiscardRequest>() ?? new DiscardRequest())),
-        AgentEndpoint.Move => (200, MoveEndpoint.Move(request, await request.ReadBodyAsync<MoveRequest>())),
-        AgentEndpoint.Access => (200, await AccessEndpoint.HandleAsync(request, await request.ReadBodyAsync<AccessRequest>())),
-        AgentEndpoint.Delete => (200, MoveEndpoint.Delete(request)),
-        AgentEndpoint.Read => (200, ReadEndpoint.Handle(request)),
-        _ => throw new InvalidOperationException($"Unhandled endpoint {endpoint}."),
+        [AgentEndpoint.Ping] = Read(request => PingEndpoint.Handle(request)),
+        [AgentEndpoint.Shutdown] = Read(request => ShutdownEndpoint.Handle(request)),
+        [AgentEndpoint.Drift] = Read(request => DriftEndpoint.Handle(request)),
+        [AgentEndpoint.Type] = Read(request => TypeEndpoint.Handle(request)),
+        [AgentEndpoint.Read] = Read(request => ReadEndpoint.Handle(request)),
+        [AgentEndpoint.Create] = Write(r => r.ReadBodyAsync<CreateRequest>(), b => b.DryRun, (r, b) => Created(CreateEndpoint.Handle(r, b))),
+        [AgentEndpoint.Upload] = Write(r => r.ReadBodyAsync<UploadRequest>(UploadEndpoint.MaxBodyBytes), b => b.DryRun, (r, b) => Created(UploadEndpoint.Handle(r, b))),
+        [AgentEndpoint.Draft] = Write(r => r.ReadBodyAsync<DraftRequest>(), b => b.DryRun, (r, b) => Ok(DraftEndpoint.Handle(r, b))),
+        [AgentEndpoint.Languages] = Write(r => r.ReadBodyAsync<LanguageBranchRequest>(), b => b.DryRun, (r, b) => Created(LanguageEndpoint.Handle(r, b))),
+        [AgentEndpoint.Publish] = Write(async r => await r.ReadOptionalBodyAsync<PublishRequest>() ?? new PublishRequest(), _ => false, (r, b) => Ok(PublishEndpoint.Handle(r, b))),
+        [AgentEndpoint.RemoveLanguage] = Write(r => r.ReadBodyAsync<RemoveLanguageRequest>(), b => b.DryRun, (r, b) => Ok(LanguageEndpoint.Remove(r, b))),
+        [AgentEndpoint.Unpublish] = Write(async r => await r.ReadOptionalBodyAsync<UnpublishRequest>() ?? new UnpublishRequest(), b => b.DryRun, (r, b) => Ok(VersionEndpoints.Unpublish(r, b))),
+        [AgentEndpoint.Discard] = Write(async r => await r.ReadOptionalBodyAsync<DiscardRequest>() ?? new DiscardRequest(), b => b.DryRun, (r, b) => Ok(VersionEndpoints.Discard(r, b))),
+        [AgentEndpoint.Move] = Write(r => r.ReadBodyAsync<MoveRequest>(), b => b.DryRun, (r, b) => Ok(MoveEndpoint.Move(r, b))),
+        [AgentEndpoint.Access] = Write(r => r.ReadBodyAsync<AccessRequest>(), b => b.DryRun, async (r, b) => Ok(await AccessEndpoint.HandleAsync(r, b))),
+        // No body and no dry run: a delete is always real.
+        [AgentEndpoint.Delete] = Write(Task.FromResult, _ => false, (r, _) => Ok(MoveEndpoint.Delete(r))),
     };
+
+    /// <param name="Gated">The endpoint is a write, and passes <see cref="DriftGate"/> before it runs.</param>
+    internal sealed record EndpointHandler(bool Gated, Func<AgentRequest, Task<(int Status, object Data)>> Run);
+
+    /// <summary>An endpoint that changes nothing in the content (or, for shutdown, in the database).</summary>
+    private static EndpointHandler Read(Func<AgentRequest, object> handle) => new(false, request => Task.FromResult((200, handle(request))));
+
+    /// <summary>A write: its body is read, <see cref="DriftGate"/> checked (dry runs pass), then it runs.</summary>
+    private static EndpointHandler Write<T>(Func<AgentRequest, Task<T>> read, Func<T, bool> dryRun, Func<AgentRequest, T, (int, object)> handle) =>
+        Write(read, dryRun, (request, body) => Task.FromResult(handle(request, body)));
+
+    private static EndpointHandler Write<T>(Func<AgentRequest, Task<T>> read, Func<T, bool> dryRun, Func<AgentRequest, T, Task<(int, object)>> handle) =>
+        new(true, async request =>
+        {
+            var body = await read(request);
+            DriftGate.Check(request, dryRun(body));
+            return await handle(request, body);
+        });
+
+    private static (int, object) Ok(object result) => (200, result);
 
     private static (int, object) Created(WriteResult result) => (result.Saved ? 201 : 200, result);
 

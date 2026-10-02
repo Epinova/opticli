@@ -4,10 +4,12 @@ using OptiCli.Cli;
 using OptiCli.Core.Cms;
 using OptiCli.Core.Configuration;
 using OptiCli.Core.Discovery;
+using OptiCli.Core.Drift;
 using OptiCli.Core.Errors;
 using OptiCli.Core.Safety;
 using OptiCli.Core.Serve;
 using OptiCli.Core.Skills;
+using OptiCli.Protocol;
 
 namespace OptiCli.Commands;
 
@@ -24,6 +26,7 @@ internal static class DoctorCommand
         ConnectionSection Connection,
         DatabaseSection Database,
         AgentStatus? Agent,
+        DriftReport? Drift,
         IReadOnlyList<InstalledSkill> Skills,
         IReadOnlyList<string> Warnings);
 
@@ -74,8 +77,8 @@ internal static class DoctorCommand
         var command = new Command("doctor", """
             Check the setup: project, connection string, database, write agent and installed skill, and where each came from.
             Lists every connection string candidate with its id, source, server, database and whether it is local (passwords
-            are never shown), which one is the development database and why, the CMS schema version and the agent's state
-            (running, stopped, stale, unresponsive). Always exits 0:
+            are never shown), which one is the development database and why, the CMS schema version, the agent's state
+            (running, stopped, stale, unresponsive) and, against a shared database, drift (what differs from this build). Always exits 0:
             data.healthy says whether reads work, data.warnings lists problems. Run it first when another command fails.
             Example: opticli doctor
             """);
@@ -132,6 +135,10 @@ internal static class DoctorCommand
                 warnings.Add($"Agent: {agent.Message}");
             }
 
+            var drift = project is null || resolution.Chosen is null || !databaseSection.Reachable
+                ? null
+                : await DriftAsync(context, project, resolution.Chosen, warnings, cancellationToken);
+
             var skills = InstalledSkills(context);
             foreach (var skill in skills.Where(s => s.Outdated))
             {
@@ -146,11 +153,66 @@ internal static class DoctorCommand
                 connectionSection,
                 databaseSection,
                 agent,
+                drift,
                 skills,
                 warnings);
             return new CommandResult(report);
         });
         return command;
+    }
+
+    /// <summary>
+    /// Against a shared database: what <c>serve</c> found differs between the build and the database. Before <c>serve</c>
+    /// has run, the part it compares before starting the site (EF Core migrations, the CMS schema version).
+    /// </summary>
+    private static async Task<DriftReport?> DriftAsync(CliContext context, ProjectInfo project, ConnectionCandidate chosen, List<string> warnings, CancellationToken cancellationToken)
+    {
+        if (chosen.IsLocal != false)
+        {
+            return new DriftReport { Checked = false, Notes = [DriftCommand.LocalNote] };
+        }
+        try
+        {
+            // Only a report about this same database: the state may be from a run against another one.
+            if (context.StateStore.Read() is { Drift: { } reported } state
+                && string.Equals(state.DbServer?.Trim(), chosen.Server?.Trim(), StringComparison.OrdinalIgnoreCase)
+                && string.Equals(state.DbName?.Trim(), chosen.Database?.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                return reported;
+            }
+        }
+        catch (CorruptStateException)
+        {
+            // Reported with the agent's state.
+        }
+        try
+        {
+            var settings = UserConfig.ForProject(context.Environment.UserConfigFile, project.Directory);
+            var output = OutputLocator.Locate(project, null, settings?.Output, context.Environment.CurrentDirectory);
+            await using var db = await context.OpenDatabaseAsync(cancellationToken);
+            var startup = await StartupDriftCheck.RunAsync(db, Path.GetDirectoryName(output.Dll)!, cancellationToken);
+            if (startup.SchemaRefusal is { } refusal)
+            {
+                warnings.Add($"{refusal} {startup.SchemaHint}");
+            }
+            if (startup.PendingMigrations.Count > 0)
+            {
+                warnings.Add($"This build has {startup.PendingMigrations.Count} EF Core migration(s) the shared database doesn't; `opticli serve` refuses to start it without --allow-pending-migrations.");
+            }
+            return new DriftReport
+            {
+                Checked = true,
+                Partial = true,
+                Migrations = startup.Drift.Migrations,
+                Schema = startup.Drift.Schema,
+                Notes = [.. startup.Drift.Notes, "Content types, properties and Dynamic Data Store types are compared once `opticli serve` runs; the fingerprint comes with that."],
+            };
+        }
+        catch (OptiCliException ex)
+        {
+            warnings.Add($"Drift: not compared ({ex.Message})");
+            return null;
+        }
     }
 
     /// <summary>The user's and the repository's copy of the skill, where installed.</summary>

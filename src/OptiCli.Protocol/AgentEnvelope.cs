@@ -29,6 +29,9 @@ public sealed record AgentError(string Code, string Message, string? Hint = null
 
     /// <summary>What kind of refusal or conflict, when a caller may act on it: one of <see cref="AgentErrorReasons"/>.</summary>
     public string? Reason { get; init; }
+
+    /// <summary>For <c>drift</c> errors: what differs; retry with its fingerprint in <see cref="AgentProtocol.AcceptDriftHeader"/> to confirm.</summary>
+    public DriftReport? Drift { get; init; }
 }
 
 /// <summary>Values of <see cref="AgentError.Reason"/>, which the CLI passes on as <c>details.reason</c>.</summary>
@@ -77,6 +80,12 @@ public static class AgentErrorCodes
     /// <summary>422: the CMS's validation rejected the content; see <see cref="AgentError.Validation"/>.</summary>
     public const string Validation = "validation";
 
+    /// <summary>
+    /// 409: a write in shared mode while the site's code and the database differ (<see cref="AgentError.Drift"/>),
+    /// without <see cref="AgentProtocol.AcceptDriftHeader"/> naming the current fingerprint.
+    /// </summary>
+    public const string Drift = "drift";
+
     /// <summary>500: an unexpected failure inside the site.</summary>
     public const string Internal = "internal";
 
@@ -86,7 +95,7 @@ public static class AgentErrorCodes
         Unauthorized => 401,
         Refused => 403,
         NotFound or UnsupportedProtocol => 404,
-        Conflict => 409,
+        Conflict or Drift => 409,
         Validation => 422,
         _ => 500,
     };

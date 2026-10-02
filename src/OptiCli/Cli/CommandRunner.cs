@@ -1,5 +1,6 @@
 using System.CommandLine;
 using OptiCli.Core;
+using OptiCli.Core.Drift;
 using OptiCli.Core.Errors;
 using OptiCli.Core.Output;
 
@@ -29,6 +30,10 @@ internal static class CommandRunner
                 {
                     var result = await body(context, cancellationToken);
                     var warnings = (result.Warnings ?? []).Concat(context.DatabaseWarnings).ToList();
+                    if (!warnings.Any(w => w.StartsWith(DriftText.Prefix, StringComparison.Ordinal)))
+                    {
+                        warnings.AddRange(context.DriftWarnings);
+                    }
                     if (result.Raw is { } raw)
                     {
                         WriteWarnings(context.DatabaseWarnings);

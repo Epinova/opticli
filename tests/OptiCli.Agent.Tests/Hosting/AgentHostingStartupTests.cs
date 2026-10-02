@@ -1,5 +1,6 @@
 using System.Reflection;
 using EPiServer.Data;
+using EPiServer.Data.Dynamic;
 using EPiServer.DataAbstraction.RuntimeModel.Internal;
 using EPiServer.Scheduler;
 using Microsoft.AspNetCore.Hosting;
@@ -95,7 +96,8 @@ public class AgentHostingStartupTests
         Assert.Equal(Remote, DatabasePin.Resolve(data)?.ConnectionString);
         Assert.False(host.Services.GetRequiredService<IOptions<SchedulerOptions>>().Value.Enabled);
         Assert.False(host.Services.GetRequiredService<IOptions<ContentModelOptions>>().Value.EnableModelSyncCommit);
-        Assert.Contains("Shared database: scheduler, automatic schema updates and content type sync are off", stderr, StringComparison.Ordinal);
+        Assert.False(host.Services.GetRequiredService<IOptions<DynamicDataStoreOptions>>().Value.AutoRemapStores);
+        Assert.Contains("Shared database: scheduler, automatic schema updates, content type sync and store remapping are off", stderr, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -109,6 +111,7 @@ public class AgentHostingStartupTests
         Assert.True(data.CreateDatabaseSchema);
         Assert.Equal(new SchedulerOptions().Enabled, host.Services.GetRequiredService<IOptions<SchedulerOptions>>().Value.Enabled);
         Assert.Equal(new ContentModelOptions().EnableModelSyncCommit, host.Services.GetRequiredService<IOptions<ContentModelOptions>>().Value.EnableModelSyncCommit);
+        Assert.True(host.Services.GetRequiredService<IOptions<DynamicDataStoreOptions>>().Value.AutoRemapStores);
     }
 
     [Fact]
@@ -119,6 +122,19 @@ public class AgentHostingStartupTests
         Assert.Equal(Local, host.Services.GetRequiredService<AgentSettings>().PinnedConnection);
         Assert.Contains(host.Services.GetServices<IValidateOptions<DataAccessOptions>>(), v => v is DataAccessOptionsGuard);
         Assert.Contains(host.Services.GetServices<IStartupFilter>(), f => f is AgentStartupFilter);
+        Assert.NotNull(host.Services.GetRequiredService<OptiCli.Agent.Drift.DriftCheck>());
+    }
+
+    [Fact]
+    public void Store_changes_are_turned_off_on_every_cms_12_version()
+    {
+        // SeamlessUpgradeStores only exists in later CMS 12 versions; on 12.0 there is nothing more to turn off.
+        var options = new DynamicDataStoreOptions();
+
+        AgentHostingStartup.TurnOffStoreChanges(options);
+
+        Assert.False(options.AutoRemapStores);
+        Assert.True(options.AutoResolveTypes);
     }
 
     /// <param name="site">The site's own configuration (appsettings, user secrets, Key Vault), added before the web host.</param>

@@ -8,6 +8,7 @@ public class AgentRouterTests
     [Theory]
     [InlineData("GET", "/v1/ping", "Ping", null)]
     [InlineData("POST", "/v1/shutdown", "Shutdown", null)]
+    [InlineData("GET", "/v1/drift", "Drift", null)]
     [InlineData("GET", "/v1/types/ArticlePage", "Type", "ArticlePage")]
     [InlineData("GET", "/v1/types/0b1c2d3e-0000-4000-8000-000000000001", "Type", "0b1c2d3e-0000-4000-8000-000000000001")]
     [InlineData("POST", "/v1/content", "Create", null)]

@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using OptiCli.Core.Errors;
 using OptiCli.Core.Output;
+using OptiCli.Protocol;
 
 namespace OptiCli.Core.Serve;
 
@@ -30,6 +31,7 @@ public sealed class StateStore
         StatePath = Path.Combine(stateDirectory, $"{_key}.json");
         LogPath = Path.Combine(stateDirectory, $"{_key}.log");
         LockPath = Path.Combine(stateDirectory, $"{_key}.lock");
+        DriftPath = Path.Combine(stateDirectory, $"{_key}.drift.json");
     }
 
     public string Directory { get; }
@@ -43,6 +45,9 @@ public sealed class StateStore
 
     /// <summary>Held from "is a site running?" until the state file is written, so two starts can't both decide no.</summary>
     public string LockPath { get; }
+
+    /// <summary>What <c>serve</c> compared before starting a site against a shared database, for the site agent to read.</summary>
+    public string DriftPath { get; }
 
     /// <summary>The log of the run <paramref name="runsAgo"/> runs before the latest (1 up to <see cref="LogsKept"/> - 1).</summary>
     public string PreviousLogPath(int runsAgo) => Path.Combine(Directory, $"{_key}.{runsAgo}.log");
@@ -116,18 +121,28 @@ public sealed class StateStore
     }
 
     /// <summary>Writes atomically (temp file + rename) with user-only permissions from the start.</summary>
-    public void Write(ServeState state)
+    public void Write(ServeState state) => WriteUserOnly(StatePath, JsonSerializer.Serialize(state, JsonOutput.Options));
+
+    /// <summary>Writes <see cref="DriftPath"/>, in the agent's JSON, for the site agent of the run about to start.</summary>
+    /// <returns>Its path.</returns>
+    public string WriteStartupDrift(StartupDrift drift)
+    {
+        WriteUserOnly(DriftPath, JsonSerializer.Serialize(drift, AgentJson.Options));
+        return DriftPath;
+    }
+
+    private void WriteUserOnly(string path, string text)
     {
         EnsureDirectory();
-        var temp = $"{StatePath}.{Guid.NewGuid():N}.tmp";
+        var temp = $"{path}.{Guid.NewGuid():N}.tmp";
         try
         {
             using (var stream = OpenUserOnly(temp, FileMode.CreateNew))
             using (var writer = new StreamWriter(stream, new UTF8Encoding(false)))
             {
-                writer.Write(JsonSerializer.Serialize(state, JsonOutput.Options));
+                writer.Write(text);
             }
-            File.Move(temp, StatePath, overwrite: true);
+            File.Move(temp, path, overwrite: true);
         }
         finally
         {
@@ -135,11 +150,16 @@ public sealed class StateStore
         }
     }
 
+    /// <summary>Removes the state file, and what <c>serve</c> compared before the start (<see cref="DriftPath"/>) with it.</summary>
     public void Delete()
     {
         if (File.Exists(StatePath))
         {
             File.Delete(StatePath);
+        }
+        if (File.Exists(DriftPath))
+        {
+            File.Delete(DriftPath);
         }
     }
 

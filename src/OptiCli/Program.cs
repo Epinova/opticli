@@ -57,8 +57,9 @@ internal partial class Program
               stdout is redirected, tables on a terminal; --json / --text force one, --jsonl (list commands) prints one item per
               line. Lists return 50 items: pass meta.next as --cursor for more, or raise --limit.
             Errors: {"ok": false, "error": {"code", "message", "hint"}}; the hint says what to do next.
-            Exit codes: 0 ok, 1 usage, 2 not found, 3 refused by a safety rule, 4 database/site unreachable, 5 write conflict or
-              validation failure, 6 the user must choose the development database first (error.details lists the choices).
+            Exit codes: 0 ok, 1 usage, 2 not found, 3 refused by a safety rule, 4 database/site unreachable, 5 write conflict,
+              validation failure or unconfirmed drift (a shared database that differs from this build: `opticli drift`),
+              6 the user must choose the development database first (error.details lists the choices).
             Details and an example for each command: opticli <command> --help
             """);
         options.AddTo(root);
@@ -86,6 +87,7 @@ internal partial class Program
         root.Subcommands.Add(SqlCommand.Create(options));
         root.Subcommands.Add(ServeCommand.Create(options));
         root.Subcommands.Add(EnvCommand.Create(options));
+        root.Subcommands.Add(DriftCommand.Create(options));
         root.Subcommands.Add(SetCommand.Create(options));
         root.Subcommands.Add(CreateCommand.Create(options));
         root.Subcommands.Add(AreaCommand.Create(options));

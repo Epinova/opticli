@@ -3,6 +3,32 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.7.0 (2 October 2026)
+
+### Shared databases
+
+- **Writes stop when the build and a shared database differ** (drift). Against a remote development database the
+  site doesn't sync its content types, so the database keeps what the deployed code made. A write would run this
+  build's code against content the deployed site serves, so it now asks on a terminal, and elsewhere fails with
+  `drift` (exit 5) with the differences in `error.details`. `--accept-drift <fingerprint>` confirms (once for a plan:
+  `apply --accept-drift`); the fingerprint stops counting when the differences change. Dry runs don't stop.
+- `opticli drift` lists what differs: content types and properties in the code but not in the database and the
+  reverse, changed property types and culture-specific settings, renames a migration step hasn't applied, EF Core
+  migrations, Dynamic Data Store types and the CMS schema version. Each says which side is ahead: `local`,
+  `database`, or `unknown` when the database doesn't say; the report as a whole can also be `both`. `serve` prints a
+  summary, `doctor` has a `drift` section, and once `serve` has reported drift, commands that use the database and
+  `serve --status` carry a warning.
+- `serve` refuses (exit 3) a build with EF Core migrations the database's `__EFMigrationsHistory` lacks, since a site
+  that migrates at startup would apply them for everyone. `--allow-pending-migrations` starts it anyway.
+- `serve` says when the database's CMS schema version doesn't fit the build's packages, before it starts the site,
+  instead of leaving a stack trace in the log.
+- Dynamic Data Store remapping is off in shared mode too: a store whose type changed fails when used, and drift
+  reports it.
+- `serve` predicts whether the CMS starts against a schema one version newer from the build's EPiServer.Framework
+  version (12.17 and later accept it).
+- README: a "Shared databases" section on what opticli can't turn off (the site's own startup code), and why a login
+  without DDL rights helps.
+
 ## 0.6.0 (1 October 2026)
 
 ### Behaviour changes

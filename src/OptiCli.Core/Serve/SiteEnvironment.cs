@@ -20,6 +20,7 @@ public static class SiteEnvironment
     /// <param name="approvedRemote">The remote development database the site may use (the agent refuses other remote ones); null for a local one.</param>
     /// <param name="httpsPort">Also listen on <c>https://localhost:&lt;port&gt;</c> (with the development certificate), for browsing a site that redirects to HTTPS.</param>
     /// <param name="kestrelEndpoints">The site configures <c>Kestrel:Endpoints</c>, which replace the URLs: add opticli's addresses as endpoints too.</param>
+    /// <param name="driftFile">What <c>serve</c> compared before the start (<see cref="StartupDrift"/>), for the agent's drift report.</param>
     public static IReadOnlyList<KeyValuePair<string, string>> Build(
         string agentDll,
         string token,
@@ -30,7 +31,8 @@ public static class SiteEnvironment
         bool includeUrls = true,
         VerifiedConnectionString? approvedRemote = null,
         int? httpsPort = null,
-        bool kestrelEndpoints = false)
+        bool kestrelEndpoints = false,
+        string? driftFile = null)
     {
         var variables = new List<KeyValuePair<string, string>>
         {
@@ -59,6 +61,10 @@ public static class SiteEnvironment
         if (approvedRemote is { IsLocal: false })
         {
             variables.Add(new(AgentProtocol.RemoteDatabaseVariable, AgentProtocol.FormatRemote(approvedRemote.Server, approvedRemote.Database)));
+            if (driftFile is not null)
+            {
+                variables.Add(new(AgentProtocol.DriftFileVariable, driftFile));
+            }
         }
         if (connection is not null)
         {
@@ -77,7 +83,7 @@ public static class SiteEnvironment
     /// <summary>The variables opticli gives the site that <paramref name="variables"/> leaves out, which must not be inherited from an earlier <c>opticli env</c>.</summary>
     public static IReadOnlyList<string> NotSet(IEnumerable<KeyValuePair<string, string>> variables)
     {
-        string[] owned = [AgentProtocol.TokenVariable, AgentProtocol.DatabaseVariable, AgentProtocol.ConnectionNameVariable, AgentProtocol.RemoteDatabaseVariable];
+        string[] owned = [AgentProtocol.TokenVariable, AgentProtocol.DatabaseVariable, AgentProtocol.ConnectionNameVariable, AgentProtocol.RemoteDatabaseVariable, AgentProtocol.DriftFileVariable];
         var set = variables.Select(v => v.Key).ToHashSet(StringComparer.Ordinal);
         return owned.Where(name => !set.Contains(name)).ToList();
     }

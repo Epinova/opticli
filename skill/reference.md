@@ -261,6 +261,25 @@ these stop unless confirmed: `set`, `area` and plan steps with `publish`, `publi
 - Versions saved by `opticli` itself never need it, so "save a draft, check it, publish" works as before.
 - To go back after a publish: `opticli publish <ref> --version <previouslyPublished>`.
 
+### Drift (shared databases)
+
+Against a remote development database (shared mode) the site doesn't sync its content types into the database, so
+the database keeps what the deployed code made while the site runs this build. `opticli drift` (needs `serve`) lists
+what differs: `fingerprint`, `ahead` (`local`, `database`, `both`, `unknown`), `differences`, and per kind
+`contentTypes[]`, `properties[]`, `migrations[]` (EF Core), `stores[]` (Dynamic Data Store types), `schema[]` (the CMS
+schema version), each with `name`, `ahead` and `difference`. `notes[]` say what wasn't compared (`[AllowedTypes]`,
+required, display names and order live only in code, so they never differ). Against a local database nothing is
+compared (`checked: false`).
+- While anything differs, every write stops, whatever it touches: on a terminal opticli shows the list and asks;
+  elsewhere `drift` (exit 5) with the report in `error.details`. Dry runs don't stop. Once `serve` has reported drift,
+  commands that use the database and `serve --status` carry a `drift:` warning in `meta.warnings` (not when the site
+  was started with `opticli env`: use `opticli drift`).
+- `--accept-drift <fingerprint>` confirms it (every write command; `apply --accept-drift` for a whole plan). The
+  fingerprint is a hash of the differences: it stops counting when they change, e.g. after a deploy or a pull (restart
+  `serve` to compare again). Ask the user before confirming.
+- `local` ahead: this branch has changes that aren't deployed there (check out what is deployed, or deploy first).
+  `database` ahead: that environment runs newer code than this checkout (pull and build).
+
 ### Approval sequences
 
 Content can have an approval sequence (its own, or inherited from an ancestor): publishing it goes through reviewers,
@@ -345,7 +364,7 @@ Plans that run again (a section rebuilt after a database refresh, or repaired af
 
 ## serve and env
 
-- `opticli serve [--build] [--port N] [--https] [--foreground] [--output <dll>] [--timeout s]`: runs the existing build
+- `opticli serve [--build] [--port N] [--https] [--foreground] [--output <dll>] [--timeout s] [--allow-pending-migrations]`: runs the existing build
   output (`bin/Debug/<tfm>/<Site>.dll`) with the site agent injected through `DOTNET_STARTUP_HOOKS`, in Development, on
   `http://127.0.0.1:<port>` (default 5199, else the first free port up to 5299), waiting up to `--timeout`
   (default 180 s) for it to answer. A warning says when sources are newer than the
@@ -358,9 +377,13 @@ Plans that run again (a section rebuilt after a database refresh, or repaired af
 - The agent refuses to start if the site would use a different database, or a remote one other than the development
   database (exit 3). It answers only loopback callers with the per-run token, and only in Development. `serve`
   refuses a remote database that isn't the development one.
-- Against a remote development database the site runs with the scheduler, automatic schema updates and content type
-  sync off (a warning says so): content types or properties that exist only in local code aren't in the database, so
-  writes to them fail.
+- Against a remote development database the site runs with the scheduler, automatic schema updates, content type
+  sync and Dynamic Data Store remapping off (a warning says so): content types or properties that exist only in local
+  code aren't in the database, so writes to them fail. Before it starts the site, `serve` refuses (exit 3) a build with
+  EF Core migrations the database's `__EFMigrationsHistory` lacks (`details.reason: "pendingMigrations"`; a site that
+  migrates at startup would apply them; `--allow-pending-migrations` starts it anyway), and a CMS schema version the
+  CMS won't start with (`"schemaVersion"`). Once the site answers it reports drift (see
+  [Drift](#drift-shared-databases)).
 - `opticli env [--format shell|powershell|dotenv|json|launchSettings] [--include-connection]` prints the variables
   to start the site yourself (IDE, `dotnet run`). Set them only for the site process (a subshell or launch profile):
   `DOTNET_STARTUP_HOOKS` affects every .NET process started from a shell that exports it. The connection string is
@@ -381,5 +404,7 @@ Plans that run again (a section rebuilt after a database refresh, or repaired af
 | `refused` (exit 3), `details.reason: "approvalSequence"` | The content has an approval sequence. Ask the user whether to send it for review; if so, run again with `--request-approval`. |
 | `conflict` (exit 5), `details.reason: "inReview"` | The content awaits a reviewer's decision; tell the user, who decides in the CMS edit UI. |
 | `conflict` (exit 5), `details.reason: "referenced"` | Other content references what `delete` would remove (`details.references`). Show them; remove the references, or ask the user before `--ignore-references`. |
+| `drift` (exit 5) | This build and the shared database differ (`error.details`, `opticli drift`). Show the user the differences and which side is ahead; pass `--accept-drift <details.fingerprint>` only after they said to write anyway. |
+| `refused` (exit 3) from `serve`, `details.reason: "pendingMigrations"` or `"schemaVersion"` | The build doesn't fit the shared database: migrations it lacks, or a CMS schema the packages can't run. Tell the user (check out what is deployed, or pull); `--allow-pending-migrations` only when they say the site doesn't migrate at startup. |
 | `conflict` (exit 5) | A newer version exists: `opticli versions <ref> --limit 3`, then re-run. With `details.reason: "pendingDraft"`: someone else's unpublished changes would go live too; show `details.draft` and ask the user before `--include-draft`. |
 | Values look cut off | `truncated: true`: use `get <ref> --fields Prop` or `--full`. |

@@ -1,7 +1,7 @@
 ---
 name: opticli
 description: Inspect and change content of an Optimizely CMS 12 (EPiServer) site the user develops locally (against its local or development database) with the opticli CLI instead of hand-written SQL or guessing from code. Use when you need to know what CMS content exists (pages, blocks, media, folders), what a page or block contains (properties, ContentArea items, rich text), which page type or block type something is and which C# class and Razor view render it, where a block or page is used, which content a URL shows, what drafts and versions exist, or when the user asks you to create or edit CMS content (set properties, add a block to a ContentArea, create a page or block, translate, publish) in their development site.
-opticli-version: 0.6.0
+opticli-version: 0.7.0
 ---
 
 # opticli: Optimizely CMS content from the command line
@@ -16,7 +16,7 @@ The database says what *does* exist (content items, their values, where blocks a
 opticli for the second kind of question, and to find the code: `opticli type <Name>` gives the class file, views and
 per-property `allowedTypes`; `opticli allowed-in <Type>` answers "where may this block go" across all types.
 
-This file was written for opticli 0.6.0 (`opticli --version`). Longer material (every command and option, value
+This file was written for opticli 0.7.0 (`opticli --version`). Longer material (every command and option, value
 syntax, plan files, output fields, troubleshooting) is in [reference.md](reference.md): read it when you write, or
 when a command below doesn't cover your question.
 
@@ -61,6 +61,7 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
 | Text anywhere in names or text properties | `opticli search "opening hours" --in strings` |
 | Who may read or edit an item (access rights) | `opticli access 123` (`inherited`, `from`: where they come from) |
 | Version history / unpublished work | `opticli versions 123` / `opticli drafts --since 2024-06-01 --kind page` |
+| What differs between this build and a shared database? | `opticli drift` (needs `serve`) |
 | Anything else (read-only) | `opticli sql "SELECT TOP 10 ... FROM tblContent ..."` |
 
 ## Recipes
@@ -103,8 +104,8 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
 - Failures: `{"ok":false,"error":{"code","message","hint"}}` on stdout, and a non-zero exit code. **Read the hint**: it
   says what to do next (a "Did you mean ...?" for mistyped types, properties or commands; which option to add).
 - Exit codes: `0` ok, `1` usage (bad arguments), `2` not found, `3` refused by a safety rule, `4` database or site
-  not reachable, `5` write conflict or validation failure (`error.details` lists every issue), `6` the user must
-  choose the development database (see "Which database"), `130` interrupted (Ctrl+C).
+  not reachable, `5` write conflict, validation failure (`error.details` lists every issue) or `drift` (see Rules),
+  `6` the user must choose the development database (see "Which database"), `130` interrupted (Ctrl+C).
 - `meta.warnings` means the result is valid but you should know something (e.g. a search was capped).
 - Statuses: `published`, `checkedOut` (draft), `checkedIn` (ready to publish), `previouslyPublished`,
   `delayedPublish` (scheduled), `awaitingApproval`, `rejected`. Deleted items (in the recycle bin) say `deleted: true`.
@@ -117,7 +118,8 @@ unless `--publish` is passed. The new draft becomes the primary draft, which edi
 
 1. `opticli serve` - starts the local site in the background with the opticli site agent (takes 30-60 s; `serve --status`,
    `serve --logs --tail 40` if it fails). Only start it when you are about to write. Against a remote development
-   database it warns that the database is shared: tell the user that the writes will reach it.
+   database it warns that the database is shared: tell the user that the writes will reach it. There it also says
+   when this build and the database differ (`drift:` in `meta.warnings`): writes then stop until the user confirms.
 2. Dry-run first: add `--dry-run` to see the validated before/after without saving.
 3. Run the write: `opticli set 123 Heading="New title"`, `opticli area 123 MainArea add 456`,
    `opticli block create --type TeaserBlock --name "Teaser" --for 123`, `opticli create 123 --type ArticlePage --name News`,
@@ -143,6 +145,17 @@ order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a cod
   `pendingDraft` with a warning). Show the user `details.draft` (`savedBy`, `saved`, `changes`) and **ask whether those changes
   should go live too**. Pass `--include-draft` (in a plan, `"includeDraft": true` on the step) only after they said
   yes; never on your own initiative. Drafts opticli saved itself don't need this.
+- Against a shared (remote) development database, a write stops when this build and the database differ: `drift`
+  (exit 5). The database keeps what the deployed code made, so the write would run this build's code against content
+  the deployed site serves. Show the user what differs (`error.details`, or `opticli drift`) and what it means:
+  `local` ahead = this branch has changes that aren't deployed there; `database` ahead = that environment runs newer
+  code than this checkout (pull); `unknown` = they differ and the database doesn't say which side changed. Ask whether
+  to write with this build anyway. Pass `--accept-drift <details.fingerprint>` (a plan takes it once:
+  `apply --accept-drift`) only after they said yes, never on your own initiative, and never with a fingerprint from an
+  earlier answer: it stops counting when the differences change. Dry runs don't stop.
+- `serve` refuses (exit 3) a build with EF Core migrations the shared database lacks (`details.reason:
+  "pendingMigrations"`), or a CMS schema version the database can't run (`"schemaVersion"`). Tell the user; pass
+  `--allow-pending-migrations` only when they say the site doesn't migrate that database at startup.
 - Content with an approval sequence (`approval` in `get`) is never published directly: such a publish is refused
   (exit 3, `details.reason: "approvalSequence"`). Ask the user whether to send it for review, and only then pass
   `--request-approval`. opticli never approves or rejects; reviewers do that in the CMS.

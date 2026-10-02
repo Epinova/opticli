@@ -52,6 +52,14 @@ internal sealed class WriteOptions
         Description = "Where an approval sequence applies (get shows approval), send the change for review instead of publishing: it is saved and the sequence starts, as the edit UI's Ready for Review does; publishing there is refused (exit 3). With --publish, content without a sequence is published as usual.",
     };
 
+    public const string AcceptDriftName = "--accept-drift";
+
+    public Option<string?> AcceptDrift { get; } = new(AcceptDriftName)
+    {
+        Description = "Against a shared database whose content model differs from this build's (`opticli drift`): write anyway. Takes the fingerprint from the drift error or `opticli drift`, and stops counting when the differences change. Without it such a write asks on a terminal, and elsewhere fails with drift (exit 5). Ask the user first.",
+        HelpName = "fingerprint",
+    };
+
     public void AddCommon(Command command, bool publish = true)
     {
         command.Options.Add(DryRun);
@@ -60,6 +68,7 @@ internal sealed class WriteOptions
             command.Options.Add(Publish);
             command.Options.Add(RequestApproval);
         }
+        command.Options.Add(AcceptDrift);
     }
 
     public Option<string?> PublishAt { get; } = new("--publish-at")

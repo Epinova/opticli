@@ -34,6 +34,22 @@ public class StartupFailureTests : IDisposable
         Assert.Equal(store.LogPath, log.Log);
     }
 
+    [Theory]
+    [InlineData("      System.NotSupportedException: The database schema for 'CMS' has not been updated to version '8023.0', current database version is '8022.0'. Update the database automatically by setting DataAccessOptions.UpdateDatabaseSchema to \"true\".",
+        "The database schema for 'CMS' has not been updated to version '8023.0'")]
+    [InlineData(" ---> System.NotSupportedException: The assemblies for 'CMS' have not been updated to work with the current database version '8030.0'. Supported database version is '8023.0'. Make sure the NuGet packages are updated and build the solution.",
+        "The assemblies for 'CMS' have not been updated")]
+    public void A_schema_the_cms_refuses_is_a_refusal_that_says_which_side_to_update(string line, string quoted)
+    {
+        var store = StoreWithLog("info: starting", line, "Unhandled exception. EPiServer.Framework.Initialization.InitializationException: Initialize action failed");
+
+        var error = SiteLauncher.StartupFailure(store, "The site exited during startup (exit code 134).");
+
+        Assert.IsType<RefusedException>(error);
+        Assert.Contains($"The CMS refused the database schema: {quoted}", error.Message);
+        Assert.Contains("Older schema", error.Hint);
+    }
+
     [Fact]
     public void Any_other_exit_is_unreachable_and_keeps_only_the_last_lines()
     {

@@ -54,6 +54,9 @@ public sealed record AgentStatus(AgentState State, string Message)
 
     public DatabaseTarget? Database { get; init; }
 
+    /// <summary>Against a shared database: how the site's code differs from it (<c>opticli drift</c> has the list).</summary>
+    public DriftSummary? Drift { get; init; }
+
     public string? Hint { get; init; }
 
     /// <summary>For <see cref="AgentState.Stale"/>: the state file itself is unreadable, so nothing is known about the site.</summary>
@@ -61,6 +64,13 @@ public sealed record AgentStatus(AgentState State, string Message)
 
     /// <summary>For <see cref="AgentState.Incompatible"/>: the error the agent answered with.</summary>
     [JsonIgnore] public ErrorCode? Failure { get; init; }
+}
+
+/// <summary>The drift report in short.</summary>
+/// <param name="Ahead">One of <see cref="DriftAhead"/>; null when nothing differs.</param>
+public sealed record DriftSummary(int Differences, string? Ahead)
+{
+    public static DriftSummary From(DriftReport report) => new(report.Differences, report.Ahead);
 }
 
 /// <summary>The ping fields worth showing.</summary>
@@ -180,5 +190,6 @@ public static class AgentProbe
         StatePath = store.StatePath,
         Output = state.OutputDll,
         AgentDll = state.AgentDll,
+        Drift = state.Drift is { Checked: true } drift ? DriftSummary.From(drift) : null,
     };
 }

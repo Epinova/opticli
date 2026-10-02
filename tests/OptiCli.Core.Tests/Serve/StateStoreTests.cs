@@ -109,6 +109,24 @@ public class StateStoreTests : IDisposable
     }
 
     [Fact]
+    public void What_serve_compared_before_the_start_is_user_only_and_goes_with_the_state()
+    {
+        var store = Store();
+        store.Write(State(store));
+
+        var path = store.WriteStartupDrift(new OptiCli.Protocol.StartupDrift { Notes = ["n"] });
+
+        Assert.Equal(store.DriftPath, path);
+        Assert.Contains("\"notes\":[\"n\"]", File.ReadAllText(path), StringComparison.Ordinal);
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(path));
+        }
+        store.Delete();
+        Assert.False(File.Exists(path));
+    }
+
+    [Fact]
     public void A_run_only_removes_the_state_file_it_wrote()
     {
         var store = Store();

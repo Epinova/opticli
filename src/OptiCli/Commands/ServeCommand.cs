@@ -1,6 +1,7 @@
 using System.CommandLine;
 using OptiCli.Cli;
 using OptiCli.Core.Configuration;
+using OptiCli.Core.Drift;
 using OptiCli.Core.Errors;
 using OptiCli.Core.Serve;
 using OptiCli.Core.Writes;
@@ -29,6 +30,10 @@ internal static class ServeCommand
         var logs = new Option<bool>("--logs") { Description = $"Show the latest run's log (the site's console output); data.previous lists the logs of up to {StateStore.LogsKept - 1} runs before it." };
         var tail = new Option<int?>("--tail") { Description = $"With --logs: only the last N lines (default {DefaultLogLines}).", HelpName = "n" };
         var stop = new Option<bool>("--stop") { Description = "Stop the site (asks it to shut down through the agent, else SIGTERM on Unix; kills it after 20 s) and forget its token." };
+        var allowPendingMigrations = new Option<bool>("--allow-pending-migrations")
+        {
+            Description = "Against a shared database: start even though this build has EF Core migrations the database lacks. Without it serve refuses (exit 3), since a site that migrates at startup would apply them for everyone.",
+        };
         var https = new Option<bool>("--https")
         {
             Description = "Also listen on https://localhost:<next free port> with the ASP.NET Core development certificate, to browse a site that redirects to HTTPS. Default: \"https\" in the user config; --https false turns it off.",
@@ -41,10 +46,12 @@ internal static class ServeCommand
             returns once the agent answers (30-60 s is normal); state (pid, port, a fresh token) is kept in a user-only file.
             Warns when source files are newer than the build output (--build rebuilds first). A site that redirects to HTTPS
             can't be browsed on that address: --https adds https://localhost:<port> (browseUrl), while opticli keeps using HTTP.
-            Stop it when done.
+            Against a shared (remote) development database it turns off what would change that database at startup, refuses
+            to start a build with EF Core migrations the database lacks, and reports what differs between this build and the
+            database (drift; `opticli drift`): writes then stop until the user confirms. Stop it when done.
             Example: opticli serve    then: opticli serve --status | opticli serve --logs --tail 40 | opticli serve --stop
             """);
-        foreach (var option in new Option[] { build, port, foreground, output, timeout, https, status, logs, tail, stop })
+        foreach (var option in new Option[] { build, port, foreground, output, timeout, https, allowPendingMigrations, status, logs, tail, stop })
         {
             command.Options.Add(option);
         }
@@ -53,7 +60,7 @@ internal static class ServeCommand
         {
             var parse = context.Parse;
             var modes = new[] { parse.GetValue(status), parse.GetValue(logs), parse.GetValue(stop) }.Count(m => m);
-            var starting = parse.GetValue(build) || parse.GetValue(port) is not null || parse.GetValue(foreground) || parse.GetValue(output) is not null || parse.GetResult(https) is { Implicit: false };
+            var starting = parse.GetValue(build) || parse.GetValue(port) is not null || parse.GetValue(foreground) || parse.GetValue(output) is not null || parse.GetResult(https) is { Implicit: false } || parse.GetValue(allowPendingMigrations);
             if (modes > 1 || (modes == 1 && starting))
             {
                 throw new UsageException("--status, --logs and --stop are separate actions; don't combine them with each other or with start options.");
@@ -65,7 +72,8 @@ internal static class ServeCommand
 
             if (parse.GetValue(status))
             {
-                return new CommandResult(await StatusAsync(context, cancellationToken), Source: WriteExecutor.AgentSource);
+                var current = await StatusAsync(context, cancellationToken);
+                return new CommandResult(current, Warnings: DriftWarning(context.StateStore, started: false) is { } drifted ? [drifted] : null, Source: WriteExecutor.AgentSource);
             }
             if (parse.GetValue(logs))
             {
@@ -81,12 +89,12 @@ internal static class ServeCommand
             {
                 throw new UsageException("--timeout must be a positive number of seconds.");
             }
-            return await StartAsync(context, parse.GetValue(build), parse.GetValue(port), parse.GetValue(foreground), parse.GetValue(output), parse.GetResult(https) is { Implicit: false } ? parse.GetValue(https) : null, TimeSpan.FromSeconds(seconds), cancellationToken);
+            return await StartAsync(context, parse.GetValue(build), parse.GetValue(port), parse.GetValue(foreground), parse.GetValue(output), parse.GetResult(https) is { Implicit: false } ? parse.GetValue(https) : null, parse.GetValue(allowPendingMigrations), TimeSpan.FromSeconds(seconds), cancellationToken);
         });
         return command;
     }
 
-    private static async Task<CommandResult> StartAsync(CliContext context, bool build, int? port, bool foreground, string? output, bool? https, TimeSpan timeout, CancellationToken cancellationToken)
+    private static async Task<CommandResult> StartAsync(CliContext context, bool build, int? port, bool foreground, string? output, bool? https, bool allowPendingMigrations, TimeSpan timeout, CancellationToken cancellationToken)
     {
         var project = context.Project;
         // The database check comes before anything is started or even looked for.
@@ -99,7 +107,8 @@ internal static class ServeCommand
         switch (existing.State)
         {
             case AgentState.Running when existing.Mode != ServeMode.External:
-                return new CommandResult(existing, Warnings: ["The site was already running; nothing was started."], Source: WriteExecutor.AgentSource);
+                return new CommandResult(existing, Warnings: ["The site was already running; nothing was started.", .. DriftWarning(store, started: false) is { } drifted ? [drifted] : Array.Empty<string>()],
+                    Source: WriteExecutor.AgentSource);
             case AgentState.Stopped:
                 break;
             case AgentState.Stale:
@@ -125,9 +134,19 @@ internal static class ServeCommand
         }
         var siteOutput = OutputLocator.Locate(project, output, settings?.Output, context.Environment.CurrentDirectory);
         var warnings = new List<string>();
+        string? driftFile = null;
         if (!connection.IsLocal)
         {
             warnings.Add(SharedDatabaseWarning(connection));
+            // Before anything starts: what the CMS or the site itself would change in (or refuse about) the shared database.
+            StartupCheck startup;
+            await using (var db = await context.OpenDatabaseAsync(cancellationToken))
+            {
+                startup = await StartupDriftCheck.RunAsync(db, Path.GetDirectoryName(siteOutput.Dll)!, cancellationToken);
+            }
+            startup.ThrowIfBlocked(allowPendingMigrations);
+            warnings.AddRange(startup.Warnings);
+            driftFile = store.WriteStartupDrift(startup.Drift);
         }
         if (OutputLocator.NewerSource(project, siteOutput.Dll) is { } newer)
         {
@@ -148,7 +167,8 @@ internal static class ServeCommand
             httpPort,
             timeout,
             (https ?? settings?.Https == true) ? PortSelector.Select(null, null, p => p != httpPort && PortSelector.IsFree(p)) : null,
-            siteEndpoints);
+            siteEndpoints,
+            driftFile);
 
         if (!foreground)
         {
@@ -156,6 +176,10 @@ internal static class ServeCommand
             if (request.HttpsPort is null && started.Url is { } url && await RedirectsToHttpsAsync(url, cancellationToken))
             {
                 warnings.Add($"The site redirects {url} to HTTPS, so it can't be browsed there (opticli itself is unaffected). `opticli serve --stop`, then `opticli serve --https` adds an HTTPS address.");
+            }
+            if (DriftWarning(store, started: true) is { } drift)
+            {
+                warnings.Add(drift);
             }
             return new CommandResult(started, Warnings: warnings.Count > 0 ? warnings : null, Source: WriteExecutor.AgentSource);
         }
@@ -166,7 +190,14 @@ internal static class ServeCommand
         }
         // Redirected stdout carries the one JSON envelope at the end, so the site's output goes to stderr then.
         await SiteLauncher.RunForegroundAsync(store, request, startLock, Console.IsOutputRedirected ? Console.Error : Console.Out,
-            ready => Console.Error.WriteLine($"[opticli] agent ready at {ready.Url}{(ready.BrowseUrl is { } browse ? $", browse the site at {browse}" : "")} (pid {ready.Pid}, database '{ready.Database?.Name}'); Ctrl+C stops the site."),
+            ready =>
+            {
+                Console.Error.WriteLine($"[opticli] agent ready at {ready.Url}{(ready.BrowseUrl is { } browse ? $", browse the site at {browse}" : "")} (pid {ready.Pid}, database '{ready.Database?.Name}'); Ctrl+C stops the site.");
+                if (DriftWarning(store, started: true) is { } drift)
+                {
+                    Console.Error.WriteLine($"warning: {drift}");
+                }
+            },
             cancellationToken);
         return new CommandResult(new { stopped = true });
     }
@@ -183,7 +214,9 @@ internal static class ServeCommand
         }
         return status.State switch
         {
-            AgentState.Running => new CommandResult(status, Warnings: ["Another `opticli serve` was starting the site; this one waited for it and started nothing."], Source: WriteExecutor.AgentSource),
+            AgentState.Running => new CommandResult(status,
+                Warnings: ["Another `opticli serve` was starting the site; this one waited for it and started nothing.", .. DriftWarning(store, started: false) is { } drifted ? [drifted] : Array.Empty<string>()],
+                Source: WriteExecutor.AgentSource),
             AgentState.Stopped or AgentState.Stale => throw new UnreachableException(
                 "Another `opticli serve` was starting the site, and it didn't start.",
                 "Its error is in that command's output and in `opticli serve --logs`; fix it, then run `opticli serve` again."),
@@ -230,8 +263,22 @@ internal static class ServeCommand
 
     public static string SharedDatabaseWarning(Core.Safety.VerifiedConnectionString connection) =>
         $"The site runs against the remote development database '{connection.Database}' on '{connection.Server}', which others may use too. "
-        + "For this run opticli turned off its scheduler, automatic database schema updates and content type sync, so content types "
-        + "or properties that exist only in your local code are not added to the database (writes to them fail).";
+        + "For this run opticli turned off its scheduler, automatic database schema updates, content type sync and store remapping, so content types "
+        + "or properties that exist only in your local code are not added to the database (writes to them fail). The site's own startup code still runs.";
+
+    /// <summary>What the agent reported as drift once the site answered, kept in the state file; null when nothing differs.</summary>
+    /// <param name="started">The site was just started: the longer summary; otherwise the short warning other commands give.</param>
+    private static string? DriftWarning(StateStore store, bool started)
+    {
+        try
+        {
+            return store.Read()?.Drift is { Fingerprint: not null } drift ? started ? DriftText.Started(drift) : DriftText.Warning(drift) : null;
+        }
+        catch (CorruptStateException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>Whether the site answers its start page with a redirect to HTTPS; false when it can't tell quickly.</summary>
     private static async Task<bool> RedirectsToHttpsAsync(string url, CancellationToken cancellationToken)

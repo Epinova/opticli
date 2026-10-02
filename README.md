@@ -91,7 +91,7 @@ When stdout is redirected, every command prints a single JSON line:
 
 ```json
 {"ok":true,"data":{"ref":"123","type":"ArticlePage","name":"News","status":"published","url":"/en/news/",
- "properties":{"Heading":{"type":"String","value":"Hello"}}},"meta":{"source":"db","version":"0.6.0"}}
+ "properties":{"Heading":{"type":"String","value":"Hello"}}},"meta":{"source":"db","version":"0.7.0"}}
 ```
 
 ## Using opticli with coding agents
@@ -166,19 +166,30 @@ When the database in use is remote, every response carries `meta.database` (`ser
 exported one can't win over the pin. Against a remote one it turns off, for that run:
 - the site's scheduler;
 - automatic schema updates;
-- content type sync.
+- content type sync;
+- the remapping of Dynamic Data Store types whose properties changed.
 
-So a local build can't change a shared database just by starting.
+So the CMS doesn't change a shared database just because a local build starts. `serve` also checks, before it
+starts the site:
+- EF Core migrations. A migration in the build that the database's `__EFMigrationsHistory` lacks would be applied
+  by a site that migrates at startup, so `serve` refuses (exit 3) unless `--allow-pending-migrations`.
+- The CMS schema version. When the database's doesn't fit the build's EPiServer packages, the CMS won't start, and
+  `serve` says which side to update. EPiServer.Framework 12.17 and later accept a schema one version newer; earlier
+  ones (and a version opticli can't read) are taken not to.
+
+Once the site answers, `serve` reports drift: what differs between the build and the database (see
+[Shared databases](#shared-databases)).
 
 ## Safety model
 
 | Rule | Enforced by |
 |---|---|
 | A remote database is used only when the user chose it as the development database, or for one run with `--db` or `--connection`, with a warning on every response. Only literal loopback names (`localhost`, `127.0.0.1`, `::1`, `.`, `(local)`) and LocalDB count as local. A host name that resolves to 127.0.0.1 counts as remote. | CLI, before connecting |
-| The site started by `serve` is pinned to the database the CLI reads. It refuses to start against any remote database except the approved development one. There it runs without scheduler, schema updates or content type sync. If the site turns hosting startups off in its code, so the pin can't run, it refuses to start. | CLI + site agent at startup |
+| The site started by `serve` is pinned to the database the CLI reads. It refuses to start against any remote database except the approved development one. There it runs without scheduler, schema updates, content type sync or store remapping, and `serve` refuses a build with EF Core migrations the database lacks. If the site turns hosting startups off in its code, so the pin can't run, it refuses to start. | CLI + site agent at startup |
 | The site agent answers only loopback callers that send the per-run token, and only in `Development`. The token is kept in a state file only your user can read. | Site agent, per request |
 | Writes create drafts; publishing needs `--publish` (or `publish`). Saves are attributed to the user `opticli`. | CLI + site agent |
 | A publish that would also put live changes someone else saved after the published version stops: on a terminal it shows who saved what and asks, elsewhere it fails with `conflict` (exit 5) listing them. `--include-draft` (a plan step's `"includeDraft": true`) confirms; `publish --version <id>` publishes that version as it is. | Site agent |
+| Against a shared database, writes stop while the build and the database differ (drift): on a terminal it shows the differences and asks, elsewhere it fails with `drift` (exit 5). `--accept-drift <fingerprint>` confirms; the fingerprint stops counting when the differences change. | Site agent, CLI first |
 | `delete` moves content to the recycle bin; nothing empties it. Site roots, start pages, asset roots and anything above them can't be moved or deleted. | Site agent |
 | Reads use fixed queries. `sql` accepts a single SELECT, refuses anything that writes, runs code, reaches another database or reads server-wide views, logs and traces (in `sys`, only the views that describe the database's own schema), and always runs in a rolled-back transaction. Personal-data tables (form submissions, users) need `--include-personal-data`. | CLI |
 | Passwords are never printed; `doctor` redacts connection strings. The exception is `opticli env`: it prints the per-run token, and with `--include-connection` the connection string too. | CLI |
@@ -189,6 +200,39 @@ Things these rules can't see:
 
 Don't point opticli at such a connection unless you mean to write to what is behind it.
 
+### Shared databases
+
+A remote development database is often shared: with other developers, and with the environment it belongs to. The
+database doesn't say which build or commit is deployed against it. So opticli checks whether the database matches
+what the local build expects, which is what matters before a write:
+- content types and properties in the code but not in the database, and the reverse (properties added in admin
+  mode don't count);
+- a property's type or culture-specific setting, and renames a migration step hasn't applied yet;
+- EF Core migrations, Dynamic Data Store types and the CMS schema version.
+
+Each difference says which side is ahead. `local`: your branch has changes that aren't deployed there (check out what
+is deployed, or deploy first). `database`: the environment runs newer code than your checkout (pull and build).
+`unknown`: they differ, and the database doesn't say which side changed. Required, display names, sort order, tabs
+and `[AllowedTypes]` aren't stored for a model: the running code decides them, so they never show as drift.
+
+`opticli drift` lists the differences and `doctor` shows them. Once `serve` has reported drift, a short warning comes
+with every command that uses the database, and with `serve --status`. A site you start yourself with `opticli env`
+reports drift only through `opticli drift` and the write errors. While there are any differences, every write stops, not only those to a type that differs: the risk is the build as a whole (its event
+handlers and validators), not only its models. Reads keep working, since they don't run the site's code. Restart
+`serve` to compare again after a deploy or a pull.
+
+What opticli can't turn off is the site's own startup code. Against a shared database, a local build still:
+- runs `Database.Migrate()` if the site calls it at startup (the reason for the migration check);
+- registers its scheduled jobs (new jobs get rows, changed ones are updated), even with the scheduler off;
+- creates the content root folders that add-ons register at startup (`IContentRootService`), and Dynamic Data Store
+  stores when they are first used, if they don't exist yet;
+- runs initialization modules and other startup code that writes, such as a site that creates its own content.
+
+So use a SQL login without DDL rights (no `db_ddladmin` or `db_owner`) for a shared database where you can. Schema
+changes then fail instead of reaching everyone. Some add-ons create or alter their own tables, views or stored
+procedures every time the site starts, and a site with those may not start with such a login. Check what your
+add-ons need first.
+
 ## Commands
 
 `opticli <command> --help` lists every option with an example, and a bare `opticli` shows an overview.
@@ -197,7 +241,7 @@ Don't point opticli at such a connection unless you mean to write to what is beh
 
 | Command | Answers |
 |---|---|
-| `doctor` | project, connection string candidates, database, schema version, site agent, installed skill |
+| `doctor` | project, connection string candidates, database, schema version, site agent, drift (against a shared database), installed skill |
 | `db list`, `db use`, `db forget` | the development database (see [Which database](#which-database)) |
 | `sites`, `languages` | site definitions and hosts; language branches |
 | `types [--kind] [--unused] [--sort]` | content types with instance counts |
@@ -212,6 +256,7 @@ Don't point opticli at such a connection unless you mean to write to what is beh
 | `versions <ref>`, `drafts [--since] [--by] [--kind] [--type]` | version history; unpublished changes |
 | `projects [<id>]` | projects, and the versions in one |
 | `blob <ref>` | where a media file lives on disk |
+| `drift` | what differs between the build and a shared database (needs `serve`; see [Shared databases](#shared-databases)) |
 | `access <ref>` | who may read and edit an item: its access rights, and the ancestor they are inherited from |
 | `sql "<SELECT …>"` | anything else, read-only |
 
@@ -252,6 +297,8 @@ A publish puts the whole version live. When someone else saved unpublished chang
 a terminal; elsewhere it fails with `conflict` and `details.reason: "pendingDraft"`, and `--include-draft` confirms.
 Output after a publish names `previouslyPublished`, the version to publish again to go back. Content with an approval
 sequence isn't published directly (exit 3); `--request-approval` sends it for review instead, as the edit UI does.
+Against a shared database that differs from the build, writes stop with `drift` (exit 5) until `--accept-drift
+<fingerprint>` (`apply --accept-drift` for a whole plan); dry runs don't stop.
 [skill/reference.md](skill/reference.md) documents value syntax and the plan format.
 
 ## serve and env
@@ -267,6 +314,7 @@ agent injected, and returns once the site agent answers.
 | `--timeout <s>` | 180 seconds to wait for the site to answer |
 | `--foreground` | off: the site runs in the background; with it, the site's output streams until Ctrl+C (to stderr when stdout is redirected, so stdout stays one JSON envelope) |
 | `--https` | off (or `"https": true` in the user config, which `--https false` overrides): also listen on `https://localhost:<next free port>` with the development certificate, printed as `browseUrl`, for sites that redirect to HTTPS. `serve` warns when a site does |
+| `--allow-pending-migrations` | off: against a shared database, `serve` refuses a build with EF Core migrations the database lacks |
 
 `serve --status`, `serve --logs [--tail N]` and `serve --stop` manage the running site:
 - `--stop` asks the site to shut down through the site agent, on every OS, and falls back to SIGTERM on Linux and
@@ -307,6 +355,7 @@ are often committed, so keep the token out of git.
 | `OPTICLI_CONNECTION_NAME` | when not `EPiServerDB` | which connection string to pin |
 | `ConnectionStrings__<Name>` | `serve`, `env --include-connection` | the same connection string, for code that reads it before the agent's pin; `serve` also removes other spellings of it (`ConnectionStrings:<Name>`, another case) |
 | `OPTICLI_REMOTE_DB` | against a remote development database | the one remote database the site agent accepts; turns on shared-database mode |
+| `OPTICLI_DRIFT_FILE` | `serve`, against a remote development database | what `serve` compared before the start (EF Core migrations, CMS schema version), for the site agent's drift report |
 
 ### How the injection works
 
@@ -343,7 +392,7 @@ runtime. It ships no copies of them.
 | 2 | `not_found` | project, connection string, content, type or version not found |
 | 3 | `refused` | a safety rule blocked it |
 | 4 | `unreachable` | database or site agent not reachable, or a query failed on the server (a write that timed out may still have been saved) |
-| 5 | `conflict` / `validation` | a newer version exists, a publish would include someone else's unpublished changes (`details.reason: "pendingDraft"`), or the CMS rejected the values |
+| 5 | `conflict` / `validation` / `drift` | a newer version exists, a publish would include someone else's unpublished changes (`details.reason: "pendingDraft"`), the CMS rejected the values, or a write against a shared database that differs from the build wasn't confirmed (`details` is the drift report) |
 | 6 | `needs_selection` | the user must choose the development database first (`error.details.choices`) |
 | 130 | `cancelled` | interrupted (Ctrl+C); an `apply` reports what it saved until then |
 
@@ -445,6 +494,16 @@ dotnet test tests/OptiCli.Integration
 
 The integration tests run one at a time, since the write tests make and remove scratch content on the same site.
 
+`drift.sh` in the same folder runs the shared-database scenario on copies of the edge-case site and its database. It
+reaches the copy through a host name instead of a loopback name (`<hostname>.localhost` resolves to the loopback
+address, but counts as remote), so `serve` runs in shared mode. It then changes the copy's code and checks each step:
+nothing differs, local ahead, the database ahead, and an EF Core migration that `serve` refuses. Against that copy,
+`DriftTests` checks that writes stop on drift until its fingerprint confirms it.
+
+```sh
+SQLCMDPASSWORD=... tests/fixtures/edge-cases/drift.sh path/to/AlloyEdge path/to/AlloyDrift
+```
+
 [CI](.github/workflows/ci.yml) runs the unit tests on Linux, Windows and macOS for every push and pull request.
 Issues and pull requests are welcome. Please run the unit tests before sending a change. When a change touches
 reads, also run the integration test against a site you have.
@@ -455,7 +514,7 @@ Set the new version as `<Version>` in [Directory.Build.props](Directory.Build.pr
 [skill/SKILL.md](skill/SKILL.md), and add the release to [CHANGELOG.md](CHANGELOG.md). Commit, then push a matching tag:
 
 ```sh
-git tag v0.6.0 && git push origin v0.6.0
+git tag v0.7.0 && git push origin v0.7.0
 ```
 
 The [release workflow](.github/workflows/release.yml) checks that the tag matches both versions and is on `main`,

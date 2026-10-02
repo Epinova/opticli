@@ -87,6 +87,7 @@ internal static class EnvCommand
             if (!connection.IsLocal)
             {
                 warnings.Add(ServeCommand.SharedDatabaseWarning(connection));
+                warnings.Add("A site you start yourself isn't checked for EF Core migrations the shared database lacks, or for a CMS schema version it can't start with: `opticli serve` checks those first. The site agent still reports content type drift (`opticli drift`), and writes stop on it.");
             }
             if (siteEndpoints.Count > 0)
             {

@@ -35,6 +35,14 @@ public static class AgentRoutes
     public static readonly string Shutdown = $"{Prefix}/shutdown";
 
     /// <summary>
+    /// <c>GET /v1/drift</c>. Response: <see cref="DriftReport"/>: what differs between the site's code and a shared
+    /// database (computed once per run, the first time it is asked for). Against a local database it isn't compared
+    /// (<see cref="DriftReport.Checked"/> false). While there are differences, writes that aren't dry runs fail with
+    /// <c>drift</c> 409 unless they send <see cref="AgentProtocol.AcceptDriftHeader"/> with the fingerprint.
+    /// </summary>
+    public static readonly string Drift = $"{Prefix}/drift";
+
+    /// <summary>
     /// <c>GET /v1/types/{name}</c>, name or GUID. Response: <see cref="ContentTypeModel"/>.
     /// Errors: <c>not_found</c> with close matches in the hint.
     /// </summary>

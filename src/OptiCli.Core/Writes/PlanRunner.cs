@@ -95,6 +95,8 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             return new PlanRun(true, checks, new Dictionary<string, string>());
         }
 
+        // Drift is confirmed once for the whole plan (apply --accept-drift), before its first step saves anything.
+        await executor.RequireDriftAcceptedAsync(cancellationToken);
         var created = new Dictionary<string, int>(StringComparer.Ordinal);
         var results = new List<PlanStepResult>();
         foreach (var step in steps)

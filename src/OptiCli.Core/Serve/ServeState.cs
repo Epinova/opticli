@@ -1,3 +1,5 @@
+using OptiCli.Protocol;
+
 namespace OptiCli.Core.Serve;
 
 /// <summary>How the site that answers for a project was started.</summary>
@@ -20,6 +22,7 @@ public enum ServeMode
 /// <param name="Pid">Site process id; null in <see cref="ServeMode.External"/> mode.</param>
 /// <param name="ProcessStartTime">Start time of <see cref="Pid"/>, so a reused pid is never mistaken for the site.</param>
 /// <param name="DbServer">Server of the database the site was pinned to (never the full connection string).</param>
+/// <param name="Drift">What differs between the site's code and its shared database, as the agent reported it once it answered.</param>
 public sealed record ServeState(
     ServeMode Mode,
     string ProjectDirectory,
@@ -33,7 +36,8 @@ public sealed record ServeState(
     DateTimeOffset? ProcessStartTime = null,
     string? OutputDll = null,
     string? AgentDll = null,
-    int? HttpsPort = null)
+    int? HttpsPort = null,
+    DriftReport? Drift = null)
 {
     /// <summary>Where the CLI talks to the agent: always plain HTTP on the loopback address.</summary>
     public Uri BaseUrl => new($"http://127.0.0.1:{Port}");

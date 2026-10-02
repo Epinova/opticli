@@ -10,6 +10,7 @@ namespace OptiCli.Core.Serve;
 /// <param name="ConnectionName">Name of the connection string the agent pins (<c>EPiServerDB</c>).</param>
 /// <param name="Timeout">How long to wait for the agent to answer after starting the process.</param>
 /// <param name="SiteEndpoints">The site's own <c>Kestrel:Endpoints</c>; when it has any, opticli's address is added as one more.</param>
+/// <param name="DriftFile">What was compared before the start (shared mode), for the agent's drift report.</param>
 public sealed record LaunchRequest(
     ProjectInfo Project,
     VerifiedConnectionString Connection,
@@ -19,7 +20,8 @@ public sealed record LaunchRequest(
     int Port,
     TimeSpan Timeout,
     int? HttpsPort = null,
-    IReadOnlyList<string>? SiteEndpoints = null);
+    IReadOnlyList<string>? SiteEndpoints = null,
+    string? DriftFile = null);
 
 /// <summary>Starts the site with the agent injected, waits until the agent answers and checks it uses the pinned database.</summary>
 public static class SiteLauncher
@@ -36,6 +38,17 @@ public static class SiteLauncher
     /// <summary>For a site stopped before its agent ever answered: SIGTERM, then a kill after this long.</summary>
     public static readonly TimeSpan StartupStopGrace = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// What the CMS throws when the database schema doesn't fit its packages: older, with schema updates off (as in
+    /// shared mode), or newer than they support.
+    /// </summary>
+    private static readonly string[] SchemaMarkers =
+    [
+        "has not been updated to version",
+        "have not been updated to work with the current database version",
+        "is not installed. Update the database automatically",
+    ];
+
     /// <summary>What ASP.NET Core logs for each address it binds.</summary>
     private const string ListeningMarker = "Now listening on:";
 
@@ -51,7 +64,8 @@ public static class SiteLauncher
         using var process = SiteProcess.StartDetached(SiteProcess.DotnetHost(), request.Output.Dll, request.Project.Directory, Environment(request, token), store.LogPath);
         var state = Record(store, request, token, ServeMode.Background, process);
         startLock?.Dispose();
-        await WaitUntilReadyAsync(store, state, process, request, cancellationToken);
+        state = await WaitUntilReadyAsync(store, state, process, request, cancellationToken);
+        await RecordDriftAsync(store, state, request, cancellationToken);
         return await AgentProbe.ProbeAsync(store, request.Connection, cancellationToken);
     }
 
@@ -86,6 +100,7 @@ public static class SiteLauncher
         try
         {
             state = await WaitUntilReadyAsync(store, state, process, request, cancellationToken);
+            state = await RecordDriftAsync(store, state, request, cancellationToken);
             onReady(await AgentProbe.ProbeAsync(store, request.Connection, cancellationToken));
             await process.WaitForExitAsync(cancellationToken);
             if (process.ExitCode != 0)
@@ -131,6 +146,30 @@ public static class SiteLauncher
         return result;
     }
 
+    /// <summary>
+    /// Against a shared database: asks the agent what differs between the site's code and the database, and keeps that in
+    /// the state file, where every later command finds it. A failure leaves it out: the agent works it out again before a
+    /// write.
+    /// </summary>
+    private static async Task<ServeState> RecordDriftAsync(StateStore store, ServeState state, LaunchRequest request, CancellationToken cancellationToken)
+    {
+        if (request.Connection.IsLocal)
+        {
+            return state;
+        }
+        using var client = AgentClient.For(state);
+        try
+        {
+            state = state with { Drift = await client.DriftAsync(cancellationToken) };
+            store.Write(state);
+        }
+        catch (OptiCliException ex)
+        {
+            Console.Error.WriteLine($"warning: the site didn't say what differs between its code and the database: {ex.Message}");
+        }
+        return state;
+    }
+
     /// <summary>The agent's shutdown endpoint; false when it doesn't answer (still starting, hung, or an older agent).</summary>
     private static async Task<bool> RequestShutdownAsync(ServeState state)
     {
@@ -156,7 +195,8 @@ public static class SiteLauncher
             System.Environment.GetEnvironmentVariable(SiteEnvironment.StartupHooksVariable),
             approvedRemote: request.Connection,
             httpsPort: request.HttpsPort,
-            kestrelEndpoints: request.SiteEndpoints is { Count: > 0 });
+            kestrelEndpoints: request.SiteEndpoints is { Count: > 0 },
+            driftFile: request.DriftFile);
         // The site inherits this process's environment. Other spellings of the pinned ConnectionStrings variable go first
         // (removed, not blanked: an empty one would still be read). Then blank what this run doesn't set, so a stale export
         // from `opticli env` can't approve another remote database or pin another connection name.
@@ -263,6 +303,13 @@ public static class SiteLauncher
             return new RefusedException($"{message} The opticli agent refused to start the site: {lines.Last(l => l.Contains(RefusalMarker, StringComparison.Ordinal)).Trim()}",
                 "The site's effective database is not the one opticli pinned; details.lines has the site's output.") { Details = details };
         }
+        if (lines.LastOrDefault(l => SchemaMarkers.Any(m => l.Contains(m, StringComparison.Ordinal))) is { } schema)
+        {
+            return new RefusedException($"{message} The CMS refused the database schema: {SchemaMessage(schema)}",
+                "The database schema doesn't fit this build's EPiServer packages, and against a shared database opticli turns schema updates off. "
+                + "Older schema: check out and build what is deployed there, or update that environment first. Newer schema: update the packages (pull) and build.")
+            { Details = details };
+        }
         if (lines.Any(l => l.Contains("Unable to configure HTTPS endpoint", StringComparison.Ordinal) || l.Contains("developer certificate could not be found", StringComparison.Ordinal)))
         {
             return new UnreachableException($"{message} The site found no HTTPS development certificate.",
@@ -278,6 +325,13 @@ public static class SiteLauncher
         return new UnreachableException(message,
             timedOut ? "Raise --timeout if the site is just slow; details.lines has its latest output." : "details.lines has the site's last output; fix the error and start again.")
         { Details = details };
+    }
+
+    /// <summary>The CMS's message from a log line, without the logger's prefix and the exception type.</summary>
+    internal static string SchemaMessage(string line)
+    {
+        var at = line.IndexOf("The ", StringComparison.Ordinal);
+        return (at >= 0 ? line[at..] : line).Trim();
     }
 
     /// <summary>The addresses the site's log says it listens on, when none of them is opticli's (<c>http://127.0.0.1:&lt;port&gt;</c>).</summary>

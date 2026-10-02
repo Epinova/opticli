@@ -47,6 +47,33 @@ public sealed class AgentClient : IDisposable
     public Task<ShutdownResponse> ShutdownAsync(CancellationToken cancellationToken) =>
         SendAsync<ShutdownResponse>(HttpMethod.Post, AgentRoutes.Shutdown, null, PingTimeout, cancellationToken);
 
+    /// <summary>
+    /// What differs between the site's code and its shared database (the first call after a start compares them, which
+    /// can take a while on a large site).
+    /// </summary>
+    /// <exception cref="UnreachableException">Nothing answers.</exception>
+    /// <exception cref="RefusedException">An agent from before drift checks, which can't say: restart the site.</exception>
+    public async Task<DriftReport> DriftAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await SendAsync<DriftReport>(HttpMethod.Get, AgentRoutes.Drift, null, WriteTimeout, cancellationToken);
+        }
+        catch (NotFoundException ex) when (ex.Message.Contains("No agent route", StringComparison.Ordinal))
+        {
+            throw new RefusedException(
+                "The site's agent is older than this opticli, so it can't compare this build with the shared database; writes there are refused until the site is restarted with this opticli.",
+                AgentErrors.OutOfDateHint);
+        }
+    }
+
+    /// <summary>Sends <paramref name="fingerprint"/> with every later request: the user confirmed writing despite those differences.</summary>
+    public void AcceptDrift(string fingerprint)
+    {
+        _http.DefaultRequestHeaders.Remove(AgentProtocol.AcceptDriftHeader);
+        _http.DefaultRequestHeaders.Add(AgentProtocol.AcceptDriftHeader, fingerprint);
+    }
+
     public Task<T> SendAsync<T>(HttpMethod method, string route, object? body, CancellationToken cancellationToken) =>
         SendAsync<T>(method, route, body, WriteTimeout, cancellationToken);
 

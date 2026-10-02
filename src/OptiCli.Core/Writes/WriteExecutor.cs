@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.Data.SqlClient;
 using OptiCli.Core.Cms;
 using OptiCli.Core.Content;
+using OptiCli.Core.Drift;
 using OptiCli.Core.Errors;
 using OptiCli.Core.Queries;
 using OptiCli.Core.Refs;
@@ -37,6 +38,15 @@ namespace OptiCli.Core.Writes;
 /// references); true deletes it. Null: such a delete fails with a <c>conflict</c> whose details list them.
 /// </param>
 /// <param name="confirm">Asks a person at a terminal a yes/no question (the message, then the question). Null: fail with a <c>conflict</c> instead.</param>
+/// <param name="acceptDrift">
+/// The drift fingerprint the user confirmed (<c>--accept-drift</c>): writes go ahead against a shared database whose
+/// content model differs from the build's, as long as the differences are still those.
+/// </param>
+/// <param name="confirmDrift">
+/// Asks a person at a terminal whether to write although the build and the shared database differ (the report); true
+/// confirms its fingerprint. Null: such a write fails with <c>drift</c>.
+/// </param>
+/// <param name="sharedDatabase">Whether drift is checked; default: when <paramref name="session"/>'s database is remote.</param>
 public sealed class WriteExecutor(
     ContentSession session,
     Func<CancellationToken, Task<AgentClient>> connect,
@@ -45,7 +55,10 @@ public sealed class WriteExecutor(
     bool updateExisting = false,
     Func<string, PendingDraft, string, bool>? confirmDraft = null,
     Func<string, Queries.IncomingReferences, bool>? confirmReferences = null,
-    Func<string, string, bool>? confirm = null)
+    Func<string, string, bool>? confirm = null,
+    string? acceptDrift = null,
+    Func<DriftReport, bool>? confirmDrift = null,
+    bool? sharedDatabase = null)
 {
     public bool UpdateExisting => updateExisting;
 
@@ -60,6 +73,9 @@ public sealed class WriteExecutor(
         "details.draft lists the unpublished changes and who saved them. Ask the user whether they should go live too, and only if so run again with --include-draft (in a plan: \"includeDraft\": true on the step). Without --publish the change is saved as a draft and nothing goes live; `opticli publish <ref> --version <id>` publishes one version as it is.";
 
     private AgentClient? _agent;
+
+    /// <summary>The drift check passed for this run (nothing differs, or the user confirmed it).</summary>
+    private bool _driftAccepted;
 
     /// <exception cref="ContentValidationException">A dry run found the change would fail validation (details: the dry-run result).</exception>
     public async Task<WriteOutcome> RunAsync(WriteOperation operation, bool dryRun, CancellationToken cancellationToken)
@@ -78,6 +94,10 @@ public sealed class WriteExecutor(
             {
                 throw new UsageException("A review request can't be scheduled: the reviewers decide when it is published.", "Give --publish-at or --request-approval, not both.");
             }
+        }
+        if (!dryRun)
+        {
+            await RequireDriftAcceptedAsync(cancellationToken);
         }
         var outcome = operation switch
         {
@@ -953,6 +973,57 @@ public sealed class WriteExecutor(
     }
 
     private async Task<AgentClient> AgentAsync(CancellationToken cancellationToken) => _agent ??= await connect(cancellationToken);
+
+    /// <summary>
+    /// Before the first write that isn't a dry run: against a shared database whose content model differs from the
+    /// build's, the user must confirm the differences, by their fingerprint (<c>--accept-drift</c>) or at the prompt.
+    /// The site agent enforces the same rule; checking here first stops before anything else is sent, and lets a plan ask
+    /// once before its first step. Against a local database there is nothing to compare, so the agent isn't asked (an
+    /// agent from an older opticli couldn't answer).
+    /// </summary>
+    /// <exception cref="DriftException">Not confirmed; details is the drift report.</exception>
+    /// <exception cref="RefusedException">Shared database, and the agent is too old to compare.</exception>
+    public async Task RequireDriftAcceptedAsync(CancellationToken cancellationToken)
+    {
+        if (_driftAccepted || !(sharedDatabase ?? !session.Db.ConnectionString.IsLocal))
+        {
+            return;
+        }
+        var agent = await AgentAsync(cancellationToken);
+        var report = await agent.DriftAsync(cancellationToken);
+        if (report.Fingerprint is { } fingerprint)
+        {
+            var given = acceptDrift?.Trim();
+            if (!string.Equals(given, fingerprint, StringComparison.OrdinalIgnoreCase))
+            {
+                if (confirmDrift is null || (given is not null && given.Length > 0))
+                {
+                    throw Drifted(report, given);
+                }
+                if (!confirmDrift(report))
+                {
+                    throw new DriftException("Not written, as answered; nothing was saved.", DriftText.Advice(report.Ahead));
+                }
+            }
+            agent.AcceptDrift(fingerprint);
+        }
+        _driftAccepted = true;
+    }
+
+    /// <summary>The error a write fails with while the build and the shared database differ.</summary>
+    /// <param name="accepted">A fingerprint the caller gave that no longer matches.</param>
+    public static DriftException Drifted(DriftReport report, string? accepted)
+    {
+        var changed = string.IsNullOrEmpty(accepted)
+            ? ""
+            : $" --accept-drift {accepted} no longer matches: the differences changed since, and are now {report.Fingerprint}.";
+        return new DriftException(
+            $"This build and the shared database differ: {report.Describe()}. A write would run this build's code (models, validators, event handlers) against content the deployed site serves.{changed}",
+            AgentErrors.DriftHint)
+        {
+            Details = report,
+        };
+    }
 
     /// <summary>Content in this database (not provider content), which every edit needs to check names and versions.</summary>
     private async Task<Target> EditableAsync(string reference, CancellationToken cancellationToken, string what = "ref")

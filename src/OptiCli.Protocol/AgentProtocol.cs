@@ -42,6 +42,19 @@ public static class AgentProtocol
 
     public static string FormatRemote(string server, string? database) => $"{server}|{database}";
 
+    /// <summary>
+    /// Environment variable with the path of a JSON <see cref="StartupDrift"/>: what <c>serve</c> found before the site
+    /// started (EF Core migrations, the CMS schema version), for the agent's <see cref="DriftReport"/>. Shared mode only.
+    /// </summary>
+    public const string DriftFileVariable = "OPTICLI_DRIFT_FILE";
+
+    /// <summary>
+    /// Request header confirming a write although the build and the shared database differ: the
+    /// <see cref="DriftReport.Fingerprint"/> the user agreed to. Without it (or with another one) such writes fail with
+    /// <see cref="AgentErrorCodes.Drift"/>.
+    /// </summary>
+    public const string AcceptDriftHeader = "X-OptiCli-Accept-Drift";
+
     /// <returns>Null when <paramref name="value"/> is empty or malformed.</returns>
     public static (string Server, string? Database)? ParseRemote(string? value)
     {

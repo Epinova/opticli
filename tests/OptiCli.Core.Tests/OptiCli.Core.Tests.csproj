@@ -10,6 +10,8 @@
   <ItemGroup>
     <!-- Direct reference for cross-checking the safety check against SqlClient's own parser. -->
     <PackageReference Include="Microsoft.Data.SqlClient" />
+    <!-- Fixture migrations for BuildScanner: real [Migration] and [DbContext] attributes, read as metadata only. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />

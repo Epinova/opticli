@@ -20,6 +20,7 @@ internal enum AgentEndpoint
     Unpublish,
     Discard,
     RemoveLanguage,
+    Drift,
 }
 
 /// <param name="Argument">The <c>{name}</c> or <c>{ref}</c> segment, when the route has one.</param>
@@ -34,7 +35,7 @@ internal static partial class AgentRouter
     private static readonly string VersionSegment = AgentRoutes.Prefix.TrimStart('/');
 
     private static readonly string RouteList =
-        $"GET {AgentRoutes.Prefix}/ping, POST {AgentRoutes.Prefix}/shutdown, GET {AgentRoutes.Prefix}/types/{{name}}, POST {AgentRoutes.Prefix}/content, POST {AgentRoutes.Prefix}/media, " +
+        $"GET {AgentRoutes.Prefix}/ping, POST {AgentRoutes.Prefix}/shutdown, GET {AgentRoutes.Prefix}/drift, GET {AgentRoutes.Prefix}/types/{{name}}, POST {AgentRoutes.Prefix}/content, POST {AgentRoutes.Prefix}/media, " +
         $"POST {AgentRoutes.Prefix}/content/{{ref}}/draft|languages|remove-language|publish|unpublish|discard|move|access, GET|DELETE {AgentRoutes.Prefix}/content/{{ref}}";
 
     /// <exception cref="AgentException">No route matches, or it belongs to another protocol version.</exception>
@@ -56,25 +57,27 @@ internal static partial class AgentRouter
             throw NotFound(shown);
         }
 
-        var (endpoint, argument, allowed) = segments[1..] switch
+        var (endpoint, argument) = segments[1..] switch
         {
-            ["ping"] => (AgentEndpoint.Ping, (string?)null, "GET"),
-            ["shutdown"] => (AgentEndpoint.Shutdown, (string?)null, "POST"),
-            ["types", var name] => (AgentEndpoint.Type, name, "GET"),
-            ["content"] => (AgentEndpoint.Create, (string?)null, "POST"),
-            ["media"] => (AgentEndpoint.Upload, (string?)null, "POST"),
-            ["content", var reference] when IsMethod(method, "GET") => (AgentEndpoint.Read, reference, "GET"),
-            ["content", var reference] => (AgentEndpoint.Delete, reference, "DELETE"),
-            ["content", var reference, "draft"] => (AgentEndpoint.Draft, reference, "POST"),
-            ["content", var reference, "languages"] => (AgentEndpoint.Languages, reference, "POST"),
-            ["content", var reference, "publish"] => (AgentEndpoint.Publish, reference, "POST"),
-            ["content", var reference, "remove-language"] => (AgentEndpoint.RemoveLanguage, reference, "POST"),
-            ["content", var reference, "unpublish"] => (AgentEndpoint.Unpublish, reference, "POST"),
-            ["content", var reference, "discard"] => (AgentEndpoint.Discard, reference, "POST"),
-            ["content", var reference, "move"] => (AgentEndpoint.Move, reference, "POST"),
-            ["content", var reference, "access"] => (AgentEndpoint.Access, reference, "POST"),
+            ["ping"] => (AgentEndpoint.Ping, (string?)null),
+            ["shutdown"] => (AgentEndpoint.Shutdown, (string?)null),
+            ["drift"] => (AgentEndpoint.Drift, (string?)null),
+            ["types", var name] => (AgentEndpoint.Type, name),
+            ["content"] => (AgentEndpoint.Create, (string?)null),
+            ["media"] => (AgentEndpoint.Upload, (string?)null),
+            ["content", var reference] when IsMethod(method, "GET") => (AgentEndpoint.Read, reference),
+            ["content", var reference] => (AgentEndpoint.Delete, reference),
+            ["content", var reference, "draft"] => (AgentEndpoint.Draft, reference),
+            ["content", var reference, "languages"] => (AgentEndpoint.Languages, reference),
+            ["content", var reference, "publish"] => (AgentEndpoint.Publish, reference),
+            ["content", var reference, "remove-language"] => (AgentEndpoint.RemoveLanguage, reference),
+            ["content", var reference, "unpublish"] => (AgentEndpoint.Unpublish, reference),
+            ["content", var reference, "discard"] => (AgentEndpoint.Discard, reference),
+            ["content", var reference, "move"] => (AgentEndpoint.Move, reference),
+            ["content", var reference, "access"] => (AgentEndpoint.Access, reference),
             _ => throw NotFound(shown),
         };
+        var allowed = Methods[endpoint];
 
         if (!IsMethod(method, allowed))
         {
@@ -85,6 +88,27 @@ internal static partial class AgentRouter
         // ASP.NET Core has already percent-decoded the path.
         return new RouteMatch(endpoint, argument);
     }
+
+    /// <summary>The HTTP method each endpoint takes.</summary>
+    internal static readonly IReadOnlyDictionary<AgentEndpoint, string> Methods = new Dictionary<AgentEndpoint, string>
+    {
+        [AgentEndpoint.Ping] = "GET",
+        [AgentEndpoint.Shutdown] = "POST",
+        [AgentEndpoint.Drift] = "GET",
+        [AgentEndpoint.Type] = "GET",
+        [AgentEndpoint.Create] = "POST",
+        [AgentEndpoint.Upload] = "POST",
+        [AgentEndpoint.Read] = "GET",
+        [AgentEndpoint.Delete] = "DELETE",
+        [AgentEndpoint.Draft] = "POST",
+        [AgentEndpoint.Languages] = "POST",
+        [AgentEndpoint.Publish] = "POST",
+        [AgentEndpoint.RemoveLanguage] = "POST",
+        [AgentEndpoint.Unpublish] = "POST",
+        [AgentEndpoint.Discard] = "POST",
+        [AgentEndpoint.Move] = "POST",
+        [AgentEndpoint.Access] = "POST",
+    };
 
     private static bool IsMethod(string method, string expected) => string.Equals(method, expected, StringComparison.OrdinalIgnoreCase);
 
