@@ -51,6 +51,12 @@ public static class AgentErrorReasons
 
     /// <summary>Conflict: the content is in review; a reviewer must approve or reject it before it can be changed.</summary>
     public const string InReview = "inReview";
+
+    /// <summary>
+    /// Validation: the CMS refused to publish a language branch other than the master, because the master branch has
+    /// never been published. Publish the master branch first.
+    /// </summary>
+    public const string MasterNotPublished = "masterNotPublished";
 }
 
 /// <summary>Error codes and the HTTP status each one is sent with.</summary>

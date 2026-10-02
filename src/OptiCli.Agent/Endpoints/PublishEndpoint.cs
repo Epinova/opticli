@@ -82,6 +82,10 @@ internal static class PublishEndpoint
         {
             saved = flow.Repository.Save(writable, action, AccessLevel.NoAccess);
         }
+        catch (System.ComponentModel.DataAnnotations.ValidationException ex) when (ValidationErrors.MasterNotPublished(writable, action, flow.Repository))
+        {
+            throw ValidationErrors.MasterFirst(ex);
+        }
         catch (Exception ex) when (ex is not AgentException
             && !expired
             && flow.Repository.Get<IContent>(version.ContentLink) is IVersionable { Status: var status }

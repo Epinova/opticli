@@ -1,7 +1,9 @@
+using EPiServer;
 using EPiServer.Core;
 using EPiServer.DataAccess;
 using EPiServer.Validation;
 using EPiServer.Validation.Internal;
+using OptiCli.Agent.Http;
 using OptiCli.Protocol;
 using DataAnnotationsValidationException = System.ComponentModel.DataAnnotations.ValidationException;
 
@@ -46,6 +48,22 @@ internal static class ValidationErrors
         var issues = exception.Data.Values.OfType<ValidationError>().Select(ToIssue).ToList();
         return issues.Count > 0 ? issues : [new ValidationIssue(null, exception.Message)];
     }
+
+    /// <summary>
+    /// Whether a publish the CMS refused on save broke its "master language first" rule: a branch other than the master
+    /// can't be published while the master branch has never been published. That rule is no validator, so a dry run
+    /// can't see it (the CLI checks it from the database first), and "use dryRun" is no help.
+    /// </summary>
+    public static bool MasterNotPublished(IContent content, SaveAction action, IContentLoader loader) =>
+        WriteFlow.Kind(action) == SaveAction.Publish
+        && content is ILocalizable { Language: { } language, MasterLanguage: { } master } && !language.Equals(master)
+        && !ContentReference.IsNullOrEmpty(content.ContentLink)
+        && loader.TryGet<IContent>(content.ContentLink.ToReferenceWithoutVersion(), master, out var masterBranch)
+        && masterBranch is IVersionable { IsPendingPublish: true };
+
+    /// <summary>The refusal of <see cref="MasterNotPublished"/>, with the CMS's message.</summary>
+    public static AgentException MasterFirst(DataAnnotationsValidationException exception) =>
+        AgentException.Invalid(From(exception), "Publish the master language branch first, or save this branch without publishing it.", AgentErrorReasons.MasterNotPublished);
 
     private static ValidationIssue ToIssue(ValidationError error) => new(
         string.IsNullOrEmpty(error.PropertyName) ? null : error.PropertyName,

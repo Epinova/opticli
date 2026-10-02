@@ -21,10 +21,16 @@ public sealed record Simulation(
 /// <param name="Master">The content's master language.</param>
 /// <param name="BranchExists">Whether the database has that branch now (false: an earlier translate step creates it).</param>
 /// <param name="Versioned">The step names a version (<c>123_456</c>, a publish's <c>version</c>).</param>
-public sealed record PlanTarget(int Id, string? Language, string? Master, bool BranchExists, bool Versioned)
+/// <param name="MasterPublished">Whether the master branch has been published (<see cref="Content.ContentHeader.MasterPublished"/>).</param>
+public sealed record PlanTarget(int Id, string? Language, string? Master, bool BranchExists, bool Versioned, bool MasterPublished = true)
 {
     public bool Same(PlanTarget other) => Id == other.Id && string.Equals(Language, other.Language, StringComparison.OrdinalIgnoreCase);
 }
+
+/// <summary>What <see cref="PlanSimulation.MasterFirst"/> found for a step that publishes a branch before the master is published.</summary>
+/// <param name="PublishedBy">The earlier step that publishes the master branch first; null when none does.</param>
+/// <param name="Note">For the step's warnings.</param>
+public sealed record MasterOrder(int? PublishedBy, string Note);
 
 /// <summary>
 /// A dry run for a plan step whose content doesn't exist yet: the content the step saves is dry-run as a create under
@@ -36,7 +42,10 @@ public static class PlanSimulation
 {
     /// <param name="existing">Plan ids whose content already exists (<c>--update-existing</c>): real refs, not stand-ins.</param>
     /// <param name="updateExisting">Leave the GUID out, so the agent doesn't match it against content under the stand-in.</param>
-    /// <returns>Null for steps that can't be simulated this way (area, translate, access, move, delete).</returns>
+    /// <returns>
+    /// Null for steps that can't be simulated this way (area, translate, access, move, delete), and for a set or publish of
+    /// another language branch than the one the content is created in (<see cref="MasterFirst"/> checks their order).
+    /// </returns>
     public static Simulation? For(PlanStep step, IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing, bool updateExisting)
     {
         var op = step.Operation;
@@ -53,6 +62,16 @@ public static class PlanSimulation
                 ? null
                 : steps.FirstOrDefault(s => s.Operation.Id == target && s.Index < step.Index && s.Operation is CreateOperation or BlockCreateOperation or UploadOperation);
         if (creating is null || (target is not null && existing.ContainsKey(target)))
+        {
+            return null;
+        }
+        var branch = op switch
+        {
+            SetOperation set => set.Lang,
+            PublishOperation publishing => publishing.Lang,
+            _ => null,
+        };
+        if (!SameLanguage(branch, LanguageOf(creating.Operation)))
         {
             return null;
         }
@@ -243,6 +262,95 @@ public static class PlanSimulation
         TranslateOperation translate => (translate.Properties, translate.Name),
         _ => (Properties(op), NameOf(op)),
     };
+
+    /// <summary>
+    /// A step that publishes a language branch other than the master: the CMS refuses that until the master branch has
+    /// been published (<see cref="MasterLanguageRule"/>), and neither a dry run nor today's database knows what earlier
+    /// steps publish. So the steps before it are walked: existing content's master branch is published as the database has
+    /// it (<see cref="PlanTarget.MasterPublished"/>), planned content's once a step publishes it now (the creating step,
+    /// a <c>set</c>, <c>area</c> or <c>publish</c> of that branch; a scheduled publish or a review request doesn't count).
+    /// </summary>
+    /// <param name="steps">The plan's steps, with refs to existing content already resolved (<see cref="WritePlan.Resolve"/>).</param>
+    /// <param name="targets">Per step index, the existing content and branch it writes.</param>
+    /// <param name="masters">Planned content's master language, by plan id, where its creating step gives no lang (its parent's).</param>
+    /// <returns>
+    /// Null unless the step publishes another branch than the master of content whose master isn't published yet. Then the
+    /// earlier step that publishes the master first; or, for a publish the CMS defers on planned content, a warning (on
+    /// existing content the step's dry run warns).
+    /// </returns>
+    /// <exception cref="Errors.ContentValidationException">The step publishes such a branch now, and no earlier step publishes the master.</exception>
+    public static MasterOrder? MasterFirst(PlanStep step, IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<int, PlanTarget> targets, IReadOnlyDictionary<string, string>? masters = null)
+    {
+        if (Publishing(step, steps, targets, masters) is not { Master: not null, IsMaster: false, MasterPublished: false } branch)
+        {
+            return null;
+        }
+        PlanStep? PublishingMaster(IEnumerable<PlanStep> candidates) =>
+            candidates.FirstOrDefault(s => Publishing(s, steps, targets, masters) is { Now: true, IsMaster: true } other && other.Content == branch.Content);
+
+        if (PublishingMaster(steps.Where(s => s.Index < step.Index)) is { } first)
+        {
+            return new MasterOrder(first.Index,
+                $"The master branch ('{branch.Master}') of {branch.Content} isn't published yet; operation {first.Index} publishes it first, so the CMS takes this publish of the '{branch.Language}' branch.");
+        }
+        if (!branch.Now)
+        {
+            return branch.Planned
+                ? new MasterOrder(null, $"The master branch ('{branch.Master}') of {branch.Content} isn't published by an earlier operation, and the CMS won't publish the '{branch.Language}' branch before it: "
+                    + $"{(step.Operation.PublishAt is not null ? "this scheduled publish fails when it comes due" : "the version can't be published once it is approved")}, unless the master branch is published first.")
+                : null;
+        }
+        var later = PublishingMaster(steps.Where(s => s.Index > step.Index));
+        throw new Errors.ContentValidationException(
+            $"Dry run: operation {step.Index} publishes the '{branch.Language}' branch of {branch.Content} before its master language ('{branch.Master}') is published; the CMS refuses that.",
+            later is not null
+                ? $"Move operation {later.Index}, which publishes '{branch.Master}', before operation {step.Index}."
+                : $"Add a publish of the master branch before operation {step.Index}, or {(step.Operation is PublishOperation ? "remove this publish" : "leave out \"publish\": true")}.")
+        {
+            Details = MasterLanguageRule.Details,
+        };
+    }
+
+    /// <summary>What a step publishes, for <see cref="MasterFirst"/>; null for a step that doesn't publish or request approval.</summary>
+    private static Branch? Publishing(PlanStep step, IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<int, PlanTarget> targets, IReadOnlyDictionary<string, string>? masters)
+    {
+        var op = step.Operation;
+        if (op is TranslateOperation { Remove: true } || !(op.Publishes || op.RequestApproval))
+        {
+            return null;
+        }
+        var now = op.Publishes && op.PublishAt is null && !op.RequestApproval;
+        if (targets.TryGetValue(step.Index, out var target))
+        {
+            return new Branch(WriteOutput.Id(target.Id), target.Language, target.Master, target.MasterPublished, now, Planned: false);
+        }
+        var (id, language) = op switch
+        {
+            CreateOperation create => (create.Id, create.Lang),
+            BlockCreateOperation block => (block.Id, block.Lang),
+            UploadOperation upload => (upload.Id, null),
+            SetOperation set => (PlanId(set.Ref), set.Lang),
+            AreaEdit area => (PlanId(area.Ref), area.Lang),
+            TranslateOperation translate => (PlanId(translate.Ref), translate.Lang),
+            PublishOperation publish => (PlanId(publish.Ref), publish.Lang),
+            _ => (null, null),
+        };
+        if (id is null || steps.FirstOrDefault(s => s.Operation.Id == id && s.Operation is CreateOperation or BlockCreateOperation or UploadOperation) is not { } creating)
+        {
+            return null;
+        }
+        var master = LanguageOf(creating.Operation) ?? masters?.GetValueOrDefault(id);
+        return new Branch($"${id}", language, master, MasterPublished: false, now, Planned: true);
+    }
+
+    /// <param name="Content">The content as messages name it: its id, or <c>$id</c> for planned content.</param>
+    /// <param name="Language">The branch; null: the master branch.</param>
+    /// <param name="Master">The master language; null when it can't be told (planned content without a lang).</param>
+    /// <param name="Now">Published now, not scheduled or sent for review.</param>
+    private sealed record Branch(string Content, string? Language, string? Master, bool MasterPublished, bool Now, bool Planned)
+    {
+        public bool IsMaster => Language is null || string.Equals(Language, Master, StringComparison.OrdinalIgnoreCase);
+    }
 
     private static string In(PlanTarget target) => target.Language is { } language ? $" in '{language}'" : "";
 

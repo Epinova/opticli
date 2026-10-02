@@ -128,6 +128,13 @@ block's master language, published with `--publish`), so the new branch doesn't 
 `translate --remove` deletes a branch with all its versions; it can't be undone. Not the master language, nor a site's
 start page. The dry run shows `versions` and whether it was `published`; the real run needs `--confirm` (a prompt on a
 terminal; elsewhere `conflict`, `details.reason: "removesBranch"`).
+The CMS publishes a branch other than the master language only once the master branch has been published (one that
+was published and is offline now counts). Before that, a publish of another branch (`publish --lang`, a version of it,
+`set`/`area`/`translate --publish`, also each block of `translate --with-blocks --publish`) is refused before anything
+is saved, dry run included: `validation` (exit 5), `details.reason: "masterNotPublished"`. Publish the master branch
+first (`opticli publish <ref>`, only when the user wants it live), or save the branch as a draft. A scheduled publish
+(`--publish-at`) or a review request under an approval sequence only warns: the CMS saves it, and fails when it comes
+due or is approved.
 `move` and `delete` refuse start pages, site and asset roots, the recycle bin and anything that contains them.
 `delete` (and its dry run) lists references from other content to the item or its descendants, which would point into
 the recycle bin: `references[]` (`from`, `name`, `type`, `language`, `to`, `property`, `kind`; the first 50) and
@@ -345,8 +352,13 @@ How far the dry run gets (`meta.warnings` sums it up; step statuses):
   on the master branch.
   A step on existing content whose rich text links to planned content is dry-run with those links pointing at the
   content's GUID (or a stand-in).
-- `deferred`: only names were checked (`access`, `translate`, `move`, `delete` on planned content); the site validates
-  them when the plan runs.
+- `deferred`: only names were checked (`access`, `translate`, `move`, `delete` on planned content, and a `set` or
+  `publish` of another branch than the one it is created in); the site validates them when the plan runs.
+
+Whatever the status, the order of publishes is checked: a step that publishes a branch other than the master before
+the master branch is published (by an earlier step, or in the database) fails validation with `validation`,
+`details.reason: "masterNotPublished"`, and the hint names the later step that publishes the master, to move before it.
+A scheduled publish or a review request of the master doesn't count as publishing it.
 
 Plans that run again (a section rebuilt after a database refresh, or repaired after edits):
 - `"guidNamespace": "<GUID>"` next to `"operations"` gives every `create`, `block` and `upload` a GUID derived from its
@@ -401,6 +413,7 @@ Plans that run again (a section rebuilt after a database refresh, or repaired af
 | `unreachable` (exit 4) on a write | The site isn't running: `opticli serve`; if it was, `opticli serve --status` and `--logs --tail 80`. If the write timed out ("no response within"), it may still have been saved: `opticli versions <ref>` before you retry. |
 | `serve` times out or exits | `opticli serve --logs --tail 80`. Typical: the site needs a build (`--build`), a port is taken (`--port`), or the site's own startup fails. |
 | `validation` (exit 5) | `error.details` lists each failing property; drafts may leave required properties empty, publishing may not. |
+| `validation` (exit 5), `details.reason: "masterNotPublished"` | The master language branch was never published, and the CMS publishes no other branch before it. Ask the user whether the master should go live first (`opticli publish <ref>`; in a plan, an earlier step), or save the branch as a draft. |
 | `refused` (exit 3), `details.reason: "approvalSequence"` | The content has an approval sequence. Ask the user whether to send it for review; if so, run again with `--request-approval`. |
 | `conflict` (exit 5), `details.reason: "inReview"` | The content awaits a reviewer's decision; tell the user, who decides in the CMS edit UI. |
 | `conflict` (exit 5), `details.reason: "referenced"` | Other content references what `delete` would remove (`details.references`). Show them; remove the references, or ask the user before `--ignore-references`. |

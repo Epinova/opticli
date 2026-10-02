@@ -73,11 +73,12 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         var existing = executor.UpdateExisting ? await ExistingAsync(steps, cancellationToken) : new Dictionary<string, int>();
         var resolved = steps.Select(s => s with { Operation = WritePlan.Resolve(s, existing, guids) }).ToList();
         var targets = await TargetsAsync(resolved, existing, cancellationToken);
+        var masters = await PlannedMastersAsync(resolved, existing, cancellationToken);
         var checks = new List<PlanStepResult>();
         OptiCliException? firstFailure = null;
         foreach (var step in steps)
         {
-            var (result, failure) = await ValidateAsync(step, steps, existing, resolved, targets, cancellationToken);
+            var (result, failure) = await ValidateAsync(step, steps, existing, resolved, targets, masters, cancellationToken);
             checks.Add(result);
             firstFailure ??= failure;
         }
@@ -157,14 +158,15 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     }
 
     /// <summary>
-    /// For plans that publish or translate, the existing content (and branch) each step writes, so that a step can be
-    /// dry-run with what earlier steps change on the same content (<see cref="PlanSimulation.OnExisting"/>). Steps whose
-    /// ref can't be resolved are left out; their own dry run reports why.
+    /// For plans that publish, request approval or translate, the existing content (and branch) each step writes, so that
+    /// a step can be dry-run with what earlier steps change on the same content (<see cref="PlanSimulation.OnExisting"/>),
+    /// and the order of publishes checked (<see cref="PlanSimulation.MasterFirst"/>). Steps whose ref can't be resolved are
+    /// left out; their own dry run reports why.
     /// </summary>
     private async Task<Dictionary<int, PlanTarget>> TargetsAsync(IReadOnlyList<PlanStep> resolved, IReadOnlyDictionary<string, int> existing, CancellationToken cancellationToken)
     {
         var targets = new Dictionary<int, PlanTarget>();
-        if (!resolved.Any(s => s.Operation is PublishOperation or TranslateOperation))
+        if (!resolved.Any(s => s.Operation is PublishOperation or TranslateOperation || MayPublish(s.Operation)))
         {
             return targets;
         }
@@ -192,9 +194,16 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                 var header = await session.HeaderAsync(located.Id, cancellationToken);
                 var master = session.Model.Language(header.MasterLanguageId);
                 var language = session.Language(lang) ?? located.Url?.Language ?? master;
+                if (lang is null && step.Operation is PublishOperation publishing && (publishing.Version ?? located.VersionId) is { } version
+                    && await VersionReader.ByIdAsync(session.Db, session.Model, version, cancellationToken) is { } named && named.ContentId == located.Id)
+                {
+                    // A named version is published in its own language.
+                    language = session.Model.Language(named.LanguageId) ?? language;
+                }
                 targets[step.Index] = new PlanTarget(located.Id, language?.Code, master?.Code,
                     BranchExists: language is null || header.Languages.ContainsKey(language.Id),
-                    Versioned: located.VersionId is not null || step.Operation is PublishOperation { Version: not null });
+                    Versioned: located.VersionId is not null || step.Operation is PublishOperation { Version: not null },
+                    MasterPublished: header.MasterPublished);
             }
             catch (OptiCliException)
             {
@@ -202,6 +211,63 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             }
         }
         return targets;
+    }
+
+    private static bool MayPublish(WriteOperation op) => op.Publishes || op.RequestApproval;
+
+    /// <summary>
+    /// For plans that publish: the master language planned content gets where its creating step gives no lang, which is
+    /// its parent's (a "For this page" block's: its owner's), for <see cref="PlanSimulation.MasterFirst"/>. Content whose
+    /// parent can't be found is left out.
+    /// </summary>
+    private async Task<Dictionary<string, string>> PlannedMastersAsync(IReadOnlyList<PlanStep> resolved, IReadOnlyDictionary<string, int> existing, CancellationToken cancellationToken)
+    {
+        var masters = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (!resolved.Any(s => MayPublish(s.Operation)))
+        {
+            return masters;
+        }
+        foreach (var step in resolved)
+        {
+            var (lang, parent) = step.Operation switch
+            {
+                CreateOperation create => (create.Lang, create.Parent),
+                BlockCreateOperation block => (block.Lang, block.For ?? block.Parent),
+                UploadOperation upload => (null, upload.For ?? upload.Parent),
+                _ => ((string?)null, (string?)null),
+            };
+            if (step.Operation.Id is not { } id || existing.ContainsKey(id) || parent is null)
+            {
+                continue;
+            }
+            if (lang is not null)
+            {
+                masters[id] = lang;
+            }
+            else if (PlanSimulation.PlanId(parent) is { } plannedParent)
+            {
+                if (masters.TryGetValue(plannedParent, out var inherited))
+                {
+                    masters[id] = inherited;
+                }
+            }
+            else
+            {
+                try
+                {
+                    var located = await session.LocateAsync(parent, null, cancellationToken);
+                    if (session.Model.Language((await session.HeaderAsync(located.Id, cancellationToken)).MasterLanguageId) is { } master)
+                    {
+                        masters[id] = master.Code;
+                    }
+                }
+                catch (OptiCliException)
+                {
+                    // The step's own dry run says what is wrong with its parent.
+                }
+            }
+        }
+        return masters;
     }
 
     private static bool Changed(object output) => output switch
@@ -213,10 +279,39 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         _ => true,
     };
 
+    /// <summary>
+    /// The step's place in the order of publishes first (<see cref="PlanSimulation.MasterFirst"/>): a branch published
+    /// before its master is invalid, and one whose master an earlier step publishes is dry-run as passing that rule.
+    /// </summary>
+    /// <param name="masters">Planned content's master language (<see cref="PlannedMastersAsync"/>).</param>
+    private async Task<(PlanStepResult Result, OptiCliException? Failure)> ValidateAsync(PlanStep step, IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing,
+        IReadOnlyList<PlanStep> resolved, IReadOnlyDictionary<int, PlanTarget> targets, IReadOnlyDictionary<string, string> masters, CancellationToken cancellationToken)
+    {
+        MasterOrder? order;
+        try
+        {
+            order = PlanSimulation.MasterFirst(resolved.First(s => s.Index == step.Index), resolved, targets, masters);
+        }
+        catch (ContentValidationException ex)
+        {
+            return (new PlanStepResult(step.Index, step.Operation.Kind, step.Operation.Id, PlanStepStatus.Invalid, ex.Details, Error(ex), Guid: step.Operation.ContentGuid), ex);
+        }
+        if (order?.PublishedBy is { } publishedBy)
+        {
+            PlanStep Marked(PlanStep s) => s.Index == step.Index ? s with { Operation = s.Operation with { MasterPublishedBy = publishedBy } } : s;
+            step = Marked(step);
+            resolved = resolved.Select(Marked).ToList();
+        }
+        var (result, failure) = await CheckAsync(step, steps, existing, resolved, targets, cancellationToken);
+        return order is null || failure is not null
+            ? (result, failure)
+            : (result with { Warnings = [order.Note, .. result.Warnings ?? []] }, null);
+    }
+
     /// <param name="existing">Content that steps' GUIDs already name; steps that only depend on it get a full dry run.</param>
     /// <param name="resolved">The steps with <paramref name="existing"/> resolved.</param>
     /// <param name="targets">The existing content each step writes (<see cref="TargetsAsync"/>).</param>
-    private async Task<(PlanStepResult Result, OptiCliException? Failure)> ValidateAsync(PlanStep step, IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing,
+    private async Task<(PlanStepResult Result, OptiCliException? Failure)> CheckAsync(PlanStep step, IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing,
         IReadOnlyList<PlanStep> resolved, IReadOnlyDictionary<int, PlanTarget> targets, CancellationToken cancellationToken)
     {
         var op = step.Operation;
@@ -353,7 +448,8 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         object? details = null;
         try
         {
-            outcome = await executor.RunAsync(simulation.Operation, dryRun: true, cancellationToken);
+            // What the plan knows about the step's master branch holds for what it is dry-run as.
+            outcome = await executor.RunAsync(simulation.Operation with { MasterPublishedBy = op.MasterPublishedBy }, dryRun: true, cancellationToken);
         }
         catch (ContentValidationException ex) when (ex.Details is WriteOutput invalid)
         {

@@ -40,15 +40,17 @@ internal sealed class AgentException(string code, string message, string? hint =
     public static AgentException Conflict(string message, string? hint = null) => new(AgentErrorCodes.Conflict, message, hint);
 
     /// <param name="issues">Every issue found; warnings are passed along but don't count as errors.</param>
-    public static AgentException Invalid(IReadOnlyList<ValidationIssue> issues)
+    /// <param name="hint">What to do instead of fixing the listed errors, for a known <paramref name="reason"/>.</param>
+    public static AgentException Invalid(IReadOnlyList<ValidationIssue> issues, string? hint = null, string? reason = null)
     {
         var errors = issues.Where(i => i.Severity == "error").ToList();
         return new(
             AgentErrorCodes.Validation,
             errors.Count == 1 ? $"Validation failed: {Describe(errors[0])}" : $"Validation failed with {errors.Count} errors.",
-            "Fix every listed error and retry; use dryRun to check without saving.")
+            hint ?? "Fix every listed error and retry; use dryRun to check without saving.")
         {
             Validation = issues,
+            Reason = reason,
         };
     }
 

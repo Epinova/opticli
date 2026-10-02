@@ -140,6 +140,7 @@ public sealed class WriteExecutor(
         var target = await EditableAsync(op.Ref, cancellationToken);
         PropertyNameCheck.Check(session.Model, target.Header.TypeId, op.Properties);
         var language = LanguageFor(op.Lang, target);
+        var masterFirst = await MasterFirstAsync(target, language, op, dryRun, cancellationToken);
         var areaOps = new List<AreaOperation>();
         foreach (var edit in op.AreaEdits ?? [])
         {
@@ -162,7 +163,7 @@ public sealed class WriteExecutor(
         {
             throw new UsageException("Nothing to set.", $"Give properties ({PropertyArguments.Syntax}), --values or --name.");
         }
-        return await DraftAsync(target, request, cancellationToken);
+        return WithWarning(await DraftAsync(target, request, cancellationToken), masterFirst);
     }
 
     private async Task<WriteOutcome> AreaAsync(AreaEdit op, bool dryRun, CancellationToken cancellationToken)
@@ -170,6 +171,7 @@ public sealed class WriteExecutor(
         var target = await EditableAsync(op.Ref, cancellationToken);
         var edit = await AreaOperationAsync(op, target, cancellationToken);
         var language = LanguageFor(op.Lang, target);
+        var masterFirst = await MasterFirstAsync(target, language, op, dryRun, cancellationToken);
         var request = new DraftRequest
         {
             Lang = language?.Code,
@@ -181,7 +183,7 @@ public sealed class WriteExecutor(
             DryRun = dryRun,
             BaseVersion = await BaseVersionAsync(target, language, op.BaseVersion, op.Force, cancellationToken),
         };
-        return await DraftAsync(target, request, cancellationToken);
+        return WithWarning(await DraftAsync(target, request, cancellationToken), masterFirst);
     }
 
     /// <summary>An area edit as the agent takes it, with its property and item checked.</summary>
@@ -429,6 +431,10 @@ public sealed class WriteExecutor(
         {
             return await RemoveLanguageAsync(op, target, language, dryRun, cancellationToken);
         }
+        // An existing branch is updated by a set or publish below, which check it themselves.
+        var masterFirst = updateExisting && target.Header.Languages.ContainsKey(language.Id)
+            ? null
+            : await MasterFirstAsync(target, language, op, dryRun, cancellationToken, creatingBranch: true);
         var blocks = op.WithBlocks ? await AssetBlocksAsync(target.Header, cancellationToken) : [];
         if (op.WithBlocks && !dryRun)
         {
@@ -459,7 +465,7 @@ public sealed class WriteExecutor(
                 DryRun = dryRun,
             };
             var result = await PostAsync<WriteResult>(AgentRoutes.Languages(target.ContentRef), request, cancellationToken);
-            outcome = await WithSimpleAddressCheckAsync(Outcome(WriteOutput.From(result), null), result, target.Header, self: true, cancellationToken);
+            outcome = WithWarning(await WithSimpleAddressCheckAsync(Outcome(WriteOutput.From(result), null), result, target.Header, self: true, cancellationToken), masterFirst);
         }
         if (!op.WithBlocks)
         {
@@ -502,6 +508,13 @@ public sealed class WriteExecutor(
             {
                 var result = await PostAsync<WriteResult>(AgentRoutes.Languages(reference),
                     new LanguageBranchRequest { Lang = language.Code, Publish = op.Publish, RequestApproval = op.RequestApproval && op.Publish, DryRun = dryRun }, cancellationToken);
+                if (dryRun && op.Publish && !op.RequestApproval)
+                {
+                    // Once the block turned out to be localizable. A real run dry-runs every block first, so this is
+                    // checked before anything is saved there too, and isn't worded as a dry run.
+                    await MasterFirstAsync(new Target(block.Id, null, null, block, null), language, new TranslateOperation(reference, language.Code, Publish: true),
+                        dryRun: false, cancellationToken, creatingBranch: true);
+                }
                 var output = WriteOutput.From(result);
                 results.Add(new BlockTranslation(reference, identity.Name, identity.Type, output.Version, "translated"));
             }
@@ -563,12 +576,20 @@ public sealed class WriteExecutor(
         }
         var language = LanguageFor(op.Lang, target);
         var versionId = op.Version ?? target.Version;
+        var branch = language;
+        if (versionId is { } named)
+        {
+            // A named version is published in its own language; one that isn't there is reported below.
+            var own = await VersionReader.ByIdAsync(session.Db, session.Model, named, cancellationToken);
+            branch = own is not null && own.ContentId == target.Id ? session.Model.Language(own.LanguageId) : null;
+        }
+        var masterFirst = await MasterFirstAsync(target, branch, op, dryRun, cancellationToken);
 
         var request = new PublishRequest { Version = versionId, Lang = language?.Code, IncludeDraft = op.IncludeDraft, RequestApproval = op.RequestApproval, PublishAt = op.PublishAt?.UtcDateTime };
         if (!dryRun && !updateExisting)
         {
             var result = await PublishingPostAsync(AgentRoutes.Publish(target.ContentRef), request, r => r with { IncludeDraft = true }, cancellationToken);
-            return Outcome(WriteOutput.From(result), null);
+            return WithWarning(Outcome(WriteOutput.From(result), null), masterFirst);
         }
 
         var version = versionId is { } id
@@ -593,7 +614,7 @@ public sealed class WriteExecutor(
         if (!dryRun)
         {
             var result = await PublishingPostAsync(AgentRoutes.Publish(target.ContentRef), request, r => r with { IncludeDraft = true }, cancellationToken);
-            return Outcome(WriteOutput.From(result), null);
+            return WithWarning(Outcome(WriteOutput.From(result), null), masterFirst);
         }
         var what = $"{target.Id} ('{version.Name}')";
         var sequence = await ApprovalReader.ResolveAsync(session.Db, session.Model, target.Header, cancellationToken);
@@ -628,8 +649,43 @@ public sealed class WriteExecutor(
         {
             notes.Add($"For information: {version.Ref} also holds {others.Describe()}; naming the version confirms that they go live.");
         }
+        if (masterFirst is not null)
+        {
+            notes.Add(masterFirst);
+        }
         return new WriteOutcome(output, DbSource, null, notes);
     }
+
+    /// <summary>
+    /// <see cref="MasterLanguageRule"/> for a write that publishes (or requests approval of) <paramref name="language"/> of
+    /// the target, before anything is saved.
+    /// </summary>
+    /// <param name="language">The branch written; null: the master branch.</param>
+    /// <param name="creatingBranch">The write creates the branch (translate), so it needn't exist yet.</param>
+    /// <returns>A warning for a publish the CMS defers; null when the rule is met or doesn't apply.</returns>
+    /// <exception cref="ContentValidationException">A publish now, before the master branch was ever published.</exception>
+    private async Task<string?> MasterFirstAsync(Target target, LanguageBranch? language, WriteOperation op, bool dryRun, CancellationToken cancellationToken, bool creatingBranch = false)
+    {
+        if (language is null || !(op.Publishes || op.RequestApproval) || (dryRun && op.MasterPublishedBy is not null)
+            || language.Id == target.Header.MasterLanguageId || target.Header.MasterPublished)
+        {
+            return null;
+        }
+        // Headers are cached for the session: an earlier step of a plan may have published the master branch since.
+        var header = await ContentHeaderReader.ByIdAsync(session.Db, target.Id, cancellationToken) ?? target.Header;
+        if (header.MasterPublished || (!creatingBranch && !header.Languages.ContainsKey(language.Id)))
+        {
+            return null;
+        }
+        // With a review request, content without an approval sequence is published as usual.
+        var deferred = op.PublishAt is not null
+            || (op.RequestApproval && (!op.Publishes || await ApprovalReader.ResolveAsync(session.Db, session.Model, header, cancellationToken) is not null));
+        var master = session.Model.Language(header.MasterLanguageId)?.Code ?? header.MasterLanguageId.ToString(CultureInfo.InvariantCulture);
+        return MasterLanguageRule.Check(target.Id, $"{target.Id} ('{header.LanguageRow(language.Id)?.Name}')", language.Code, master, op, deferred, dryRun);
+    }
+
+    private static WriteOutcome WithWarning(WriteOutcome outcome, string? warning) =>
+        warning is null ? outcome : outcome with { Warnings = [.. outcome.Warnings, warning] };
 
     /// <summary>The latest version of <paramref name="language"/>, reported as a step that changed nothing.</summary>
     private async Task<WriteOutcome> LatestUnchangedAsync(Target target, LanguageBranch language, bool dryRun, string message, CancellationToken cancellationToken)

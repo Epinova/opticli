@@ -28,6 +28,16 @@ public class ContentHeaderTests
     }
 
     [Fact]
+    public void The_master_branch_counts_as_published_once_it_was_ever_published()
+    {
+        Assert.False(Header(Row(English, "news", VersionStatus.CheckedOut, 10), Row(Swedish, "nyheter", VersionStatus.Published, 11)).MasterPublished);
+        Assert.False(Header(Row(English, "news", VersionStatus.DelayedPublish, 10)).MasterPublished);
+        // tblContentLanguage keeps the published status when the branch is unpublished or expires, or gets a newer draft.
+        Assert.True(Header(Row(English, "news", VersionStatus.Published, 10), Row(Swedish, "nyheter", VersionStatus.CheckedOut, 11)).MasterPublished);
+        Assert.True(Header(Row(Swedish, "nyheter", VersionStatus.CheckedOut, 11)).MasterPublished);
+    }
+
+    [Fact]
     public void The_primary_version_of_a_never_published_branch_is_its_common_draft()
     {
         // tblContentLanguage.Version can still name the first version saved while the primary values are the common draft's.

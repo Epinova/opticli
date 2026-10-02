@@ -31,6 +31,12 @@ public sealed record ContentHeader(
         ?? Languages.Values.OrderBy(l => l.LanguageId).FirstOrDefault();
 
     /// <summary>
+    /// Whether the master language branch has been published, even if it is offline now (unpublished or expired): the
+    /// CMS publishes no other branch before it. True for content without a master branch row.
+    /// </summary>
+    public bool MasterPublished => Languages.GetValueOrDefault(MasterLanguageId)?.Status is null or VersionStatus.Published;
+
+    /// <summary>
     /// The branch whose URL segment the CMS uses for <paramref name="languageId"/>: URLs are built from
     /// published branches, so a branch that was never published takes the master branch's segment.
     /// </summary>

@@ -40,6 +40,13 @@ public abstract record WriteOperation
     /// </summary>
     public DateTimeOffset? PublishAt { get; init; }
 
+    /// <summary>
+    /// Dry run only: the plan step that publishes the content's master language branch before this step publishes another
+    /// branch (<see cref="PlanSimulation.MasterFirst"/>). The database doesn't have that publish yet, so the check that the
+    /// master branch is published (<see cref="MasterLanguageRule"/>) passes.
+    /// </summary>
+    public int? MasterPublishedBy { get; init; }
+
     /// <summary>True for an operation that publishes, now or at <see cref="PublishAt"/> (or would, but for an approval sequence).</summary>
     public virtual bool Publishes => PublishAt is not null;
 

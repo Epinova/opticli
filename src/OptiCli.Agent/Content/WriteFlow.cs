@@ -182,6 +182,10 @@ internal sealed class WriteFlow
         {
             saved = Repository.Save(writable, action, AccessLevel.NoAccess);
         }
+        catch (System.ComponentModel.DataAnnotations.ValidationException ex) when (ValidationErrors.MasterNotPublished(writable, action, Repository))
+        {
+            throw ValidationErrors.MasterFirst(ex);
+        }
         catch (Exception ex) when (ex is not AgentException && SavedAnyway(writable, isNew, newestBefore) is { } stored)
         {
             // The CMS raises its post-save events inside Save: a site handler that throws (a search indexer, say) fails
