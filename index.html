@@ -153,7 +153,7 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
       <div class="term-bar"><i></i><i></i><i></i><span>opticli on the Alloy sample site</span></div>
       <div class="player" id="player"></div>
     </div>
-    <ol class="chapters" id="chapters"><li><button type="button" data-index="0" data-start="4.015" data-end="28.376" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">1</span><span class="time">0:04</span></span><span class="t">No setup</span></button></li><li><button type="button" data-index="1" data-start="28.376" data-end="57.383" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">2</span><span class="time">0:28</span></span><span class="t">Find the content</span></button></li><li><button type="button" data-index="2" data-start="57.383" data-end="74.617" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">3</span><span class="time">0:57</span></span><span class="t">Find the code</span></button></li><li><button type="button" data-index="3" data-start="74.617" data-end="156.255" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">4</span><span class="time">1:14</span></span><span class="t">Make the change</span></button></li><li><button type="button" data-index="4" data-start="156.255" data-end="227.013" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">5</span><span class="time">2:36</span></span><span class="t">A section as a plan</span></button></li><li><button type="button" data-index="5" data-start="227.013" data-end="255.041" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">6</span><span class="time">3:47</span></span><span class="t">Run it again</span></button></li><li><button type="button" data-index="6" data-start="255.041" data-end="311.518" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">7</span><span class="time">4:15</span></span><span class="t">Let an agent do it</span></button></li></ol>
+    <ol class="chapters" id="chapters"><li><button type="button" data-index="0" data-start="4.018" data-end="28.228" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">1</span><span class="time">0:04</span></span><span class="t">No setup</span></button></li><li><button type="button" data-index="1" data-start="28.228" data-end="57.492" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">2</span><span class="time">0:28</span></span><span class="t">Find the content</span></button></li><li><button type="button" data-index="2" data-start="57.492" data-end="74.497" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">3</span><span class="time">0:57</span></span><span class="t">Find the code</span></button></li><li><button type="button" data-index="3" data-start="74.497" data-end="156.402" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">4</span><span class="time">1:14</span></span><span class="t">Make the change</span></button></li><li><button type="button" data-index="4" data-start="156.402" data-end="229.675" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">5</span><span class="time">2:36</span></span><span class="t">A section as a plan</span></button></li><li><button type="button" data-index="5" data-start="229.675" data-end="258.693" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">6</span><span class="time">3:49</span></span><span class="t">Run it again</span></button></li><li><button type="button" data-index="6" data-start="258.693" data-end="303.581" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">7</span><span class="time">4:18</span></span><span class="t">Safety nets</span></button></li><li><button type="button" data-index="7" data-start="303.581" data-end="358.012" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">8</span><span class="time">5:03</span></span><span class="t">Let an agent do it</span></button></li></ol>
   </div>
 
   <section>
@@ -173,6 +173,18 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
       <li><h3>Change content through the CMS API</h3>
         <p>Writes go through <code>IContentRepository</code> inside your running site, so validation, versioning, events and caches all work. Changes are saved as drafts unless you publish, and every write command takes <code>--dry-run</code>.</p>
         <code class="eg">opticli set 123 Heading="New title" --dry-run</code></li>
+      <li><h3>Deletes that check first</h3>
+        <p><code>delete</code> only moves content to the recycle bin, and stops while other pages or blocks still reference
+          it, listing where. The dry run shows the same list.</p>
+        <code class="eg">opticli delete 456 --dry-run</code></li>
+      <li><h3>Take content offline, and back</h3>
+        <p><code>unpublish</code> takes a page offline as the edit UI's expiry does and names the version that was live, so
+          publishing it puts the page back. <code>discard</code> removes a draft that was never published.</p>
+        <code class="eg">opticli unpublish 123</code></li>
+      <li><h3>Approvals and scheduled publishing</h3>
+        <p>Content with an approval sequence is never published past its reviewers: <code>--request-approval</code> sends it
+          for review instead. <code>--publish-at</code> leaves the publish to the CMS's scheduled job.</p>
+        <code class="eg">opticli publish 123 --request-approval</code></li>
       <li><h3>Upload files as media</h3>
         <p>A file becomes a media item of the type the site registers for its extension, in a page's own folder or any other.
           The output says where the site stored it.</p>
@@ -187,7 +199,8 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
         <code class="eg">opticli apply plan.json --update-existing</code></li>
       <li><h3>Rich text from files</h3>
         <p>A plan value of <code>"@body.html"</code> is that file's text, so long rich text stays in reviewable files next to
-          the plan instead of inside its JSON.</p>
+          the plan instead of inside its JSON. In it, <code>href="$id"</code> links to content the plan creates, saved as its
+          permanent link.</p>
         <code class="eg">"MainBody": "@body.html"</code></li>
       <li><h3>Dry runs that reach every step</h3>
         <p>Steps on content the plan hasn't created yet run against stand-ins, so validators, required properties and
@@ -217,7 +230,7 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
     <ul class="points">
       <li><b>Your local database by default</b><span>opticli reads the connection string from the site's Development config. To use a remote database you have to choose it explicitly, and every response then carries a warning.</span></li>
       <li><b>Read-only reads</b><span>Reads use fixed queries. <code>opticli sql</code> accepts a single <code>SELECT</code> against the site's own database and runs it in a transaction that is rolled back.</span></li>
-      <li><b>Nothing permanent by accident</b><span>Changes are saved as drafts by the user <code>opticli</code>. Publishing needs <code>--publish</code>, and <code>delete</code> only moves content to the recycle bin.</span></li>
+      <li><b>Nothing permanent by accident</b><span>Changes are saved as drafts by the user <code>opticli</code>. Publishing needs <code>--publish</code>, and <code>delete</code> only moves content to the recycle bin, and not while other content still references it.</span></li>
     </ul>
   </section>
 
@@ -244,6 +257,30 @@ opticli skill install                   <span class="c"># teach Claude Code to u
         <code>opticli skill install</code> again to update the skill.</p>
     </div>
     <ol class="changelog">
+      <li><div class="v"><b>0.6.0</b><span>1 October 2026</span></div>
+        <ul>
+          <li><b>Approval sequences</b> are respected: publishing content that has one is refused (exit 3), and
+            <code>--request-approval</code> sends it for review instead. Content in review can't be changed until a
+            reviewer decides.</li>
+          <li><b>delete</b> stops while other content references what it deletes (<code>conflict</code>, with the
+            references listed) and asks on a terminal. <code>--ignore-references</code> deletes all the same.</li>
+          <li><b>unpublish and discard:</b> <code>opticli unpublish</code> takes a published page offline, undone with
+            <code>publish --version</code>; <code>opticli discard</code> deletes a version that was never published.</li>
+          <li><b>Scheduled publishing:</b> <code>--publish-at</code> on <code>set</code>, <code>area</code>,
+            <code>create</code> and <code>publish</code>; <code>drafts</code> and <code>versions</code> show the time.</li>
+          <li><b>Plans:</b> <code>href="$id"</code> in rich text and <code>@file</code> HTML links to content the plan
+            creates, as a permanent link. New ops <code>unpublish</code> and <code>discard</code>.</li>
+          <li><b>More writes:</b> <code>translate --with-blocks</code> and <code>translate --remove</code>,
+            <code>upload --replace</code> for a new file on existing media, and unknown visitor group ids are refused.</li>
+          <li><b>Reads:</b> <code>get</code> shows the approval sequence, visitor group names, personalized rich text and
+            projects; <code>where-used --type</code> lists every instance of a type; <code>opticli projects</code> is new.</li>
+          <li><b>serve:</b> the site agent refuses requests that came through a proxy or tunnel, and a body the web server
+            refuses as too large is reported as such.</li>
+          <li><b>Output changes:</b> <code>get --lang</code> follows the language settings (replacement and fallback
+            languages), a diff's <code>before</code> gives ContentArea items an explicit <code>group</code> and
+            <code>visitorGroups</code>, and any publish clears a stop-publish date that has passed. Details in the
+            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
+        </ul></li>
       <li><div class="v"><b>0.5.0</b><span>1 October 2026</span></div>
         <ul>
           <li><b>Publishing someone else's changes</b> needs confirmation: a publish whose version holds changes another
