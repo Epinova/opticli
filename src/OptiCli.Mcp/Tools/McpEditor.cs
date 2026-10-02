@@ -1,0 +1,59 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
+using ModelContextProtocol;
+using OptiCli.Cms;
+using OptiCli.Mcp.OAuth;
+
+namespace OptiCli.Mcp.Tools;
+
+/// <summary>
+/// The editor a tool call runs as: the MCP endpoint's principal, which the bearer handler built from the grant. It is
+/// also <c>HttpContext.User</c>, and so what the CMS's <c>IPrincipalAccessor</c> gives every content operation, which
+/// therefore checks the editor's own access rights.
+/// </summary>
+internal sealed class McpEditor
+{
+    private readonly HttpContext _context;
+    private readonly IReadOnlyList<string> _scopes;
+
+    private McpEditor(HttpContext context)
+    {
+        _context = context;
+        // The grant's scope string is in the site's order (Scopes.Grantable); keep it.
+        _scopes = (context.User.FindFirst(McpClaims.Scope)?.Value ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).Distinct(StringComparer.Ordinal).ToList();
+    }
+
+    /// <exception cref="McpException">There is no request, or it isn't one the bearer handler signed in.</exception>
+    public static McpEditor From(IHttpContextAccessor accessor) =>
+        accessor.HttpContext is { User.Identity: { IsAuthenticated: true, AuthenticationType: TokenService.AuthenticationType } } context
+            ? new McpEditor(context)
+            : throw new McpException("This tool only runs on the MCP endpoint, for a signed-in editor.");
+
+    public ClaimsPrincipal User => _context.User;
+
+    public string Name => User.Identity?.Name ?? "";
+
+    public string ClientId => User.FindFirst(McpClaims.Client)?.Value ?? "";
+
+    public string ClientName => User.FindFirst(McpClaims.ClientName)?.Value ?? "";
+
+    /// <summary>The roles the grant carries (virtual roles are worked out by the CMS on each check).</summary>
+    public IReadOnlyList<string> Roles => User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
+
+    /// <summary>The scopes the editor approved, in the site's order.</summary>
+    public IReadOnlyList<string> Scopes => _scopes;
+
+    public bool Has(string scope) => _scopes.Contains(scope, StringComparer.Ordinal);
+
+    /// <exception cref="McpException">The connection wasn't granted <paramref name="scope"/>.</exception>
+    public void Require(string scope)
+    {
+        if (!Has(scope))
+        {
+            throw new McpException($"This connection wasn't granted {scope}. Connect the assistant again and allow it.");
+        }
+    }
+
+    /// <summary>A content operation as this editor: every load and save checked against their access rights.</summary>
+    public CmsCall Call() => new(_context.RequestServices, _context.RequestAborted, CmsCaller.Editor);
+}

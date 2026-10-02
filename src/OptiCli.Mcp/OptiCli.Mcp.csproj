@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The MCP server a production site installs, so editors can connect Claude to it: an OAuth authorization server that
+    signs in with the site's own login, and tools that run the same content operations as the opticli agent, always as
+    the signed-in editor with their access rights.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>OptiCli.Mcp</RootNamespace>
+    <PackageId>OptiCli.Mcp</PackageId>
+    <Description>An MCP server for Optimizely CMS 12: editors connect Claude to the site, sign in with the site's own login, and work with their own access rights.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>optimizely;episerver;cms;mcp;model-context-protocol;oauth</PackageTags>
+    <PackageLicenseExpression>MPL-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/epinova/opticli</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/epinova/opticli.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <!-- IntelliSense for the site developer who calls AddOptiCliMcp and sets its options. The linked Cms and Protocol
+         sources weren't written for a documentation file: missing or partial comments there aren't errors. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <!--
+      Built against the oldest CMS 12 the MCP SDK can run beside, never CMS 13, whose APIs differ. Older CMS 12 packages
+      cap Microsoft.Extensions.* below 7.0, and the SDK needs 10.x: CMS UI 12.16.1 is the first whose dependencies don't,
+      and it needs CMS 12.12.1 (EPiServer.CMS.Core pins EPiServer.Framework to its own version).
+    -->
+    <PackageReference Include="EPiServer.CMS.Core" VersionOverride="[12.12.1, 13.0.0)" />
+    <!-- UIRoleProvider: the editor's roles as they are now, for ASP.NET Identity and synchronized external logins alike. -->
+    <PackageReference Include="EPiServer.CMS.UI.Core" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The content operations the CLI's agent runs; here always as the signed-in editor. Compiled in: one assembly. -->
+    <Compile Include="..\OptiCli.Cms\**\*.cs" Exclude="..\OptiCli.Cms\bin\**;..\OptiCli.Cms\obj\**" LinkBase="Cms" />
+    <Compile Include="..\OptiCli.Protocol\**\*.cs" Exclude="..\OptiCli.Protocol\bin\**;..\OptiCli.Protocol\obj\**" LinkBase="Protocol" />
+    <!-- Dependency-free helper shared with the CLI so "did you mean" behaves the same on both sides. -->
+    <Compile Include="..\OptiCli.Core\Text\Suggestions.cs" Link="Shared\Suggestions.cs" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OptiCli.Mcp.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -17,9 +17,16 @@
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
   </ItemGroup>
 
+  <ItemGroup Label="MCP module">
+    <!-- The oldest CMS UI 12 whose dependencies allow the MCP SDK's Microsoft.Extensions 10.x (see OptiCli.Mcp.csproj). -->
+    <PackageVersion Include="EPiServer.CMS.UI.Core" Version="[12.16.1, 13.0.0)" />
+    <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
+  </ItemGroup>
+
   <ItemGroup Label="Tests">
     <!-- Real EF Core migrations, for the build scanner's fixture; never run. -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.28" />
+    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="8.0.28" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
