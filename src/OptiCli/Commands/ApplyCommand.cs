@@ -28,8 +28,9 @@ internal static class ApplyCommand
             are dry-run against a stand-in: the content as it will be after that operation, under its nearest existing
             ancestor (status "simulated"; values that refer to other planned content are checked when the plan runs, and
             their ContentArea placements against [AllowedTypes] in the code). So is a publish after earlier set, area or
-            translate operations on the same content and language (those changes, published), and a set on a language
-            branch an earlier translate creates. The rest get their names checked ("deferred"). Then they run in order; on a failure
+            translate operations on the same content and language (those changes, published), a set or area after one with
+            "from" (on that version, with the changes since), and a set on a language branch an earlier translate creates.
+            The rest get their names checked ("deferred"). Then they run in order; on a failure
             opticli stops and reports what was saved (refs and versions), what failed, and how to undo each saved operation.
             Plan: {"operations": [ {"op": "...", ...}, ... ]}. A create, block or upload operation may have an "id"; later
             operations refer to what it created as "$id", in ref fields and as a whole string value in "properties".
@@ -45,6 +46,8 @@ internal static class ApplyCommand
             Operations and fields (* required; the same as the matching command):
             {{{string.Join(Environment.NewLine, WritePlan.Fields.Select(f => $"  {f.Key}: {string.Join(", ", f.Value)}"))}}}
             area: action is add (item = block ref, at, display), remove (index or item) or move (index or item, to).
+            set, area: "from": "published" (or a version, 456 or "123_456") bases the change on that version instead of the
+            latest, leaving newer drafts out (as --from); later operations on that content and language build on its result.
             Example: opticli apply plan.json --dry-run
               {"operations": [
                 {"op": "create", "id": "page", "parent": "123", "type": "ArticlePage", "name": "News", "properties": {"Heading": "Hi"}},

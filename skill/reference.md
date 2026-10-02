@@ -89,7 +89,7 @@ directly: see [Approval sequences](#approval-sequences).
 
 | Command | Example |
 |---|---|
-| `set <ref> Prop=value... [--values json] [--name N]` | `opticli set 123 Heading="New title" --dry-run` |
+| `set <ref> Prop=value... [--values json] [--name N] [--from published\|<version>]` | `opticli set 123 Heading="New title" --dry-run` |
 | `create <parent-ref> --type T --name N [Prop=value...]` | `opticli create 45 --type ArticlePage --name "News" Heading=Hi` |
 | `area <ref> <Prop> add <block-ref> [--at N] [--display opt]` | `opticli area 123 MainArea add 789 --at 0` |
 | `area <ref> <Prop> remove <position\|ref:id>` | `opticli area 123 MainArea remove ref:789` |
@@ -241,15 +241,33 @@ property of the same name wins). All are versioned, show in `changes`, and are r
 ### Concurrency
 
 `set` and `area` base the draft on the latest version, read just before saving. If someone saved a newer version
-meanwhile the write fails with `conflict` (exit 5); look at it, then run again. `--base-version <id>` pins the base
-explicitly; `--force` skips the check.
+meanwhile the write fails with `conflict` (exit 5); look at it, then run again. `--base-version <id>` (or a ref with
+a version, `123_456`) pins the base explicitly, and it must still be the latest; `--force` skips the check.
+
+`--from published` (or `--from <id>` / `--from 123_456`, a version of the same content and language) bases the change
+on that version instead, e.g. to change the live page while someone's draft is newer. The check stays: the change
+still fails with `conflict` when someone saves a newer version meanwhile (`--base-version` names the version expected
+to be the latest; `--force` skips it). Not with a ref that names a version (usage error); `--from published` on a
+branch that was never published is `not_found`.
+- `baseVersion` in the output is the version it was based on; `leftOut[]` the newer versions it doesn't include
+  (`version`, `status`, `savedBy`, `saved`, `primary`: what edit mode opened until then), with a warning in
+  `meta.warnings` (dry runs too). They stay as they are, without the change, and the change has none of theirs. The new
+  draft becomes the primary draft, which edit mode opens; once published, edit mode opens the published version.
+  Publishing one of those drafts later puts its changes live without this change.
+- In a plan, `"from"` on a `set` or `area` step does the same (`"published"`, `456` or `"123_456"`; only on existing
+  content). Later steps on that content and language build on its result, and a later `publish` publishes that, so
+  the plan is dry-run that way.
 
 ### Other people's drafts
 
 A publish puts the whole version live, so with `set`/`area --publish` also every unpublished change in the version it
 is based on. If a version saved after the published one (in that language) was saved by someone other than `opticli`,
-these stop unless confirmed: `set`, `area` and plan steps with `publish`, `publish` without `--version`, and
-`create`/`block`/`upload`/`translate` steps that publish existing content (`apply --update-existing`).
+and the version that would go live has its changes, these stop unless confirmed: `set`, `area` and plan steps with
+`publish`, `publish` without `--version`, and `create`/`block`/`upload`/`translate` steps that publish existing content
+(`apply --update-existing`).
+- To publish a change without someone's draft, base it on the published version: `set <ref> ... --from published
+  --publish` (see [Concurrency](#concurrency)). Their draft stays a draft and needs no `--include-draft`; neither does a
+  later `publish` of what was based on it.
 - Not on a terminal: `conflict` (exit 5), `error.details.reason: "pendingDraft"`, `error.details.draft`: `version`
   (the newest such version), `savedBy` (empty for saves without a user, e.g. a scheduled job), `saved`, `changes[]`
   (published version to the version that would go live). On a terminal opticli shows the same and asks.
@@ -340,7 +358,9 @@ How far the dry run gets (`meta.warnings` sums it up; step statuses):
   Also simulated, on existing content: a `publish` after `set`, `area`, `translate` (or `create`/`block`/`upload`
   updating existing content) on the same content and language is dry-run as those changes, published, so its
   pending-draft check (`includeDraft`) sees what will go live. A `publish` right after a step that already publishes
-  it fails validation (`conflict`): there is nothing left to publish. A `set` on a language branch that an earlier
+  it fails validation (`conflict`): there is nothing left to publish. After a step with `"from"`, a `set`, `area` or
+  `publish` on that content and language is dry-run as that step and the ones since, on the version it names (steps
+  before it are left out, as in the real run). A `set` on a language branch that an earlier
   `translate` creates is dry-run as the new branch with every value set on it so far; an `area` edit there is dry-run
   on the master branch.
   A step on existing content whose rich text links to planned content is dry-run with those links pointing at the

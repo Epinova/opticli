@@ -8,30 +8,42 @@ namespace OptiCli.Core.Writes;
 
 /// <summary>
 /// The site agent's pending-draft rule, read from the database for the publish dry run, which opticli checks without
-/// the site: changes saved after the published version by someone other than <see cref="AgentProtocol.PrincipalName"/>.
+/// the site: changes saved after the published version by someone other than <see cref="AgentProtocol.PrincipalName"/>
+/// that the version carries (the agent's <c>PendingDrafts.Carries</c>).
 /// </summary>
 /// <remarks>Values are compared as <c>get</c> shows them, not in the request shape the agent reports.</remarks>
 internal static class PendingDraftReader
 {
     /// <param name="version">The version a publish would put live.</param>
-    /// <returns>Null when nobody else saved a version since the published one.</returns>
+    /// <returns>Null when nobody else saved a version since the published one whose changes it has.</returns>
     public static async Task<PendingDraft?> FindAsync(ContentSession session, VersionInfo version, CancellationToken cancellationToken)
     {
-        var newest = await VersionReader.NewestSavedByOtherAsync(
+        var candidates = await VersionReader.SavedByOthersAsync(
             session.Db, session.Model, version.ContentId, version.LanguageId, version.Id, AgentProtocol.PrincipalName, cancellationToken);
-        if (newest is null)
+        if (candidates.Count == 0)
         {
             return null;
         }
         var published = await VersionReader.PublishedAsync(session.Db, session.Model, version.ContentId, version.LanguageId, cancellationToken);
         var loader = new ContentLoader(session.Db, session.Identities);
         var options = new DecodeOptions(Full: true);
-        var after = await loader.GetAsync(version.ContentId, new VersionSelector(VersionKind.Specific, version.Id), null, options, cancellationToken);
-        var before = published is null
-            ? null
-            : await loader.GetAsync(version.ContentId, new VersionSelector(VersionKind.Specific, published.Id), null, options, cancellationToken);
-        return new PendingDraft(newest.Ref, newest.ChangedBy, DateTime.SpecifyKind(newest.Saved ?? default, DateTimeKind.Utc), Diff(before, after));
+        Task<ContentDocument> Load(int id) => loader.GetAsync(version.ContentId, new VersionSelector(VersionKind.Specific, id), null, options, cancellationToken);
+        var after = await Load(version.Id);
+        var before = published is null ? null : await Load(published.Id);
+        foreach (var candidate in candidates)
+        {
+            var draft = candidate.Id == version.Id ? after : await Load(candidate.Id);
+            if (Carries(Diff(before, draft), Diff(draft, after)))
+            {
+                return new PendingDraft(candidate.Ref, candidate.ChangedBy, DateTime.SpecifyKind(candidate.Saved ?? default, DateTimeKind.Utc), Diff(before, after));
+            }
+        }
+        return null;
     }
+
+    /// <summary>The base has the draft's value for at least one property the draft changed (as the agent decides it).</summary>
+    internal static bool Carries(IReadOnlyList<PropertyChange> draftChanges, IReadOnlyList<PropertyChange> baseDifferences) =>
+        draftChanges.Any(c => !baseDifferences.Any(d => d.Property.Equals(c.Property, StringComparison.OrdinalIgnoreCase)));
 
     /// <summary>The name, publish dates and every property value that differ.</summary>
     internal static List<PropertyChange> Diff(ContentDocument? before, ContentDocument after)

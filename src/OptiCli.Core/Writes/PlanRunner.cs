@@ -157,14 +157,14 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     }
 
     /// <summary>
-    /// For plans that publish or translate, the existing content (and branch) each step writes, so that a step can be
-    /// dry-run with what earlier steps change on the same content (<see cref="PlanSimulation.OnExisting"/>). Steps whose
-    /// ref can't be resolved are left out; their own dry run reports why.
+    /// For plans that publish, translate or base a change on another version (<c>from</c>), the existing content (and
+    /// branch) each step writes, so that a step can be dry-run with what earlier steps change on the same content
+    /// (<see cref="PlanSimulation.OnExisting"/>). Steps whose ref can't be resolved are left out; their own dry run reports why.
     /// </summary>
     private async Task<Dictionary<int, PlanTarget>> TargetsAsync(IReadOnlyList<PlanStep> resolved, IReadOnlyDictionary<string, int> existing, CancellationToken cancellationToken)
     {
         var targets = new Dictionary<int, PlanTarget>();
-        if (!resolved.Any(s => s.Operation is PublishOperation or TranslateOperation))
+        if (!resolved.Any(s => s.Operation is PublishOperation or TranslateOperation or SetOperation { From: not null } or AreaEdit { From: not null }))
         {
             return targets;
         }

@@ -8,8 +8,8 @@ namespace OptiCli.Agent.Content;
 internal readonly record struct VersionStamp(int Id, bool Published, DateTime Saved, string? SavedBy);
 
 /// <summary>
-/// A publish puts the whole version it is based on live, so also every change saved since the published version.
-/// When someone other than opticli saved one of those, publishing needs the caller's confirmation.
+/// A publish puts the whole version it is based on live, so also the changes saved since the published version that
+/// it carries. When someone other than opticli saved one of those, publishing needs the caller's confirmation.
 /// </summary>
 internal static class PendingDrafts
 {
@@ -19,16 +19,30 @@ internal static class PendingDrafts
     /// The newest version after the published one (every version, when the branch was never published) up to
     /// <paramref name="baseVersion"/> that someone other than opticli saved; null when there is none.
     /// </returns>
-    public static VersionStamp? NewestByOthers(IEnumerable<VersionStamp> versions, int baseVersion)
+    public static VersionStamp? NewestByOthers(IEnumerable<VersionStamp> versions, int baseVersion) =>
+        ByOthers(versions, baseVersion).Select(v => (VersionStamp?)v).FirstOrDefault();
+
+    /// <summary>As <see cref="NewestByOthers"/>: every such version, newest first.</summary>
+    public static IReadOnlyList<VersionStamp> ByOthers(IEnumerable<VersionStamp> versions, int baseVersion)
     {
         var all = versions.ToList();
         var published = all.Where(v => v.Published).Select(v => v.Id).DefaultIfEmpty(0).Max();
         return all
             .Where(v => v.Id > published && v.Id <= baseVersion && !SavedByOptiCli(v.SavedBy))
             .OrderByDescending(v => v.Id)
-            .Select(v => (VersionStamp?)v)
-            .FirstOrDefault();
+            .ToList();
     }
+
+    /// <summary>
+    /// Whether the version a publish is based on carries a draft's changes. A higher version id doesn't say so: a change
+    /// based on the published version (or an older one) leaves out the drafts saved after that, and so does everything
+    /// based on that change later.
+    /// </summary>
+    /// <param name="draftChanges">The draft compared with the published version (with nothing, when there is none).</param>
+    /// <param name="baseDifferences">The base version compared with the draft.</param>
+    /// <returns>True when the base has the draft's value for at least one property the draft changed.</returns>
+    public static bool Carries(IReadOnlyList<PropertyChange> draftChanges, IReadOnlyList<PropertyChange> baseDifferences) =>
+        draftChanges.Any(c => !baseDifferences.Any(d => d.Property.Equals(c.Property, StringComparison.OrdinalIgnoreCase)));
 
     /// <summary>Saves through the agent are attributed to <see cref="AgentProtocol.PrincipalName"/>; an empty name is nobody's.</summary>
     public static bool SavedByOptiCli(string? savedBy) =>

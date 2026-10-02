@@ -302,4 +302,75 @@ public class PlanSimulationOnExistingTests
         Assert.Equal(("500", "Page", true), (set.Ref, set.Name, set.Publish));
         Assert.Equal("One", (string?)set.Properties!["Heading"]);
     }
+
+    private static readonly WritePlan FromPlan = WritePlan.Parse("""
+        {"operations": [
+          {"op": "set", "ref": "123", "properties": {"Heading": "Before"}},
+          {"op": "set", "ref": "123", "from": "published", "properties": {"Intro": "From published"}},
+          {"op": "area", "ref": "123", "property": "MainArea", "action": "add", "item": "456"},
+          {"op": "set", "ref": "123", "properties": {"Teaser": "t"}, "publishAt": "2099-01-01T08:00:00Z"},
+          {"op": "publish", "ref": "123"}
+        ]}
+        """);
+
+    [Fact]
+    public void A_publish_after_a_step_with_from_is_that_step_and_the_ones_since_on_its_version()
+    {
+        var targets = Enumerable.Range(0, 5).ToDictionary(i => i, _ => Target());
+
+        var simulation = For(FromPlan, 4, targets)!;
+
+        var set = Assert.IsType<SetOperation>(simulation.Operation);
+        // Operation 0's Heading is in a draft the change from the published version leaves out.
+        Assert.Equal((FromVersion.Published, true), (set.From, set.Publish));
+        Assert.Equal("""{"Intro":"From published","Teaser":"t"}""", set.Properties!.ToJsonString());
+        Assert.Equal("456", Assert.Single(set.AreaEdits!).Item);
+        Assert.Equal("Dry-run as 123 in 'en' will be after operation(s) 1, 2, 3, published (their changes aren't saved yet), on the published version as operation 1's \"from\" says.",
+            Assert.Single(simulation.Notes!));
+    }
+
+    [Fact]
+    public void Steps_after_one_with_from_build_on_its_result()
+    {
+        var targets = Enumerable.Range(0, 5).ToDictionary(i => i, _ => Target());
+
+        var area = Assert.IsType<SetOperation>(For(FromPlan, 2, targets)!.Operation);
+        Assert.Equal((FromVersion.Published, false), (area.From, area.Publish));
+        Assert.Equal("""{"Intro":"From published"}""", area.Properties!.ToJsonString());
+        Assert.Equal("456", Assert.Single(area.AreaEdits!).Item);
+
+        var scheduled = For(FromPlan, 3, targets)!;
+        var set = Assert.IsType<SetOperation>(scheduled.Operation);
+        Assert.Equal((FromVersion.Published, false, new DateTimeOffset(2099, 1, 1, 8, 0, 0, TimeSpan.Zero)), (set.From, set.Publish, set.PublishAt));
+        Assert.Contains("after operation(s) 1, 2 and this one, on the published version", Assert.Single(scheduled.Notes!));
+    }
+
+    [Fact]
+    public void A_step_with_from_and_steps_before_one_are_dry_run_as_they_are()
+    {
+        var targets = Enumerable.Range(0, 5).ToDictionary(i => i, _ => Target());
+
+        // Its own version is what it starts from; and before any "from", sets aren't folded together.
+        Assert.Null(For(FromPlan, 1, targets));
+        Assert.Null(For(FromPlan, 0, targets));
+        // A ref with a version is checked as given.
+        var pinned = WritePlan.Parse("""{"operations": [{"op": "set", "ref": "123", "from": 77, "name": "x"}, {"op": "set", "ref": "123_80", "name": "y"}]}""");
+        Assert.Null(For(pinned, 1, new Dictionary<int, PlanTarget> { [0] = Target(), [1] = Target(versioned: true) }));
+    }
+
+    [Fact]
+    public void From_on_a_branch_the_plan_translates_is_a_usage_error()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "translate", "ref": "123", "lang": "sv", "publish": true},
+              {"op": "set", "ref": "123", "lang": "sv", "from": "published", "name": "Nyheter"}
+            ]}
+            """);
+        var targets = new Dictionary<int, PlanTarget> { [0] = Target(language: "sv", branchExists: false), [1] = Target(language: "sv", branchExists: false) };
+
+        var error = Assert.Throws<Core.Errors.UsageException>(() => For(plan, 1, targets));
+
+        Assert.StartsWith("Operation 0 creates the 'sv' branch of 123", error.Message);
+    }
 }

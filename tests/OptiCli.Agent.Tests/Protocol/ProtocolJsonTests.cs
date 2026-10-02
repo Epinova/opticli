@@ -96,6 +96,21 @@ public class ProtocolJsonTests
     }
 
     [Fact]
+    public void A_draft_from_another_version_names_it_and_the_versions_it_leaves_out()
+    {
+        var request = JsonSerializer.Deserialize<DraftRequest>("""{"from":"published","baseVersion":458}""", AgentRequest.RequestOptions)!;
+        Assert.Equal((DraftRequest.FromPublished, 458), (request.From, request.BaseVersion));
+        Assert.DoesNotContain("from", JsonSerializer.Serialize(new DraftRequest(), AgentJson.Options));
+
+        var saved = new DateTime(2025, 1, 27, 9, 0, 0, DateTimeKind.Utc);
+        var copy = RoundTrip(new WriteResult { Saved = true, BaseVersion = 450, LeftOut = [new LeftOutVersion("123_458", "checkedOut", "editor@example.com", saved, Primary: true)] }, out var json);
+
+        Assert.Equal(new LeftOutVersion("123_458", "checkedOut", "editor@example.com", saved, true), copy.LeftOut!.Single());
+        Assert.Contains("\"leftOut\":[{\"version\":\"123_458\",\"status\":\"checkedOut\",\"savedBy\":\"editor@example.com\",\"saved\":\"2025-01-27T09:00:00Z\",\"primary\":true}]", json);
+        Assert.DoesNotContain("leftOut", JsonSerializer.Serialize(new WriteResult(), AgentJson.Options));
+    }
+
+    [Fact]
     public void Write_result_envelope_round_trips()
     {
         var result = new WriteResult

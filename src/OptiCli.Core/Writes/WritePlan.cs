@@ -26,9 +26,9 @@ public sealed partial class WritePlan
     /// <summary>Allowed fields per op; required ones end with <c>*</c>.</summary>
     public static readonly IReadOnlyDictionary<string, string[]> Fields = new Dictionary<string, string[]>
     {
-        ["set"] = ["ref*", "properties", "name", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "baseVersion", "force"],
+        ["set"] = ["ref*", "properties", "name", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force"],
         ["create"] = ["parent*", "type*", "name*", "properties", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "id", "guid"],
-        ["area"] = ["ref*", "property*", "action*", "item", "index", "at", "to", "display", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "baseVersion", "force"],
+        ["area"] = ["ref*", "property*", "action*", "item", "index", "at", "to", "display", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force"],
         ["block"] = ["type*", "name*", "for", "parent", "properties", "lang", "publish", "includeDraft", "requestApproval", "id", "guid"],
         ["upload"] = ["file*", "for", "parent", "replace", "name", "type", "properties", "publish", "includeDraft", "requestApproval", "id", "guid"],
         ["translate"] = ["ref*", "lang*", "name", "properties", "publish", "includeDraft", "requestApproval", "withBlocks", "remove", "confirm"],
@@ -264,9 +264,15 @@ public sealed partial class WritePlan
 
         WriteOperation operation = op switch
         {
-            "set" => new SetOperation(reader.Ref("ref"), reader.Object("properties"), reader.String("name"), reader.String("lang"), reader.Bool("publish"), reader.Int("baseVersion"), reader.Bool("force")),
+            "set" => new SetOperation(reader.Ref("ref"), reader.Object("properties"), reader.String("name"), reader.String("lang"), reader.Bool("publish"), reader.Int("baseVersion"), reader.Bool("force"))
+            {
+                From = reader.From("from"),
+            },
             "create" => new CreateOperation(reader.Ref("parent"), reader.String("type") ?? "", reader.String("name") ?? "", reader.Object("properties"), reader.String("lang"), reader.Bool("publish")),
-            "area" => new AreaEdit(reader.Ref("ref"), reader.String("property") ?? "", reader.String("action") ?? "", reader.OptionalRef("item"), reader.Int("index"), reader.Int("at"), reader.Int("to"), reader.String("display"), reader.String("lang"), reader.Bool("publish"), reader.Int("baseVersion"), reader.Bool("force")),
+            "area" => new AreaEdit(reader.Ref("ref"), reader.String("property") ?? "", reader.String("action") ?? "", reader.OptionalRef("item"), reader.Int("index"), reader.Int("at"), reader.Int("to"), reader.String("display"), reader.String("lang"), reader.Bool("publish"), reader.Int("baseVersion"), reader.Bool("force"))
+            {
+                From = reader.From("from"),
+            },
             "block" => new BlockCreateOperation(reader.String("type") ?? "", reader.String("name") ?? "", reader.OptionalRef("for"), reader.OptionalRef("parent"), reader.Object("properties"), reader.String("lang"), reader.Bool("publish")),
             "upload" => new UploadOperation(reader.String("file") ?? "", reader.OptionalRef("for"), reader.OptionalRef("parent"), reader.String("name"), reader.String("type"), reader.Object("properties"), reader.Bool("publish"))
             {
@@ -290,6 +296,16 @@ public sealed partial class WritePlan
         if (operation is AreaEdit area && area.Action is not ("add" or "remove" or "move") && step["action"] is not null)
         {
             problems.Add($"{reader.Where}: \"action\" must be add, remove or move.");
+        }
+        var (based, from) = operation switch
+        {
+            SetOperation set => (set.Ref, set.From),
+            AreaEdit edit => (edit.Ref, edit.From),
+            _ => ("", null),
+        };
+        if (from is not null && based.StartsWith('$'))
+        {
+            problems.Add($"{reader.Where}: \"from\" bases a change on a version of existing content, and '{based}' is created by the plan; leave \"from\" out.");
         }
         if (operation is AccessOperation access)
         {
@@ -376,6 +392,15 @@ public sealed partial class WritePlan
         };
 
         public string Ref(string name) => OptionalRef(name) ?? "";
+
+        /// <summary>What a change is based on: <c>"published"</c>, or a version as a number (<c>456</c>) or string (<c>"123_456"</c>).</summary>
+        public FromVersion? From(string name) => step[name] switch
+        {
+            null => null,
+            JsonValue value when value.TryGetValue<int>(out var number) && number > 0 => new FromVersion(number),
+            JsonValue value when value.TryGetValue<string>(out var text) && FromVersion.TryParse(text, out var from) => from,
+            _ => Problem<FromVersion>(name, FromVersion.Syntax),
+        };
 
         public int? Int(string name) => step[name] switch
         {

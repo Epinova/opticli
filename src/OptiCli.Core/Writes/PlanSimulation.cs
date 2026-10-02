@@ -120,7 +120,10 @@ public static class PlanSimulation
     /// <list type="bullet">
     /// <item>a <c>publish</c> (of the latest version) after <c>set</c>, <c>area</c>, <c>translate</c>, or a create step that
     /// updates existing content: those changes, dry-run with publish, as one draft on the latest version (or as the new
-    /// language branch). Its pending-draft check covers what the real publish will put live.</item>
+    /// language branch). Its pending-draft check covers what the real publish will put live. After a step with
+    /// <c>from</c>, only that step and the ones after it count, on the version it names.</item>
+    /// <item>a <c>set</c> or <c>area</c> after a step with <c>from</c>: that step, those since and this one, as one draft on
+    /// the version it names (the real run bases this step on what that step saved, not on today's latest version).</item>
     /// <item>a <c>set</c> on a language branch an earlier <c>translate</c> creates: the translate with every value set on
     /// the branch so far; an <c>area</c> edit there is dry-run on the master branch instead.</item>
     /// </list>
@@ -133,6 +136,7 @@ public static class PlanSimulation
     /// A publish whose content an earlier step already publishes, with nothing saved in between: there is nothing left to
     /// publish (without <paramref name="updateExisting"/>, which makes such a publish change nothing).
     /// </exception>
+    /// <exception cref="Errors.UsageException">A <c>from</c> on a language branch an earlier translate creates.</exception>
     public static Simulation? OnExisting(PlanStep step, IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<int, PlanTarget> targets, IReadOnlyDictionary<string, int> existing, bool updateExisting)
     {
         if (!targets.TryGetValue(step.Index, out var target))
@@ -146,6 +150,11 @@ public static class PlanSimulation
         }
         var translate = target.BranchExists ? null : earlier.FirstOrDefault(s => s.Operation is TranslateOperation);
         var reference = WriteOutput.Id(target.Id);
+        // A step with "from" starts over from that version: what the steps before it saved isn't in it, nor in what is
+        // based on it later. (A branch the plan creates has only the plan's versions.)
+        var restart = translate is null ? earlier.LastOrDefault(s => FromOf(s.Operation) is not null) : null;
+        var since = restart is null ? earlier : earlier.Where(s => s.Index >= restart.Index).ToList();
+        var from = restart is null ? null : FromOf(restart.Operation);
         switch (step.Operation)
         {
             case PublishOperation { Version: null } when !target.Versioned:
@@ -155,8 +164,16 @@ public static class PlanSimulation
                         $"Operation {earlier[^1].Index} already publishes {reference}{In(target)}, and nothing is saved in between, so this publish would find nothing to publish.",
                         "Remove this publish, or the earlier step's \"publish\": true.");
                 }
-                return Merged(step, earlier, target, translate, reference, publish: true, steps, existing,
-                    $"Dry-run as {reference}{In(target)} will be after operation(s) {string.Join(", ", earlier.Select(s => s.Index))}, published (their changes aren't saved yet).");
+                return Merged(step, since, target, translate, reference, publish: true, steps, existing,
+                    $"Dry-run as {reference}{In(target)} will be after operation(s) {string.Join(", ", since.Select(s => s.Index))}, published (their changes aren't saved yet){Based(restart, from)}.", from);
+            case SetOperation { From: not null } or AreaEdit { From: not null } when translate is not null:
+                throw new Errors.UsageException(
+                    $"Operation {translate.Index} creates the '{target.Language}' branch of {reference}, so it has no version from before the plan for this operation's \"from\" to base the change on.",
+                    "Leave \"from\" out: the change is then based on the branch as the plan makes it.");
+            case SetOperation { From: null } or AreaEdit { From: null } when restart is not null && !target.Versioned:
+                var simulation = Merged(step, [.. since, step], target, null, reference, publish: step.Operation is SetOperation { Publish: true } or AreaEdit { Publish: true }, steps, existing,
+                    $"Dry-run as {reference}{In(target)} will be after operation(s) {string.Join(", ", since.Select(s => s.Index))} and this one{Based(restart, from)}.", from);
+                return simulation with { Operation = simulation.Operation with { PublishAt = step.Operation.PublishAt, RequestApproval = step.Operation.RequestApproval } };
             case SetOperation set when translate is not null:
                 return Merged(step, [.. earlier, step], target, translate, reference, set.Publish, steps, existing,
                     $"Dry-run as the new '{target.Language}' branch of {reference} will be after this operation: operation {translate.Index} creates it.");
@@ -168,9 +185,21 @@ public static class PlanSimulation
         }
     }
 
+    /// <summary>What a set or area step bases its change on, when it has <c>from</c>.</summary>
+    private static FromVersion? FromOf(WriteOperation op) => op switch
+    {
+        SetOperation set => set.From,
+        AreaEdit area => area.From,
+        _ => null,
+    };
+
+    private static string Based(PlanStep? restart, FromVersion? from) =>
+        restart is null ? "" : $", on {(from!.IsPublished ? "the published version" : $"version {from}")} as operation {restart.Index}'s \"from\" says";
+
     /// <summary>The earlier writes (and for a set, the step itself), applied in order, as one dry run.</summary>
+    /// <param name="from">The version the first of <paramref name="writes"/> is based on, when it has <c>from</c>; else the latest.</param>
     private static Simulation Merged(PlanStep step, IReadOnlyList<PlanStep> writes, PlanTarget target, PlanStep? translate, string reference, bool publish,
-        IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing, string note)
+        IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing, string note, FromVersion? from = null)
     {
         var properties = new JsonObject();
         string? name = null;
@@ -214,7 +243,7 @@ public static class PlanSimulation
         {
             // The master branch as the agent picks it, which also suits content without languages.
             var language = string.Equals(target.Language, target.Master, StringComparison.OrdinalIgnoreCase) ? null : target.Language;
-            operation = new SetOperation(reference, stripped, name, language, publish) { AreaEdits = areas };
+            operation = new SetOperation(reference, stripped, name, language, publish) { AreaEdits = areas, From = from };
         }
         return new Simulation(operation with { IncludeDraft = step.Operation.IncludeDraft }, null, new Dictionary<string, string>(), notChecked.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), references, notes);
     }

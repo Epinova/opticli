@@ -102,7 +102,10 @@ public abstract record WriteOperation
     }
 }
 
-/// <param name="BaseVersion">Version the change must be based on; default: the latest, read just before the call.</param>
+/// <param name="BaseVersion">
+/// Version the change must be based on, which must be the latest; default: the latest, read just before the call. With
+/// <see cref="From"/>, only the version expected to be the latest.
+/// </param>
 /// <param name="Force">Skip the concurrency check.</param>
 public sealed record SetOperation(
     string Ref,
@@ -114,6 +117,12 @@ public sealed record SetOperation(
     bool Force = false) : WriteOperation
 {
     public override string Kind => "set";
+
+    /// <summary>
+    /// Base the change on this version instead of the latest (<c>--from</c>, a plan's <c>from</c>); the concurrency check
+    /// still expects <see cref="BaseVersion"/>, else the latest. Not with a ref that names a version.
+    /// </summary>
+    public FromVersion? From { get; init; }
 
     /// <summary>
     /// Dry run only: area edits applied after the properties, for a plan step dry-run as the content will be after
@@ -179,6 +188,9 @@ public sealed record AreaEdit(
     bool Force = false) : WriteOperation
 {
     public override string Kind => "area";
+
+    /// <summary>As <see cref="SetOperation.From"/>.</summary>
+    public FromVersion? From { get; init; }
 
     public override IEnumerable<string?> Refs => [Ref, Item];
 

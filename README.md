@@ -188,7 +188,7 @@ Once the site answers, `serve` reports drift: what differs between the build and
 | The site started by `serve` is pinned to the database the CLI reads. It refuses to start against any remote database except the approved development one. There it runs without scheduler, schema updates, content type sync or store remapping, and `serve` refuses a build with EF Core migrations the database lacks. If the site turns hosting startups off in its code, so the pin can't run, it refuses to start. | CLI + site agent at startup |
 | The site agent answers only loopback callers that send the per-run token, and only in `Development`. The token is kept in a state file only your user can read. | Site agent, per request |
 | Writes create drafts; publishing needs `--publish` (or `publish`). Saves are attributed to the user `opticli`. | CLI + site agent |
-| A publish that would also put live changes someone else saved after the published version stops: on a terminal it shows who saved what and asks, elsewhere it fails with `conflict` (exit 5) listing them. `--include-draft` (a plan step's `"includeDraft": true`) confirms; `publish --version <id>` publishes that version as it is. | Site agent |
+| A publish that would also put live changes someone else saved after the published version stops: on a terminal it shows who saved what and asks, elsewhere it fails with `conflict` (exit 5) listing them. `--include-draft` (a plan step's `"includeDraft": true`) confirms; `publish --version <id>` publishes that version as it is; `--from published` bases the change on the published version, leaving them out. | Site agent |
 | Against a shared database, writes stop while the build and the database differ (drift): on a terminal it shows the differences and asks, elsewhere it fails with `drift` (exit 5). `--accept-drift <fingerprint>` confirms; the fingerprint stops counting when the differences change. | Site agent, CLI first |
 | `delete` moves content to the recycle bin; nothing empties it. Site roots, start pages, asset roots and anything above them can't be moved or deleted. | Site agent |
 | Reads use fixed queries. `sql` accepts a single SELECT, refuses anything that writes, runs code, reaches another database or reads server-wide views, logs and traces (in `sys`, only the views that describe the database's own schema), and always runs in a rolled-back transaction. Personal-data tables (form submissions, users) need `--include-personal-data`. | CLI |
@@ -293,8 +293,11 @@ These commands write:
 Every write command takes `--dry-run`. Structured values use `--values`, e.g.
 `--values '{"MainArea":[{"ref":"456"}]}'`. `set` and `area` check that nobody saved a newer version in the meantime
 (exit 5 on a conflict). `--base-version <id>` pins the version the change is based on, and `--force` skips the check.
+`--from published` (or `--from <version>`) bases the change on that version instead of the latest, and the check
+stays: newer drafts are left out and stay as they are, and the output lists them (`leftOut`).
 A publish puts the whole version live. When someone else saved unpublished changes in it, opticli shows them and asks on
 a terminal; elsewhere it fails with `conflict` and `details.reason: "pendingDraft"`, and `--include-draft` confirms.
+`set ... --from published --publish` publishes a change without them.
 Output after a publish names `previouslyPublished`, the version to publish again to go back. Content with an approval
 sequence isn't published directly (exit 3); `--request-approval` sends it for review instead, as the edit UI does.
 Against a shared database that differs from the build, writes stop with `drift` (exit 5) until `--accept-drift
