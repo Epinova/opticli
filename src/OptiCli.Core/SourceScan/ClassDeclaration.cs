@@ -1,8 +1,8 @@
 namespace OptiCli.Core.SourceScan;
 
 /// <param name="ContentTypeGuid">GUID from a <c>[ContentType(GUID = "...")]</c>-style attribute on the class, if any.</param>
-/// <param name="BodyStart">Index of the opening brace in the file text.</param>
-/// <param name="BodyEnd">Index of the closing brace in the file text.</param>
+/// <param name="BodyStart">Index of the opening brace in the file text; the ';' of a body-less <c>class Foo : Bar;</c>.</param>
+/// <param name="BodyEnd">Index of the closing brace in the file text; the index after the ';' of a body-less declaration.</param>
 public sealed record ClassDeclaration(
     string Name,
     string File,

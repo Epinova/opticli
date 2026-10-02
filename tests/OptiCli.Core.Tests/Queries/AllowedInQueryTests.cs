@@ -67,6 +67,28 @@ public class AllowedInQueryTests : IDisposable
         Assert.Equal(allowed, AllowedInQuery.Allows(model, CSharpSourceIndex.Build(_root.Path), model.RequireType("ArticlePage"), property, model.RequireType(target)));
     }
 
+    [Fact]
+    public void Body_less_classes_keep_their_base_chain()
+    {
+        _root.Write("Web/Blocks.cs", """
+            namespace Example.Web;
+
+            public abstract class SiteBlock : BlockData;
+
+            public class TeaserBlock : SiteBlock;
+
+            public class FactBlock : SiteBlock { }
+
+            public class HeroBlock : BlockData;
+            """);
+        var model = ModelFixture.Create();
+        var index = CSharpSourceIndex.Build(_root.Path);
+
+        Assert.True(AllowedInQuery.Allows(model, index, model.RequireType("ArticlePage"), "MainArea", model.RequireType("TeaserBlock")));
+        Assert.False(AllowedInQuery.Allows(model, index, model.RequireType("ArticlePage"), "MainArea", model.RequireType("HeroBlock")));
+        Assert.Equal([("MainArea", "explicit", "SiteBlock"), ("RelatedItems", "any", null)], Find("TeaserBlock", explicitOnly: false).Select(r => (r.Property, r.Allowed, r.MatchedBy)));
+    }
+
     [Theory]
     [InlineData("ImageFile", "explicit", "ImageData")]
     [InlineData("DocumentFile", null, null)]

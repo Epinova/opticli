@@ -114,6 +114,35 @@ public class ContentTypeSourcesTests : IDisposable
     }
 
     [Fact]
+    public void Indexes_body_less_declarations_with_their_bases_and_guid()
+    {
+        _root.Write("Web/Blocks/Blocks.cs", """
+            namespace Example.Web.Blocks;
+
+            public abstract class SiteBlock : BlockData;
+
+            [ContentType(GUID = "3c1d2e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f")]
+            public class AboutBlock : SiteBlock, IHasTeaser;
+
+            public sealed class QuoteBlock(string author) : SiteBlock
+            {
+                public virtual string Text { get; set; }
+            }
+            """);
+        var index = CSharpSourceIndex.Build(_root.Path);
+
+        var about = Assert.Single(index.Classes, c => c.Name == "AboutBlock");
+        Assert.Equal(["SiteBlock", "IHasTeaser"], about.BaseTypes);
+        Assert.Equal(Guid.Parse("3c1d2e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f"), about.ContentTypeGuid);
+        Assert.Equal(["BlockData"], Assert.Single(index.Classes, c => c.Name == "SiteBlock").BaseTypes);
+        Assert.Empty(ContentTypeSources.FindProperties(index, about));
+
+        var quote = Assert.Single(index.Classes, c => c.Name == "QuoteBlock");
+        Assert.Null(quote.ContentTypeGuid);
+        Assert.Equal(["Text"], ContentTypeSources.FindProperties(index, quote).Keys);
+    }
+
+    [Fact]
     public void Finds_the_class_by_guid_before_name()
     {
         var index = CSharpSourceIndex.Build(_root.Path);

@@ -3,6 +3,13 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.7.1 (2 October 2026)
+
+- Fixed: classes declared without a body (`public class AboutBlock : SiteBlockData;`, C# 12) were left out of the
+  source scan. A plan's `area add` was refused as not allowed by `[AllowedTypes]` when the area named a base class
+  of such a block, although the CMS allowed it; `allowed-in` missed the same areas, and `type` found no C# class.
+  A body-less base class broke this for every type derived from it.
+
 ## 0.7.0 (2 October 2026)
 
 ### Shared databases

@@ -73,15 +73,24 @@ public sealed partial class CSharpSourceIndex
         {
             var open = text.IndexOf('{', match.Index + match.Length);
             var semicolon = text.IndexOf(';', match.Index + match.Length);
-            if (open < 0 || (semicolon >= 0 && semicolon < open))
+            int close;
+            if (semicolon >= 0 && (open < 0 || semicolon < open))
             {
-                // `record Foo(...);` or a declaration we can't follow: no body to scan.
+                // `class Foo : Bar;` or `record Foo(...);`: no body, but the base types still count.
+                open = semicolon;
+                close = semicolon + 1;
+            }
+            else if (open < 0)
+            {
                 continue;
+            }
+            else
+            {
+                close = CSharpText.FindClosing(text, open);
             }
 
             var header = text[(match.Index + match.Length)..open];
             var guid = ContentTypeGuid(text[previousEnd..match.Index]);
-            var close = CSharpText.FindClosing(text, open);
 
             result.Add(new ClassDeclaration(
                 match.Groups["name"].Value,
