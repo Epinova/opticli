@@ -16,6 +16,8 @@
     <PackageReference Include="EPiServer.CMS.Core" ExcludeAssets="runtime" PrivateAssets="all" />
     <!-- GetRequiredService, without the ASP.NET Core framework: these operations mustn't depend on HTTP. -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" PrivateAssets="all" />
+    <!-- ILogger, for what the site's own log should get: still no ASP.NET Core. -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>

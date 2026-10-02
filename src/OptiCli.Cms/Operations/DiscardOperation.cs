@@ -63,13 +63,13 @@ internal static class DiscardOperation
         var kept = ContentLocator.PublishedVersion(branch)
             ?? branch.Where(v => v.ContentLink.WorkID != stamp.ContentLink.WorkID).Select(v => v.ContentLink.WorkID).First();
         var changes = PropertyValues.Diff(PropertyValues.Snapshot(flow.Repository.Get<IContent>(new ContentReference(link.ID, kept))), PropertyValues.Snapshot(version));
-        var pending = PendingDrafts.SavedByOptiCli(stamp.SavedBy)
+        var pending = PendingDrafts.SavedBy(stamp.SavedBy, call.UserName)
             ? null
             : new PendingDraft(stamp.ContentLink.ToString(), stamp.SavedBy, stamp.Saved.ToUniversalTime(), changes);
         if (pending is not null && !body.IncludeDraft && !body.DryRun)
         {
             throw new AgentException(AgentErrorCodes.Conflict,
-                $"{what} was saved by {(string.IsNullOrWhiteSpace(stamp.SavedBy) ? "nobody signed in (a scheduled job or import)" : stamp.SavedBy)}, not opticli; discarding it deletes their changes for good.",
+                $"{what} was saved by {(string.IsNullOrWhiteSpace(stamp.SavedBy) ? "nobody signed in (a scheduled job or import)" : stamp.SavedBy)}, not {call.UserName}; discarding it deletes their changes for good.",
                 "Ask whether those changes should be thrown away; if so, retry with includeDraft.")
             {
                 PendingDraft = pending,

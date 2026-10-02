@@ -205,6 +205,15 @@ public class OptionsTests
         Assert.Contains("BasePath", error.Message);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(50L * 1024 * 1024 + 1)]
+    public async Task An_upload_size_out_of_range_fails_at_startup(long bytes)
+    {
+        var error = await Assert.ThrowsAsync<OptionsValidationException>(() => TestSite.StartAsync(o => o.MaxUploadBytes = bytes));
+        Assert.Contains("MaxUploadBytes", error.Message);
+    }
+
     [Fact]
     public async Task The_site_root_needs_a_host_of_its_own()
     {

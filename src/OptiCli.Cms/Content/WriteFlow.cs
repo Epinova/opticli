@@ -188,7 +188,7 @@ internal sealed class WriteFlow
         {
             // The CMS raises its post-save events inside Save: a site handler that throws (a search indexer, say) fails
             // the call after the content was saved. The save stands, so report it, or a plan would lose what it made.
-            Console.Error.WriteLine($"[opticli] the site failed after saving {stored}: {ex}");
+            Call.SiteFailedAfterSave(stored, ex);
             saved = stored;
             siteError = $"{ex.Message} ({ex.GetType().FullName})";
         }

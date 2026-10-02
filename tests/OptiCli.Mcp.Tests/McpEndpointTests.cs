@@ -99,8 +99,7 @@ public sealed class McpEndpointTests : IAsyncLifetime
     {
         await using var client = await Connect("editor");
         var tools = await client.ListToolsAsync();
-        var whoami = Assert.Single(tools);
-        Assert.Equal("whoami", whoami.Name);
+        var whoami = Assert.Single(tools, t => t.Name == "whoami");
         Assert.True(whoami.ProtocolTool.Annotations?.ReadOnlyHint);
 
         var result = await client.CallToolAsync("whoami", new Dictionary<string, object?>());

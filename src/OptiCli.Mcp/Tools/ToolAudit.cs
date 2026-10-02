@@ -14,7 +14,7 @@ internal static class ToolAudit
     /// <summary>Argument names that hold a content reference; tools name theirs this way so they're audited.</summary>
     internal static readonly HashSet<string> ReferenceArguments = new(StringComparer.OrdinalIgnoreCase)
     {
-        "reference", "ref", "parent", "destination", "root", "contentId", "target",
+        "reference", "ref", "parent", "destination", "root", "contentId", "target", "forContent", "replace",
     };
 
     private const int MaxReferences = 10;

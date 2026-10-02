@@ -116,7 +116,7 @@ public sealed record WriteResult
 
 /// <summary>
 /// Changes a publish would put live besides its own: versions saved after the published version, in the language, by
-/// someone other than <see cref="AgentProtocol.PrincipalName"/>.
+/// someone other than the caller (<see cref="AgentProtocol.PrincipalName"/> for the agent, the editor for the MCP module).
 /// </summary>
 /// <param name="Version">The newest such version, as <c>id_version</c>.</param>
 /// <param name="SavedBy">Who saved it, as the CMS recorded it; empty when nobody was signed in (a scheduled job or import).</param>

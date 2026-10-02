@@ -45,14 +45,8 @@ internal sealed class McpEditor
 
     public bool Has(string scope) => _scopes.Contains(scope, StringComparer.Ordinal);
 
-    /// <exception cref="McpException">The connection wasn't granted <paramref name="scope"/>.</exception>
-    public void Require(string scope)
-    {
-        if (!Has(scope))
-        {
-            throw new McpException($"This connection wasn't granted {scope}. Connect the assistant again and allow it.");
-        }
-    }
+    /// <exception cref="McpException"><c>refused</c> when the connection wasn't granted <paramref name="scope"/> (<see cref="ToolGates.Scope"/>).</exception>
+    public void Require(string scope) => ToolGates.Scope(_scopes, scope);
 
     /// <summary>A content operation as this editor: every load and save checked against their access rights.</summary>
     public CmsCall Call() => new(_context.RequestServices, _context.RequestAborted, CmsCaller.Editor);

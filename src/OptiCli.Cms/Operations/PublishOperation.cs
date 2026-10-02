@@ -96,7 +96,7 @@ internal static class PublishOperation
             && status == (publishing ? VersionStatus.Published : scheduling ? VersionStatus.DelayedPublish : VersionStatus.AwaitingApproval))
         {
             // A handler of the publishing events failed after the version went live (see WriteFlow.Save).
-            Console.Error.WriteLine($"[opticli] the site failed after saving {version.ContentLink}: {ex}");
+            call.SiteFailedAfterSave(version.ContentLink, ex);
             saved = version.ContentLink;
             siteError = $"{ex.Message} ({ex.GetType().FullName})";
         }

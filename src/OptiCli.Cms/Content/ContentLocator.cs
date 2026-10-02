@@ -25,7 +25,8 @@ internal sealed class ContentLocator(CmsCall call)
         if (!RefSyntax.TryParse(reference, out var parsed))
         {
             throw AgentException.Usage($"'{reference}' is not a valid {what}: expected {RefSyntax.Description}.",
-                "URLs and paths are resolved by the CLI; send the id.");
+                // The CLI resolves URLs and paths itself; an editor's assistant has a tool for it.
+                call.Caller == CmsCaller.Editor ? "Resolve a URL or path to its id first." : "URLs and paths are resolved by the CLI; send the id.");
         }
         if (parsed.Guid is { } guid)
         {
@@ -139,7 +140,7 @@ internal sealed class ContentLocator(CmsCall call)
 
     /// <summary>
     /// What publishing <paramref name="based"/> would put live besides the request's own change: the versions of its
-    /// branch after the published one, up to <paramref name="based"/>, that someone other than opticli saved and whose
+    /// branch after the published one, up to <paramref name="based"/>, that someone other than the caller saved and whose
     /// changes <paramref name="based"/> carries (<see cref="PendingDrafts.Carries"/>).
     /// </summary>
     /// <param name="branch">The versions of <paramref name="based"/>'s branch (<see cref="Versions"/>).</param>
@@ -152,7 +153,7 @@ internal sealed class ContentLocator(CmsCall call)
             return null;
         }
         var stamps = branch.Select(v => new VersionStamp(v.ContentLink.WorkID, v.Status == VersionStatus.Published, v.Saved, v.SavedBy));
-        var candidates = PendingDrafts.ByOthers(stamps, based.ContentLink.WorkID);
+        var candidates = PendingDrafts.ByOthers(stamps, based.ContentLink.WorkID, call.UserName);
         if (candidates.Count == 0)
         {
             return null;

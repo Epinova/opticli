@@ -9,6 +9,9 @@ public class PendingDraftsTests
 {
     private static readonly DateTime Monday = new(2025, 1, 27, 9, 0, 0, DateTimeKind.Utc);
 
+    /// <summary>The agent's saves are attributed to the opticli principal.</summary>
+    private const string Agent = AgentProtocol.PrincipalName;
+
     private static VersionStamp Version(int id, string? savedBy, bool published = false) => new(id, published, Monday.AddHours(id), savedBy);
 
     private static PendingDraft Draft(string? savedBy = "editor@example.com") => new("123_12", savedBy, Monday,
@@ -20,8 +23,8 @@ public class PendingDraftsTests
         VersionStamp[] versions = [Version(10, "editor@example.com", published: true), Version(11, "editor@example.com"), Version(12, "opticli")];
 
         // opticli's own draft on top of it still carries the editor's change.
-        Assert.Equal(11, PendingDrafts.NewestByOthers(versions, baseVersion: 12)?.Id);
-        Assert.Equal(11, PendingDrafts.NewestByOthers(versions, baseVersion: 11)?.Id);
+        Assert.Equal(11, PendingDrafts.NewestByOthers(versions, baseVersion: 12, Agent)?.Id);
+        Assert.Equal(11, PendingDrafts.NewestByOthers(versions, baseVersion: 11, Agent)?.Id);
     }
 
     [Fact]
@@ -29,7 +32,7 @@ public class PendingDraftsTests
     {
         VersionStamp[] versions = [Version(10, "editor@example.com", published: true), Version(11, "opticli"), Version(12, "OptiCli ")];
 
-        Assert.Null(PendingDrafts.NewestByOthers(versions, baseVersion: 12));
+        Assert.Null(PendingDrafts.NewestByOthers(versions, baseVersion: 12, Agent));
     }
 
     [Fact]
@@ -37,10 +40,10 @@ public class PendingDraftsTests
     {
         VersionStamp[] versions = [Version(8, "editor@example.com"), Version(10, "editor@example.com", published: true), Version(11, "opticli"), Version(13, "editor@example.com")];
 
-        Assert.Null(PendingDrafts.NewestByOthers(versions, baseVersion: 11));
+        Assert.Null(PendingDrafts.NewestByOthers(versions, baseVersion: 11, Agent));
         // A change based on the published version itself publishes nothing else.
-        Assert.Null(PendingDrafts.NewestByOthers(versions, baseVersion: 10));
-        Assert.Equal(13, PendingDrafts.NewestByOthers(versions, baseVersion: 13)?.Id);
+        Assert.Null(PendingDrafts.NewestByOthers(versions, baseVersion: 10, Agent));
+        Assert.Equal(13, PendingDrafts.NewestByOthers(versions, baseVersion: 13, Agent)?.Id);
     }
 
     [Fact]
@@ -48,8 +51,8 @@ public class PendingDraftsTests
     {
         VersionStamp[] versions = [Version(10, "opticli", published: true), Version(11, "editor@example.com"), Version(12, "opticli"), Version(13, ""), Version(14, "editor@example.com")];
 
-        Assert.Equal([13, 11], PendingDrafts.ByOthers(versions, baseVersion: 13).Select(v => v.Id));
-        Assert.Empty(PendingDrafts.ByOthers(versions, baseVersion: 10));
+        Assert.Equal([13, 11], PendingDrafts.ByOthers(versions, baseVersion: 13, Agent).Select(v => v.Id));
+        Assert.Empty(PendingDrafts.ByOthers(versions, baseVersion: 10, Agent));
     }
 
     private static PropertyChange Change(string property, string? before, string? after) => new(property,
@@ -79,8 +82,8 @@ public class PendingDraftsTests
     [Fact]
     public void Without_a_published_version_every_version_counts()
     {
-        Assert.Equal(1, PendingDrafts.NewestByOthers([Version(1, "editor@example.com"), Version(2, "opticli")], baseVersion: 2)?.Id);
-        Assert.Null(PendingDrafts.NewestByOthers([Version(1, "opticli"), Version(2, "opticli")], baseVersion: 2));
+        Assert.Equal(1, PendingDrafts.NewestByOthers([Version(1, "editor@example.com"), Version(2, "opticli")], baseVersion: 2, Agent)?.Id);
+        Assert.Null(PendingDrafts.NewestByOthers([Version(1, "opticli"), Version(2, "opticli")], baseVersion: 2, Agent));
     }
 
     [Theory]
@@ -88,7 +91,24 @@ public class PendingDraftsTests
     [InlineData(null)]
     public void A_save_without_a_user_name_is_someone_elses(string? savedBy)
     {
-        Assert.Equal(11, PendingDrafts.NewestByOthers([Version(10, "opticli", published: true), Version(11, savedBy)], baseVersion: 11)?.Id);
+        Assert.Equal(11, PendingDrafts.NewestByOthers([Version(10, "opticli", published: true), Version(11, savedBy)], baseVersion: 11, Agent)?.Id);
+    }
+
+    [Fact]
+    public void For_an_editor_their_own_drafts_are_theirs_and_opticlis_are_someone_elses()
+    {
+        VersionStamp[] versions = [Version(10, "admin@example.com", published: true), Version(11, "Editor@Example.com "), Version(12, "opticli")];
+
+        Assert.Equal(12, PendingDrafts.NewestByOthers(versions, baseVersion: 12, "editor@example.com")?.Id);
+        Assert.Null(PendingDrafts.NewestByOthers(versions, baseVersion: 11, "editor@example.com"));
+        Assert.Equal(11, PendingDrafts.NewestByOthers(versions, baseVersion: 11, "colleague@example.com")?.Id);
+    }
+
+    [Fact]
+    public void A_caller_without_a_name_owns_no_version()
+    {
+        Assert.Equal(11, PendingDrafts.NewestByOthers([Version(10, "", published: true), Version(11, "")], baseVersion: 11, "")?.Id);
+        Assert.False(PendingDrafts.SavedBy(null, ""));
     }
 
     [Fact]

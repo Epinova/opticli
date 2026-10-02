@@ -8,26 +8,32 @@ internal readonly record struct VersionStamp(int Id, bool Published, DateTime Sa
 
 /// <summary>
 /// A publish puts the whole version it is based on live, so also the changes saved since the published version that
-/// it carries. When someone other than opticli saved one of those, publishing needs the caller's confirmation.
+/// it carries. When someone other than the caller saved one of those, publishing needs the caller's confirmation.
 /// </summary>
+/// <remarks>
+/// The caller is whoever the CMS records the save under (<see cref="CmsCall.UserName"/>): the opticli principal for the
+/// developer's agent, so its own earlier drafts never count; the editor for the MCP module, so an editor's own drafts
+/// (from the edit UI or an earlier conversation) are theirs to publish, and only a colleague's need confirming.
+/// </remarks>
 internal static class PendingDrafts
 {
     /// <param name="versions">Every version of the branch.</param>
     /// <param name="baseVersion">The version the publish is based on (or publishes).</param>
+    /// <param name="self">The caller's user name (<see cref="CmsCall.UserName"/>).</param>
     /// <returns>
     /// The newest version after the published one (every version, when the branch was never published) up to
-    /// <paramref name="baseVersion"/> that someone other than opticli saved; null when there is none.
+    /// <paramref name="baseVersion"/> that someone other than <paramref name="self"/> saved; null when there is none.
     /// </returns>
-    public static VersionStamp? NewestByOthers(IEnumerable<VersionStamp> versions, int baseVersion) =>
-        ByOthers(versions, baseVersion).Select(v => (VersionStamp?)v).FirstOrDefault();
+    public static VersionStamp? NewestByOthers(IEnumerable<VersionStamp> versions, int baseVersion, string self) =>
+        ByOthers(versions, baseVersion, self).Select(v => (VersionStamp?)v).FirstOrDefault();
 
     /// <summary>As <see cref="NewestByOthers"/>: every such version, newest first.</summary>
-    public static IReadOnlyList<VersionStamp> ByOthers(IEnumerable<VersionStamp> versions, int baseVersion)
+    public static IReadOnlyList<VersionStamp> ByOthers(IEnumerable<VersionStamp> versions, int baseVersion, string self)
     {
         var all = versions.ToList();
         var published = all.Where(v => v.Published).Select(v => v.Id).DefaultIfEmpty(0).Max();
         return all
-            .Where(v => v.Id > published && v.Id <= baseVersion && !SavedByOptiCli(v.SavedBy))
+            .Where(v => v.Id > published && v.Id <= baseVersion && !SavedBy(v.SavedBy, self))
             .OrderByDescending(v => v.Id)
             .ToList();
     }
@@ -43,9 +49,13 @@ internal static class PendingDrafts
     public static bool Carries(IReadOnlyList<PropertyChange> draftChanges, IReadOnlyList<PropertyChange> baseDifferences) =>
         draftChanges.Any(c => !baseDifferences.Any(d => d.Property.Equals(c.Property, StringComparison.OrdinalIgnoreCase)));
 
-    /// <summary>Saves through the agent are attributed to <see cref="AgentProtocol.PrincipalName"/>; an empty name is nobody's.</summary>
-    public static bool SavedByOptiCli(string? savedBy) =>
-        string.Equals(savedBy?.Trim(), AgentProtocol.PrincipalName, StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// Whether <paramref name="self"/> saved a version: the agent's saves are attributed to
+    /// <see cref="AgentProtocol.PrincipalName"/>, an editor's to their user name. An empty name is nobody's, not even a
+    /// caller without one: a scheduled job or an import saves that way.
+    /// </summary>
+    public static bool SavedBy(string? savedBy, string self) =>
+        !string.IsNullOrWhiteSpace(self) && string.Equals(savedBy?.Trim(), self.Trim(), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Stops a publish that would put <paramref name="pending"/> live unless the caller confirmed it; a dry run only

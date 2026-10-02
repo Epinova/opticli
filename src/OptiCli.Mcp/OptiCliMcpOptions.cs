@@ -54,7 +54,11 @@ public sealed class OptiCliMcpOptions
     /// </summary>
     public bool AllowDelete { get; set; }
 
-    /// <summary>The largest media file an assistant may upload, in bytes. Defaults to 10 MB.</summary>
+    /// <summary>
+    /// The largest media file an assistant may upload, in bytes: 10 MB by default, 50 MB at most. The MCP endpoint takes
+    /// requests up to this size as base64 plus 1 MB; on IIS, raise <c>maxAllowedContentLength</c> (30 MB by default) to
+    /// match for more than about 20 MB.
+    /// </summary>
     public long MaxUploadBytes { get; set; } = 10 * 1024 * 1024;
 
     /// <summary>The MCP endpoint's path: the resource access tokens are issued for.</summary>
@@ -87,6 +91,10 @@ public sealed class OptiCliMcpOptions
         {
             return "AccessTokenLifetime can't be longer than RefreshTokenLifetime.";
         }
-        return MaxUploadBytes <= 0 ? "MaxUploadBytes must be positive." : null;
+        if (MaxUploadBytes is <= 0 or > Protocol.UploadRequest.MaxBytes)
+        {
+            return $"MaxUploadBytes must be positive and at most {Protocol.UploadRequest.MaxBytes / (1024 * 1024)} MB, the most opticli uploads.";
+        }
+        return null;
     }
 }

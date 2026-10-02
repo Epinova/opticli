@@ -3,6 +3,7 @@ using EPiServer.Core;
 using EPiServer.DataAccess;
 using EPiServer.Security;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using OptiCli.Protocol;
 
 namespace OptiCli.Cms;
@@ -117,6 +118,26 @@ internal sealed class CmsCall(IServiceProvider services, CancellationToken abort
                 "Ask a CMS administrator for the access, or for someone who has it to make the change.");
         }
     }
+
+    /// <summary>
+    /// A save the CMS made, after which a site handler of its save or publish events threw (a search indexer, say): the
+    /// save stands, and the caller is told so. The details go to the site's own log, where whoever runs the site looks,
+    /// rather than to the caller. Without a logger (never the case in a running site) they go to standard error.
+    /// </summary>
+    public void SiteFailedAfterSave(ContentReference saved, Exception exception)
+    {
+        if (OptionalService<ILoggerFactory>() is { } loggers)
+        {
+            loggers.CreateLogger(LogCategory).LogWarning(exception, "The site failed after saving {Content}; the save stands.", saved.ToString());
+        }
+        else
+        {
+            Console.Error.WriteLine($"[opticli] the site failed after saving {saved}: {exception}");
+        }
+    }
+
+    /// <summary>The log category of the content operations.</summary>
+    public const string LogCategory = "OptiCli.Cms";
 
     /// <summary>Content that isn't <see cref="ISecurable"/> (a content provider's, say) has no access rights of its own, as for the CMS.</summary>
     private bool HasAccess(IContent content, AccessLevel level) =>
