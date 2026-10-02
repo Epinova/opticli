@@ -17,6 +17,12 @@ internal static class MoveOperation
         var link = flow.Locator.ResolveContent(reference);
         var destination = flow.Locator.ResolveContent(body.Parent, "parent");
         var content = Movable(flow, link);
+        if (content.IsDeleted && !call.MayRestore)
+        {
+            throw AgentException.Refused(
+                $"Content {link.ID} ('{content.Name}') is in the recycle bin; moving it out would restore it, published versions and all.",
+                "Ask the user to restore it in the CMS edit UI (the recycle bin), where they see what comes back. Nothing was changed.");
+        }
 
         var target = flow.Locator.LoadAnyLanguage(destination);
         if (target.ContentLink.CompareToIgnoreWorkID(ContentReference.WasteBasket) || target.IsDeleted)
@@ -31,7 +37,7 @@ internal static class MoveOperation
         }
         // The same rule as for new content: the edit UI doesn't let content be moved where it couldn't be created.
         if (flow.Types.Load(content.ContentTypeID) is { } type && flow.Types.Load(target.ContentTypeID) is { } targetType
-            && CreateOperation.Placement(call, type, targetType, target.ContentLink.ID) is { Count: > 0 } issues)
+            && CreateOperation.Placement(call, type, targetType, target.ContentLink.ID, creating: false) is { Count: > 0 } issues)
         {
             throw AgentException.Invalid(issues);
         }

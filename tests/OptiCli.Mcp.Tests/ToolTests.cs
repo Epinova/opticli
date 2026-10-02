@@ -3,11 +3,15 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using EPiServer.Core;
+using EPiServer.DataAccess;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using OptiCli.Cms;
+using OptiCli.Mcp.OAuth;
 using OptiCli.Mcp.Tests.Support;
 using OptiCli.Mcp.Tools;
 using OptiCli.Protocol;
@@ -147,6 +151,34 @@ public sealed class ToolTests
         Assert.Equal(HttpStatusCode.OK, (await Post(site, tokens.Access, Initialize)).StatusCode);
     }
 
+    [Theory]
+    [InlineData(false, "content:read content:write content:publish", McpErrorReasons.PublishingOff)]
+    [InlineData(true, "content:read content:write", McpErrorReasons.MissingScope)]
+    public void Every_publishing_save_of_an_editor_passes_the_publish_gate_whatever_the_tool_asked_for(bool allowPublish, string scope, string reason)
+    {
+        // The backstop behind the tools' up-front checks: an operation that would publish without its arguments saying
+        // so (publish_content with requestApproval where no sequence applies, before that was fixed) is stopped here.
+        var call = Editor(scope).Call(new OptiCliMcpOptions { AllowPublish = allowPublish });
+
+        foreach (var action in new[] { SaveAction.Publish, SaveAction.Publish | SaveAction.ForceNewVersion, SaveAction.Schedule })
+        {
+            var error = Parse(Assert.ThrowsAny<McpException>(() => call.Save(null!, action)));
+            Assert.Equal((AgentErrorCodes.Refused, reason), (error.Code, error.Reason));
+        }
+        // A draft or a review request isn't gated (here it fails only for want of a CMS).
+        Assert.IsNotAssignableFrom<McpException>(Record.Exception(() => call.Save(null!, SaveAction.Save | SaveAction.ForceNewVersion)));
+        Assert.IsNotAssignableFrom<McpException>(Record.Exception(() => call.Save(null!, SaveAction.RequestApproval)));
+    }
+
+    [Fact]
+    public void An_editors_review_request_never_publishes_and_a_restore_is_left_to_the_cms()
+    {
+        var call = Editor("content:read content:write").Call(new OptiCliMcpOptions());
+        Assert.Equal(CmsCaller.Editor, call.Caller);
+        Assert.False(call.RequestApprovalMayPublish);
+        Assert.False(call.MayRestore);
+    }
+
     [Fact]
     public void Deleting_is_refused_unless_the_site_allows_it()
     {
@@ -230,7 +262,37 @@ public sealed class ToolTests
         Assert.Same(mcp, ToolErrors.Map(mcp, NullLogger.Instance));
     }
 
+    [Fact]
+    public void Content_the_cms_does_not_find_is_the_same_not_found_as_hidden_content_and_is_not_logged()
+    {
+        var log = new AuditLog();
+        var logger = log.CreateLogger(ToolErrors.LogCategory);
+
+        var byId = Parse(ToolErrors.Map(new ContentNotFoundException(new ContentReference(123, 7)), logger)!);
+        Assert.Equal((AgentErrorCodes.NotFound, CmsCall.NotFound(new ContentReference(123)).Message), (byId.Code, byId.Message));
+        var guid = Guid.NewGuid();
+        Assert.Equal($"No content with GUID {guid}.", Parse(ToolErrors.Map(new ContentNotFoundException(guid), logger)!).Message);
+        Assert.Equal(AgentErrorCodes.NotFound, Parse(ToolErrors.Map(new ContentNotFoundException(), logger)!).Code);
+        Assert.Empty(log.Entries);
+    }
+
     private static Exception Map(Exception exception) => ToolErrors.Map(exception, NullLogger.Instance)!;
+
+    /// <summary>The editor a tool call runs as, outside a site: a request signed in by the bearer handler with these scopes.</summary>
+    private static McpEditor Editor(string scope)
+    {
+        var grant = new Grant
+        {
+            GrantId = "g", ClientId = "c", ClientName = "C", UserName = "editor", Roles = ["WebEditors"], Scope = scope,
+            Resource = "r", RefreshHash = "h", Created = DateTimeOffset.UnixEpoch, Expires = DateTimeOffset.UnixEpoch,
+        };
+        var context = new DefaultHttpContext
+        {
+            User = TokenService.Principal(grant),
+            RequestServices = new ServiceCollection().BuildServiceProvider(),
+        };
+        return McpEditor.From(new HttpContextAccessor { HttpContext = context });
+    }
 
     private static (bool?, bool?, bool?, bool?) Hints(ToolAnnotations a) => (a.ReadOnlyHint, a.DestructiveHint, a.IdempotentHint, a.OpenWorldHint);
 

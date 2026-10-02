@@ -38,10 +38,16 @@ internal static class Approvals
     /// <paramref name="requestApproval"/>; <c>usage</c> for <paramref name="requestApproval"/> alone where none applies.
     /// </exception>
     public static SaveAction? Decide(CmsCall call, ContentReference link, bool publish, bool requestApproval, string what) =>
-        publish || requestApproval ? Choose(Applying(call, link), link, publish, requestApproval, what) : null;
+        publish || requestApproval
+            ? Choose(Applying(call, link), link, publish, requestApproval, what,
+                call.ForCaller(NoSequenceHint, "Save it as a draft and give the user its editUrl; or, if the user asked to publish, publish it (publish, or publish_content without requestApproval) where the site allows it. Nothing was saved."))
+            : null;
+
+    private const string NoSequenceHint = "Publish it instead (publish), or save it as a draft.";
 
     /// <summary><see cref="Decide"/> once the sequence that applies (<paramref name="definition"/>, or null) is known.</summary>
-    internal static SaveAction? Choose(ApprovalDefinition? definition, ContentReference link, bool publish, bool requestApproval, string what)
+    /// <param name="noSequenceHint">The hint for <paramref name="requestApproval"/> where no sequence applies, in the caller's terms.</param>
+    internal static SaveAction? Choose(ApprovalDefinition? definition, ContentReference link, bool publish, bool requestApproval, string what, string noSequenceHint = NoSequenceHint)
     {
         if (!publish && !requestApproval)
         {
@@ -51,8 +57,7 @@ internal static class Approvals
         {
             return publish
                 ? SaveAction.Publish
-                : throw new AgentException(AgentErrorCodes.Usage, $"No approval sequence applies to {what}, so there is no review to request.",
-                    "Publish it instead (publish), or save it as a draft.")
+                : throw new AgentException(AgentErrorCodes.Usage, $"No approval sequence applies to {what}, so there is no review to request.", noSequenceHint)
                 {
                     Reason = AgentErrorReasons.NoApprovalSequence,
                 };

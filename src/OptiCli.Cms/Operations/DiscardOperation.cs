@@ -27,13 +27,7 @@ internal static class DiscardOperation
 
         var named = body.Version ?? (link.WorkID > 0 ? link.WorkID : (int?)null);
         var language = named is null ? flow.Locator.ContentLanguage(content, body.Lang) : null;
-        var version = named is { } id
-            ? flow.Repository.Get<IContent>(new ContentReference(link.ID, id))
-            : flow.Repository.Get<IContent>(ContentLocator.Latest(flow.Locator.Versions(link, language), link, language).ContentLink);
-        if (version.ContentLink.ID != link.ID)
-        {
-            throw AgentException.NotFound($"Content {link.ID} has no version {named}.");
-        }
+        var version = flow.Locator.Version(link, named ?? ContentLocator.Latest(flow.Locator.Versions(link, language), link, language).ContentLink.WorkID);
         // The CMS's version repository requires Delete on the content to delete a version, also a draft the editor saved
         // themselves; checked first, so the refusal names the content and nothing is compared or loaded for nothing.
         call.RequireAccess(version, AccessLevel.Delete);

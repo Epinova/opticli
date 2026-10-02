@@ -33,11 +33,7 @@ internal static class PublishOperation
             versionId = ContentLocator.Latest(branch, link, language).ContentLink.WorkID;
         }
 
-        var version = flow.Repository.Get<IContent>(new ContentReference(link.ID, versionId));
-        if (version.ContentLink.ID != link.ID)
-        {
-            throw AgentException.NotFound($"Content {link.ID} has no version {versionId}.");
-        }
+        var version = flow.Locator.Version(link, versionId);
         // After the id check: a version id of other content loads that content, whose existence mustn't leak.
         call.RequireRead(version);
         // The published version taken offline (unpublish) is published again as a new version, without its stop date.
@@ -50,7 +46,9 @@ internal static class PublishOperation
         var versionLanguage = version is ILocalizable { Language: { } own } ? own : null;
         branch ??= flow.Locator.Versions(link, versionLanguage);
         var what = $"{link.ID} ('{version.Name}')";
-        var action = WriteFlow.Publishing(call, link, publish: true, body.RequestApproval, body.PublishAt, what) ?? SaveAction.Publish;
+        // An editor's requestApproval only asks for review, never publishes (see CmsCall.RequestApprovalMayPublish).
+        var publish = !body.RequestApproval || call.RequestApprovalMayPublish;
+        var action = WriteFlow.Publishing(call, link, publish, body.RequestApproval, body.PublishAt, what) ?? SaveAction.Publish;
         var publishing = action == SaveAction.Publish;
         var scheduling = action == SaveAction.Schedule;
         if (action == SaveAction.RequestApproval && version is IVersionable { Status: VersionStatus.AwaitingApproval })

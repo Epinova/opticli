@@ -43,11 +43,14 @@ internal sealed class McpEditor
     /// <summary>The scopes the editor approved, in the site's order.</summary>
     public IReadOnlyList<string> Scopes => _scopes;
 
-    public bool Has(string scope) => _scopes.Contains(scope, StringComparer.Ordinal);
-
     /// <exception cref="McpException"><c>refused</c> when the connection wasn't granted <paramref name="scope"/> (<see cref="ToolGates.Scope"/>).</exception>
     public void Require(string scope) => ToolGates.Scope(_scopes, scope);
 
-    /// <summary>A content operation as this editor: every load and save checked against their access rights.</summary>
-    public CmsCall Call() => new(_context.RequestServices, _context.RequestAborted, CmsCaller.Editor);
+    /// <summary>
+    /// A content operation as this editor: every load and save checked against their access rights, and every save
+    /// that publishes or schedules against the publish gate (<see cref="ToolGates.Publishing"/>) as well, whatever the
+    /// tool's arguments said.
+    /// </summary>
+    public CmsCall Call(OptiCliMcpOptions site) =>
+        new(_context.RequestServices, _context.RequestAborted, CmsCaller.Editor, () => ToolGates.Publishing(_scopes, site));
 }

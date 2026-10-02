@@ -108,18 +108,25 @@ internal static class CreateOperation
     {
         var parentType = plannedParent
             ?? (assetsFolder && parent is not ContentFolder ? types.Load(typeof(ContentAssetFolder)) : types.Load(parent.ContentTypeID));
-        return parentType is null ? [] : Placement(call, type, parentType, parent.ContentLink.ID);
+        return parentType is null ? [] : Placement(call, type, parentType, parent.ContentLink.ID, creating: true);
     }
 
     /// <summary>
     /// Where content of <paramref name="type"/> may go (<see cref="ContentPlacement"/>), with the parent type's availability
-    /// as the CMS's <see cref="ContentTypeAvailabilityService"/> answers it, for create, upload and move alike.
+    /// as the CMS's <see cref="ContentTypeAvailabilityService"/> answers it, for create, upload and move alike; for new
+    /// content (<paramref name="creating"/>) also whether the caller may create the type at all (<see cref="CmsCall.MayCreate"/>).
     /// </summary>
-    internal static IReadOnlyList<ValidationIssue> Placement(CmsCall call, ContentType type, ContentType parentType, int parentId)
+    internal static IReadOnlyList<ValidationIssue> Placement(CmsCall call, ContentType type, ContentType parentType, int parentId, bool creating)
     {
-        var allowed = call.Service<ContentTypeAvailabilityService>().IsAllowed(parentType.Name, type.Name);
-        return ContentPlacement.Problem(Kind(type), type.Name, Kind(parentType), parentType.Name, parentId, allowed) is { } problem
-            ? [new ValidationIssue(null, problem)]
+        var availability = call.Service<ContentTypeAvailabilityService>();
+        var allowed = availability.IsAllowed(parentType.Name, type.Name);
+        if (ContentPlacement.Problem(Kind(type), type.Name, Kind(parentType), parentType.Name, parentId, allowed) is { } problem)
+        {
+            return [new ValidationIssue(null, problem)];
+        }
+        // A move isn't a create: the type's access rights only say who may create its content, as in the CMS.
+        return creating && !call.MayCreate(type, parentType)
+            ? [new ValidationIssue(null, $"You may not create {type.Name} content: the content type's access rights don't allow it.")]
             : [];
     }
 

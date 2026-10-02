@@ -46,7 +46,7 @@ internal abstract class ContentToolBase(IHttpContextAccessor http, IOptions<Opti
         gate?.Invoke(editor);
         try
         {
-            return run(editor, editor.Call());
+            return run(editor, editor.Call(Site));
         }
         catch (Exception e) when (ToolErrors.Map(e, _logger) is { } mapped)
         {

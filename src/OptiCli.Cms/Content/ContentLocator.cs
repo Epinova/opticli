@@ -77,6 +77,16 @@ internal sealed class ContentLocator(CmsCall call)
         Repository.Get<IContent>(link.ToReferenceWithoutVersion(), AnyLanguage());
 
     /// <summary>
+    /// A version of content already resolved (so one the caller may read). The CMS loads a version id of other content
+    /// as that content, so the id is compared too.
+    /// </summary>
+    /// <exception cref="AgentException"><c>not_found</c> naming the version, rather than the CMS's own exception.</exception>
+    public IContent Version(ContentReference link, int versionId) =>
+        Repository.TryGet<IContent>(new ContentReference(link.ID, versionId), out var version) && version.ContentLink.ID == link.ID
+            ? version
+            : throw AgentException.NotFound($"Content {link.ID} has no version {versionId}.");
+
+    /// <summary>
     /// The language to work in: the requested one (which the content must have), else the content's master language.
     /// Null for content that isn't localizable (folders, media).
     /// </summary>

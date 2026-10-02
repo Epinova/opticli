@@ -1,5 +1,6 @@
 using EPiServer;
 using EPiServer.Core;
+using EPiServer.DataAbstraction;
 using EPiServer.DataAccess;
 using EPiServer.Security;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,7 +35,13 @@ internal enum CmsCaller
 /// <see cref="AccessLevel"/> to the CMS itself: it saves, moves and deletes through this class, and checks what the CMS
 /// doesn't check (reads through <see cref="RequireRead{T}"/>, access rights through <see cref="RequireAccess"/>).
 /// </remarks>
-internal sealed class CmsCall(IServiceProvider services, CancellationToken aborted, CmsCaller caller)
+/// <param name="publishing">
+/// Runs before every save that publishes or schedules a publish, and throws to stop it: the MCP module's gate for what
+/// the site and the connection allow (<c>AllowPublish</c>, the <c>content:publish</c> scope). The module also checks
+/// the gate up front from a tool's arguments; this is the backstop for any path that would publish without saying so in
+/// its arguments. Null lets every publish through, as for the developer.
+/// </param>
+internal sealed class CmsCall(IServiceProvider services, CancellationToken aborted, CmsCaller caller, Action? publishing = null)
 {
     /// <summary>Signalled when the caller gave up (a timeout or Ctrl+C in the CLI): nothing is saved after that.</summary>
     public CancellationToken Aborted { get; } = aborted;
@@ -60,11 +67,44 @@ internal sealed class CmsCall(IServiceProvider services, CancellationToken abort
     public string UserName => Checked ? Service<IPrincipalAccessor>().Principal?.Identity?.Name ?? "" : AgentProtocol.PrincipalName;
 
     /// <summary>
-    /// Saves as the caller: unchecked for the developer; for an editor with the access the CMS requires for
-    /// <paramref name="action"/> (Edit for a draft, Publish for a publish, Create for new content).
+    /// Whether a publish with <c>requestApproval</c> publishes content no approval sequence applies to. For the
+    /// developer it does: <c>opticli publish --request-approval</c> (and <c>apply --request-approval</c> over a plan
+    /// with content of both kinds) means "put it live, through review where there is one". For an editor it never
+    /// does: there <c>requestApproval</c> only ever asks for review, and so needs no publishing rights, which is what
+    /// lets the MCP module leave the publish gate out for it. Where no sequence applies, the request is refused
+    /// (<c>noApprovalSequence</c>).
     /// </summary>
-    public ContentReference Save(IContent content, SaveAction action) =>
-        Checked ? Repository.Save(content, action) : Repository.Save(content, action, AccessLevel.NoAccess);
+    public bool RequestApprovalMayPublish => !Checked;
+
+    /// <summary>
+    /// Whether content in the recycle bin may be moved out of it (a restore). Not for an editor: a restore can put
+    /// content that was published live again, with neither a publish nor the publish gate, so an editor restores in
+    /// the CMS edit UI, where they see what comes back.
+    /// </summary>
+    public bool MayRestore => !Checked;
+
+    /// <summary>
+    /// Whether the caller may create content of <paramref name="type"/> below content of <paramref name="parentType"/>
+    /// as far as the type's own access rights go (admin mode's access rights on a content type, <c>[Access]</c> on its
+    /// class): always for the developer; for an editor as the edit UI's list of types to create offers them, which the
+    /// CMS doesn't check again on save. Where the type may go at all is <c>ContentTypeAvailabilityService.IsAllowed</c>.
+    /// </summary>
+    public bool MayCreate(ContentType type, ContentType parentType) =>
+        !Checked || Service<ContentTypeAvailabilityService>().ListAvailable(parentType.Name, Service<IPrincipalAccessor>().Principal).Any(t => t.ID == type.ID);
+
+    /// <summary>
+    /// Saves as the caller: unchecked for the developer; for an editor with the access the CMS requires for
+    /// <paramref name="action"/> (Edit for a draft, Publish for a publish, Create for new content). A save that
+    /// publishes or schedules passes the caller's publishing gate first, if it has one.
+    /// </summary>
+    public ContentReference Save(IContent content, SaveAction action)
+    {
+        if (publishing is not null && (action & SaveAction.ActionMask) is SaveAction.Publish or SaveAction.Schedule)
+        {
+            publishing();
+        }
+        return Checked ? Repository.Save(content, action) : Repository.Save(content, action, AccessLevel.NoAccess);
+    }
 
     /// <summary>
     /// Moves as the caller: for an editor, the CMS requires Read and Delete on the content, and Create below the

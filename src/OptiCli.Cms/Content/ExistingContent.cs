@@ -54,6 +54,11 @@ internal static class ExistingContent
                 $"Content with GUID {existing.ContentGuid} already exists: {link.ID} ({existingType} '{existing.Name}'{(deleted ? ", in the recycle bin" : "")}).",
                 "Pass updateExisting (apply --update-existing) to update it instead, or give the new content another GUID.");
         }
+        if (deleted && !flow.Call.MayRestore)
+        {
+            throw AgentException.Refused($"{link.ID} ('{existing.Name}') is in the recycle bin; updating it would restore it.",
+                "Ask the user to restore it in the CMS edit UI (the recycle bin). Nothing was changed.");
+        }
         if (existing.ContentTypeID != type.ID)
         {
             throw AgentException.Conflict(

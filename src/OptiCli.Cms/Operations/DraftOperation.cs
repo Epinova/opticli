@@ -36,11 +36,7 @@ internal static class DraftOperation
         }
 
         var baseLink = BaseLink(flow.Locator, link, body.From, branch, latest, language);
-        var current = flow.Repository.Get<IContent>(baseLink);
-        if (current.ContentLink.ID != link.ID)
-        {
-            throw AgentException.NotFound($"Content {link.ID} has no version {baseLink.WorkID}.");
-        }
+        var current = flow.Locator.Version(link, baseLink.WorkID);
         call.RequireRead(current);
         if (language is not null && current is ILocalizable { Language: { } versionLanguage } && !versionLanguage.Name.Equals(language.Name, StringComparison.OrdinalIgnoreCase))
         {

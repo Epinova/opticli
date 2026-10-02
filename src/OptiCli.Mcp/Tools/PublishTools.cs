@@ -27,6 +27,8 @@ internal sealed class PublishTools(IHttpContextAccessor http, IOptions<OptiCliMc
         [Description(WriteTools.PublishAt)] DateTime? publishAt = null,
         [Description(WriteTools.RequestApproval + " Needs no publishing rights.")] bool requestApproval = false,
         [Description(WriteTools.IncludeDraft)] bool includeDraft = false) =>
+        // A review request never publishes for an editor (CmsCall.RequestApprovalMayPublish: refused where no sequence
+        // applies), so it needs no publish gate; the call's own gate on every publishing save backs that up.
         Write(Scopes.Write, call => PublishOperation.Run(call, reference, new PublishRequest
         {
             Version = version,

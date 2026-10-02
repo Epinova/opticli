@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Security.Principal;
 using EPiServer;
+using EPiServer.Approvals;
 using EPiServer.Core;
 using EPiServer.DataAbstraction;
 using EPiServer.DataAccess;
@@ -59,6 +60,54 @@ public class CmsCallTests
         Assert.Equal(
             [("Save", AccessLevel.NoAccess), ("Save", AccessLevel.Undefined)],
             _repository.Calls.Select(c => (c.Method, (AccessLevel)c.Args[2]!)));
+    }
+
+    [Fact]
+    public void A_save_that_publishes_or_schedules_passes_the_callers_publishing_gate_first()
+    {
+        var content = new Secured(Page, AccessLevel.FullAccess);
+        var gated = new List<SaveAction>();
+        var call = new CmsCall(_services, CancellationToken.None, CmsCaller.Editor, () => throw new InvalidOperationException("publishing off"));
+        var counting = new CmsCall(_services, CancellationToken.None, CmsCaller.Editor, () => gated.Add(default));
+
+        foreach (var action in new[] { SaveAction.Publish, SaveAction.Publish | SaveAction.ForceNewVersion, SaveAction.Schedule })
+        {
+            Assert.Equal("publishing off", Assert.Throws<InvalidOperationException>(() => call.Save(content, action)).Message);
+        }
+        Assert.Empty(_repository.Calls);
+        call.Save(content, SaveAction.Save | SaveAction.ForceNewVersion);
+        call.Save(content, SaveAction.RequestApproval);
+        counting.Save(content, SaveAction.Publish);
+        Call(CmsCaller.Developer).Save(content, SaveAction.Publish);
+
+        Assert.Single(gated);
+        Assert.Equal(4, _repository.Calls.Count(c => c.Method == "Save"));
+    }
+
+    [Fact]
+    public void Only_the_developer_publishes_through_a_review_request_without_a_sequence_and_restores_from_the_recycle_bin()
+    {
+        // opticli publish --request-approval puts content without a sequence live; an editor's requestApproval never does.
+        Assert.True(Call(CmsCaller.Developer).RequestApprovalMayPublish);
+        Assert.False(Call(CmsCaller.Editor).RequestApprovalMayPublish);
+        Assert.True(Call(CmsCaller.Developer).MayRestore);
+        Assert.False(Call(CmsCaller.Editor).MayRestore);
+    }
+
+    [Fact]
+    public void The_hint_for_a_review_request_without_a_sequence_is_in_the_callers_terms()
+    {
+        var approvals = Recorder<IApprovalDefinitionRepository>.Create();
+        var services = new ServiceCollection().AddSingleton(approvals.Proxy).BuildServiceProvider();
+        approvals.Recorder.Answer = (method, _) => method.Name == nameof(IApprovalDefinitionRepository.ResolveAsync) ? Task.FromResult<ApprovalDefinitionResolveResult?>(null) : null;
+
+        var developer = Assert.Throws<AgentException>(() => Approvals.Decide(new CmsCall(services, default, CmsCaller.Developer), Page, publish: false, requestApproval: true, "123"));
+        var editor = Assert.Throws<AgentException>(() => Approvals.Decide(new CmsCall(services, default, CmsCaller.Editor), Page, publish: false, requestApproval: true, "123"));
+
+        Assert.Equal((AgentErrorReasons.NoApprovalSequence, AgentErrorReasons.NoApprovalSequence), (developer.Reason, editor.Reason));
+        Assert.Equal("Publish it instead (publish), or save it as a draft.", developer.Hint);
+        Assert.Contains("publish_content without requestApproval", editor.Hint);
+        Assert.Contains("draft", editor.Hint);
     }
 
     [Fact]

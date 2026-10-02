@@ -60,6 +60,12 @@ internal static class ToolErrors
                 return exception;
             case AgentException agent:
                 return From(agent.ToError());
+            case ContentNotFoundException notFound:
+                // A load the operation didn't guard: the same not_found as for content the editor can't read, so the
+                // two stay indistinguishable. No failure of the site, so not logged as one.
+                return From((notFound.ContentLink is { } link && !ContentReference.IsNullOrEmpty(link)
+                    ? CmsCall.NotFound(link)
+                    : AgentException.NotFound(notFound.ContentGuid != Guid.Empty ? $"No content with GUID {notFound.ContentGuid}." : "No such content.")).ToError());
             case AccessDeniedException:
                 // The CMS checks the editor's rights itself on save, move and delete; its message names the access level.
                 return Refused(
