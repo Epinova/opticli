@@ -182,4 +182,8 @@ order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a cod
   the development one, and whether to touch any other, is the user's decision. Writes to anything but the development
   database are refused (exit 3). Don't try to work around a refusal; tell the user.
 - Don't write to the CMS database with SQL; `sql` is read-only by design.
-- Report what you changed: the refs and version refs every write prints.
+- Whenever you mention content to the user (in a report, a proposal or a question), give its name next to the ref,
+  and the type or language when that tells items apart: "About us" (page 10, draft 10_1473), not 10 or 10_1473
+  alone. Every item in a result carries `name`; for a bare id, `opticli get <ref> --fields name` looks it up. A
+  version someone else saved: who and when (`savedBy`, `saved`), e.g. "the draft Kari saved on 14 April".
+- Report what you changed that way: the refs and version refs every write prints, each with its content's name.
