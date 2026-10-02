@@ -41,6 +41,13 @@ public class CmsCallTests
     private CmsCall Call(CmsCaller caller) => new(_services, CancellationToken.None, caller);
 
     [Fact]
+    public void A_hint_names_the_next_step_in_the_caller_s_own_terms()
+    {
+        Assert.Equal("opticli delete", Call(CmsCaller.Developer).ForCaller("opticli delete", "delete_content"));
+        Assert.Equal("delete_content", Call(CmsCaller.Editor).ForCaller("opticli delete", "delete_content"));
+    }
+
+    [Fact]
     public void The_developer_saves_unchecked_and_an_editor_with_the_access_the_CMS_requires()
     {
         var content = new Secured(Page, AccessLevel.FullAccess);

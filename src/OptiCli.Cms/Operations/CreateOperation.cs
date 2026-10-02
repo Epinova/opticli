@@ -19,11 +19,12 @@ internal static class CreateOperation
             throw AgentException.Usage("name is required.");
         }
 
-        var type = TypeOperation.Find(flow.Types, body.Type);
+        var type = TypeOperation.Find(call, flow.Types, body.Type);
         if (Kind(type) == PlacementKind.Media)
         {
             throw AgentException.Usage($"{type.Name} is a media type; created this way it would be a media item without a file.",
-                $"Upload the file instead (POST {AgentRoutes.Media}, opticli upload), which picks or checks the media type.");
+                call.ForCaller($"Upload the file instead (POST {AgentRoutes.Media}, opticli upload), which picks or checks the media type.",
+                    "Upload the file instead (upload_media), which picks or checks the media type."));
         }
         var (parent, owner) = Parent(flow, body.Parent, body.ForContent, body.DryRun);
         var culture = body.Lang is { } lang ? flow.Locator.EnabledLanguage(lang) : MasterLanguage(owner);
@@ -94,7 +95,7 @@ internal static class CreateOperation
     /// <summary>The type the real parent will have, for a dry run under a stand-in parent (see <see cref="Availability"/>).</summary>
     private static ContentType? ParentType(WriteFlow flow, CreateRequest body) =>
         body.ParentType is null ? null
-        : body.DryRun ? TypeOperation.Find(flow.Types, body.ParentType)
+        : body.DryRun ? TypeOperation.Find(flow.Call, flow.Types, body.ParentType)
         : throw AgentException.Usage("parentType only applies to a dry run.");
 
     /// <summary>

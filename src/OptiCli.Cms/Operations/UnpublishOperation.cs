@@ -37,7 +37,7 @@ internal static class UnpublishOperation
         if (published is IVersionable { StopPublish: { } stop } && stop <= DateTime.Now)
         {
             throw AgentException.Conflict($"{what} is already offline{where}: its published version {published.ContentLink} expired {stop.ToUniversalTime():u}.",
-                "Publish a version to put it back (publish --version).");
+                call.ForCaller("Publish a version to put it back (publish --version).", "Publish a version to put it back (publish_content with version)."));
         }
         Approvals.RequireNotInReview(branch, what, language?.Name);
         if (Approvals.Applying(call, link) is not null)

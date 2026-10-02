@@ -1,5 +1,6 @@
 # Builds and runs the unit tests on every push and pull request, on the three operating systems opticli supports.
-# The integration test skips itself: it needs a running site.
+# Every project under tests/ runs, the MCP module's included; the integration tests (OptiCli.Integration and
+# OptiCli.Mcp.Integration) skip themselves: they need a running site.
 name: CI
 
 on:

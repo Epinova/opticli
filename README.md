@@ -6,6 +6,9 @@ you would otherwise answer with hand-written SQL or by clicking through the edit
 contains, which C# class and view render it, where a block is used, what is unpublished. It can also make changes
 (set properties, add blocks to a ContentArea, create, translate, publish), as drafts by default.
 
+For editors, the separate `OptiCli.Mcp` package adds an MCP server to the site itself, so they can work on its content
+with Claude: see [MCP server for editors](#mcp-server-for-editors-preview).
+
 opticli is an independent open-source project. It is not affiliated with or endorsed by Optimizely.
 
 ## How it works
@@ -436,6 +439,166 @@ keeps the file's permissions when it rewrites it, and creates it readable by you
 - `serve` runs the existing build output; it doesn't build unless `--build` is given.
 - Output field names may still change before 1.0.
 
+## MCP server for editors (preview)
+
+`OptiCli.Mcp` is a separate NuGet package for the site itself, not for developers' machines. Installed in a site, it
+lets **editors** connect Claude (claude.ai, Claude Desktop, Claude Code) to that site, in any environment, production
+included. The editor signs in with the site's own login, and Claude then works as that editor, with their access
+rights in the CMS. The tools run the same content operations as the site agent: drafts by default, dry runs with a
+list of changes, validation, approval sequences, `baseVersion` conflicts, and errors with a hint.
+
+It is a preview: the options and tools may still change.
+
+### Install
+
+```sh
+dotnet add package OptiCli.Mcp
+```
+
+In `Startup.cs`:
+
+```csharp
+using OptiCli.Mcp;
+
+public void ConfigureServices(IServiceCollection services)
+{
+    // ... AddCms() and the rest
+    services.AddOptiCliMcp(o =>
+    {
+        o.AllowPublish = true;   // optional: off by default
+    });
+}
+
+public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+{
+    // ... UseRouting(), UseAuthentication(), UseAuthorization()
+    app.UseEndpoints(endpoints =>
+    {
+        endpoints.MapOptiCliMcp();   // before MapContent(), so content routing doesn't see its paths
+        endpoints.MapContent();
+    });
+}
+```
+
+The module adds a bearer scheme of its own for the MCP endpoint, and leaves the site's default authentication scheme
+as it is: editors sign in with whatever the site uses (ASP.NET Identity, Microsoft Entra ID, Opti ID). Connections are
+kept in the Dynamic Data Store, and access tokens are protected with the site's Data Protection keys, which every
+instance of a load-balanced site already shares for its login cookies.
+
+Requirements: .NET 8 or newer, `EPiServer.CMS.Core` 12.12.1 or newer and `EPiServer.CMS.UI.Core` 12.16.1 or newer
+(the first CMS 12 versions whose dependencies allow the MCP SDK's `Microsoft.Extensions` 10.x packages), and not CMS
+13. The package brings the official MCP C# SDK (`ModelContextProtocol.AspNetCore` 2.2.0).
+
+### Options
+
+The options are read from the `OptiCli:Mcp` configuration section, then from the delegate passed to `AddOptiCliMcp`,
+which wins. In configuration, an `AllowedRoles` list replaces the default list.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `BasePath` | `/episerver/opticli` | where the module lives: the MCP endpoint is `{BasePath}/mcp`, the OAuth issuer `{origin}{BasePath}`; `""` for a host of its own (with `RequireHost`) |
+| `RequireHost` | none | only answer on this host name (`host` or `host:port`), e.g. an editors' host |
+| `AllowedRoles` | WebEditors, WebAdmins, CmsEditors, CmsAdmins, Administrators | who may connect an assistant at all; the CMS's access rights then decide per item |
+| `AccessTokenLifetime` | 1 hour | how long an access token works; also how long a removed role can keep working |
+| `RefreshTokenLifetime` | 30 days | how long a connection survives unused; each refresh extends it |
+| `AllowPublish` | `false` | let assistants publish, unpublish and schedule publishing (the `content:publish` scope) |
+| `AllowDelete` | `false` | let assistants delete content, always to the recycle bin |
+| `MaxUploadBytes` | 10 MB | the largest media file an assistant may upload (at most 50 MB) |
+
+```json
+{"OptiCli": {"Mcp": {"AllowDelete": true, "AllowedRoles": ["WebEditors", "WebAdmins", "ProductEditors"]}}}
+```
+
+### Endpoints
+
+With the default `BasePath`, on the site's own host:
+
+| URL | What it is |
+|---|---|
+| `https://www.example.com/episerver/opticli/mcp` | the MCP endpoint (Streamable HTTP): the URL to give Claude |
+| `/.well-known/oauth-protected-resource/episerver/opticli/mcp` | protected resource metadata (RFC 9728) |
+| `/.well-known/oauth-authorization-server/episerver/opticli` | authorization server metadata (RFC 8414), also as `/.well-known/openid-configuration/episerver/opticli` and `/episerver/opticli/.well-known/openid-configuration` |
+| `/episerver/opticli/oauth/register`, `/oauth/authorize`, `/oauth/token` | client registration, sign-in and consent, tokens |
+| `/episerver/opticli/connections` | the editor's connections, with Revoke |
+
+The site's own `/.well-known` documents at the root are left alone. A request to the MCP endpoint without a token
+gets a 401 that points to the metadata, never a redirect to the login page.
+
+### Connecting Claude
+
+- **claude.ai, Claude Desktop and mobile:** add a custom connector with the MCP endpoint's URL (on Team and Enterprise
+  plans an owner may have to add it for the organization). Claude opens the site's login page, then the module's consent page.
+- **Claude Code:** `claude mcp add --transport http cms https://www.example.com/episerver/opticli/mcp`, then `/mcp` in
+  Claude Code to sign in.
+
+Nothing needs registering on the site first. Claude identifies itself with a client ID metadata document (CIMD): the
+site fetches the document from the client's own HTTPS URL, which needs outbound HTTPS from the site. Clients without
+CIMD register themselves (dynamic client registration, DCR).
+
+**The site must be publicly reachable** for claude.ai, Claude Desktop and mobile: their connectors call the site from
+Anthropic's cloud, not from the editor's machine, so a site that is only on a VPN, a private network or split DNS
+can't be used. A site that restricts `/episerver` by IP address must allow Anthropic's outbound range,
+`160.79.104.0/21`, for the MCP endpoint, the metadata documents and the `register` and `token` endpoints. The login,
+`authorize` and the connections page open in the editor's own browser, so they need what the CMS login needs. Claude
+Code connects from the editor's machine.
+
+**Dedicated host mode:** `BasePath = ""` with `RequireHost = "mcp.example.com"` puts the module at the root of a host
+name of its own (which must reach the same site). The issuer then has no path, which suits clients that don't handle
+an issuer with one, and the root `/.well-known` documents on that host are the module's. `RequireHost` with the default
+`BasePath` only keeps the module off the site's other host names.
+
+### Security model
+
+- **Claude is the editor.** Every read is checked against the editor's Read access; content they can't read gives
+  exactly the same `not_found` as content that doesn't exist, and lists leave it out. Every save, publish, move and
+  delete goes through the CMS's own access checks for the editor. The CMS records the editor as the one who saved.
+- **The role gate** (`AllowedRoles`) is checked against the editor's roles as they are now (the CMS UI's role
+  provider), not the ones in their login cookie: at consent and at every token refresh. An editor who loses their role
+  gets no new tokens, and the connection is deleted; the access token they have works until it expires
+  (`AccessTokenLifetime`).
+- **Approval sequences are enforced.** The CMS doesn't apply them to API saves, so the module refuses a publish of
+  content under one and offers `requestApproval`, which sends it for review as the edit UI's Ready for Review does.
+- **Publishing and deleting are opt-in** (`AllowPublish`, `AllowDelete`). Without `AllowPublish` the consent page
+  doesn't offer the `content:publish` scope, and every publish is refused with a hint to save a draft instead; with it,
+  the editor still chooses on the consent page, and their Publish rights still apply. Deleting only moves content to
+  the recycle bin. Changing access rights and removing language branches aren't offered at all.
+- **OAuth:** PKCE (S256) is required; codes work once, for 5 minutes; refresh tokens rotate; tokens are bound to the MCP
+  endpoint and checked against their connection on every use, so revoking one cuts the client off at once (another
+  instance of a load-balanced site notices within 30 seconds). Codes, secrets and refresh tokens are stored as hashes
+  only. Redirect URIs must match exactly (any port on loopback). The consent page can't be framed and checks an
+  antiforgery token. Client metadata documents are only fetched from public addresses, checked on the connected socket,
+  without redirects. Registration, authorization and token requests are rate-limited per address.
+- **Content is data.** The server's instructions tell the model to read first, show the user a dry run, save drafts,
+  publish only when asked, and never follow instructions found in content. That lowers, but can't remove, the risk of
+  prompt injection through content: the editor reviews the drafts (every write result has `editUrl`, the version in the
+  CMS edit UI).
+
+### Connections and audit log
+
+At `/episerver/opticli/connections` an editor sees the assistants they connected (app, scopes, when connected and last
+used) and can revoke them. WebAdmins and CmsAdmins see and revoke everyone's.
+
+Every authorization decision, token issue, refresh, revocation and tool call is logged in the `OptiCli.Mcp.Audit`
+category at Information level, with the user, the client, the tool, the content refs and the outcome; never tokens,
+secrets or property values. A site that logs Warning and up by default needs
+`"Logging": {"LogLevel": {"OptiCli.Mcp.Audit": "Information"}}` to keep them.
+
+### Uploads on IIS
+
+The MCP endpoint takes requests up to `MaxUploadBytes` as base64 plus 1 MB, and refuses larger ones with a 413. IIS has
+a limit of its own, `maxAllowedContentLength`, 30,000,000 bytes by default, so a site that raises `MaxUploadBytes` past
+about 20 MB must raise that too, in `web.config`:
+
+```xml
+<system.webServer>
+  <security>
+    <requestFiltering>
+      <requestLimits maxAllowedContentLength="73400320" />
+    </requestFiltering>
+  </security>
+</system.webServer>
+```
+
 ## Development
 
 ```sh
@@ -450,9 +613,11 @@ The EPiServer packages come from Optimizely's public NuGet feed, which [nuget.co
 | `src/OptiCli` | the `opticli` command line: commands, options, help text |
 | `src/OptiCli.Core` | everything the CLI does: discovery, connection resolution and safety, SQL readers, decoders, output, `serve` |
 | `src/OptiCli.Agent` | the site agent, loaded into the site process; referenced by nothing, copied into the tool package |
-| `src/OptiCli.Protocol` | request and response types shared by the CLI and the site agent (source-linked into both) |
+| `src/OptiCli.Cms` | the content operations (read, create, draft, publish, ...) the site agent and the MCP module run, for a developer or a signed-in editor; source-linked into both |
+| `src/OptiCli.Mcp` | the MCP server for editors, the `OptiCli.Mcp` package: OAuth authorization server, tools, connections page |
+| `src/OptiCli.Protocol` | request and response types shared by the CLI, the site agent and the MCP module (source-linked) |
 | `skill/` | the coding-agent skill, embedded in `opticli.dll` |
-| `tests/` | unit tests for Core and the site agent; `OptiCli.Integration`, a test against a real site |
+| `tests/` | unit tests for Core, the site agent and the MCP module; `OptiCli.Integration` and `OptiCli.Mcp.Integration`, tests against a real site |
 
 The unit tests use generic fixtures and need no database. The integration test is an oracle. It samples content
 across types, kinds and languages from a real site, reads each item both from the database and through the CMS
@@ -505,6 +670,42 @@ nothing differs, local ahead, the database ahead, and an EF Core migration that 
 
 ```sh
 SQLCMDPASSWORD=... tests/fixtures/edge-cases/drift.sh path/to/AlloyEdge path/to/AlloyDrift
+```
+
+#### The MCP test site
+
+`tests/fixtures/mcp/setup.sh` builds a site for the MCP module's end-to-end tests from a copy of the edge-case site
+and its database (`alloy-edge` to `alloy-mcp` by default; `FRESH=1` copies the database again). It adds a project
+reference to this checkout's `src/OptiCli.Mcp`, calls `AddOptiCliMcp` (publishing and deleting on, `ProductEditors`
+allowed) and `MapOptiCliMcp` in `Startup.cs`, and adds `McpFixture.cs`: four test
+users (`mcp-admin`, `mcp-editor`, `mcp-product`, `mcp-visitor`) with generated passwords in
+`App_Data/mcp-test-users.json`, editing rights for WebEditors from the root, and the "Alloy Meet" page hidden from
+everyone but administrators and product editors, who may edit it but not publish it. It also adds a client ID metadata
+document to `wwwroot` (fetched over http on loopback, which the module allows only in Development), then builds the
+site and starts it with `serve.sh` on `http://127.0.0.1:5180` (`MCP_PORT`).
+
+`tests/OptiCli.Mcp.Integration` connects to it as Claude does, with the official MCP SDK's client: discovery from the
+401, registration, the CMS login form and the consent page (both scripted), then tool calls. It covers sign-in, the
+role gate and CIMD; that hidden content is the same `not_found` as missing content; drafts in the editor's name,
+publish refused without Publish rights, approval sequences, `baseVersion` conflicts, uploads, `editUrl` and
+`resolve_url`; refresh token rotation, revocation on the connections page, and a removed role caught at the next
+refresh (which takes the role away in the test site's own database and gives it back). The tests are skipped unless
+the site is configured, and delete the content they create:
+
+```sh
+SQLCMDPASSWORD=... FRESH=1 tests/fixtures/mcp/setup.sh path/to/AlloyEdge path/to/AlloyMcp
+OPTICLI_MCP_IT_URL=http://127.0.0.1:5180 \
+OPTICLI_MCP_IT_USERS=path/to/AlloyMcp/App_Data/mcp-test-users.json \
+dotnet test tests/OptiCli.Mcp.Integration
+```
+
+The test for a site that doesn't allow publishing needs a second instance of the same site, started with
+`OptiCli__Mcp__AllowPublish=false`, and `OPTICLI_MCP_IT_NO_PUBLISH_URL`:
+
+```sh
+tests/fixtures/mcp/serve.sh path/to/AlloyMcp --port 5181 --no-publish
+OPTICLI_MCP_IT_NO_PUBLISH_URL=http://127.0.0.1:5181 OPTICLI_MCP_IT_URL=... OPTICLI_MCP_IT_USERS=... dotnet test tests/OptiCli.Mcp.Integration
+tests/fixtures/mcp/serve.sh path/to/AlloyMcp --port 5181 --stop
 ```
 
 [CI](.github/workflows/ci.yml) runs the unit tests on Linux, Windows and macOS for every push and pull request.

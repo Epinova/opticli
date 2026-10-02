@@ -189,16 +189,16 @@ internal static class UploadOperation
 
         if (requested is not null)
         {
-            var type = TypeOperation.Find(flow.Types, requested);
+            var type = TypeOperation.Find(call, flow.Types, requested);
             return accepting.Any(t => t.ID == type.ID)
                 ? type
-                : throw AgentException.Usage($"{type.Name} does not accept {extension} files.", Alternatives(extension, naming, anyFile));
+                : throw AgentException.Usage($"{type.Name} does not accept {extension} files.", Alternatives(call, extension, naming, anyFile));
         }
         return naming.FirstOrDefault() ?? throw AgentException.Usage(
-            $"No media type is registered for {extension} files.", Alternatives(extension, naming, anyFile));
+            $"No media type is registered for {extension} files.", Alternatives(call, extension, naming, anyFile));
     }
 
-    private static string Alternatives(string extension, IReadOnlyList<ContentType> naming, IReadOnlyList<ContentType> anyFile)
+    private static string Alternatives(CmsCall call, string extension, IReadOnlyList<ContentType> naming, IReadOnlyList<ContentType> anyFile)
     {
         var hints = new List<string>();
         if (naming.Count > 0)
@@ -207,7 +207,7 @@ internal static class UploadOperation
         }
         if (anyFile.Count > 0)
         {
-            hints.Add($"Types that accept any file (only with --type): {string.Join(", ", anyFile.Select(t => t.Name))}.");
+            hints.Add($"Types that accept any file (only when named as {call.ForCaller("--type", "type")}): {string.Join(", ", anyFile.Select(t => t.Name))}.");
         }
         if (naming.Count == 0)
         {

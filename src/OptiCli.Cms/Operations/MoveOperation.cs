@@ -21,7 +21,9 @@ internal static class MoveOperation
         var target = flow.Locator.LoadAnyLanguage(destination);
         if (target.ContentLink.CompareToIgnoreWorkID(ContentReference.WasteBasket) || target.IsDeleted)
         {
-            throw AgentException.Refused("Moving into the recycle bin is a delete.", $"Use DELETE {AgentRoutes.Delete(link.ID.ToString())} (opticli delete).");
+            throw AgentException.Refused("Moving into the recycle bin is a delete.", flow.Call.ForCaller(
+                $"Use DELETE {AgentRoutes.Delete(link.ID.ToString())} (opticli delete).",
+                "Delete it instead (delete_content, where the site allows it), which moves it to the recycle bin."));
         }
         if (destination.CompareToIgnoreWorkID(link) || flow.Repository.GetAncestors(destination).Any(a => a.ContentLink.CompareToIgnoreWorkID(link)))
         {

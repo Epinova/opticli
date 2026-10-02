@@ -28,6 +28,8 @@
     <!-- Real EF Core migrations, for the build scanner's fixture; never run. -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.28" />
     <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="8.0.28" />
+    <!-- The MCP module's end-to-end tests connect as Claude does, with the official SDK's client. -->
+    <PackageVersion Include="ModelContextProtocol" Version="2.2.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />

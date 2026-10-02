@@ -26,7 +26,7 @@ internal sealed class ContentLocator(CmsCall call)
         {
             throw AgentException.Usage($"'{reference}' is not a valid {what}: expected {RefSyntax.Description}.",
                 // The CLI resolves URLs and paths itself; an editor's assistant has a tool for it.
-                call.Caller == CmsCaller.Editor ? "Resolve a URL or path to its id first." : "URLs and paths are resolved by the CLI; send the id.");
+                call.ForCaller("URLs and paths are resolved by the CLI; send the id.", "Resolve a URL or path to its id first (resolve_url)."));
         }
         if (parsed.Guid is { } guid)
         {
@@ -97,7 +97,7 @@ internal sealed class ContentLocator(CmsCall call)
         {
             throw AgentException.NotFound(
                 $"Content {content.ContentLink.ID} has no '{culture.Name}' language branch (it has {string.Join(", ", localizable.ExistingLanguages.Select(l => l.Name))}).",
-                "Create the branch first (POST .../languages, opticli translate).");
+                call.ForCaller("Create the branch first (POST .../languages, opticli translate).", "Create the branch first (add_language)."));
         }
         return culture;
     }

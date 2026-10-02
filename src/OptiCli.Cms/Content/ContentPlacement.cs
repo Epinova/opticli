@@ -38,7 +38,7 @@ internal static class ContentPlacement
                 return $"{childType} is a page type; pages go in the page tree, not {below}, an asset folder.";
             case (PlacementKind.Block or PlacementKind.Media or PlacementKind.Folder, PlacementKind.Page):
                 return $"{childType} is a {Name(childKind)} type; {Plural(childKind)} go in asset folders, not {below}, a page. "
-                    + "A page's own blocks and files go in its \"For this page\" folder (--for <page>).";
+                    + "A page's own blocks and files go in its \"For this page\" folder (forContent; --for <page> on the command line).";
         }
         return allowedByParentType ? null : $"{childType} is not allowed {below}.";
     }

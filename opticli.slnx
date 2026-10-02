@@ -10,6 +10,7 @@
     <Project Path="tests/OptiCli.Core.Tests/OptiCli.Core.Tests.csproj" />
     <Project Path="tests/OptiCli.Agent.Tests/OptiCli.Agent.Tests.csproj" />
     <Project Path="tests/OptiCli.Mcp.Tests/OptiCli.Mcp.Tests.csproj" />
+    <Project Path="tests/OptiCli.Mcp.Integration/OptiCli.Mcp.Integration.csproj" />
     <Project Path="tests/OptiCli.Tests/OptiCli.Tests.csproj" />
     <Project Path="tests/OptiCli.Integration/OptiCli.Integration.csproj" />
   </Folder>

@@ -44,7 +44,7 @@ internal static class FindOperation
         var rootLink = body.Root is null ? ContentReference.RootPage : locator.ResolveContent(body.Root, "root");
         var root = locator.LoadAnyLanguage(rootLink);
         var types = call.Service<IContentTypeRepository>();
-        var type = body.Type is null ? null : TypeOperation.Find(types, body.Type);
+        var type = body.Type is null ? null : TypeOperation.Find(call, types, body.Type);
         var limit = Paging.Limit(body.Limit, DefaultLimit, MaxLimit);
         var options = Paging.Language(body.Lang);
         var loader = call.Service<IContentLoader>();

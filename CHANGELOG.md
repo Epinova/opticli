@@ -3,6 +3,32 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## Unreleased
+
+### MCP server for editors (preview)
+
+- **New package `OptiCli.Mcp`** for the site itself: editors connect Claude (claude.ai, Claude Desktop, Claude Code) to
+  an Optimizely CMS 12 site, sign in with the site's own login, and Claude works as them, with their access rights.
+  `services.AddOptiCliMcp()` and `endpoints.MapOptiCliMcp()` (before `MapContent()`); the endpoint is
+  `/episerver/opticli/mcp`. Needs CMS 12.12.1 and CMS UI 12.16.1 or newer. See the README's "MCP server for editors".
+- A small OAuth 2.1 authorization server in the module: client ID metadata documents and dynamic client registration,
+  PKCE, rotating refresh tokens, a consent page, and a role gate (`AllowedRoles`) checked against the editor's current
+  roles at consent and at every refresh. The site's default authentication scheme is left as it is.
+- Tools: `whoami`, `get_content`, `list_children`, `resolve_url`, `find_content`, `get_content_type`, `list_versions`,
+  `create_content`, `update_content`, `add_language`, `upload_media`, `discard_draft`, `move_content`, and, when the
+  site allows them, `delete_content` (`AllowDelete`), `publish_content` and `unpublish_content` (`AllowPublish`). Both are
+  off by default. Content an editor can't read is the same `not_found` as missing content. Every write result has
+  `editUrl`, the version in the CMS edit UI.
+- `/episerver/opticli/connections` lists an editor's connections with Revoke (administrators see everyone's), and the
+  `OptiCli.Mcp.Audit` log category records sign-ins, tokens, revocations and tool calls.
+
+### Development
+
+- The content operations moved from the site agent to `src/OptiCli.Cms`, which the site agent and the MCP module both
+  run. Nothing changes for the CLI.
+- `tests/fixtures/mcp/setup.sh` builds an MCP test site from the edge-case site, and `tests/OptiCli.Mcp.Integration`
+  tests the module end to end with the official MCP SDK's client.
+
 ## 0.8.0 (2 October 2026)
 
 ### Behaviour changes

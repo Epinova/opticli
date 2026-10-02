@@ -34,8 +34,9 @@ internal static class DiscardOperation
         {
             throw AgentException.NotFound($"Content {link.ID} has no version {named}.");
         }
-        // The CMS doesn't check a version's delete; the edit UI offers it to whoever may edit the content.
-        call.RequireAccess(version, AccessLevel.Edit);
+        // The CMS's version repository requires Delete on the content to delete a version, also a draft the editor saved
+        // themselves; checked first, so the refusal names the content and nothing is compared or loaded for nothing.
+        call.RequireAccess(version, AccessLevel.Delete);
         var versionLanguage = version is ILocalizable { Language: { } own } ? own : null;
         var branch = flow.Locator.Versions(link, versionLanguage);
         var stamp = branch.First(v => v.ContentLink.WorkID == version.ContentLink.WorkID);

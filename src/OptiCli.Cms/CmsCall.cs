@@ -49,6 +49,13 @@ internal sealed class CmsCall(IServiceProvider services, CancellationToken abort
 
     private bool Checked => Caller == CmsCaller.Editor;
 
+    /// <summary>
+    /// A hint that names the next step in the caller's own terms: <paramref name="developer"/> with the CLI's command
+    /// (and the agent's route), <paramref name="editor"/> with the MCP tool. Neither caller is told about commands it
+    /// doesn't have.
+    /// </summary>
+    public string ForCaller(string developer, string editor) => Checked ? editor : developer;
+
     /// <summary>The name the CMS records changes under: the opticli principal's for the developer, the editor's own.</summary>
     public string UserName => Checked ? Service<IPrincipalAccessor>().Principal?.Identity?.Name ?? "" : AgentProtocol.PrincipalName;
 
