@@ -77,6 +77,9 @@ internal static class PublishOperation
             throw AgentException.Invalid(issues);
         }
 
+        // Outside the try below, whose filter could take the gate's refusal for a site failure after the save (a version
+        // already scheduled looks saved).
+        call.RequirePublishing(action);
         flow.ThrowIfAborted();
         ContentReference saved;
         string? siteError = null;
@@ -86,7 +89,7 @@ internal static class PublishOperation
         }
         catch (System.ComponentModel.DataAnnotations.ValidationException ex) when (ValidationErrors.MasterNotPublished(writable, action, flow.Repository))
         {
-            throw ValidationErrors.MasterFirst(ex);
+            throw ValidationErrors.MasterFirst(ex, call);
         }
         catch (Exception ex) when (ex is not AgentException
             && !expired

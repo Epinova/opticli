@@ -383,12 +383,13 @@ public sealed class AuthorizationServerTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task A_rotated_out_refresh_token_used_again_revokes_the_connection()
+    public async Task A_rotated_out_refresh_token_used_again_after_the_grace_period_revokes_the_connection()
     {
         var tokens = await _site.ConnectAsync();
         var rotated = await Tokens.ReadAsync(await _site.TokenAsync(RefreshForm(tokens)), tokens.ClientId);
+        _site.Time.Advance(_site.Options.RefreshTokenReuseGrace + TimeSpan.FromSeconds(1));
 
-        // Whoever holds the old token (the client confused, or someone who copied it): the site can't tell, so the
+        // Whoever holds the old token now (the client confused, or someone who copied it): the site can't tell, so the
         // connection ends for the holder of the current token too.
         var reused = await _site.TokenAsync(RefreshForm(tokens));
         Assert.Equal("invalid_grant", await Error(reused));
@@ -399,21 +400,56 @@ public sealed class AuthorizationServerTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Of_parallel_refreshes_with_the_same_token_exactly_one_succeeds()
+    public async Task Within_the_grace_period_the_replaced_token_is_refused_but_the_connection_kept()
+    {
+        var tokens = await _site.ConnectAsync();
+        var rotated = await Tokens.ReadAsync(await _site.TokenAsync(RefreshForm(tokens)), tokens.ClientId);
+        _site.Time.Advance(_site.Options.RefreshTokenReuseGrace - TimeSpan.FromSeconds(1));
+
+        // The client retrying a refresh whose answer it never got.
+        Assert.Equal("invalid_grant", await Error(await _site.TokenAsync(RefreshForm(tokens))));
+        Assert.Single(await _site.Store.ListGrantsAsync(null, default));
+        Assert.NotNull(await _site.Services.GetRequiredService<TokenService>().ValidateAsync(rotated.Access, "http://localhost/episerver/opticli/mcp", default));
+        Assert.Equal(HttpStatusCode.OK, (await _site.TokenAsync(RefreshForm(rotated))).StatusCode);
+        Assert.Contains(_site.Audit.Audit, m => m.Contains("within the grace period, connection kept"));
+    }
+
+    [Fact]
+    public async Task Within_the_grace_period_the_replaced_token_from_another_client_still_revokes()
+    {
+        var tokens = await _site.ConnectAsync();
+        await _site.TokenAsync(RefreshForm(tokens));
+        var (otherId, _) = await _site.RegisterAsync();
+
+        Assert.Equal("invalid_grant", await Error(await _site.TokenAsync(RefreshForm(tokens with { ClientId = otherId }))));
+        Assert.Empty(await _site.Store.ListGrantsAsync(null, default));
+    }
+
+    [Fact]
+    public async Task Without_a_grace_period_every_reuse_revokes()
+    {
+        await using var site = await TestSite.StartAsync(o => o.RefreshTokenReuseGrace = TimeSpan.Zero);
+        var tokens = await site.ConnectAsync();
+        await site.TokenAsync(RefreshForm(tokens));
+        site.Time.Advance(TimeSpan.FromMilliseconds(1));
+        Assert.Equal("invalid_grant", await Error(await site.TokenAsync(RefreshForm(tokens))));
+        Assert.Empty(await site.Store.ListGrantsAsync(null, default));
+        Assert.Contains("RefreshTokenReuseGrace", new OptiCliMcpOptions { RefreshTokenReuseGrace = TimeSpan.FromMinutes(-1) }.Problem());
+    }
+
+    [Fact]
+    public async Task Of_parallel_refreshes_with_the_same_token_exactly_one_succeeds_and_its_tokens_keep_working()
     {
         var tokens = await _site.ConnectAsync();
         var responses = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => Task.Run(() => _site.TokenAsync(RefreshForm(tokens)))));
 
-        var succeeded = responses.Where(r => r.StatusCode == HttpStatusCode.OK).ToList();
-        var winner = await Tokens.ReadAsync(Assert.Single(succeeded), tokens.ClientId);
+        var winner = await Tokens.ReadAsync(Assert.Single(responses, r => r.StatusCode == HttpStatusCode.OK), tokens.ClientId);
         Assert.All(responses.Where(r => r.StatusCode != HttpStatusCode.OK), r => Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode));
-        // The grant has the winner's token; whichever of the others came after the rotation counted as reuse, and
-        // ended the connection: either way no second token works.
-        var grants = await _site.Store.ListGrantsAsync(null, default);
-        if (grants.Count == 1)
-        {
-            Assert.Equal(Secrets.Hash(winner.Refresh), grants[0].RefreshHash);
-        }
+        // The losers, whether before the rotation (the swap failed) or after it (within the grace period), leave the
+        // connection to the winner.
+        Assert.Equal(Secrets.Hash(winner.Refresh), Assert.Single(await _site.Store.ListGrantsAsync(null, default)).RefreshHash);
+        Assert.NotNull(await _site.Services.GetRequiredService<TokenService>().ValidateAsync(winner.Access, "http://localhost/episerver/opticli/mcp", default));
+        Assert.Equal(HttpStatusCode.OK, (await _site.TokenAsync(RefreshForm(winner))).StatusCode);
     }
 
     [Fact]
@@ -458,15 +494,15 @@ public sealed class AuthorizationServerTests : IAsyncLifetime
         };
         await store.AddGrantAsync(grant, default);
 
-        Assert.True(await store.TryRotateRefreshAsync("g1", "h1", "h2", grant.Expires, grant.Roles, grant.Scope, default));
-        Assert.False(await store.TryRotateRefreshAsync("g1", "h1", "h3", grant.Expires, grant.Roles, grant.Scope, default));
+        Assert.True(await store.TryRotateRefreshAsync("g1", "h1", "h2", grant.Created, grant.Expires, grant.Roles, grant.Scope, default));
+        Assert.False(await store.TryRotateRefreshAsync("g1", "h1", "h3", grant.Created, grant.Expires, grant.Roles, grant.Scope, default));
         var rotated = await store.FindGrantByRefreshAsync("h2", default);
         Assert.Equal("h1", rotated!.PreviousRefreshHash);
         Assert.Equal("g1", (await store.FindGrantByPreviousRefreshAsync("h1", default))!.GrantId);
         Assert.Null(await store.FindGrantByPreviousRefreshAsync("", default));
 
         await store.DeleteGrantAsync("g1", default);
-        Assert.False(await store.TryRotateRefreshAsync("g1", "h2", "h4", grant.Expires, grant.Roles, grant.Scope, default));
+        Assert.False(await store.TryRotateRefreshAsync("g1", "h2", "h4", grant.Created, grant.Expires, grant.Roles, grant.Scope, default));
         Assert.Null(await store.FindGrantAsync("g1", default));
     }
 

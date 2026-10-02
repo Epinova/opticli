@@ -154,8 +154,9 @@ public static class OptiCliMcpExtensions
         options.AllowedRoles = roles.Exists() ? roles.Get<string[]>() ?? [] : defaultRoles;
     }
 
-    private static string Version =>
-        typeof(OptiCliMcpExtensions).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.0.0";
+    /// <summary>The package's version (Directory.Build.props), as the server's MCP <c>serverInfo</c>; without build metadata.</summary>
+    internal static string Version =>
+        typeof(OptiCliMcpExtensions).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.0.0";
 
     /// <summary>Gives the actual problem in the error, not just "invalid".</summary>
     private sealed class OptionsValidator : IValidateOptions<OptiCliMcpOptions>

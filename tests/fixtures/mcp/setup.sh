@@ -99,7 +99,7 @@ patch(project, [(
 patch(f"{target}/Startup.cs", [
     ("using OptiCli.Mcp;", "using Alloy.Extensions;", "using Alloy.Extensions;\nusing OptiCli.Mcp;"),
     ("AddOptiCliMcp(", "        // Required by Wangkanai.Detection", """        // opticli MCP test site (tests/fixtures/mcp/setup.sh): publishing and deleting on, product editors may connect,
-        // high rate limits.
+        // high rate limits, a short refresh token reuse grace.
         services.AddOptiCliMcp(o =>
         {
             o.AllowPublish = true;
@@ -107,6 +107,8 @@ patch(f"{target}/Startup.cs", [
             o.AllowedRoles = [.. o.AllowedRoles, "ProductEditors"];
             // The end-to-end tests sign in many times a minute from one address: well above what a site needs.
             o.RateLimits = new() { RegisterPerMinute = 1000, TokenPerMinute = 1000, TokenPerAddressPerMinute = 5000, AuthorizePerMinute = 1000 };
+            // A short grace for a reused refresh token (a minute by default), so the tests needn't wait for it to pass.
+            o.RefreshTokenReuseGrace = TimeSpan.FromSeconds(3);
         });
         // ...unless the OptiCli:Mcp settings say otherwise (OptiCli__Mcp__AllowPublish=false), for the tests' second configuration.
         services.AddOptions<OptiCliMcpOptions>().PostConfigure<IConfiguration>(OptiCliMcpFixture.McpFixture.ApplyConfiguration);

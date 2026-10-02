@@ -433,6 +433,7 @@ internal sealed class AuthorizationServer(
                     Scope = record.Scope,
                     Resource = record.Resource,
                     RefreshHash = Secrets.Hash(newRefresh),
+                    RefreshIssued = now,
                     Created = now,
                     Expires = expires,
                 };
@@ -448,6 +449,13 @@ internal sealed class AuthorizationServer(
                 var found = refreshHash.Length == 0 ? null : await store.FindGrantByRefreshAsync(refreshHash, context.RequestAborted);
                 if (found is null && refreshHash.Length > 0 && await store.FindGrantByPreviousRefreshAsync(refreshHash, context.RequestAborted) is { } reused)
                 {
+                    if (string.Equals(reused.ClientId, client.ClientId, StringComparison.Ordinal) && now - reused.RefreshIssued <= Options.RefreshTokenReuseGrace)
+                    {
+                        // Soon after the rotation, from the same client: a refresh it sent twice at once, or retried because
+                        // the answer got lost. Revoking would end the connection the other refresh just renewed.
+                        audit.Refresh(reused, "refused: the replaced refresh token again within the grace period, connection kept");
+                        return OAuthJson.Error(context, "invalid_grant", "The refresh token was already used; use the one issued with it.");
+                    }
                     // A refresh token that was already rotated out: it leaked, or the client lost track (RFC 9700 4.14.2).
                     // The site can't tell which, so the connection ends, for whoever holds its current token too.
                     await store.DeleteGrantAsync(reused.GrantId, context.RequestAborted);
@@ -490,12 +498,12 @@ internal sealed class AuthorizationServer(
                 }
                 // Refresh tokens rotate, as a compare-and-swap: of two refreshes with the same token only one gets new
                 // tokens, and a connection revoked meanwhile isn't brought back.
-                if (!await store.TryRotateRefreshAsync(found.GrantId, refreshHash, Secrets.Hash(newRefresh), expires, roles, scope, context.RequestAborted))
+                if (!await store.TryRotateRefreshAsync(found.GrantId, refreshHash, Secrets.Hash(newRefresh), now, expires, roles, scope, context.RequestAborted))
                 {
                     audit.Refresh(found, "refused: refreshed at the same time, or revoked");
                     return OAuthJson.Error(context, "invalid_grant", "The refresh token is unknown, already used, expired, or revoked.");
                 }
-                grant = found with { Roles = roles, Scope = scope, RefreshHash = Secrets.Hash(newRefresh), PreviousRefreshHash = refreshHash, Expires = expires };
+                grant = found with { Roles = roles, Scope = scope, RefreshHash = Secrets.Hash(newRefresh), PreviousRefreshHash = refreshHash, RefreshIssued = now, Expires = expires };
                 audit.Refresh(grant, "rotated");
                 break;
             }

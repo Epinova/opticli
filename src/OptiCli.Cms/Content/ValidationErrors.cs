@@ -60,9 +60,12 @@ internal static class ValidationErrors
         && loader.TryGet<IContent>(content.ContentLink.ToReferenceWithoutVersion(), master, out var masterBranch)
         && masterBranch is IVersionable { IsPendingPublish: true };
 
-    /// <summary>The refusal of <see cref="MasterNotPublished"/>, with the CMS's message.</summary>
-    public static AgentException MasterFirst(DataAnnotationsValidationException exception) =>
-        AgentException.Invalid(From(exception), "Publish the master language branch first, or save this branch without publishing it.", AgentErrorReasons.MasterNotPublished);
+    /// <summary>The refusal of <see cref="MasterNotPublished"/>, with the CMS's message and a hint in the caller's terms.</summary>
+    public static AgentException MasterFirst(DataAnnotationsValidationException exception, CmsCall call) =>
+        AgentException.Invalid(From(exception), call.ForCaller(
+                "Publish the master language branch first, or save this branch without publishing it.",
+                "The master language branch has never been published, and the CMS publishes it first. Save this branch as a draft (leave out publish) and give the user its editUrl; or, if the user asks, publish the master branch first (publish_content with its lang). Nothing was published."),
+            AgentErrorReasons.MasterNotPublished);
 
     private static ValidationIssue ToIssue(ValidationError error) => new(
         string.IsNullOrEmpty(error.PropertyName) ? null : error.PropertyName,

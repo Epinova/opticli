@@ -242,6 +242,33 @@ public sealed class WritingTests(SharedSessions sessions)
         Assert.True((await editor.OkAsync("create_content", arguments with { type = "EditorialBlock" })).GetProperty("valid").GetBoolean());
     }
 
+    [McpSiteFact]
+    public async Task A_language_branch_is_not_published_before_its_master_and_the_hint_says_what_to_do()
+    {
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var start = Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        // The master branch (en) is only a draft.
+        var page = Id((await editor.OkAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = start })).GetProperty("content"));
+        try
+        {
+            var refused = await editor.ErrorAsync("add_language", new { reference = page, lang = "sv", publish = true });
+            Assert.Equal(("validation", "masterNotPublished"), (refused.GetProperty("code").GetString(), refused.GetProperty("reason").GetString()));
+            var hint = refused.GetProperty("hint").GetString()!;
+            Assert.Contains("publish_content", hint);
+            Assert.Contains("draft", hint);
+            Assert.DoesNotContain("opticli", hint);
+            Assert.Single((await editor.OkAsync("list_versions", new { reference = page })).GetProperty("versions").EnumerateArray());
+
+            // As a draft it is fine.
+            var draft = await editor.OkAsync("add_language", new { reference = page, lang = "sv" });
+            Assert.False(draft.GetProperty("published").GetBoolean());
+        }
+        finally
+        {
+            await DeleteAsync(editor, page);
+        }
+    }
+
     private static void NoSequence(JsonElement error)
     {
         Assert.Equal(("usage", "noApprovalSequence"), (error.GetProperty("code").GetString(), error.GetProperty("reason").GetString()));

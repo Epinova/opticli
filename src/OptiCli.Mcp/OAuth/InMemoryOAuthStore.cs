@@ -52,7 +52,7 @@ internal sealed class InMemoryOAuthStore : IOAuthStore
     /// <summary>For tests: runs as a refresh's compare-and-swap starts, after the refresh found the grant (a revocation, say).</summary>
     public Func<Task>? BeforeRotate;
 
-    public async Task<bool> TryRotateRefreshAsync(string grantId, string currentRefreshHash, string newRefreshHash, DateTimeOffset expires,
+    public async Task<bool> TryRotateRefreshAsync(string grantId, string currentRefreshHash, string newRefreshHash, DateTimeOffset issued, DateTimeOffset expires,
         IReadOnlyList<string> roles, string scope, CancellationToken cancellationToken)
     {
         if (BeforeRotate is { } beforeRotate)
@@ -69,6 +69,7 @@ internal sealed class InMemoryOAuthStore : IOAuthStore
             {
                 RefreshHash = newRefreshHash,
                 PreviousRefreshHash = currentRefreshHash,
+                RefreshIssued = issued,
                 Expires = expires,
                 Roles = roles,
                 Scope = scope,

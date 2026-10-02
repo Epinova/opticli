@@ -108,6 +108,12 @@ public sealed record Grant
     /// </summary>
     public string PreviousRefreshHash { get; init; } = "";
 
+    /// <summary>
+    /// When the current refresh token was issued (and so the previous one replaced): the previous one coming back soon
+    /// after is a retry or a parallel refresh by the client itself (<see cref="OptiCliMcpOptions.RefreshTokenReuseGrace"/>).
+    /// </summary>
+    public DateTimeOffset RefreshIssued { get; init; }
+
     /// <summary>When the editor approved it.</summary>
     public required DateTimeOffset Created { get; init; }
 
@@ -155,8 +161,9 @@ public interface IOAuthStore
     /// succeeds, and a grant deleted meanwhile (revoked) stays deleted: this never adds one.
     /// </summary>
     /// <param name="newRefreshHash">Becomes <see cref="Grant.RefreshHash"/>; <paramref name="currentRefreshHash"/> becomes <see cref="Grant.PreviousRefreshHash"/>.</param>
+    /// <param name="issued">Becomes <see cref="Grant.RefreshIssued"/>.</param>
     /// <returns>False when the grant is gone, or its refresh token is no longer <paramref name="currentRefreshHash"/>.</returns>
-    Task<bool> TryRotateRefreshAsync(string grantId, string currentRefreshHash, string newRefreshHash, DateTimeOffset expires,
+    Task<bool> TryRotateRefreshAsync(string grantId, string currentRefreshHash, string newRefreshHash, DateTimeOffset issued, DateTimeOffset expires,
         IReadOnlyList<string> roles, string scope, CancellationToken cancellationToken);
 
     /// <summary>Records when a grant was last used, without touching the rest of it (a refresh may be saving it).</summary>

@@ -501,6 +501,7 @@ which wins. In configuration, an `AllowedRoles` list replaces the default list.
 | `AllowedRoles` | WebEditors, WebAdmins, CmsEditors, CmsAdmins, Administrators | who may connect an assistant at all; the CMS's access rights then decide per item |
 | `AccessTokenLifetime` | 1 hour | how long an access token works; also how long a removed role can keep working |
 | `RefreshTokenLifetime` | 30 days | how long a connection survives unused; each refresh extends it |
+| `RefreshTokenReuseGrace` | 1 minute | how long after a refresh the refresh token it replaced, sent again by the same client, is only refused; later (or from another client) it revokes the connection |
 | `AllowPublish` | `false` | let assistants publish, unpublish and schedule publishing (the `content:publish` scope) |
 | `AllowDelete` | `false` | let assistants delete content, always to the recycle bin |
 | `MaxUploadBytes` | 10 MB | the largest media file an assistant may upload (at most 50 MB) |
@@ -589,9 +590,11 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   site allows it) publishing can be unticked, and the connection gets only what was left ticked. The connections page
   shows each connection's scopes.
 - **OAuth:** PKCE (S256) is required; codes work once, for 5 minutes. Refresh tokens rotate, as a compare-and-swap, so
-  of two refreshes with the same token only one succeeds and a connection revoked meanwhile stays revoked; the refresh
+  of two refreshes with the same token only one succeeds and a connection revoked meanwhile stays revoked. The refresh
   token before the current one, used again, revokes the connection (RFC 9700), since the site can't tell a leaked
-  token from a confused client (older ones are just refused). A refresh may ask for fewer scopes: the access token
+  token from a confused client; but not from the same client within `RefreshTokenReuseGrace` of the refresh that
+  replaced it, which is a client refreshing twice at once or retrying after a lost answer: that is only refused, and
+  the connection keeps the tokens the other refresh got. Older refresh tokens are just refused. A refresh may ask for fewer scopes: the access token
   gets those, and the connection keeps what the editor approved. Tokens are bound to the MCP endpoint and checked
   against their connection on every use, so revoking one cuts the client off at once (another instance of a
   load-balanced site notices within 30 seconds). Codes, secrets and refresh tokens are stored as hashes only. Redirect
@@ -728,10 +731,12 @@ site and starts it with `serve.sh` on `http://127.0.0.1:5180` (`MCP_PORT`).
 role gate and CIMD; that hidden content is the same `not_found` as missing content; drafts in the editor's name,
 publish refused without Publish rights, approval sequences, `baseVersion` conflicts, uploads, `editUrl` and
 `resolve_url`; review requests without publishing (none where no sequence applies), content type access rights,
-restores refused, `list_children` paging; refresh token rotation and reuse, fewer scopes on a refresh, revocation on
+restores refused, a branch not published before its master, `list_children` paging; parallel refreshes, refresh
+token rotation and reuse within and after the grace period, fewer scopes on a refresh, revocation on
 the connections page, and a removed role or a disabled account caught at the next refresh (which changes the test
 site's own database and changes it back). `McpFixture.cs` also adds `RestrictedBlock`, a block type only WebAdmins
-may create, and `setup.sh` gives the site high `RateLimits`, as the tests sign in many times a minute. The tests are skipped unless
+may create, and `setup.sh` gives the site high `RateLimits`, as the tests sign in many times a minute, and a
+`RefreshTokenReuseGrace` of 3 seconds, so the reuse test needn't wait a minute. The tests are skipped unless
 the site is configured, and delete the content they create:
 
 ```sh

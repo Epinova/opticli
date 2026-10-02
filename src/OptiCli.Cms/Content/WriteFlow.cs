@@ -165,6 +165,9 @@ internal sealed class WriteFlow
         {
             throw AgentException.Invalid(issues);
         }
+        // Before anything changes (beforeSave may restore content) and outside the try below, whose filter could take
+        // the gate's refusal for a site failure after a save.
+        Call.RequirePublishing(action);
         ThrowIfAborted();
         beforeSave?.Invoke();
         if (changes.Count == 0 && !saveUnchanged)
@@ -182,7 +185,7 @@ internal sealed class WriteFlow
         }
         catch (System.ComponentModel.DataAnnotations.ValidationException ex) when (ValidationErrors.MasterNotPublished(writable, action, Repository))
         {
-            throw ValidationErrors.MasterFirst(ex);
+            throw ValidationErrors.MasterFirst(ex, Call);
         }
         catch (Exception ex) when (ex is not AgentException && SavedAnyway(writable, isNew, newestBefore) is { } stored)
         {

@@ -99,11 +99,21 @@ internal sealed class CmsCall(IServiceProvider services, CancellationToken abort
     /// </summary>
     public ContentReference Save(IContent content, SaveAction action)
     {
+        RequirePublishing(action);
+        return Checked ? Repository.Save(content, action) : Repository.Save(content, action, AccessLevel.NoAccess);
+    }
+
+    /// <summary>
+    /// The caller's publishing gate, for a save with <paramref name="action"/> that publishes or schedules. <see cref="Save"/>
+    /// runs it too; a caller whose save is inside a <c>catch</c> that may treat a failure as "saved after all" runs it
+    /// first, outside that <c>try</c>, so the refusal can't be taken for a site failure.
+    /// </summary>
+    public void RequirePublishing(SaveAction action)
+    {
         if (publishing is not null && (action & SaveAction.ActionMask) is SaveAction.Publish or SaveAction.Schedule)
         {
             publishing();
         }
-        return Checked ? Repository.Save(content, action) : Repository.Save(content, action, AccessLevel.NoAccess);
     }
 
     /// <summary>

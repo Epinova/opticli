@@ -12,9 +12,10 @@ again to update the skill.
   `services.AddOptiCliMcp()` and `endpoints.MapOptiCliMcp()` (before `MapContent()`); the endpoint is
   `/episerver/opticli/mcp`. Needs CMS 12.12.1 and CMS UI 12.16.1 or newer. See the README's "MCP server for editors".
 - A small OAuth 2.1 authorization server in the module: client ID metadata documents and dynamic client registration,
-  PKCE, refresh tokens that rotate (a rotated-out one used again revokes the connection), a consent page where the
-  editor unticks what the app shouldn't do, and a gate checked at consent and at every refresh: the editor's current
-  roles (`AllowedRoles`) and that their account is still active. Rate limits are options (`RateLimits`); the token
+  PKCE, refresh tokens that rotate (a rotated-out one used again revokes the connection, after a grace period for a
+  client's own retries, `RefreshTokenReuseGrace`), a consent page where the editor unticks what the app shouldn't do,
+  and a gate checked at consent and at every refresh: the editor's current roles (`AllowedRoles`) and that their
+  account is still active. Rate limits are options (`RateLimits`); the token
   endpoint counts per client, as claude.ai's editors share its addresses. The site's default authentication scheme
   is left as it is.
 - Tools: `whoami`, `get_content`, `list_children`, `resolve_url`, `find_content`, `get_content_type`, `list_versions`,

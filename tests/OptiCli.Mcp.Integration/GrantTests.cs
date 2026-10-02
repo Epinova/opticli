@@ -40,8 +40,18 @@ public sealed class GrantTests
         Assert.Equal("Bearer", rotated.GetProperty("token_type").GetString());
         Assert.True(rotated.GetProperty("expires_in").GetInt32() > 0);
 
-        // The one before the current refresh token, used again after it was rotated out (RFC 9700): it leaked, or the
-        // client lost track. The site can't tell, so the whole connection ends, the newest tokens with it.
+        // The one before the current refresh token, used again right away: a retry, as far as the site can tell
+        // (RefreshTokenReuseGrace, 3 seconds on the test site). Refused, and the connection carries on.
+        var (retried, retry) = await session.RefreshAsync(second.RefreshToken!);
+        Assert.Equal((HttpStatusCode.BadRequest, "invalid_grant"), (retried, retry.GetProperty("error").GetString()));
+        using (var still = await session.PostMcpAsync(rotated.GetProperty("access_token").GetString()))
+        {
+            Assert.Equal(HttpStatusCode.OK, still.StatusCode);
+        }
+
+        // Used again after the grace period (RFC 9700): it leaked, or the client lost track. The site can't tell, so
+        // the whole connection ends, the newest tokens with it.
+        await Task.Delay(TimeSpan.FromSeconds(4));
         var (status, reused) = await session.RefreshAsync(second.RefreshToken!);
         Assert.Equal((HttpStatusCode.BadRequest, "invalid_grant"), (status, reused.GetProperty("error").GetString()));
         Assert.Contains("revoked", reused.GetProperty("error_description").GetString());
@@ -51,6 +61,24 @@ public sealed class GrantTests
         {
             Assert.Equal(HttpStatusCode.Unauthorized, old.StatusCode);
         }
+    }
+
+    [McpSiteFact]
+    public async Task Of_parallel_refreshes_with_the_same_token_one_wins_and_the_connection_keeps_working()
+    {
+        await using var session = await McpSession.ConnectAsync(TestUsers.Editor);
+        var refresh = session.Tokens.Current!.RefreshToken!;
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => session.RefreshAsync(refresh)));
+
+        var (_, winner) = Assert.Single(results, r => r.Status == HttpStatusCode.OK);
+        Assert.All(results.Where(r => r.Status != HttpStatusCode.OK), r => Assert.Equal("invalid_grant", r.Body.GetProperty("error").GetString()));
+        using (var works = await session.PostMcpAsync(winner.GetProperty("access_token").GetString()))
+        {
+            Assert.Equal(HttpStatusCode.OK, works.StatusCode);
+        }
+        var (again, _) = await session.RefreshAsync(winner.GetProperty("refresh_token").GetString()!);
+        Assert.Equal(HttpStatusCode.OK, again);
     }
 
     [McpSiteFact]

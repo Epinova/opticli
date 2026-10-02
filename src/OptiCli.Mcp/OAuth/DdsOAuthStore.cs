@@ -76,7 +76,7 @@ internal sealed class DdsOAuthStore(DynamicDataStoreFactory stores) : IOAuthStor
         return Task.CompletedTask;
     }
 
-    public Task<bool> TryRotateRefreshAsync(string grantId, string currentRefreshHash, string newRefreshHash, DateTimeOffset expires,
+    public Task<bool> TryRotateRefreshAsync(string grantId, string currentRefreshHash, string newRefreshHash, DateTimeOffset issued, DateTimeOffset expires,
         IReadOnlyList<string> roles, string scope, CancellationToken cancellationToken)
     {
         lock (GrantLocks.For(grantId))
@@ -89,6 +89,7 @@ internal sealed class DdsOAuthStore(DynamicDataStoreFactory stores) : IOAuthStor
             }
             data.PreviousRefreshHash = currentRefreshHash;
             data.RefreshHash = newRefreshHash;
+            data.RefreshIssued = issued.UtcDateTime;
             data.Expires = expires.UtcDateTime;
             data.Roles = Lines(roles);
             data.Scope = scope;
@@ -347,6 +348,9 @@ public sealed class McpGrantData : IDynamicData
     [EPiServerDataIndex]
     public string PreviousRefreshHash { get; set; } = "";
 
+    /// <summary>See <see cref="Grant.RefreshIssued"/>; UTC.</summary>
+    public DateTime RefreshIssued { get; set; }
+
     /// <summary>See <see cref="Grant.Created"/>; UTC.</summary>
     public DateTime Created { get; set; }
 
@@ -364,6 +368,7 @@ public sealed class McpGrantData : IDynamicData
         Resource = grant.Resource,
         RefreshHash = grant.RefreshHash,
         PreviousRefreshHash = grant.PreviousRefreshHash,
+        RefreshIssued = grant.RefreshIssued.UtcDateTime,
         Created = grant.Created.UtcDateTime,
         Expires = grant.Expires.UtcDateTime,
     };
@@ -379,6 +384,7 @@ public sealed class McpGrantData : IDynamicData
         Resource = Resource,
         RefreshHash = RefreshHash,
         PreviousRefreshHash = PreviousRefreshHash ?? "",
+        RefreshIssued = DdsOAuthStore.Utc(RefreshIssued),
         Created = DdsOAuthStore.Utc(Created),
         Expires = DdsOAuthStore.Utc(Expires),
         LastUsed = lastUsed,

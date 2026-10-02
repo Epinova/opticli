@@ -43,6 +43,14 @@ public sealed class OptiCliMcpOptions
     public TimeSpan RefreshTokenLifetime { get; set; } = TimeSpan.FromDays(30);
 
     /// <summary>
+    /// How long after a refresh the refresh token it replaced, from the same client, is only refused. Later, or from
+    /// another client, it revokes the connection (RFC 9700 4.14.2): it leaked, and the site can't tell who holds it. A
+    /// client sends the old one again when it refreshed twice at once or retried after the answer got lost; revoking
+    /// then would end the connection the other refresh just renewed. A minute by default; zero revokes on every reuse.
+    /// </summary>
+    public TimeSpan RefreshTokenReuseGrace { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>
     /// Whether an assistant may publish, unpublish and schedule publishing at all (the <c>content:publish</c> scope).
     /// Off by default: the site owner opts in, and the editor's consent and access rights still apply.
     /// </summary>
@@ -89,6 +97,10 @@ public sealed class OptiCliMcpOptions
         if (AccessTokenLifetime <= TimeSpan.Zero || RefreshTokenLifetime <= TimeSpan.Zero)
         {
             return "AccessTokenLifetime and RefreshTokenLifetime must be positive.";
+        }
+        if (RefreshTokenReuseGrace < TimeSpan.Zero || RefreshTokenReuseGrace > AccessTokenLifetime)
+        {
+            return "RefreshTokenReuseGrace must be zero or more, and at most AccessTokenLifetime.";
         }
         if (AccessTokenLifetime > RefreshTokenLifetime)
         {
