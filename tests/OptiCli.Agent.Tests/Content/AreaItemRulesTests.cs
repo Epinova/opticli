@@ -1,6 +1,6 @@
 using System.Text.Json;
-using OptiCli.Agent.Content;
-using OptiCli.Agent.Http;
+using OptiCli.Cms;
+using OptiCli.Cms.Content;
 using OptiCli.Protocol;
 
 namespace OptiCli.Agent.Tests.Content;

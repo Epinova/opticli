@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using OptiCli.Agent.Hosting;
 using OptiCli.Agent.Safety;
+using OptiCli.Cms;
 using OptiCli.Protocol;
 
 namespace OptiCli.Agent.Http;

@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using OptiCli.Agent.Drift;
 using OptiCli.Agent.Hosting;
 using OptiCli.Agent.Http;
+using OptiCli.Cms;
 using OptiCli.Protocol;
 using static OptiCli.Agent.Tests.Hosting.HostingFixture;
 

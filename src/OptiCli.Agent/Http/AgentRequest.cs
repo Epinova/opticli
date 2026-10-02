@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
+using OptiCli.Cms;
 using OptiCli.Protocol;
 
 namespace OptiCli.Agent.Http;
@@ -11,6 +12,8 @@ namespace OptiCli.Agent.Http;
 internal sealed class AgentRequest(HttpContext context, string? argument)
 {
     private const int MaxBodyBytes = 16 * 1024 * 1024;
+
+    private CmsCall? _call;
 
     /// <summary>
     /// Unknown fields are errors: a misspelt <c>dryRun</c> silently ignored would turn a dry run into a
@@ -27,6 +30,12 @@ internal sealed class AgentRequest(HttpContext context, string? argument)
     public string Argument => argument ?? throw new InvalidOperationException("This route has no argument.");
 
     public T Service<T>() where T : notnull => Context.RequestServices.GetRequiredService<T>();
+
+    /// <summary>
+    /// The content operation this request runs: as the developer, whose agent writes unchecked. The guards in
+    /// <see cref="RequestGuard"/> are what make that safe, so nothing but this agent may create such a call.
+    /// </summary>
+    public CmsCall Call => _call ??= new CmsCall(Context.RequestServices, Context.RequestAborted, CmsCaller.Developer);
 
     /// <param name="maxBytes">Limit for this route; default 16 MB.</param>
     /// <exception cref="AgentException">The body is empty.</exception>

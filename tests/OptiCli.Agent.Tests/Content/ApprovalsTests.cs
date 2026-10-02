@@ -3,8 +3,8 @@ using EPiServer.Approvals.ContentApprovals;
 using EPiServer.Core;
 using EPiServer.DataAbstraction;
 using EPiServer.DataAccess;
-using OptiCli.Agent.Content;
-using OptiCli.Agent.Http;
+using OptiCli.Cms;
+using OptiCli.Cms.Content;
 using OptiCli.Protocol;
 
 namespace OptiCli.Agent.Tests.Content;

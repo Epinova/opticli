@@ -13,6 +13,8 @@
   <ItemGroup Label="Agent">
     <!-- Compile-time only: the agent binds to the host site's newer CMS 12 assemblies at runtime. -->
     <PackageVersion Include="EPiServer.CMS.Core" Version="12.0.3" />
+    <!-- OptiCli.Cms builds without the ASP.NET Core framework; the agent and the MCP module get it from the host. -->
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
   </ItemGroup>
 
   <ItemGroup Label="Tests">

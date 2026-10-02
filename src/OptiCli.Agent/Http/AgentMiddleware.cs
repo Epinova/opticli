@@ -3,11 +3,13 @@ using System.Text.Json;
 using EPiServer.Core;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
-using OptiCli.Agent.Content;
 using OptiCli.Agent.Drift;
 using OptiCli.Agent.Endpoints;
 using OptiCli.Agent.Hosting;
 using OptiCli.Agent.Safety;
+using OptiCli.Cms;
+using OptiCli.Cms.Content;
+using OptiCli.Cms.Operations;
 using OptiCli.Protocol;
 
 namespace OptiCli.Agent.Http;
@@ -16,9 +18,16 @@ namespace OptiCli.Agent.Http;
 /// The whole agent: a terminal middleware branch at <see cref="AgentProtocol.BasePath"/> that guards,
 /// routes, runs the endpoint as the opticli principal, and writes the envelope.
 /// </summary>
+/// <remarks>
+/// The content endpoints are <c>OptiCli.Cms</c> operations, which the MCP module runs too; this class adds only what is
+/// HTTP: the body, the status code, and the request's <see cref="AgentRequest.Call"/> as the developer.
+/// </remarks>
 internal static class AgentMiddleware
 {
     private static readonly AgentMeta Meta = new("agent", AgentInfo.Version, AgentProtocol.Version);
+
+    /// <summary>An upload's body limit: base64 grows the file by a third; the rest of the JSON is small.</summary>
+    internal const int UploadBodyBytes = UploadRequest.MaxBytes / 3 * 4 + 1024 * 1024;
 
     public static async Task HandleAsync(HttpContext context)
     {
@@ -57,20 +66,20 @@ internal static class AgentMiddleware
         [AgentEndpoint.Ping] = Read(request => PingEndpoint.Handle(request)),
         [AgentEndpoint.Shutdown] = Read(request => ShutdownEndpoint.Handle(request)),
         [AgentEndpoint.Drift] = Read(request => DriftEndpoint.Handle(request)),
-        [AgentEndpoint.Type] = Read(request => TypeEndpoint.Handle(request)),
+        [AgentEndpoint.Type] = Read(request => TypeOperation.Run(request.Call, request.Argument)),
         [AgentEndpoint.Read] = Read(request => ReadEndpoint.Handle(request)),
-        [AgentEndpoint.Create] = Write(r => r.ReadBodyAsync<CreateRequest>(), b => b.DryRun, (r, b) => Created(CreateEndpoint.Handle(r, b))),
-        [AgentEndpoint.Upload] = Write(r => r.ReadBodyAsync<UploadRequest>(UploadEndpoint.MaxBodyBytes), b => b.DryRun, (r, b) => Created(UploadEndpoint.Handle(r, b))),
-        [AgentEndpoint.Draft] = Write(r => r.ReadBodyAsync<DraftRequest>(), b => b.DryRun, (r, b) => Ok(DraftEndpoint.Handle(r, b))),
-        [AgentEndpoint.Languages] = Write(r => r.ReadBodyAsync<LanguageBranchRequest>(), b => b.DryRun, (r, b) => Created(LanguageEndpoint.Handle(r, b))),
-        [AgentEndpoint.Publish] = Write(async r => await r.ReadOptionalBodyAsync<PublishRequest>() ?? new PublishRequest(), _ => false, (r, b) => Ok(PublishEndpoint.Handle(r, b))),
-        [AgentEndpoint.RemoveLanguage] = Write(r => r.ReadBodyAsync<RemoveLanguageRequest>(), b => b.DryRun, (r, b) => Ok(LanguageEndpoint.Remove(r, b))),
-        [AgentEndpoint.Unpublish] = Write(async r => await r.ReadOptionalBodyAsync<UnpublishRequest>() ?? new UnpublishRequest(), b => b.DryRun, (r, b) => Ok(VersionEndpoints.Unpublish(r, b))),
-        [AgentEndpoint.Discard] = Write(async r => await r.ReadOptionalBodyAsync<DiscardRequest>() ?? new DiscardRequest(), b => b.DryRun, (r, b) => Ok(VersionEndpoints.Discard(r, b))),
-        [AgentEndpoint.Move] = Write(r => r.ReadBodyAsync<MoveRequest>(), b => b.DryRun, (r, b) => Ok(MoveEndpoint.Move(r, b))),
-        [AgentEndpoint.Access] = Write(r => r.ReadBodyAsync<AccessRequest>(), b => b.DryRun, async (r, b) => Ok(await AccessEndpoint.HandleAsync(r, b))),
+        [AgentEndpoint.Create] = Write(r => r.ReadBodyAsync<CreateRequest>(), b => b.DryRun, (r, b) => Created(CreateOperation.Run(r.Call, b))),
+        [AgentEndpoint.Upload] = Write(r => r.ReadBodyAsync<UploadRequest>(UploadBodyBytes), b => b.DryRun, (r, b) => Created(UploadOperation.Run(r.Call, b))),
+        [AgentEndpoint.Draft] = Write(r => r.ReadBodyAsync<DraftRequest>(), b => b.DryRun, (r, b) => Ok(DraftOperation.Run(r.Call, r.Argument, b))),
+        [AgentEndpoint.Languages] = Write(r => r.ReadBodyAsync<LanguageBranchRequest>(), b => b.DryRun, (r, b) => Created(LanguagesOperation.Run(r.Call, r.Argument, b))),
+        [AgentEndpoint.Publish] = Write(async r => await r.ReadOptionalBodyAsync<PublishRequest>() ?? new PublishRequest(), _ => false, (r, b) => Ok(PublishOperation.Run(r.Call, r.Argument, b))),
+        [AgentEndpoint.RemoveLanguage] = Write(r => r.ReadBodyAsync<RemoveLanguageRequest>(), b => b.DryRun, (r, b) => Ok(RemoveLanguageOperation.Run(r.Call, r.Argument, b))),
+        [AgentEndpoint.Unpublish] = Write(async r => await r.ReadOptionalBodyAsync<UnpublishRequest>() ?? new UnpublishRequest(), b => b.DryRun, (r, b) => Ok(UnpublishOperation.Run(r.Call, r.Argument, b))),
+        [AgentEndpoint.Discard] = Write(async r => await r.ReadOptionalBodyAsync<DiscardRequest>() ?? new DiscardRequest(), b => b.DryRun, (r, b) => Ok(DiscardOperation.Run(r.Call, r.Argument, b))),
+        [AgentEndpoint.Move] = Write(r => r.ReadBodyAsync<MoveRequest>(), b => b.DryRun, (r, b) => Ok(MoveOperation.Run(r.Call, r.Argument, b))),
+        [AgentEndpoint.Access] = Write(r => r.ReadBodyAsync<AccessRequest>(), b => b.DryRun, async (r, b) => Ok(await AccessOperation.RunAsync(r.Call, r.Argument, b))),
         // No body and no dry run: a delete is always real.
-        [AgentEndpoint.Delete] = Write(Task.FromResult, _ => false, (r, _) => Ok(MoveEndpoint.Delete(r))),
+        [AgentEndpoint.Delete] = Write(Task.FromResult, _ => false, (r, _) => Ok(DeleteOperation.Run(r.Call, r.Argument))),
     };
 
     /// <param name="Gated">The endpoint is a write, and passes <see cref="DriftGate"/> before it runs.</param>

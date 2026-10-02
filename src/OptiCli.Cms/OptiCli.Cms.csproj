@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The content operations shared by the agent (the developer's, unchecked) and the MCP module (editors', checked). Both
+    compile these sources in, so each stays one assembly. This project only builds them on their own: nothing here can
+    reach for ASP.NET Core, the agent's HTTP plumbing or MCP types.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>OptiCli.Cms</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Compile against the oldest CMS 12, as the agent does; the host's own (newer) copy is what runs. -->
+    <PackageReference Include="EPiServer.CMS.Core" ExcludeAssets="runtime" PrivateAssets="all" />
+    <!-- GetRequiredService, without the ASP.NET Core framework: these operations mustn't depend on HTTP. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\OptiCli.Protocol\**\*.cs" LinkBase="Protocol" />
+    <!-- Dependency-free helper shared with the CLI so "did you mean" behaves the same on both sides. -->
+    <Compile Include="..\OptiCli.Core\Text\Suggestions.cs" Link="Shared\Suggestions.cs" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,133 @@
+using System.Globalization;
+using EPiServer.Core;
+using EPiServer.DataAbstraction;
+using EPiServer.DataAccess;
+using EPiServer.Security;
+using OptiCli.Cms.Content;
+using OptiCli.Protocol;
+
+namespace OptiCli.Cms.Operations;
+
+/// <summary>New content of any type but media (the agent's <c>POST /v1/content</c>); with a known GUID, see <see cref="ExistingContent"/>.</summary>
+internal static class CreateOperation
+{
+    public static WriteResult Run(CmsCall call, CreateRequest body)
+    {
+        var flow = new WriteFlow(call);
+        if (string.IsNullOrWhiteSpace(body.Name))
+        {
+            throw AgentException.Usage("name is required.");
+        }
+
+        var type = TypeOperation.Find(flow.Types, body.Type);
+        if (Kind(type) == PlacementKind.Media)
+        {
+            throw AgentException.Usage($"{type.Name} is a media type; created this way it would be a media item without a file.",
+                $"Upload the file instead (POST {AgentRoutes.Media}, opticli upload), which picks or checks the media type.");
+        }
+        var (parent, owner) = Parent(flow, body.Parent, body.ForContent, body.DryRun);
+        var culture = body.Lang is { } lang ? flow.Locator.EnabledLanguage(lang) : MasterLanguage(owner);
+
+        if (body.Guid is { } guid && ExistingContent.Find(flow, guid) is { } existing)
+        {
+            return ExistingContent.Update(flow, existing, body.UpdateExisting, type, parent, body.Lang is null ? null : culture, body.Name, body.Properties, body.Publish, body.RequestApproval, body.IncludeDraft, body.DryRun, body.PublishAt);
+        }
+
+        var content = culture is null
+            ? flow.Repository.GetDefault<IContent>(parent.ContentLink, type.ID)
+            : flow.Repository.GetDefault<IContent>(parent.ContentLink, type.ID, culture);
+        if (body.Guid is { } fixedGuid)
+        {
+            content.ContentGuid = fixedGuid;
+        }
+        var before = PropertyValues.Snapshot(content);
+        content.Name = body.Name;
+        flow.Writer.Apply(content, body.Properties);
+        // For a plan's dry run under a stand-in parent, that is the nearest existing ancestor, whose sequence is inherited.
+        var action = WriteFlow.Publishing(call, parent.ContentLink, body.Publish, body.RequestApproval, body.PublishAt, $"New {type.Name} '{body.Name}'");
+        WriteFlow.ScheduleAt(content, action, body.PublishAt);
+
+        return flow.Save(
+            content,
+            before,
+            action ?? SaveAction.Save,
+            body.DryRun,
+            shown: null,
+            baseVersion: null,
+            saveUnchanged: true,
+            precheck: Availability(call, parent, body.ForContent is not null, type, flow.Types, ParentType(flow, body)));
+    }
+
+    /// <summary>
+    /// The explicit parent, or the "For this page" assets folder of <c>forContent</c>; plus the content
+    /// whose master language new content defaults to (the parent, or the folder's owner).
+    /// </summary>
+    internal static (IContent Parent, IContent LanguageSource) Parent(WriteFlow flow, string? parentRef, string? forContent, bool dryRun)
+    {
+        if ((parentRef is null) == (forContent is null))
+        {
+            throw AgentException.Usage("Give exactly one of parent or forContent.");
+        }
+        if (parentRef is not null)
+        {
+            var parent = flow.Locator.LoadAnyLanguage(flow.Locator.ResolveContent(parentRef, "parent"));
+            return (parent, parent);
+        }
+
+        var owner = flow.Locator.LoadAnyLanguage(flow.Locator.ResolveContent(forContent, "forContent"));
+        var assets = flow.Call.Service<ContentAssetHelper>();
+        if (!dryRun)
+        {
+            // The CMS creates the folder unchecked; for an editor, adding to it is a change to content they must be able to edit.
+            flow.Call.RequireAccess(owner, AccessLevel.Edit);
+        }
+        // A dry run must not create the folder; validating against the owner is close enough.
+        IContent folder = dryRun
+            ? (IContent?)assets.GetAssetFolder(owner.ContentLink) ?? owner
+            : assets.GetOrCreateAssetFolder(owner.ContentLink);
+        return (folder, owner);
+    }
+
+    private static CultureInfo? MasterLanguage(IContent content) =>
+        content is ILocalizable { MasterLanguage: { } master } ? master : null;
+
+    /// <summary>The type the real parent will have, for a dry run under a stand-in parent (see <see cref="Availability"/>).</summary>
+    private static ContentType? ParentType(WriteFlow flow, CreateRequest body) =>
+        body.ParentType is null ? null
+        : body.DryRun ? TypeOperation.Find(flow.Types, body.ParentType)
+        : throw AgentException.Usage("parentType only applies to a dry run.");
+
+    /// <summary>
+    /// Whether new content of <paramref name="type"/> may go below <paramref name="parent"/> (<see cref="Placement"/>),
+    /// reported as a validation error rather than an exception, so a dry run lists it with the rest.
+    /// </summary>
+    /// <param name="assetsFolder">The parent is a "For this page" folder; in a dry run it may be its owner, as the folder doesn't exist yet.</param>
+    /// <param name="plannedParent">The type the real parent will have, when the dry run uses a stand-in parent.</param>
+    internal static IReadOnlyList<ValidationIssue> Availability(CmsCall call, IContent parent, bool assetsFolder, ContentType type, IContentTypeRepository types, ContentType? plannedParent = null)
+    {
+        var parentType = plannedParent
+            ?? (assetsFolder && parent is not ContentFolder ? types.Load(typeof(ContentAssetFolder)) : types.Load(parent.ContentTypeID));
+        return parentType is null ? [] : Placement(call, type, parentType, parent.ContentLink.ID);
+    }
+
+    /// <summary>
+    /// Where content of <paramref name="type"/> may go (<see cref="ContentPlacement"/>), with the parent type's availability
+    /// as the CMS's <see cref="ContentTypeAvailabilityService"/> answers it, for create, upload and move alike.
+    /// </summary>
+    internal static IReadOnlyList<ValidationIssue> Placement(CmsCall call, ContentType type, ContentType parentType, int parentId)
+    {
+        var allowed = call.Service<ContentTypeAvailabilityService>().IsAllowed(parentType.Name, type.Name);
+        return ContentPlacement.Problem(Kind(type), type.Name, Kind(parentType), parentType.Name, parentId, allowed) is { } problem
+            ? [new ValidationIssue(null, problem)]
+            : [];
+    }
+
+    internal static PlacementKind Kind(ContentType type) => type switch
+    {
+        PageType => PlacementKind.Page,
+        BlockType => PlacementKind.Block,
+        { ModelType: { } model } when typeof(MediaData).IsAssignableFrom(model) => PlacementKind.Media,
+        { ModelType: { } model } when typeof(ContentFolder).IsAssignableFrom(model) => PlacementKind.Folder,
+        _ => PlacementKind.Other,
+    };
+}

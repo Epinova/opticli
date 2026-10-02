@@ -1,4 +1,4 @@
-using OptiCli.Agent.Content;
+using OptiCli.Cms.Content;
 using OptiCli.Protocol;
 
 namespace OptiCli.Agent.Tests.Content;

@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.AspNetCore.Http;
 using OptiCli.Agent.Http;
+using OptiCli.Cms;
 using OptiCli.Protocol;
 
 namespace OptiCli.Agent.Tests.Http;

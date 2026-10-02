@@ -16,6 +16,8 @@
 
   <ItemGroup>
     <Compile Include="..\OptiCli.Protocol\**\*.cs" LinkBase="Protocol" />
+    <!-- The content operations the MCP module runs too; compiled in, so the agent stays one assembly. -->
+    <Compile Include="..\OptiCli.Cms\**\*.cs" Exclude="..\OptiCli.Cms\bin\**;..\OptiCli.Cms\obj\**" LinkBase="Cms" />
     <!-- Dependency-free helper shared with the CLI so "did you mean" behaves the same on both sides. -->
     <Compile Include="..\OptiCli.Core\Text\Suggestions.cs" Link="Shared\Suggestions.cs" />
   </ItemGroup>
