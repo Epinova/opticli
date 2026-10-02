@@ -33,8 +33,14 @@ internal sealed class WriteOptions
 
     public Option<string?> BaseVersion { get; } = new("--base-version")
     {
-        Description = "Version the change is based on (id or 123_456). Default: the latest version, read just before saving; if a newer one exists by then the write fails with a conflict (exit 5).",
+        Description = "Version the change is based on (id or 123_456), which must be the latest. Default: the latest version, read just before saving; if a newer one exists by then the write fails with a conflict (exit 5). With --from, only the version expected to be the latest.",
         HelpName = "version",
+    };
+
+    public Option<string?> From { get; } = new("--from")
+    {
+        Description = $"Base the change on this version instead of the latest: {FromVersion.Syntax}, of the same content and language. Newer versions (someone's draft) are left out and stay as they are, and with --publish they don't go live. The concurrency check still compares with the latest version (or --base-version). Not with a ref that names a version.",
+        HelpName = "version|published",
     };
 
     public Option<bool> Force { get; } = new("--force")
@@ -107,9 +113,14 @@ internal sealed class WriteOptions
 
     public void AddConcurrency(Command command)
     {
+        command.Options.Add(From);
         command.Options.Add(BaseVersion);
         command.Options.Add(Force);
     }
+
+    /// <returns>Null without <c>--from</c>.</returns>
+    public FromVersion? ParseFrom(CliContext context) =>
+        context.Parse.GetValue(From) is { } value ? FromVersion.Parse(value, "--from") : null;
 
     /// <returns>Null when no properties were given.</returns>
     public JsonObject? ParseProperties(CliContext context)

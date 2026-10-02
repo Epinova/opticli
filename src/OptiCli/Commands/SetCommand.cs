@@ -15,7 +15,8 @@ internal static class SetCommand
             Change properties (or the name) on a new version, a draft unless --publish. Needs `opticli serve`.
             Values are parsed by the CMS like imported values; property names are checked against the content type first.
             --publish puts the whole new version live: if someone else saved changes after the published version, it asks
-            on a terminal and elsewhere fails with a conflict listing them, unless --include-draft.
+            on a terminal and elsewhere fails with a conflict listing them, unless --include-draft. To leave such a draft
+            out, base the change on the published version instead of the latest: --from published (or --from <version>).
             Structured values (ContentArea items, links, lists) go in --values as JSON. Prints ref, the new version,
             baseVersion, status and every changed property (before/after).
             Example: opticli set 123 Heading="New title" MainBody=@body.html --dry-run
@@ -42,6 +43,7 @@ internal static class SetCommand
                 parse.GetValue(write.Force))
             {
                 IncludeDraft = parse.GetValue(write.IncludeDraft),
+                From = write.ParseFrom(context),
             };
             await using var session = await context.OpenContentAsync(cancellationToken);
             var outcome = await context.Writes(session, parse.GetValue(content.Site)).RunAsync(write.WithApproval(operation, parse), parse.GetValue(write.DryRun), cancellationToken);

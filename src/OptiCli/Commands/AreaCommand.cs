@@ -25,6 +25,7 @@ internal static class AreaCommand
             Add, remove or reorder ContentArea items on a new version, a draft unless --publish. Needs `opticli serve`.
             Positions are zero-based; remove and move take a position (2) or the item's content (ref:456). Prints the new version
             and the area's items before/after. Read the current items with `opticli get <ref> --fields <Prop>`.
+            --from published edits the published version's area instead of the latest draft's (which is left out).
             Example: opticli area 123 MainArea add 456 --at 0 --display wide --dry-run
             Also:    opticli area 123 MainArea remove ref:456    opticli area 123 MainArea move 0 3
             """);
@@ -70,6 +71,7 @@ internal static class AreaCommand
                 parse.GetValue(write.Force))
             {
                 IncludeDraft = parse.GetValue(write.IncludeDraft),
+                From = write.ParseFrom(context),
             };
             await using var session = await context.OpenContentAsync(cancellationToken);
             return WriteOptions.Result(await context.Writes(session, parse.GetValue(content.Site)).RunAsync(write.WithApproval(operation, parse), parse.GetValue(write.DryRun), cancellationToken));

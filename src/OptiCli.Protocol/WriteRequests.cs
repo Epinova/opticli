@@ -69,6 +69,18 @@ public sealed record DraftRequest
     /// different one, the request fails with <c>conflict</c> (409) and nothing is saved.
     /// </summary>
     public int? BaseVersion { get; init; }
+
+    /// <summary>
+    /// Base the new version on this one instead of the latest: <see cref="FromPublished"/> (the branch's published
+    /// version) or a version id of the content in <see cref="Lang"/>. <see cref="BaseVersion"/> is still checked against
+    /// the latest version. Not with a ref that names a version (<c>usage</c>). Newer versions the change leaves out are
+    /// listed in <see cref="WriteResult.LeftOut"/>.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? From { get; init; }
+
+    /// <summary>The <see cref="From"/> value for the published version.</summary>
+    public const string FromPublished = "published";
 }
 
 /// <summary>One ContentArea edit. Maps 1:1 to <c>opticli area &lt;ref&gt; &lt;Prop&gt; add|remove|move</c>.</summary>

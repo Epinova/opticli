@@ -100,6 +100,14 @@ public sealed record WriteResult
     public int? PreviouslyPublished { get; init; }
 
     /// <summary>
+    /// For a change based on an older version (<see cref="DraftRequest.From"/>, or a ref naming a version): the versions of
+    /// the branch saved after <see cref="BaseVersion"/>, newest first. The change doesn't have their changes; they stay as
+    /// they are.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<LeftOutVersion>? LeftOut { get; init; }
+
+    /// <summary>
     /// The content was saved, but the site's own code failed after that (a handler of the CMS's save or publish events,
     /// such as a search indexer): its message. The save stands; details are in the site's log.
     /// </summary>
@@ -127,6 +135,14 @@ public sealed record PendingDraft(string Version, string? SavedBy, DateTime Save
         return $"changes saved {who} in {Version} ({Saved.ToUniversalTime().ToString("u", System.Globalization.CultureInfo.InvariantCulture)}) that aren't published yet{properties}";
     }
 }
+
+/// <summary>A version saved after the one a change was based on, which the change leaves out.</summary>
+/// <param name="Version">As <c>id_version</c>.</param>
+/// <param name="Status">CMS version status, camelCase, as in <see cref="ContentSummary.Status"/>.</param>
+/// <param name="SavedBy">Who saved it, as the CMS recorded it; empty when nobody was signed in (a scheduled job or import).</param>
+/// <param name="Saved">When it was saved, UTC.</param>
+/// <param name="Primary">It was the primary draft (what edit mode opened) before the change was saved.</param>
+public sealed record LeftOutVersion(string Version, string? Status, string? SavedBy, DateTime Saved, bool Primary);
 
 /// <summary>A property value before and after, in the same JSON shape the draft endpoint accepts.</summary>
 /// <param name="Before">Omitted when the property was empty.</param>

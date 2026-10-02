@@ -123,11 +123,12 @@ internal sealed class ContentLocator(IContentRepository repository, IContentVers
 
     /// <summary>
     /// What publishing <paramref name="based"/> would put live besides the request's own change: the versions of its
-    /// branch after the published one, up to <paramref name="based"/>, when someone other than opticli saved one.
+    /// branch after the published one, up to <paramref name="based"/>, that someone other than opticli saved and whose
+    /// changes <paramref name="based"/> carries (<see cref="PendingDrafts.Carries"/>).
     /// </summary>
     /// <param name="branch">The versions of <paramref name="based"/>'s branch (<see cref="Versions"/>).</param>
     /// <param name="based">The version the publish is based on, as loaded.</param>
-    /// <returns>Null when there is nothing by someone else (or the content isn't versioned).</returns>
+    /// <returns>The newest such version; null when there is none (or the content isn't versioned).</returns>
     public PendingDraft? PendingDraft(IReadOnlyList<ContentVersion> branch, IContent based)
     {
         if (based is not IVersionable)
@@ -135,17 +136,29 @@ internal sealed class ContentLocator(IContentRepository repository, IContentVers
             return null;
         }
         var stamps = branch.Select(v => new VersionStamp(v.ContentLink.WorkID, v.Status == VersionStatus.Published, v.Saved, v.SavedBy));
-        if (PendingDrafts.NewestByOthers(stamps, based.ContentLink.WorkID) is not { } newest)
+        var candidates = PendingDrafts.ByOthers(stamps, based.ContentLink.WorkID);
+        if (candidates.Count == 0)
         {
             return null;
         }
         var published = PublishedVersion(branch) is { } publishedId
             ? PropertyValues.Snapshot(Repository.Get<IContent>(new ContentReference(based.ContentLink.ID, publishedId)))
             : new Dictionary<string, System.Text.Json.JsonElement?>();
-        return new PendingDraft(
-            $"{based.ContentLink.ID.ToString(CultureInfo.InvariantCulture)}_{newest.Id.ToString(CultureInfo.InvariantCulture)}",
-            newest.SavedBy,
-            newest.Saved.ToUniversalTime(),
-            PropertyValues.Diff(published, PropertyValues.Snapshot(based)));
+        var basedValues = PropertyValues.Snapshot(based);
+        foreach (var candidate in candidates)
+        {
+            var draft = candidate.Id == based.ContentLink.WorkID
+                ? basedValues
+                : PropertyValues.Snapshot(Repository.Get<IContent>(new ContentReference(based.ContentLink.ID, candidate.Id)));
+            if (PendingDrafts.Carries(PropertyValues.Diff(published, draft), PropertyValues.Diff(draft, basedValues)))
+            {
+                return new PendingDraft(
+                    $"{based.ContentLink.ID.ToString(CultureInfo.InvariantCulture)}_{candidate.Id.ToString(CultureInfo.InvariantCulture)}",
+                    candidate.SavedBy,
+                    candidate.Saved.ToUniversalTime(),
+                    PropertyValues.Diff(published, basedValues));
+            }
+        }
+        return null;
     }
 }

@@ -138,6 +138,7 @@ public sealed class WriteExecutor(
     private async Task<WriteOutcome> SetAsync(SetOperation op, bool dryRun, CancellationToken cancellationToken)
     {
         var target = await EditableAsync(op.Ref, cancellationToken);
+        op.From?.Check(target.Id, target.Version);
         PropertyNameCheck.Check(session.Model, target.Header.TypeId, op.Properties);
         var language = LanguageFor(op.Lang, target);
         var masterFirst = await MasterFirstAsync(target, language, op, dryRun, cancellationToken);
@@ -158,17 +159,19 @@ public sealed class WriteExecutor(
             PublishAt = op.PublishAt?.UtcDateTime,
             DryRun = dryRun,
             BaseVersion = await BaseVersionAsync(target, language, op.BaseVersion, op.Force, cancellationToken),
+            From = op.From?.Request,
         };
         if (request.Properties is null && request.Name is null && op.AreaEdits is null)
         {
             throw new UsageException("Nothing to set.", $"Give properties ({PropertyArguments.Syntax}), --values or --name.");
         }
-        return WithWarning(await DraftAsync(target, request, cancellationToken), masterFirst);
+        return WithWarning(await DraftAsync(target, request, op.From, op.Publishes, cancellationToken), masterFirst);
     }
 
     private async Task<WriteOutcome> AreaAsync(AreaEdit op, bool dryRun, CancellationToken cancellationToken)
     {
         var target = await EditableAsync(op.Ref, cancellationToken);
+        op.From?.Check(target.Id, target.Version);
         var edit = await AreaOperationAsync(op, target, cancellationToken);
         var language = LanguageFor(op.Lang, target);
         var masterFirst = await MasterFirstAsync(target, language, op, dryRun, cancellationToken);
@@ -182,8 +185,9 @@ public sealed class WriteExecutor(
             PublishAt = op.PublishAt?.UtcDateTime,
             DryRun = dryRun,
             BaseVersion = await BaseVersionAsync(target, language, op.BaseVersion, op.Force, cancellationToken),
+            From = op.From?.Request,
         };
-        return WithWarning(await DraftAsync(target, request, cancellationToken), masterFirst);
+        return WithWarning(await DraftAsync(target, request, op.From, op.Publishes, cancellationToken), masterFirst);
     }
 
     /// <summary>An area edit as the agent takes it, with its property and item checked.</summary>
@@ -218,7 +222,8 @@ public sealed class WriteExecutor(
         return edit;
     }
 
-    private async Task<WriteOutcome> DraftAsync(Target target, DraftRequest request, CancellationToken cancellationToken)
+    /// <param name="from">What <c>--from</c> based the change on, for the warning about the newer versions it leaves out.</param>
+    private async Task<WriteOutcome> DraftAsync(Target target, DraftRequest request, FromVersion? from, bool publishes, CancellationToken cancellationToken)
     {
         WriteResult result;
         try
@@ -228,13 +233,21 @@ public sealed class WriteExecutor(
         catch (ConflictException ex) when (ex.Details is AgentErrorDetails { CurrentVersion: { } current })
         {
             // The agent's hint speaks protocol ("baseVersion"); say it in command-line terms.
-            var latest = WriteOutput.VersionRef(target.Id, current);
-            throw new ConflictException(ex.Message,
-                $"Someone saved {latest} after the version this change was based on. Look at it (opticli get {latest}), then run the command again: without --base-version it is based on the latest version; --force skips the check.")
-            { Details = ex.Details };
+            throw new ConflictException(ex.Message, ConflictHint(WriteOutput.VersionRef(target.Id, current), from)) { Details = ex.Details };
         }
-        return await WithSimpleAddressCheckAsync(Outcome(WriteOutput.From(result), null), result, target.Header, self: true, cancellationToken);
+        var output = WriteOutput.From(result);
+        var outcome = Outcome(output, null);
+        if (LeftOutVersions.Warning(output, from, publishes) is { } leftOut)
+        {
+            outcome = outcome with { Warnings = [.. outcome.Warnings, leftOut] };
+        }
+        return await WithSimpleAddressCheckAsync(outcome, result, target.Header, self: true, cancellationToken);
     }
+
+    /// <summary>What to do when someone saved <paramref name="latest"/> after the version the change expected to be the latest.</summary>
+    public static string ConflictHint(string latest, FromVersion? from) => from is null
+        ? $"Someone saved {latest} after the version this change was based on. Look at it (opticli get {latest}), then run the command again: without --base-version it is based on the latest version; to base it on an older one and leave the newer ones out, use --from <version> (or --from published); --force skips the check."
+        : $"Someone saved {latest} after the version this change expected to be the latest. Look at it (opticli get {latest}), then run the command again: --from still bases the change on {(from.IsPublished ? "the published version" : $"version {from}")}, and without --base-version it is checked against the latest version; --force skips the check.";
 
     /// <param name="header">The page written, or the parent of new content (<paramref name="self"/> false).</param>
     private async Task<WriteOutcome> WithSimpleAddressCheckAsync(WriteOutcome outcome, WriteResult result, ContentHeader? header, bool self, CancellationToken cancellationToken)
@@ -904,7 +917,8 @@ public sealed class WriteExecutor(
 
     /// <summary>
     /// The version the change must be based on: <paramref name="explicitVersion"/>, else the ref's own
-    /// version, else the latest in the language, read now. The agent answers 409 if a newer one exists.
+    /// version, else the latest in the language, read now. The agent answers 409 if a newer one exists. With
+    /// <c>--from</c> (whose ref names no version), the change is based on that version and this is only checked.
     /// </summary>
     private async Task<int?> BaseVersionAsync(Target target, LanguageBranch? language, int? explicitVersion, bool force, CancellationToken cancellationToken)
     {

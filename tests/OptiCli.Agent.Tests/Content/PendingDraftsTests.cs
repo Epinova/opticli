@@ -44,6 +44,39 @@ public class PendingDraftsTests
     }
 
     [Fact]
+    public void Every_draft_by_others_up_to_the_base_is_a_candidate_newest_first()
+    {
+        VersionStamp[] versions = [Version(10, "opticli", published: true), Version(11, "editor@example.com"), Version(12, "opticli"), Version(13, ""), Version(14, "editor@example.com")];
+
+        Assert.Equal([13, 11], PendingDrafts.ByOthers(versions, baseVersion: 13).Select(v => v.Id));
+        Assert.Empty(PendingDrafts.ByOthers(versions, baseVersion: 10));
+    }
+
+    private static PropertyChange Change(string property, string? before, string? after) => new(property,
+        before is null ? null : JsonSerializer.SerializeToElement(before), after is null ? null : JsonSerializer.SerializeToElement(after));
+
+    [Fact]
+    public void A_base_with_the_drafts_value_for_a_property_it_changed_carries_the_draft()
+    {
+        // The draft changed Heading and Teaser; the base differs from it only in Teaser, which opticli changed again.
+        List<PropertyChange> draft = [Change("Heading", "Old", "Theirs"), Change("Teaser", "Old", "Theirs")];
+
+        Assert.True(PendingDrafts.Carries(draft, [Change("teaser", "Theirs", "Ours")]));
+        Assert.True(PendingDrafts.Carries(draft, []));
+    }
+
+    [Fact]
+    public void A_base_from_the_published_version_does_not_carry_a_later_draft()
+    {
+        // Based on the published version, the base has none of the draft's values; its own change is elsewhere.
+        List<PropertyChange> draft = [Change("Heading", "Old", "Theirs")];
+
+        Assert.False(PendingDrafts.Carries(draft, [Change("Heading", "Theirs", "Old"), Change("MainBody", "Text", "Ours")]));
+        // A draft that changed nothing puts nothing live.
+        Assert.False(PendingDrafts.Carries([], [Change("MainBody", "Text", "Ours")]));
+    }
+
+    [Fact]
     public void Without_a_published_version_every_version_counts()
     {
         Assert.Equal(1, PendingDrafts.NewestByOthers([Version(1, "editor@example.com"), Version(2, "opticli")], baseVersion: 2)?.Id);

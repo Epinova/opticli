@@ -65,6 +65,12 @@ public sealed record WriteOutput(
     /// <summary>The site's own code failed after the save (a handler of the CMS's events): its message. The save stands.</summary>
     public string? SiteError { get; init; }
 
+    /// <summary>
+    /// For a change based on an older version (<c>--from</c>): the versions saved after <see cref="BaseVersion"/>, newest
+    /// first, whose changes it doesn't have. They stay as they are.
+    /// </summary>
+    public IReadOnlyList<LeftOutVersion>? LeftOut { get; init; }
+
     /// <param name="type">Shown when the agent returns no content (a dry-run create).</param>
     public static WriteOutput From(WriteResult result, string? type = null, string? name = null, string? parent = null)
     {
@@ -93,6 +99,7 @@ public sealed record WriteOutput(
             ScheduledFor = result.ScheduledFor,
             Unpublished = result.Unpublished ? true : null,
             Discarded = result.Discarded ? true : null,
+            LeftOut = result.LeftOut is { Count: > 0 } leftOut ? leftOut : null,
         };
     }
 

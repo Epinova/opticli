@@ -114,7 +114,9 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
 ## Changing content (only when the user asked for a change)
 
 Writes go through the CMS in the running site, are saved as the user `opticli`, and create a **new draft version**
-unless `--publish` is passed. The new draft becomes the primary draft, which edit mode opens. Workflow:
+unless `--publish` is passed. The new draft becomes the primary draft, which edit mode opens. `set` and `area` base it
+on the latest version (a conflict, exit 5, if someone saves a newer one meanwhile); `--from published` bases it on the
+published version instead, leaving newer drafts out. Workflow:
 
 1. `opticli serve` - starts the local site in the background with the opticli site agent (takes 30-60 s; `serve --status`,
    `serve --logs --tail 40` if it fails). Only start it when you are about to write. Against a remote development
@@ -144,7 +146,10 @@ order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a cod
   there are any, it fails with `conflict` (exit 5) and `error.details.reason: "pendingDraft"` (a `--dry-run` reports
   `pendingDraft` with a warning). Show the user `details.draft` (`savedBy`, `saved`, `changes`) and **ask whether those changes
   should go live too**. Pass `--include-draft` (in a plan, `"includeDraft": true` on the step) only after they said
-  yes; never on your own initiative. Drafts opticli saved itself don't need this.
+  yes; never on your own initiative. Drafts opticli saved itself don't need this. If they should stay out, don't drop
+  your change or rewrite whole values to get around them: base it on the published version, `--from published` (a
+  plan step's `"from": "published"`). Their draft then stays a draft and doesn't go live; the warning in
+  `meta.warnings` lists what was left out, and the new draft becomes the one edit mode opens, so tell the user.
 - Against a shared (remote) development database, a write stops when this build and the database differ: `drift`
   (exit 5). The database keeps what the deployed code made, so the write would run this build's code against content
   the deployed site serves. Show the user what differs (`error.details`, or `opticli drift`) and what it means:
