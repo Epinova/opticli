@@ -4,9 +4,9 @@ using Microsoft.Data.SqlClient;
 namespace OptiCli.Mcp.Integration.Support;
 
 /// <summary>
-/// Takes a test user's role away and gives it back, in the test site's own ASP.NET Identity tables: Alloy's user admin
-/// has no API an HTTP client could use. The connection string is the test site's own, read from its appsettings, so
-/// no other database is ever touched. McpFixture also restores every test user's roles when the site starts.
+/// Takes a test user's role away and gives it back, or disables their account and enables it again, in the test site's
+/// own ASP.NET Identity tables: Alloy's user admin has no API an HTTP client could use. The connection string is the test site's own, read from its appsettings, so
+/// no other database is ever touched. McpFixture also restores every test user's roles and account when the site starts.
 /// </summary>
 internal sealed class TestUserRoles(string connectionString)
 {
@@ -43,6 +43,16 @@ internal sealed class TestUserRoles(string connectionString)
         return new Restore(this, user, role);
     }
 
+    /// <summary>Disables <paramref name="user"/>'s account (not approved, as the CMS's user admin does); dispose the result to enable it again.</summary>
+    public async Task<IAsyncDisposable> DisableAsync(string user)
+    {
+        if (await ExecuteAsync("UPDATE AspNetUsers SET IsApproved = 0 WHERE UserName = @user AND IsApproved = 1", user, "") != 1)
+        {
+            throw new InvalidOperationException($"{user} wasn't an enabled user: is this the MCP test site's database?");
+        }
+        return new Enable(this, user);
+    }
+
     private async Task<int> ExecuteAsync(string sql, string user, string role)
     {
         await using var connection = new SqlConnection(connectionString);
@@ -51,6 +61,11 @@ internal sealed class TestUserRoles(string connectionString)
         command.Parameters.AddWithValue("@user", user);
         command.Parameters.AddWithValue("@role", role);
         return await command.ExecuteNonQueryAsync();
+    }
+
+    private sealed class Enable(TestUserRoles roles, string user) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync() => await roles.ExecuteAsync("UPDATE AspNetUsers SET IsApproved = 1 WHERE UserName = @user", user, "");
     }
 
     private sealed class Restore(TestUserRoles roles, string user, string role) : IAsyncDisposable

@@ -47,15 +47,22 @@ internal sealed class TokenService(
 
     private readonly ConcurrentDictionary<string, DateTimeOffset> _touched = new(StringComparer.Ordinal);
 
+    /// <param name="Scope">The token's own scopes when a refresh asked for fewer than the grant has; null for the grant's.</param>
     private sealed record Payload(
         [property: JsonPropertyName("g")] string GrantId,
         [property: JsonPropertyName("aud")] string Audience,
-        [property: JsonPropertyName("exp")] long Expires);
+        [property: JsonPropertyName("exp")] long Expires,
+        [property: JsonPropertyName("scp"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Scope = null);
 
-    public (string Token, int ExpiresIn) Issue(Grant grant)
+    /// <param name="scope">
+    /// The token's scopes, when fewer than the grant's (a refresh that asked for less, RFC 6749 6); the grant keeps its
+    /// own, so the next refresh may ask for them again. Null or the grant's scopes for a token with all of them.
+    /// </param>
+    public (string Token, int ExpiresIn) Issue(Grant grant, string? scope = null)
     {
         var lifetime = options.Value.AccessTokenLifetime;
-        var payload = new Payload(grant.GrantId, grant.Resource, time.GetUtcNow().Add(lifetime).ToUnixTimeSeconds());
+        var payload = new Payload(grant.GrantId, grant.Resource, time.GetUtcNow().Add(lifetime).ToUnixTimeSeconds(),
+            scope is null || scope == grant.Scope ? null : scope);
         return (Prefix + _protector.Protect(JsonSerializer.Serialize(payload)), (int)lifetime.TotalSeconds);
     }
 
@@ -86,16 +93,18 @@ internal sealed class TokenService(
             return null;
         }
         await TouchAsync(grant, now, cancellationToken);
-        return Principal(grant);
+        // Never more than the grant has now: a site that stopped allowing publishing narrowed it at the last refresh.
+        return Principal(grant, payload.Scope is null ? grant.Scope : Scopes.Intersect(grant.Scope, payload.Scope));
     }
 
     /// <summary>The editor as the CMS sees them: their name and the roles they had at their last (re)authorization.</summary>
-    public static ClaimsPrincipal Principal(Grant grant) => EditorGate.Principal(grant.UserName, grant.Roles, AuthenticationType,
+    /// <param name="scope">The access token's scopes; the grant's when null.</param>
+    public static ClaimsPrincipal Principal(Grant grant, string? scope = null) => EditorGate.Principal(grant.UserName, grant.Roles, AuthenticationType,
     [
         new Claim(McpClaims.Grant, grant.GrantId),
         new Claim(McpClaims.Client, grant.ClientId),
         new Claim(McpClaims.ClientName, grant.ClientName),
-        new Claim(McpClaims.Scope, grant.Scope),
+        new Claim(McpClaims.Scope, scope ?? grant.Scope),
     ]);
 
     /// <summary>Records the use for the connections page, at most once a <see cref="TouchInterval"/> per grant.</summary>

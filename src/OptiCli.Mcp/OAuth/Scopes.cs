@@ -19,16 +19,47 @@ public static class Scopes
     internal static string[] Supported(OptiCliMcpOptions options) => options.AllowPublish ? [Read, Write, Publish] : [Read, Write];
 
     /// <summary>
-    /// What a client gets for the scopes it asked for: the ones the site offers, in their fixed order; all of them
+    /// What a client may get for the scopes it asked for: the ones the site offers, in their fixed order; all of them
     /// when it asked for none. Unknown scopes and <c>content:publish</c> on a site without publishing are left out
-    /// rather than refused, so a client that always asks for everything still connects.
+    /// rather than refused, so a client that always asks for everything still connects. <see cref="Read"/> comes with
+    /// anything else, as the MCP endpoint needs it for every call.
     /// </summary>
     /// <returns>Space-separated scopes; empty when nothing asked for is offered.</returns>
     internal static string Grantable(string? requested, OptiCliMcpOptions options)
     {
         var supported = Supported(options);
         var asked = Split(requested);
-        return asked.Count == 0 ? string.Join(' ', supported) : string.Join(' ', supported.Where(asked.Contains));
+        if (asked.Count == 0)
+        {
+            return string.Join(' ', supported);
+        }
+        var offered = supported.Where(asked.Contains).ToList();
+        return offered.Count == 0 ? "" : string.Join(' ', supported.Where(s => s == Read || offered.Contains(s)));
+    }
+
+    /// <summary>
+    /// What the editor allowed on the consent page: <see cref="Read"/>, which is required, and those of the
+    /// <paramref name="offered"/> scopes they left ticked. Anything posted that wasn't offered is ignored.
+    /// </summary>
+    /// <param name="offered">Space-separated, as <see cref="Grantable"/> gives them.</param>
+    internal static string Chosen(string offered, IEnumerable<string?> ticked)
+    {
+        var allowed = new HashSet<string>(ticked.OfType<string>(), StringComparer.Ordinal) { Read };
+        return string.Join(' ', offered.Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(allowed.Contains));
+    }
+
+    /// <summary>
+    /// The scopes of <paramref name="granted"/> that <paramref name="requested"/> names, in <paramref name="granted"/>'s
+    /// order: a refresh asking for less (RFC 6749 6) gets an access token for that much.
+    /// </summary>
+    /// <returns>Space-separated; <paramref name="granted"/> when nothing was requested.</returns>
+    internal static string Narrowed(string granted, string? requested) => Split(requested).Count == 0 ? granted : Intersect(granted, requested);
+
+    /// <summary>The scopes of <paramref name="granted"/> that <paramref name="other"/> has too, in <paramref name="granted"/>'s order.</summary>
+    internal static string Intersect(string granted, string? other)
+    {
+        var also = Split(other);
+        return string.Join(' ', granted.Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(also.Contains));
     }
 
     internal static HashSet<string> Split(string? scope) =>

@@ -39,13 +39,21 @@ internal sealed class TestSite : IAsyncDisposable
     public static async Task<TestSite> StartAsync(
         Action<OptiCliMcpOptions>? configure = null,
         Dictionary<string, string?>? configuration = null,
-        OAuthRateLimits? limits = null,
+        OptiCliMcpRateLimits? limits = null,
         string environment = "Production",
         Action<IServiceCollection>? services = null)
     {
         var site = new TestSite();
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environment });
         builder.WebHost.UseTestServer();
+        // Limits high enough for any test, unless the test sets its own (limits, or the configuration).
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["OptiCli:Mcp:RateLimits:RegisterPerMinute"] = "1000",
+            ["OptiCli:Mcp:RateLimits:TokenPerMinute"] = "1000",
+            ["OptiCli:Mcp:RateLimits:TokenPerAddressPerMinute"] = "1000",
+            ["OptiCli:Mcp:RateLimits:AuthorizePerMinute"] = "1000",
+        });
         builder.Configuration.AddInMemoryCollection(configuration ?? []);
         builder.Logging.ClearProviders();
         builder.Logging.AddProvider(site.Audit);
@@ -55,9 +63,15 @@ internal sealed class TestSite : IAsyncDisposable
         builder.Services.AddSingleton<IOAuthStore>(site.Store);
         builder.Services.AddSingleton<IEditorRoles>(site.Roles);
         builder.Services.AddSingleton<TimeProvider>(site.Time);
-        builder.Services.AddSingleton(limits ?? new OAuthRateLimits { RegisterPerMinute = 1000, TokenPerMinute = 1000, AuthorizePerMinute = 1000 });
         services?.Invoke(builder.Services);
-        builder.Services.AddOptiCliMcp(configure);
+        builder.Services.AddOptiCliMcp(o =>
+        {
+            if (limits is not null)
+            {
+                o.RateLimits = limits;
+            }
+            configure?.Invoke(o);
+        });
 
         var app = builder.Build();
         app.UseRouting();
@@ -127,15 +141,17 @@ internal sealed class TestSite : IAsyncDisposable
     }
 
     /// <summary>The whole sign-in as a browser does it: authorize page, consent, code.</summary>
+    /// <param name="allow">The scopes the editor leaves ticked on the consent page; all that are offered when null.</param>
     /// <returns>The query of the redirect back to the client.</returns>
-    public async Task<Dictionary<string, string>> AuthorizeAsync(string clientId, string verifier, string user = "editor", string decision = "allow", string? scope = null)
+    public async Task<Dictionary<string, string>> AuthorizeAsync(string clientId, string verifier, string user = "editor", string decision = "allow", string? scope = null, string[]? allow = null)
     {
         var browser = Browser(user);
         var url = AuthorizeUrl(clientId, Pkce.Challenge(verifier), scope: scope);
         var page = await browser.GetAsync(url);
         Assert.Equal(HttpStatusCode.OK, page.StatusCode);
         var html = await page.Content.ReadAsStringAsync();
-        var posted = await browser.PostFormAsync(Support.Browser.FormAction(html), Support.Browser.Inputs(html, decision));
+        var ticked = Support.Browser.Ticked(html).Where(t => allow is null || allow.Contains(t.Value));
+        var posted = await browser.PostFormAsync(Support.Browser.FormAction(html), Support.Browser.Inputs(html, decision).Concat(ticked));
         Assert.Equal(HttpStatusCode.SeeOther, posted.StatusCode);
         var location = posted.Headers.Location!.ToString();
         Assert.StartsWith(RedirectUri, location, StringComparison.Ordinal);
@@ -153,11 +169,12 @@ internal sealed class TestSite : IAsyncDisposable
     }
 
     /// <summary>Signs <paramref name="user"/> in for a new public client and exchanges the code.</summary>
-    public async Task<Tokens> ConnectAsync(string user = "editor", string? scope = null)
+    /// <param name="allow">The scopes the editor leaves ticked on the consent page; all that are offered when null.</param>
+    public async Task<Tokens> ConnectAsync(string user = "editor", string? scope = null, string[]? allow = null)
     {
         var (clientId, _) = await RegisterAsync();
         var verifier = Verifier();
-        var back = await AuthorizeAsync(clientId, verifier, user, scope: scope);
+        var back = await AuthorizeAsync(clientId, verifier, user, scope: scope, allow: allow);
         var response = await TokenAsync(new()
         {
             ["grant_type"] = "authorization_code",
@@ -221,7 +238,9 @@ internal sealed class Browser(TestServer server, string? user, string? cookieRol
 
     public Task<HttpResponseMessage> GetAsync(string url) => SendAsync(new HttpRequestMessage(HttpMethod.Get, url));
 
-    public Task<HttpResponseMessage> PostFormAsync(string url, Dictionary<string, string> form) =>
+    public Task<HttpResponseMessage> PostFormAsync(string url, Dictionary<string, string> form) => PostFormAsync(url, form.AsEnumerable());
+
+    public Task<HttpResponseMessage> PostFormAsync(string url, IEnumerable<KeyValuePair<string, string>> form) =>
         SendAsync(new HttpRequestMessage(HttpMethod.Post, url) { Content = new FormUrlEncodedContent(form) });
 
     public async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request)
@@ -250,14 +269,17 @@ internal sealed class Browser(TestServer server, string? user, string? cookieRol
         return response;
     }
 
-    /// <summary>The form's fields, as a browser would post them when <paramref name="decision"/> is clicked.</summary>
+    /// <summary>
+    /// The form's fields but its checkboxes, as a browser would post them when <paramref name="decision"/> is clicked;
+    /// the ticked checkboxes are <see cref="Ticked"/>.
+    /// </summary>
     public static Dictionary<string, string> Inputs(string html, string? decision = null)
     {
         var fields = new Dictionary<string, string>();
         foreach (Match input in Regex.Matches(html, "<input\\b[^>]*>"))
         {
             string? Attr(string name) => Regex.Match(input.Value, $"\\b{name}=\"([^\"]*)\"") is { Success: true } m ? WebUtility.HtmlDecode(m.Groups[1].Value) : null;
-            if (Attr("name") is { } key)
+            if (Attr("name") is { } key && Attr("type") != "checkbox")
             {
                 fields.TryAdd(key, Attr("value") ?? "");
             }
@@ -268,6 +290,15 @@ internal sealed class Browser(TestServer server, string? user, string? cookieRol
         }
         return fields;
     }
+
+    /// <summary>The checkboxes a browser would post: ticked, enabled and named.</summary>
+    public static List<KeyValuePair<string, string>> Ticked(string html) =>
+        Regex.Matches(html, "<input\\b[^>]*\\btype=\"checkbox\"[^>]*>")
+            .Where(m => m.Value.Contains(" checked", StringComparison.Ordinal) && !m.Value.Contains(" disabled", StringComparison.Ordinal))
+            .Select(m => (Name: Regex.Match(m.Value, "\\bname=\"([^\"]*)\""), Value: Regex.Match(m.Value, "\\bvalue=\"([^\"]*)\"")))
+            .Where(m => m.Name.Success)
+            .Select(m => KeyValuePair.Create(WebUtility.HtmlDecode(m.Name.Groups[1].Value), m.Value.Success ? WebUtility.HtmlDecode(m.Value.Groups[1].Value) : "on"))
+            .ToList();
 
     public static string FormAction(string html) =>
         WebUtility.HtmlDecode(Regex.Match(html, "<form method=\"post\" action=\"([^\"]*)\"").Groups[1].Value);

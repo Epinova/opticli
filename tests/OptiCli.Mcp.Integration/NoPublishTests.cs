@@ -45,6 +45,17 @@ public sealed class NoPublishTests
             Refused(await editor.ErrorAsync("update_content", new { reference = page, properties = new { TeaserText = "x" }, publish = true }));
             Refused(await editor.ErrorAsync("publish_content", new { reference = page }));
             Refused(await editor.ErrorAsync("unpublish_content", new { reference = page, dryRun = true }));
+            // A review request where no approval sequence applies is no way round it: there is nothing to review.
+            foreach (var (tool, arguments) in new (string, object)[]
+            {
+                ("publish_content", new { reference = page, requestApproval = true }),
+                ("update_content", new { reference = page, properties = new { TeaserText = "x" }, requestApproval = true }),
+                ("add_language", new { reference = page, lang = "sv", requestApproval = true }),
+            })
+            {
+                var noSequence = await editor.ErrorAsync(tool, arguments);
+                Assert.Equal(("usage", "noApprovalSequence"), (noSequence.GetProperty("code").GetString(), noSequence.GetProperty("reason").GetString()));
+            }
             var versions = (await editor.OkAsync("list_versions", new { reference = page })).GetProperty("versions");
             Assert.Equal("checkedOut", Assert.Single(versions.EnumerateArray()).GetProperty("status").GetString());
         }

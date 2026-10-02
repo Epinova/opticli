@@ -7,13 +7,20 @@ using Microsoft.Extensions.Logging;
 namespace OptiCli.Mcp.OAuth;
 
 /// <summary>
-/// Where an editor's roles come from. A login cookie keeps the roles it was issued with, so the module asks this
-/// instead, at consent and on every token refresh: an editor who loses their role stops getting tokens.
+/// Where an editor's roles and account come from. A login cookie keeps the roles it was issued with, and keeps working
+/// for a while after the account is disabled, so the module asks this instead, at consent and on every token refresh:
+/// an editor who loses their role, or whose account is disabled or deleted, stops getting tokens.
 /// </summary>
 public interface IEditorRoles
 {
     /// <returns>The roles the user has now, as the site's role store has them; null when the store can't say.</returns>
     Task<IReadOnlyList<string>?> GetRolesAsync(string userName, CancellationToken cancellationToken);
+
+    /// <returns>
+    /// Whether the user's account is active now: true when it is, false when it is disabled (not approved, locked out)
+    /// or doesn't exist any more, null when the user store can't say.
+    /// </returns>
+    Task<bool?> IsActiveAsync(string userName, CancellationToken cancellationToken);
 
     /// <summary>
     /// Whether <paramref name="user"/> is in <paramref name="role"/>, counting the CMS's virtual roles (CmsEditors,
@@ -23,12 +30,44 @@ public interface IEditorRoles
 }
 
 /// <summary>
-/// The CMS's own answer: <see cref="UIRoleProvider"/>, the role store the CMS UI's user admin uses, which answers for
-/// ASP.NET Identity users and for users synchronized from an external login (Entra ID, Opti ID) alike.
+/// The CMS's own answer: <see cref="UIRoleProvider"/> and <see cref="UIUserProvider"/>, the stores the CMS UI's user
+/// admin uses, which answer for ASP.NET Identity users and for users synchronized from an external login (Entra ID,
+/// Opti ID) alike.
 /// </summary>
 internal sealed class CmsEditorRoles(IServiceProvider services, ILogger<CmsEditorRoles> logger) : IEditorRoles
 {
     private static int _warned;
+
+    private static int _warnedUsers;
+
+    public async Task<bool?> IsActiveAsync(string userName, CancellationToken cancellationToken)
+    {
+        if (services.GetService<UIUserProvider>() is not { } provider)
+        {
+            WarnOnce(ref _warnedUsers, "No UIUserProvider is registered: the MCP module can't tell whether an editor's account is still active, and goes by their roles alone.");
+            return null;
+        }
+        IUIUser? user;
+        try
+        {
+            user = await provider.GetUserAsync(userName);
+        }
+        catch (NotSupportedException)
+        {
+            // The base class's answer for a provider that doesn't look users up.
+            WarnOnce(ref _warnedUsers, $"{provider.GetType().FullName} doesn't look users up: the MCP module can't tell whether an editor's account is still active, and goes by their roles alone.");
+            return null;
+        }
+        return user is { IsApproved: true, IsLockedOut: false };
+    }
+
+    private void WarnOnce(ref int warned, string message)
+    {
+        if (Interlocked.Exchange(ref warned, 1) == 0)
+        {
+            logger.LogWarning("{Problem}", message);
+        }
+    }
 
     public async Task<IReadOnlyList<string>?> GetRolesAsync(string userName, CancellationToken cancellationToken)
     {
@@ -49,6 +88,16 @@ internal sealed class CmsEditorRoles(IServiceProvider services, ILogger<CmsEdito
     }
 
     public bool IsInRole(ClaimsPrincipal user, string role) => user.IsInRole(role) || VirtualRolePrincipal.CreateWrapper(user).IsInRole(role);
+}
+
+/// <summary>Why <see cref="EditorGate.RefusalAsync"/> turned a user away.</summary>
+internal enum GateRefusal
+{
+    /// <summary>None of <see cref="OptiCliMcpOptions.AllowedRoles"/>.</summary>
+    NotAnEditor,
+
+    /// <summary>The account is disabled (not approved, locked out) or gone.</summary>
+    AccountDisabled,
 }
 
 /// <summary>The role gate: who may connect an assistant, and who administers connections.</summary>
@@ -77,6 +126,22 @@ internal sealed class EditorGate(IEditorRoles roles)
     /// <summary>Whether a user with these roles may connect: one of <see cref="OptiCliMcpOptions.AllowedRoles"/>.</summary>
     public bool MayConnect(ClaimsPrincipal user, OptiCliMcpOptions options) =>
         user.Identity?.IsAuthenticated == true && options.AllowedRoles.Any(role => roles.IsInRole(user, role));
+
+    /// <summary>
+    /// The whole gate, at consent and at a refresh: the roles (<see cref="MayConnect"/>), then the account, which must
+    /// still be active (a login cookie outlives disabling it). An account the user store can't say anything about goes by
+    /// its roles alone.
+    /// </summary>
+    /// <param name="user">The user with their current roles (<see cref="CurrentAsync"/>, <see cref="Principal"/>).</param>
+    /// <returns>Null when the user may connect; otherwise why not, for the audit log.</returns>
+    public async Task<GateRefusal?> RefusalAsync(ClaimsPrincipal user, OptiCliMcpOptions options, CancellationToken cancellationToken)
+    {
+        if (!MayConnect(user, options))
+        {
+            return GateRefusal.NotAnEditor;
+        }
+        return await roles.IsActiveAsync(user.Identity?.Name ?? "", cancellationToken) == false ? GateRefusal.AccountDisabled : null;
+    }
 
     public bool IsAdmin(ClaimsPrincipal user) => user.Identity?.IsAuthenticated == true && AdminRoles.Any(role => roles.IsInRole(user, role));
 

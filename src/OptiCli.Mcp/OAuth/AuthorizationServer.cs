@@ -12,10 +12,10 @@ namespace OptiCli.Mcp.OAuth;
 
 /// <summary>
 /// A small OAuth 2.1 authorization server for MCP clients: dynamic client registration (RFC 7591), client ID metadata
-/// documents, the authorization code flow with PKCE (S256 only), refresh tokens that rotate, resource indicators
-/// (RFC 8707) and the <c>iss</c> response parameter (RFC 9207). Sign-in itself is the site's own: <c>authorize</c>
-/// challenges the site's default scheme (ASP.NET Identity, Entra ID, Opti ID, ...), then asks the editor to approve the
-/// client.
+/// documents, the authorization code flow with PKCE (S256 only), refresh tokens that rotate (with reuse detection,
+/// RFC 9700), resource indicators (RFC 8707) and the <c>iss</c> response parameter (RFC 9207). Sign-in itself is the
+/// site's own: <c>authorize</c> challenges the site's default scheme (ASP.NET Identity, Entra ID, Opti ID, ...), then
+/// asks the editor to approve the client and choose its scopes.
 /// </summary>
 /// <remarks>
 /// Not OpenIddict: CMS 12's own OpenID Connect package pins OpenIddict 3, which has neither DCR nor metadata documents,
@@ -237,10 +237,9 @@ internal sealed class AuthorizationServer(
             return Results.Challenge(new AuthenticationProperties { RedirectUri = context.Request.PathBase + context.Request.Path + context.Request.QueryString });
         }
         var (current, _) = await gate.CurrentAsync(context.User, context.RequestAborted);
-        if (!gate.MayConnect(current, Options))
+        if (await gate.RefusalAsync(current, Options, context.RequestAborted) is { } refusal)
         {
-            audit.Authorize(user, request.Client.ClientId, request.Client.ClientName, "refused (not an editor)", request.Scope);
-            return Message(context, HttpStatusCode.Forbidden, "No access", $"{user} isn't an editor on this site, so it can't connect an AI assistant.");
+            return Refused(context, user, request, refusal);
         }
 
         var form = antiforgery.GetAndStoreTokens(context);
@@ -248,16 +247,19 @@ internal sealed class AuthorizationServer(
         var identity = ClientMetadataDocument.IsUrl(request.Client.ClientId)
             ? $"The app's description is published by <b>{H(new Uri(request.Client.ClientId).Host)}</b>."
             : "The app registered itself under this name; the site can't confirm who made it.";
-        var scopes = string.Concat(request.Scope.Split(' ').Select(s => $"<li>{H(Scopes.Describe(s))}</li>"));
+        // Read is what every call needs, so it can't be unticked; the others are the editor's choice.
+        var scopes = string.Concat(request.Scope.Split(' ').Select(s => s == Scopes.Read
+            ? $"<li><label><input type=\"checkbox\" checked disabled> {H(Scopes.Describe(s))} (always)</label></li>"
+            : $"<li><label><input type=\"checkbox\" name=\"scope\" value=\"{H(s)}\" checked> {H(Scopes.Describe(s))}</label></li>"));
         var noPublish = Options.AllowPublish ? "" : "<p class=\"muted\">This site doesn't let AI assistants publish: an editor publishes in the CMS.</p>";
         var action = context.Request.PathBase + context.Request.Path + context.Request.QueryString;
         return Render(context, HttpStatusCode.OK, "Connect an AI assistant", $"""
             <h1>Connect {H(request.Client.ClientName)}?</h1>
             <p>Signed in as <b>{H(user)}</b>. {identity}</p>
-            <p>If you allow it, you'll be sent back to <b>{H(redirect.Authority)}</b>, and the app will act as you, with your access rights in the CMS. It may:</p>
-            <ul>{scopes}</ul>
-            {noPublish}
+            <p>If you allow it, you'll be sent back to <b>{H(redirect.Authority)}</b>, and the app will act as you, with your access rights in the CMS. Untick what it shouldn't do. It may:</p>
             <form method="post" action="{H(action)}">
+              <ul class="scopes">{scopes}</ul>
+              {noPublish}
               <input type="hidden" name="{H(form.FormFieldName)}" value="{H(form.RequestToken)}">
               <button type="submit" name="decision" value="allow">Allow</button>
               <button type="submit" name="decision" value="deny">Deny</button>
@@ -286,10 +288,9 @@ internal sealed class AuthorizationServer(
             return Message(context, HttpStatusCode.Forbidden, "Not signed in", "Sign in to the site first, then connect again from the app.");
         }
         var (current, roles) = await gate.CurrentAsync(context.User, context.RequestAborted);
-        if (!gate.MayConnect(current, Options))
+        if (await gate.RefusalAsync(current, Options, context.RequestAborted) is { } refusal)
         {
-            audit.Authorize(user, request.Client.ClientId, request.Client.ClientName, "refused (not an editor)", request.Scope);
-            return Message(context, HttpStatusCode.Forbidden, "No access", $"{user} isn't an editor on this site, so it can't connect an AI assistant.");
+            return Refused(context, user, request, refusal);
         }
         var form = await context.Request.ReadFormAsync(context.RequestAborted);
         if (form["decision"] != "allow")
@@ -298,6 +299,8 @@ internal sealed class AuthorizationServer(
             return SeeOther(context, Redirect(context, request.RedirectUri, request.State,
                 new() { ["error"] = "access_denied", ["error_description"] = "The editor didn't allow the connection." }));
         }
+        // What the editor left ticked, of what was offered: the code, and so the connection, gets only that.
+        var scope = Scopes.Chosen(request.Scope, form["scope"]);
 
         var code = Secrets.New();
         await store.AddCodeAsync(new AuthorizationCode
@@ -309,12 +312,22 @@ internal sealed class AuthorizationServer(
             CodeChallenge = request.Challenge,
             UserName = user,
             Roles = roles,
-            Scope = request.Scope,
+            Scope = scope,
             Resource = request.Resource,
             Expires = time.GetUtcNow().Add(CodeLifetime),
         }, context.RequestAborted);
-        audit.Authorize(user, request.Client.ClientId, request.Client.ClientName, "allowed", request.Scope);
+        audit.Authorize(user, request.Client.ClientId, request.Client.ClientName, "allowed", scope);
         return SeeOther(context, Redirect(context, request.RedirectUri, request.State, new() { ["code"] = code }));
+    }
+
+    /// <summary>The page for a user the gate turned away (<see cref="EditorGate.RefusalAsync"/>), audited.</summary>
+    private IResult Refused(HttpContext context, string user, AuthorizeRequest request, GateRefusal refusal)
+    {
+        var (outcome, text) = refusal == GateRefusal.AccountDisabled
+            ? ("refused (account disabled)", $"The account {user} is disabled on this site, so it can't connect an AI assistant.")
+            : ("refused (not an editor)", $"{user} isn't an editor on this site, so it can't connect an AI assistant.");
+        audit.Authorize(user, request.Client.ClientId, request.Client.ClientName, outcome, request.Scope);
+        return Message(context, HttpStatusCode.Forbidden, "No access", text);
     }
 
     /// <summary>The signed-in user's name; null when nobody (with a name) is signed in.</summary>
@@ -365,6 +378,12 @@ internal sealed class AuthorizationServer(
         {
             return OAuthJson.Error(context, "invalid_request", "The client id in the Authorization header and the form differ, or the header is malformed.");
         }
+        // Per client as well as per address: claude.ai's token requests for every editor of a site come from the same
+        // few Anthropic addresses.
+        if (limiter.Check(OAuthRateLimiter.TokenClient, context, credentials.ClientId) is { } clientLimited)
+        {
+            return clientLimited;
+        }
         var client = await clients.ResolveAsync(credentials.ClientId, context.RequestAborted);
         if (client is null || !credentials.Authenticates(client))
         {
@@ -378,7 +397,10 @@ internal sealed class AuthorizationServer(
         }
 
         var now = time.GetUtcNow();
+        var newRefresh = RefreshPrefix + Secrets.New();
+        var expires = now.Add(Options.RefreshTokenLifetime);
         Grant grant;
+        string accessScope;
         switch (grantType)
         {
             case "authorization_code":
@@ -410,57 +432,79 @@ internal sealed class AuthorizationServer(
                     Roles = record.Roles,
                     Scope = record.Scope,
                     Resource = record.Resource,
-                    RefreshHash = "",
+                    RefreshHash = Secrets.Hash(newRefresh),
                     Created = now,
-                    Expires = now,
+                    Expires = expires,
                 };
+                await store.AddGrantAsync(grant, context.RequestAborted);
+                accessScope = grant.Scope;
+                audit.TokenIssued(grant);
                 break;
             }
             case "refresh_token":
             {
                 var refresh = form["refresh_token"].ToString();
-                var found = refresh.Length == 0 ? null : await store.FindGrantByRefreshAsync(Secrets.Hash(refresh), context.RequestAborted);
+                var refreshHash = refresh.Length == 0 ? "" : Secrets.Hash(refresh);
+                var found = refreshHash.Length == 0 ? null : await store.FindGrantByRefreshAsync(refreshHash, context.RequestAborted);
+                if (found is null && refreshHash.Length > 0 && await store.FindGrantByPreviousRefreshAsync(refreshHash, context.RequestAborted) is { } reused)
+                {
+                    // A refresh token that was already rotated out: it leaked, or the client lost track (RFC 9700 4.14.2).
+                    // The site can't tell which, so the connection ends, for whoever holds its current token too.
+                    await store.DeleteGrantAsync(reused.GrantId, context.RequestAborted);
+                    cache.Evict(reused.GrantId);
+                    audit.Refresh(reused, "refused: a replaced refresh token was used again, connection deleted");
+                    return OAuthJson.Error(context, "invalid_grant", "The refresh token was already used once, so the connection was revoked; connect again.");
+                }
                 if (found is null || !string.Equals(found.ClientId, client.ClientId, StringComparison.Ordinal) || found.Expires <= now)
                 {
                     audit.TokenRefused(grantType, client.ClientId, "invalid_grant (refresh token)");
                     return OAuthJson.Error(context, "invalid_grant", "The refresh token is unknown, already used, expired, or revoked.");
                 }
-                if (form["scope"].ToString() is { Length: > 0 } narrower && !Scopes.Split(narrower).IsSubsetOf(Scopes.Split(found.Scope)))
+                var requested = form["scope"].ToString();
+                if (requested.Length > 0 && !Scopes.Split(requested).IsSubsetOf(Scopes.Split(found.Scope)))
                 {
                     return OAuthJson.Error(context, "invalid_scope", "A refresh can't add scopes the editor didn't approve.");
                 }
-                // The editor's roles as they are now: someone who lost their editor role gets no more tokens.
+                // The editor as they are now: someone who lost their editor role, or whose account was disabled, gets no
+                // more tokens.
                 var roles = await gate.CurrentRolesAsync(found.UserName, found.Roles, context.RequestAborted);
-                if (!gate.MayConnect(EditorGate.Principal(found.UserName, roles, TokenService.AuthenticationType), Options))
+                if (await gate.RefusalAsync(EditorGate.Principal(found.UserName, roles, TokenService.AuthenticationType), Options, context.RequestAborted) is { } refusal)
                 {
                     await store.DeleteGrantAsync(found.GrantId, context.RequestAborted);
                     cache.Evict(found.GrantId);
-                    audit.Refresh(found, "refused: no longer an editor, connection deleted");
-                    return OAuthJson.Error(context, "invalid_grant", $"{found.UserName} is no longer an editor on this site.");
+                    var why = refusal == GateRefusal.AccountDisabled ? "account disabled" : "no longer an editor";
+                    audit.Refresh(found, $"refused: {why}, connection deleted");
+                    return OAuthJson.Error(context, "invalid_grant", refusal == GateRefusal.AccountDisabled
+                        ? $"The account {found.UserName} is disabled on this site."
+                        : $"{found.UserName} is no longer an editor on this site.");
                 }
                 // A site that stopped allowing publishing takes the scope back from existing connections too.
-                var scope = Scopes.Grantable(found.Scope, Options);
-                grant = found with { Roles = roles, Scope = scope.Length > 0 ? scope : found.Scope };
+                var allowed = Scopes.Grantable(found.Scope, Options);
+                var scope = allowed.Length > 0 ? allowed : found.Scope;
+                // Asking for less (RFC 6749 6) gives an access token for that much; the connection keeps what the editor
+                // approved, and the next refresh may ask for it again.
+                accessScope = Scopes.Narrowed(scope, requested);
+                if (accessScope.Length == 0)
+                {
+                    return OAuthJson.Error(context, "invalid_scope", "None of the requested scopes is granted any more.");
+                }
+                // Refresh tokens rotate, as a compare-and-swap: of two refreshes with the same token only one gets new
+                // tokens, and a connection revoked meanwhile isn't brought back.
+                if (!await store.TryRotateRefreshAsync(found.GrantId, refreshHash, Secrets.Hash(newRefresh), expires, roles, scope, context.RequestAborted))
+                {
+                    audit.Refresh(found, "refused: refreshed at the same time, or revoked");
+                    return OAuthJson.Error(context, "invalid_grant", "The refresh token is unknown, already used, expired, or revoked.");
+                }
+                grant = found with { Roles = roles, Scope = scope, RefreshHash = Secrets.Hash(newRefresh), PreviousRefreshHash = refreshHash, Expires = expires };
+                audit.Refresh(grant, "rotated");
                 break;
             }
             default:
                 return OAuthJson.Error(context, "unsupported_grant_type", "Supported grant types: authorization_code, refresh_token.");
         }
 
-        // Refresh tokens rotate: the old one stops working once the new one is issued.
-        var newRefresh = RefreshPrefix + Secrets.New();
-        grant = grant with { RefreshHash = Secrets.Hash(newRefresh), Expires = now.Add(Options.RefreshTokenLifetime) };
-        await store.SaveGrantAsync(grant, context.RequestAborted);
         cache.Evict(grant.GrantId);
-        var (access, expiresIn) = tokens.Issue(grant);
-        if (grantType == "authorization_code")
-        {
-            audit.TokenIssued(grant);
-        }
-        else
-        {
-            audit.Refresh(grant, "rotated");
-        }
+        var (access, expiresIn) = tokens.Issue(grant, accessScope);
         await maintenance.MaybeCleanUpAsync(store, now, context.RequestAborted);
         return Results.Json(new Dictionary<string, object>
         {
@@ -468,7 +512,7 @@ internal sealed class AuthorizationServer(
             ["token_type"] = "Bearer",
             ["expires_in"] = expiresIn,
             ["refresh_token"] = newRefresh,
-            ["scope"] = grant.Scope,
+            ["scope"] = accessScope,
         }, OAuthJson.Options);
     }
 

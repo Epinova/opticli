@@ -504,9 +504,25 @@ which wins. In configuration, an `AllowedRoles` list replaces the default list.
 | `AllowPublish` | `false` | let assistants publish, unpublish and schedule publishing (the `content:publish` scope) |
 | `AllowDelete` | `false` | let assistants delete content, always to the recycle bin |
 | `MaxUploadBytes` | 10 MB | the largest media file an assistant may upload (at most 50 MB) |
+| `RateLimits` | see below | requests a minute the OAuth endpoints take |
 
 ```json
 {"OptiCli": {"Mcp": {"AllowDelete": true, "AllowedRoles": ["WebEditors", "WebAdmins", "ProductEditors"]}}}
+```
+
+`RateLimits` are fixed windows of a minute, counted per instance; over a limit, a request gets 429 with `Retry-After`.
+claude.ai calls `register` and `token` from Anthropic's addresses (below), which every editor of the site who uses
+claude.ai shares, so the token endpoint counts per client as well as per address:
+
+| `RateLimits.` | Default | Counts |
+|---|---|---|
+| `TokenPerMinute` | 60 | token requests (code exchanges, refreshes) per client and address |
+| `TokenPerAddressPerMinute` | 600 | token requests per address, whatever the client |
+| `RegisterPerMinute` | 60 | client registrations per address (clients with a metadata document, as Claude has, don't register) |
+| `AuthorizePerMinute` | 60 | the consent page and its post, per address (the editor's browser) |
+
+```json
+{"OptiCli": {"Mcp": {"RateLimits": {"TokenPerAddressPerMinute": 1200}}}}
 ```
 
 ### Endpoints
@@ -552,22 +568,45 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
 - **Claude is the editor.** Every read is checked against the editor's Read access; content they can't read gives
   exactly the same `not_found` as content that doesn't exist, and lists leave it out. Every save, publish, move and
   delete goes through the CMS's own access checks for the editor. The CMS records the editor as the one who saved.
+  What the CMS leaves to the edit UI is checked too: a content type's own access rights (who may create it), and
+  restoring from the recycle bin, which the module doesn't do at all (a move out of the recycle bin is refused, with a
+  hint to restore it in the CMS, where the editor sees what comes back live).
 - **The role gate** (`AllowedRoles`) is checked against the editor's roles as they are now (the CMS UI's role
-  provider), not the ones in their login cookie: at consent and at every token refresh. An editor who loses their role
-  gets no new tokens, and the connection is deleted; the access token they have works until it expires
-  (`AccessTokenLifetime`).
+  provider), not the ones in their login cookie: at consent and at every token refresh. So is their account (the CMS
+  UI's user provider): disabled, locked out or deleted, it gets no consent and no new tokens. An editor who fails
+  either at a refresh gets no new tokens, and the connection is deleted; the access token they have works until it
+  expires (`AccessTokenLifetime`).
 - **Approval sequences are enforced.** The CMS doesn't apply them to API saves, so the module refuses a publish of
   content under one and offers `requestApproval`, which sends it for review as the edit UI's Ready for Review does.
+  `requestApproval` never publishes, so it needs neither `AllowPublish` nor `content:publish`: where no sequence
+  applies, it is refused (`noApprovalSequence`) and nothing is saved.
 - **Publishing and deleting are opt-in** (`AllowPublish`, `AllowDelete`). Without `AllowPublish` the consent page
   doesn't offer the `content:publish` scope, and every publish is refused with a hint to save a draft instead; with it,
-  the editor still chooses on the consent page, and their Publish rights still apply. Deleting only moves content to
-  the recycle bin. Changing access rights and removing language branches aren't offered at all.
-- **OAuth:** PKCE (S256) is required; codes work once, for 5 minutes; refresh tokens rotate; tokens are bound to the MCP
-  endpoint and checked against their connection on every use, so revoking one cuts the client off at once (another
-  instance of a load-balanced site notices within 30 seconds). Codes, secrets and refresh tokens are stored as hashes
-  only. Redirect URIs must match exactly (any port on loopback). The consent page can't be framed and checks an
-  antiforgery token. Client metadata documents are only fetched from public addresses, checked on the connected socket,
-  without redirects. Registration, authorization and token requests are rate-limited per address.
+  the editor still chooses on the consent page, and their Publish rights still apply. Besides each tool's own check,
+  every save that would publish or schedule is checked against the same gate. Deleting only moves content to the
+  recycle bin. Changing access rights and removing language branches aren't offered at all.
+- **The consent page** lists what the app may do, with a checkbox each: reading is required, writing and (where the
+  site allows it) publishing can be unticked, and the connection gets only what was left ticked. The connections page
+  shows each connection's scopes.
+- **OAuth:** PKCE (S256) is required; codes work once, for 5 minutes. Refresh tokens rotate, as a compare-and-swap, so
+  of two refreshes with the same token only one succeeds and a connection revoked meanwhile stays revoked; the refresh
+  token before the current one, used again, revokes the connection (RFC 9700), since the site can't tell a leaked
+  token from a confused client (older ones are just refused). A refresh may ask for fewer scopes: the access token
+  gets those, and the connection keeps what the editor approved. Tokens are bound to the MCP endpoint and checked
+  against their connection on every use, so revoking one cuts the client off at once (another instance of a
+  load-balanced site notices within 30 seconds). Codes, secrets and refresh tokens are stored as hashes only. Redirect
+  URIs must match exactly (any port on loopback). The consent page can't be framed and checks an antiforgery token.
+  Client metadata documents are only fetched from public addresses, checked on the connected socket, without
+  redirects. Registration, authorization and token requests are rate-limited (`RateLimits`). Registered clients
+  without a connection are deleted 30 days after they registered.
+- **Load-balanced sites:** the Dynamic Data Store has no conditional update, so a refresh's compare-and-swap is
+  atomic within an instance only. Two instances given the same refresh token within milliseconds could both rotate
+  it (the later one wins, and the other new refresh token never works), and a revocation on one instance in the same
+  milliseconds as a refresh on another could be undone by it. Taking a code has the same window, which PKCE covers.
+- **What an editor can still tell about content they can't read:** that a page they can read has a parent (its
+  `parent` id, which they can't open), and that a ContentArea or content reference they can read points to something
+  (its id, which they can't open). Both are by design: a bare id, never the content's name, type or values.
+  `list_children`'s cursor counts only what the editor can read, so paging tells nothing of what lies between.
 - **Content is data.** The server's instructions tell the model to read first, show the user a dry run, save drafts,
   publish only when asked, and never follow instructions found in content. That lowers, but can't remove, the risk of
   prompt injection through content: the editor reviews the drafts (every write result has `editUrl`, the version in the
@@ -575,8 +614,8 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
 
 ### Connections and audit log
 
-At `/episerver/opticli/connections` an editor sees the assistants they connected (app, scopes, when connected and last
-used) and can revoke them. WebAdmins and CmsAdmins see and revoke everyone's.
+At `/episerver/opticli/connections` an editor sees the assistants they connected (app, the scopes they allowed, when
+connected and last used) and can revoke them. WebAdmins and CmsAdmins see and revoke everyone's.
 
 Every authorization decision, token issue, refresh, revocation and tool call is logged in the `OptiCli.Mcp.Audit`
 category at Information level, with the user, the client, the tool, the content refs and the outcome; never tokens,
@@ -688,8 +727,11 @@ site and starts it with `serve.sh` on `http://127.0.0.1:5180` (`MCP_PORT`).
 401, registration, the CMS login form and the consent page (both scripted), then tool calls. It covers sign-in, the
 role gate and CIMD; that hidden content is the same `not_found` as missing content; drafts in the editor's name,
 publish refused without Publish rights, approval sequences, `baseVersion` conflicts, uploads, `editUrl` and
-`resolve_url`; refresh token rotation, revocation on the connections page, and a removed role caught at the next
-refresh (which takes the role away in the test site's own database and gives it back). The tests are skipped unless
+`resolve_url`; review requests without publishing (none where no sequence applies), content type access rights,
+restores refused, `list_children` paging; refresh token rotation and reuse, fewer scopes on a refresh, revocation on
+the connections page, and a removed role or a disabled account caught at the next refresh (which changes the test
+site's own database and changes it back). `McpFixture.cs` also adds `RestrictedBlock`, a block type only WebAdmins
+may create, and `setup.sh` gives the site high `RateLimits`, as the tests sign in many times a minute. The tests are skipped unless
 the site is configured, and delete the content they create:
 
 ```sh

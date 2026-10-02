@@ -12,13 +12,17 @@ again to update the skill.
   `services.AddOptiCliMcp()` and `endpoints.MapOptiCliMcp()` (before `MapContent()`); the endpoint is
   `/episerver/opticli/mcp`. Needs CMS 12.12.1 and CMS UI 12.16.1 or newer. See the README's "MCP server for editors".
 - A small OAuth 2.1 authorization server in the module: client ID metadata documents and dynamic client registration,
-  PKCE, rotating refresh tokens, a consent page, and a role gate (`AllowedRoles`) checked against the editor's current
-  roles at consent and at every refresh. The site's default authentication scheme is left as it is.
+  PKCE, refresh tokens that rotate (a rotated-out one used again revokes the connection), a consent page where the
+  editor unticks what the app shouldn't do, and a gate checked at consent and at every refresh: the editor's current
+  roles (`AllowedRoles`) and that their account is still active. Rate limits are options (`RateLimits`); the token
+  endpoint counts per client, as claude.ai's editors share its addresses. The site's default authentication scheme
+  is left as it is.
 - Tools: `whoami`, `get_content`, `list_children`, `resolve_url`, `find_content`, `get_content_type`, `list_versions`,
-  `create_content`, `update_content`, `add_language`, `upload_media`, `discard_draft`, `move_content`, and, when the
-  site allows them, `delete_content` (`AllowDelete`), `publish_content` and `unpublish_content` (`AllowPublish`). Both are
-  off by default. Content an editor can't read is the same `not_found` as missing content. Every write result has
-  `editUrl`, the version in the CMS edit UI.
+  `create_content`, `update_content`, `add_language`, `upload_media`, `discard_draft`, `move_content`,
+  `publish_content` and `unpublish_content`, which refuse (`publishingOff`) unless the site sets `AllowPublish`, and
+  `delete_content`, offered only when it sets `AllowDelete`. Both options are off by default. `requestApproval` only
+  ever sends content for review, so it works without publishing. Content an editor can't read is the same
+  `not_found` as missing content. Every write result has `editUrl`, the version in the CMS edit UI.
 - `/episerver/opticli/connections` lists an editor's connections with Revoke (administrators see everyone's), and the
   `OptiCli.Mcp.Audit` log category records sign-ins, tokens, revocations and tool calls.
 

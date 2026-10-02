@@ -33,7 +33,7 @@ public class TokenServiceTests
             Created = _time.GetUtcNow(),
             Expires = _time.GetUtcNow().AddDays(30),
         };
-        _store.SaveGrantAsync(_grant, default).Wait();
+        _store.AddGrantAsync(_grant, default).Wait();
     }
 
     private TokenService Tokens(IDataProtectionProvider protection) =>
@@ -122,7 +122,7 @@ public class TokenServiceTests
     public async Task An_expired_grant_refuses_a_live_token()
     {
         var shortGrant = _grant with { GrantId = Secrets.New(), Expires = _time.GetUtcNow().AddMinutes(10) };
-        await _store.SaveGrantAsync(shortGrant, default);
+        await _store.AddGrantAsync(shortGrant, default);
         var (token, _) = _tokens.Issue(shortGrant);
         _time.Advance(TimeSpan.FromMinutes(11));
         Assert.Null(await _tokens.ValidateAsync(token, Resource, default));

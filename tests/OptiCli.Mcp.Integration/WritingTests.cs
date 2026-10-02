@@ -172,6 +172,83 @@ public sealed class WritingTests(SharedSessions sessions)
     }
 
     [McpSiteFact]
+    public async Task A_review_request_never_publishes_and_needs_no_publish_scope()
+    {
+        // The editor has Publish rights, but left publishing unticked on the consent page.
+        await using var editor = await McpSession.ConnectAsync(TestUsers.Editor, new SessionOptions { Allow = ["content:write"] });
+        Assert.Equal(["content:read", "content:write"], SignInTests.Strings((await editor.OkAsync("whoami")).GetProperty("scopes")));
+        var start = Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        var root = Id(await editor.OkAsync("get_content", new { reference = TestUsers.ApprovalRoot }));
+        var plain = Id((await editor.OkAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = start })).GetProperty("content"));
+        var reviewed = Id((await editor.OkAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = root })).GetProperty("content"));
+        try
+        {
+            // No sequence applies: there is nothing to review, and requestApproval is no way round the publish gate.
+            NoSequence(await editor.ErrorAsync("publish_content", new { reference = plain, requestApproval = true }));
+            NoSequence(await editor.ErrorAsync("update_content", new { reference = plain, name = "x", requestApproval = true }));
+            Assert.Equal("checkedOut", Assert.Single((await editor.OkAsync("list_versions", new { reference = plain })).GetProperty("versions").EnumerateArray()).GetProperty("status").GetString());
+            var unscoped = await editor.ErrorAsync("publish_content", new { reference = plain });
+            Assert.Equal(("refused", "missingScope"), (unscoped.GetProperty("code").GetString(), unscoped.GetProperty("reason").GetString()));
+
+            // Where a sequence applies, sending it for review is what an editor without publishing does.
+            var review = await editor.OkAsync("publish_content", new { reference = reviewed, requestApproval = true });
+            Assert.True(review.GetProperty("approvalRequested").GetBoolean());
+            Assert.False(review.GetProperty("published").GetBoolean());
+            Assert.Equal("awaitingApproval", review.GetProperty("content").GetProperty("status").GetString());
+        }
+        finally
+        {
+            await DeleteAsync(editor, plain);
+            await DeleteAsync(editor, reviewed);
+        }
+    }
+
+    [McpSiteFact]
+    public async Task Content_in_the_recycle_bin_is_not_restored_through_a_move()
+    {
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var start = Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        var page = Id((await editor.OkAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = start, publish = true })).GetProperty("content"));
+        await DeleteAsync(editor, page);
+
+        foreach (var dryRun in new[] { true, false })
+        {
+            var refused = await editor.ErrorAsync("move_content", new { reference = page, destination = start, dryRun });
+            Assert.Equal("refused", refused.GetProperty("code").GetString());
+            Assert.Contains("recycle bin", refused.GetProperty("message").GetString());
+            Assert.Contains("CMS edit UI", refused.GetProperty("hint").GetString());
+        }
+        Assert.True((await editor.OkAsync("get_content", new { reference = page })).GetProperty("deleted").GetBoolean());
+    }
+
+    [McpSiteFact]
+    public async Task A_content_type_the_editor_may_not_create_is_refused_and_an_administrator_may()
+    {
+        // RestrictedBlock (McpFixture.cs): only WebAdmins may create it, as its access rights in admin mode say.
+        var start = Id((await (await sessions.ForAsync(TestUsers.Editor)).OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var admin = await sessions.ForAsync(TestUsers.Admin);
+        var arguments = new { type = "RestrictedBlock", name = ScratchName(), forContent = start, dryRun = true };
+
+        var refused = await editor.OkAsync("create_content", arguments);
+        Assert.False(refused.GetProperty("valid").GetBoolean());
+        Assert.Contains(refused.GetProperty("validation").EnumerateArray(), i => i.GetProperty("message").GetString()!.Contains("may not create RestrictedBlock"));
+        var saved = await editor.ErrorAsync("create_content", arguments with { dryRun = false });
+        Assert.Equal("validation", saved.GetProperty("code").GetString());
+
+        var allowed = await admin.OkAsync("create_content", arguments);
+        Assert.True(allowed.GetProperty("valid").GetBoolean());
+        // A type anyone may create stays allowed for the editor.
+        Assert.True((await editor.OkAsync("create_content", arguments with { type = "EditorialBlock" })).GetProperty("valid").GetBoolean());
+    }
+
+    private static void NoSequence(JsonElement error)
+    {
+        Assert.Equal(("usage", "noApprovalSequence"), (error.GetProperty("code").GetString(), error.GetProperty("reason").GetString()));
+        Assert.Contains("Nothing was saved", error.GetProperty("hint").GetString());
+    }
+
+    [McpSiteFact]
     public async Task An_upload_goes_into_the_page_s_own_folder_as_a_draft_of_the_editor()
     {
         // A 1x1 PNG: Alloy's ImageFile takes .png.

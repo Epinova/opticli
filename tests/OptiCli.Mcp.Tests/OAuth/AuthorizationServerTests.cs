@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using OptiCli.Mcp.OAuth;
 using OptiCli.Mcp.Tests.Support;
 
@@ -134,6 +135,51 @@ public sealed class AuthorizationServerTests : IAsyncLifetime
         Assert.Contains(Scopes.Describe(Scopes.Read), html);
         Assert.Contains(Scopes.Describe(Scopes.Write), html);
         Assert.DoesNotContain(Scopes.Describe(Scopes.Publish), html);
+    }
+
+    [Fact]
+    public async Task The_editor_chooses_the_scopes_on_the_consent_page_and_read_is_required()
+    {
+        await using var site = await TestSite.StartAsync(o => o.AllowPublish = true);
+        var (clientId, _) = await site.RegisterAsync();
+        var html = await (await site.Browser("editor").GetAsync(TestSite.AuthorizeUrl(clientId, Pkce.Challenge(TestSite.Verifier())))).Content.ReadAsStringAsync();
+        Assert.Equal(["content:write", "content:publish"], Browser.Ticked(html).Select(t => t.Value));
+        Assert.Contains("checked disabled> " + Scopes.Describe(Scopes.Read), html);
+
+        var readOnly = await site.ConnectAsync(allow: []);
+        Assert.Equal("content:read", readOnly.Scope);
+        var noPublish = await site.ConnectAsync(allow: ["content:write"]);
+        Assert.Equal("content:read content:write", noPublish.Scope);
+        Assert.Contains(site.Audit.Audit, m => m.Contains("authorize allowed") && m.EndsWith("scope content:read content:write", StringComparison.Ordinal));
+        var page = await (await site.Browser("editor").GetAsync("/episerver/opticli/connections")).Content.ReadAsStringAsync();
+        Assert.Contains("<td>content:read</td>", page);
+        Assert.Contains("<td>content:read content:write</td>", page);
+    }
+
+    [Fact]
+    public async Task A_scope_the_consent_page_did_not_offer_is_ignored_when_posted()
+    {
+        // The site doesn't allow publishing, so the page doesn't offer it; posting it anyway changes nothing.
+        var (clientId, _) = await _site.RegisterAsync();
+        var browser = _site.Browser("editor");
+        var url = TestSite.AuthorizeUrl(clientId, Pkce.Challenge(TestSite.Verifier()), scope: "content:read content:write content:publish");
+        var html = await (await browser.GetAsync(url)).Content.ReadAsStringAsync();
+        Assert.DoesNotContain("content:publish", html);
+        var posted = await browser.PostFormAsync(Browser.FormAction(html), [.. Browser.Inputs(html, "allow"), KeyValuePair.Create("scope", "content:publish"), KeyValuePair.Create("scope", "content:write")]);
+        var code = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(posted.Headers.Location!.Query)["code"].ToString();
+        var stored = await _site.Store.TakeCodeAsync(Secrets.Hash(code), default);
+        Assert.Equal("content:read content:write", stored!.Scope);
+    }
+
+    [Fact]
+    public async Task A_client_asking_only_for_write_gets_read_with_it()
+    {
+        Assert.Equal("content:read content:write", Scopes.Grantable("content:write", new OptiCliMcpOptions()));
+        Assert.Equal("", Scopes.Grantable("openid profile", new OptiCliMcpOptions()));
+        Assert.Equal("content:read", Scopes.Chosen("content:read content:write", []));
+        Assert.Equal("content:read", Scopes.Narrowed("content:read content:write", "content:read"));
+        Assert.Equal("content:read content:write", Scopes.Narrowed("content:read content:write", null));
+        Assert.Equal("", Scopes.Intersect("content:read", ""));
     }
 
     [Fact]
@@ -322,7 +368,7 @@ public sealed class AuthorizationServerTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Refresh_tokens_rotate_and_an_old_one_fails()
+    public async Task Refresh_tokens_rotate()
     {
         var tokens = await _site.ConnectAsync();
         var first = await _site.TokenAsync(RefreshForm(tokens));
@@ -330,13 +376,114 @@ public sealed class AuthorizationServerTests : IAsyncLifetime
         var rotated = await Tokens.ReadAsync(first, tokens.ClientId);
         Assert.NotEqual(tokens.Refresh, rotated.Refresh);
 
-        var reused = await _site.TokenAsync(RefreshForm(tokens));
-        Assert.Equal(HttpStatusCode.BadRequest, reused.StatusCode);
-        Assert.Equal("invalid_grant", await Error(reused));
-        Assert.Contains("no-store", reused.Headers.CacheControl!.ToString());
-
-        Assert.Equal(HttpStatusCode.OK, (await _site.TokenAsync(RefreshForm(rotated))).StatusCode);
+        var again = await _site.TokenAsync(RefreshForm(rotated));
+        Assert.Equal(HttpStatusCode.OK, again.StatusCode);
+        Assert.Contains("no-store", again.Headers.CacheControl!.ToString());
         Assert.Single(await _site.Store.ListGrantsAsync(null, default));
+    }
+
+    [Fact]
+    public async Task A_rotated_out_refresh_token_used_again_revokes_the_connection()
+    {
+        var tokens = await _site.ConnectAsync();
+        var rotated = await Tokens.ReadAsync(await _site.TokenAsync(RefreshForm(tokens)), tokens.ClientId);
+
+        // Whoever holds the old token (the client confused, or someone who copied it): the site can't tell, so the
+        // connection ends for the holder of the current token too.
+        var reused = await _site.TokenAsync(RefreshForm(tokens));
+        Assert.Equal("invalid_grant", await Error(reused));
+        Assert.Empty(await _site.Store.ListGrantsAsync(null, default));
+        Assert.Equal("invalid_grant", await Error(await _site.TokenAsync(RefreshForm(rotated))));
+        Assert.Null(await _site.Services.GetRequiredService<TokenService>().ValidateAsync(rotated.Access, "http://localhost/episerver/opticli/mcp", default));
+        Assert.Contains(_site.Audit.Audit, m => m.Contains("replaced refresh token was used again"));
+    }
+
+    [Fact]
+    public async Task Of_parallel_refreshes_with_the_same_token_exactly_one_succeeds()
+    {
+        var tokens = await _site.ConnectAsync();
+        var responses = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => Task.Run(() => _site.TokenAsync(RefreshForm(tokens)))));
+
+        var succeeded = responses.Where(r => r.StatusCode == HttpStatusCode.OK).ToList();
+        var winner = await Tokens.ReadAsync(Assert.Single(succeeded), tokens.ClientId);
+        Assert.All(responses.Where(r => r.StatusCode != HttpStatusCode.OK), r => Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode));
+        // The grant has the winner's token; whichever of the others came after the rotation counted as reuse, and
+        // ended the connection: either way no second token works.
+        var grants = await _site.Store.ListGrantsAsync(null, default);
+        if (grants.Count == 1)
+        {
+            Assert.Equal(Secrets.Hash(winner.Refresh), grants[0].RefreshHash);
+        }
+    }
+
+    [Fact]
+    public async Task A_parallel_refresh_that_loses_the_race_does_not_revoke_the_connection()
+    {
+        var tokens = await _site.ConnectAsync();
+        var raced = false;
+        // Another refresh with the same token rotates it between this refresh's lookup and its swap.
+        _site.Store.BeforeRotate = async () =>
+        {
+            if (!raced)
+            {
+                raced = true;
+                Assert.Equal(HttpStatusCode.OK, (await _site.TokenAsync(RefreshForm(tokens))).StatusCode);
+            }
+        };
+        var lost = await _site.TokenAsync(RefreshForm(tokens));
+        Assert.Equal("invalid_grant", await Error(lost));
+        Assert.Single(await _site.Store.ListGrantsAsync(null, default));
+        Assert.Contains(_site.Audit.Audit, m => m.Contains("refreshed at the same time, or revoked"));
+    }
+
+    [Fact]
+    public async Task A_connection_revoked_during_a_refresh_stays_revoked()
+    {
+        var tokens = await _site.ConnectAsync();
+        var grant = Assert.Single(await _site.Store.ListGrantsAsync(null, default));
+        _site.Store.BeforeRotate = () => _site.Store.DeleteGrantAsync(grant.GrantId, default);
+
+        Assert.Equal("invalid_grant", await Error(await _site.TokenAsync(RefreshForm(tokens))));
+        Assert.Empty(await _site.Store.ListGrantsAsync(null, default));
+    }
+
+    [Fact]
+    public async Task The_store_rotates_only_from_the_current_token_and_never_adds_a_grant()
+    {
+        var store = new InMemoryOAuthStore();
+        var grant = new Grant
+        {
+            GrantId = "g1", ClientId = "c", ClientName = "C", UserName = "editor", Roles = ["WebEditors"], Scope = "content:read",
+            Resource = "r", RefreshHash = "h1", Created = DateTimeOffset.UnixEpoch, Expires = DateTimeOffset.UnixEpoch.AddDays(1),
+        };
+        await store.AddGrantAsync(grant, default);
+
+        Assert.True(await store.TryRotateRefreshAsync("g1", "h1", "h2", grant.Expires, grant.Roles, grant.Scope, default));
+        Assert.False(await store.TryRotateRefreshAsync("g1", "h1", "h3", grant.Expires, grant.Roles, grant.Scope, default));
+        var rotated = await store.FindGrantByRefreshAsync("h2", default);
+        Assert.Equal("h1", rotated!.PreviousRefreshHash);
+        Assert.Equal("g1", (await store.FindGrantByPreviousRefreshAsync("h1", default))!.GrantId);
+        Assert.Null(await store.FindGrantByPreviousRefreshAsync("", default));
+
+        await store.DeleteGrantAsync("g1", default);
+        Assert.False(await store.TryRotateRefreshAsync("g1", "h2", "h4", grant.Expires, grant.Roles, grant.Scope, default));
+        Assert.Null(await store.FindGrantAsync("g1", default));
+    }
+
+    [Fact]
+    public async Task A_refresh_for_fewer_scopes_gets_an_access_token_for_those_and_the_connection_keeps_the_rest()
+    {
+        var tokens = await _site.ConnectAsync();
+        var form = RefreshForm(tokens);
+        form["scope"] = "content:read";
+        var narrowed = await Tokens.ReadAsync(await _site.TokenAsync(form), tokens.ClientId);
+        Assert.Equal("content:read", narrowed.Scope);
+        var principal = await _site.Services.GetRequiredService<TokenService>().ValidateAsync(narrowed.Access, "http://localhost/episerver/opticli/mcp", default);
+        Assert.Equal("content:read", principal!.FindFirst(McpClaims.Scope)!.Value);
+        Assert.Equal("content:read content:write", Assert.Single(await _site.Store.ListGrantsAsync(null, default)).Scope);
+
+        var full = await Tokens.ReadAsync(await _site.TokenAsync(RefreshForm(narrowed)), tokens.ClientId);
+        Assert.Equal("content:read content:write", full.Scope);
     }
 
     [Fact]
@@ -357,6 +504,45 @@ public sealed class AuthorizationServerTests : IAsyncLifetime
         Assert.Equal("invalid_grant", await Error(response));
         Assert.Empty(await _site.Store.ListGrantsAsync(null, default));
         Assert.Contains(_site.Audit.Audit, m => m.Contains("no longer an editor"));
+    }
+
+    [Fact]
+    public async Task A_refresh_after_the_editors_account_was_disabled_or_deleted_deletes_the_grant()
+    {
+        _site.Roles.Set("disabled", "WebEditors");
+        _site.Roles.Set("deleted", "WebEditors");
+        var disabled = await _site.ConnectAsync("disabled");
+        var deleted = await _site.ConnectAsync("deleted");
+        _site.Roles.Disable("disabled");
+        _site.Roles.Delete("deleted");
+
+        var refused = await _site.TokenAsync(RefreshForm(disabled));
+        Assert.Equal("invalid_grant", await Error(refused));
+        Assert.Contains("disabled", await refused.Content.ReadAsStringAsync());
+        Assert.Equal("invalid_grant", await Error(await _site.TokenAsync(RefreshForm(deleted))));
+        Assert.Empty(await _site.Store.ListGrantsAsync(null, default));
+        Assert.Contains(_site.Audit.Audit, m => m.Contains("refused: account disabled") && m.Contains("disabled"));
+    }
+
+    [Fact]
+    public async Task A_disabled_account_can_not_connect_though_its_login_still_works()
+    {
+        _site.Roles.Set("locked", "WebEditors");
+        _site.Roles.Disable("locked");
+        var (clientId, _) = await _site.RegisterAsync();
+        var response = await _site.Browser("locked").GetAsync(TestSite.AuthorizeUrl(clientId, Pkce.Challenge(TestSite.Verifier())));
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Contains("is disabled on this site", await response.Content.ReadAsStringAsync());
+        Assert.Contains(_site.Audit.Audit, m => m.Contains("refused (account disabled)") && m.Contains("locked"));
+    }
+
+    [Fact]
+    public async Task When_the_user_store_cannot_say_the_roles_decide()
+    {
+        var tokens = await _site.ConnectAsync();
+        _site.Roles.Unavailable = true;
+        // The roles fall back to the grant's, and the account can't be checked: the refresh goes ahead.
+        Assert.Equal(HttpStatusCode.OK, (await _site.TokenAsync(RefreshForm(tokens))).StatusCode);
     }
 
     [Fact]
@@ -389,6 +575,24 @@ public sealed class AuthorizationServerTests : IAsyncLifetime
         await _site.ConnectAsync();
         Assert.Equal(0, _site.Store.CodeCount);
         Assert.Single(await _site.Store.ListGrantsAsync(null, default));
+    }
+
+    [Fact]
+    public async Task Registered_clients_left_unused_for_30_days_are_deleted_and_used_ones_kept()
+    {
+        var (unused, _) = await _site.RegisterAsync();
+        var connected = await _site.ConnectAsync();
+        _site.Time.Advance(TimeSpan.FromDays(29));
+        await _site.TokenAsync(RefreshForm(connected)); // the connection stays in use
+        _site.Time.Advance(TimeSpan.FromDays(2));
+        var (recent, _) = await _site.RegisterAsync();
+        Assert.Equal(3, _site.Store.ClientCount);
+
+        await _site.ConnectAsync(); // a token issue runs the cleanup
+
+        Assert.Null(await _site.Store.FindClientAsync(unused, default));
+        Assert.NotNull(await _site.Store.FindClientAsync(connected.ClientId, default));
+        Assert.NotNull(await _site.Store.FindClientAsync(recent, default));
     }
 
     [Fact]

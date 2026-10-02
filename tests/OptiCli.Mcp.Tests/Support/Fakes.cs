@@ -15,13 +15,35 @@ internal sealed class FakeEditorRoles : IEditorRoles
         ["visitor"] = [],
     };
 
+    private readonly ConcurrentDictionary<string, bool> _disabled = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>When set, the store "can't say", and the module falls back to the login's roles.</summary>
     public bool Unavailable { get; set; }
 
     public void Set(string user, params string[] roles) => _roles[user] = roles;
 
+    /// <summary>Disables (or enables again) a user's account, keeping their roles.</summary>
+    public void Disable(string user, bool disabled = true)
+    {
+        if (disabled)
+        {
+            _disabled[user] = true;
+        }
+        else
+        {
+            _disabled.TryRemove(user, out _);
+        }
+    }
+
+    /// <summary>Deletes a user: no account, no roles.</summary>
+    public void Delete(string user) => _roles.TryRemove(user, out _);
+
     public Task<IReadOnlyList<string>?> GetRolesAsync(string userName, CancellationToken cancellationToken) =>
         Task.FromResult(Unavailable ? null : _roles.TryGetValue(userName, out var roles) ? roles : (IReadOnlyList<string>)[]);
+
+    /// <summary>A user the fake knows is active unless disabled; an unknown one doesn't exist.</summary>
+    public Task<bool?> IsActiveAsync(string userName, CancellationToken cancellationToken) =>
+        Task.FromResult(Unavailable ? null : (bool?)(_roles.ContainsKey(userName) && !_disabled.ContainsKey(userName)));
 
     /// <summary>One virtual role, as the CMS maps it: CmsAdmins is WebAdmins or Administrators.</summary>
     public bool IsInRole(ClaimsPrincipal user, string role) =>

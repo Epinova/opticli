@@ -40,10 +40,41 @@ internal sealed class InMemoryOAuthStore : IOAuthStore
     public Task<Grant?> FindGrantByRefreshAsync(string refreshHash, CancellationToken cancellationToken) =>
         Task.FromResult(_grants.Values.FirstOrDefault(g => g.RefreshHash == refreshHash) is { } grant ? WithUse(grant) : null);
 
-    public Task SaveGrantAsync(Grant grant, CancellationToken cancellationToken)
+    public Task<Grant?> FindGrantByPreviousRefreshAsync(string refreshHash, CancellationToken cancellationToken) =>
+        Task.FromResult(_grants.Values.FirstOrDefault(g => g.PreviousRefreshHash.Length > 0 && g.PreviousRefreshHash == refreshHash) is { } grant ? WithUse(grant) : null);
+
+    public Task AddGrantAsync(Grant grant, CancellationToken cancellationToken)
     {
         _grants[grant.GrantId] = grant with { LastUsed = null };
         return Task.CompletedTask;
+    }
+
+    /// <summary>For tests: runs as a refresh's compare-and-swap starts, after the refresh found the grant (a revocation, say).</summary>
+    public Func<Task>? BeforeRotate;
+
+    public async Task<bool> TryRotateRefreshAsync(string grantId, string currentRefreshHash, string newRefreshHash, DateTimeOffset expires,
+        IReadOnlyList<string> roles, string scope, CancellationToken cancellationToken)
+    {
+        if (BeforeRotate is { } beforeRotate)
+        {
+            await beforeRotate();
+        }
+        lock (GrantLocks.For(grantId))
+        {
+            if (!_grants.TryGetValue(grantId, out var grant) || grant.RefreshHash != currentRefreshHash)
+            {
+                return false;
+            }
+            _grants[grantId] = grant with
+            {
+                RefreshHash = newRefreshHash,
+                PreviousRefreshHash = currentRefreshHash,
+                Expires = expires,
+                Roles = roles,
+                Scope = scope,
+            };
+            return true;
+        }
     }
 
     public Task TouchGrantAsync(string grantId, DateTimeOffset at, CancellationToken cancellationToken)
@@ -62,12 +93,15 @@ internal sealed class InMemoryOAuthStore : IOAuthStore
 
     public Task DeleteGrantAsync(string grantId, CancellationToken cancellationToken)
     {
-        _grants.TryRemove(grantId, out _);
-        _used.TryRemove(grantId, out _);
+        lock (GrantLocks.For(grantId))
+        {
+            _grants.TryRemove(grantId, out _);
+            _used.TryRemove(grantId, out _);
+        }
         return Task.CompletedTask;
     }
 
-    public Task<int> DeleteExpiredAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    public Task<int> DeleteExpiredAsync(DateTimeOffset now, DateTimeOffset unusedClientsBefore, CancellationToken cancellationToken)
     {
         var deleted = 0;
         foreach (var code in _codes.Values.Where(c => c.Expires < now))
@@ -76,14 +110,25 @@ internal sealed class InMemoryOAuthStore : IOAuthStore
         }
         foreach (var grant in _grants.Values.Where(g => g.Expires < now))
         {
-            deleted += _grants.TryRemove(grant.GrantId, out _) ? 1 : 0;
-            _used.TryRemove(grant.GrantId, out _);
+            lock (GrantLocks.For(grant.GrantId))
+            {
+                deleted += _grants.TryRemove(grant.GrantId, out _) ? 1 : 0;
+                _used.TryRemove(grant.GrantId, out _);
+            }
+        }
+        var inUse = _grants.Values.Select(g => g.ClientId).Concat(_codes.Values.Select(c => c.ClientId)).ToHashSet(StringComparer.Ordinal);
+        foreach (var client in _clients.Values.Where(c => c.Created < unusedClientsBefore && !inUse.Contains(c.ClientId)))
+        {
+            deleted += _clients.TryRemove(client.ClientId, out _) ? 1 : 0;
         }
         return Task.FromResult(deleted);
     }
 
     /// <summary>For tests: how many codes are waiting.</summary>
     public int CodeCount => _codes.Count;
+
+    /// <summary>For tests: how many clients are registered.</summary>
+    public int ClientCount => _clients.Count;
 
     private Grant WithUse(Grant grant) => grant with { LastUsed = _used.TryGetValue(grant.GrantId, out var at) ? at : null };
 }

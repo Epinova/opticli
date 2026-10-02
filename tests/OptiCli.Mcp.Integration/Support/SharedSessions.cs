@@ -8,10 +8,10 @@ public sealed class McpSiteCollection : ICollectionFixture<SharedSessions>
 }
 
 /// <summary>
-/// One signed-in session per test user, for the tests that only need a connected editor. The module rate-limits
-/// registration, authorization and token requests per address (20, 60 and 60 a minute): a sign-in per test would come
-/// close, and two runs in a row would go over. Tests about signing in and connections make their own sessions. At the
-/// end each shared connection is revoked.
+/// One signed-in session per test user, for the tests that only need a connected editor: a sign-in per test would be
+/// slow, and the module rate-limits registration, authorization and token requests (the test site raises the limits,
+/// setup.sh). Tests about signing in and connections make their own sessions. At the end each shared connection is
+/// revoked.
 /// </summary>
 public sealed class SharedSessions : IAsyncLifetime
 {

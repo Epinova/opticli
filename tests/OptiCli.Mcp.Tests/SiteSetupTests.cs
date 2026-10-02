@@ -13,7 +13,7 @@ public class RateLimitTests
     [Fact]
     public async Task Registration_is_limited_per_address_with_a_429()
     {
-        await using var site = await TestSite.StartAsync(limits: new OAuthRateLimits { RegisterPerMinute = 2 });
+        await using var site = await TestSite.StartAsync(limits: new OptiCliMcpRateLimits { RegisterPerMinute = 2 });
         var body = new { redirect_uris = new[] { TestSite.RedirectUri }, token_endpoint_auth_method = "none" };
         Assert.Equal(HttpStatusCode.Created, (await site.Client().PostAsync("/episerver/opticli/oauth/register", TestSite.Json(body))).StatusCode);
         Assert.Equal(HttpStatusCode.Created, (await site.Client().PostAsync("/episerver/opticli/oauth/register", TestSite.Json(body))).StatusCode);
@@ -23,23 +23,56 @@ public class RateLimitTests
     }
 
     [Fact]
-    public async Task The_token_endpoint_is_limited_on_its_own()
+    public async Task The_token_endpoint_is_limited_per_client_and_address()
     {
-        await using var site = await TestSite.StartAsync(limits: new OAuthRateLimits { TokenPerMinute = 3 });
+        await using var site = await TestSite.StartAsync(limits: new OptiCliMcpRateLimits { TokenPerMinute = 3 });
         var form = new Dictionary<string, string> { ["grant_type"] = "refresh_token", ["refresh_token"] = "guess", ["client_id"] = "mcp_x" };
         for (var i = 0; i < 3; i++)
         {
             Assert.Equal(HttpStatusCode.Unauthorized, (await site.TokenAsync(form)).StatusCode);
         }
-        Assert.Equal(HttpStatusCode.TooManyRequests, (await site.TokenAsync(form)).StatusCode);
+        var limited = await site.TokenAsync(form);
+        Assert.Equal(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.Contains("for this client", await limited.Content.ReadAsStringAsync());
+        // Another client from the same address (claude.ai's editors all share Anthropic's) has a window of its own.
+        Assert.Equal(HttpStatusCode.Unauthorized, (await site.TokenAsync(new(form) { ["client_id"] = "mcp_y" })).StatusCode);
         // Registration still has its own window.
         await site.RegisterAsync();
     }
 
     [Fact]
+    public async Task The_token_endpoint_has_a_ceiling_per_address_whatever_the_client()
+    {
+        await using var site = await TestSite.StartAsync(limits: new OptiCliMcpRateLimits { TokenPerMinute = 100, TokenPerAddressPerMinute = 3 });
+        for (var i = 0; i < 3; i++)
+        {
+            var form = new Dictionary<string, string> { ["grant_type"] = "refresh_token", ["refresh_token"] = "guess", ["client_id"] = $"mcp_{i}" };
+            Assert.Equal(HttpStatusCode.Unauthorized, (await site.TokenAsync(form)).StatusCode);
+        }
+        var limited = await site.TokenAsync(new() { ["grant_type"] = "refresh_token", ["client_id"] = "mcp_new" });
+        Assert.Equal(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.Contains("from this address", await limited.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task The_limits_are_options_with_defaults_for_shared_addresses()
+    {
+        var defaults = new OptiCliMcpRateLimits();
+        Assert.Equal((60, 60, 600, 60), (defaults.RegisterPerMinute, defaults.TokenPerMinute, defaults.TokenPerAddressPerMinute, defaults.AuthorizePerMinute));
+
+        await using var site = await TestSite.StartAsync(configuration: new()
+        {
+            ["OptiCli:Mcp:RateLimits:TokenPerMinute"] = "7",
+            ["OptiCli:Mcp:RateLimits:RegisterPerMinute"] = "9",
+        });
+        Assert.Equal((9, 7), (site.Options.RateLimits.RegisterPerMinute, site.Options.RateLimits.TokenPerMinute));
+        Assert.Contains("every limit must be positive", new OptiCliMcpOptions { RateLimits = new() { TokenPerMinute = 0 } }.Problem());
+    }
+
+    [Fact]
     public async Task The_consent_post_is_limited()
     {
-        await using var site = await TestSite.StartAsync(limits: new OAuthRateLimits { AuthorizePerMinute = 1 });
+        await using var site = await TestSite.StartAsync(limits: new OptiCliMcpRateLimits { AuthorizePerMinute = 1 });
         var (clientId, _) = await site.RegisterAsync();
         var url = TestSite.AuthorizeUrl(clientId, Pkce.Challenge(TestSite.Verifier()));
         Assert.Equal(HttpStatusCode.OK, (await site.Browser("editor").GetAsync(url)).StatusCode);

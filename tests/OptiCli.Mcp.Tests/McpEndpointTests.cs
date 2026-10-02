@@ -55,8 +55,15 @@ public sealed class McpEndpointTests : IAsyncLifetime
     [Fact]
     public async Task A_token_without_content_read_answers_403_insufficient_scope()
     {
-        var tokens = await _site.ConnectAsync(scope: "content:write");
-        var response = await Call(tokens.Access, Initialize());
+        // The consent page always grants read with anything else, so such a token comes from a grant made by hand.
+        var grant = new Grant
+        {
+            GrantId = "write-only", ClientId = "mcp_x", ClientName = "X", UserName = "editor", Roles = ["WebEditors"], Scope = "content:write",
+            Resource = "http://localhost/episerver/opticli/mcp", RefreshHash = "x", Created = _site.Time.GetUtcNow(), Expires = _site.Time.GetUtcNow().AddDays(1),
+        };
+        await _site.Store.AddGrantAsync(grant, default);
+        var (access, _) = _site.Services.GetRequiredService<TokenService>().Issue(grant);
+        var response = await Call(access, Initialize());
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Contains("error=\"insufficient_scope\"", response.Headers.WwwAuthenticate.Single().ToString());
     }
@@ -163,7 +170,7 @@ public sealed class McpEndpointTests : IAsyncLifetime
                     var page = await browser.GetAsync(context.AuthorizationUri.PathAndQuery);
                     var html = await page.Content.ReadAsStringAsync(cancellationToken);
                     Assert.Equal(HttpStatusCode.OK, page.StatusCode);
-                    var posted = await browser.PostFormAsync(Browser.FormAction(html), Browser.Inputs(html, "allow"));
+                    var posted = await browser.PostFormAsync(Browser.FormAction(html), Browser.Inputs(html, "allow").Concat(Browser.Ticked(html)));
                     var back = QueryHelpers.ParseQuery(posted.Headers.Location!.Query);
                     return new AuthorizationResult { Code = back["code"], State = back["state"], Iss = back["iss"] };
                 },

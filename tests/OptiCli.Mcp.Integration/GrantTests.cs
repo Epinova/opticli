@@ -33,17 +33,40 @@ public sealed class GrantTests
         Assert.NotEqual(first.AccessToken, second.AccessToken);
         Assert.Equal(1, session.Browser.SignIns);
 
-        // The old refresh token is spent; the connection itself carries on.
-        var (status, reused) = await session.RefreshAsync(first.RefreshToken!);
-        Assert.Equal((HttpStatusCode.BadRequest, "invalid_grant"), (status, reused.GetProperty("error").GetString()));
-        Assert.Equal(TestUsers.Editor, (await session.OkAsync("whoami")).GetProperty("name").GetString());
-
         var (again, rotated) = await session.RefreshAsync(second.RefreshToken!);
         Assert.Equal(HttpStatusCode.OK, again);
         Assert.NotEqual(second.RefreshToken, rotated.GetProperty("refresh_token").GetString());
         Assert.Equal("content:read content:write content:publish", rotated.GetProperty("scope").GetString());
         Assert.Equal("Bearer", rotated.GetProperty("token_type").GetString());
         Assert.True(rotated.GetProperty("expires_in").GetInt32() > 0);
+
+        // The one before the current refresh token, used again after it was rotated out (RFC 9700): it leaked, or the
+        // client lost track. The site can't tell, so the whole connection ends, the newest tokens with it.
+        var (status, reused) = await session.RefreshAsync(second.RefreshToken!);
+        Assert.Equal((HttpStatusCode.BadRequest, "invalid_grant"), (status, reused.GetProperty("error").GetString()));
+        Assert.Contains("revoked", reused.GetProperty("error_description").GetString());
+        var (newest, _) = await session.RefreshAsync(rotated.GetProperty("refresh_token").GetString()!);
+        Assert.Equal(HttpStatusCode.BadRequest, newest);
+        using (var old = await session.PostMcpAsync(rotated.GetProperty("access_token").GetString()))
+        {
+            Assert.Equal(HttpStatusCode.Unauthorized, old.StatusCode);
+        }
+    }
+
+    [McpSiteFact]
+    public async Task A_refresh_for_fewer_scopes_gets_a_token_for_those_only()
+    {
+        await using var session = await McpSession.ConnectAsync(TestUsers.Editor);
+        var (status, narrowed) = await session.RefreshAsync(session.Tokens.Current!.RefreshToken!, "content:read");
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal("content:read", narrowed.GetProperty("scope").GetString());
+        session.Tokens.ReplaceAccessToken(narrowed.GetProperty("access_token").GetString()!);
+        session.AllowSignIn = false;
+        var refused = await session.ErrorAsync("create_content", new { type = "StandardPage", name = "x", parent = "1", dryRun = true });
+        Assert.Equal("missingScope", refused.GetProperty("reason").GetString());
+        // The connection keeps what the editor approved.
+        var (_, full) = await session.RefreshAsync(narrowed.GetProperty("refresh_token").GetString()!);
+        Assert.Equal("content:read content:write content:publish", full.GetProperty("scope").GetString());
     }
 
     [McpSiteFact]
@@ -74,6 +97,22 @@ public sealed class GrantTests
         var cutOff = await Assert.ThrowsAnyAsync<Exception>(() => session.CallAsync("whoami"));
         Assert.Contains("The client tried to sign in again", SignInTests.Flatten(cutOff));
         Assert.DoesNotContain($"<code>{tokens.ClientId}</code>", await session.Browser.ConnectionsAsync(CancellationToken.None));
+    }
+
+    [McpSiteFact]
+    public async Task An_editor_whose_account_was_disabled_gets_no_new_token_and_the_connection_is_deleted()
+    {
+        await using var session = await McpSession.ConnectAsync(TestUsers.Product);
+        var tokens = session.Tokens.Current!;
+        await using (await TestUserRoles.ForTestSite().DisableAsync(TestUsers.Product))
+        {
+            // The roles are unchanged: it's the account the refresh catches.
+            var (status, refused) = await session.RefreshAsync(tokens.RefreshToken!);
+            Assert.Equal((HttpStatusCode.BadRequest, "invalid_grant"), (status, refused.GetProperty("error").GetString()));
+            Assert.Contains("disabled", refused.GetProperty("error_description").GetString());
+            using var old = await session.PostMcpAsync(tokens.AccessToken);
+            Assert.Equal(HttpStatusCode.Unauthorized, old.StatusCode);
+        }
     }
 
     [McpSiteFact]

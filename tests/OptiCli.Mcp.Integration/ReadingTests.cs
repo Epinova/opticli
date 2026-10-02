@@ -55,6 +55,34 @@ public sealed class ReadingTests(SharedSessions sessions)
     }
 
     [McpSiteFact]
+    public async Task Paging_through_children_counts_only_what_the_editor_can_read()
+    {
+        var product = await sessions.ForAsync(TestUsers.Product);
+        var parent = (await product.OkAsync("get_content", new { reference = TestUsers.HiddenPage })).GetProperty("parent").GetString()!;
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var all = (await editor.OkAsync("list_children", new { reference = parent, limit = 200 })).GetProperty("items").EnumerateArray()
+            .Select(i => i.GetProperty("guid").GetString()).ToList();
+
+        // One at a time: the cursor goes up by one per item the editor sees, so it tells nothing of the hidden page
+        // between them.
+        var paged = new List<string?>();
+        int? cursor = null;
+        do
+        {
+            var page = await editor.OkAsync("list_children", new { reference = parent, limit = 1, cursor });
+            paged.AddRange(page.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("guid").GetString()));
+            int? next = page.TryGetProperty("next", out var n) && n.ValueKind == JsonValueKind.Number ? n.GetInt32() : null;
+            Assert.True(next is null || next == paged.Count, $"cursor {next} after {paged.Count} items");
+            cursor = next;
+        }
+        while (cursor is not null);
+        Assert.Equal(all, paged);
+        Assert.DoesNotContain(TestUsers.HiddenPage, paged);
+        var theirs = (await product.OkAsync("list_children", new { reference = parent, limit = 200 })).GetProperty("items").GetArrayLength();
+        Assert.True(theirs > all.Count, "the product editor sees the hidden page among them");
+    }
+
+    [McpSiteFact]
     public async Task resolve_url_finds_the_content_of_a_public_path_a_full_URL_and_a_permanent_link()
     {
         var editor = await sessions.ForAsync(TestUsers.Editor);

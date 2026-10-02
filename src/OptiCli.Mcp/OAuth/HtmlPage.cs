@@ -56,6 +56,7 @@ internal static class HtmlPage
             button{font:inherit;padding:.4rem 1.1rem;margin-right:.5rem;cursor:pointer}
             table{border-collapse:collapse;width:100%;font-size:.9rem}td,th{text-align:left;padding:.35rem .5rem;border-bottom:1px solid #ddd;vertical-align:top}
             .muted{color:#666;font-size:.9rem}code{font-size:.85rem;word-break:break-all}
+            .scopes{list-style:none;padding-left:0}.scopes li{margin:.3rem 0}
             </style></head><body>
             {{body}}
             </body></html>

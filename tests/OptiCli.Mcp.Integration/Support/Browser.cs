@@ -33,6 +33,9 @@ internal sealed partial class Browser : IDisposable
     /// <summary>What to press on the consent page.</summary>
     public string Decision { get; set; } = "allow";
 
+    /// <summary>The scopes to leave ticked on the consent page; all it offers when null.</summary>
+    public string[]? Allow { get; set; }
+
     /// <summary>The last consent page shown, to check what it offered.</summary>
     public string? LastConsentPage { get; private set; }
 
@@ -68,7 +71,8 @@ internal sealed partial class Browser : IDisposable
                 LastConsentPage = html;
                 var fields = Inputs(html);
                 fields["decision"] = Decision;
-                using var post = await _http.PostAsync(url, new FormUrlEncodedContent(fields), cancellationToken);
+                var ticked = Ticked(html).Where(t => Allow is null || Allow.Contains(t.Value));
+                using var post = await _http.PostAsync(url, new FormUrlEncodedContent(fields.Concat(ticked)), cancellationToken);
                 return post.Headers.Location is { } location
                     ? new Uri(url, location)
                     : throw Unexpected(post.StatusCode, await post.Content.ReadAsStringAsync(cancellationToken));
@@ -155,6 +159,23 @@ internal sealed partial class Browser : IDisposable
             if (Attribute("name") is { } key && Attribute("type") is not ("submit" or "checkbox"))
             {
                 fields.TryAdd(key, Attribute("value") ?? "");
+            }
+        }
+        return fields;
+    }
+
+    /// <summary>The ticked checkboxes, as the browser would send them (a disabled one isn't sent).</summary>
+    private static List<KeyValuePair<string, string>> Ticked(string html)
+    {
+        var fields = new List<KeyValuePair<string, string>>();
+        foreach (Match input in Input().Matches(html))
+        {
+            string? Attribute(string name) =>
+                Regex.Match(input.Value, $"\\b{name}=\"([^\"]*)\"") is { Success: true } m ? WebUtility.HtmlDecode(m.Groups[1].Value) : null;
+            if (Attribute("type") == "checkbox" && Attribute("name") is { } key
+                && input.Value.Contains(" checked", StringComparison.Ordinal) && !input.Value.Contains(" disabled", StringComparison.Ordinal))
+            {
+                fields.Add(KeyValuePair.Create(key, Attribute("value") ?? "on"));
             }
         }
         return fields;

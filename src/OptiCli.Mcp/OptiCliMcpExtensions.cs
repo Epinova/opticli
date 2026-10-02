@@ -46,8 +46,7 @@ public static class OptiCliMcpExtensions
         // The site's store and role provider; a test (or another CMS) registers its own first.
         services.TryAddSingleton<IOAuthStore, DdsOAuthStore>();
         services.TryAddScoped<IEditorRoles, CmsEditorRoles>();
-        services.TryAddSingleton(new OAuthRateLimits());
-        services.AddSingleton<OAuthRateLimiter>();
+        services.AddSingleton(sp => new OAuthRateLimiter(OAuthRateLimits.From(sp.GetRequiredService<IOptions<OptiCliMcpOptions>>().Value.RateLimits)));
         services.AddSingleton<ClientResolver>();
         services.AddSingleton<GrantCache>();
         services.AddSingleton<TokenService>();

@@ -31,6 +31,9 @@ internal sealed record SessionOptions
 
     /// <summary>What the editor presses on the consent page: allow or deny.</summary>
     public string Decision { get; init; } = "allow";
+
+    /// <summary>The scopes the editor leaves ticked on the consent page (read always comes with them); all offered when null.</summary>
+    public string[]? Allow { get; init; }
 }
 
 /// <summary>
@@ -102,7 +105,7 @@ internal sealed class McpSession : IAsyncDisposable
     private static async Task<McpSession> ConnectOnceAsync(string user, SessionOptions? options, CancellationToken cancellationToken)
     {
         var site = options?.Site ?? McpSiteSettings.Url!;
-        var browser = new Browser(site, user, McpSiteSettings.Password(user)) { Decision = options?.Decision ?? "allow" };
+        var browser = new Browser(site, user, McpSiteSettings.Password(user)) { Decision = options?.Decision ?? "allow", Allow = options?.Allow };
         var traffic = new Traffic();
         var http = new HttpClient(new Traffic.Handler(traffic, new HttpClientHandler { AllowAutoRedirect = false })) { BaseAddress = site };
         var session = new McpSession(site, user, browser, new RecordingTokenCache(), traffic, http);
@@ -189,10 +192,15 @@ internal sealed class McpSession : IAsyncDisposable
     }
 
     /// <summary>A refresh at the token endpoint, as the client's registration says to authenticate.</summary>
-    public async Task<(HttpStatusCode Status, JsonElement Body)> RefreshAsync(string refreshToken)
+    /// <param name="scope">Fewer scopes to ask for; the connection's when null.</param>
+    public async Task<(HttpStatusCode Status, JsonElement Body)> RefreshAsync(string refreshToken, string? scope = null)
     {
         var tokens = Tokens.Current ?? throw new InvalidOperationException("No tokens yet.");
         var form = new Dictionary<string, string> { ["grant_type"] = "refresh_token", ["refresh_token"] = refreshToken };
+        if (scope is not null)
+        {
+            form["scope"] = scope;
+        }
         var request = new HttpRequestMessage(HttpMethod.Post, "episerver/opticli/oauth/token");
         switch (tokens.TokenEndpointAuthMethod)
         {

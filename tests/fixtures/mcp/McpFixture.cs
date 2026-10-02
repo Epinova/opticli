@@ -1,6 +1,6 @@
 // Copied into a copy of the edge-case site by setup.sh, for the MCP module's end-to-end tests
-// (tests/OptiCli.Mcp.Integration). At startup it makes the test users and the access rights the tests rely on, on
-// this site's database only. Passwords are generated, kept in App_Data/mcp-test-users.json (readable by the owner
+// (tests/OptiCli.Mcp.Integration). It adds a content type only administrators may create, and at startup makes the
+// test users and the access rights the tests rely on, on this site's database only. Passwords are generated, kept in App_Data/mcp-test-users.json (readable by the owner
 // only) and never printed.
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -13,6 +13,17 @@ using Microsoft.AspNetCore.Identity;
 using OptiCli.Mcp;
 
 namespace OptiCliMcpFixture;
+
+/// <summary>
+/// A block type only WebAdmins may create (the type's access rights, as admin mode sets them): an editor's assistant
+/// must not create it either, though the CMS doesn't check this on save.
+/// </summary>
+[ContentType(GUID = "5d6c1a2b-8e4f-4a7b-9c3d-2e1f0a9b8c71", DisplayName = "Restricted block", Description = "opticli MCP fixture: only WebAdmins may create it")]
+[Access(Roles = "WebAdmins", Access = AccessLevel.Create)]
+public class RestrictedBlock : BlockData
+{
+    public virtual string Heading { get; set; }
+}
 
 [InitializableModule]
 [ModuleDependency(typeof(EPiServer.Web.InitializationModule))]
@@ -107,7 +118,13 @@ public class McpFixture : IInitializableModule
                 passwords[name] = password;
                 Console.Error.WriteLine($"[mcp-fixture] reset the password of {name}");
             }
-            // Exactly these roles, so a test that took a role away and failed to give it back is repaired on restart.
+            // Enabled, and with exactly these roles, so a test that disabled the account or took a role away and failed
+            // to undo it is repaired on restart.
+            if (!user.IsApproved)
+            {
+                user.IsApproved = true;
+                Check(Wait(users.UpdateAsync(user)));
+            }
             var current = Wait(users.GetRolesAsync(user));
             foreach (var extra in current.Except(userRoles, StringComparer.OrdinalIgnoreCase))
             {

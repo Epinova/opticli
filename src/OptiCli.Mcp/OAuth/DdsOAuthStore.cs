@@ -8,9 +8,20 @@ namespace OptiCli.Mcp.OAuth;
 /// clients, codes and grants, and a site needs no table or migration of its own.
 /// </summary>
 /// <remarks>
-/// The Dynamic Data Store is synchronous; the async signatures leave room for a store that isn't. Taking a code is a
-/// find then a delete, serialised within the instance; two instances racing for the same code within milliseconds
-/// could both get it, which PKCE still guards (only the client that started the sign-in has the verifier).
+/// <para>
+/// The Dynamic Data Store is synchronous; the async signatures leave room for a store that isn't. It has no conditional
+/// update or transaction of its own, so what must happen once is a read and a write under a lock, which serialises it
+/// within the instance only:
+/// </para>
+/// <list type="bullet">
+/// <item>Taking a code is a find then a delete. Two instances racing for the same code within milliseconds could both
+/// get it, which PKCE still guards (only the client that started the sign-in has the verifier).</item>
+/// <item>A refresh re-reads the grant and compares its refresh token before it saves. Two instances given the same
+/// refresh token within milliseconds could both rotate it; the later save wins, so one of the two new refresh tokens
+/// never works (the first refresh after that fails, and the client signs in again), while both access tokens last
+/// their hour. A revocation on one instance in the same milliseconds as a refresh on another could be undone by the
+/// refresh's save. On one instance, and so on a site that isn't load-balanced, neither can happen.</item>
+/// </list>
 /// </remarks>
 internal sealed class DdsOAuthStore(DynamicDataStoreFactory stores) : IOAuthStore
 {
@@ -53,15 +64,37 @@ internal sealed class DdsOAuthStore(DynamicDataStoreFactory stores) : IOAuthStor
             ? data.ToRecord(LastUsed(data.GrantId))
             : null);
 
-    public Task SaveGrantAsync(Grant grant, CancellationToken cancellationToken)
+    public Task<Grant?> FindGrantByPreviousRefreshAsync(string refreshHash, CancellationToken cancellationToken) =>
+        Task.FromResult(refreshHash.Length > 0
+            && Store<McpGrantData>().Find<McpGrantData>(nameof(McpGrantData.PreviousRefreshHash), refreshHash).FirstOrDefault() is { } data
+                ? data.ToRecord(LastUsed(data.GrantId))
+                : null);
+
+    public Task AddGrantAsync(Grant grant, CancellationToken cancellationToken)
     {
-        var data = McpGrantData.From(grant);
-        if (FindGrantData(grant.GrantId) is { } existing)
-        {
-            data.Id = existing.Id;
-        }
-        Store<McpGrantData>().Save(data);
+        Store<McpGrantData>().Save(McpGrantData.From(grant));
         return Task.CompletedTask;
+    }
+
+    public Task<bool> TryRotateRefreshAsync(string grantId, string currentRefreshHash, string newRefreshHash, DateTimeOffset expires,
+        IReadOnlyList<string> roles, string scope, CancellationToken cancellationToken)
+    {
+        lock (GrantLocks.For(grantId))
+        {
+            // Read again inside the lock: what FindGrantByRefreshAsync found may have been rotated or deleted since.
+            var data = FindGrantData(grantId);
+            if (data is null || data.RefreshHash != currentRefreshHash)
+            {
+                return Task.FromResult(false);
+            }
+            data.PreviousRefreshHash = currentRefreshHash;
+            data.RefreshHash = newRefreshHash;
+            data.Expires = expires.UtcDateTime;
+            data.Roles = Lines(roles);
+            data.Scope = scope;
+            Store<McpGrantData>().Save(data);
+            return Task.FromResult(true);
+        }
     }
 
     /// <summary>In a store of its own, so recording a use can never overwrite a refresh token another instance just rotated.</summary>
@@ -91,16 +124,19 @@ internal sealed class DdsOAuthStore(DynamicDataStoreFactory stores) : IOAuthStor
 
     public Task DeleteGrantAsync(string grantId, CancellationToken cancellationToken)
     {
-        var grants = Store<McpGrantData>();
-        foreach (var grant in grants.Find<McpGrantData>(nameof(McpGrantData.GrantId), grantId).ToList())
+        lock (GrantLocks.For(grantId))
         {
-            grants.Delete(grant.Id);
+            var grants = Store<McpGrantData>();
+            foreach (var grant in grants.Find<McpGrantData>(nameof(McpGrantData.GrantId), grantId).ToList())
+            {
+                grants.Delete(grant.Id);
+            }
+            DeleteUses(grantId);
         }
-        DeleteUses(grantId);
         return Task.CompletedTask;
     }
 
-    public Task<int> DeleteExpiredAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    public Task<int> DeleteExpiredAsync(DateTimeOffset now, DateTimeOffset unusedClientsBefore, CancellationToken cancellationToken)
     {
         var cutoff = now.UtcDateTime;
         var deleted = 0;
@@ -113,8 +149,21 @@ internal sealed class DdsOAuthStore(DynamicDataStoreFactory stores) : IOAuthStor
         var grants = Store<McpGrantData>();
         foreach (var grant in grants.Items<McpGrantData>().Where(g => g.Expires < cutoff).ToList())
         {
-            grants.Delete(grant.Id);
-            DeleteUses(grant.GrantId);
+            lock (GrantLocks.For(grant.GrantId))
+            {
+                grants.Delete(grant.Id);
+                DeleteUses(grant.GrantId);
+            }
+            deleted++;
+        }
+        var inUse = grants.LoadAll<McpGrantData>().Select(g => g.ClientId)
+            .Concat(codes.LoadAll<McpCodeData>().Select(c => c.ClientId))
+            .ToHashSet(StringComparer.Ordinal);
+        var clients = Store<McpClientData>();
+        var clientCutoff = unusedClientsBefore.UtcDateTime;
+        foreach (var client in clients.Items<McpClientData>().Where(c => c.Created < clientCutoff).ToList().Where(c => !inUse.Contains(c.ClientId)))
+        {
+            clients.Delete(client.Id);
             deleted++;
         }
         return Task.FromResult(deleted);
@@ -294,6 +343,10 @@ public sealed class McpGrantData : IDynamicData
     [EPiServerDataIndex]
     public string RefreshHash { get; set; } = "";
 
+    /// <summary>See <see cref="Grant.PreviousRefreshHash"/>.</summary>
+    [EPiServerDataIndex]
+    public string PreviousRefreshHash { get; set; } = "";
+
     /// <summary>See <see cref="Grant.Created"/>; UTC.</summary>
     public DateTime Created { get; set; }
 
@@ -310,6 +363,7 @@ public sealed class McpGrantData : IDynamicData
         Scope = grant.Scope,
         Resource = grant.Resource,
         RefreshHash = grant.RefreshHash,
+        PreviousRefreshHash = grant.PreviousRefreshHash,
         Created = grant.Created.UtcDateTime,
         Expires = grant.Expires.UtcDateTime,
     };
@@ -324,6 +378,7 @@ public sealed class McpGrantData : IDynamicData
         Scope = Scope,
         Resource = Resource,
         RefreshHash = RefreshHash,
+        PreviousRefreshHash = PreviousRefreshHash ?? "",
         Created = DdsOAuthStore.Utc(Created),
         Expires = DdsOAuthStore.Utc(Expires),
         LastUsed = lastUsed,

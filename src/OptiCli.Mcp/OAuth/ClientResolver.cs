@@ -68,7 +68,8 @@ internal sealed class ClientResolver : IDisposable
         cancellationToken.ThrowIfCancellationRequested();
         if (error is not null)
         {
-            _logger.LogWarning("Client metadata document {ClientId} refused: it {Reason}.", clientId, error);
+            // Both are the caller's to choose (the reason may name the URL's host): cleaned, so they can't forge log lines.
+            _logger.LogWarning("Client metadata document {ClientId} refused: it {Reason}.", McpAudit.Clean(clientId), McpAudit.Clean(error));
         }
         if (_documents.Count >= MaxCached)
         {

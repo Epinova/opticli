@@ -101,6 +101,13 @@ public sealed record Grant
     /// <summary>SHA-256 of the current refresh token; an older one no longer matches.</summary>
     public required string RefreshHash { get; init; }
 
+    /// <summary>
+    /// SHA-256 of the refresh token the current one replaced; empty before the first refresh. A rotated-out token that
+    /// comes back means it leaked, or the client is confused: either way the grant ends (RFC 9700 4.14.2). Only the
+    /// one before is kept: older tokens are just unknown.
+    /// </summary>
+    public string PreviousRefreshHash { get; init; } = "";
+
     /// <summary>When the editor approved it.</summary>
     public required DateTimeOffset Created { get; init; }
 
@@ -136,8 +143,21 @@ public interface IOAuthStore
     /// <returns>The grant whose current refresh token has this hash; null for none.</returns>
     Task<Grant?> FindGrantByRefreshAsync(string refreshHash, CancellationToken cancellationToken);
 
-    /// <summary>Adds a grant, or replaces the one with the same <see cref="Grant.GrantId"/>.</summary>
-    Task SaveGrantAsync(Grant grant, CancellationToken cancellationToken);
+    /// <returns>The grant whose previous refresh token (<see cref="Grant.PreviousRefreshHash"/>) has this hash; null for none.</returns>
+    Task<Grant?> FindGrantByPreviousRefreshAsync(string refreshHash, CancellationToken cancellationToken);
+
+    /// <summary>Adds a new grant, for a code just exchanged.</summary>
+    Task AddGrantAsync(Grant grant, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// A refresh: replaces the grant's refresh token, if it is still <paramref name="currentRefreshHash"/>, and sets
+    /// what the refresh looked up again, as one compare-and-swap. Of two refreshes with the same token only one
+    /// succeeds, and a grant deleted meanwhile (revoked) stays deleted: this never adds one.
+    /// </summary>
+    /// <param name="newRefreshHash">Becomes <see cref="Grant.RefreshHash"/>; <paramref name="currentRefreshHash"/> becomes <see cref="Grant.PreviousRefreshHash"/>.</param>
+    /// <returns>False when the grant is gone, or its refresh token is no longer <paramref name="currentRefreshHash"/>.</returns>
+    Task<bool> TryRotateRefreshAsync(string grantId, string currentRefreshHash, string newRefreshHash, DateTimeOffset expires,
+        IReadOnlyList<string> roles, string scope, CancellationToken cancellationToken);
 
     /// <summary>Records when a grant was last used, without touching the rest of it (a refresh may be saving it).</summary>
     Task TouchGrantAsync(string grantId, DateTimeOffset at, CancellationToken cancellationToken);
@@ -148,7 +168,22 @@ public interface IOAuthStore
     /// <summary>Deletes a grant, which revokes its tokens. Nothing happens for an unknown id.</summary>
     Task DeleteGrantAsync(string grantId, CancellationToken cancellationToken);
 
-    /// <summary>Deletes codes and grants that expired before <paramref name="now"/>.</summary>
+    /// <summary>
+    /// Deletes codes and grants that expired before <paramref name="now"/>, and registered clients created before
+    /// <paramref name="unusedClientsBefore"/> that have neither a grant nor a code waiting: registration is open to
+    /// anyone, so what it stores must not pile up.
+    /// </summary>
     /// <returns>How many were deleted.</returns>
-    Task<int> DeleteExpiredAsync(DateTimeOffset now, CancellationToken cancellationToken);
+    Task<int> DeleteExpiredAsync(DateTimeOffset now, DateTimeOffset unusedClientsBefore, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Locks for changing one grant within this process: a refresh's compare-and-swap and a revocation take the same one,
+/// so neither undoes the other. Striped, so memory stays bounded however many grants there are.
+/// </summary>
+internal static class GrantLocks
+{
+    private static readonly object[] Stripes = Enumerable.Range(0, 64).Select(_ => new object()).ToArray();
+
+    public static object For(string grantId) => Stripes[(int)((uint)StringComparer.Ordinal.GetHashCode(grantId) % (uint)Stripes.Length)];
 }
