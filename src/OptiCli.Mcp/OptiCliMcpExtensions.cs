@@ -124,9 +124,17 @@ public static class OptiCliMcpExtensions
         all.Add(endpoints.MapGet(McpUrls.ConnectionsPath(options), Handle(c => Connections(c).Show(c))).AllowAnonymous());
         all.Add(endpoints.MapPost(McpUrls.ConnectionsPath(options), Handle(c => Connections(c).Revoke(c))).AllowAnonymous());
 
-        if (options.RequireHost is { Length: > 0 } host)
+        foreach (var builder in all)
         {
-            foreach (var builder in all)
+            // Last, so it wraps the others: the site's status code pages never rewrite the module's errors.
+            builder.Add(endpoint =>
+            {
+                if (endpoint.RequestDelegate is { } next)
+                {
+                    endpoint.RequestDelegate = StatusCodePages.Skipping(next);
+                }
+            });
+            if (options.RequireHost is { Length: > 0 } host)
             {
                 builder.RequireHost(host);
             }

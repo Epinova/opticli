@@ -625,6 +625,20 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   prompt injection through content: the editor reviews the drafts (every write result has `editUrl`, the version in the
   CMS edit UI).
 
+### Error pages and security headers
+
+- **Custom error pages** (`UseStatusCodePages`, `UseStatusCodePagesWithReExecute`) are switched off for the module's
+  own requests, and its errors all have a body, so the site's error page never replaces them. That matters most for
+  the MCP endpoint's 401: re-executed as a POST to a GET-only error page, it would reach the client as a 405 without the
+  `WWW-Authenticate` header that tells it where to sign in.
+- **Security headers:** the consent and connections pages send `X-Frame-Options: DENY`, a `Content-Security-Policy`
+  with `frame-ancestors 'none'` and a `form-action` limited to the module and the client's redirect, and
+  `Referrer-Policy: no-referrer`. Middleware that sets a site's own security headers as the response starts replaces
+  them, and the module can't set its own later than that. The page also carries its policy and referrer policy in
+  `meta` elements, which the browser applies besides the site's header, but `frame-ancestors` and `X-Frame-Options`
+  only work as headers. So have such middleware leave `{BasePath}` (`/episerver/opticli`) alone, or only set headers
+  the response doesn't already have; or check that the site's own values forbid framing.
+
 ### Connections and audit log
 
 At `/episerver/opticli/connections` an editor sees the assistants they connected (app, the scopes they allowed, when

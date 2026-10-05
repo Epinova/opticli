@@ -28,6 +28,12 @@ internal static class OAuthJson
 /// The module's few pages (consent, errors, connections). Plain HTML, every value encoded; they can't be framed
 /// (clickjacking), load nothing, and forms post only to the module itself or, for consent, to the client's redirect.
 /// </summary>
+/// <remarks>
+/// A site's own security-header middleware usually sets its headers as the response starts, after the module set its
+/// own, and so replaces them; a callback of the module's can't come later than the site's. So the page carries its
+/// policy and referrer policy in <c>meta</c> elements as well, which the browser applies besides any header: the
+/// stricter of the two wins. <c>frame-ancestors</c> and <c>X-Frame-Options</c> only work as headers (see the README).
+/// </remarks>
 internal static class HtmlPage
 {
     public static string H(string? value) => WebUtility.HtmlEncode(value ?? "");
@@ -39,9 +45,9 @@ internal static class HtmlPage
     public static IResult Render(HttpContext context, HttpStatusCode status, string title, string body, string? formTarget = null)
     {
         var headers = context.Response.Headers;
+        var policy = $"default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; base-uri 'none'; form-action 'self'{(formTarget is null ? "" : " " + formTarget)}";
         headers.XFrameOptions = "DENY";
-        headers.ContentSecurityPolicy =
-            $"default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'{(formTarget is null ? "" : " " + formTarget)}";
+        headers.ContentSecurityPolicy = policy + "; frame-ancestors 'none'";
         headers.CacheControl = "no-store";
         headers.Pragma = "no-cache";
         headers["Referrer-Policy"] = "no-referrer";
@@ -50,6 +56,7 @@ internal static class HtmlPage
             $$"""
             <!doctype html>
             <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+            <meta http-equiv="Content-Security-Policy" content="{{H(policy)}}"><meta name="referrer" content="no-referrer">
             <title>{{H(title)}}</title>
             <style>
             body{font:16px/1.5 system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem;color:#1b1b1b}

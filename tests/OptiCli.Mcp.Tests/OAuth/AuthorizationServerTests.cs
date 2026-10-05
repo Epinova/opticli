@@ -192,6 +192,11 @@ public sealed class AuthorizationServerTests : IAsyncLifetime
         Assert.Contains("frame-ancestors 'none'", csp);
         Assert.Contains("form-action 'self' http://127.0.0.1:53682", csp);
         Assert.Contains("no-store", response.Headers.CacheControl!.ToString());
+        // Also in the page, where a site's own security headers can't replace them.
+        var html = await response.Content.ReadAsStringAsync();
+        Assert.Contains("<meta http-equiv=\"Content-Security-Policy\" content=\"default-src &#39;none&#39;;", html);
+        Assert.Contains("form-action &#39;self&#39; http://127.0.0.1:53682\">", html);
+        Assert.Contains("<meta name=\"referrer\" content=\"no-referrer\">", html);
     }
 
     [Fact]

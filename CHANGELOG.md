@@ -26,6 +26,8 @@ again to update the skill.
   `delete_content`, offered only when it sets `AllowDelete`. Both options are off by default. `requestApproval` only
   ever sends content for review, so it works without publishing. Content an editor can't read is the same
   `not_found` as missing content. Every write result has `editUrl`, the version in the CMS edit UI.
+- The module's errors (the MCP endpoint's 401 above all) have a body and switch the site's status code pages off, so
+  custom error pages don't replace them.
 - `/episerver/opticli/connections` lists an editor's connections with Revoke (administrators see everyone's), and the
   `OptiCli.Mcp.Audit` log category records sign-ins, tokens, revocations and tool calls.
 

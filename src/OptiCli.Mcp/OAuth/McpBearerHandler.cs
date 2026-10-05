@@ -34,22 +34,38 @@ internal sealed class McpBearerHandler(
             : AuthenticateResult.Success(new AuthenticationTicket(principal, SchemeName));
     }
 
+    /// <remarks>
+    /// With a small JSON body, and the site's status code pages off (<see cref="StatusCodePages"/>): an empty 401 is what
+    /// a site's custom error pages replace, and the client then never sees the header that tells it where to sign in.
+    /// </remarks>
     protected override async Task HandleChallengeAsync(AuthenticationProperties properties)
     {
         var result = await HandleAuthenticateOnceSafeAsync();
-        var error = result.Failure is not null ? ", error=\"invalid_token\", error_description=\"The access token is invalid, expired or revoked.\"" : "";
+        var invalid = result.Failure is not null;
+        var error = invalid ? ", error=\"invalid_token\", error_description=\"The access token is invalid, expired or revoked.\"" : "";
+        StatusCodePages.Skip(Context);
         Response.StatusCode = StatusCodes.Status401Unauthorized;
         Response.Headers.CacheControl = "no-store";
         Response.Headers.WWWAuthenticate =
             $"Bearer resource_metadata=\"{McpUrls.ResourceMetadata(Request, options.Value)}\", scope=\"{string.Join(' ', Scopes.Supported(options.Value))}\"{error}";
+        await WriteErrorAsync(invalid ? "invalid_token" : "unauthorized", invalid
+            ? "The access token is invalid, expired or revoked."
+            : "This MCP endpoint needs an OAuth access token: the WWW-Authenticate header's resource_metadata says where to get one.");
     }
 
     /// <summary>Signed in, but the connection wasn't granted what the endpoint needs (RFC 6750 3.1).</summary>
     protected override Task HandleForbiddenAsync(AuthenticationProperties properties)
     {
+        StatusCodePages.Skip(Context);
         Response.StatusCode = StatusCodes.Status403Forbidden;
+        Response.Headers.CacheControl = "no-store";
         Response.Headers.WWWAuthenticate =
             $"Bearer error=\"insufficient_scope\", scope=\"{Scopes.Read}\", resource_metadata=\"{McpUrls.ResourceMetadata(Request, options.Value)}\"";
-        return Task.CompletedTask;
+        return WriteErrorAsync("insufficient_scope", $"The connection wasn't granted {Scopes.Read}; connect again.");
     }
+
+    /// <summary>The error as JSON (RFC 6750 allows a body), in the OAuth error response's shape.</summary>
+    private Task WriteErrorAsync(string error, string description) => Response.HasStarted
+        ? Task.CompletedTask
+        : Response.WriteAsJsonAsync(new Dictionary<string, string> { ["error"] = error, ["error_description"] = description }, OAuthJson.Options, Context.RequestAborted);
 }

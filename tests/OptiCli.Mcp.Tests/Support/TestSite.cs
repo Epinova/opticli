@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Configuration;
@@ -41,7 +42,8 @@ internal sealed class TestSite : IAsyncDisposable
         Dictionary<string, string?>? configuration = null,
         OptiCliMcpRateLimits? limits = null,
         string environment = "Production",
-        Action<IServiceCollection>? services = null)
+        Action<IServiceCollection>? services = null,
+        bool statusCodePages = false)
     {
         var site = new TestSite();
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environment });
@@ -74,6 +76,13 @@ internal sealed class TestSite : IAsyncDisposable
         });
 
         var app = builder.Build();
+        if (statusCodePages)
+        {
+            // As a site with custom error pages has it: an error without a body is re-executed, with the request's own
+            // method, as the site's error page, which only answers GET.
+            app.UseStatusCodePagesWithReExecute("/error/{0}");
+            app.MapGet("/error/{code:int}", (int code) => Results.Text($"<h1>Site error page {code}</h1>", "text/html", statusCode: code));
+        }
         app.UseRouting();
         app.UseAuthentication();
         app.UseAuthorization();
