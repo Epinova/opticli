@@ -269,6 +269,17 @@ public class SiteHostsTests : IDisposable
     }
 
     [Fact]
+    public void Doctor_and_from_config_read_an_entry_naming_a_languages_primary_host_as_that_languages()
+    {
+        // Saved "Site F": "site-f.se", the site's primary host for sv beside one for every language.
+        var f = Site(7, "Site F", new HostInfo("site-f.example", HostType.Primary, null, null), new HostInfo("site-f.se", HostType.Primary, "nb", null));
+        var saved = new Dictionary<string, SavedPrimaryHost> { ["Site F"] = new("site-f.se") };
+
+        Assert.Equal(PrimaryMapping.Matches, PrimaryMapping.Compare(saved, [f], Languages).Single().Status);
+        Assert.Equal("nb", UnqualifiedPrimary.Language(f.Hosts.Select(SiteHostsRunner.ToSiteHost).ToList(), ["site-f.se"], Languages));
+    }
+
+    [Fact]
     public void From_config_skips_a_saved_site_that_is_gone_and_keeps_each_entrys_options()
     {
         var warnings = new List<string>();

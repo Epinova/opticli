@@ -334,8 +334,11 @@ the `changes` line says so. With primary hosts for several languages only (or on
 the new host is for every language beside them, and `meta.warnings` gives the pairs for the rest. A host that is a
 primary host already keeps its language, and the language is worked out on the site as it was before the command, so
 the order of the pairs doesn't matter and running them again changes nothing. SiteUrl follows a pair without
-`@lang`, and a `@lang` pair whose primary host SiteUrl was on. `doctor` and `--from-config` read a saved entry without
-a language the same way.
+`@lang`, and a `@lang` pair whose primary host SiteUrl was on. A pair without `@lang` whose host is already one
+language's primary host, beside a primary host for every language, is that language's pair (`Site A@sv=...`): SiteUrl
+stays, and `meta.warnings` says so. Every primary pair, with or without `@lang`, makes the Edit host undefined (unless
+`--keep-edit`): the CMS has one Edit host per site, for every language. `doctor` and `--from-config` read a saved
+entry without a language the same way.
 
 Putting a site back: the commands only ever put SiteUrl on a primary host. Once it has moved, a SiteUrl that was on
 a host that isn't primary (as on a site the CMS created on its first request) can't be put back with them alone.

@@ -464,6 +464,44 @@ public class SiteHostPlannerTests
     }
 
     [Fact]
+    public void A_pair_without_a_language_on_a_languages_primary_host_beside_one_for_every_language_leaves_site_url()
+    {
+        var sites = new List<SiteState>
+        {
+            new(A, "Site A", "https://site-a.example/", [Host("site-a.example", HostTypes.Primary), Host("site-a.se", HostTypes.Primary, "sv"), Host("edit.site-a.example", HostTypes.Edit)]),
+        };
+
+        var plan = Plan(sites, Primary("Site A", "site-a.se"));
+        var a = plan.Sites.Single();
+
+        Assert.Equal("https://site-a.example/", a.After.SiteUrl);
+        Assert.Equal(Host("site-a.example", HostTypes.Primary), a.After.Hosts[0]);
+        Assert.Equal(Host("site-a.se", HostTypes.Primary, "sv"), a.After.Hosts[1]);
+        // As for Site A@sv=site-a.se: every primary pair makes the (language-invariant) Edit host undefined.
+        Assert.Equal(["edit.site-a.example: edit → undefined"], a.Changes);
+        var note = "Site A=site-a.se was read as `Site A@sv=site-a.se`: site-a.se is Site A's primary host for sv, beside its primary host for every language, so SiteUrl stays https://site-a.example/, as for that pair.";
+        Assert.Contains(plan.Warnings, w => w.StartsWith(note, StringComparison.Ordinal));
+        Assert.True(SiteHostPlanner.Same(Plan(sites, Primary("Site A", "site-a.se", "sv")).Sites.Single().After, a.After));
+
+        var again = Plan([a.After], Primary("Site A", "site-a.se"));
+        Assert.False(again.Sites.Single().Changed);
+        Assert.Contains(again.Warnings, w => w.StartsWith(note, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_pair_without_a_language_still_moves_site_url_on_a_site_whose_hosts_are_all_for_one_language()
+    {
+        // SiteUrl on the language's undefined host, not its primary one: the pair replaces the site's primary host all the same.
+        var sites = OneLanguage();
+        sites[0] = sites[0] with { SiteUrl = "https://www.site-d.example/" };
+
+        var d = Plan(sites, Primary("Site D", "localhost:5001")).Sites.Single();
+
+        Assert.Equal("https://localhost:5001/", d.After.SiteUrl);
+        Assert.False(Plan([d.After], Primary("Site D", "localhost:5001")).Sites.Single().Changed);
+    }
+
+    [Fact]
     public void A_pair_without_a_language_is_for_the_same_language_whatever_comes_before_it_in_the_batch()
     {
         SiteHostChange[] changes = [Primary("Site D", "localhost:5882"), Primary("Site D", "localhost:5881", "sv")];

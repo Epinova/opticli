@@ -74,7 +74,8 @@ internal static class SitesCommand
         var command = new Command("primary", $$"""
             Make a host each site's primary host, through the site (needs `opticli serve`): the host is added when the site
             doesn't have it, the previous primary host for that language and the site's Edit host become undefined, and a
-            pair without @lang also sets the site's URL (SiteUrl), as does a @lang pair whose primary host SiteUrl was on.
+            pair without @lang also sets the site's URL (SiteUrl), as does a @lang pair whose primary host SiteUrl was on
+            (a pair without @lang whose host is a language's primary host already counts as that language's).
             A pair without @lang replaces the site's primary host: the one for every language, or, on a site whose only
             primary host is bound to a language, that one, in that language. Existing hosts are kept, so production URLs
             still resolve. All pairs are validated as one batch before any site is saved (exit 5 naming the pair), e.g. a host

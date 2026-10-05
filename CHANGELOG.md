@@ -3,6 +3,16 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## Unreleased
+
+### Fixed
+
+- `sites primary "Site A=<host>"` with a host that is already the site's primary host for one language, beside its
+  primary host for every language, kept the host's language but still moved SiteUrl onto it. Such a pair now works
+  as `Site A@<lang>=<host>` would: SiteUrl stays unless it was on the primary host the pair replaces, and a warning
+  says how the pair was read. On a site whose hosts are all for one language, a pair without `@lang` still moves
+  SiteUrl. As before, every primary pair makes the Edit host undefined (unless `--keep-edit`).
+
 ## 0.10.0 (5 October 2026)
 
 ### New

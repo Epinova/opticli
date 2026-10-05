@@ -271,6 +271,10 @@ For a restored copy of a production database, whose sites still have the product
   already keeps its language, and the language comes from the site as it was before the command: the pairs' order
   doesn't matter, and running them again changes nothing. `Site A=h` and `Site A@nb=h` together for such an `nb` site:
   `validation` (the first already covers `nb`). `doctor` and `--from-config` read a saved entry the same way.
+- SiteUrl follows a pair without `@lang`, except one whose host is already a language's primary host beside a primary
+  host for every language: that is the language's pair, so SiteUrl stays (a warning says so) unless it was on the
+  primary host the pair replaces. Every primary pair makes the Edit host `undefined` (`--keep-edit` keeps it): the
+  CMS's Edit host is for every language.
 - The commands only put SiteUrl on a primary host: once moved, a SiteUrl that was on a host that isn't primary (as on a
   site the CMS created on its first request) can't be put back with them alone.
 - All pairs are one batch, checked before any site is saved, including the host the CMS adds for SiteUrl. Errors:

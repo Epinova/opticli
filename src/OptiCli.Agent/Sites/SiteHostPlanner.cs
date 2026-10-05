@@ -102,7 +102,7 @@ internal static class SiteHostPlanner
             switch (change.Action)
             {
                 case SiteHostActions.Primary:
-                    MakePrimary(site, existing, name, language ?? Unqualified(site, [literal, name], languages, warnings), language is null, https, change, label, work, issues, ref sameLanguageTwice);
+                    MakePrimary(site, existing, name, language ?? Unqualified(site, [literal, name], languages, warnings), language is null, https, change, label, work, issues, warnings, ref sameLanguageTwice);
                     break;
                 case SiteHostActions.Add:
                     Add(site, existing, name, HostTypes.Parse(change.Type ?? HostTypes.Undefined)!, language, https, label, work, issues, warnings);
@@ -215,7 +215,7 @@ internal static class SiteHostPlanner
     }
 
     /// <param name="language">The language the host is for: the pair's, or for one without @lang (<paramref name="unqualified"/>) <see cref="Unqualified"/>.</param>
-    private static void MakePrimary(WorkingSite site, SiteHost? existing, string name, string? language, bool unqualified, (bool Given, bool? Value) https, SiteHostChange change, string label, IReadOnlyList<WorkingSite> work, List<ValidationIssue> issues, ref bool sameLanguageTwice)
+    private static void MakePrimary(WorkingSite site, SiteHost? existing, string name, string? language, bool unqualified, (bool Given, bool? Value) https, SiteHostChange change, string label, IReadOnlyList<WorkingSite> work, List<ValidationIssue> issues, List<string> warnings, ref bool sameLanguageTwice)
     {
         if (name == HostNames.Wildcard)
         {
@@ -256,7 +256,10 @@ internal static class SiteHostPlanner
         {
             site.Replace(existing, final);
         }
-        if (unqualified && language is not null)
+        // A pair without @lang read as one language's, beside a primary host for every language (its host is that
+        // language's primary already): it is that language's pair, @lang and all.
+        var besideNeutral = unqualified && language is not null && site.Before.Hosts.Any(h => h.Type == HostTypes.Primary && h.Language is null);
+        if (unqualified && language is not null && !besideNeutral)
         {
             site.Changes.Add($"{name} is the primary host for {language}: on this site a pair without @lang replaces the primary host for {language}");
         }
@@ -268,18 +271,24 @@ internal static class SiteHostPlanner
             replacedSiteUrlHost |= HostNames.Same(previous.Name, siteUrlHost);
             site.Replace(previous, previous with { Type = HostTypes.Undefined });
         }
+        // Every primary pair, with or without @lang, makes the Edit host undefined: the CMS only allows one, for every
+        // language, so it is the edit host of this language too.
         if (!change.KeepEdit)
         {
-            // The CMS only allows an Edit host for every language, so it is the edit host of this language too.
             foreach (var edit in site.Hosts.Where(h => h.Type == HostTypes.Edit && !HostNames.Same(h.Name, name)).ToList())
             {
                 site.Replace(edit, edit with { Type = HostTypes.Undefined });
             }
         }
-        // SiteUrl follows a pair without @lang, and any pair whose primary host it was on.
-        if ((unqualified || replacedSiteUrlHost) && !change.KeepSiteUrl)
+        // SiteUrl follows any pair whose primary host it was on, and a pair without @lang, which replaces the site's
+        // primary host, unless it is read as one language's beside a primary host for every language.
+        if ((replacedSiteUrlHost || (unqualified && !besideNeutral)) && !change.KeepSiteUrl)
         {
             site.SetSiteUrl(HostNames.SiteUrl(final.Name, final.Https, site.SiteUrl));
+        }
+        else if (besideNeutral && !replacedSiteUrlHost)
+        {
+            warnings.Add($"{label} was read as `{site.Name}@{language}={name}`: {name} is {site.Name}'s primary host for {language}, beside its primary host for every language, so SiteUrl stays {site.SiteUrl}, as for that pair. A host that isn't a primary host already replaces the primary host for every language, and moves SiteUrl.");
         }
     }
 
