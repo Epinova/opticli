@@ -46,6 +46,12 @@ body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.6 v
 h1, h2 { font-family: var(--display); text-wrap: balance; margin: 0; letter-spacing: -.01em; }
 h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); line-height: 1.05; }
 h2 { font-size: 1.55rem; line-height: 1.2; }
+/* Each section heading links to itself, so a section can be shared by its URL. */
+h2 .anchor { color: inherit; text-decoration: none; }
+h2 .anchor::after { content: "#"; margin-left: .35em; color: var(--muted); font-weight: 400; opacity: 0; transition: opacity .15s; }
+h2:hover .anchor::after, h2 .anchor:focus-visible::after { opacity: 1; }
+@media (hover: none) { h2 .anchor::after { opacity: .45; } }
+section[id] { scroll-margin-top: 20px; }
 p { margin: 0; }
 code { font-family: var(--mono); font-size: .88em; }
 a { color: var(--accent); }
@@ -158,9 +164,9 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
     <ol class="chapters" id="chapters"><li><button type="button" data-index="0" data-start="4.018" data-end="28.228" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">1</span><span class="time">0:04</span></span><span class="t">No setup</span></button></li><li><button type="button" data-index="1" data-start="28.228" data-end="57.492" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">2</span><span class="time">0:28</span></span><span class="t">Find the content</span></button></li><li><button type="button" data-index="2" data-start="57.492" data-end="74.497" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">3</span><span class="time">0:57</span></span><span class="t">Find the code</span></button></li><li><button type="button" data-index="3" data-start="74.497" data-end="156.402" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">4</span><span class="time">1:14</span></span><span class="t">Make the change</span></button></li><li><button type="button" data-index="4" data-start="156.402" data-end="229.675" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">5</span><span class="time">2:36</span></span><span class="t">A section as a plan</span></button></li><li><button type="button" data-index="5" data-start="229.675" data-end="258.693" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">6</span><span class="time">3:49</span></span><span class="t">Run it again</span></button></li><li><button type="button" data-index="6" data-start="258.693" data-end="303.581" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">7</span><span class="time">4:18</span></span><span class="t">Safety nets</span></button></li><li><button type="button" data-index="7" data-start="303.581" data-end="358.012" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">8</span><span class="time">5:03</span></span><span class="t">Let an agent do it</span></button></li></ol>
   </div>
 
-  <section>
+  <section id="what-its-for">
     <div class="head">
-      <h2>What it's for</h2>
+      <h2><a class="anchor" href="#what-its-for">What it's for</a></h2>
     </div>
     <ul class="features">
       <li><h3>Answer content questions without SQL</h3>
@@ -225,9 +231,9 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
     </ul>
   </section>
 
-  <section>
+  <section id="how-it-works">
     <div class="head">
-      <h2>How it works</h2>
+      <h2><a class="anchor" href="#how-it-works">How it works</a></h2>
     </div>
     <div class="flow" role="img" aria-label="Reads: opticli queries the CMS database with fixed read-only SQL. Writes: opticli calls the site agent inside the running site over loopback HTTP with a per-run token; the agent uses IContentRepository.">
       <div class="lane"><span class="tag">Reads</span><span class="node hot">opticli</span><span class="arrow">── fixed read-only SQL ─▶</span><span class="node">CMS database</span></div>
@@ -237,7 +243,7 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
 
   <section id="safety">
     <div class="head">
-      <h2>Safety</h2>
+      <h2><a class="anchor" href="#safety">Safety</a></h2>
     </div>
     <ul class="points">
       <li><b>Which database does it use?</b><span>Your local one by default: opticli reads the connection string from the site's Development config. To use a remote database you have to choose it explicitly, and every response then carries a warning.</span></li>
@@ -252,7 +258,7 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
 
   <section id="get-started">
     <div class="head">
-      <h2>Get started</h2>
+      <h2><a class="anchor" href="#get-started">Get started</a></h2>
       <p>You need the .NET 8 SDK or newer. Install opticli from <a href="https://www.nuget.org/packages/OptiCli">nuget.org</a>
         as a global tool, then run it from anywhere inside a CMS 12 site's repository.</p>
     </div>
@@ -268,7 +274,7 @@ opticli skill install                   <span class="c"># teach Claude Code to u
 
   <section id="editors">
     <div class="head">
-      <h2>For editors: an MCP server<span class="badge">Preview</span></h2>
+      <h2><a class="anchor" href="#editors">For editors: an MCP server<span class="badge">Preview</span></a></h2>
       <p>opticli itself is for developers on their own machine. <code>OptiCli.Mcp</code> is a NuGet package you install in
         the site, so editors can connect Claude (claude.ai, Claude Desktop, Claude Code) to it in any environment. Editors
         sign in with the site's own login, Entra ID or ASP.NET Identity, and approve the connection. Claude then reads and
@@ -292,7 +298,7 @@ https://your-site.example/episerver/opticli/mcp</pre>
 
   <section id="changelog">
     <div class="head">
-      <h2>Changelog</h2>
+      <h2><a class="anchor" href="#changelog">Changelog</a></h2>
       <p>Every release is on <a href="https://www.nuget.org/packages/OptiCli">nuget.org</a>. After updating, run
         <code>opticli skill install</code> again to update the skill.</p>
     </div>
