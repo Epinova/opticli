@@ -71,7 +71,8 @@ internal static class FindOperation
                     {
                         continue;
                     }
-                    if (child.Name.Contains(text, StringComparison.OrdinalIgnoreCase) && (type is null || child.ContentTypeID == type.ID))
+                    // Real sites have content without a name (e.g. from a content provider, or a branch missing in this language).
+                    if (child.Name?.Contains(text, StringComparison.OrdinalIgnoreCase) == true && (type is null || child.ContentTypeID == type.ID))
                     {
                         found.Add(ContentSummaries.Describe(child, types));
                     }
