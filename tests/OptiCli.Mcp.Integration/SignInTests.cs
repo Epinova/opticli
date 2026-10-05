@@ -58,6 +58,32 @@ public sealed class SignInTests(SharedSessions sessions)
     }
 
     [McpSiteFact]
+    public async Task The_sites_error_pages_and_controllers_leave_the_module_alone()
+    {
+        using var http = new HttpClient { BaseAddress = McpSiteSettings.Url! };
+
+        // The test site has custom error pages: an error without a body is re-executed as its GET-only error page, so a
+        // POST ends in a 405.
+        using var page = await http.GetAsync("no-such-page-for-opticli");
+        Assert.Equal(HttpStatusCode.NotFound, page.StatusCode);
+        Assert.Contains("Site error page 404", await page.Content.ReadAsStringAsync());
+        using var post = await http.PostAsync("no-such-page-for-opticli", new StringContent("{}", System.Text.Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.MethodNotAllowed, post.StatusCode);
+
+        // The module's 401 is still the module's: the challenge that leads to the metadata, and a JSON body.
+        using var anonymous = await http.PostAsync(McpSession.McpPath, new StringContent("{}", System.Text.Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        Assert.Contains("resource_metadata=", anonymous.Headers.WwwAuthenticate.ToString());
+        using var error = JsonDocument.Parse(await anonymous.Content.ReadAsStringAsync());
+        Assert.Equal("unauthorized", error.RootElement.GetProperty("error").GetString());
+
+        // The site's own named route works: mapped after MapContent() and the site's controllers, the module didn't
+        // make the CMS map them twice ("Duplicate endpoint name" on every request).
+        using var ping = await http.GetAsync("api/mcp-fixture/ping");
+        Assert.Equal(HttpStatusCode.OK, ping.StatusCode);
+    }
+
+    [McpSiteFact]
     public async Task A_user_without_an_editor_role_is_turned_away_at_consent()
     {
         var refused = await Assert.ThrowsAsync<PageException>(async () =>

@@ -474,11 +474,19 @@ public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
     // ... UseRouting(), UseAuthentication(), UseAuthorization()
     app.UseEndpoints(endpoints =>
     {
-        endpoints.MapOptiCliMcp();   // before MapContent(), so content routing doesn't see its paths
         endpoints.MapContent();
+        endpoints.MapControllers();   // the site's own endpoints, if it has them
+        endpoints.MapOptiCliMcp();    // after everything else
     });
 }
 ```
+
+Map the module **after** `MapContent()` and the site's own endpoints. Its paths are literal, so they win over content
+routing's catch-all wherever they are mapped, and mapped last it changes nothing for the rest. Mapped before
+`MapContent()` it does: the CMS's documentation asks for other endpoints before or after `MapContent()`, not both,
+because with anything mapped before it, the CMS freezes the routes add-ons register, and a `MapControllers()` after it
+then maps the site's controllers a second time. A site with a named route then fails every request with "Duplicate
+endpoint name". The module logs a warning when it is the site's first endpoint mapping.
 
 The module adds a bearer scheme of its own for the MCP endpoint, and leaves the site's default authentication scheme
 as it is: editors sign in with whatever the site uses (ASP.NET Identity, Microsoft Entra ID, Opti ID). Connections are
@@ -743,7 +751,10 @@ SQLCMDPASSWORD=... tests/fixtures/edge-cases/drift.sh path/to/AlloyEdge path/to/
 `tests/fixtures/mcp/setup.sh` builds a site for the MCP module's end-to-end tests from a copy of the edge-case site
 and its database (`alloy-edge` to `alloy-mcp` by default; `FRESH=1` copies the database again). It adds a project
 reference to this checkout's `src/OptiCli.Mcp`, calls `AddOptiCliMcp` (publishing and deleting on, `ProductEditors`
-allowed) and `MapOptiCliMcp` in `Startup.cs`, and adds `McpFixture.cs`: four test
+allowed) and, as many real sites have it, `UseStatusCodePagesWithReExecute("/error/{0}")` and `MapControllers()` after
+`MapContent()`, then `MapOptiCliMcp()` after those, in `Startup.cs`. It adds `McpFixture.cs`: a GET-only error page, an
+API controller with a named route, a route an add-on registers with the CMS (together, what fails with "Duplicate
+endpoint name" when the module is mapped before `MapContent()`), and four test
 users (`mcp-admin`, `mcp-editor`, `mcp-product`, `mcp-visitor`) with generated passwords in
 `App_Data/mcp-test-users.json`, editing rights for WebEditors from the root, and the "Alloy Meet" page hidden from
 everyone but administrators and product editors, who may edit it but not publish it. It also adds a client ID metadata
@@ -752,7 +763,8 @@ site and starts it with `serve.sh` on `http://127.0.0.1:5180` (`MCP_PORT`).
 
 `tests/OptiCli.Mcp.Integration` connects to it as Claude does, with the official MCP SDK's client: discovery from the
 401, registration, the CMS login form and the consent page (both scripted), then tool calls. It covers sign-in, the
-role gate and CIMD; that hidden content is the same `not_found` as missing content; drafts in the editor's name,
+role gate and CIMD; the module's 401 untouched by the site's error pages, and the site's named route working beside
+the module; that hidden content is the same `not_found` as missing content; drafts in the editor's name,
 publish refused without Publish rights, approval sequences, `baseVersion` conflicts, uploads, `editUrl` and
 `resolve_url`; review requests without publishing (none where no sequence applies), content type access rights,
 restores refused, a branch not published before its master, `list_children` paging; parallel refreshes, refresh

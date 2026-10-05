@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Builds the MCP test site for the MCP module's end-to-end tests (tests/OptiCli.Mcp.Integration): a copy of the
 # edge-case site (tests/fixtures/edge-cases/setup.sh) and of its database, with this repository's src/OptiCli.Mcp
-# added, McpFixture.cs (test users and access rights), and a client ID metadata document. Then starts it with serve.sh.
+# added, McpFixture.cs (test users and access rights, a named API route, an add-on route, a custom error page), custom
+# error pages and the site's controllers in Startup.cs, and a client ID metadata document. Then starts it with serve.sh.
 # The edge-case site and its database are not changed.
 #
 #   setup.sh [<edge-site-dir> [<target-dir> [<source-db> [<target-db>]]]]
@@ -12,7 +13,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
-  sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 fi
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -96,6 +97,8 @@ patch(project, [(
   </ItemGroup>
 </Project>""")])
 
+with open(f"{target}/Startup.cs", encoding="utf-8") as f:
+    maps_controllers = "MapControllers()" in f.read()
 patch(f"{target}/Startup.cs", [
     ("using OptiCli.Mcp;", "using Alloy.Extensions;", "using Alloy.Extensions;\nusing OptiCli.Mcp;"),
     ("AddOptiCliMcp(", "        // Required by Wangkanai.Detection", """        // opticli MCP test site (tests/fixtures/mcp/setup.sh): publishing and deleting on, product editors may connect,
@@ -114,7 +117,18 @@ patch(f"{target}/Startup.cs", [
         services.AddOptions<OptiCliMcpOptions>().PostConfigure<IConfiguration>(OptiCliMcpFixture.McpFixture.ApplyConfiguration);
 
         // Required by Wangkanai.Detection"""),
-    ("MapOptiCliMcp()", "endpoints.MapContent();", "endpoints.MapOptiCliMcp();\n            endpoints.MapContent();"),
+    # Custom error pages, as many sites have: errors without a body are re-executed as McpFixtureErrorController's page.
+    ("UseStatusCodePagesWithReExecute", "app.UseStaticFiles();", """// opticli MCP test site: custom error pages, which must leave the module's errors alone.
+        app.UseStatusCodePagesWithReExecute("/error/{0}");
+
+        app.UseStaticFiles();"""),
+    # The common real-site shape: the site's controllers after MapContent(), then the module after the site's own endpoints.
+    ("MapOptiCliMcp()", "endpoints.MapContent();", "endpoints.MapContent();" + ("" if maps_controllers else """
+            // opticli MCP test site: the site's own controllers after MapContent(), as many sites have them.
+            endpoints.MapControllers();""") + """
+            // After the site's own endpoints: mapped before MapContent(), the module would make the CMS map the
+            // controllers twice ("Duplicate endpoint name").
+            endpoints.MapOptiCliMcp();"""),
 ])
 PY
 

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using EPiServer.Web.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using OptiCli.Mcp.OAuth;
@@ -317,5 +318,24 @@ public class OptionsTests
         var services = new ServiceCollection();
         services.AddOptiCliMcp();
         Assert.Throws<InvalidOperationException>(() => services.AddOptiCliMcp());
+    }
+
+    [Fact]
+    public async Task Mapping_the_module_before_the_cms_maps_anything_is_warned_about()
+    {
+        await using var first = await TestSite.StartAsync(services: s => s.AddSingleton<IEndpointRoutingExtension, NoRoutes>());
+        Assert.Contains("MapOptiCliMcp() is the site's first endpoint mapping", first.Audit.All);
+
+        // After the site's own endpoints (here its error page), as the README says: nothing to warn about.
+        await using var after = await TestSite.StartAsync(services: s => s.AddSingleton<IEndpointRoutingExtension, NoRoutes>(), statusCodePages: true);
+        Assert.DoesNotContain("first endpoint mapping", after.Audit.All);
+    }
+
+    /// <summary>An add-on's routes, registered with the CMS's extension point: what <c>MapContent()</c> maps.</summary>
+    private sealed class NoRoutes : IEndpointRoutingExtension
+    {
+        public void MapEndpoints(Microsoft.AspNetCore.Routing.IEndpointRouteBuilder endpointRouteBuilder)
+        {
+        }
     }
 }

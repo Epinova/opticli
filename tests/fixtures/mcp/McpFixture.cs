@@ -209,3 +209,42 @@ public class McpFixture : IInitializableModule
         }
     }
 }
+
+/// <summary>
+/// The site's own API controller, with a named route that makes a link to itself: on a site whose controllers are
+/// mapped twice ("Duplicate endpoint name", what mapping the module before <c>MapContent()</c> causes with a
+/// <c>MapControllers()</c> after it and <see cref="McpFixtureAddOnRoutes"/>), every request fails. Startup maps the
+/// controllers after <c>MapContent()</c>, as many sites do.
+/// </summary>
+[Microsoft.AspNetCore.Mvc.ApiController]
+public class McpFixturePingController : Microsoft.AspNetCore.Mvc.ControllerBase
+{
+    [Microsoft.AspNetCore.Mvc.HttpGet("api/mcp-fixture/ping", Name = "McpFixturePing")]
+    public Microsoft.AspNetCore.Mvc.IActionResult Ping() => Ok(new { self = Url.Link("McpFixturePing", null) });
+}
+
+/// <summary>
+/// The site's custom error page, for <c>UseStatusCodePagesWithReExecute("/error/{0}")</c> in Startup: GET only, as an
+/// error controller usually is, so an error without a body re-executed for a POST becomes a 405. The module's own
+/// errors must reach the client as the module wrote them.
+/// </summary>
+public class McpFixtureErrorController : Microsoft.AspNetCore.Mvc.Controller
+{
+    [Microsoft.AspNetCore.Mvc.HttpGet("error/{code:int}")]
+    public Microsoft.AspNetCore.Mvc.IActionResult Error(int code)
+    {
+        Response.StatusCode = code;
+        return Content($"<!doctype html><title>Error {code}</title><h1>Site error page {code}</h1>", "text/html");
+    }
+}
+
+/// <summary>
+/// Routes an add-on registers through the CMS's extension point, which <c>MapContent()</c> maps, as many add-ons do:
+/// what the CMS freezes when another endpoint was mapped before <c>MapContent()</c>.
+/// </summary>
+[ServiceConfiguration(typeof(EPiServer.Web.Routing.IEndpointRoutingExtension))]
+public class McpFixtureAddOnRoutes : EPiServer.Web.Routing.IEndpointRoutingExtension
+{
+    public void MapEndpoints(IEndpointRouteBuilder endpointRouteBuilder) =>
+        endpointRouteBuilder.MapControllerRoute("McpFixtureAddOn", "mcp-fixture-addon/{action=Index}", new { controller = "McpFixtureAddOn" });
+}

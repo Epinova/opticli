@@ -1,4 +1,5 @@
 using System.Reflection;
+using EPiServer.Web.Routing;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -6,6 +7,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
 using OptiCli.Mcp.Connections;
@@ -95,11 +97,23 @@ public static class OptiCliMcpExtensions
 
     /// <summary>
     /// Maps <c>{BasePath}/mcp</c>, the OAuth endpoints under <c>{BasePath}/oauth/</c>, the connections page and the
-    /// metadata documents. Call it before the CMS's <c>MapContent()</c>, so content routing doesn't see these paths.
+    /// metadata documents. Call it after the CMS's <c>MapContent()</c> and the site's own endpoints: its paths are
+    /// literal, so they win over content routing's catch-all wherever they are mapped.
     /// </summary>
+    /// <remarks>
+    /// Not before <c>MapContent()</c>: with any endpoint mapped before it, the CMS freezes the routes add-ons register
+    /// through <c>IEndpointRoutingExtension</c> (its documentation asks for other endpoints before or after it, not both),
+    /// and a <c>MapControllers()</c> after it then maps the site's controllers a second time, so that a named route fails
+    /// every request with "Duplicate endpoint name". Mapped after everything else, the module changes nothing for the rest.
+    /// </remarks>
     public static IEndpointRouteBuilder MapOptiCliMcp(this IEndpointRouteBuilder endpoints)
     {
         var options = endpoints.ServiceProvider.GetRequiredService<IOptions<OptiCliMcpOptions>>().Value;
+        if (endpoints.DataSources.Count == 0 && endpoints.ServiceProvider.GetServices<IEndpointRoutingExtension>().Any())
+        {
+            endpoints.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(OptiCliMcpExtensions).FullName!).LogWarning(
+                "MapOptiCliMcp() is the site's first endpoint mapping. Mapped before MapContent(), it makes a MapControllers() after MapContent() map the site's controllers twice (\"Duplicate endpoint name\"): call MapOptiCliMcp() after MapContent() and the site's own endpoints.");
+        }
         var all = new List<IEndpointConventionBuilder>();
 
         var mcp = endpoints.MapMcp(options.McpPath).RequireAuthorization(Policy);
