@@ -60,10 +60,12 @@ internal sealed class TokenService(
     /// </param>
     public (string Token, int ExpiresIn) Issue(Grant grant, string? scope = null)
     {
-        var lifetime = options.Value.AccessTokenLifetime;
-        var payload = new Payload(grant.GrantId, grant.Resource, time.GetUtcNow().Add(lifetime).ToUnixTimeSeconds(),
+        var now = time.GetUtcNow();
+        // Never past the connection's end (ConnectionLifetime): the client is told when it has to sign in again.
+        var expires = Min(now.Add(options.Value.AccessTokenLifetime), options.Value.ConnectionEnds(grant.Created));
+        var payload = new Payload(grant.GrantId, grant.Resource, expires.ToUnixTimeSeconds(),
             scope is null || scope == grant.Scope ? null : scope);
-        return (Prefix + _protector.Protect(JsonSerializer.Serialize(payload)), (int)lifetime.TotalSeconds);
+        return (Prefix + _protector.Protect(JsonSerializer.Serialize(payload)), (int)Math.Max(0, (expires - now).TotalSeconds));
     }
 
     /// <returns>The editor the token stands for; null for a token that is malformed, expired, for another resource, or revoked.</returns>
@@ -88,7 +90,10 @@ internal sealed class TokenService(
             return null;
         }
         var grant = await cache.GetAsync(payload.GrantId, store, cancellationToken);
-        if (grant is null || grant.Expires <= now || !string.Equals(grant.Resource, resource, StringComparison.Ordinal))
+        // The connection's own end too, from when it was made: a site that shortened ConnectionLifetime ends older
+        // connections at once, not at their next refresh.
+        if (grant is null || grant.Expires <= now || options.Value.ConnectionEnds(grant.Created) <= now
+            || !string.Equals(grant.Resource, resource, StringComparison.Ordinal))
         {
             return null;
         }
@@ -96,6 +101,8 @@ internal sealed class TokenService(
         // Never more than the grant has now: a site that stopped allowing publishing narrowed it at the last refresh.
         return Principal(grant, payload.Scope is null ? grant.Scope : Scopes.Intersect(grant.Scope, payload.Scope));
     }
+
+    private static DateTimeOffset Min(DateTimeOffset a, DateTimeOffset b) => a <= b ? a : b;
 
     /// <summary>The editor as the CMS sees them: their name and the roles they had at their last (re)authorization.</summary>
     /// <param name="scope">The access token's scopes; the grant's when null.</param>

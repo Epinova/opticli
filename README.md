@@ -501,6 +501,7 @@ which wins. In configuration, an `AllowedRoles` list replaces the default list.
 | `AllowedRoles` | WebEditors, WebAdmins, CmsEditors, CmsAdmins, Administrators | who may connect an assistant at all; the CMS's access rights then decide per item |
 | `AccessTokenLifetime` | 1 hour | how long an access token works; also how long a removed role can keep working |
 | `RefreshTokenLifetime` | 30 days | how long a connection survives unused; each refresh extends it |
+| `ConnectionLifetime` | 30 days | the longest a connection lasts, however often it is used; then the editor connects again, through the site's login (see below) |
 | `RefreshTokenReuseGrace` | 1 minute | how long after a refresh the refresh token it replaced, sent again by the same client, is only refused; later (or from another client) it revokes the connection |
 | `AllowPublish` | `false` | let assistants publish, unpublish and schedule publishing (the `content:publish` scope) |
 | `AllowDelete` | `false` | let assistants delete content, always to the recycle bin |
@@ -573,10 +574,19 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   restoring from the recycle bin, which the module doesn't do at all (a move out of the recycle bin is refused, with a
   hint to restore it in the CMS, where the editor sees what comes back live).
 - **The role gate** (`AllowedRoles`) is checked against the editor's roles as they are now (the CMS UI's role
-  provider), not the ones in their login cookie: at consent and at every token refresh. So is their account (the CMS
-  UI's user provider): disabled, locked out or deleted, it gets no consent and no new tokens. An editor who fails
-  either at a refresh gets no new tokens, and the connection is deleted; the access token they have works until it
-  expires (`AccessTokenLifetime`).
+  provider), not the ones in their login cookie: at consent and at every token refresh. So is their account, where the
+  site manages it: an ASP.NET Identity user who is disabled, locked out or deleted gets no consent and no new tokens.
+  An editor who fails either at a refresh gets no new tokens, and the connection is deleted; the access token they
+  have works until it expires (`AccessTokenLifetime`).
+- **External logins** (Microsoft Entra ID, Opti ID, any OpenID Connect provider): the account is managed by the
+  identity provider, not the CMS, so for a user the CMS synchronized from one the module doesn't judge the account at
+  all, whatever a user provider for such users reports, and the roles decide. Those roles are only as current as the
+  CMS's copy, which it updates when the editor signs in; and the CMS never hears that an account was disabled in the
+  identity provider. So such an editor, disabled there, could keep refreshing for as long as the connection is used.
+  `ConnectionLifetime` bounds that: counted from when the editor allowed the connection, checked at every refresh and
+  on every access token, after which they have to connect again through the site's login, where the identity provider
+  has its say. The default is 30 days; for a site with external logins, 1 to 7 days is a better choice. The site's
+  login cookie counts as signed in while it lasts, so its lifetime matters too.
 - **Approval sequences are enforced.** The CMS doesn't apply them to API saves, so the module refuses a publish of
   content under one and offers `requestApproval`, which sends it for review as the edit UI's Ready for Review does.
   `requestApproval` never publishes, so it needs neither `AllowPublish` nor `content:publish`: where no sequence

@@ -43,6 +43,20 @@ public sealed class OptiCliMcpOptions
     public TimeSpan RefreshTokenLifetime { get; set; } = TimeSpan.FromDays(30);
 
     /// <summary>
+    /// The longest a connection lasts, however often it is used: this long after the editor allowed it, its tokens stop
+    /// working and the editor connects again, through the site's login. 30 days by default.
+    /// </summary>
+    /// <remarks>
+    /// A refresh checks the editor's roles and account as the site knows them now, but for an external login (Entra ID,
+    /// Opti ID, any OpenID Connect provider) the site knows little: the account is disabled in the identity provider,
+    /// which the CMS never hears about, and the CMS only updates the editor's roles when they sign in. Without a limit,
+    /// such an editor's connection would keep refreshing for as long as it is used. This is that limit, from when the
+    /// editor allowed the connection (its <c>Created</c> time), checked at every refresh and on every access token. For a
+    /// site with external logins, 1 to 7 days is a better choice. It can't be shorter than <see cref="AccessTokenLifetime"/>.
+    /// </remarks>
+    public TimeSpan ConnectionLifetime { get; set; } = TimeSpan.FromDays(30);
+
+    /// <summary>
     /// How long after a refresh the refresh token it replaced, from the same client, is only refused. Later, or from
     /// another client, it revokes the connection (RFC 9700 4.14.2): it leaked, and the site can't tell who holds it. A
     /// client sends the old one again when it refreshed twice at once or retried after the answer got lost; revoking
@@ -75,6 +89,10 @@ public sealed class OptiCliMcpOptions
     /// <summary>The MCP endpoint's path: the resource access tokens are issued for.</summary>
     internal string McpPath => BasePath + "/mcp";
 
+    /// <summary>When a connection made at <paramref name="created"/> ends (<see cref="ConnectionLifetime"/>), however often it is used.</summary>
+    internal DateTimeOffset ConnectionEnds(DateTimeOffset created) =>
+        DateTimeOffset.MaxValue - created <= ConnectionLifetime ? DateTimeOffset.MaxValue : created + ConnectionLifetime;
+
     /// <summary>Dedicated-host mode: the module owns the host's root, so the root well-known documents are its own.</summary>
     internal bool DedicatedHost => BasePath.Length == 0;
 
@@ -105,6 +123,10 @@ public sealed class OptiCliMcpOptions
         if (AccessTokenLifetime > RefreshTokenLifetime)
         {
             return "AccessTokenLifetime can't be longer than RefreshTokenLifetime.";
+        }
+        if (ConnectionLifetime < AccessTokenLifetime)
+        {
+            return "ConnectionLifetime can't be shorter than AccessTokenLifetime.";
         }
         if (RateLimits is null || RateLimits.RegisterPerMinute <= 0 || RateLimits.TokenPerMinute <= 0 || RateLimits.TokenPerAddressPerMinute <= 0 || RateLimits.AuthorizePerMinute <= 0)
         {

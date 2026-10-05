@@ -398,7 +398,13 @@ internal sealed class AuthorizationServer(
 
         var now = time.GetUtcNow();
         var newRefresh = RefreshPrefix + Secrets.New();
-        var expires = now.Add(Options.RefreshTokenLifetime);
+        // A refresh extends the connection by RefreshTokenLifetime, but never past ConnectionLifetime from its start.
+        DateTimeOffset GrantExpires(DateTimeOffset created)
+        {
+            var sliding = now.Add(Options.RefreshTokenLifetime);
+            var end = Options.ConnectionEnds(created);
+            return end < sliding ? end : sliding;
+        }
         Grant grant;
         string accessScope;
         switch (grantType)
@@ -435,7 +441,7 @@ internal sealed class AuthorizationServer(
                     RefreshHash = Secrets.Hash(newRefresh),
                     RefreshIssued = now,
                     Created = now,
-                    Expires = expires,
+                    Expires = GrantExpires(now),
                 };
                 await store.AddGrantAsync(grant, context.RequestAborted);
                 accessScope = grant.Scope;
@@ -462,6 +468,15 @@ internal sealed class AuthorizationServer(
                     cache.Evict(reused.GrantId);
                     audit.Refresh(reused, "refused: a replaced refresh token was used again, connection deleted");
                     return OAuthJson.Error(context, "invalid_grant", "The refresh token was already used once, so the connection was revoked; connect again.");
+                }
+                if (found is not null && string.Equals(found.ClientId, client.ClientId, StringComparison.Ordinal) && Options.ConnectionEnds(found.Created) <= now)
+                {
+                    // However often it was used: the editor signs in again through the site's login, where an external
+                    // identity provider has its say about the account (ConnectionLifetime).
+                    await store.DeleteGrantAsync(found.GrantId, context.RequestAborted);
+                    cache.Evict(found.GrantId);
+                    audit.Refresh(found, "refused: the connection reached ConnectionLifetime, connection deleted");
+                    return OAuthJson.Error(context, "invalid_grant", "The connection is as old as this site allows; connect again.");
                 }
                 if (found is null || !string.Equals(found.ClientId, client.ClientId, StringComparison.Ordinal) || found.Expires <= now)
                 {
@@ -498,6 +513,7 @@ internal sealed class AuthorizationServer(
                 }
                 // Refresh tokens rotate, as a compare-and-swap: of two refreshes with the same token only one gets new
                 // tokens, and a connection revoked meanwhile isn't brought back.
+                var expires = GrantExpires(found.Created);
                 if (!await store.TryRotateRefreshAsync(found.GrantId, refreshHash, Secrets.Hash(newRefresh), now, expires, roles, scope, context.RequestAborted))
                 {
                     audit.Refresh(found, "refused: refreshed at the same time, or revoked");

@@ -36,8 +36,21 @@ public class TokenServiceTests
         _store.AddGrantAsync(_grant, default).Wait();
     }
 
-    private TokenService Tokens(IDataProtectionProvider protection) =>
-        new(protection, _store, _cache, Options.Create(new OptiCliMcpOptions()), _time);
+    private TokenService Tokens(IDataProtectionProvider protection, OptiCliMcpOptions? options = null) =>
+        new(protection, _store, _cache, Options.Create(options ?? new OptiCliMcpOptions()), _time);
+
+    [Fact]
+    public async Task A_connection_older_than_ConnectionLifetime_is_refused_whatever_its_expiry_says()
+    {
+        // A connection made before the site shortened ConnectionLifetime: its own expiry is still weeks away.
+        var protection = new EphemeralDataProtectionProvider();
+        var old = _grant with { GrantId = Secrets.New(), Created = _time.GetUtcNow().AddDays(-8), Expires = _time.GetUtcNow().AddDays(22) };
+        await _store.AddGrantAsync(old, default);
+        var (token, _) = Tokens(protection).Issue(old);
+
+        Assert.NotNull(await Tokens(protection).ValidateAsync(token, Resource, default));
+        Assert.Null(await Tokens(protection, new OptiCliMcpOptions { ConnectionLifetime = TimeSpan.FromDays(7) }).ValidateAsync(token, Resource, default));
+    }
 
     [Fact]
     public async Task A_token_validates_as_the_editor()

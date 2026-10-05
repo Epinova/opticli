@@ -601,6 +601,47 @@ public sealed class AuthorizationServerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_connection_ends_after_ConnectionLifetime_however_often_it_is_refreshed()
+    {
+        await using var site = await TestSite.StartAsync(o => o.ConnectionLifetime = TimeSpan.FromDays(3));
+        var tokens = await site.ConnectAsync();
+        for (var day = 1; day < 3; day++)
+        {
+            site.Time.Advance(TimeSpan.FromDays(1));
+            var refreshed = await site.TokenAsync(RefreshForm(tokens));
+            Assert.Equal(HttpStatusCode.OK, refreshed.StatusCode);
+            tokens = await Tokens.ReadAsync(refreshed, tokens.ClientId);
+            // The connection's end, not RefreshTokenLifetime from now: an unused connection lapses no later either.
+            Assert.Equal(TimeSpan.FromDays(3 - day), Assert.Single(await site.Store.ListGrantsAsync(null, default)).Expires - site.Time.GetUtcNow());
+        }
+        site.Time.Advance(TimeSpan.FromDays(1));
+
+        var refused = await site.TokenAsync(RefreshForm(tokens));
+        Assert.Equal("invalid_grant", await Error(refused));
+        Assert.Contains("connect again", await refused.Content.ReadAsStringAsync());
+        Assert.Empty(await site.Store.ListGrantsAsync(null, default));
+        Assert.Contains(site.Audit.Audit, m => m.Contains("ConnectionLifetime"));
+    }
+
+    [Fact]
+    public async Task An_access_token_never_outlasts_its_connection()
+    {
+        await using var site = await TestSite.StartAsync(o => o.ConnectionLifetime = TimeSpan.FromMinutes(90));
+        var tokens = await site.ConnectAsync();
+        Assert.Equal(3600, tokens.ExpiresIn);
+        site.Time.Advance(TimeSpan.FromMinutes(50));
+
+        // 40 minutes left of the connection: the access token says so, and stops then.
+        var refreshed = await Tokens.ReadAsync(await site.TokenAsync(RefreshForm(tokens)), tokens.ClientId);
+        Assert.Equal(40 * 60, refreshed.ExpiresIn);
+        var service = site.Services.GetRequiredService<TokenService>();
+        Assert.NotNull(await service.ValidateAsync(refreshed.Access, "http://localhost/episerver/opticli/mcp", default));
+        site.Time.Advance(TimeSpan.FromMinutes(40));
+        Assert.Null(await service.ValidateAsync(refreshed.Access, "http://localhost/episerver/opticli/mcp", default));
+        Assert.Equal("invalid_grant", await Error(await site.TokenAsync(RefreshForm(refreshed))));
+    }
+
+    [Fact]
     public async Task Expired_codes_and_grants_are_cleaned_up_when_tokens_are_issued()
     {
         var (clientId, _) = await _site.RegisterAsync();
@@ -616,19 +657,35 @@ public sealed class AuthorizationServerTests : IAsyncLifetime
     [Fact]
     public async Task Registered_clients_left_unused_for_30_days_are_deleted_and_used_ones_kept()
     {
-        var (unused, _) = await _site.RegisterAsync();
+        // A connection may outlast its client's first 30 days only on a site that lets connections last longer.
+        await using var site = await TestSite.StartAsync(o => o.ConnectionLifetime = TimeSpan.FromDays(60));
+        var (unused, _) = await site.RegisterAsync();
+        var connected = await site.ConnectAsync();
+        site.Time.Advance(TimeSpan.FromDays(29));
+        await site.TokenAsync(RefreshForm(connected)); // the connection stays in use
+        site.Time.Advance(TimeSpan.FromDays(2));
+        var (recent, _) = await site.RegisterAsync();
+        Assert.Equal(3, site.Store.ClientCount);
+
+        await site.ConnectAsync(); // a token issue runs the cleanup
+
+        Assert.Null(await site.Store.FindClientAsync(unused, default));
+        Assert.NotNull(await site.Store.FindClientAsync(connected.ClientId, default));
+        Assert.NotNull(await site.Store.FindClientAsync(recent, default));
+    }
+
+    [Fact]
+    public async Task A_client_whose_only_connection_reached_ConnectionLifetime_is_deleted_like_an_unused_one()
+    {
         var connected = await _site.ConnectAsync();
         _site.Time.Advance(TimeSpan.FromDays(29));
-        await _site.TokenAsync(RefreshForm(connected)); // the connection stays in use
+        await _site.TokenAsync(RefreshForm(connected));
         _site.Time.Advance(TimeSpan.FromDays(2));
-        var (recent, _) = await _site.RegisterAsync();
-        Assert.Equal(3, _site.Store.ClientCount);
 
-        await _site.ConnectAsync(); // a token issue runs the cleanup
+        await _site.ConnectAsync();
 
-        Assert.Null(await _site.Store.FindClientAsync(unused, default));
-        Assert.NotNull(await _site.Store.FindClientAsync(connected.ClientId, default));
-        Assert.NotNull(await _site.Store.FindClientAsync(recent, default));
+        Assert.Null(await _site.Store.FindClientAsync(connected.ClientId, default));
+        Assert.Single(await _site.Store.ListGrantsAsync(null, default));
     }
 
     [Fact]

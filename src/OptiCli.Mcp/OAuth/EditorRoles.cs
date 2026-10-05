@@ -17,8 +17,10 @@ public interface IEditorRoles
     Task<IReadOnlyList<string>?> GetRolesAsync(string userName, CancellationToken cancellationToken);
 
     /// <returns>
-    /// Whether the user's account is active now: true when it is, false when it is disabled (not approved, locked out)
-    /// or doesn't exist any more, null when the user store can't say.
+    /// Whether the user's account is active now: true when it is, false when the site's own user store has it disabled
+    /// (not approved, locked out) or doesn't have it any more, null when the site can't say, as for a user who signs in
+    /// with an external login, whose account the identity provider manages. Only false turns the user away: null leaves
+    /// it to their roles.
     /// </returns>
     Task<bool?> IsActiveAsync(string userName, CancellationToken cancellationToken);
 
@@ -34,17 +36,61 @@ public interface IEditorRoles
 /// admin uses, which answer for ASP.NET Identity users and for users synchronized from an external login (Entra ID,
 /// Opti ID) alike.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Whether an account is active (<see cref="IsActiveAsync"/>) is only the site's to say for accounts the site itself
+/// manages: ASP.NET Identity's (the CMS's <c>ApplicationUserProvider&lt;TUser&gt;</c>), where an administrator disables,
+/// locks out or deletes a user in the CMS. A user synchronized from an external login (Entra ID, Opti ID, any OpenID
+/// Connect provider) is disabled in the identity provider instead, which the CMS never hears about; a user provider for
+/// such users, as some sites register, typically knows no more than the name, and reports everyone as not approved.
+/// The CMS itself treats a site without a user provider as one whose users aren't managed in the CMS at all.
+/// </para>
+/// <para>The rule, in order:</para>
+/// <list type="number">
+/// <item>No user provider, or one that isn't ASP.NET Identity's: unknown (null); the roles decide.</item>
+/// <item>The user is in ASP.NET Identity's store, approved and not locked out: active.</item>
+/// <item>
+/// The user is synchronized from an external login (the CMS's <see cref="SynchronizingRolesSecurityEntityProvider"/>
+/// has them): unknown, as on a site with both kinds of login, whatever ASP.NET Identity's store has under that name.
+/// </item>
+/// <item>Otherwise the account is disabled, locked out, or deleted from ASP.NET Identity's store: not active.</item>
+/// </list>
+/// <para>
+/// Unknown isn't a free pass: the roles still decide at every refresh, and <see cref="OptiCliMcpOptions.ConnectionLifetime"/>
+/// bounds how long a connection lasts without the editor signing in again through the site's login, where the identity
+/// provider has its say.
+/// </para>
+/// </remarks>
 internal sealed class CmsEditorRoles(IServiceProvider services, ILogger<CmsEditorRoles> logger) : IEditorRoles
 {
+    /// <summary>The <see cref="UIUserProvider.Name"/> of ASP.NET Identity's user provider, <c>ApplicationUserProvider&lt;TUser&gt;</c>.</summary>
+    internal const string AspNetIdentityProviderName = "EPi_AspNetIdentityUserProvider";
+
+    /// <summary>
+    /// ASP.NET Identity's user provider, by name: it is in <c>EPiServer.CMS.UI.AspNetIdentity</c>, which a site with only
+    /// an external login doesn't have, so the module doesn't reference it.
+    /// </summary>
+    private const string AspNetIdentityProviderType = "EPiServer.Cms.UI.AspNetIdentity.ApplicationUserProvider`1";
+
     private static int _warned;
 
     private static int _warnedUsers;
+
+    private static int _warnedExternal;
+
+    private static int _warnedSynchronized;
 
     public async Task<bool?> IsActiveAsync(string userName, CancellationToken cancellationToken)
     {
         if (services.GetService<UIUserProvider>() is not { } provider)
         {
-            WarnOnce(ref _warnedUsers, "No UIUserProvider is registered: the MCP module can't tell whether an editor's account is still active, and goes by their roles alone.");
+            WarnOnce(ref _warnedUsers, LogLevel.Information, "No UIUserProvider is registered: the MCP module can't tell whether an editor's account is still active, and goes by their roles alone.");
+            return null;
+        }
+        if (!ManagesAccounts(provider))
+        {
+            WarnOnce(ref _warnedExternal, LogLevel.Information,
+                $"{provider.GetType().FullName} isn't ASP.NET Identity's user store: the MCP module leaves whether an editor's account is active to the identity provider, and goes by their roles and OptiCli:Mcp:ConnectionLifetime.");
             return null;
         }
         IUIUser? user;
@@ -55,17 +101,58 @@ internal sealed class CmsEditorRoles(IServiceProvider services, ILogger<CmsEdito
         catch (NotSupportedException)
         {
             // The base class's answer for a provider that doesn't look users up.
-            WarnOnce(ref _warnedUsers, $"{provider.GetType().FullName} doesn't look users up: the MCP module can't tell whether an editor's account is still active, and goes by their roles alone.");
+            WarnOnce(ref _warnedUsers, LogLevel.Warning, $"{provider.GetType().FullName} doesn't look users up: the MCP module can't tell whether an editor's account is still active, and goes by their roles alone.");
             return null;
         }
-        return user is { IsApproved: true, IsLockedOut: false };
+        if (user is { IsApproved: true, IsLockedOut: false })
+        {
+            return true;
+        }
+        // Disabled or missing in the site's own store: refused, unless it is someone who signs in with an external login.
+        return await IsSynchronizedAsync(userName) == false ? false : null;
     }
 
-    private void WarnOnce(ref int warned, string message)
+    /// <summary>Whether the provider manages accounts itself, so that its <see cref="IUIUser.IsApproved"/> and <see cref="IUIUser.IsLockedOut"/> mean something.</summary>
+    internal static bool ManagesAccounts(UIUserProvider provider)
+    {
+        if (string.Equals(provider.Name, AspNetIdentityProviderName, StringComparison.Ordinal))
+        {
+            return true;
+        }
+        for (var type = provider.GetType(); type is not null; type = type.BaseType)
+        {
+            if (type.IsGenericType && type.GetGenericTypeDefinition().FullName == AspNetIdentityProviderType)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <returns>
+    /// Whether the CMS synchronized <paramref name="userName"/> from an external login (they signed in through one at
+    /// least once); null when it can't say.
+    /// </returns>
+    /// <remarks>
+    /// <see cref="SynchronizingRolesSecurityEntityProvider"/> is the CMS's store of synchronized users, searched the way
+    /// the CMS's access rights dialog does: by part of the name or e-mail address, so only an exact match counts.
+    /// </remarks>
+    internal async Task<bool?> IsSynchronizedAsync(string userName)
+    {
+        if (services.GetService<SynchronizingRolesSecurityEntityProvider>() is not { } synchronized)
+        {
+            WarnOnce(ref _warnedSynchronized, LogLevel.Warning, "SynchronizingRolesSecurityEntityProvider isn't registered: the MCP module can't tell synchronized users from deleted ones, and goes by their roles alone.");
+            return null;
+        }
+        var found = await synchronized.SearchAsync(userName, ClaimTypes.Name);
+        return found.Any(e => e.EntityType == SecurityEntityType.User && string.Equals(e.Name, userName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void WarnOnce(ref int warned, LogLevel level, string message)
     {
         if (Interlocked.Exchange(ref warned, 1) == 0)
         {
-            logger.LogWarning("{Problem}", message);
+            logger.Log(level, "{Problem}", message);
         }
     }
 

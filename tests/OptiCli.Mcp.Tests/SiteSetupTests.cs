@@ -184,6 +184,11 @@ public class OptionsTests
         Assert.Equal(10 * 1024 * 1024, options.MaxUploadBytes);
         Assert.Equal(TimeSpan.FromHours(1), options.AccessTokenLifetime);
         Assert.Equal(TimeSpan.FromDays(30), options.RefreshTokenLifetime);
+        Assert.Equal(TimeSpan.FromDays(30), options.ConnectionLifetime);
+        Assert.Contains("ConnectionLifetime can't be shorter", new OptiCliMcpOptions { ConnectionLifetime = TimeSpan.FromMinutes(30) }.Problem());
+        Assert.Null(new OptiCliMcpOptions { ConnectionLifetime = TimeSpan.FromDays(1) }.Problem());
+        Assert.Null(new OptiCliMcpOptions { ConnectionLifetime = TimeSpan.MaxValue }.Problem());
+        Assert.Equal(DateTimeOffset.MaxValue, new OptiCliMcpOptions { ConnectionLifetime = TimeSpan.MaxValue }.ConnectionEnds(DateTimeOffset.UtcNow));
         Assert.Equal(new[] { "WebEditors", "WebAdmins", "CmsEditors", "CmsAdmins", "Administrators" }, options.AllowedRoles);
     }
 
