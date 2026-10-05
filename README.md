@@ -557,6 +557,32 @@ gets a 401 that points to the metadata, never a redirect to the login page.
 - **Claude Code:** `claude mcp add --transport http cms https://www.example.com/episerver/opticli/mcp`, then `/mcp` in
   Claude Code to sign in.
 
+**Trying it locally with Claude Code:** plain http on a loopback address (`http://127.0.0.1:5000/...`) works where
+the site allows it. Over https, Claude Code (a native executable) honours `NODE_EXTRA_CA_CERTS` but doesn't accept the
+ASP.NET Core development certificate as a trust root, since that certificate is a self-signed leaf (`CA:FALSE`): it
+fails with `UNABLE_TO_VERIFY_LEAF_SIGNATURE`, though curl and Node accept it. A localhost certificate signed by a test
+CA of your own works:
+
+```sh
+openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=Local MCP test CA" \
+  -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" \
+  -keyout ca.key -out ca.pem
+printf 'subjectAltName=DNS:localhost,IP:127.0.0.1\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n' > localhost.ext
+openssl req -newkey rsa:2048 -nodes -subj "/CN=localhost" -keyout localhost.key -out localhost.csr
+openssl x509 -req -in localhost.csr -CA ca.pem -CAkey ca.key -CAcreateserial -days 30 -extfile localhost.ext -out localhost.pem
+
+# the site, with that certificate
+ASPNETCORE_URLS=https://localhost:5443 \
+ASPNETCORE_Kestrel__Certificates__Default__Path=$PWD/localhost.pem \
+ASPNETCORE_Kestrel__Certificates__Default__KeyPath=$PWD/localhost.key \
+dotnet run
+
+# Claude Code, trusting the test CA
+NODE_EXTRA_CA_CERTS=$PWD/ca.pem claude
+```
+
+Keep `ca.key` to yourself and delete it when you are done: whoever has it can make certificates your Claude Code trusts.
+
 Nothing needs registering on the site first. Claude identifies itself with a client ID metadata document (CIMD): the
 site fetches the document from the client's own HTTPS URL, which needs outbound HTTPS from the site. Clients without
 CIMD register themselves (dynamic client registration, DCR).
