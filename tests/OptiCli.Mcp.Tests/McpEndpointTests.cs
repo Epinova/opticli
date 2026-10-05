@@ -109,8 +109,8 @@ public sealed class McpEndpointTests : IAsyncLifetime
         var whoami = Assert.Single(tools, t => t.Name == "whoami");
         Assert.True(whoami.ProtocolTool.Annotations?.ReadOnlyHint);
 
-        // The package's own version, as Directory.Build.props sets it.
-        Assert.Equal(("opticli", typeof(OptiCliMcpOptions).Assembly.GetName().Version!.ToString(3)), (client.ServerInfo.Name, client.ServerInfo.Version));
+        // The package's own version: Directory.Build.props' version with the package's -preview suffix.
+        Assert.Equal(("opticli", typeof(OptiCliMcpOptions).Assembly.GetName().Version!.ToString(3) + "-preview"), (client.ServerInfo.Name, client.ServerInfo.Version));
         Assert.Equal(client.ServerInfo.Version, OptiCliMcpExtensions.Version);
 
         var result = await client.CallToolAsync("whoami", new Dictionary<string, object?>());

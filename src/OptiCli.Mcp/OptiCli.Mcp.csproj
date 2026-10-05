@@ -9,7 +9,9 @@
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>OptiCli.Mcp</RootNamespace>
     <PackageId>OptiCli.Mcp</PackageId>
-    <Description>An MCP server for Optimizely CMS 12: editors connect Claude to the site, sign in with the site's own login, and work with their own access rights.</Description>
+    <!-- A preview: the options and tools may still change. The prerelease suffix keeps it out of plain installs and updates. -->
+    <Version>$(Version)-preview</Version>
+    <Description>Preview. An MCP server for Optimizely CMS 12: editors connect Claude to the site, sign in with the site's own login, and work with their own access rights.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageTags>optimizely;episerver;cms;mcp;model-context-protocol;oauth</PackageTags>
     <PackageLicenseExpression>MPL-2.0</PackageLicenseExpression>
@@ -25,9 +27,10 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <!--
-      Built against the oldest CMS 12 the MCP SDK can run beside, never CMS 13, whose APIs differ. Older CMS 12 packages
-      cap Microsoft.Extensions.* below 7.0, and the SDK needs 10.x: CMS UI 12.16.1 is the first whose dependencies don't,
-      and it needs CMS 12.12.1 (EPiServer.CMS.Core pins EPiServer.Framework to its own version).
+      Built against the oldest CMS 12 the MCP SDK can run beside, never CMS 13, whose APIs differ. CMS 12 before 12.11
+      caps Microsoft.Extensions.* below 7.0, and the SDK needs 10.x. CMS UI 12.16.1 is the first whose dependencies
+      resolve cleanly to an uncapped CMS (12.16.0 asks for a CMS 12.12.0 that was never released), and it needs CMS
+      12.12.1, since EPiServer.CMS.Core pins EPiServer.Framework to its own version.
     -->
     <PackageReference Include="EPiServer.CMS.Core" VersionOverride="[12.12.1, 13.0.0)" />
     <!-- UIRoleProvider: the editor's roles as they are now, for ASP.NET Identity and synchronized external logins alike. -->

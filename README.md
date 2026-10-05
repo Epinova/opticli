@@ -94,7 +94,7 @@ When stdout is redirected, every command prints a single JSON line:
 
 ```json
 {"ok":true,"data":{"ref":"123","type":"ArticlePage","name":"News","status":"published","url":"/en/news/",
- "properties":{"Heading":{"type":"String","value":"Hello"}}},"meta":{"source":"db","version":"0.8.0"}}
+ "properties":{"Heading":{"type":"String","value":"Hello"}}},"meta":{"source":"db","version":"0.9.0"}}
 ```
 
 ## Using opticli with coding agents
@@ -447,12 +447,13 @@ included. The editor signs in with the site's own login, and Claude then works a
 rights in the CMS. The tools run the same content operations as the site agent: drafts by default, dry runs with a
 list of changes, validation, approval sequences, `baseVersion` conflicts, and errors with a hint.
 
-It is a preview: the options and tools may still change.
+It is a **preview**, not yet recommended for production: the options and tools may still change, and the package is
+published as a prerelease (a `-preview` version). It supports CMS 12 only (12.12.1 / CMS UI 12.16.1 or newer), not CMS 13.
 
 ### Install
 
 ```sh
-dotnet add package OptiCli.Mcp
+dotnet add package OptiCli.Mcp --prerelease
 ```
 
 In `Startup.cs`:
@@ -827,11 +828,12 @@ Set the new version as `<Version>` in [Directory.Build.props](Directory.Build.pr
 [skill/SKILL.md](skill/SKILL.md), and add the release to [CHANGELOG.md](CHANGELOG.md). Commit, then push a matching tag:
 
 ```sh
-git tag v0.8.0 && git push origin v0.8.0
+git tag v0.9.0 && git push origin v0.9.0
 ```
 
 The [release workflow](.github/workflows/release.yml) checks that the tag matches both versions and is on `main`,
-runs the unit tests, checks that the package holds the site agent and starts, and publishes it to nuget.org.
+runs the unit tests, checks that the CLI package holds the site agent and starts, and publishes it to nuget.org together
+with `OptiCli.Mcp` at the same version plus a `-preview` suffix (set in its project file while it is a preview).
 
 ## Licence
 

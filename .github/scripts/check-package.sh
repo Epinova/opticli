@@ -3,7 +3,7 @@
 # embedded skill. Usage: check-package.sh <dir with the .nupkg>
 set -euo pipefail
 
-package="$(find "$1" -maxdepth 1 -name 'OptiCli.*.nupkg' | head -n 1)"
+package="$(find "$1" -maxdepth 1 -name 'OptiCli.*.nupkg' ! -name 'OptiCli.Mcp.*' | head -n 1)"
 if [ -z "$package" ]; then
   echo "::error::No OptiCli .nupkg in $1."
   exit 1

@@ -3,9 +3,13 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
-## Unreleased
+## 0.9.0 (5 October 2026)
 
 ### MCP server for editors (preview)
+
+`OptiCli.Mcp` is published as a prerelease (`0.9.0-preview`): the options and tools may still change, and it supports
+CMS 12 only, not CMS 13.
+
 
 - **New package `OptiCli.Mcp`** for the site itself: editors connect Claude (claude.ai, Claude Desktop, Claude Code) to
   an Optimizely CMS 12 site, sign in with the site's own login, and Claude works as them, with their access rights.

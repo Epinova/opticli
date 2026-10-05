@@ -1,4 +1,5 @@
-# Publishes the OptiCli tool package to nuget.org when a version tag (v1.2.3) is pushed.
+# Publishes the OptiCli tool package and the OptiCli.Mcp site package (a -preview prerelease of the same version) to
+# nuget.org when a version tag (v1.2.3) is pushed.
 # Authenticates with nuget.org trusted publishing: no API key is stored in the repository.
 name: Release
 
@@ -46,10 +47,14 @@ jobs:
         run: dotnet test opticli.slnx -c Release
 
       - name: Pack
-        run: dotnet pack src/OptiCli/OptiCli.csproj -c Release -o artifacts
+        run: |
+          dotnet pack src/OptiCli/OptiCli.csproj -c Release -o artifacts
+          dotnet pack src/OptiCli.Mcp/OptiCli.Mcp.csproj -c Release -o artifacts
 
-      - name: Check the package
-        run: .github/scripts/check-package.sh artifacts
+      - name: Check the packages
+        run: |
+          .github/scripts/check-package.sh artifacts
+          .github/scripts/check-mcp-package.sh artifacts "${GITHUB_REF_NAME#v}"
 
       - name: Log in to nuget.org
         id: login
