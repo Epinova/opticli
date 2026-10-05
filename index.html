@@ -121,6 +121,8 @@ section > .head p { color: var(--muted); max-width: 70ch; }
 .points b { display: block; font-weight: 600; margin-bottom: 2px; }
 .points span { color: var(--muted); font-size: .95rem; }
 
+.badge { display: inline-block; margin-left: .45em; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font: 600 .68rem var(--body); letter-spacing: .07em; text-transform: uppercase; vertical-align: .15em; }
+
 pre.cmd { margin: 0; background: var(--term-bg); color: var(--term-fg); border-radius: 8px; padding: 16px 18px; overflow-x: auto; font: .88rem/1.7 var(--mono); }
 pre.cmd .c { color: #7c8896; }
 
@@ -145,7 +147,7 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
     <h1><span class="prompt">❯</span>opticli</h1>
     <p class="lead">A command-line tool for the content in your Optimizely CMS 12 site. Look up pages and blocks, trace them
       to the code that renders them, and change them through the CMS API, from your terminal or through your coding agent.</p>
-    <div class="actions"><a class="btn" href="https://github.com/epinova/opticli">View on GitHub</a><a href="#get-started">Get started</a><a href="#safety">Safety</a><a href="#changelog">Changelog</a></div>
+    <div class="actions"><a class="btn" href="https://github.com/epinova/opticli">View on GitHub</a><a href="#get-started">Get started</a><a href="#editors">For editors</a><a href="#safety">Safety</a><a href="#changelog">Changelog</a></div>
   </div>
 
   <div class="stage">
@@ -213,6 +215,10 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
       <li><h3>Nothing to add to your solution</h3>
         <p><code>serve</code> starts your existing build with a small agent injected at startup, through a .NET startup hook and a hosting startup. Your site's code and config stay as they are.</p>
         <code class="eg">opticli serve</code></li>
+      <li><h3>Claude for editors, on any environment<span class="badge">Preview</span></h3>
+        <p>The <code>OptiCli.Mcp</code> package adds an MCP server to the site itself, production included. Editors connect
+          Claude, sign in with the site's own login, and Claude works as them, with their access rights.</p>
+        <code class="eg">dotnet add package OptiCli.Mcp --prerelease</code></li>
       <li><h3>Built for coding agents</h3>
         <p>Piped output is compact JSON. Every item has a ref you can pass to the next command, and errors come with a code and a hint. A Claude Code skill tells the agent when to use opticli and how to use it safely.</p>
         <code class="eg">opticli skill install</code></li>
@@ -239,6 +245,7 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
       <li><b>Can it publish or delete by accident?</b><span>Changes are saved as drafts by the user <code>opticli</code>. Publishing needs <code>--publish</code>, and <code>delete</code> only moves content to the recycle bin, and not while other content still references it.</span></li>
       <li><b>Can starting it change a shared database?</b><span>Against a remote development database, the scheduler, schema updates, content type sync and store remapping are off, and <code>serve</code> won't start a build with EF Core migrations the database lacks. The CMS still registers the build's scheduled jobs and add-on content roots there, and the site's own startup code still runs, so use a login without DDL rights where your add-ons allow it.</span></li>
       <li><b>What if my branch isn't what's deployed?</b><span>opticli compares the build with the shared database: content types, properties, migrations. While they differ, writes stop until you confirm with <code>--accept-drift</code>, and it says which side is ahead. Reads keep working.</span></li>
+      <li><b>What can the MCP server do to a production site?</b><span>Only what the signed-in editor may do: every read and save is checked against their access rights, and content they can't read looks the same as content that doesn't exist. Changes are drafts. Publishing and deleting are off until the site turns them on, and approval sequences always apply. Editors can see and revoke their connections.</span></li>
       <li><b>Can anyone else reach the site agent?</b><span>It answers only on 127.0.0.1, only in Development, and only with the token of that run, which sits in a file only you can read. Requests that came through a proxy or tunnel are refused.</span></li>
     </ul>
   </section>
@@ -259,6 +266,30 @@ opticli resolve https://example.com/en/about/
 opticli skill install                   <span class="c"># teach Claude Code to use it</span></pre>
   </section>
 
+  <section id="editors">
+    <div class="head">
+      <h2>For editors: an MCP server<span class="badge">Preview</span></h2>
+      <p>opticli itself is for developers on their own machine. <code>OptiCli.Mcp</code> is a NuGet package you install in
+        the site, so editors can connect Claude (claude.ai, Claude Desktop, Claude Code) to it in any environment. Editors
+        sign in with the site's own login, Entra ID or ASP.NET Identity, and approve the connection. Claude then reads and
+        changes content as that editor, with their access rights, through the same operations as the CLI's site agent:
+        drafts by default, dry runs, validation and approval sequences.</p>
+      <p>It is a preview, published as a prerelease, and not yet recommended for production: the options and tools may
+        still change. It supports CMS 12 (12.12.1 and CMS UI 12.16.1 or newer), not CMS 13. claude.ai and Claude Desktop
+        need the site to be reachable from the internet. See the
+        <a href="https://github.com/epinova/opticli#mcp-server-for-editors-preview">README</a> for every option.</p>
+    </div>
+    <pre class="cmd"><span class="c"># in the site's project</span>
+dotnet add package OptiCli.Mcp --prerelease
+
+<span class="c"># Startup.cs</span>
+services.AddOptiCliMcp();               <span class="c"># after the site's own login setup</span>
+endpoints.MapOptiCliMcp();              <span class="c"># after MapContent() and the site's own endpoints</span>
+
+<span class="c"># editors then connect Claude to</span>
+https://your-site.example/episerver/opticli/mcp</pre>
+  </section>
+
   <section id="changelog">
     <div class="head">
       <h2>Changelog</h2>
@@ -266,6 +297,13 @@ opticli skill install                   <span class="c"># teach Claude Code to u
         <code>opticli skill install</code> again to update the skill.</p>
     </div>
     <ol class="changelog">
+      <li><div class="v"><b>0.9.0</b><span>5 October 2026</span></div>
+        <ul>
+          <li><b>MCP server for editors (preview):</b> the new <code>OptiCli.Mcp</code> package, published as
+            <code>0.9.0-preview</code>, lets editors connect Claude to a CMS 12 site and work as themselves, signed in with
+            the site's own login. Publishing and deleting are off unless the site turns them on.</li>
+          <li><b>Site agent:</b> its content operations moved to a layer the MCP server shares. Nothing changes for the CLI.</li>
+        </ul></li>
       <li><div class="v"><b>0.8.0</b><span>2 October 2026</span></div>
         <ul>
           <li><b>--from:</b> <code>set</code> and <code>area</code> take <code>--from published</code> (or a version) to
