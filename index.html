@@ -308,6 +308,12 @@ https://your-site.example/episerver/opticli/mcp</pre>
         <code>opticli skill install</code> again to update the skill.</p>
     </div>
     <ol class="changelog">
+      <li><div class="v"><b>0.10.1</b><span>5 October 2026</span></div>
+        <ul>
+          <li><b>Fixed:</b> <code>sites primary "Site A=&lt;host&gt;"</code> with a host that is already one language's
+            primary host, on a site that also has one for every language, moved SiteUrl onto it. It now works as
+            <code>Site A@&lt;lang&gt;=&lt;host&gt;</code> would, and a warning says so.</li>
+        </ul></li>
       <li><div class="v"><b>0.10.0</b><span>5 October 2026</span></div>
         <ul>
           <li><b>sites primary:</b> points a restored copy of a production database at localhost.
