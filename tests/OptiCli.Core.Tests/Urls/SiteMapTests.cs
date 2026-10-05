@@ -115,6 +115,22 @@ public class SiteMapTests
     }
 
     [Fact]
+    public void Other_languages_use_the_host_for_every_language_even_when_a_languages_primary_host_comes_first()
+    {
+        // As `sites primary` leaves a site: the production hosts first, the new local primary host last.
+        var map = Map(Site(
+            new HostInfo("www.example.se", HostType.Primary, "sv", null),
+            new HostInfo("www.example.com", HostType.Undefined, null, null),
+            new HostInfo("localhost:5001", HostType.Primary, null, true)));
+
+        var english = map.Compose([1, 5, 100], id => id == 100 ? "about" : "home", En, ContentKind.Page)!;
+        var swedish = map.Compose([1, 5, 100], id => id == 100 ? "om-oss" : "home", Sv, ContentKind.Page)!;
+
+        Assert.Equal("https://localhost:5001/en/about/", english.Absolute);
+        Assert.Equal("https://www.example.se/om-oss/", swedish.Absolute);
+    }
+
+    [Fact]
     public void Page_urls_get_a_language_prefix_when_no_host_is_mapped()
     {
         var map = Map(Site(new HostInfo("www.example.com", HostType.Primary, "en", true)));

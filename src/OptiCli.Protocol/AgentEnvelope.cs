@@ -57,6 +57,12 @@ public static class AgentErrorReasons
     /// never been published. Publish the master branch first.
     /// </summary>
     public const string MasterNotPublished = "masterNotPublished";
+
+    /// <summary>
+    /// Validation: site host changes (<see cref="AgentRoutes.SiteHosts"/>) that would break a site definition; each issue
+    /// names the change, and the error's hint says what to do (not the hint for content properties).
+    /// </summary>
+    public const string SiteHosts = "siteHosts";
 }
 
 /// <summary>Error codes and the HTTP status each one is sent with.</summary>

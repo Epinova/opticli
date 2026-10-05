@@ -22,6 +22,7 @@ internal enum AgentEndpoint
     Discard,
     RemoveLanguage,
     Drift,
+    SiteHosts,
 }
 
 /// <param name="Argument">The <c>{name}</c> or <c>{ref}</c> segment, when the route has one.</param>
@@ -37,7 +38,7 @@ internal static partial class AgentRouter
 
     private static readonly string RouteList =
         $"GET {AgentRoutes.Prefix}/ping, POST {AgentRoutes.Prefix}/shutdown, GET {AgentRoutes.Prefix}/drift, GET {AgentRoutes.Prefix}/types/{{name}}, POST {AgentRoutes.Prefix}/content, POST {AgentRoutes.Prefix}/media, " +
-        $"POST {AgentRoutes.Prefix}/content/{{ref}}/draft|languages|remove-language|publish|unpublish|discard|move|access, GET|DELETE {AgentRoutes.Prefix}/content/{{ref}}";
+        $"POST {AgentRoutes.Prefix}/content/{{ref}}/draft|languages|remove-language|publish|unpublish|discard|move|access, GET|DELETE {AgentRoutes.Prefix}/content/{{ref}}, POST {AgentRoutes.Prefix}/sites/hosts";
 
     /// <exception cref="AgentException">No route matches, or it belongs to another protocol version.</exception>
     public static RouteMatch Match(string method, string? path)
@@ -66,6 +67,7 @@ internal static partial class AgentRouter
             ["types", var name] => (AgentEndpoint.Type, name),
             ["content"] => (AgentEndpoint.Create, (string?)null),
             ["media"] => (AgentEndpoint.Upload, (string?)null),
+            ["sites", "hosts"] => (AgentEndpoint.SiteHosts, (string?)null),
             ["content", var reference] when IsMethod(method, "GET") => (AgentEndpoint.Read, reference),
             ["content", var reference] => (AgentEndpoint.Delete, reference),
             ["content", var reference, "draft"] => (AgentEndpoint.Draft, reference),
@@ -109,6 +111,7 @@ internal static partial class AgentRouter
         [AgentEndpoint.Discard] = "POST",
         [AgentEndpoint.Move] = "POST",
         [AgentEndpoint.Access] = "POST",
+        [AgentEndpoint.SiteHosts] = "POST",
     };
 
     private static bool IsMethod(string method, string expected) => string.Equals(method, expected, StringComparison.OrdinalIgnoreCase);

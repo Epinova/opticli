@@ -8,6 +8,7 @@ using OptiCli.Core.Drift;
 using OptiCli.Core.Errors;
 using OptiCli.Core.Safety;
 using OptiCli.Core.Serve;
+using OptiCli.Core.Sites;
 using OptiCli.Core.Skills;
 using OptiCli.Protocol;
 
@@ -27,6 +28,7 @@ internal static class DoctorCommand
         DatabaseSection Database,
         AgentStatus? Agent,
         DriftReport? Drift,
+        IReadOnlyList<SavedPrimary>? SitesMapping,
         IReadOnlyList<InstalledSkill> Skills,
         IReadOnlyList<string> Warnings);
 
@@ -78,7 +80,8 @@ internal static class DoctorCommand
             Check the setup: project, connection string, database, write agent and installed skill, and where each came from.
             Lists every connection string candidate with its id, source, server, database and whether it is local (passwords
             are never shown), which one is the development database and why, the CMS schema version, the agent's state
-            (running, stopped, stale, unresponsive) and, against a shared database, drift (what differs from this build). Always exits 0:
+            (running, stopped, stale, unresponsive), against a shared database drift (what differs from this build), and the
+            sites whose primary host differs from the mapping saved with `sites primary --save`. Always exits 0:
             data.healthy says whether reads work, data.warnings lists problems. Run it first when another command fails.
             Example: opticli doctor
             """);
@@ -139,6 +142,10 @@ internal static class DoctorCommand
                 ? null
                 : await DriftAsync(context, project, resolution.Chosen, warnings, cancellationToken);
 
+            var sitesMapping = project is null || !databaseSection.Reachable
+                ? null
+                : await SitesMappingAsync(context, project, warnings, cancellationToken);
+
             var skills = InstalledSkills(context);
             foreach (var skill in skills.Where(s => s.Outdated))
             {
@@ -154,6 +161,7 @@ internal static class DoctorCommand
                 databaseSection,
                 agent,
                 drift,
+                sitesMapping,
                 skills,
                 warnings);
             return new CommandResult(report);
@@ -211,6 +219,32 @@ internal static class DoctorCommand
         catch (OptiCliException ex)
         {
             warnings.Add($"Drift: not compared ({ex.Message})");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The saved <c>sites primary</c> mapping against the sites' primary hosts now, read from the database (no agent): after
+    /// a database restore it says to run <c>sites primary --from-config</c>.
+    /// </summary>
+    private static async Task<IReadOnlyList<SavedPrimary>?> SitesMappingAsync(CliContext context, ProjectInfo project, List<string> warnings, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (UserConfig.ForProject(context.Environment.UserConfigFile, project.Directory)?.PrimaryHosts is not { } mapping)
+            {
+                return null;
+            }
+            await using var db = await context.OpenDatabaseAsync(cancellationToken);
+            var sites = await SiteReader.ListAsync(db, cancellationToken);
+            var languages = (await LanguageReader.ListAsync(db, cancellationToken)).Where(l => l.Enabled).Select(l => l.Code).ToList();
+            var entries = PrimaryMapping.Compare(mapping, sites, languages);
+            warnings.AddRange(PrimaryMapping.Warnings(entries));
+            return entries;
+        }
+        catch (OptiCliException ex)
+        {
+            warnings.Add($"Sites mapping: not compared ({ex.Message})");
             return null;
         }
     }

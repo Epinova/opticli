@@ -42,7 +42,8 @@ internal static class CommandRunner
                     }
                     if (result.Text is { } text && writer.Format == OutputFormat.Text)
                     {
-                        WriteWarnings(context.DatabaseWarnings);
+                        // As the table rendering does: every warning on stderr.
+                        WriteWarnings(warnings);
                         Console.Out.Write(text);
                         return ExitCodes.Ok;
                     }

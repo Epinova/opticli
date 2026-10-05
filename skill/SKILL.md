@@ -1,6 +1,6 @@
 ---
 name: opticli
-description: Inspect and change content of an Optimizely CMS 12 (EPiServer) site the user develops locally (against its local or development database) with the opticli CLI instead of hand-written SQL or guessing from code. Use when you need to know what CMS content exists (pages, blocks, media, folders), what a page or block contains (properties, ContentArea items, rich text), which page type or block type something is and which C# class and Razor view render it, where a block or page is used, which content a URL shows, what drafts and versions exist, or when the user asks you to create or edit CMS content (set properties, add a block to a ContentArea, create a page or block, translate, publish) in their development site.
+description: Inspect and change content of an Optimizely CMS 12 (EPiServer) site the user develops locally (against its local or development database) with the opticli CLI instead of hand-written SQL or guessing from code. Use when you need to know what CMS content exists (pages, blocks, media, folders), what a page or block contains (properties, ContentArea items, rich text), which page type or block type something is and which C# class and Razor view render it, where a block or page is used, which content a URL shows, what drafts and versions exist, or when the user asks you to create or edit CMS content (set properties, add a block to a ContentArea, create a page or block, translate, publish) in their development site, or to point the sites of a restored database at localhost (their host names).
 opticli-version: 0.9.0
 ---
 
@@ -49,6 +49,7 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
 |---|---|
 | Is opticli set up, which DB, is the site running? | `opticli doctor` |
 | Which sites, hosts and start pages exist? | `opticli sites` |
+| Point a restored database's sites at localhost (only when asked) | `opticli sites primary "Site A=localhost:5001" --dry-run` (needs `serve`) |
 | Which page/block types exist, how many items each? | `opticli types --kind block --sort instances` (`page`, `media`, `folder`) |
 | A type's properties, C# class file and views | `opticli type ArticlePage` |
 | Which ContentAreas/references accept a type | `opticli allowed-in TeaserBlock --kind page` |
@@ -179,6 +180,12 @@ order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a cod
   the user explicitly asked for it. They aren't versioned: report the `before` from the output, which is the only
   record of what they were. Root, start pages and asset roots, and changes that leave no role with Administer, are
   refused.
+- Never change site hosts (`sites primary`, `sites host add|remove`) unless the user asked for it, and dry-run first.
+  Which host goes with which site is the user's call: ports in the launch profile say nothing about which site is
+  which, so ask rather than guess. Pass `--save` only when they want the mapping kept for the next restore (then
+  `opticli sites primary --from-config`; `--forget <site>` drops a saved site that is gone). Site definitions aren't
+  versioned: report the `changes` from the output. Tell the user to restart the site if it also runs elsewhere (their
+  IDE), as `meta.warnings` says. Against a shared database they are refused (exit 3): don't work around it.
 - Always `--dry-run` a multi-step `apply` plan first, and a single write when you are unsure of its effect.
 - A write that timed out (`unreachable`, "no response within") or a plan that stopped halfway (`details.partial`) may
   have saved more than it reports: check with `opticli versions <ref>` before running it again.

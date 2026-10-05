@@ -99,7 +99,11 @@ public sealed class SiteMap(IReadOnlyList<SiteInfo> sites, IReadOnlyList<Languag
     public (HostInfo? Host, bool LanguageMapped) HostFor(SiteInfo site, LanguageBranch? language)
     {
         var usable = site.Hosts.Where(h => h.Name != Wildcard && h.Type is HostType.Primary or HostType.Undefined).ToList();
-        var primary = usable.FirstOrDefault(h => h.Type == HostType.Primary) ?? usable.FirstOrDefault();
+        // As the CMS: the hosts for every language first (GetPrimaryHost(null)), then any primary or undefined one, so a
+        // language's primary host listed before the site's own isn't taken for the other languages.
+        var invariant = usable.Where(h => h.Language is null).ToList();
+        var primary = invariant.FirstOrDefault(h => h.Type == HostType.Primary) ?? invariant.FirstOrDefault()
+            ?? usable.FirstOrDefault(h => h.Type == HostType.Primary) ?? usable.FirstOrDefault();
         if (language is null || language.IsInvariant)
         {
             return (primary, true);

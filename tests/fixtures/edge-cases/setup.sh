@@ -81,7 +81,7 @@ if ! result=$($OPTICLI apply "$HERE/edge-cases.plan.json" --update-existing); th
   exit 1
 fi
 echo "$result" | jq -c '.data.operations[] | {index, op, id, status}'
-echo "== restart (creates the nested site, the approval sequence and the language settings)"
+echo "== restart (creates the nested site, the hosts sites, the approval sequence and the language settings)"
 restart
 if $OPTICLI serve --logs --tail 400 | jq -r '.data.lines[]' | grep -A3 '\[edge-cases\] setup failed'; then
   exit 1

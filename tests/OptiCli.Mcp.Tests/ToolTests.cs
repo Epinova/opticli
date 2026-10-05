@@ -52,6 +52,15 @@ public sealed class ToolTests
     }
 
     [Fact]
+    public void The_module_has_no_way_to_change_site_definitions()
+    {
+        // Site hosts (sites primary, sites host) are the developer agent's alone: never compiled into the module.
+        var types = typeof(OptiCliMcpExtensions).Assembly.GetTypes();
+
+        Assert.DoesNotContain(types, t => t.Namespace?.StartsWith("OptiCli.Agent", StringComparison.Ordinal) == true || t.Name is "SiteHostsOperation" or "SiteHostPlanner");
+    }
+
+    [Fact]
     public async Task The_instructions_explain_the_workflow_and_what_the_site_allows()
     {
         await using var site = await TestSite.StartAsync();

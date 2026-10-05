@@ -44,6 +44,13 @@
     {"op": "create", "id": "nestedChild", "parent": "$nested", "type": "StandardPage", "name": "Nested child", "publish": true,
      "properties": {"SimpleAddress": "edge-two", "MainBody": "<p>A page on the nested site.</p>"}},
 
+    {"op": "create", "id": "hostsA", "guid": "6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e04", "parent": "$edge", "type": "StandardPage", "name": "Hosts site A", "publish": true,
+     "properties": {"MainBody": "<p>The start page of a site whose hosts the site host tests change and restore.</p>"}},
+    {"op": "create", "id": "hostsB", "guid": "6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e05", "parent": "$edge", "type": "StandardPage", "name": "Hosts site B", "publish": true,
+     "properties": {"MainBody": "<p>The start page of a second such site.</p>"}},
+    {"op": "create", "id": "hostsC", "guid": "6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e06", "parent": "$edge", "type": "StandardPage", "name": "Hosts site C", "publish": true,
+     "properties": {"MainBody": "<p>The start page of a site whose hosts are all for one language.</p>"}},
+
     {"op": "create", "id": "approval", "guid": "6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e02", "parent": "$edge", "type": "StandardPage", "name": "Approval root"},
 
     {"op": "create", "id": "languages", "guid": "6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e03", "parent": "$edge", "type": "EdgePage", "name": "Language settings root", "publish": true,

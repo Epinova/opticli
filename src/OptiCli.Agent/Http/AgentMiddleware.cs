@@ -7,6 +7,7 @@ using OptiCli.Agent.Drift;
 using OptiCli.Agent.Endpoints;
 using OptiCli.Agent.Hosting;
 using OptiCli.Agent.Safety;
+using OptiCli.Agent.Sites;
 using OptiCli.Cms;
 using OptiCli.Cms.Content;
 using OptiCli.Cms.Operations;
@@ -20,7 +21,8 @@ namespace OptiCli.Agent.Http;
 /// </summary>
 /// <remarks>
 /// The content endpoints are <c>OptiCli.Cms</c> operations, which the MCP module runs too; this class adds only what is
-/// HTTP: the body, the status code, and the request's <see cref="AgentRequest.Call"/> as the developer.
+/// HTTP: the body, the status code, and the request's <see cref="AgentRequest.Call"/> as the developer. Site hosts
+/// (<see cref="SiteHostsOperation"/>) are the agent's own, never the module's.
 /// </remarks>
 internal static class AgentMiddleware
 {
@@ -78,6 +80,8 @@ internal static class AgentMiddleware
         [AgentEndpoint.Discard] = Write(async r => await r.ReadOptionalBodyAsync<DiscardRequest>() ?? new DiscardRequest(), b => b.DryRun, (r, b) => Ok(DiscardOperation.Run(r.Call, r.Argument, b))),
         [AgentEndpoint.Move] = Write(r => r.ReadBodyAsync<MoveRequest>(), b => b.DryRun, (r, b) => Ok(MoveOperation.Run(r.Call, r.Argument, b))),
         [AgentEndpoint.Access] = Write(r => r.ReadBodyAsync<AccessRequest>(), b => b.DryRun, async (r, b) => Ok(await AccessOperation.RunAsync(r.Call, r.Argument, b))),
+        // Not a content operation: site definitions are the developer's only, so this one isn't in OptiCli.Cms.
+        [AgentEndpoint.SiteHosts] = Write(r => r.ReadBodyAsync<SiteHostsRequest>(), b => b.DryRun, (r, b) => Ok(SiteHostsOperation.Run(r, b))),
         // No body and no dry run: a delete is always real.
         [AgentEndpoint.Delete] = Write(Task.FromResult, _ => false, (r, _) => Ok(DeleteOperation.Run(r.Call, r.Argument))),
     };

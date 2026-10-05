@@ -1,7 +1,8 @@
 // Copied into an Alloy site by setup.sh, for opticli's integration tests. It adds the content types the edge-case
 // plan (edge-cases.plan.json) needs, and at startup sets up what a plan can't create: a visitor group, a second site
-// whose start page is under the first site's, an approval sequence and language settings. Each is made once, and only
-// once the plan's content exists, so setup.sh restarts the site after applying the plan.
+// whose start page is under the first site's, three sites for the site host tests, an approval sequence and language
+// settings. Each is made once, and only once the plan's content exists, so setup.sh restarts the site after applying
+// the plan.
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using EPiServer.Approvals;
@@ -58,9 +59,22 @@ public class EdgeCasesSetup : IInitializableModule
     public static readonly Guid ApprovalRoot = Guid.Parse("6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e02");
     public static readonly Guid LanguageRoot = Guid.Parse("6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e03");
     public static readonly Guid VisitorGroup = Guid.Parse("6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e10");
+    public static readonly Guid HostsStartA = Guid.Parse("6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e04");
+    public static readonly Guid HostsStartB = Guid.Parse("6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e05");
+    public static readonly Guid HostsStartC = Guid.Parse("6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e06");
 
     public const string NestedSiteName = "Edge nested site";
     public const string NestedHost = "edge-nested.localhost";
+
+    /// <summary>
+    /// Two sites whose hosts the site host tests change, in a shape `opticli sites primary` and `sites host` can restore
+    /// exactly: an https SiteUrl on the primary host, a language host, and the Edit host last.
+    /// </summary>
+    public const string HostsSiteA = "Edge hosts A";
+    public const string HostsSiteB = "Edge hosts B";
+
+    /// <summary>A site whose hosts are all bound to one language (English), with no primary host for every language.</summary>
+    public const string HostsSiteC = "Edge hosts C";
 
     public void Initialize(InitializationEngine context)
     {
@@ -69,9 +83,32 @@ public class EdgeCasesSetup : IInitializableModule
         {
             EnsureVisitorGroup(locate.GetInstance<IVisitorGroupRepository>());
             var content = locate.GetInstance<IContentRepository>();
+            var sites = locate.GetInstance<ISiteDefinitionRepository>();
             if (Find(content, NestedStart) is { } nested)
             {
-                EnsureNestedSite(locate.GetInstance<ISiteDefinitionRepository>(), nested);
+                EnsureNestedSite(sites, nested);
+            }
+            if (Find(content, HostsStartA) is { } hostsA)
+            {
+                EnsureSite(sites, HostsSiteA, hostsA, "https://hosts-a.localhost/",
+                [
+                    new HostDefinition { Name = "hosts-a.localhost", Type = HostDefinitionType.Primary },
+                    new HostDefinition { Name = "sv.hosts-a.example", Type = HostDefinitionType.Primary, Language = CultureInfo.GetCultureInfo("sv") },
+                    new HostDefinition { Name = "edit.hosts-a.localhost", Type = HostDefinitionType.Edit },
+                ]);
+            }
+            if (Find(content, HostsStartB) is { } hostsB)
+            {
+                EnsureSite(sites, HostsSiteB, hostsB, "https://hosts-b.localhost/", [new HostDefinition { Name = "hosts-b.localhost", Type = HostDefinitionType.Primary }]);
+            }
+            if (Find(content, HostsStartC) is { } hostsC)
+            {
+                var english = CultureInfo.GetCultureInfo("en");
+                EnsureSite(sites, HostsSiteC, hostsC, "https://hosts-c.localhost/",
+                [
+                    new HostDefinition { Name = "hosts-c.localhost", Type = HostDefinitionType.Primary, Language = english, UseSecureConnection = true },
+                    new HostDefinition { Name = "alt.hosts-c.localhost", Language = english, UseSecureConnection = true },
+                ]);
             }
             if (Find(content, ApprovalRoot) is { } approval)
             {
@@ -123,6 +160,16 @@ public class EdgeCasesSetup : IInitializableModule
         };
         sites.Save(site);
         Console.Error.WriteLine($"[edge-cases] created site '{NestedSiteName}' with start page {start}");
+    }
+
+    private static void EnsureSite(ISiteDefinitionRepository sites, string name, ContentReference start, string url, IList<HostDefinition> hosts)
+    {
+        if (sites.List().Any(s => s.Name == name))
+        {
+            return;
+        }
+        sites.Save(new SiteDefinition { Name = name, StartPage = start, SiteUrl = new Uri(url), Hosts = hosts });
+        Console.Error.WriteLine($"[edge-cases] created site '{name}' with start page {start}");
     }
 
     private static void EnsureApproval(IApprovalDefinitionRepository approvals, ContentReference root)

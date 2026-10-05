@@ -49,6 +49,18 @@ public static class AgentRoutes
     public static string Type(string nameOrGuid) => $"{Prefix}/types/{Uri.EscapeDataString(nameOrGuid)}";
 
     /// <summary>
+    /// <c>POST /v1/sites/hosts</c>. Body: <see cref="SiteHostsRequest"/>. Response: <see cref="SiteHostsResult"/>. Saves
+    /// through <c>ISiteDefinitionRepository</c>, which clears the site definition cache and raises its change events, so
+    /// the running site uses the new hosts at once. Listing sites stays a database read (<c>opticli sites</c>).
+    /// Errors: <c>not_found</c> (site, with close matches; a host to remove), <c>conflict</c> (adding a host the site has),
+    /// <c>validation</c> 422 naming the offending change (a host another site has, two primary hosts for a language, a
+    /// language that isn't enabled, a bad host name, ...), <c>refused</c> (the site's last host; in shared mode, anything
+    /// but adding a host of type undefined: <see cref="SiteHostsRequest.AllowedOnSharedDatabase"/>).
+    /// Developer-only: the MCP module has no such tool.
+    /// </summary>
+    public static readonly string SiteHosts = $"{Prefix}/sites/hosts";
+
+    /// <summary>
     /// <c>POST /v1/content</c>. Body: <see cref="CreateRequest"/>. Response: <see cref="WriteResult"/>
     /// (201 when saved). Errors: <c>not_found</c> (parent, type), <c>usage</c> (unknown property, bad value),
     /// <c>validation</c> 422 (required property, type not allowed under the parent, ...), <c>conflict</c> 409 (the GUID

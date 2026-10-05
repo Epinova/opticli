@@ -44,6 +44,24 @@ public class ProtocolJsonTests
     }
 
     [Fact]
+    public void Site_hosts_request_round_trips_and_leaves_out_what_was_not_given()
+    {
+        var request = new SiteHostsRequest
+        {
+            Changes = [new SiteHostChange { Site = "Site A", Host = "localhost:5001", Action = SiteHostActions.Primary, Language = "nb", Https = HostHttps.True }],
+            DryRun = true,
+        };
+
+        var copy = JsonSerializer.Deserialize<SiteHostsRequest>(JsonSerializer.Serialize(request, AgentJson.Options), AgentRequest.RequestOptions)!;
+        var json = JsonSerializer.Serialize(new SiteHostsRequest { Changes = [new SiteHostChange { Site = "Site A", Host = "*", Action = SiteHostActions.Remove }] }, AgentJson.Options);
+
+        Assert.True(copy.DryRun);
+        Assert.Equal(request.Changes[0], copy.Changes[0]);
+        Assert.Equal("""{"changes":[{"site":"Site A","host":"*","action":"remove","keepEdit":false,"keepSiteUrl":false}],"dryRun":false}""", json);
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<SiteHostsRequest>("""{"dryRun":true}""", AgentRequest.RequestOptions));
+    }
+
+    [Fact]
     public void Requests_reject_unknown_fields_so_typos_never_turn_a_dry_run_into_a_save()
     {
         var error = Assert.Throws<JsonException>(() =>

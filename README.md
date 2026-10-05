@@ -193,6 +193,7 @@ Once the site answers, `serve` reports drift: what differs between the build and
 | Writes create drafts; publishing needs `--publish` (or `publish`). Saves are attributed to the user `opticli`. | CLI + site agent |
 | A publish that would also put live changes someone else saved after the published version stops: on a terminal it shows who saved what and asks, elsewhere it fails with `conflict` (exit 5) listing them. `--include-draft` (a plan step's `"includeDraft": true`) confirms; `publish --version <id>` publishes that version as it is; `--from published` bases the change on the published version, leaving them out. | Site agent |
 | Against a shared database, writes stop while the build and the database differ (drift): on a terminal it shows the differences and asks, elsewhere it fails with `drift` (exit 5). `--accept-drift <fingerprint>` confirms; the fingerprint stops counting when the differences change. | Site agent, CLI first |
+| Against a shared database, `sites primary` and `sites host remove` are refused (exit 3), and `sites host add` only adds hosts of type undefined: the deployed site uses the same site definitions. There is no override; change those sites in their own admin UI. Site definitions are never reachable from the MCP module. | Site agent, CLI first |
 | `delete` moves content to the recycle bin; nothing empties it. Site roots, start pages, asset roots and anything above them can't be moved or deleted. | Site agent |
 | Reads use fixed queries. `sql` accepts a single SELECT, refuses anything that writes, runs code, reaches another database or reads server-wide views, logs and traces (in `sys`, only the views that describe the database's own schema), and always runs in a rolled-back transaction. Personal-data tables (form submissions, users) need `--include-personal-data`. | CLI |
 | Passwords are never printed; `doctor` redacts connection strings. The exception is `opticli env`: it prints the per-run token, and with `--include-connection` the connection string too. | CLI |
@@ -244,7 +245,7 @@ add-ons need first.
 
 | Command | Answers |
 |---|---|
-| `doctor` | project, connection string candidates, database, schema version, site agent, drift (against a shared database), installed skill |
+| `doctor` | project, connection string candidates, database, schema version, site agent, drift (against a shared database), sites whose primary host differs from the saved `sites primary` mapping, installed skill |
 | `db list`, `db use`, `db forget` | the development database (see [Which database](#which-database)) |
 | `sites`, `languages` | site definitions and hosts; language branches |
 | `types [--kind] [--unused] [--sort]` | content types with instance counts |
@@ -286,6 +287,8 @@ These commands write:
   `--inherit` changes one item's access rights. Children that inherit follow; nothing is applied to descendants.
   Access rights aren't versioned, so the output shows them before and after. The root, the recycle bin, start pages
   and asset roots are refused, and so is a change that leaves no role with Administer.
+- `sites primary` and `sites host add|remove` change site definitions' host names; see
+  [Site hosts after a database restore](#site-hosts-after-a-database-restore).
 - `apply plan.json` runs several operations validated together. Later operations can refer to an item an earlier
   one created as `$id`. A property value `"@texts/body.html"` is that file's text, as `Prop=@file` is on the command
   line. Files in a plan are relative to the plan file and must stay inside its folder. With `"guidNamespace"`, what a
@@ -306,6 +309,75 @@ sequence isn't published directly (exit 3); `--request-approval` sends it for re
 Against a shared database that differs from the build, writes stop with `drift` (exit 5) until `--accept-drift
 <fingerprint>` (`apply --accept-drift` for a whole plan); dry runs don't stop.
 [skill/reference.md](skill/reference.md) documents value syntax and the plan format.
+
+### Site hosts after a database restore
+
+A restored copy of a production database has the production host names. Locally, every site but the one with the `*`
+host is unreachable, and absolute URLs (canonical links, sitemaps, structured data, emails) point at production.
+`sites primary` points each site at the port the site listens on, through the running site (`opticli serve`):
+
+```sh
+opticli sites primary "Site A=localhost:5001" "Site B=localhost:5002" "Site C=localhost:5003" --dry-run
+opticli sites primary "Site A=localhost:5001" "Site B=localhost:5002" "Site C=localhost:5003" --save
+```
+
+For each pair the site gets the host if it doesn't have it, as its primary host. The previous primary host and the
+site's Edit host become undefined: an Edit host on a production name sends the edit UI and preview there, and
+without one the CMS edits on any host. The site's URL (SiteUrl) follows the new primary host, `https://` unless
+`--https false`, keeping SiteUrl's path. The CMS builds a host's links on SiteUrl's scheme when the host has no https
+setting of its own, and adds SiteUrl's host back to the site whenever it is saved. The production hosts stay, so
+`opticli resolve https://site-b.example/...` still finds content.
+
+A pair without `@lang` replaces the site's primary host: the one for every language, or, on a site whose only primary
+host is bound to a language (a site whose only hosts are for `nb`, say), that one, and the new host is for `nb` too;
+the `changes` line says so. With primary hosts for several languages only (or one in a language that isn't enabled),
+the new host is for every language beside them, and `meta.warnings` gives the pairs for the rest. A host that is a
+primary host already keeps its language, and the language is worked out on the site as it was before the command, so
+the order of the pairs doesn't matter and running them again changes nothing. SiteUrl follows a pair without
+`@lang`, and a `@lang` pair whose primary host SiteUrl was on. `doctor` and `--from-config` read a saved entry without
+a language the same way.
+
+Putting a site back: the commands only ever put SiteUrl on a primary host. Once it has moved, a SiteUrl that was on
+a host that isn't primary (as on a site the CMS created on its first request) can't be put back with them alone.
+
+A host is `name[:port]`. The default port of the host's scheme is left out, as browsers leave it out of the requests'
+host: `localhost:443` is the host `localhost` with https, `localhost:80` with http, while `http://localhost:443` (or
+`localhost:443 --https false`) keeps its port. A host a site already has under another spelling
+(`www.site.example:443`, from admin mode) is found by the name `opticli sites` shows. IPv6 addresses can't be site
+hosts in the CMS; use `localhost`.
+
+| Option | Does |
+|---|---|
+| `"Site A@nb=localhost:5004"` | the primary host for one language (an enabled one); SiteUrl stays. Without it, the host is for every language, as most are. `meta.warnings` names the languages whose URLs still use a production host. |
+| `https://localhost:5001/` | the same host; the scheme sets its https setting. `--https true\|false\|unset` overrides it. |
+| `--keep-edit`, `--keep-site-url` | leave the Edit host, or SiteUrl, as they are |
+| `--dry-run` | validates through the site and shows each site's end state, saving nothing |
+| `--save` | after a real run, saves the pairs (with `--keep-edit` and `--keep-site-url`) in the opticli user config, replacing that project's entries for those sites. Entries are keyed `Site A` and `Site A@nb`, so with sites named both `Shop` and `Shop@en`, saving for `Shop` replaces the `Shop@en` entry too. |
+| `--from-config` | runs the saved pairs: after the next restore, `opticli sites primary --from-config` is all it takes. A saved site the database doesn't have is skipped with a warning. |
+| `--forget <site>` | drops a site's entries (or one entry, `"Site A@nb"`) from the saved mapping, e.g. for a site that was deleted or renamed |
+
+All pairs are one batch: every pair is checked, and the end state of every site as the CMS would save it, before
+any site is saved. Then nothing is saved if one fails, and the error names each failing pair. Should the CMS still
+refuse a site while saving (or the database fail), the sites saved before it stay saved, and the message says
+`Already saved: ...; not saved: ...`. A site that is already as asked is `unchanged` and isn't saved, so the command
+is safe to run again, also after such a failure. `doctor` compares the saved mapping with the database and says when
+to run `--from-config`.
+
+| Problem | Error |
+|---|---|
+| a host another site has (in any spelling: `localhost:443` is `localhost`), two primary hosts for a site and language, `*` on two sites, `host add --lang` with a language that isn't enabled | `validation`, exit 5 |
+| a host with a path, query, other scheme or a bad port, a pair without `=` | `usage`, exit 1 (read by the CLI) |
+| a site that doesn't exist, also `"Site A@xx=..."` when `xx` isn't an enabled language (`@xx` is then read as part of the name; the hint says so) | `not_found`, exit 2 |
+| adding a host the site has | `conflict`, exit 5 |
+| removing the site's last host; anything but `host add --type undefined` against a shared database | `refused`, exit 3 |
+
+`sites host add <site> <host>` adds one host (`--type undefined|primary|edit|redirect-permanent|redirect-temporary`,
+`--lang`, `--https`); a host the site has is a `conflict`. `sites host remove <site> <host>` removes one, but never the
+site's last host or SiteUrl's host. Both take `--dry-run`.
+
+Saving through the site clears its site definition cache, so the site `serve` runs uses the new hosts at once. Another
+process running the site against the same database (your IDE's) keeps the old ones until it restarts, unless remote
+events are set up. Site definitions aren't versioned: the output lists every change and the hosts after it.
 
 ## serve and env
 
@@ -409,11 +481,14 @@ runtime. It ships no copies of them.
 | User config | `$XDG_CONFIG_HOME/opticli/config.json` (default `~/.config/opticli/config.json`) | `%APPDATA%\opticli\config.json` |
 | `serve` state, start lock and logs (the last 3 runs) | `$XDG_STATE_HOME/opticli/` (default `~/.local/state/opticli/`) | `%LOCALAPPDATA%\opticli\` |
 
-You can set per-project defaults in the user config. `opticli db use` adds the chosen `database` there. opticli
-keeps the file's permissions when it rewrites it, and creates it readable by you only on Linux and macOS.
+You can set per-project defaults in the user config. `opticli db use` adds the chosen `database` there, and
+`opticli sites primary --save` the `sites.primary` mapping. opticli keeps the file's permissions when it rewrites it,
+and creates it readable by you only on Linux and macOS.
 
 ```json
-{"projects": {"/abs/path/to/Site": {"connection": "...", "output": "bin/Debug/net8.0/Site.dll", "port": 5199, "https": true}}}
+{"projects": {"/abs/path/to/Site": {"connection": "...", "output": "bin/Debug/net8.0/Site.dll", "port": 5199, "https": true,
+  "sites": {"primary": {"Site A": "localhost:5001", "Site A@nb": "https://localhost:5004",
+    "Site B": {"host": "localhost:5002", "keepEdit": true}}}}}}
 ```
 
 ## Supported versions
@@ -748,7 +823,8 @@ with the reason in `tests/OptiCli.Integration/Comparison/KnownDifferences.cs`; a
 
 A sample site lacks much of what real sites have: fetch-data pages, a site whose start page is under another site's,
 simple addresses on several sites, culture-specific properties in shared and local blocks, personalized ContentAreas,
-an approval sequence, language fallback settings, and a media type for PDF files. `tests/fixtures/edge-cases/` builds
+an approval sequence, language fallback settings, a media type for PDF files, and three sites whose hosts the site host
+tests change (and put back). `tests/fixtures/edge-cases/` builds
 them from an Alloy site (`dotnet new epi-alloy-mvc`) without changing it. `setup.sh` copies the site and its
 database, adds `EdgeCasesFixture.cs` (the extra content types, plus a startup module for what a plan can't create),
 and applies `edge-cases.plan.json`. Run it again to update the content: the plan is applied with

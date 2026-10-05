@@ -143,6 +143,15 @@ public partial class CommandRunnerTests
     }
 
     [Fact]
+    public async Task A_text_rendering_keeps_the_warnings_on_stderr()
+    {
+        var run = await Returning(new CommandResult(new { Name = "Start" }, Text: "custom rendering\n", Warnings: ["restart the site"]), "--text");
+
+        Assert.Equal("custom rendering\n", run.Stdout);
+        Assert.Equal("warning: restart the site", run.Stderr.TrimEnd());
+    }
+
+    [Fact]
     public async Task Raw_output_is_printed_as_is_in_every_format()
     {
         var result = new CommandResult(null, Raw: "export A=1\n");

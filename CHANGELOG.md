@@ -3,6 +3,51 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## Unreleased
+
+### New
+
+- **`opticli sites primary` points a restored database's sites at localhost.** A copy of a production database has
+  the production host names, so locally every site but the one with `*` is unreachable and absolute URLs point at
+  production. `sites primary "Site A=localhost:5001" "Site B=localhost:5002"` adds each host if the site lacks it and
+  makes it the primary host; the previous primary host and the Edit host become undefined, and SiteUrl follows,
+  keeping its path (`--keep-edit`, `--keep-site-url` to leave them). `Site A@nb=...` sets a language's primary host,
+  `https://localhost:5001/` or `--https true|false|unset` its https setting; a default port goes (`localhost:443` is
+  `localhost` with https). The production hosts stay. It saves through the site (needs `serve`), which clears the site
+  definition cache: no restart for the site `serve` runs; a warning says to restart any other process running it.
+- A pair without `@lang` replaces the site's primary host: on a site whose only primary host is bound to a language
+  (all its hosts for one language), the new host gets that language, so one pair is enough, in any order with the
+  other pairs; a host that is already primary keeps its language, so running the pairs again changes nothing. A
+  `@lang` pair moves SiteUrl when SiteUrl was on the primary host it replaces. `doctor` and `--from-config` read saved entries the same
+  way. Once SiteUrl has moved, a SiteUrl that was on a host that isn't primary can't be put back with the commands.
+- All pairs are one batch, checked before any site is saved, including the host the CMS adds for SiteUrl
+  (`validation`, exit 5, naming the pair): a host another site has, two primary hosts for a site and language, `*`
+  twice. Should the CMS still refuse a site while saving, the error says which sites were already saved. A site already
+  as asked is `unchanged`, so it is safe to run again; `--dry-run` shows each site's end state. `meta.warnings` names
+  languages whose URLs still use a production host.
+- `--save` keeps the pairs, with `--keep-edit` and `--keep-site-url`, in the opticli user config for the project
+  (`sites.primary`), so after the next restore `opticli sites primary --from-config` is all it takes; it skips a saved
+  site the database doesn't have, and `--forget <site>` drops one. `doctor` reports sites whose primary host differs
+  from the saved mapping.
+- `opticli sites host add <site> <host>` (`--type`, `--lang`, `--https`) and `sites host remove <site> <host>` change
+  one host. The site's last host and SiteUrl's host can't be removed.
+- Against a shared database `sites primary` and `sites host remove` are refused (exit 3), and `sites host add` only
+  adds hosts of type undefined: the deployed site uses the same site definitions. The MCP module has no such tool.
+
+### Fixed
+
+- URLs in every output (`url`, `get`, `resolve`, ...) used a language's primary host for the site's other languages
+  when that host was listed before the site's own primary host, as it is once `sites primary` has added a local one.
+  The host for every language comes first now, as in the CMS.
+- A command with its own text rendering (`drift`, the new `sites primary`) left its warnings out in text mode; they
+  are on stderr now, as for tables.
+
+### Development
+
+- The edge-case site has three more sites (`Edge hosts A`, `B`, and `C`, whose hosts are all for one language) for
+  the site host integration tests, which put their hosts back after each test. Run
+  `tests/fixtures/edge-cases/setup.sh` again to add them.
+
 ## 0.9.0 (5 October 2026)
 
 ### MCP server for editors (preview)

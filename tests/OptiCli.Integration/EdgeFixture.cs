@@ -17,6 +17,17 @@ internal static class EdgeFixture
     /// <summary>A page with language settings: Swedish falls back to English below it.</summary>
     public static readonly Guid LanguageRoot = Guid.Parse("6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e03");
 
+    /// <summary>
+    /// Two sites whose hosts the site host tests change and restore: <see cref="HostsSiteA"/> has a primary host, a
+    /// Swedish primary host on a production-like name and an Edit host; <see cref="HostsSiteB"/> one primary host.
+    /// </summary>
+    public const string HostsSiteA = "Edge hosts A";
+
+    public const string HostsSiteB = "Edge hosts B";
+
+    /// <summary>A site whose hosts are all for English (hosts-c.localhost primary, alt.hosts-c.localhost undefined, https), no primary for every language.</summary>
+    public const string HostsSiteC = "Edge hosts C";
+
     /// <summary>The visitor group the personalized page's ContentArea uses ("Edge visitors").</summary>
     public static readonly Guid VisitorGroup = Guid.Parse("6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e10");
 

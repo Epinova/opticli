@@ -31,8 +31,8 @@ the one saved with `opticli db use`, else `connection` in the user config (`~/.c
 
 | Command | Notes |
 |---|---|
-| `doctor` | Always exits 0. `data.healthy`, `data.warnings`; `connection.candidates`, `database`, `agent`, `skills`. |
-| `sites` | Hosts, start page, master language, assets root. |
+| `doctor` | Always exits 0. `data.healthy`, `data.warnings`; `connection.candidates`, `database`, `agent`, `skills`, `sitesMapping` (each entry of the saved `sites primary` mapping: `key`, `saved`, `primary`, `status`: `matches`, `differs`, `noSite`, `invalid`). |
+| `sites` | Hosts (`name`, `type`: undefined, primary, edit, redirectPermanent, redirectTemporary; `language`, `https`), URL (SiteUrl), start page, master language, assets root. |
 | `languages [--all]` | Enabled branches (all with `--all`), item counts, which sites use each as master. |
 | `types [--kind page\|block\|media\|folder\|other] [--unused] [--sort name\|instances]` | `instances` = non-deleted items. Sorted by name unless `--sort instances`. |
 | `type <name\|class\|guid>` | `properties[]` (name, type, blockType, list, cultureSpecific, required, tab, order, displayName, `source` file:line, `declaredIn`, `allowedTypes`/`restrictedTypes` from `[AllowedTypes]`, `uiHint`), `classes[]` (file, line, `baseTypes`), `views[]` (file, `matchedBy`: fileName, partialName, viewComponent, model), `sourceRoot`. `existsOnModel: false` = in the DB but gone from code. Controllers are not listed. |
@@ -105,6 +105,9 @@ directly: see [Approval sequences](#approval-sequences).
 | `move <ref> --to <parent-ref>` | `opticli move 123 --to 45` |
 | `delete <ref> [--ignore-references]` | `opticli delete 123 --dry-run` (recycle bin; only when the user asked) |
 | `access <ref> [--grant Role=Levels] [--user Name=Levels] [--revoke Name] [--break-inheritance \| --inherit]` | `opticli access 123 --break-inheritance --revoke Everyone --grant Authenticated=Read --dry-run` (only when the user asked) |
+| `sites primary <site>[@<lang>]=<host>... [--https true\|false\|unset] [--keep-edit] [--keep-site-url] [--save]` | `opticli sites primary "Site A=localhost:5001" "Site B=localhost:5002" --dry-run` (see [Site hosts](#site-hosts)) |
+| `sites primary --from-config` / `sites primary --forget <site>` | `opticli sites primary --from-config --dry-run` |
+| `sites host add <site> <host> [--type T] [--lang] [--https]` / `sites host remove <site> <host>` | `opticli sites host add "Site A" localhost:5001 --dry-run` |
 | `apply <plan.json\|->` | `opticli apply plan.json --dry-run` |
 
 `unpublish` takes a published branch offline as the edit UI's expiry does: a copy of the published version with
@@ -244,6 +247,57 @@ property of the same name wins). All are versioned, show in `changes`, and are r
   which no role that had Administer (or Administrators, WebAdmins, CmsAdmins) keeps it.
 - Output: `saved`, `dryRun`, `before` and `after` (both as `access <ref>` prints them). Access rights aren't
   versioned: `before` is the only record, and an `apply` step's `undo` is the inverse `access` command.
+
+### Site hosts
+
+For a restored copy of a production database, whose sites still have the production host names. Through the site
+(`serve`); `sites` itself is a database read.
+- `sites primary "Site A=localhost:5001"`: the site is a name (case-insensitive), id or GUID as `sites` lists them;
+  the pair splits on its last `=`. The host is `name[:port]`, or a URL with nothing after the host
+  (`https://localhost:5001/`, whose scheme sets the host's `https`; `--https` overrides it, and `unset` uses SiteUrl's
+  scheme). Default: an existing host keeps its setting. The default port of the host's scheme (the URL's, or
+  `--https`) is dropped: `localhost:443` is `localhost` with https, `localhost:80` with http; `http://localhost:443`
+  keeps its port. A host the site has as `name:443` (from admin mode) is found by that name, e.g. to remove it. No
+  IPv6 addresses (the CMS can't store them).
+- Per pair: the host is added if the site lacks it, made primary, the previous primary for that language and the
+  site's Edit host become `undefined` (`--keep-edit` keeps the Edit host), and SiteUrl becomes `https://<host>/`
+  with SiteUrl's path kept (`http://` with `--https false`; `--keep-site-url` keeps it). `Site A@nb=...` makes the
+  host primary for that language only (an enabled language), and moves SiteUrl only when it was on the primary host
+  it replaces.
+- A pair without `@lang` replaces the site's primary host: the one for every language, or on a site whose only primary
+  host is bound to a language (all its hosts for `nb`, say) that one, and the new host gets that language (a `changes`
+  line says so). With primary hosts for several languages only (or one whose language isn't enabled), it is for
+  every language beside them, and `meta.warnings` gives the pairs that work for the rest. A host that is a primary host
+  already keeps its language, and the language comes from the site as it was before the command: the pairs' order
+  doesn't matter, and running them again changes nothing. `Site A=h` and `Site A@nb=h` together for such an `nb` site:
+  `validation` (the first already covers `nb`). `doctor` and `--from-config` read a saved entry the same way.
+- The commands only put SiteUrl on a primary host: once moved, a SiteUrl that was on a host that isn't primary (as on a
+  site the CMS created on its first request) can't be put back with them alone.
+- All pairs are one batch, checked before any site is saved, including the host the CMS adds for SiteUrl. Errors:
+  `validation` (exit 5, `details.reason: "siteHosts"`, `details.validation[]` naming each failing pair) for a host
+  another site has in any spelling (a host is never moved), two primary hosts for a site and language, `*` on two
+  sites or as primary, and `host add --lang` with a language that isn't enabled; `usage` (exit 1) for a host with a
+  path, query, other scheme or bad port; `not_found` (exit 2) for an unknown site, also `Site A@xx` when `xx` isn't an
+  enabled language (`@xx` is then part of the name; the hint says so). Should the CMS still refuse a site while
+  saving, the sites saved before it stay saved: the message ends `Already saved: ...; not saved: ...`, and running
+  the same command again finishes the rest (the saved sites are `unchanged`).
+- Output, per site: `site`, `id`, `guid`, `status` (`changed`, or `unchanged` when it already was so: nothing saved),
+  `changes[]` (added, `a: primary → undefined`, `SiteUrl: old → new`, removed), `url`, `hosts[]` as `sites` prints
+  them; `dryRun: true` for a dry run. `meta.warnings`: a language whose URLs still use a production host ("Site A's nb
+  URLs still use site-a.no; add `Site A@nb=localhost:<port>`"), and after a save that another process running the
+  site keeps the old hosts until it restarts.
+- `--save` (after a real run) stores the pairs, with `--keep-edit` and `--keep-site-url`, in the user config's
+  `sites.primary` for the project, replacing the entries for those sites (keys are `Site A` and `Site A@nb`: saving
+  for a site `Shop` also replaces a site `Shop@en`'s entry); `--from-config` runs them, skipping (with a
+  warning) a saved site the database doesn't have; `keepEdit`/`keepSiteUrl` saved on one of a site's entries apply to
+  all of that site's entries. `--forget <site>` drops a site's entries, or one entry
+  (`"Site A@nb"`). `doctor` warns when a site's primary host differs from the saved mapping.
+- `sites host add <site> <host>`: `--type undefined|primary|edit|redirect-permanent|redirect-temporary` (default
+  undefined; primary and edit demote the previous one), `--lang`, `--https`. A host the site has: `conflict`.
+  `sites host remove <site> <host>`: not the site's last host (exit 3), nor SiteUrl's host, which the CMS adds back
+  (`validation`; make another host primary first). Removing `*` warns.
+- Against a shared database `sites primary` and `sites host remove` are refused (exit 3), and `host add` takes only
+  `--type undefined`, which makes a site reachable on a local host without changing its URLs for anyone else.
 
 ### Concurrency
 
