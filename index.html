@@ -218,6 +218,11 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
         <p>Shortcuts and external links, simple addresses, categories, child sort order and sort index, and publish dates.
           <code>get</code> shows them, and diffs name what changed.</p>
         <code class="eg">opticli set 123 SimpleAddress=campaign</code></li>
+      <li><h3>A production copy, on localhost</h3>
+        <p>After restoring a production database, one command makes your local host each site's primary host and moves
+          SiteUrl with it, so links and canonical URLs stay local. The production hosts stay too. Save the mapping once and
+          run it again after every restore.</p>
+        <code class="eg">opticli sites primary --from-config</code></li>
       <li><h3>Nothing to add to your solution</h3>
         <p><code>serve</code> starts your existing build with a small agent injected at startup, through a .NET startup hook and a hosting startup. Your site's code and config stay as they are.</p>
         <code class="eg">opticli serve</code></li>
@@ -303,6 +308,18 @@ https://your-site.example/episerver/opticli/mcp</pre>
         <code>opticli skill install</code> again to update the skill.</p>
     </div>
     <ol class="changelog">
+      <li><div class="v"><b>0.10.0</b><span>5 October 2026</span></div>
+        <ul>
+          <li><b>sites primary:</b> points a restored copy of a production database at localhost.
+            <code>opticli sites primary "Site A=localhost:5001" "Site B=localhost:5002"</code> makes each host the site's
+            primary host, also on sites whose hosts are all for one language, and moves SiteUrl with it. The production
+            hosts stay, and running it again changes nothing.</li>
+          <li><b>A saved mapping:</b> <code>--save</code> keeps the pairs, so after the next restore
+            <code>sites primary --from-config</code> is all it takes, and <code>doctor</code> says when the database no
+            longer matches.</li>
+          <li><b>sites host add / remove</b> change one host. Against a shared database, only adding a host is allowed.</li>
+          <li><b>Fixed:</b> URLs in every output could use another language's primary host.</li>
+        </ul></li>
       <li><div class="v"><b>0.9.0</b><span>5 October 2026</span></div>
         <ul>
           <li><b>MCP server for editors (preview):</b> the new <code>OptiCli.Mcp</code> package, published as
