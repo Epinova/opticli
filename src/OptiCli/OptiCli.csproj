@@ -31,9 +31,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\OptiCli.Core\OptiCli.Core.csproj" />
-    <!-- Built first but never referenced: the agent is loaded into the site process, not into the CLI.
-         Its DLL is copied to agent/ in the build output and so into tools/<tfm>/any/agent/ in the package. -->
-    <ProjectReference Include="..\OptiCli.Agent\OptiCli.Agent.csproj" ReferenceOutputAssembly="false" OutputItemType="OptiCliAgent" />
+    <!-- Built first but never referenced: the agent is loaded into the site process, not into the CLI. Both of its builds
+         are copied to agent/cms<major>/ in the build output and so into tools/<tfm>/any/agent/cms<major>/ in the package;
+         serve injects the one that matches the site's CMS major. -->
+    <ProjectReference Include="..\OptiCli.Agent\OptiCli.Agent.csproj" ReferenceOutputAssembly="false" SetTargetFramework="TargetFramework=net8.0" SkipGetTargetFrameworkProperties="true" OutputItemType="OptiCliAgentCms12" />
+    <ProjectReference Include="..\OptiCli.Agent\OptiCli.Agent.csproj" ReferenceOutputAssembly="false" SetTargetFramework="TargetFramework=net10.0" SkipGetTargetFrameworkProperties="true" OutputItemType="OptiCliAgentCms13" />
   </ItemGroup>
 
   <ItemGroup>
@@ -42,7 +44,8 @@
 
   <Target Name="IncludeOptiCliAgent" AfterTargets="ResolveProjectReferences">
     <ItemGroup>
-      <ContentWithTargetPath Include="@(OptiCliAgent)" TargetPath="agent\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+      <ContentWithTargetPath Include="@(OptiCliAgentCms12)" TargetPath="agent\cms12\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+      <ContentWithTargetPath Include="@(OptiCliAgentCms13)" TargetPath="agent\cms13\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     </ItemGroup>
   </Target>
 

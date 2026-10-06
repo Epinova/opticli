@@ -565,7 +565,8 @@ are often committed, so keep the token out of git.
 ### How the injection works
 
 `serve` starts `dotnet <Site>.dll` with `DOTNET_STARTUP_HOOKS` pointing at `OptiCli.Agent.dll`, which ships in the
-tool package under `agent/`. The startup hook makes the site agent's assembly resolvable and appends it to
+tool package under `agent/`, one build per CMS major (`agent/cms12/`, `agent/cms13/`): `serve` and `env` take the one
+for the CMS the project builds against (else the one its database's schema belongs to). The startup hook makes the site agent's assembly resolvable and appends it to
 `ASPNETCORE_HOSTINGSTARTUPASSEMBLIES`. The hosting startup then:
 1. pins the connection string, added as the last configuration source and as a `PostConfigure` of the CMS's data
    access options;

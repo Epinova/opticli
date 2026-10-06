@@ -156,6 +156,8 @@ internal static class ServeCommand
         {
             await SiteBuild.RunAsync(project, Console.Error, cancellationToken);
         }
+        // After a build, which restores: an unrestored project's CMS version is only known then.
+        var agent = await SelectAgentAsync(context, connection, cancellationToken);
         var siteOutput = OutputLocator.Locate(project, output, settings?.Output, context.Environment.CurrentDirectory);
         var warnings = new List<string>();
         string? driftFile = null;
@@ -199,13 +201,14 @@ internal static class ServeCommand
             connection,
             context.ConnectionRequest.Name,
             siteOutput,
-            AgentLocator.Locate(AppContext.BaseDirectory),
+            agent.Dll,
             httpPort,
             timeout,
             (https ?? settings?.Https == true) ? PortSelector.Select(null, null, p => p != httpPort && PortSelector.IsFree(p)) : null,
             siteEndpoints,
             driftFile,
-            schedulerOn);
+            schedulerOn,
+            agent.Choice.CmsMajor);
 
         if (!foreground)
         {
@@ -300,6 +303,37 @@ internal static class ServeCommand
                 "The site only runs against a local database or the development database the user chose (`opticli db list`). Reads with --db work; writes to other environments are not supported.");
         }
         return connection;
+    }
+
+    /// <summary>
+    /// The agent build for the site's CMS major (<see cref="AgentSelection"/>): from the project, else the database. Against
+    /// a shared database, CMS 13 is refused for now: opticli can't yet compare a CMS 13 build with the database (drift), so
+    /// it couldn't keep that site from changing it for everyone.
+    /// </summary>
+    /// <exception cref="RefusedException">The project and the database disagree, or a shared CMS 13 database.</exception>
+    /// <exception cref="UsageException">The major is unknown or unsupported.</exception>
+    public static async Task<(AgentChoice Choice, string Dll)> SelectAgentAsync(CliContext context, Core.Safety.VerifiedConnectionString connection, CancellationToken cancellationToken)
+    {
+        Core.Data.CmsSchema? schema = null;
+        string? databaseError = null;
+        try
+        {
+            await using var db = await context.OpenDatabaseAsync(cancellationToken);
+            schema = await db.SchemaAsync(cancellationToken);
+        }
+        catch (OptiCliException ex)
+        {
+            // The project may still tell; the site itself reports a database it can't reach.
+            databaseError = ex.Message;
+        }
+        var choice = AgentSelection.Choose(Core.Discovery.PackageVersions.FindCms(context.Project.Project), schema, connection.Database, databaseError);
+        if (choice.CmsMajor >= 13 && !connection.IsLocal)
+        {
+            throw new RefusedException(
+                $"Not running a CMS {choice.CmsMajor} site against the shared database '{connection.Database}' on '{connection.Server}': opticli can't yet check what a CMS 13 build would change there.",
+                "Run the site against a local copy of the database (`opticli db list` shows the candidates). Reads with --db work.");
+        }
+        return (choice, AgentLocator.Locate(AppContext.BaseDirectory, choice.CmsMajor));
     }
 
     public static string SharedDatabaseWarning(Core.Safety.VerifiedConnectionString connection) =>

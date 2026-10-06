@@ -12,6 +12,7 @@ namespace OptiCli.Core.Serve;
 /// <param name="SiteEndpoints">The site's own <c>Kestrel:Endpoints</c>; when it has any, opticli's address is added as one more.</param>
 /// <param name="DriftFile">What was compared before the start (shared mode), for the agent's drift report.</param>
 /// <param name="Scheduler">Leave the site's scheduler on (<c>serve --scheduler</c>); otherwise the agent turns it off.</param>
+/// <param name="AgentCmsMajor">The CMS major <paramref name="AgentDll"/> is built for; the site must report the same.</param>
 public sealed record LaunchRequest(
     ProjectInfo Project,
     VerifiedConnectionString Connection,
@@ -23,7 +24,8 @@ public sealed record LaunchRequest(
     int? HttpsPort = null,
     IReadOnlyList<string>? SiteEndpoints = null,
     string? DriftFile = null,
-    bool Scheduler = false);
+    bool Scheduler = false,
+    int AgentCmsMajor = 12);
 
 /// <summary>Starts the site with the agent injected, waits until the agent answers and checks it uses the pinned database.</summary>
 public static class SiteLauncher
@@ -267,6 +269,10 @@ public static class SiteLauncher
             {
                 throw new RefusedException($"Stopped the site: {problem}.", "Find what in the site overrides the connection string (code or configuration that sets it after startup).");
             }
+            if (AgentMismatch(ping.CmsVersion, request.AgentCmsMajor) is { } mismatch)
+            {
+                throw new RefusedException($"Stopped the site: {mismatch}", "Build the site (`opticli serve --build`) so its output matches the project's EPiServer packages, then start again.");
+            }
         }
         catch (Exception)
         {
@@ -295,6 +301,15 @@ public static class SiteLauncher
         }
         return state;
     }
+
+    /// <summary>
+    /// Why the running CMS doesn't fit the agent build that was injected (the build output is another CMS major than the
+    /// project file says, say); null when it fits, or the CMS version is unknown.
+    /// </summary>
+    internal static string? AgentMismatch(string? cmsVersion, int agentCmsMajor) =>
+        PackageVersions.Major(cmsVersion) is { } runs && runs != agentCmsMajor
+            ? $"it runs CMS {cmsVersion}, but opticli chose its CMS {agentCmsMajor} agent from the project and database."
+            : null;
 
     /// <param name="port">The port opticli waited on, to point out a site that listens elsewhere.</param>
     internal static OptiCliException StartupFailure(StateStore store, string message, bool timedOut = false, int? port = null)

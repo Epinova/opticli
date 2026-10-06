@@ -68,7 +68,7 @@ internal static class EnvCommand
             }
 
             var settings = UserConfig.ForProject(context.Environment.UserConfigFile, project.Directory);
-            var agentDll = AgentLocator.Locate(AppContext.BaseDirectory);
+            var (_, agentDll) = await ServeCommand.SelectAgentAsync(context, connection, cancellationToken);
             var selectedPort = PortSelector.Select(parse.GetValue(port), settings?.Port, PortSelector.IsFree);
             var token = SiteEnvironment.NewToken();
             var pinned = parse.GetValue(includeConnection) ? connection : null;
