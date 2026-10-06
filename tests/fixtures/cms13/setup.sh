@@ -39,13 +39,24 @@ if [ "$FRESH_DB" = "$SOURCE_DB" ] || [ "$UPGRADED_DB" = "$SOURCE_DB" ] || [ "$FR
   echo "The fresh, upgraded and source databases must all differ." >&2
   exit 1
 fi
-source_site=$(cd "$SOURCE_SITE" 2>/dev/null && pwd || echo "$SOURCE_SITE")
+source_site=$(realpath -m "$SOURCE_SITE")
+# FRESH=1 deletes both target directories: neither may be (or contain) the source site, or be the other one.
 for dir in "$FRESH_DIR" "$UPGRADED_DIR"; do
-  if [ "$(realpath -m "$dir")" = "$(realpath -m "$source_site")" ]; then
-    echo "$dir is the source site; pick another directory." >&2
+  target=$(realpath -m "$dir")
+  case "$source_site/" in
+    "$target"/*) echo "$dir is or contains the source site ($SOURCE_SITE); pick another directory." >&2; exit 1 ;;
+  esac
+  if [ "$target" = / ]; then
+    echo "$dir is the root directory; pick another directory." >&2
     exit 1
   fi
 done
+case "$(realpath -m "$UPGRADED_DIR")/" in
+  "$(realpath -m "$FRESH_DIR")"/*) echo "UPGRADED_DIR ($UPGRADED_DIR) is or is inside FRESH_DIR ($FRESH_DIR); pick another directory." >&2; exit 1 ;;
+esac
+case "$(realpath -m "$FRESH_DIR")/" in
+  "$(realpath -m "$UPGRADED_DIR")"/*) echo "FRESH_DIR ($FRESH_DIR) is or is inside UPGRADED_DIR ($UPGRADED_DIR); pick another directory." >&2; exit 1 ;;
+esac
 if ! dotnet new uninstall 2>/dev/null | grep -A1 '^ *EPiServer.Templates$' | grep -q 'Version: 2\.0\.1$'; then
   echo "The EPiServer.Templates 2.0.1 template package isn't installed: dotnet new install EPiServer.Templates::2.0.1" >&2
   exit 1
