@@ -256,7 +256,7 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
       <li><b>Can it publish or delete by accident?</b><span>Changes are saved as drafts by the user <code>opticli</code>. Publishing needs <code>--publish</code>, and <code>delete</code> only moves content to the recycle bin, and not while other content still references it.</span></li>
       <li><b>Can starting it change a shared database?</b><span>Against a remote development database, the scheduler, schema updates, content type sync and store remapping are off, and <code>serve</code> won't start a build with EF Core migrations the database lacks. The CMS still registers the build's scheduled jobs and add-on content roots there, and the site's own startup code still runs, so use a login without DDL rights where your add-ons allow it.</span></li>
       <li><b>What if my branch isn't what's deployed?</b><span>opticli compares the build with the shared database: content types, properties, migrations. While they differ, writes stop until you confirm with <code>--accept-drift</code>, and it says which side is ahead. Reads keep working.</span></li>
-      <li><b>What can the MCP server do to a production site?</b><span>Only what the signed-in editor may do: every read and save is checked against their access rights, and content they can't read looks the same as content that doesn't exist. Changes are drafts. Publishing and deleting are off until the site turns them on, and approval sequences always apply. Editors can see and revoke their connections.</span></li>
+      <li><b>What can the MCP server do to a production site?</b><span>Only what the signed-in editor may do: every read and save is checked against their access rights, and content they can't read looks the same as content that doesn't exist. Changes are drafts, without script. Publishing and deleting are off until the site turns them on, and approval sequences always apply. Only Claude, or an app on the editor's own machine, can be connected, and editors can see and revoke their connections.</span></li>
       <li><b>Can anyone else reach the site agent?</b><span>It answers only on 127.0.0.1, only in Development, and only with the token of that run, which sits in a file only you can read. Requests that came through a proxy or tunnel are refused.</span></li>
     </ul>
   </section>
@@ -308,6 +308,19 @@ https://your-site.example/episerver/opticli/mcp</pre>
         <code>opticli skill install</code> again to update the skill.</p>
     </div>
     <ol class="changelog">
+      <li><div class="v"><b>0.11.0</b><span>6 October 2026</span></div>
+        <ul>
+          <li><b>MCP server security fixes:</b> update <code>OptiCli.Mcp</code> to <code>0.11.0-preview</code> before
+            using it on a real site. Only apps that return to Claude (<code>AllowedRedirectHosts</code>: claude.ai and
+            claude.com by default) or to the editor's own machine can be connected, so a self-registered app can't collect
+            an editor's approval.</li>
+          <li><b>No script from editors:</b> rich text, links and uploads are checked. Moving live content and discarding a
+            scheduled version need the publish setting, and discarding someone else's draft needs the delete setting.</li>
+          <li><b>The edit UI's rules apply:</b> access rights per language, properties the edit UI hides or locks, and
+            the access a group of content types requires.</li>
+          <li><b>Fixed:</b> a value in <code>get</code>'s <code>{type, value}</code> shape is a usage error, not an
+            internal one.</li>
+        </ul></li>
       <li><div class="v"><b>0.10.1</b><span>5 October 2026</span></div>
         <ul>
           <li><b>Fixed:</b> <code>sites primary "Site A=&lt;host&gt;"</code> with a host that is already one language's
