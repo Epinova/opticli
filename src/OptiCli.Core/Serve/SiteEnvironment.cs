@@ -77,14 +77,14 @@ public static class SiteEnvironment
         }
         if (connection is not null)
         {
-            variables.Add(new(AgentProtocol.DatabaseVariable, connection.Value));
+            variables.Add(new(AgentProtocol.DatabaseVariable, connection.ForSite));
             if (!string.Equals(connectionName, AgentProtocol.DefaultConnectionName, StringComparison.Ordinal))
             {
                 variables.Add(new(AgentProtocol.ConnectionNameVariable, connectionName));
             }
             // For sites that read the connection before hosting startups run (the agent's pin can't reach those), and over
             // one exported in the shell, which the site would otherwise read ahead of user secrets.
-            variables.Add(new(ConnectionVariables.Name(connectionName), connection.Value));
+            variables.Add(new(ConnectionVariables.Name(connectionName), connection.ForSite));
         }
         return variables;
     }

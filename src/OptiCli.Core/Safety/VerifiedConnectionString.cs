@@ -22,8 +22,16 @@ public sealed class VerifiedConnectionString
     /// <summary>A SQL Server on this machine; otherwise a remote (usually shared) one.</summary>
     public bool IsLocal { get; }
 
-    /// <summary>The normalised connection string, credentials included. Never printed.</summary>
+    /// <summary>The normalised connection string opticli connects with, credentials included. Never printed.</summary>
     internal string Value { get; }
+
+    /// <summary>
+    /// The string to give the site: <see cref="Value"/>, except that a <c>|DataDirectory|</c> the site expands itself
+    /// (<see cref="ConnectionSafety.ResolveDataDirectory"/>) stays as configured.
+    /// </summary>
+    internal string ForSite { get => _forSite ?? Value; init => _forSite = value; }
+
+    private readonly string? _forSite;
 
     public override string ToString() => ConnectionStringRedactor.Redact(Value);
 }

@@ -61,10 +61,20 @@ public sealed class ConnectionResolution(
     public bool IsDevelopment => Chosen is { } chosen
         && (chosen.IsLocal == true || (Development is { } development && chosen.SameTarget(development.Server, development.Database)));
 
-    /// <summary>The chosen string, checked.</summary>
+    /// <summary>
+    /// The chosen string, checked, with a <c>|DataDirectory|</c> in it expanded to the site's <c>App_Data</c>, as the CMS
+    /// templates' startup sets it (<see cref="DataDirectoryOf"/>).
+    /// </summary>
     /// <exception cref="OptiCliException">No usable candidate (the reason is in <see cref="Failure"/>).</exception>
     public VerifiedConnectionString Require() =>
-        Chosen is { } chosen ? ConnectionSafety.Approve(chosen.ConnectionString) : throw Failure!;
+        Chosen is { } chosen ? ConnectionSafety.Approve(chosen.ConnectionString, DataDirectoryOf(projectDirectory)) : throw Failure!;
+
+    /// <summary>
+    /// The site's data directory: <c>App_Data</c> in its project folder (its content root), which the CMS templates'
+    /// <c>Startup</c> sets as <c>DataDirectory</c>; null without a project.
+    /// </summary>
+    public static string? DataDirectoryOf(string? projectDirectory) =>
+        projectDirectory is null ? null : Path.Combine(projectDirectory, "App_Data");
 
     /// <summary>What the caller should be told about the database in use: a remote one that isn't the development database.</summary>
     public IReadOnlyList<string> Warnings()

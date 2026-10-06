@@ -48,7 +48,20 @@ public sealed class CmsDatabase : IAsyncDisposable
             builder.ApplicationIntent = ApplicationIntent.ReadOnly;
         }
 
-        var connection = new SqlConnection(builder.ConnectionString);
+        if (ConnectionSafety.Unusable(builder.ConnectionString) is { } unusable)
+        {
+            throw new RefusedException(unusable, ConnectionSafety.UnusableHint);
+        }
+        SqlConnection connection;
+        try
+        {
+            connection = new SqlConnection(builder.ConnectionString);
+        }
+        catch (ArgumentException ex)
+        {
+            // SqlClient checks some values only here, e.g. a database file to attach that it can't find a path for.
+            throw new RefusedException($"{ConnectionSafety.UnusableHere} {ex.Message}", ConnectionSafety.UnusableHint);
+        }
         if (connectionString.IsLocal
             ? !ConnectionSafety.IsLocalDataSource(connection.DataSource)
             : !string.Equals(connection.DataSource, connectionString.Server, StringComparison.OrdinalIgnoreCase))

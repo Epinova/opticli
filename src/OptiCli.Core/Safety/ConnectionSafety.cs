@@ -57,6 +57,73 @@ public static class ConnectionSafety
         return new SafetyVerdict(true, server, database, null);
     }
 
+    /// <summary>The start of the message when SqlClient can't use a string on this machine (<see cref="Unusable"/>).</summary>
+    public const string UnusableHere = "This connection string can't be used here:";
+
+    /// <summary>What to do about a string <see cref="Unusable"/> refuses.</summary>
+    public const string UnusableHint =
+        "SQL Server Express LocalDB, which the CMS templates' connection string uses, only exists on Windows. Point the site's connection string (`opticli doctor` shows which file it comes from) at a SQL Server database by name instead, e.g. SQL Server in a container: \"Server=localhost,1433;Database=MySite;User Id=sa;Password=...;TrustServerCertificate=True\", or pass --connection.";
+
+    /// <summary>The token SqlClient replaces with the application's data directory in <c>AttachDbFilename</c>.</summary>
+    public const string DataDirectory = "|DataDirectory|";
+
+    /// <summary>
+    /// Why SqlClient can't use a string on this machine although it names a local server: LocalDB away from Windows, where
+    /// it doesn't exist (the CMS templates' development connection string uses it). Null when it can.
+    /// </summary>
+    public static string? Unusable(string connectionString)
+    {
+        var builder = new SqlConnectionStringBuilder(connectionString);
+        return !OperatingSystem.IsWindows() && IsLocalDb(builder.DataSource)
+            ? $"{UnusableHere} SQL Server Express LocalDB ('{builder.DataSource.Trim()}') only runs on Windows."
+            : null;
+    }
+
+    /// <summary><c>(localdb)\instance</c>, with or without <c>tcp:</c>.</summary>
+    public static bool IsLocalDb(string? dataSource)
+    {
+        var value = dataSource?.Trim() ?? "";
+        if (value.StartsWith(TcpPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            value = value[TcpPrefix.Length..].TrimStart();
+        }
+        return value.StartsWith(LocalDbPrefix, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The string with <c>|DataDirectory|</c> in <c>AttachDbFilename</c> replaced by <paramref name="dataDirectory"/>, as
+    /// SqlClient expands it in the site, whose startup sets the data directory to its <c>App_Data</c> (the CMS templates
+    /// do). opticli's own process has no such setting: SqlClient would expand it against opticli's folder. The file must
+    /// stay inside the folder, as SqlClient requires. Unchanged without the token.
+    /// </summary>
+    /// <param name="dataDirectory">The site's data directory; null when it isn't known (no project).</param>
+    /// <exception cref="RefusedException">The string has the token but there is no data directory, or the file leaves it.</exception>
+    public static string ResolveDataDirectory(string connectionString, string? dataDirectory)
+    {
+        var builder = new SqlConnectionStringBuilder(connectionString);
+        var file = builder.AttachDBFilename;
+        if (!file.StartsWith(DataDirectory, StringComparison.OrdinalIgnoreCase))
+        {
+            return connectionString;
+        }
+        if (string.IsNullOrWhiteSpace(dataDirectory))
+        {
+            throw new RefusedException(
+                $"{UnusableHere} it attaches '{file}', and without the site's project opticli doesn't know its {DataDirectory}.",
+                "Run opticli in the site's repository (or pass --project), or give the database file's full path.");
+        }
+        var root = Path.GetFullPath(dataDirectory);
+        var relative = file[DataDirectory.Length..].Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar)
+            .TrimStart(Path.DirectorySeparatorChar);
+        var full = Path.GetFullPath(Path.Combine(root, relative));
+        if (!full.StartsWith(Path.TrimEndingDirectorySeparator(root) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new RefusedException($"{UnusableHere} its AttachDbFilename '{file}' leaves the data directory {root}.");
+        }
+        builder.AttachDBFilename = full;
+        return builder.ConnectionString;
+    }
+
     /// <summary>
     /// Checks that the string is local and returns the only handle <see cref="Data.CmsDatabase"/> accepts.
     /// </summary>
@@ -78,22 +145,25 @@ public static class ConnectionSafety
     /// it decides whether a remote database may be used.
     /// </summary>
     /// <exception cref="RefusedException">The string is not a valid SQL Server connection string.</exception>
-    internal static VerifiedConnectionString Approve(string? connectionString)
+    /// <param name="dataDirectory">The site's data directory, for <c>|DataDirectory|</c> (<see cref="ResolveDataDirectory"/>).</param>
+    internal static VerifiedConnectionString Approve(string? connectionString, string? dataDirectory = null)
     {
         var verdict = Check(connectionString);
         if (!verdict.IsValid || string.IsNullOrWhiteSpace(verdict.Server))
         {
             throw new RefusedException($"Refusing to use this connection string: {verdict.Reason ?? "it names no server."}");
         }
-        return Create(connectionString!, verdict);
+        return Create(connectionString!, verdict, dataDirectory);
     }
 
-    private static VerifiedConnectionString Create(string connectionString, SafetyVerdict verdict)
+    private static VerifiedConnectionString Create(string connectionString, SafetyVerdict verdict, string? dataDirectory = null)
     {
         // Re-serialising through the builder collapses duplicates and synonyms, so the string we
         // later connect with is exactly the one whose server was checked.
         var normalized = new SqlConnectionStringBuilder(connectionString).ConnectionString;
-        return new VerifiedConnectionString(normalized, verdict.Server!, verdict.Database, verdict.IsLocal);
+        // The site keeps the string as configured and expands |DataDirectory| itself; opticli connects with it expanded.
+        var resolved = Unusable(normalized) is null ? ResolveDataDirectory(normalized, dataDirectory) : normalized;
+        return new VerifiedConnectionString(resolved, verdict.Server!, verdict.Database, verdict.IsLocal) { ForSite = normalized };
     }
 
     /// <summary>
