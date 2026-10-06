@@ -250,12 +250,12 @@ add-ons need first.
 | `doctor` | project, connection string candidates, database, schema version, site agent, drift (against a shared database), sites whose primary host differs from the saved `sites primary` mapping, installed skill |
 | `db list`, `db use`, `db forget` | the development database (see [Which database](#which-database)) |
 | `sites`, `languages` | site definitions and hosts; language branches |
-| `types [--kind] [--unused] [--orphaned] [--sort]` | content types with instance counts; `--orphaned`: types whose class is gone from the code, which the CMS keeps while content uses them (the running site checks every class; without `serve`, the site's sources are scanned for its own types) |
+| `types [--kind] [--unused] [--orphaned] [--sort]` | content types with instance counts; `--orphaned`: types whose class is gone from the code, which the CMS keeps while content uses them (the running site checks every class, `meta.source: agent`; otherwise the site's sources are scanned for its own types, with a warning saying why) |
 | `type <name>` | properties (type, culture-specific, required, tab, order, source line, `[AllowedTypes]`; one that isn't in the code with how many values it has stored), C# class file, views |
 | `allowed-in <type>` | which ContentArea/reference properties accept a type, from `[AllowedTypes]` in code |
 | `get <ref> [--lang] [--version] [--fields] [--expand]` | one item, typed and decoded (ContentAreas, local blocks, rich-text links) |
 | `tree`, `children`, `ancestors` | the content tree |
-| `find --type T [--where Prop=value] [--under] [--status]` | items of a type, filtered; `--status scheduled` (a version waits to be published: `publishAt`) and `expired` (published, stop-publish date passed: `expiredAt`) |
+| `find --type T [--where Prop=value] [--under] [--status]` | items of a type, filtered; `--status scheduled` (a version waits to be published: `publishAt`) and `expired` (published, stop-publish date passed: `expiredAt`), in the master language unless `--lang` |
 | `search <text> [--in names\|strings\|all]` | names and text properties containing a string |
 | `where-used <ref> [--pages]`, `where-used --type T` | ContentAreas, references, links and rich text pointing at an item (`--pages`: through nested blocks up to pages); `--type`: for every instance of a type |
 | `resolve <url>`, `url <ref>` | URL to content, and content to URL per language |
@@ -263,7 +263,7 @@ add-ons need first.
 | `history <ref> [--since] [--by]` | the CMS's change log for one item: creates, publishes, moves (from, to), deletes and restores, with who and when; the only record of moves and deletes (drafts saved aren't in it) |
 | `categories`, `visitor-groups` | the category tree (names `set` takes, selectable, how many items use each); visitor groups (ids ContentAreas store, names, how criteria combine), without their criteria or notes |
 | `projects [<id>]` | projects, and the versions in one |
-| `trash [--since] [--by] [--type]` | what is in the recycle bin: who deleted it and when, what came along (`descendants`), and `originalParent`, where `restore` puts it back |
+| `trash [--since] [--by] [--type]` | what is in the recycle bin: who deleted it and when, what came along (`descendants`), and `originalParent`, where `restore` puts it back (asked of the site while `serve` runs, `meta.source: agent`; otherwise read from the database, with a warning saying why) |
 | `jobs [--failed]`, `jobs log [<job>] [--failed] [--since]` | scheduled jobs: schedule, next and last run, how it ended, overdue, running; their runs with status and message (see [Scheduled jobs](#scheduled-jobs)) |
 | `blob <ref>` | where a media file lives on disk |
 | `drift` | what differs between the build and a shared database (needs `serve`; see [Shared databases](#shared-databases)) |
@@ -288,7 +288,8 @@ These commands write:
   references what it deletes, unless `--ignore-references`.
 - `restore <ref>` brings deleted content back out of the recycle bin, as the edit UI's Restore does: below the parent
   it had before it was deleted, which the CMS stores for every move (`trash` shows it as `originalParent`), or below
-  `--to <parent>`. It keeps its versions, so what was published is live again. Something below deleted content can't be
+  `--to <parent>`. It keeps its versions, so what was published is live again. Name it by id or GUID: content in the
+  recycle bin has no URL. Something below deleted content can't be
   restored on its own (restore what was deleted), and a parent that is in the recycle bin too is a `conflict`.
 - `create`, `block create`, `upload` and `move` put content only where it can go: pages below pages, blocks, media and
   folders in asset folders, and only where the parent type allows the type (`[AvailableContentTypes]` and admin mode's
@@ -448,15 +449,15 @@ opticli users remove dev               # only a user opticli made
 
 | Command | Does |
 |---|---|
-| `users add <name> [--role R]... [--password-stdin]` | makes the user, approved, with the address `<name>@opticli.localhost` (it reaches nobody) and the claim `opticli:created`, in `WebAdmins` (the role the first-admin registration uses) unless `--role` says otherwise; a role that doesn't exist is created (`createdRoles`). A warning says when the roles don't give `CmsAdmins` (admin mode) on this site. The password: `--password-stdin` reads one line; on a terminal opticli asks without showing it; otherwise it generates one and writes it to a file only you can read (`passwordFile`, see [Files](#files)), never to the output. The site's password rules apply (`validation`, exit 5). A name that exists is a `conflict`. |
-| `users remove <name>` | removes a user `users add` made (it has the claim; in a user store without claims, the address), and its password file. Any other user is `refused` (exit 3); roles stay. |
+| `users add <name> [--role R]... [--password-stdin]` | makes the user, approved, with the address `<name>@opticli.localhost` (it reaches nobody) and the claim `opticli:created`, in `WebAdmins` (the role the first-admin registration uses) unless `--role` says otherwise; a role that doesn't exist is created (`createdRoles`). A warning says when the roles don't give `CmsAdmins` (admin mode) on this site. The password: `--password-stdin` reads one line; on a terminal opticli asks without showing it; otherwise it generates one and writes it to a file only you can read (`passwordFile`, see [Files](#files)), never to the output. If the site's answer gets lost, the file is kept as `<name>.txt.<id>.pending` and the error names it (the site may have made the user); a later run for the name doesn't remove it, `users remove` does. The site's password rules apply (`validation`, exit 5). A name that exists is a `conflict`. |
+| `users remove <name>` | removes a user `users add` made (the claim `opticli:created` with the value `true` and the `opticli.localhost` address; in a user store without claims, the address), and its password files. Any other user is `refused` (exit 3); roles stay. |
 | `users roles` | role names with their member counts, the virtual roles each gives, the virtual roles (mapped ones with the roles that give them), and how many users opticli made. No user names or addresses. |
 
 All three go through the site (`serve`) and take no part of an existing account. Against a shared database they are
-refused (exit 3): its users are real. On a site whose CMS users come from OpenID Connect, Opti ID or another identity
-provider (no ASP.NET Identity), they are refused (exit 3) with the user provider the site has: sign in through that
-provider. `doctor` doesn't hint at `users add`: whether anyone can sign in locally depends on password hashes and
-external logins in the user tables, which are personal data.
+refused (exit 3), even `users roles`: its users are real, and opticli doesn't even count them there. On a site whose
+CMS users come from OpenID Connect, Opti ID or another identity provider (no ASP.NET Identity), they are refused (exit
+3) with the user provider the site has: sign in through that provider. `doctor` doesn't hint at `users add`: whether
+anyone can sign in locally depends on password hashes and external logins in the user tables, which are personal data.
 
 ## serve and env
 
@@ -566,7 +567,7 @@ runtime. It ships no copies of them.
 |---|---|---|
 | User config | `$XDG_CONFIG_HOME/opticli/config.json` (default `~/.config/opticli/config.json`) | `%APPDATA%\opticli\config.json` |
 | `serve` state, start lock and logs (the last 3 runs) | `$XDG_STATE_HOME/opticli/` (default `~/.local/state/opticli/`) | `%LOCALAPPDATA%\opticli\` |
-| Generated passwords of `users add` (readable by you only) | `$XDG_STATE_HOME/opticli/users/<project>/<name>.txt` | `%LOCALAPPDATA%\opticli\users\<project>\<name>.txt` |
+| Generated passwords of `users add` | `$XDG_STATE_HOME/opticli/users/<project>/<name>.txt`, readable by you only (the folders too) | `%LOCALAPPDATA%\opticli\users\<project>\<name>.txt`, in your user profile, which other users can't read by default (opticli sets no ACL of its own) |
 
 You can set per-project defaults in the user config (`output`, `port`, `https` and `scheduler` for `serve`).
 `opticli db use` adds the chosen `database` there, and `opticli sites primary --save` the `sites.primary` mapping.

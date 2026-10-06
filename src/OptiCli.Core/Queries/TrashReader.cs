@@ -30,14 +30,17 @@ public sealed record TrashItem(
 /// <c>trash</c>: what is directly in the recycle bin (what was deleted; what was below it is counted, not listed), newest
 /// first, with the parent each item goes back to.
 /// </summary>
-/// <param name="agent">
-/// The running site's agent, when <c>serve</c> runs: the stored parents are then read through the CMS, as <c>restore</c>
-/// reads them; without it, from the database (<see cref="RestoreParents.ReadAsync"/>).
+/// <param name="connect">
+/// Connects to the running site's agent: the stored parents are then read through the CMS, as <c>restore</c> reads them.
+/// Without it, or when the site can't answer, from the database (<see cref="RestoreParents.ReadAsync"/>).
 /// </param>
-public sealed class TrashReader(ContentSession session, Serve.AgentClient? agent = null)
+public sealed class TrashReader(ContentSession session, Func<CancellationToken, Task<Serve.AgentClient>>? connect = null)
 {
     /// <summary>Where the last <see cref="ListAsync"/> read the stored parents: <c>site</c> or <c>database</c>.</summary>
     public string ParentsFrom { get; private set; } = "database";
+
+    /// <summary>Why the last <see cref="ListAsync"/> didn't ask the site, when it was given one to ask (<see cref="Serve.SiteFallback"/>).</summary>
+    public string? NotFromSite { get; private set; }
 
     /// <summary>Content type of the recycle bin (<c>ContentReference.WasteBasket</c>).</summary>
     public const string RecycleBinType = "SysRecycleBin";
@@ -75,7 +78,14 @@ public sealed class TrashReader(ContentSession session, Serve.AgentClient? agent
             new SqlParameter("@offset", offset),
             new SqlParameter("@take", limit + 1));
 
-        var parents = agent is null ? null : await RestoreParents.ThroughSiteAsync(agent, rows.Select(r => r.Id), cancellationToken);
+        IReadOnlyDictionary<int, int>? parents = null;
+        NotFromSite = null;
+        if (connect is not null)
+        {
+            var answer = await Serve.SiteFallback.AskAsync(connect, agent => RestoreParents.ThroughSiteAsync(agent, rows.Select(r => r.Id), cancellationToken), cancellationToken);
+            parents = answer.Value;
+            NotFromSite = answer.WhyNot;
+        }
         ParentsFrom = parents is null ? "database" : "site";
         parents ??= await RestoreParents.ReadAsync(session.Db, rows.Select(r => r.Id), cancellationToken);
         // Read as they are now, not from the session's cache: whether a parent is deleted may have changed in this session.
@@ -158,21 +168,13 @@ public static class RestoreParents
     }
 
     /// <summary>The same, through the running site: the CMS's own answer, as <c>restore</c> gets it.</summary>
-    /// <returns>Null when the site's agent is older than this opticli and can't answer.</returns>
-    public static async Task<IReadOnlyDictionary<int, int>?> ThroughSiteAsync(Serve.AgentClient agent, IEnumerable<int> contentIds, CancellationToken cancellationToken)
+    /// <exception cref="Errors.OptiCliException">The site couldn't answer (an agent older than this opticli: <c>not_found</c>).</exception>
+    public static async Task<IReadOnlyDictionary<int, int>> ThroughSiteAsync(Serve.AgentClient agent, IEnumerable<int> contentIds, CancellationToken cancellationToken)
     {
         var result = new Dictionary<int, int>();
         foreach (var chunk in contentIds.Distinct().Chunk(Protocol.RestoreParentsResult.MaxIds))
         {
-            Protocol.RestoreParentsResult answer;
-            try
-            {
-                answer = await agent.SendAsync<Protocol.RestoreParentsResult>(HttpMethod.Get, Protocol.AgentRoutes.RestoreParents(chunk), null, cancellationToken);
-            }
-            catch (Errors.NotFoundException ex) when (ex.Message.StartsWith("No agent route", StringComparison.Ordinal))
-            {
-                return null;
-            }
+            var answer = await agent.SendAsync<Protocol.RestoreParentsResult>(HttpMethod.Get, Protocol.AgentRoutes.RestoreParents(chunk), null, cancellationToken);
             foreach (var (item, parent) in answer.Parents)
             {
                 if (Id(item) is { } itemId && Id(parent) is { } parentId)

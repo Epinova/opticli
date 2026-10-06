@@ -25,6 +25,18 @@ public class AgentErrorsTests
         Assert.Equal("message", exception.Message);
     }
 
+    [Theory]
+    [InlineData(AgentErrorReasons.SiteHosts)]
+    [InlineData(AgentErrorReasons.Users)]
+    [InlineData(AgentErrorReasons.Restore)]
+    public void A_validation_with_a_reason_of_its_own_keeps_the_agents_hint(string reason)
+    {
+        var error = new AgentError(AgentErrorCodes.Validation, "Validation failed", "Restore it below a parent whose type allows it: --to <parent>.") { Reason = reason };
+
+        Assert.Equal(error.Hint, AgentErrors.ToException(error).Hint);
+        Assert.Contains("details.validation", AgentErrors.ToException(error with { Reason = null }).Hint);
+    }
+
     [Fact]
     public void Validation_issues_and_the_current_version_become_details()
     {

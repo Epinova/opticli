@@ -45,7 +45,15 @@ public static class PasswordFiles
         return name.Length == 0 ? "user" : name;
     }
 
-    /// <summary>Writes the password (and a newline), creating the folders, readable and writable by the user only.</summary>
+    /// <summary>
+    /// Writes the password (and a newline) to a new file, readable and writable by the user only from the moment it exists,
+    /// creating the <c>users/&lt;project&gt;</c> folders readable by the user only. A file already there is replaced (the
+    /// caller decides whether it may be).
+    /// </summary>
+    /// <remarks>
+    /// On Windows the file inherits the ACL of the user's profile folder (<c>%LOCALAPPDATA%</c>), which other users can't
+    /// read by default; no ACL of its own is set.
+    /// </remarks>
     public static void Write(string path, string password)
     {
         var directory = Path.GetDirectoryName(path)!;
@@ -55,25 +63,39 @@ public static class PasswordFiles
         }
         else
         {
-            Directory.CreateDirectory(directory, UserOnlyDirectory);
-            File.SetUnixFileMode(directory, UserOnlyDirectory);
+            // users/ and users/<project>/: every folder of the chain, not only the last.
+            foreach (var folder in new[] { Path.GetDirectoryName(directory)!, directory })
+            {
+                Directory.CreateDirectory(folder, UserOnlyDirectory);
+                File.SetUnixFileMode(folder, UserOnlyDirectory);
+            }
         }
-        var options = new FileStreamOptions { Mode = FileMode.Create, Access = FileAccess.Write, Share = FileShare.None };
+        // A new file every time, created with its mode: an existing one with a looser mode never holds the password.
+        File.Delete(path);
+        var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None };
         if (!OperatingSystem.IsWindows())
         {
             options.UnixCreateMode = UserOnlyFile;
         }
-        using (var stream = new FileStream(path, options))
-        using (var writer = new StreamWriter(stream))
-        {
-            writer.WriteLine(password);
-        }
-        if (!OperatingSystem.IsWindows())
-        {
-            // An existing file keeps its mode on create; this one must be the user's only.
-            File.SetUnixFileMode(path, UserOnlyFile);
-        }
+        using var stream = new FileStream(path, options);
+        using var writer = new StreamWriter(stream);
+        writer.WriteLine(password);
     }
+
+    /// <summary>
+    /// The files earlier runs left beside <paramref name="path"/> when the site's answer was lost: the user may have been
+    /// made with that password, so they are only ever removed with the user (<c>users remove</c>).
+    /// </summary>
+    public static IReadOnlyList<string> Pending(string path)
+    {
+        var directory = Path.GetDirectoryName(path)!;
+        return Directory.Exists(directory)
+            ? Directory.GetFiles(directory, Path.GetFileName(path) + ".*.pending").Order(StringComparer.Ordinal).ToList()
+            : [];
+    }
+
+    /// <summary>A new file beside <paramref name="path"/> for a password the site hasn't taken yet.</summary>
+    public static string NewPending(string path) => $"{path}.{Guid.NewGuid():N}.pending";
 
     /// <returns>True when there was a file to delete.</returns>
     public static bool Delete(string path)

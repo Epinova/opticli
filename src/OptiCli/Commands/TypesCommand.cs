@@ -1,7 +1,7 @@
 using System.CommandLine;
 using OptiCli.Cli;
 using OptiCli.Core.Cms;
-using OptiCli.Core.Errors;
+using OptiCli.Core.Serve;
 using OptiCli.Core.SourceScan;
 using OptiCli.Protocol;
 
@@ -59,10 +59,12 @@ internal static class TypesCommand
                 types = types.Where(t => t.Instances == 0);
             }
             var warnings = new List<string>();
+            var askedSite = false;
             if (context.Parse.GetValue(orphaned))
             {
-                var (found, warning) = await OrphansAsync(context, types.ToList(), cancellationToken);
+                var (found, warning, fromSite) = await OrphansAsync(context, types.ToList(), cancellationToken);
                 types = found;
+                askedSite = fromSite;
                 if (warning is not null)
                 {
                     warnings.Add(warning);
@@ -76,7 +78,8 @@ internal static class TypesCommand
             var showModel = context.Parse.GetValue(orphaned);
             var summaries = types.Select(t => new TypeSummary(t.Name, t.Kind, t.Instances ?? 0, t.DisplayName, t.Guid) { ModelType = showModel ? t.ModelType : null }).ToList();
             var page = list.Apply(context.Parse, summaries);
-            return new CommandResult(page.Items, page.Next, Warnings: warnings.Count > 0 ? warnings : null);
+            return new CommandResult(page.Items, page.Next, Warnings: warnings.Count > 0 ? warnings : null,
+                Source: askedSite ? Core.Writes.WriteExecutor.AgentSource : CommandResult.DbSource);
         });
         return command;
     }
@@ -85,27 +88,18 @@ internal static class TypesCommand
     /// Through the running site when <c>serve</c> runs (it knows every class it can load, packages' too); otherwise by the
     /// source scan, for the types of the solution's own assemblies only.
     /// </summary>
-    /// <returns>The orphaned types, and a warning when the answer is the source scan's.</returns>
-    private static async Task<(IReadOnlyList<ContentTypeInfo> Types, string? Warning)> OrphansAsync(CliContext context, IReadOnlyList<ContentTypeInfo> types, CancellationToken cancellationToken)
+    /// <returns>The orphaned types, a warning when the answer is the source scan's (saying why), and whether the site answered.</returns>
+    private static async Task<(IReadOnlyList<ContentTypeInfo> Types, string? Warning, bool FromSite)> OrphansAsync(CliContext context, IReadOnlyList<ContentTypeInfo> types, CancellationToken cancellationToken)
     {
-        var why = "`opticli serve` isn't running";
-        try
+        var answer = await SiteFallback.AskAsync(context.ConnectAgentAsync,
+            agent => agent.SendAsync<TypesWithoutCodeResult>(HttpMethod.Get, AgentRoutes.TypesWithoutCode, null, cancellationToken), cancellationToken);
+        if (answer.Value is { } site)
         {
-            var agent = await context.ConnectAgentAsync(cancellationToken);
-            var site = await agent.SendAsync<TypesWithoutCodeResult>(HttpMethod.Get, AgentRoutes.TypesWithoutCode, null, cancellationToken);
-            return (OrphanedTypes.FromSite(types, site), null);
-        }
-        catch (NotFoundException ex) when (ex.Message.StartsWith("No agent route", StringComparison.Ordinal))
-        {
-            why = "the running site's agent is older than this opticli";
-        }
-        catch (OptiCliException)
-        {
-            // No site running: the sources it is.
+            return (OrphanedTypes.FromSite(types, site), null, true);
         }
         var project = context.TryGetProject(out var error) ?? throw error!;
         var index = CSharpSourceIndex.Build(project.SourceRoot);
         return (OrphanedTypes.FromSource(types, index, ScheduledJobSources.Assemblies(project.SourceRoot)),
-            $"Checked against the site's sources ({why}): only types of the solution's own assemblies whose class the scan doesn't find, by GUID or name. A type of a package that was removed isn't found this way; with `opticli serve` running this opticli, the site checks every type's class.");
+            $"Checked against the site's sources ({answer.WhyNot}): only types of the solution's own assemblies whose class the scan doesn't find, by GUID or name. A type of a package that was removed isn't found this way; with `opticli serve` running this opticli, the site checks every type's class.", false);
     }
 }

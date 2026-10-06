@@ -78,6 +78,9 @@ public static class LocalUsers
     /// <summary>The claim that marks a user opticli made; <c>users remove</c> only removes users that have it.</summary>
     public const string CreatedClaim = "opticli:created";
 
+    /// <summary>The value of <see cref="CreatedClaim"/> on a user opticli made.</summary>
+    public const string CreatedClaimValue = "true";
+
     /// <summary>
     /// The domain of the address a user opticli makes gets: <c>.localhost</c> never reaches anyone, and it marks such users
     /// on a site whose user store keeps no claims.
@@ -85,9 +88,9 @@ public static class LocalUsers
     public const string EmailDomain = "opticli.localhost";
 
     public const string SharedRefusal =
-        "Users aren't added or removed against a shared database: its users are real, and the deployed site signs them in.";
+        "Against a shared database opticli neither changes nor reads the site's users and roles, not even to count them: they are real, and the deployed site signs them in.";
 
-    public const string SharedHint = "Add a user in that environment's own admin UI, or restore a copy of the database locally.";
+    public const string SharedHint = "Use that environment's own admin UI (Users, Roles), or restore a copy of the database locally.";
 
     /// <summary>The address a new user gets: its name with anything but letters, digits, '.', '_' and '-' as '-'.</summary>
     public static string Email(string name)

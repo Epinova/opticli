@@ -153,6 +153,23 @@ public class UsersOperationTests
         Assert.Equal(2, _roles.Roles.Count);
     }
 
+    [Theory]
+    [InlineData("false", "dev@opticli.localhost")]
+    [InlineData("", "dev@opticli.localhost")]
+    [InlineData("true", "dev@example.com")]
+    public async Task Only_the_tag_with_its_value_and_opticlis_address_counts_as_made_by_opticli(string claim, string email)
+    {
+        var users = _services.GetRequiredService<UserManager<SiteUser>>();
+        var user = new SiteUser { UserName = "dev", Email = email };
+        await users.CreateAsync(user);
+        await users.AddClaimAsync(user, new Claim(LocalUsers.CreatedClaim, claim));
+
+        var ex = await Assert.ThrowsAsync<AgentException>(() => Remove("dev"));
+
+        Assert.Equal(AgentErrorCodes.Refused, ex.Code);
+        Assert.Single(_users.Users);
+    }
+
     [Fact]
     public async Task Roles_are_counted_never_named_by_member()
     {

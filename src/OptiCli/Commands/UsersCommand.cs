@@ -76,8 +76,10 @@ internal static class UsersCommand
             var file = source == "generated" && !dryRun ? PasswordFiles.PathFor(context.Environment.StateDirectory, context.Project.Directory, user) : null;
             var agent = await context.ConnectAgentAsync(cancellationToken);
             // Written before the site makes the user, so an answer lost on the way doesn't lose the password; beside the
-            // file until then, so a password file of a user that exists already isn't overwritten by a run it refuses.
-            var pending = file is null ? null : file + ".pending";
+            // file until then, under a name of its own, so neither the password file of a user that exists already nor a
+            // file an earlier lost answer left is touched by a run the site refuses.
+            var earlier = file is null ? [] : PasswordFiles.Pending(file);
+            var pending = file is null ? null : PasswordFiles.NewPending(file);
             if (pending is not null)
             {
                 PasswordFiles.Write(pending, password);
@@ -93,15 +95,30 @@ internal static class UsersCommand
                     DryRun = dryRun,
                 }, cancellationToken);
             }
-            catch (OptiCliException ex) when (pending is not null && ex.Code is not ErrorCode.Unreachable)
+            catch (OptiCliException ex) when (pending is not null && ex.Code is ErrorCode.Unreachable)
             {
-                // Not made: no file for it either. (Unreachable may still have made it, so the pending file stays.)
+                // The site may have made the user before the answer got lost: the password stays, and the error says where.
+                throw OptiCliException.Create(ex.Code, ex.Message,
+                    $"{ex.Hint} The site may have made '{user}' with the generated password, which is kept in {pending} (readable by you only): `opticli users roles` counts the users opticli made, and `opticli users remove {user}` removes it with that file.".Trim(),
+                    ex.Details);
+            }
+            catch (OptiCliException ex) when (pending is not null)
+            {
                 PasswordFiles.Delete(pending);
-                throw;
+                throw earlier.Count == 0 || ex.Code is not ErrorCode.Conflict
+                    ? ex
+                    : OptiCliException.Create(ex.Code, ex.Message,
+                        $"{ex.Hint} An earlier run whose answer was lost kept a password for '{user}' in {string.Join(", ", earlier)}: the user may have been made with it.".Trim(),
+                        ex.Details);
             }
             if (pending is not null)
             {
                 File.Move(pending, file!, overwrite: true);
+                foreach (var stale in earlier)
+                {
+                    // The user didn't exist after all, so no earlier run made it.
+                    PasswordFiles.Delete(stale);
+                }
             }
             var warnings = result.Warnings?.ToList() ?? [];
             if (result.CreatedRoles.Count > 0)
@@ -140,7 +157,15 @@ internal static class UsersCommand
             var agent = await context.ConnectAgentAsync(cancellationToken);
             var result = await Send<UserRemoveResult>(agent, AgentRoutes.UserRemove, new UserRemoveRequest { Name = user, DryRun = dryRun }, cancellationToken);
             var file = PasswordFiles.PathFor(context.Environment.StateDirectory, context.Project.Directory, user);
-            var fileRemoved = !dryRun && result.Removed && PasswordFiles.Delete(file);
+            var fileRemoved = false;
+            if (!dryRun && result.Removed)
+            {
+                foreach (var stale in PasswordFiles.Pending(file))
+                {
+                    PasswordFiles.Delete(stale);
+                }
+                fileRemoved = PasswordFiles.Delete(file);
+            }
             return new CommandResult(new UserRemoveOutput(result.Name, result.Roles, result.Removed, fileRemoved ? file : null, dryRun ? true : null), Source: WriteExecutor.AgentSource);
         });
         return command;

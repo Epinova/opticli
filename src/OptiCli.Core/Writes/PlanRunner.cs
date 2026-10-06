@@ -323,7 +323,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                 var resolvedStep = resolved.First(s => s.Index == step.Index);
                 op = resolvedStep.Operation;
                 // A restore of what an earlier step deletes: the database doesn't have it in the recycle bin yet.
-                if (op is RestoreOperation restore && resolved.Any(s => s.Index < step.Index && s.Operation is DeleteOperation delete && delete.Ref == restore.Ref))
+                if (op is RestoreOperation restore && await DeletedEarlierAsync(restore, step.Index, resolved, cancellationToken))
                 {
                     return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Deferred,
                         Warnings: [$"An earlier operation deletes {restore.Ref}, so the site checks the restore when the plan runs."]), null);
@@ -379,6 +379,49 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         catch (OptiCliException ex) when (ex.Code is not (ErrorCode.Unreachable or ErrorCode.Internal))
         {
             return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Invalid, ex.Details, Error(ex), Guid: op.ContentGuid), ex);
+        }
+    }
+
+    /// <summary>
+    /// Whether a step before <paramref name="index"/> deletes the content <paramref name="restore"/> restores. Refs are
+    /// compared by the content they name (an id, a GUID, a URL or path name the same item), not as text.
+    /// </summary>
+    private async Task<bool> DeletedEarlierAsync(RestoreOperation restore, int index, IReadOnlyList<PlanStep> resolved, CancellationToken cancellationToken)
+    {
+        var deletes = resolved.Where(s => s.Index < index).Select(s => s.Operation).OfType<DeleteOperation>().ToList();
+        if (deletes.Count == 0)
+        {
+            return false;
+        }
+        if (deletes.Any(d => d.Ref == restore.Ref))
+        {
+            return true;
+        }
+        var target = await ContentIdAsync(restore.Ref, cancellationToken);
+        foreach (var delete in deletes)
+        {
+            if (target is not null && await ContentIdAsync(delete.Ref, cancellationToken) == target)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <returns>The content id a ref names; null for planned content (<c>$id</c>) or a ref that doesn't resolve, whose own check says why.</returns>
+    private async Task<int?> ContentIdAsync(string reference, CancellationToken cancellationToken)
+    {
+        if (PlanSimulation.PlanId(reference) is not null)
+        {
+            return null;
+        }
+        try
+        {
+            return (await session.LocateAsync(reference, null, cancellationToken)).Id;
+        }
+        catch (OptiCliException)
+        {
+            return null;
         }
     }
 

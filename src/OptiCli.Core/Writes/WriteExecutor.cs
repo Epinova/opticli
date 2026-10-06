@@ -824,7 +824,15 @@ public sealed class WriteExecutor(
     /// </summary>
     private async Task<WriteOutcome> RestoreAsync(RestoreOperation op, bool dryRun, CancellationToken cancellationToken)
     {
-        var target = await EditableAsync(op.Ref, cancellationToken);
+        Target target;
+        try
+        {
+            target = await EditableAsync(op.Ref, cancellationToken);
+        }
+        catch (NotFoundException ex) when (ContentRefParser.TryParse(op.Ref, out var parsed, out _) && parsed.Kind == ContentRefKind.Url)
+        {
+            throw new NotFoundException(ex.Message, "Content in the recycle bin has no URL: give its id or GUID (`opticli trash` lists them).");
+        }
         // Read again rather than from the session's cache: an earlier step of a plan may have deleted it.
         var header = await ContentHeaderReader.ByIdAsync(session.Db, target.Id, cancellationToken) ?? target.Header;
         if (!header.Deleted)
@@ -880,7 +888,9 @@ public sealed class WriteExecutor(
         }
         if (op.To is not null && result.StoredParent is { } stored && stored != result.Parent)
         {
-            warnings.Add($"Restored below {result.Parent} as --to says, not below {stored}, where it was before it was deleted.");
+            warnings.Add(dryRun
+                ? $"It would be restored below {result.Parent} as --to says, not below {stored}, where it was before it was deleted."
+                : $"Restored below {result.Parent} as --to says, not below {stored}, where it was before it was deleted.");
         }
         return new WriteOutcome(output, AgentSource, null, warnings);
     }

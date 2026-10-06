@@ -91,7 +91,7 @@ internal static class RestoreOperation
         if (types.Load(content.ContentTypeID) is { } type && types.Load(target.ContentTypeID) is { } targetType
             && CreateOperation.Placement(call, type, targetType, target.ContentLink.ID, creating: false) is { Count: > 0 } issues)
         {
-            throw AgentException.Invalid(issues, "Restore it below a parent whose type allows it: --to <parent>. Nothing was changed.");
+            throw AgentException.Invalid(issues, "Restore it below a parent whose type allows it: --to <parent>. Nothing was changed.", AgentErrorReasons.Restore);
         }
 
         if (body.DryRun)

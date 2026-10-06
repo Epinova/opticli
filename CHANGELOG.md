@@ -10,35 +10,36 @@ again to update the skill.
 - **`opticli trash`** lists the recycle bin, newest first: what was deleted (what was below it is counted in
   `descendants`), who deleted it and when, and `originalParent`, where `restore` puts it back. That is the parent the
   CMS itself stores for every move, for the edit UI's Restore (not the change log, so truncating that changes nothing):
-  read through the site while `serve` runs, otherwise from that store's rows in the database (only those). `--since`,
-  `--by`, `--type`.
+  read through the site while `serve` runs (`meta.source: agent`), otherwise from that store's rows in the database
+  (only those), with a warning that says why the site wasn't asked. `--since`, `--by`, `--type`.
 - **`opticli restore <ref>`** brings deleted content back out of the recycle bin through the site, as the edit UI's
   Restore does: below the parent it had, or below `--to <parent>` (needed when the CMS has no record of it). It checks
   first that the item is what was deleted (not something below it: the hint names what to restore), that the parent
   exists and isn't in the recycle bin too, and that its type is allowed there. Content keeps its versions, so what was
-  published is live again; a warning says so. `--dry-run`; in a plan `{"op": "restore", "ref": ..., "to": ...}`. The
-  MCP module has no such tool. `delete`'s undo hint is now `opticli restore <ref>`.
+  published is live again; a warning says so. Give its id or GUID: content in the recycle bin has no URL. `--dry-run`;
+  in a plan `{"op": "restore", "ref": ..., "to": ...}`, checked when the plan runs if an earlier step deletes the same
+  item (under whatever ref). The MCP module has no such tool. `delete`'s undo hint is now `opticli restore <ref>`.
 - **`opticli users add <name>`** makes a local login for a restored database through the site's ASP.NET Identity (the
   user class the CMS UI uses, found at runtime), as the CMS's first-admin registration does: approved, in `WebAdmins`
   unless `--role` says otherwise (a missing role is created), tagged as made by opticli. The password comes from
   `--password-stdin`, a hidden prompt on a terminal, or is generated and written to a file only you can read
-  (`passwordFile`); it is never printed. **`opticli users remove <name>`** removes only users opticli made, and
+  (`passwordFile`); it is never printed. When the site's answer gets lost, that file is kept (the error says where) and
+  only `users remove` deletes it. **`opticli users remove <name>`** removes only users opticli made, and
   **`opticli users roles`** shows the roles with member counts and what the virtual roles map to, never names or
   addresses. Refused against a shared database and on sites without ASP.NET Identity (exit 3); the MCP module has no
   such tools.
-
 - **`opticli types --orphaned`** lists content types whose class is gone from the code, which the CMS keeps while
   content uses them, with their class on record (`modelType`) and how many items use them. With `serve` running the site
   says which classes it can't load (packages' too); otherwise the site's sources are scanned for the types of its own
-  assemblies, with a warning. **`opticli type`** now gives a property that isn't in the code (`existsOnModel: false`) its
+  assemblies, with a warning that says why the site wasn't asked. **`opticli type`** now gives a property that isn't in the code (`existsOnModel: false`) its
   stored `values` (on content and in versions), and warns about such properties. Reads only: opticli doesn't remove
   types or properties.
-
 - **`opticli history <ref>`** reads the CMS's change log for one item: creates, publishes, scheduled publishes, review
   requests, moves (from, to), deletes to and restores from the recycle bin, permanent deletes and deleted versions, with
   who and when. It is the only record of moves and deletes. `--since`, `--by`.
 - **`find --status scheduled|expired`**: content with a version waiting to be published (`publishAt`), and published
-  content whose stop-publish date has passed (`expiredAt`).
+  content whose stop-publish date has passed (`expiredAt`); in the master language unless `--lang`, as the rest of
+  `find`.
 - **`opticli categories`** lists the category tree with the names `set` takes, whether each is selectable, and how many
   items have it; **`opticli visitor-groups`** lists the visitor groups (the ids ContentAreas store, names, how the
   criteria combine), reading only that store's names and settings, never its criteria or notes. `get` already shows

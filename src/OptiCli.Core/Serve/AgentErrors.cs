@@ -32,7 +32,7 @@ public static class AgentErrors
             AgentErrorCodes.Unauthorized => "The token in opticli's state file doesn't match the running site. Restart it with `opticli serve --stop` and `opticli serve` (or re-run `opticli env` and restart the site).",
             AgentErrorCodes.Internal => $"The site failed unexpectedly ({error.Hint}); details are in its log (`opticli serve --logs`).",
             AgentErrorCodes.Validation when error.Reason == AgentErrorReasons.MasterNotPublished => Writes.MasterLanguageRule.Hint,
-            AgentErrorCodes.Validation when error.Reason is AgentErrorReasons.SiteHosts or AgentErrorReasons.Users => error.Hint,
+            AgentErrorCodes.Validation when error.Reason is AgentErrorReasons.SiteHosts or AgentErrorReasons.Users or AgentErrorReasons.Restore => error.Hint,
             AgentErrorCodes.Validation => "Fix the properties listed in details.validation and retry; --dry-run checks without saving.",
             AgentErrorCodes.Drift => DriftHint,
             _ => error.Hint,

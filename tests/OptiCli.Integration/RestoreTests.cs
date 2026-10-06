@@ -31,7 +31,7 @@ public sealed class RestoreTests
 
             var listed = (await new TrashReader(site.Session).ListAsync(DateTime.UtcNow.AddMinutes(-5), null, null, 0, 1000, cancellationToken)).Single(i => i.Ref == page);
             // The site answers as the database's copy of the CMS's store does.
-            var throughSite = new TrashReader(site.Session, site.Agent);
+            var throughSite = new TrashReader(site.Session, _ => Task.FromResult(site.Agent));
             var fromSite = (await throughSite.ListAsync(DateTime.UtcNow.AddMinutes(-5), null, null, 0, 1000, cancellationToken)).Single(i => i.Ref == page);
             Assert.Equal(("site", listed.OriginalParent), (throughSite.ParentsFrom, fromSite.OriginalParent));
             Assert.Equal((name, "opticli", 1), (listed.Name, listed.DeletedBy, listed.Descendants));
@@ -107,6 +107,47 @@ public sealed class RestoreTests
             foreach (var reference in new[] { child, parent }.Except(deleted))
             {
                 await writes.RunAsync(new DeleteOperation(reference, IgnoreReferences: true), dryRun: false, cancellationToken);
+            }
+        }
+    }
+
+    [SiteFact]
+    public async Task A_plan_that_deletes_an_item_and_restores_it_under_another_ref_checks_the_restore_when_it_runs()
+    {
+        var cancellationToken = CancellationToken.None;
+        await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
+        if (await EdgeFixture.FindAsync(site, EdgeFixture.LanguageRoot, cancellationToken) is not { } root)
+        {
+            return;
+        }
+        var writes = new WriteExecutor(site.Session, _ => Task.FromResult(site.Agent));
+        var type = site.Session.Model.TypeName(root.TypeId);
+        var id = (await writes.RunAsync(new CreateOperation(WriteOutput.Id(root.Id), type, $"opticli-it restore ref {Guid.NewGuid():N}", Publish: true), dryRun: false, cancellationToken)).CreatedId!.Value;
+        var page = WriteOutput.Id(id);
+        try
+        {
+            var header = (await ContentHeaderReader.ByIdAsync(site.Session.Db, id, cancellationToken))!;
+            await site.Session.Identities.LoadAsync([id], [], cancellationToken);
+            var path = site.Session.Identities.Describe(header, null).Url!;
+            // Deleted by id, restored by GUID: the dry run sees it is the same item, and the run restores it.
+            var byGuid = WritePlan.Parse($$"""{"operations": [{"op": "delete", "ref": "{{page}}"}, {"op": "restore", "ref": "{{header.Guid:D}}"}]}""");
+            var checkedPlan = await new PlanRunner(site.Session, writes, Path.GetTempPath()).RunAsync(byGuid, dryRun: true, publishAll: false, cancellationToken);
+            Assert.Equal(PlanStepStatus.Deferred, checkedPlan.Operations[1].Status);
+            var run = await new PlanRunner(site.Session, writes, Path.GetTempPath()).RunAsync(byGuid, dryRun: false, publishAll: false, cancellationToken);
+            Assert.True(Assert.IsType<RestoreOutput>(run.Operations[1].Result).Restored);
+
+            // By its path: the dry run matches it too, but content in the recycle bin has no URL, so the run can't find it.
+            var byPath = WritePlan.Parse($$"""{"operations": [{"op": "delete", "ref": "{{header.Guid:D}}"}, {"op": "restore", "ref": "{{path}}"}]}""");
+            checkedPlan = await new PlanRunner(site.Session, writes, Path.GetTempPath()).RunAsync(byPath, dryRun: true, publishAll: false, cancellationToken);
+            Assert.Equal(PlanStepStatus.Deferred, checkedPlan.Operations[1].Status);
+            var failed = await Assert.ThrowsAsync<NotFoundException>(() => new PlanRunner(site.Session, writes, Path.GetTempPath()).RunAsync(byPath, dryRun: false, publishAll: false, cancellationToken));
+            Assert.Contains("id or GUID", failed.Hint);
+        }
+        finally
+        {
+            if (await ContentHeaderReader.ByIdAsync(site.Session.Db, id, cancellationToken) is { Deleted: false })
+            {
+                await writes.RunAsync(new DeleteOperation(page, IgnoreReferences: true), dryRun: false, cancellationToken);
             }
         }
     }

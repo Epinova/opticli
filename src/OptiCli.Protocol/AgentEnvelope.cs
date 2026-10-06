@@ -69,6 +69,12 @@ public static class AgentErrorReasons
     /// each issue says which, and the error's hint applies (not the hint for content properties).
     /// </summary>
     public const string Users = "users";
+
+    /// <summary>
+    /// Validation: content can't be restored below the parent (<see cref="AgentRoutes.Restore"/>), as its type isn't
+    /// allowed there; the error's hint applies.
+    /// </summary>
+    public const string Restore = "restore";
 }
 
 /// <summary>Error codes and the HTTP status each one is sent with.</summary>

@@ -140,7 +140,7 @@ internal static class UsersOperation
         {
             if (users.SupportsUserClaim)
             {
-                Check(await users.AddClaimAsync(user, new Claim(LocalUsers.CreatedClaim, "true")), null);
+                Check(await users.AddClaimAsync(user, new Claim(LocalUsers.CreatedClaim, LocalUsers.CreatedClaimValue)), null);
             }
             foreach (var role in missing)
             {
@@ -191,18 +191,22 @@ internal static class UsersOperation
                 roles.Add(new RoleInfo(role, members, virtualRoles.Where(v => v.Roles?.Contains(role, StringComparer.OrdinalIgnoreCase) == true).Select(v => v.Name).ToList()));
             }
         }
-        int? created = users.SupportsUserClaim ? (await users.GetUsersForClaimAsync(new Claim(LocalUsers.CreatedClaim, "true"))).Count : null;
+        int? created = users.SupportsUserClaim ? (await users.GetUsersForClaimAsync(new Claim(LocalUsers.CreatedClaim, LocalUsers.CreatedClaimValue))).Count : null;
         return new UserRolesResult(roles, virtualRoles, Describe(typeof(TUser))) { OptiCliUsers = created };
     }
 
-    /// <summary>Tagged with <see cref="LocalUsers.CreatedClaim"/>; in a store without claims, an address at <see cref="LocalUsers.EmailDomain"/>.</summary>
-    private static async Task<bool> MadeByOptiCliAsync<TUser>(UserManager<TUser> users, TUser user) where TUser : IdentityUser
+    /// <summary>
+    /// Tagged with <see cref="LocalUsers.CreatedClaim"/> (value <c>true</c>) and an address at
+    /// <see cref="LocalUsers.EmailDomain"/>, as <c>users add</c> makes them; in a store without claims, by the address alone.
+    /// </summary>
+    internal static async Task<bool> MadeByOptiCliAsync<TUser>(UserManager<TUser> users, TUser user) where TUser : IdentityUser
     {
-        if (users.SupportsUserClaim)
+        var address = user.Email?.EndsWith("@" + LocalUsers.EmailDomain, StringComparison.OrdinalIgnoreCase) == true;
+        if (!users.SupportsUserClaim)
         {
-            return (await users.GetClaimsAsync(user)).Any(c => c.Type == LocalUsers.CreatedClaim);
+            return address;
         }
-        return user.Email?.EndsWith("@" + LocalUsers.EmailDomain, StringComparison.OrdinalIgnoreCase) == true;
+        return address && (await users.GetClaimsAsync(user)).Any(c => c.Type == LocalUsers.CreatedClaim && c.Value == LocalUsers.CreatedClaimValue);
     }
 
     /// <summary>The CMS registers <c>RoleManager&lt;IdentityRole&gt;</c> with ASP.NET Identity (<c>AddCmsAspNetIdentity</c>).</summary>
