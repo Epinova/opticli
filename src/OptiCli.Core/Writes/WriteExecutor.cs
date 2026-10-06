@@ -882,9 +882,7 @@ public sealed class WriteExecutor(
         var warnings = new List<string>();
         if (content.Status == "published")
         {
-            warnings.Add(dryRun
-                ? $"{content.Id} has a published version: once restored it is live again, at its URL below {result.Parent}."
-                : $"{content.Id} has a published version, so it is live again, at its URL below {result.Parent}.");
+            warnings.Add(RestoredLiveWarning(WriteOutput.Id(content.Id), session.Model.Kind(header.TypeId) == Cms.ContentKind.Page, result.Parent, dryRun));
         }
         if (op.To is not null && result.StoredParent is { } stored && stored != result.Parent)
         {
@@ -894,6 +892,18 @@ public sealed class WriteExecutor(
         }
         return new WriteOutcome(output, AgentSource, null, warnings);
     }
+
+    /// <summary>
+    /// What a restore of published content means: a page is live again at its URL; blocks, media and folders have no URL
+    /// of their own, so they are only published again (where something uses them, it shows them again).
+    /// </summary>
+    internal static string RestoredLiveWarning(string id, bool page, string parent, bool dryRun) => (page, dryRun) switch
+    {
+        (true, true) => $"{id} has a published version: once restored it is live again, at its URL below {parent}.",
+        (true, false) => $"{id} has a published version, so it is live again, at its URL below {parent}.",
+        (false, true) => $"{id} has a published version: once restored it is published again, and shows wherever it is used.",
+        (false, false) => $"{id} has a published version, so it is published again, and shows wherever it is used.",
+    };
 
     private async Task<WriteOutcome> AccessAsync(AccessOperation op, bool dryRun, CancellationToken cancellationToken)
     {
