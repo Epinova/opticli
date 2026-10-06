@@ -96,6 +96,10 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
             status: shownVersion?.StatusValue ?? row?.Status,
             name: shownVersion?.Name);
         var stopPublish = shownVersion is not null ? shownVersion.StopPublish : row?.StopPublish;
+        // A version scheduled for publishing keeps the time in DelayPublishUntil; the CMS gives it as its StartPublish.
+        var scheduled = shownVersion ?? facts
+            ?? (row is { Status: VersionStatus.DelayedPublish, VersionId: { } delayed } ? await VersionReader.ByIdAsync(db, Model, delayed, cancellationToken) : null);
+        var scheduledAt = scheduled is { StatusValue: VersionStatus.DelayedPublish } ? scheduled.DelayPublishUntil : null;
         if ((shownVersion?.StatusValue ?? row?.Status) == VersionStatus.Published && stopPublish <= DateTime.UtcNow)
         {
             notes.Add($"Offline: its stop-publish date ({stopPublish.Value.ToString("u", System.Globalization.CultureInfo.InvariantCulture)}) has passed, so visitors don't see it. Publishing a version without a past stop date puts it back.");
@@ -117,7 +121,7 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
             header.ParentId is { } parent ? ContentIdentity.RefFor(parent) : null,
             shownVersion?.Saved ?? row?.Saved,
             shownVersion?.ChangedBy ?? row?.ChangedBy,
-            shownVersion?.StartPublish ?? row?.StartPublish,
+            scheduledAt ?? shownVersion?.StartPublish ?? row?.StartPublish,
             // Not ?? as for StartPublish: a draft without a stop date isn't stopped by the published version's.
             stopPublish,
             isPage ? Queries.ChildOrder.Name(sortingVersion?.ChildOrderRule ?? header.ChildOrderRule) : null,
