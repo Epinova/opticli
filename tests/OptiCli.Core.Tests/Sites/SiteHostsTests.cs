@@ -320,4 +320,27 @@ public class SiteHostsTests : IDisposable
         SiteHostsRunner.RequireAllowed([Change(SiteHostActions.Add, HostTypes.Undefined)], Sites, sharedDatabase: true);
         SiteHostsRunner.RequireAllowed([Change(SiteHostActions.Primary)], Sites, sharedDatabase: false);
     }
+
+    [Theory]
+    [InlineData(HostType.Undefined, HostTypes.Undefined)]
+    [InlineData(HostType.Edit, HostTypes.Edit)]
+    [InlineData(HostType.Preview, HostTypes.Preview)]
+    [InlineData(HostType.Media, HostTypes.Media)]
+    public void CMS_13s_host_types_go_to_the_agent_by_name(HostType type, string name)
+    {
+        // CMS 13 adds preview and media hosts; they used to go out as "type5" and "type6".
+        var host = SiteHostsRunner.ToSiteHost(new HostInfo("media.example", type, null, null));
+
+        Assert.Equal(name, host.Type);
+        Assert.Equal(type, SiteHostsRunner.ToHostInfo(host).Type);
+    }
+
+    [Theory]
+    [InlineData("preview")]
+    [InlineData("media")]
+    public void Preview_and_media_hosts_cant_be_added_with_a_type_yet(string type)
+    {
+        Assert.Null(HostTypes.Parse(type));
+        Assert.Equal(HostTypes.RedirectPermanent, HostTypes.Parse("redirect-permanent"));
+    }
 }

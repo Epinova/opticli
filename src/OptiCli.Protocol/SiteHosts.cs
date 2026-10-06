@@ -116,8 +116,8 @@ public static class HostHttps
 }
 
 /// <summary>
-/// Host types (<c>EPiServer.Web.HostDefinitionType</c>), named as <c>opticli sites</c> prints them; <see cref="Parse"/>
-/// also takes <c>redirect-permanent</c>.
+/// Host types (<c>EPiServer.Web.HostDefinitionType</c>, and CMS 13's two more of <c>ApplicationHostType</c>), named as
+/// <c>opticli sites</c> prints them; <see cref="Parse"/> also takes <c>redirect-permanent</c>.
 /// </summary>
 public static class HostTypes
 {
@@ -127,8 +127,20 @@ public static class HostTypes
     public const string RedirectTemporary = "redirectTemporary";
     public const string Edit = "edit";
 
-    /// <summary>The names, in the order of their values (0 to 4).</summary>
-    private static readonly string[] ByValue = [Undefined, Primary, RedirectPermanent, RedirectTemporary, Edit];
+    /// <summary>CMS 13 only: where the edit UI previews content.</summary>
+    public const string Preview = "preview";
+
+    /// <summary>CMS 13 only: where media is served from.</summary>
+    public const string Media = "media";
+
+    /// <summary>
+    /// The names, in the order of their values as <c>opticli sites</c> numbers them (CMS 12's 0 to 4, then CMS 13's
+    /// preview and media); the CMS 13 database numbers them differently.
+    /// </summary>
+    private static readonly string[] ByValue = [Undefined, Primary, RedirectPermanent, RedirectTemporary, Edit, Preview, Media];
+
+    /// <summary>The types a host can be given (CMS 12's): <see cref="Parse"/> takes these.</summary>
+    private static readonly string[] Settable = [Undefined, Primary, RedirectPermanent, RedirectTemporary, Edit];
 
     public const string Syntax = "undefined, primary, edit, redirect-permanent or redirect-temporary";
 
@@ -136,11 +148,14 @@ public static class HostTypes
 
     public static int ToValue(string type) => Array.IndexOf(ByValue, type);
 
-    /// <summary>The type <paramref name="text"/> names, case-insensitively and with or without dashes; null when none.</summary>
+    /// <summary>
+    /// The type <paramref name="text"/> names, case-insensitively and with or without dashes; null when none, or one a
+    /// host can't be given here (<see cref="Preview"/>, <see cref="Media"/>).
+    /// </summary>
     public static string? Parse(string text)
     {
         var compact = text.Replace("-", "", StringComparison.Ordinal).Trim();
-        return ByValue.FirstOrDefault(t => t.Equals(compact, StringComparison.OrdinalIgnoreCase));
+        return Settable.FirstOrDefault(t => t.Equals(compact, StringComparison.OrdinalIgnoreCase));
     }
 
     public static bool IsRedirect(string type) => type is RedirectPermanent or RedirectTemporary;
