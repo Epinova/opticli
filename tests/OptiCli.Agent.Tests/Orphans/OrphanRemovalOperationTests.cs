@@ -10,8 +10,22 @@ using static OptiCli.Agent.Tests.Hosting.HostingFixture;
 namespace OptiCli.Agent.Tests.Orphans;
 
 /// <summary>The orphan rules and the order of removal, over a stand-in for the site's content model.</summary>
-public class OrphanRemovalOperationTests
+public class OrphanRemovalOperationTests : IDisposable
 {
+    private readonly string _state = Directory.CreateTempSubdirectory("opticli-orphans-").FullName;
+
+    private readonly StringWriter _echo = new();
+
+    public void Dispose() => Directory.Delete(_state, recursive: true);
+
+    private string RecordFile => Path.Combine(_state, OrphanRemoval.RecordFileName);
+
+    private OrphanRemovalResult Run(IContentModelSource model, OrphanRemovalRequest request) =>
+        OrphanRemovalOperation.Run(model, request, request.DryRun ? null : new RemovalRecords(RecordFile, "/sites/Example", "localhost/example", _echo));
+
+    private IReadOnlyList<RemovalRecord> Records() =>
+        File.Exists(RecordFile) ? File.ReadAllLines(RecordFile).Select(l => System.Text.Json.JsonSerializer.Deserialize<RemovalRecord>(l, AgentJson.Options)!).ToList() : [];
+
     private const string Gone = "Example.Models.OldPage, Example";
 
     private sealed class Model(params SiteType[] types) : IContentModelSource
@@ -31,11 +45,25 @@ public class OrphanRemovalOperationTests
 
         public StoredValueCounts Values(SiteProperty property) => Stored.GetValueOrDefault(property.Id, new StoredValueCounts(0, 0));
 
-        public void Remove(SiteProperty property) => Removed.Add(Check($"property {property.Name}"));
+        /// <summary>Runs after each removal: e.g. values that appear meanwhile.</summary>
+        public Action<string>? After { get; init; }
 
-        public void Remove(SiteType type) => Removed.Add(Check($"type {type.Name}"));
+        public void Remove(SiteProperty property) => Done(Check($"property {property.Name}"));
 
-        private string Check(string label) => label.EndsWith($" {Refuses}", StringComparison.Ordinal) ? throw new DataAbstractionException($"{Refuses} cannot be deleted.") : label;
+        public void Remove(SiteType type) => Done(Check($"type {type.Name}"));
+
+        private void Done(string label)
+        {
+            Removed.Add(label);
+            After?.Invoke(label);
+        }
+
+        /// <summary>Throws this instead of removing <see cref="Refuses"/>.</summary>
+        public Exception? Throws { get; init; }
+
+        private string Check(string label) => label.EndsWith($" {Refuses}", StringComparison.Ordinal)
+            ? throw Throws ?? new DataAbstractionException($"{Refuses} cannot be deleted.")
+            : label;
     }
 
     private static int _ids = 100;
@@ -62,7 +90,7 @@ public class OrphanRemovalOperationTests
         var old = Type("OldPage", properties: Property("Intro", existsOnModel: true));
         var model = new Model(old, Type("StandardPage", "Example.Models.StandardPage, Example", hasClass: true) with { AllowedChildren = ["OldPage", "StandardPage"] });
 
-        var result = OrphanRemovalOperation.Run(model, Remove("oldpage"));
+        var result = Run(model, Remove("oldpage"));
 
         Assert.Equal(["type OldPage"], model.Removed);
         var removed = Assert.Single(result.Types);
@@ -77,7 +105,7 @@ public class OrphanRemovalOperationTests
     {
         var model = new Model(Type("OldPage"));
 
-        var result = OrphanRemovalOperation.Run(model, Remove("OldPage") with { DryRun = true });
+        var result = Run(model, Remove("OldPage") with { DryRun = true });
 
         Assert.Empty(model.Removed);
         Assert.Equal((false, true, "OldPage"), (result.Removed, result.DryRun, Assert.Single(result.Types).Name));
@@ -90,7 +118,7 @@ public class OrphanRemovalOperationTests
         var model = new Model(old);
         model.Usages[old.Id] = new TypeUsage(0, 2, 0, 0, []);
 
-        var error = Assert.Throws<AgentException>(() => OrphanRemovalOperation.Run(model, Remove("OldPage")));
+        var error = Assert.Throws<AgentException>(() => Run(model, Remove("OldPage")));
 
         Assert.Equal((AgentErrorCodes.Conflict, AgentErrorReasons.Orphans), (error.Code, error.Reason));
         Assert.Contains("2 content items in the recycle bin", error.Message);
@@ -105,10 +133,10 @@ public class OrphanRemovalOperationTests
         var model = new Model(old);
         model.Usages[old.Id] = new TypeUsage(0, 0, 0, 3, []);
 
-        var error = Assert.Throws<AgentException>(() => OrphanRemovalOperation.Run(model, Remove("OldPage")));
+        var error = Assert.Throws<AgentException>(() => Run(model, Remove("OldPage")));
 
         Assert.Equal(AgentErrorCodes.Conflict, error.Code);
-        Assert.Contains("3 versions whose page-type property names it", error.Message);
+        Assert.Contains("3 page-type property values naming it", error.Message);
     }
 
     [Theory]
@@ -119,7 +147,7 @@ public class OrphanRemovalOperationTests
     {
         var model = new Model(Type(name, modelType, hasClass));
 
-        var error = Assert.Throws<AgentException>(() => OrphanRemovalOperation.Run(model, Remove(name) with { DryRun = true }));
+        var error = Assert.Throws<AgentException>(() => Run(model, Remove(name) with { DryRun = true }));
 
         Assert.Equal(AgentErrorCodes.Refused, error.Code);
         Assert.Contains(reason, error.Message);
@@ -132,7 +160,7 @@ public class OrphanRemovalOperationTests
         var model = new Model(Type("OldPage"), used, Type("AdminPage", null));
         model.Usages[used.Id] = new TypeUsage(1, 0, 0, 0, []);
 
-        var error = Assert.Throws<AgentException>(() => OrphanRemovalOperation.Run(model, Remove("OldPage", "Nope", "UsedPage", "AdminPage")));
+        var error = Assert.Throws<AgentException>(() => Run(model, Remove("OldPage", "Nope", "UsedPage", "AdminPage")));
 
         Assert.Equal(AgentErrorCodes.Refused, error.Code);
         Assert.Equal(["Nope", "UsedPage", "AdminPage"], error.Validation!.Select(v => v.Property));
@@ -143,7 +171,7 @@ public class OrphanRemovalOperationTests
     [Fact]
     public void A_name_that_doesnt_exist_is_not_found_with_a_suggestion()
     {
-        var error = Assert.Throws<AgentException>(() => OrphanRemovalOperation.Run(new Model(Type("OldNewsPage")), Remove("OldNewsPag")));
+        var error = Assert.Throws<AgentException>(() => Run(new Model(Type("OldNewsPage")), Remove("OldNewsPag")));
 
         Assert.Equal(AgentErrorCodes.NotFound, error.Code);
         Assert.Contains("Did you mean OldNewsPage?", error.Message);
@@ -156,7 +184,7 @@ public class OrphanRemovalOperationTests
         var page = Type("OldPage", properties: Property("Teaser", existsOnModel: true, blockType: block.Guid));
         var model = new Model(block, page);
 
-        var result = OrphanRemovalOperation.Run(model, Remove("OldTeaserBlock", "OldPage"));
+        var result = Run(model, Remove("OldTeaserBlock", "OldPage"));
 
         Assert.Equal(["type OldPage", "type OldTeaserBlock"], model.Removed);
         Assert.Equal(["OldPage", "OldTeaserBlock"], result.Types.Select(t => t.Name));
@@ -168,7 +196,7 @@ public class OrphanRemovalOperationTests
         var block = Type("OldTeaserBlock");
         var model = new Model(block, Type("StandardPage", "Example.Models.StandardPage, Example", hasClass: true, Property("Teaser", blockType: block.Guid)));
 
-        var error = Assert.Throws<AgentException>(() => OrphanRemovalOperation.Run(model, Remove("OldTeaserBlock")));
+        var error = Assert.Throws<AgentException>(() => Run(model, Remove("OldTeaserBlock")));
 
         Assert.Equal(AgentErrorCodes.Conflict, error.Code);
         Assert.Contains("block type of StandardPage.Teaser", error.Message);
@@ -183,9 +211,9 @@ public class OrphanRemovalOperationTests
         model.Stored[page.Properties[0].Id] = new StoredValueCounts(2, 5);
         var request = new OrphanRemovalRequest { Properties = [new OrphanPropertyRef("StandardPage", "oldintro")] };
 
-        var refused = Assert.Throws<AgentException>(() => OrphanRemovalOperation.Run(model, request));
+        var refused = Assert.Throws<AgentException>(() => Run(model, request));
         Assert.Empty(model.Removed);
-        var result = OrphanRemovalOperation.Run(model, request with { AllowDestructive = true });
+        var result = Run(model, request with { AllowDestructive = true });
 
         Assert.Equal(AgentErrorCodes.Refused, refused.Code);
         Assert.Contains("2 content items, 5 versions", refused.Message);
@@ -203,7 +231,7 @@ public class OrphanRemovalOperationTests
         var model = new Model(Type("StandardPage", "Example.Models.StandardPage, Example", hasClass: true, Property(name, existsOnModel, inModel)));
 
         var error = Assert.Throws<AgentException>(() =>
-            OrphanRemovalOperation.Run(model, new OrphanRemovalRequest { Properties = [new OrphanPropertyRef("StandardPage", name)], AllowDestructive = true }));
+            Run(model, new OrphanRemovalRequest { Properties = [new OrphanPropertyRef("StandardPage", name)], AllowDestructive = true }));
 
         Assert.Equal(AgentErrorCodes.Refused, error.Code);
         Assert.Contains(reason, error.Message);
@@ -215,7 +243,7 @@ public class OrphanRemovalOperationTests
         var model = new Model(Type("AdminPage", null, properties: Property("Text")));
 
         var error = Assert.Throws<AgentException>(() =>
-            OrphanRemovalOperation.Run(model, new OrphanRemovalRequest { Properties = [new OrphanPropertyRef("AdminPage", "Text")] }));
+            Run(model, new OrphanRemovalRequest { Properties = [new OrphanPropertyRef("AdminPage", "Text")] }));
 
         Assert.Equal(AgentErrorCodes.Refused, error.Code);
         Assert.Contains("made in admin mode", error.Message);
@@ -229,7 +257,7 @@ public class OrphanRemovalOperationTests
         var model = new Model(Type("OldPage"), used, Type("AdminPage", null), page);
         model.Usages[used.Id] = new TypeUsage(1, 0, 0, 0, []);
 
-        var result = OrphanRemovalOperation.Run(model, new OrphanRemovalRequest { Prune = true });
+        var result = Run(model, new OrphanRemovalRequest { Prune = true });
 
         Assert.Equal(["type OldPage"], model.Removed);
         Assert.Equal([("StandardPage", "OldIntro", AgentErrorCodes.Refused), ("UsedPage", null, AgentErrorCodes.Conflict)],
@@ -245,7 +273,7 @@ public class OrphanRemovalOperationTests
         var model = new Model(block, page);
         model.Stored[page.Properties[1].Id] = new StoredValueCounts(1, 1);
 
-        var result = OrphanRemovalOperation.Run(model, new OrphanRemovalRequest { Prune = true, PruneProperties = true });
+        var result = Run(model, new OrphanRemovalRequest { Prune = true, PruneProperties = true });
 
         Assert.Equal(["property OldTeaser", "type OldTeaserBlock"], model.Removed);
         var kept = Assert.Single(result.Kept);
@@ -258,7 +286,7 @@ public class OrphanRemovalOperationTests
     {
         var model = new Model(Type("OldPage", properties: Property("OldIntro")));
 
-        var result = OrphanRemovalOperation.Run(model, new OrphanRemovalRequest { Prune = true, PruneProperties = true });
+        var result = Run(model, new OrphanRemovalRequest { Prune = true, PruneProperties = true });
 
         Assert.Equal(["type OldPage"], model.Removed);
         Assert.Empty(result.Properties);
@@ -270,11 +298,12 @@ public class OrphanRemovalOperationTests
         var block = Type("OldTeaserBlock");
         var model = new Model(Type("OldPage", properties: Property("Teaser", existsOnModel: true, blockType: block.Guid)), block) { Refuses = "OldTeaserBlock" };
 
-        var error = Assert.Throws<AgentException>(() => OrphanRemovalOperation.Run(model, Remove("OldPage", "OldTeaserBlock")));
+        var error = Assert.Throws<AgentException>(() => Run(model, Remove("OldPage", "OldTeaserBlock")));
 
         Assert.Equal(AgentErrorCodes.Conflict, error.Code);
         Assert.Contains("The CMS refused to remove OldTeaserBlock", error.Message);
-        Assert.Contains("Already removed: OldPage; not removed: OldTeaserBlock.", error.Message);
+        Assert.Contains("Already removed: OldPage (details.removed has their records", error.Message);
+        Assert.EndsWith("not removed: OldTeaserBlock.", error.Message);
     }
 
     [Theory]
@@ -285,9 +314,150 @@ public class OrphanRemovalOperationTests
     {
         var request = new OrphanRemovalRequest { Types = named ? ["OldPage"] : null, Prune = prune, PruneProperties = pruneProperties };
 
-        var error = Assert.Throws<AgentException>(() => OrphanRemovalOperation.Run(new Model(Type("OldPage")), request));
+        var error = Assert.Throws<AgentException>(() => Run(new Model(Type("OldPage")), request));
 
         Assert.Equal(AgentErrorCodes.Usage, error.Code);
+    }
+
+    [Fact]
+    public void A_property_a_content_provider_uses_stays_whatever_the_flag()
+    {
+        var page = Type("StandardPage", "Example.Models.StandardPage, Example", hasClass: true, Property("OldIntro"));
+        var model = new Model(page);
+        model.Stored[page.Properties[0].Id] = new StoredValueCounts(0, 0) { Providers = ["CatalogContent"] };
+        var request = new OrphanRemovalRequest { Properties = [new OrphanPropertyRef("StandardPage", "OldIntro")], AllowDestructive = true };
+
+        var error = Assert.Throws<AgentException>(() => Run(model, request));
+        var pruned = Run(model, new OrphanRemovalRequest { Prune = true, PruneProperties = true, AllowDestructive = true, DryRun = true });
+
+        Assert.Equal(AgentErrorCodes.Conflict, error.Code);
+        Assert.Contains("A content provider still uses it (CatalogContent)", error.Message);
+        Assert.Contains(OrphanRemoval.ProviderHint, error.Hint);
+        Assert.Empty(model.Removed);
+        var kept = Assert.Single(pruned.Kept);
+        Assert.Equal(AgentErrorCodes.Conflict, kept.Code);
+        Assert.Equal(["CatalogContent"], kept.Values!.Providers!);
+        Assert.Empty(pruned.Properties);
+    }
+
+    [Fact]
+    public void Page_type_values_get_their_own_hint_with_the_versions_holding_them()
+    {
+        var old = Type("OldPage");
+        var model = new Model(old);
+        model.Usages[old.Id] = new TypeUsage(0, 0, 0, 2, []) { PageTypeVersions = ["45_678", "46"] };
+
+        var error = Assert.Throws<AgentException>(() => Run(model, Remove("OldPage")));
+
+        Assert.Contains("2 page-type property values naming it (in 45_678, 46)", error.Message);
+        Assert.Equal(OrphanPlanner.PageTypeHint, error.Hint);
+    }
+
+    [Fact]
+    public void Each_removal_is_recorded_in_the_file_and_the_sites_output_before_it_happens()
+    {
+        var page = Type("StandardPage", "Example.Models.StandardPage, Example", hasClass: true, Property("OldIntro"));
+        var old = Type("OldPage", properties: Property("Heading", existsOnModel: true));
+        var model = new Model(page, old) { After = label => Assert.Contains(Records(), r => label.EndsWith(r.Type?.Name ?? r.Property!.Property.Name, StringComparison.Ordinal)) };
+        model.Stored[page.Properties[0].Id] = new StoredValueCounts(1, 2);
+
+        var result = Run(model, new OrphanRemovalRequest { Prune = true, PruneProperties = true, AllowDestructive = true });
+
+        Assert.Equal(RecordFile, result.RecordFile);
+        var records = Records();
+        Assert.Equal(2, records.Count);
+        Assert.Equal(("StandardPage", "OldIntro", new StoredValueCounts(1, 2)), (records[0].Property!.Type, records[0].Property!.Property.Name, records[0].Property!.Values));
+        Assert.Equal(("OldPage", "Heading"), (records[1].Type!.Name, records[1].Type!.Properties.Single().Name));
+        Assert.All(records, r => Assert.Equal(("/sites/Example", "localhost/example"), (r.Project, r.Database)));
+        Assert.Equal(2, _echo.ToString().Split('\n').Count(l => l.StartsWith("[opticli] Removing the ", StringComparison.Ordinal)));
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(RecordFile));
+        }
+    }
+
+    [Fact]
+    public void A_dry_run_records_nothing()
+    {
+        var result = Run(new Model(Type("OldPage")), Remove("OldPage") with { DryRun = true });
+
+        Assert.Null(result.RecordFile);
+        Assert.False(File.Exists(RecordFile));
+    }
+
+    [Fact]
+    public void A_run_that_stops_halfway_returns_the_full_records_of_what_it_removed_and_keeps_the_inner_code()
+    {
+        var block = Type("OldTeaserBlock");
+        var model = new Model(Type("OldPage", properties: Property("Teaser", existsOnModel: true, blockType: block.Guid)), block)
+        {
+            Refuses = "OldTeaserBlock",
+            Throws = AgentException.NotFound("'OldTeaserBlock' was removed meanwhile."),
+        };
+
+        var error = Assert.Throws<AgentException>(() => Run(model, Remove("OldPage", "OldTeaserBlock")));
+
+        Assert.Equal(AgentErrorCodes.NotFound, error.Code);
+        Assert.Contains("Already removed: OldPage", error.Message);
+        Assert.Equal(("OldPage", "Teaser"), (Assert.Single(error.Removal!.Types).Name, error.Removal.Types[0].Properties.Single().Name));
+        Assert.Equal(RecordFile, error.Removal.RecordFile);
+        // The record of the one that failed, then a line saying it wasn't removed.
+        Assert.Equal(["OldPage", "OldTeaserBlock", null], Records().Select(r => r.Type?.Name));
+        Assert.StartsWith("OldTeaserBlock: ", Records()[2].Failed);
+    }
+
+    [Fact]
+    public void Values_that_appear_after_the_check_stop_the_run_before_that_property_goes()
+    {
+        var page = Type("StandardPage", "Example.Models.StandardPage, Example", hasClass: true, Property("OldIntro"), Property("OldTitle"));
+        Model model = null!;
+        model = new Model(page) { After = _ => model.Stored[page.Properties[1].Id] = new StoredValueCounts(1, 1) };
+
+        var error = Assert.Throws<AgentException>(() => Run(model, new OrphanRemovalRequest { Properties = [new("StandardPage", "OldIntro"), new("StandardPage", "OldTitle")] }));
+
+        Assert.Equal(AgentErrorCodes.Conflict, error.Code);
+        Assert.Contains("OldTitle wasn't removed: its stored values changed since they were checked", error.Message);
+        Assert.Equal(["property OldIntro"], model.Removed);
+        Assert.Equal("OldIntro", Assert.Single(error.Removal!.Properties).Property.Name);
+        Assert.Single(Records());
+    }
+
+    [Fact]
+    public void A_caller_that_stops_waiting_halfway_leaves_a_complete_record_of_what_was_removed()
+    {
+        using var aborted = new CancellationTokenSource();
+        var model = new Model(Type("OldPage"), Type("OlderPage")) { After = _ => aborted.Cancel() };
+
+        var error = Assert.Throws<AgentException>(() => OrphanRemovalOperation.Run(model, new OrphanRemovalRequest { Prune = true },
+            new RemovalRecords(RecordFile, "/sites/Example", "localhost/example", null), aborted.Token));
+
+        Assert.Contains("The caller stopped waiting", error.Message);
+        Assert.Equal(["type OldPage"], model.Removed);
+        Assert.Equal(["OldPage"], Records().Select(r => r.Type!.Name));
+        Assert.Equal("OldPage", Assert.Single(error.Removal!.Types).Name);
+    }
+
+    [Theory]
+    [InlineData("""{"types":[null]}""")]
+    [InlineData("""{"types":[" "]}""")]
+    [InlineData("""{"properties":[{"type":null,"property":"OldIntro"}]}""")]
+    [InlineData("""{"properties":[null]}""")]
+    public void Nulls_in_a_raw_request_are_usage_errors(string json)
+    {
+        var request = System.Text.Json.JsonSerializer.Deserialize<OrphanRemovalRequest>(json, AgentRequest.RequestOptions)!;
+
+        var error = Assert.Throws<AgentException>(() => Run(new Model(Type("OldPage")), request));
+
+        Assert.Equal(AgentErrorCodes.Usage, error.Code);
+    }
+
+    [Fact]
+    public void The_record_file_is_in_opticlis_state_directory()
+    {
+        Assert.Equal(Path.Combine("/x/state", "opticli", OrphanRemoval.RecordFileName),
+            RemovalRecords.DefaultPath(name => name == "XDG_STATE_HOME" ? "/x/state" : null));
+        Assert.Equal(Path.Combine("/home/someone", ".local", "state", "opticli", OrphanRemoval.RecordFileName),
+            RemovalRecords.DefaultPath(name => name == "HOME" ? "/home/someone" : null));
     }
 
     [Fact]

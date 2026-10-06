@@ -32,11 +32,21 @@ internal static class OrphanRemovalOperation
         {
             throw AgentException.Refused(OrphanRemoval.SharedRefusal, OrphanRemoval.SharedHint);
         }
-        return Run(new ContentModelSource(request.Context.RequestServices), body, request.Call.Aborted);
+        // One removal at a time in this site: two requests checking the same type or property and then both removing would
+        // each have checked a state the other changes.
+        lock (Gate)
+        {
+            var services = request.Context.RequestServices;
+            return Run(new ContentModelSource(services), body, body.DryRun ? null : RemovalRecords.For(services), request.Call.Aborted);
+        }
     }
 
-    internal static OrphanRemovalResult Run(IContentModelSource source, OrphanRemovalRequest body, CancellationToken aborted = default)
+    private static readonly object Gate = new();
+
+    /// <param name="records">Where each record goes before its removal; null for a dry run.</param>
+    internal static OrphanRemovalResult Run(IContentModelSource source, OrphanRemovalRequest body, RemovalRecords? records, CancellationToken aborted = default)
     {
+        RequireNoNulls(body);
         var named = body.Types is { Count: > 0 } || body.Properties is { Count: > 0 };
         if (named == body.Prune)
         {
@@ -147,23 +157,52 @@ internal static class OrphanRemovalOperation
                 warnings.Add($"{(body.DryRun ? "Would delete" : "Deleted")} the stored values of {string.Join(", ", withValues)}, in every version and language, for good.");
             }
         }
-        if (!body.DryRun && removedTypes.Count + removedProperties.Count > 0)
+        var propertyRecords = removedProperties.Select(p => new RemovedProperty(p.Facts.TypeName, p.Property.Record, p.Facts.Values)).ToList();
+        var removing = removedTypes.Count + removedProperties.Count > 0;
+        if (!body.DryRun && removing)
         {
-            var steps = removedProperties.Select(p => ($"{p.Facts.TypeName}.{p.Facts.Name}", (Action)(() => source.Remove(p.Property))))
-                .Concat(plan.Types.Select(t => (t.Name, (Action)(() => source.Remove(byId[t.Id])))))
+            if (records is null)
+            {
+                throw new InvalidOperationException("A removal needs somewhere to record it.");
+            }
+            var steps = removedProperties.Select((p, i) => new Step($"{p.Facts.TypeName}.{p.Facts.Name}", null, propertyRecords[i],
+                    () => Changed(p.Facts.Values, source.Values(p.Property)), () => source.Remove(p.Property)))
+                .Concat(plan.Types.Select((t, i) => new Step(t.Name, removedTypes[i], null,
+                    () => source.Usage(byId[t.Id]) is { InUse: true } usage ? $"it is in use now: {OrphanRemoval.Describe(usage)}" : null, () => source.Remove(byId[t.Id]))))
                 .ToList();
-            Remove(steps, aborted);
+            Remove(steps, records, warnings, aborted);
             warnings.Add(RestartWarning);
         }
-        return new OrphanRemovalResult(
-            removedTypes,
-            removedProperties.Select(p => new RemovedProperty(p.Facts.TypeName, p.Property.Record, p.Facts.Values)).ToList(),
-            kept,
-            body.DryRun,
-            Removed: !body.DryRun && removedTypes.Count + removedProperties.Count > 0)
+        return new OrphanRemovalResult(removedTypes, propertyRecords, kept, body.DryRun, Removed: !body.DryRun && removing)
         {
             Warnings = warnings.Count > 0 ? warnings : null,
+            RecordFile = !body.DryRun && removing ? records?.Path : null,
         };
+    }
+
+    /// <summary>One removal: its record, a last check just before it, and the CMS's delete.</summary>
+    /// <param name="Recheck">What changed since the plan was made (null: nothing), checked again just before removing it.</param>
+    private sealed record Step(string Label, RemovedContentType? Type, RemovedProperty? Property, Func<string?> Recheck, Action Run);
+
+    /// <summary>The values counted again: different counts, or a content provider that appeared, stop the run.</summary>
+    internal static string? Changed(StoredValueCounts planned, StoredValueCounts now) =>
+        planned.Content == now.Content && planned.Versions == now.Versions && planned.ProviderUse == now.ProviderUse
+            ? null
+            : $"its stored values changed since they were checked ({OrphanRemoval.Describe(planned)}; now {OrphanRemoval.Describe(now)})";
+
+    /// <summary>
+    /// A raw request (not the CLI's) may hold nulls where names go: a usage error, not a failure inside the site.
+    /// </summary>
+    private static void RequireNoNulls(OrphanRemovalRequest body)
+    {
+        if (body.Types?.Any(t => string.IsNullOrWhiteSpace(t)) == true)
+        {
+            throw AgentException.Usage("types holds an empty name.", "Give each content type's name or GUID.");
+        }
+        if (body.Properties?.Any(p => p is null || string.IsNullOrWhiteSpace(p.Type) || string.IsNullOrWhiteSpace(p.Property)) == true)
+        {
+            throw AgentException.Usage("properties holds an entry without a type or a property.", """Give each as {"type": "...", "property": "..."}.""");
+        }
     }
 
     /// <summary>Why a type isn't an orphan of removed code; null when it is one.</summary>
@@ -213,11 +252,14 @@ internal static class OrphanRemovalOperation
             AvailableUnder = types.Where(t => t.Id != type.Id && t.AllowedChildren?.Contains(type.Name, StringComparer.OrdinalIgnoreCase) == true).Select(t => t.Name).ToList() is { Count: > 0 } under ? under : null,
         };
 
-    /// <summary>Properties first (a block type is free once they are gone), then types in the planned order.</summary>
-    private static void Remove(IReadOnlyList<(string Label, Action Run)> all, CancellationToken aborted)
+    /// <summary>
+    /// Properties first (a block type is free once they are gone), then types in the planned order. Each one is checked
+    /// once more and recorded before the CMS removes it, so the record file holds everything removed, however the run ends.
+    /// </summary>
+    private static void Remove(IReadOnlyList<Step> steps, RemovalRecords records, List<string> warnings, CancellationToken aborted)
     {
-        var done = new List<string>();
-        foreach (var (label, run) in all)
+        var done = new List<Step>();
+        foreach (var step in steps)
         {
             try
             {
@@ -225,18 +267,73 @@ internal static class OrphanRemovalOperation
                 {
                     throw new AgentException(AgentErrorCodes.Internal, "The caller stopped waiting, so nothing more was removed.", "the CLI timed out or was interrupted");
                 }
-                run();
-                done.Add(label);
+                if (step.Recheck() is { } changed)
+                {
+                    throw AgentException.Conflict($"{step.Label} wasn't removed: {changed}.", "Run the dry run again to see what is left and why.");
+                }
+                if (step.Type is { } type)
+                {
+                    records.Removing(type);
+                }
+                else
+                {
+                    records.Removing(step.Property!);
+                }
             }
             catch (Exception ex)
             {
-                var message = ex is DataAbstractionException ? $"The CMS refused to remove {label}: {ex.Message}" : ex.Message;
-                var rest = all.Select(a => a.Label).SkipWhile(l => l != label).ToList();
-                throw new AgentException(ex is DataAbstractionException ? AgentErrorCodes.Conflict : AgentErrorCodes.Internal,
-                    done.Count == 0 ? message : $"{message} Already removed: {string.Join(", ", done)}; not removed: {string.Join(", ", rest)}.",
-                    ex is AgentException agent ? agent.Hint : "Run the dry run again to see what is left and why.");
+                throw Partial(ex, step, done, steps, records, warnings, recorded: false);
+            }
+            try
+            {
+                step.Run();
+                done.Add(step);
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    records.Failed(step.Label, ex.Message);
+                }
+                catch (Exception recordFailure)
+                {
+                    Console.Error.WriteLine($"[opticli] Couldn't record that {step.Label} wasn't removed: {recordFailure.Message}");
+                }
+                throw Partial(ex, step, done, steps, records, warnings, recorded: true);
             }
         }
+    }
+
+    /// <summary>
+    /// The error for a run that stopped at <paramref name="failed"/>: the failure's own code (the CMS's refusal is a
+    /// conflict), what was removed before it in full (<c>details.removed</c>), and what wasn't.
+    /// </summary>
+    private static AgentException Partial(Exception ex, Step failed, IReadOnlyList<Step> done, IReadOnlyList<Step> steps, RemovalRecords records, List<string> warnings, bool recorded)
+    {
+        var code = ex switch
+        {
+            AgentException agent => agent.Code,
+            DataAbstractionException => AgentErrorCodes.Conflict,
+            _ => AgentErrorCodes.Internal,
+        };
+        var message = ex is DataAbstractionException ? $"The CMS refused to remove {failed.Label}: {ex.Message}" : ex.Message;
+        var rest = steps.SkipWhile(s => s != failed).Select(s => s.Label).ToList();
+        var removed = done.Count == 0 ? null : new OrphanRemovalResult(
+            done.Where(s => s.Type is not null).Select(s => s.Type!).ToList(),
+            done.Where(s => s.Property is not null).Select(s => s.Property!).ToList(),
+            [], DryRun: false, Removed: true)
+        {
+            Warnings = [.. warnings, RestartWarning],
+            RecordFile = records.Path,
+        };
+        var hint = ex is AgentException { Hint: { } own } ? own : "Run the dry run again to see what is left and why.";
+        return new AgentException(code,
+            done.Count == 0 ? message : $"{message} Already removed: {string.Join(", ", done.Select(s => s.Label))} (details.removed has their records, as does {records.Path}); not removed: {string.Join(", ", rest)}.",
+            hint)
+        {
+            Removal = removed,
+            Validation = (ex as AgentException)?.Validation,
+        };
     }
 
     /// <summary>
@@ -250,11 +347,26 @@ internal static class OrphanRemovalOperation
         var message = kept.Count == 1 && named == 1
             ? $"{issues[0].Property}: {issues[0].Message}"
             : $"{(kept.Count >= named ? $"None of the {named} can go" : $"{kept.Count} of the {named} can't go")} (details.validation has each): {string.Join(" ", issues.Select(i => $"{i.Property}: {i.Message}"))}";
-        var hint = code == AgentErrorCodes.Conflict && kept.Any(k => k.Usage?.InUse == true)
-            ? OrphanPlanner.ContentHint
-            : kept.Any(k => k.Values?.Any == true)
-                ? "Show the user the values that would go, and pass --allow-destructive only if they agree; `opticli type <type>` shows the property."
-                : "`opticli types --orphaned` lists the types whose class is gone, `opticli type <type>` the properties that aren't in the code (existsOnModel: false).";
+        var hints = new List<string>();
+        if (kept.Any(k => k.Usage is { } u && u.Content + u.InRecycleBin + u.InlineBlocks + u.OtherUses > 0))
+        {
+            hints.Add(OrphanPlanner.ContentHint);
+        }
+        if (kept.Any(k => k.Usage?.PageTypeValues > 0))
+        {
+            hints.Add(OrphanPlanner.PageTypeHint);
+        }
+        if (kept.Any(k => k.Values?.ProviderUse == true))
+        {
+            hints.Add(OrphanRemoval.ProviderHint);
+        }
+        if (kept.Any(k => k.Values?.Any == true && k.Code == AgentErrorCodes.Refused))
+        {
+            hints.Add("Show the user the values that would go, and pass --allow-destructive only if they agree; `opticli type <type>` shows the property.");
+        }
+        var hint = hints.Count > 0
+            ? string.Join(" ", hints)
+            : "`opticli types --orphaned` lists the types whose class is gone, `opticli type <type>` the properties that aren't in the code (existsOnModel: false).";
         return new AgentException(code, $"Nothing was removed. {message}", hint) { Validation = issues, Reason = AgentErrorReasons.Orphans };
     }
 

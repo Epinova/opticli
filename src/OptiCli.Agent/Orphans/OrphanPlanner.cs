@@ -34,6 +34,9 @@ internal static class OrphanPlanner
     public const string ContentHint =
         "opticli never deletes content: `opticli find --type <type>` and `opticli trash --type <type>` show it, `opticli where-used --type <type>` where it is used. Content in the recycle bin has to be deleted for good in the CMS's edit UI (or by its Automatic Emptying of Trash job) first.";
 
+    public const string PageTypeHint =
+        "Page-type property values name it (a page list's type filter, say): the CMS would clear them in every version when it removes the type. `opticli get <ref>` shows the versions listed; change or clear those values first (or discard those drafts), then run it again.";
+
     public static OrphanPlan Plan(IReadOnlyList<TypeFacts> types, IReadOnlyList<PropertyFacts> properties, bool allowDestructive)
     {
         var kept = new List<KeptOrphan>();
@@ -43,6 +46,12 @@ internal static class OrphanPlanner
             if (property.Refusal is { } refusal)
             {
                 kept.Add(Kept(property, AgentErrorCodes.Refused, refusal));
+            }
+            else if (property.Values.ProviderUse)
+            {
+                // No flag: what the provider keeps can't be counted or seen, and may not even be in the CMS's tables.
+                kept.Add(Kept(property, AgentErrorCodes.Conflict,
+                    $"A content provider still uses it ({string.Join(", ", property.Values.Providers!)}): opticli can't count or see those values, and the provider may keep them outside the CMS's tables."));
             }
             else if (property.Values.Any && !allowDestructive)
             {

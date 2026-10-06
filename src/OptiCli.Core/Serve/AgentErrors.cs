@@ -41,11 +41,12 @@ public static class AgentErrors
         {
             return new DriftException(error.Message, hint) { Details = drift };
         }
-        object? details = error.Validation is not null || error.CurrentVersion is not null || error.PendingDraft is not null || error.Reason is not null
+        object? details = error.Validation is not null || error.CurrentVersion is not null || error.PendingDraft is not null || error.Reason is not null || error.Removal is not null
             ? new AgentErrorDetails(error.Validation, error.CurrentVersion)
             {
                 Reason = error.Reason ?? (error.PendingDraft is null ? null : PendingDraft.Reason),
                 Draft = error.PendingDraft,
+                Removed = error.Removal,
             }
             : null;
         return OptiCliException.Create(CodeFor(error.Code), error.Message, hint, details);
@@ -60,4 +61,10 @@ public sealed record AgentErrorDetails(IReadOnlyList<ValidationIssue>? Validatio
 
     /// <summary>For <see cref="PendingDraft.Reason"/>: the changes by someone else the publish would put live.</summary>
     public PendingDraft? Draft { get; init; }
+
+    /// <summary>
+    /// A removal of orphaned types or properties that stopped halfway: the full records of what it removed, which can't
+    /// be restored (also in the record file it names).
+    /// </summary>
+    public OrphanRemovalResult? Removed { get; init; }
 }

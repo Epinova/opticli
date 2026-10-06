@@ -24,12 +24,15 @@ internal sealed class AgentException(string code, string message, string? hint =
     /// <summary>For <c>drift</c>: what differs.</summary>
     public DriftReport? Drift { get; init; }
 
+    /// <summary>What a removal of orphaned types or properties removed before it stopped (<see cref="AgentError.Removal"/>).</summary>
+    public OrphanRemovalResult? Removal { get; init; }
+
     /// <summary>Overrides the code's usual status, e.g. 503 rather than 403 for a disabled agent.</summary>
     public int? ForcedStatus { get; init; }
 
     public int Status => ForcedStatus ?? AgentErrorCodes.HttpStatus(Code);
 
-    public AgentError ToError() => new(Code, Message, Hint) { Validation = Validation, CurrentVersion = CurrentVersion, PendingDraft = PendingDraft, Reason = Reason ?? (PendingDraft is null ? null : AgentErrorReasons.PendingDraft), Drift = Drift };
+    public AgentError ToError() => new(Code, Message, Hint) { Validation = Validation, CurrentVersion = CurrentVersion, PendingDraft = PendingDraft, Reason = Reason ?? (PendingDraft is null ? null : AgentErrorReasons.PendingDraft), Drift = Drift, Removal = Removal };
 
     public static AgentException Usage(string message, string? hint = null) => new(AgentErrorCodes.Usage, message, hint);
 

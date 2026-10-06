@@ -32,6 +32,12 @@ public sealed record AgentError(string Code, string Message, string? Hint = null
 
     /// <summary>For <c>drift</c> errors: what differs; retry with its fingerprint in <see cref="AgentProtocol.AcceptDriftHeader"/> to confirm.</summary>
     public DriftReport? Drift { get; init; }
+
+    /// <summary>
+    /// For a removal of orphaned types or properties (<see cref="AgentRoutes.TypesRemove"/>) that stopped halfway: the full
+    /// records of what was removed before it stopped.
+    /// </summary>
+    public OrphanRemovalResult? Removal { get; init; }
 }
 
 /// <summary>Values of <see cref="AgentError.Reason"/>, which the CLI passes on as <c>details.reason</c>.</summary>

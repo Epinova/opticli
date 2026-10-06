@@ -59,15 +59,41 @@ internal interface IContentModelSource
 /// </remarks>
 internal sealed class ContentModelSource(IServiceProvider services) : IContentModelSource
 {
-    /// <summary>Content of a type, in and out of the recycle bin, and versions whose page-type properties name it.</summary>
+    /// <summary>
+    /// Content of a type, in and out of the recycle bin, and the page-type property values (data type 3) naming it, in
+    /// versions and on content: <c>netContentTypeDelete</c> clears both.
+    /// </summary>
     private const string UsageSql = """
         SELECT
             (SELECT COUNT(*) FROM tblContent WHERE fkContentTypeID = @id AND Deleted = 0) AS Content,
             (SELECT COUNT(*) FROM tblContent WHERE fkContentTypeID = @id AND Deleted = 1) AS InRecycleBin,
-            (SELECT COUNT(DISTINCT wp.fkWorkContentID)
+            (SELECT COUNT(*)
              FROM tblWorkContentProperty wp
              INNER JOIN tblPropertyDefinition pd ON pd.pkID = wp.fkPropertyDefinitionID
-             WHERE pd.Property = 3 AND wp.ContentType = @id) AS PageTypeValues
+             WHERE pd.Property = 3 AND wp.ContentType = @id)
+            + (SELECT COUNT(*)
+             FROM tblContentProperty cp
+             INNER JOIN tblPropertyDefinition pd ON pd.pkID = cp.fkPropertyDefinitionID
+             WHERE pd.Property = 3 AND cp.ContentType = @id) AS PageTypeValues
+        """;
+
+    /// <summary>Where those page-type values are: versions, and content whose value has no version row.</summary>
+    private const string PageTypeRefsSql = """
+        SELECT DISTINCT TOP (@max) ContentId, WorkId FROM (
+            SELECT wc.fkContentID AS ContentId, wc.pkID AS WorkId
+            FROM tblWorkContentProperty wp
+            INNER JOIN tblPropertyDefinition pd ON pd.pkID = wp.fkPropertyDefinitionID
+            INNER JOIN tblWorkContent wc ON wc.pkID = wp.fkWorkContentID
+            WHERE pd.Property = 3 AND wp.ContentType = @id
+            UNION
+            SELECT cp.fkContentID, NULL
+            FROM tblContentProperty cp
+            INNER JOIN tblPropertyDefinition pd ON pd.pkID = cp.fkPropertyDefinitionID
+            WHERE pd.Property = 3 AND cp.ContentType = @id
+              AND NOT EXISTS (SELECT 1 FROM tblWorkContent wc
+                              INNER JOIN tblWorkContentProperty wp ON wp.fkWorkContentID = wc.pkID AND wp.fkPropertyDefinitionID = cp.fkPropertyDefinitionID
+                              WHERE wc.fkContentID = cp.fkContentID AND wp.ContentType = @id)) refs
+        ORDER BY ContentId, WorkId
         """;
 
     /// <summary>Inline blocks (CMS 12.2x and later); the table doesn't exist before.</summary>
@@ -106,6 +132,13 @@ internal sealed class ContentModelSource(IServiceProvider services) : IContentMo
         var (content, bin, pageTypes) = Query(UsageSql, type.Id, r => (Int(r, "Content"), Int(r, "InRecycleBin"), Int(r, "PageTypeValues")));
         var inline = Query(InlineSql, type.Id, r => Int(r, "Uses"));
         var usage = new TypeUsage(content, bin, inline, pageTypes, []);
+        if (pageTypes > 0)
+        {
+            usage = usage with
+            {
+                PageTypeVersions = QueryRows(PageTypeRefsSql, type.Id, r => r["WorkId"] is DBNull ? $"{Int(r, "ContentId")}" : $"{Int(r, "ContentId")}_{Int(r, "WorkId")}"),
+            };
+        }
         if (!usage.InUse && _types.Load(type.Id) is { } contentType)
         {
             // The CMS's own check, which its Delete runs too: what the counts above don't see (content providers, values
@@ -116,8 +149,40 @@ internal sealed class ContentModelSource(IServiceProvider services) : IContentMo
         return usage;
     }
 
-    public StoredValueCounts Values(SiteProperty property) =>
-        Query(OrphanRemoval.PropertyValuesSql(property.BlockType is not null), property.Id, r => new StoredValueCounts(Int(r, "Content"), Int(r, "Versions")));
+    public StoredValueCounts Values(SiteProperty property)
+    {
+        var counts = Query(OrphanRemoval.PropertyValuesSql(property.BlockType is not null), property.Id, r => new StoredValueCounts(Int(r, "Content"), Int(r, "Versions")));
+        if (_properties.Load(property.Id) is not { } definition)
+        {
+            return counts;
+        }
+        // The counts read the CMS's own tables. Content providers (a catalog, a DAM) keep theirs elsewhere: ask each one,
+        // and the CMS's own usage check, which asks them all, for what the counts can't see.
+        var providers = new List<string>();
+        services.GetRequiredService<IContentProviderManager>().ProviderMap.Iterate((Action<ContentProvider>)(provider =>
+        {
+            if (provider.IsDefaultProvider)
+            {
+                return;
+            }
+            try
+            {
+                if (provider.IsPropertyDefinitionUsed(definition))
+                {
+                    providers.Add(provider.Name);
+                }
+            }
+            catch (Exception ex)
+            {
+                providers.Add($"{provider.Name} (it couldn't tell: {ex.GetType().Name})");
+            }
+        }));
+        if (providers.Count == 0 && !counts.Any && services.GetRequiredService<IContentModelUsage>().IsPropertyDefinitionUsed(definition))
+        {
+            providers.Add(OrphanRemoval.UnknownProvider);
+        }
+        return providers.Count == 0 ? counts : counts with { Providers = providers };
+    }
 
     public void Remove(SiteProperty property) =>
         _properties.Delete(_properties.Load(property.Id) ?? throw AgentExceptionFor(property.Record.Name));
@@ -169,6 +234,25 @@ internal sealed class ContentModelSource(IServiceProvider services) : IContentMo
             command.Parameters.Add(executor.CreateParameter("id", id));
             using var reader = command.ExecuteReader();
             return reader.Read() ? read(reader) : throw new InvalidOperationException("The count query returned no row.");
+        });
+    }
+
+    private IReadOnlyList<T> QueryRows<T>(string sql, int id, Func<DbDataReader, T> read)
+    {
+        var executor = services.GetRequiredService<IDatabaseExecutorFactory>().CreateDefaultHandler();
+        return executor.Execute(() =>
+        {
+            using var command = executor.CreateCommand();
+            command.CommandText = sql;
+            command.Parameters.Add(executor.CreateParameter("id", id));
+            command.Parameters.Add(executor.CreateParameter("max", OrphanRemoval.MaxRefs));
+            using var reader = command.ExecuteReader();
+            var rows = new List<T>();
+            while (reader.Read())
+            {
+                rows.Add(read(reader));
+            }
+            return (IReadOnlyList<T>)rows;
         });
     }
 

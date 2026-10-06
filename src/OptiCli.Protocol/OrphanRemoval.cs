@@ -52,6 +52,23 @@ public sealed record OrphanRemovalResult(
     bool Removed)
 {
     public IReadOnlyList<string>? Warnings { get; init; }
+
+    /// <summary>
+    /// The file the site wrote each record to before removing it (<see cref="OrphanRemoval.RecordFileName"/> in opticli's
+    /// state directory), one JSON line per removal; null for a dry run or when nothing was removed.
+    /// </summary>
+    public string? RecordFile { get; init; }
+}
+
+/// <summary>One line of <see cref="OrphanRemovalResult.RecordFile"/>: written just before the CMS is asked to remove it.</summary>
+/// <param name="Project">The site's content root, as the site process sees it.</param>
+/// <param name="Database">The database's server and name.</param>
+/// <param name="Type">A type that is being removed, with its properties.</param>
+/// <param name="Property">A property that is being removed on its own, with its values.</param>
+public sealed record RemovalRecord(DateTime Time, string Project, string Database, RemovedContentType? Type, RemovedProperty? Property)
+{
+    /// <summary>Set on the line written after a removal the CMS refused or that failed: it wasn't removed.</summary>
+    public string? Failed { get; init; }
 }
 
 /// <summary>A content type as it was before it was removed.</summary>
@@ -105,15 +122,25 @@ public sealed record RemovedPropertyDefinition(
 /// <param name="Versions">Versions holding a value.</param>
 public sealed record StoredValueCounts(int Content, int Versions)
 {
+    /// <summary>
+    /// Content providers (other than the CMS's own database) that report using the property, or <c>unknown</c> when the CMS's
+    /// usage check says it is used where these counts see nothing. Their values can't be counted or seen, and may be kept
+    /// outside the CMS's tables, so such a property is never removed.
+    /// </summary>
+    public IReadOnlyList<string>? Providers { get; init; }
+
     [JsonIgnore]
     public bool Any => Content > 0 || Versions > 0;
+
+    [JsonIgnore]
+    public bool ProviderUse => Providers is { Count: > 0 };
 }
 
 /// <summary>What uses a content type and keeps it from being removed.</summary>
 /// <param name="Content">Content items of the type (not deleted).</param>
 /// <param name="InRecycleBin">Content items of the type in the recycle bin.</param>
 /// <param name="InlineBlocks">Content whose ContentAreas hold inline blocks of the type.</param>
-/// <param name="PageTypeValues">Versions whose page-type properties name the type; the CMS would clear those values.</param>
+/// <param name="PageTypeValues">Page-type property values (in versions and on content) that name the type; the CMS would clear them.</param>
 /// <param name="UsedBy">Properties (<c>Type.Property</c>) whose block type it is.</param>
 public sealed record TypeUsage(int Content, int InRecycleBin, int InlineBlocks, int PageTypeValues, IReadOnlyList<string> UsedBy)
 {
@@ -124,6 +151,9 @@ public sealed record TypeUsage(int Content, int InRecycleBin, int InlineBlocks, 
     /// values of a block type's properties stored elsewhere and content providers).
     /// </summary>
     public int OtherUses { get; init; }
+
+    /// <summary>The versions (<c>123_456</c>) whose page-type property values name it, at most <see cref="OrphanRemoval.MaxRefs"/>.</summary>
+    public IReadOnlyList<string>? PageTypeVersions { get; init; }
 
     /// <summary>Content or values use it: anything but <see cref="UsedBy"/>.</summary>
     [JsonIgnore]
@@ -154,6 +184,18 @@ public static class OrphanRemoval
     /// <summary>Content types and property definitions have no versions and no recycle bin.</summary>
     public const string NoUndo =
         "Content types and properties aren't versioned and can't be restored: the output is the only record of what was removed, to make it again by hand (admin mode, or code).";
+
+    /// <summary>The file in opticli's state directory the site agent writes every removal to, before it removes it.</summary>
+    public const string RecordFileName = "removals.jsonl";
+
+    /// <summary>Stands for a content provider the CMS's usage check found but that couldn't be named.</summary>
+    public const string UnknownProvider = "unknown";
+
+    /// <summary>How many content refs an answer lists at most.</summary>
+    public const int MaxRefs = 20;
+
+    public const string ProviderHint =
+        "A content provider (a catalog, a DAM, ...) keeps content of the site that uses the property; opticli can't count or see those values, and the provider may store them outside the CMS's tables. Remove its values through that provider (or remove the property in admin mode once it has none).";
 
     public const string AdminModeLookalike =
         "A property added in admin mode to a type that has a class looks the same in the database (existsOnModel: false) as one removed from the code: check that none of these was made in admin mode on purpose.";
@@ -201,7 +243,7 @@ public static class OrphanRemoval
         }
         if (usage.PageTypeValues > 0)
         {
-            parts.Add($"{Count(usage.PageTypeValues, "version")} whose page-type property names it");
+            parts.Add($"{Count(usage.PageTypeValues, "page-type property value")} naming it{(usage.PageTypeVersions is { Count: > 0 } refs ? $" (in {string.Join(", ", refs)})" : "")}");
         }
         if (usage.OtherUses > 0)
         {
@@ -215,7 +257,8 @@ public static class OrphanRemoval
     }
 
     /// <summary>"1 content item, 3 versions".</summary>
-    public static string Describe(StoredValueCounts values) => $"{Count(values.Content, "content item")}, {Count(values.Versions, "version")}";
+    public static string Describe(StoredValueCounts values) =>
+        $"{Count(values.Content, "content item")}, {Count(values.Versions, "version")}{(values.ProviderUse ? $"; used by the content provider {string.Join(", ", values.Providers!)}" : "")}";
 
     private static string Count(int n, string noun) => $"{n} {noun}{(n == 1 ? "" : "s")}";
 }

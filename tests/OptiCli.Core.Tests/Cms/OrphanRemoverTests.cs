@@ -57,6 +57,37 @@ public class OrphanRemoverTests
     {
         var text = OrphanRemoval.Describe(new TypeUsage(1, 2, 0, 3, ["ArticlePage.Teaser"]));
 
-        Assert.Equal("1 content item; 2 content items in the recycle bin; 3 versions whose page-type property names it; the block property ArticlePage.Teaser", text);
+        Assert.Equal("1 content item; 2 content items in the recycle bin; 3 page-type property values naming it; the block property ArticlePage.Teaser", text);
+    }
+
+    [Fact]
+    public void Text_output_shows_every_field_of_what_was_removed_in_full()
+    {
+        var description = new string('d', 400);
+        var property = new RemovedPropertyDefinition(179, "OldIntro", "LongString", "EPiServer.SpecializedProperties.PropertyXhtmlString", null, true, false, true, true, "Old intro", "Help", "Content", 30);
+        var output = new OrphanRemover.Output(
+            [new RemovedContentType(31, Guid.Parse("3b0c4a5e-0d1f-4e5a-9c7b-6a1d2e3f4a12"), "OldPage", "Page", "Old page", description, "Example.OldPage, Example", [property with { Id = 180, Name = "Teaser" }]) { AvailableUnder = ["StartPage"] }],
+            [new RemovedProperty("ArticlePage", property, new StoredValueCounts(2, 5))],
+            null, Removed: true, DryRun: null)
+        { RecordFile = "/state/opticli/removals.jsonl" };
+
+        var text = OrphanRemover.Text(output);
+
+        Assert.Contains(description, text, StringComparison.Ordinal);
+        foreach (var expected in new[] { "id: 179", "typeName: EPiServer.SpecializedProperties.PropertyXhtmlString", "helpText: Help", "fieldOrder: 30", "name: Teaser", "id: 180",
+            "availableUnder: StartPage", "content: 2", "versions: 5", "recordFile: /state/opticli/removals.jsonl", "Removed: content types (1):" })
+        {
+            Assert.Contains(expected, text, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void A_removal_that_stopped_halfway_carries_its_records_into_the_errors_details()
+    {
+        var removed = new OrphanRemovalResult([], [new RemovedProperty("ArticlePage", new RemovedPropertyDefinition(1, "OldIntro", "String", null, null, false, false, false, true, null, null, null, 0), new StoredValueCounts(1, 1))], [], false, true);
+
+        var error = OptiCli.Core.Serve.AgentErrors.ToException(new AgentError(AgentErrorCodes.Conflict, "stopped") { Removal = removed });
+
+        Assert.Same(removed, Assert.IsType<OptiCli.Core.Serve.AgentErrorDetails>(error.Details).Removed);
     }
 }

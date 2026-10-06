@@ -128,6 +128,6 @@ internal static class TypesRemoveCommand
         OrphanRemover.RequireLocal(!context.UseConnection().IsLocal);
         var agent = await context.ConnectAgentAsync(cancellationToken);
         var (output, warnings) = await OrphanRemover.RunAsync(agent, request, cancellationToken);
-        return new CommandResult(output, Warnings: warnings.Count > 0 ? warnings : null, Source: WriteExecutor.AgentSource);
+        return new CommandResult(output, Text: OrphanRemover.Text(output), Warnings: warnings.Count > 0 ? warnings : null, Source: WriteExecutor.AgentSource);
     }
 }
