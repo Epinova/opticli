@@ -190,5 +190,6 @@ public sealed record RestoreResult
 /// <param name="Parents">Content id to the parent the CMS stored for it (a ref, <c>123</c>); items without one are left out.</param>
 public sealed record RestoreParentsResult(IReadOnlyDictionary<string, string> Parents)
 {
-    public const int MaxIds = 1000;
+    /// <summary>Ids per request: they go in the query string, which Kestrel limits to 8 KB with the rest of the request line.</summary>
+    public const int MaxIds = 500;
 }

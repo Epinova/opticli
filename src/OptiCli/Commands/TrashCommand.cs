@@ -58,7 +58,7 @@ internal static class TrashCommand
             }
             if (page.Items.Where(i => i.OriginalParent is { Deleted: true } or { Missing: true }).Select(i => i.Ref).ToList() is { Count: > 0 } orphaned)
             {
-                warnings.Add($"The parent {string.Join(", ", orphaned)} had is in the recycle bin too, or gone: restore that parent first, or use --to.");
+                warnings.Add($"The original parent of {string.Join(", ", orphaned)} is in the recycle bin too, or gone: restore that parent first, or use --to.");
             }
             return new CommandResult(page.Items, page.Next, Warnings: warnings.Count > 0 ? warnings : null);
         });
