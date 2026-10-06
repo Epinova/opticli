@@ -1,6 +1,7 @@
 using System.Net;
 using OptiCli.Core;
 using OptiCli.Core.Cms;
+using OptiCli.Core.Data;
 using OptiCli.Core.Errors;
 using OptiCli.Core.Serve;
 using OptiCli.Core.SourceScan;
@@ -189,6 +190,48 @@ public sealed class OrphansTests
         Assert.Equal(OrphanedTypes, await OrphanedNamesAsync(site, cancellationToken));
     }
 
+    [SiteFact]
+    public async Task A_type_that_page_type_values_name_is_refused_with_the_versions_holding_them()
+    {
+        var cancellationToken = CancellationToken.None;
+        await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
+        if (!await ReseedAsync(site, cancellationToken))
+        {
+            return;
+        }
+        var types = await ContentTypeReader.ListAsync(site.Session.Db, cancellationToken);
+        var empty = types.Single(t => t.Name == "EdgeRemovedEmptyPage");
+        // Alloy's page list block filters by page type: a value naming the type, in a draft discarded afterwards.
+        var blocks = await site.Session.Db.QueryAsync("""
+            SELECT TOP 1 c.pkID FROM tblContent c INNER JOIN tblContentType ct ON ct.pkID = c.fkContentTypeID
+            WHERE ct.Name = 'PageListBlock' AND c.Deleted = 0 ORDER BY c.pkID
+            """, r => r.GetInt32("pkID"), cancellationToken);
+        Assert.NotEmpty(blocks);
+        var draft = await site.Agent.SendAsync<WriteResult>(HttpMethod.Post, AgentRoutes.Draft(blocks[0].ToString(System.Globalization.CultureInfo.InvariantCulture)), new DraftRequest
+        {
+            Properties = new Dictionary<string, System.Text.Json.JsonElement> { ["PageTypeFilter"] = System.Text.Json.JsonSerializer.SerializeToElement(empty.Id) },
+        }, cancellationToken);
+        var version = draft.Content!;
+        try
+        {
+            var error = await Assert.ThrowsAsync<ConflictException>(() =>
+                RemoveAsync(site, new OrphanRemovalRequest { Types = ["EdgeRemovedEmptyPage", "EdgeRemovedBlock"], DryRun = true }, cancellationToken));
+
+            var reason = Assert.IsType<AgentErrorDetails>(error.Details).Validation!.Single(v => v.Property == "EdgeRemovedEmptyPage").Message;
+            Assert.Contains($"1 page-type property value naming it (in {version.Ref})", reason);
+            Assert.Equal(OrphansPlannerHint, error.Hint);
+        }
+        finally
+        {
+            await site.Agent.SendAsync<WriteResult>(HttpMethod.Post, AgentRoutes.Discard(version.Ref), new DiscardRequest(), cancellationToken);
+        }
+        await RemoveAsync(site, new OrphanRemovalRequest { Types = ["EdgeRemovedEmptyPage", "EdgeRemovedBlock"], DryRun = true }, cancellationToken);
+    }
+
+    /// <summary>The agent's hint for page-type values (OrphanPlanner.PageTypeHint), as the CLI passes it on.</summary>
+    private const string OrphansPlannerHint =
+        "Page-type property values name it (a page list's type filter, say): the CMS would clear them in every version when it removes the type. `opticli get <ref>` shows the versions listed; change or clear those values first (or discard those drafts), then run it again.";
+
     private static async Task<(OrphanRemover.Output Output, IReadOnlyList<string> Warnings)> RemoveAsync(SiteUnderTest site, OrphanRemovalRequest request, CancellationToken cancellationToken) =>
         await OrphanRemover.RunAsync(site.Agent, request, cancellationToken);
 
@@ -208,12 +251,18 @@ public sealed class OrphansTests
     }
 
     /// <summary>Makes whatever of OrphansFixture.cs is missing, through the site.</summary>
-    /// <returns>False on a site without the fixture (not the edge-case site, or one built before it had this endpoint).</returns>
+    /// <returns>False on a site that isn't the edge-case site (no EdgePage); on the edge-case site the fixture must answer.</returns>
     private static async Task<bool> ReseedAsync(SiteUnderTest site, CancellationToken cancellationToken)
     {
+        if (!(await ContentTypeReader.ListAsync(site.Session.Db, cancellationToken)).Any(t => t.Name == "EdgePage"))
+        {
+            return false;
+        }
         var state = StateStore.For(OptiCliEnvironment.FromProcess(), site.ProjectDirectory).Read() ?? throw new InvalidOperationException("opticli serve isn't running.");
         using var http = new HttpClient { BaseAddress = state.BaseUrl };
         using var response = await http.PostAsync("opticli-fixture/orphans", null, cancellationToken);
-        return response.StatusCode == HttpStatusCode.NoContent;
+        Assert.True(response.StatusCode == HttpStatusCode.NoContent,
+            $"POST /opticli-fixture/orphans answered {(int)response.StatusCode}: the edge-case site's OrphansFixture.cs is missing or out of date (run setup.sh again).");
+        return true;
     }
 }
