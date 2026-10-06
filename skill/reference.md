@@ -394,14 +394,21 @@ Through the site (`serve`; without it `unreachable`, exit 4), with the CMS's `IC
 - `types remove-property <type> <prop>...`: only properties with `existsOnModel: false` on a type defined in code (a
   type made in admin mode is refused, and a property the site's model has). Stored values (any version, language,
   inside a block property, category selections) need `--allow-destructive` (`refused` otherwise, with the counts).
+  `values.providers` names content providers (other than the CMS's database) that use it, or `unknown` when the CMS's
+  usage check says it is used where the counts see nothing: `conflict`, no override.
+- Records: just before each removal the site appends the record (`time`, `project`, `database`, `type` or `property`)
+  to `removals.jsonl` in opticli's state directory and echoes it to its output; a failed removal adds a line with
+  `failed`. A run that stops halfway (the CMS refuses, values changed since the check, the CLI stopped waiting) fails
+  with `error.details.removed` holding the records of what it removed. Text output shows every field in full.
 - `types prune [--properties] [--allow-destructive]`: every orphaned type that can go; `--properties` adds every orphaned
   property (without it they are listed under `kept`, since one added in admin mode looks the same).
   `--allow-destructive` without `--properties` is `usage`.
 - Output: `types[]` (`id`, `guid`, `name`, `base`, `displayName`, `description`, `modelType`, `properties[]`,
   `allowedChildren`, `availableUnder`), `properties[]` (`type`, `property`: `name`, `dataType`, `typeName`, `blockType`,
   `cultureSpecific`, `required`, `searchable`, `displayEditUi`, `editCaption`, `helpText`, `tab`, `fieldOrder`; `values`:
-  `content`, `versions`), `kept[]` for prune (`type`, `property`, `code`, `reason`, `values` or `usage`: `content`,
-  `inRecycleBin`, `inlineBlocks`, `pageTypeValues`, `usedBy`, `otherUses`), `removed`, `dryRun`. `meta.warnings`: no
+  `content`, `versions`, `providers`), `kept[]` for prune (`type`, `property`, `code`, `reason`, `values` or `usage`:
+  `content`, `inRecycleBin`, `inlineBlocks`, `pageTypeValues`, `pageTypeVersions` (at most 20 refs), `usedBy`,
+  `otherUses`), `removed`, `dryRun`, `recordFile`. `meta.warnings`: no
   undo; admin-mode properties look the same; which values were (would be) deleted; another process running the site
   keeps its cached content types until it restarts.
 

@@ -21,11 +21,22 @@ again to update the skill.
   `--dry-run`. The output records what was removed (names, GUIDs, classes, properties, value counts) to make it again
   by hand: content types aren't versioned. Without `serve`, `unreachable` (exit 4); refused against a shared database
   (exit 3); `apply` has no such steps and the MCP module no such tools.
+  Before each removal the site appends the full record to `removals.jsonl` in opticli's state directory (never rotated,
+  `recordFile` in the output) and to its own output, so the record survives a lost answer, a timeout or Ctrl+C; a run
+  that stops halfway puts the records of what it removed in `error.details.removed`. A property a content provider uses
+  (where opticli can't count or see the values) is a `conflict` with no override, and a type that page-type values name
+  lists the versions holding them. Each item is checked again just before it goes, and one removal runs at a time per
+  site. On a terminal every field of what was removed is shown in full.
 
 ### Changed
 
 - **`type`**'s `values` for a property that isn't in the code count content items and versions holding a value (they
   counted rows), and include values stored inside a block property and category selections: what removing it deletes.
+
+### Fixed
+
+- `restore` of a published block, media file or folder no longer says it is live again "at its URL": only pages have one;
+  the rest are published again.
 
 ### Development
 

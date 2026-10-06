@@ -223,7 +223,9 @@ order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a cod
   load, a property not in its type's code. Content keeps a type (`conflict`, also content in the recycle bin): opticli
   never deletes content, so tell the user what uses it (`find --type`, `trash --type`) instead of working around it.
   A property with stored values needs `--allow-destructive`, which deletes them in every version and language: show the
-  user `values` and pass it only after they agreed for those properties. A property added in admin mode looks the same
+  user `values` and pass it only after they agreed for those properties. A property a content provider uses
+  (`values.providers`) or a type that page-type values name (`pageTypeVersions`) is a `conflict` with no override: tell the
+  user. Every removal is also recorded in `recordFile` (`removals.jsonl` in opticli's state directory): name it in your report. A property added in admin mode looks the same
   as one removed from the code: name the properties to the user before removing them, and use `types prune --properties`
   only when they want every one of them gone.
 - Always `--dry-run` a multi-step `apply` plan first, and a single write when you are unsure of its effect.
