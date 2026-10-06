@@ -37,9 +37,19 @@ namespace OptiCli.Agent.Hosting;
 /// whose properties changed are turned off. What the local code would have changed is reported as drift instead
 /// (<see cref="DriftCheck"/>).
 /// </para>
+/// <para>
+/// The scheduler is off against a local database too, unless the CLI asks to leave it (<c>serve --scheduler</c>,
+/// <see cref="AgentSettings.Scheduler"/>): a restored production database has jobs that are overdue, and the site would
+/// start every one of them at once (imports, emails, emptying the recycle bin). The site still registers its jobs, and
+/// <c>opticli jobs run</c> still starts one. A site that turns the scheduler on in its own <c>PostConfigure</c> wins,
+/// which <c>ping</c> reports.
+/// </para>
 /// </remarks>
 public sealed class AgentHostingStartup : IHostingStartup
 {
+    /// <summary>What the site's output says when the agent turned its scheduler off (every run but <c>serve --scheduler</c>).</summary>
+    internal const string SchedulerOffLine = "[opticli] Scheduler is off for this run (jobs still run with \"opticli jobs run\"; --scheduler turns it on).";
+
     public void Configure(IWebHostBuilder builder)
     {
         HostingStartupCheck.MarkConfigured();
@@ -78,6 +88,11 @@ public sealed class AgentHostingStartup : IHostingStartup
                 services.PostConfigure<ContentModelOptions>(options => options.EnableModelSyncCommit = false);
                 services.PostConfigure<DynamicDataStoreOptions>(TurnOffStoreChanges);
                 Console.Error.WriteLine("[opticli] Shared database: scheduler, automatic schema updates, content type sync and store remapping are off for this run.");
+            }
+            else if (settings.SchedulerOff)
+            {
+                services.PostConfigure<SchedulerOptions>(options => options.Enabled = false);
+                Console.Error.WriteLine(SchedulerOffLine);
             }
             services.AddSingleton<IValidateOptions<DataAccessOptions>, DataAccessOptionsGuard>();
             services.AddSingleton<DriftCheck>();

@@ -21,6 +21,10 @@ public static class SiteEnvironment
     /// <param name="httpsPort">Also listen on <c>https://localhost:&lt;port&gt;</c> (with the development certificate), for browsing a site that redirects to HTTPS.</param>
     /// <param name="kestrelEndpoints">The site configures <c>Kestrel:Endpoints</c>, which replace the URLs: add opticli's addresses as endpoints too.</param>
     /// <param name="driftFile">What <c>serve</c> compared before the start (<see cref="StartupDrift"/>), for the agent's drift report.</param>
+    /// <param name="scheduler">
+    /// Leave the site's scheduler as the site sets it (<c>serve --scheduler</c>, <c>env</c>); otherwise the agent turns it
+    /// off. Never against a remote database, where the agent keeps it off anyway.
+    /// </param>
     public static IReadOnlyList<KeyValuePair<string, string>> Build(
         string agentDll,
         string token,
@@ -32,7 +36,8 @@ public static class SiteEnvironment
         VerifiedConnectionString? approvedRemote = null,
         int? httpsPort = null,
         bool kestrelEndpoints = false,
-        string? driftFile = null)
+        string? driftFile = null,
+        bool scheduler = false)
     {
         var variables = new List<KeyValuePair<string, string>>
         {
@@ -58,6 +63,10 @@ public static class SiteEnvironment
         }
         variables.Add(new(StartupHooksVariable, StartupHooks(existingStartupHooks, agentDll)));
         variables.Add(new(AgentProtocol.TokenVariable, token));
+        if (scheduler && approvedRemote is not { IsLocal: false })
+        {
+            variables.Add(new(AgentProtocol.SchedulerVariable, AgentProtocol.SchedulerOn));
+        }
         if (approvedRemote is { IsLocal: false })
         {
             variables.Add(new(AgentProtocol.RemoteDatabaseVariable, AgentProtocol.FormatRemote(approvedRemote.Server, approvedRemote.Database)));
@@ -83,7 +92,7 @@ public static class SiteEnvironment
     /// <summary>The variables opticli gives the site that <paramref name="variables"/> leaves out, which must not be inherited from an earlier <c>opticli env</c>.</summary>
     public static IReadOnlyList<string> NotSet(IEnumerable<KeyValuePair<string, string>> variables)
     {
-        string[] owned = [AgentProtocol.TokenVariable, AgentProtocol.DatabaseVariable, AgentProtocol.ConnectionNameVariable, AgentProtocol.RemoteDatabaseVariable, AgentProtocol.DriftFileVariable];
+        string[] owned = [AgentProtocol.TokenVariable, AgentProtocol.DatabaseVariable, AgentProtocol.ConnectionNameVariable, AgentProtocol.RemoteDatabaseVariable, AgentProtocol.DriftFileVariable, AgentProtocol.SchedulerVariable];
         var set = variables.Select(v => v.Key).ToHashSet(StringComparer.Ordinal);
         return owned.Where(name => !set.Contains(name)).ToList();
     }

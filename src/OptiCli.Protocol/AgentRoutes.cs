@@ -61,6 +61,30 @@ public static class AgentRoutes
     public static readonly string SiteHosts = $"{Prefix}/sites/hosts";
 
     /// <summary>
+    /// <c>POST /v1/jobs/run</c>. Body: <see cref="JobRunRequest"/>. Response: <see cref="JobRunResult"/>. Starts the job
+    /// through <c>IScheduledJobExecutor</c> with a user trigger, as the admin UI's "Start manually" does, also while the
+    /// scheduler is off, and returns once it has started. The job runs as <see cref="AgentProtocol.PrincipalName"/>.
+    /// Errors: <c>not_found</c> (job), <c>conflict</c> (it is running already), <c>refused</c> (a
+    /// <see cref="DestructiveJobs"/> job without <see cref="JobRunRequest.AllowDestructive"/>; anything in shared mode).
+    /// Developer-only: the MCP module has no such tool.
+    /// </summary>
+    public static readonly string JobRun = $"{Prefix}/jobs/run";
+
+    /// <summary>
+    /// <c>POST /v1/jobs/stop</c>. Body: <see cref="JobStopRequest"/>. Response: <see cref="JobStopResult"/>. Asks a job
+    /// this site runs to stop (<c>IScheduledJobExecutor.Cancel</c>, which calls the job's <c>Stop()</c>).
+    /// Errors: <c>not_found</c>, <c>conflict</c> (not running here), <c>refused</c> (the job can't be stopped; shared mode).
+    /// </summary>
+    public static readonly string JobStop = $"{Prefix}/jobs/stop";
+
+    /// <summary>
+    /// <c>POST /v1/jobs/set</c>. Body: <see cref="JobSetRequest"/>. Response: <see cref="JobSetResult"/>. Saves through
+    /// <c>IScheduledJobRepository.Save</c>, as the admin UI does. Errors: <c>not_found</c>, <c>usage</c> (an interval or
+    /// time it can't take), <c>refused</c> (shared mode).
+    /// </summary>
+    public static readonly string JobSet = $"{Prefix}/jobs/set";
+
+    /// <summary>
     /// <c>POST /v1/content</c>. Body: <see cref="CreateRequest"/>. Response: <see cref="WriteResult"/>
     /// (201 when saved). Errors: <c>not_found</c> (parent, type), <c>usage</c> (unknown property, bad value),
     /// <c>validation</c> 422 (required property, type not allowed under the parent, ...), <c>conflict</c> 409 (the GUID

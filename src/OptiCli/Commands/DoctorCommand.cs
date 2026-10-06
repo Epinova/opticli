@@ -27,12 +27,18 @@ internal static class DoctorCommand
         ConnectionSection Connection,
         DatabaseSection Database,
         AgentStatus? Agent,
+        SchedulerSection? Scheduler,
         DriftReport? Drift,
         IReadOnlyList<SavedPrimary>? SitesMapping,
         IReadOnlyList<InstalledSkill> Skills,
         IReadOnlyList<string> Warnings);
 
     private sealed record ToolSection(string Version, string Runtime);
+
+    /// <param name="Serve">What <c>opticli serve</c> does with the site's scheduler for this project: <c>off</c> unless --scheduler or <c>"scheduler": true</c> in the user config.</param>
+    /// <param name="Running">The running site's scheduler, as it reports it; null when no site answers.</param>
+    /// <param name="OverdueJobs">Enabled jobs whose next run has passed, which a site with its scheduler on starts at once.</param>
+    private sealed record SchedulerSection(string Serve, string? Running, int? OverdueJobs);
 
     /// <param name="Imports">The files besides the project file read for its properties (Directory.Build.props and imports).</param>
     private sealed record ProjectSection(
@@ -80,8 +86,9 @@ internal static class DoctorCommand
             Check the setup: project, connection string, database, write agent and installed skill, and where each came from.
             Lists every connection string candidate with its id, source, server, database and whether it is local (passwords
             are never shown), which one is the development database and why, the CMS schema version, the agent's state
-            (running, stopped, stale, unresponsive), against a shared database drift (what differs from this build), and the
-            sites whose primary host differs from the mapping saved with `sites primary --save`. Always exits 0:
+            (running, stopped, stale, unresponsive), the scheduler (what `serve` does with it, the running site's, and how
+            many jobs are overdue), against a shared database drift (what differs from this build), and the sites whose
+            primary host differs from the mapping saved with `sites primary --save`. Always exits 0:
             data.healthy says whether reads work, data.warnings lists problems. Run it first when another command fails.
             Example: opticli doctor
             """);
@@ -138,6 +145,10 @@ internal static class DoctorCommand
                 warnings.Add($"Agent: {agent.Message}");
             }
 
+            var scheduler = project is null || !databaseSection.Reachable
+                ? null
+                : await SchedulerAsync(context, project, resolution.Chosen, agent, warnings, cancellationToken);
+
             var drift = project is null || resolution.Chosen is null || !databaseSection.Reachable
                 ? null
                 : await DriftAsync(context, project, resolution.Chosen, warnings, cancellationToken);
@@ -160,6 +171,7 @@ internal static class DoctorCommand
                 connectionSection,
                 databaseSection,
                 agent,
+                scheduler,
                 drift,
                 sitesMapping,
                 skills,
@@ -219,6 +231,36 @@ internal static class DoctorCommand
         catch (OptiCliException ex)
         {
             warnings.Add($"Drift: not compared ({ex.Message})");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Whether the site's scheduler runs: what <c>serve</c> does, what the running site reports, and how many jobs are
+    /// overdue. With the scheduler on, those start at once: on a restored production database, imports, emails, and the
+    /// emptying of the recycle bin.
+    /// </summary>
+    private static async Task<SchedulerSection?> SchedulerAsync(CliContext context, ProjectInfo project, ConnectionCandidate? chosen, AgentStatus? agent, List<string> warnings, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var configured = UserConfig.ForProject(context.Environment.UserConfigFile, project.Directory)?.Scheduler == true && chosen?.IsLocal != false;
+            var running = agent?.State == AgentState.Running ? agent.Scheduler : null;
+            await using var db = await context.OpenDatabaseAsync(cancellationToken);
+            var overdue = await ServeCommand.OverdueJobsAsync(db, cancellationToken);
+            if (overdue.Count > 0 && running == "on")
+            {
+                warnings.Add(ServeCommand.OverdueWarning(overdue, "start in the running site, whose scheduler is on"));
+            }
+            else if (overdue.Count > 0 && running is null && configured)
+            {
+                warnings.Add(ServeCommand.OverdueWarning(overdue, "run when `opticli serve` starts the site (\"scheduler\": true in the user config)"));
+            }
+            return new SchedulerSection(configured ? "on" : "off", running, overdue.Count);
+        }
+        catch (OptiCliException ex)
+        {
+            warnings.Add($"Scheduler: jobs not read ({ex.Message})");
             return null;
         }
     }

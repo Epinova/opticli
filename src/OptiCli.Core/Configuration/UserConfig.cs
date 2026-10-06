@@ -10,11 +10,12 @@ namespace OptiCli.Core.Configuration;
 /// <param name="Output">Site build output DLL, relative to the project directory (used by <c>serve</c>).</param>
 /// <param name="Database">The development database the user chose (<c>opticli db use</c>).</param>
 /// <param name="Https">Run <c>serve</c> with <c>--https</c> by default.</param>
+/// <param name="Scheduler">Run <c>serve</c> with <c>--scheduler</c> by default: the site's scheduler stays as the site sets it.</param>
 /// <param name="PrimaryHosts">
 /// The saved <c>sites primary</c> mapping (<c>sites primary --save</c>): <c>Site A</c> or <c>Site A@nb</c> to the host.
 /// What <c>sites primary --from-config</c> applies after a restore.
 /// </param>
-public sealed record ProjectSettings(string? Connection, string? Output, int? Port, SavedDatabase? Database = null, bool Https = false, IReadOnlyDictionary<string, SavedPrimaryHost>? PrimaryHosts = null);
+public sealed record ProjectSettings(string? Connection, string? Output, int? Port, SavedDatabase? Database = null, bool Https = false, IReadOnlyDictionary<string, SavedPrimaryHost>? PrimaryHosts = null, bool Scheduler = false);
 
 /// <summary>
 /// One entry of the saved <c>sites primary</c> mapping. Saved as the plain host string (<c>"localhost:5001"</c>) unless
@@ -103,7 +104,8 @@ public static class UserConfig
                     entry.Value.TryGetProperty("port", out var port) && port.TryGetInt32(out var number) ? number : null,
                     entry.Value.TryGetProperty(DatabaseKey, out var database) ? ReadDatabase(database) : null,
                     entry.Value.TryGetProperty("https", out var https) && https.ValueKind == JsonValueKind.True,
-                    ReadPrimaryHosts(entry.Value));
+                    ReadPrimaryHosts(entry.Value),
+                    entry.Value.TryGetProperty("scheduler", out var scheduler) && scheduler.ValueKind == JsonValueKind.True);
             }
         }
         return null;

@@ -101,9 +101,34 @@ public class AgentHostingStartupTests
     }
 
     [Fact]
+    public void The_scheduler_is_off_for_every_run_unless_serve_asks_to_leave_it()
+    {
+        string? stderr = null;
+        using var off = Build(Settings(pinned: Local), log: s => stderr = s, after: builder => builder.ConfigureServices(services =>
+            services.Configure<SchedulerOptions>(options => options.Enabled = true)));
+        using var on = Build(Settings(pinned: Local, scheduler: true), after: builder => builder.ConfigureServices(services =>
+            services.Configure<SchedulerOptions>(options => options.Enabled = true)));
+        using var siteOff = Build(Settings(pinned: Local, scheduler: true), after: builder => builder.ConfigureServices(services =>
+            services.Configure<SchedulerOptions>(options => options.Enabled = false)));
+
+        Assert.False(off.Services.GetRequiredService<IOptions<SchedulerOptions>>().Value.Enabled);
+        Assert.Contains(AgentHostingStartup.SchedulerOffLine, stderr, StringComparison.Ordinal);
+        Assert.True(on.Services.GetRequiredService<IOptions<SchedulerOptions>>().Value.Enabled);
+        Assert.False(siteOff.Services.GetRequiredService<IOptions<SchedulerOptions>>().Value.Enabled);
+    }
+
+    [Fact]
+    public void A_shared_database_keeps_the_scheduler_off_even_when_serve_asks_to_leave_it()
+    {
+        using var host = Build(Settings(pinned: Remote, approvedRemote: RemoteApproval, scheduler: true));
+
+        Assert.False(host.Services.GetRequiredService<IOptions<SchedulerOptions>>().Value.Enabled);
+    }
+
+    [Fact]
     public void A_local_database_keeps_the_sites_own_settings()
     {
-        using var host = Build(Settings(pinned: Local), after: builder => builder.ConfigureServices(services =>
+        using var host = Build(Settings(pinned: Local, scheduler: true), after: builder => builder.ConfigureServices(services =>
             services.Configure<DataAccessOptions>(options => options.UpdateDatabaseSchema = false)));
 
         var data = host.Services.GetRequiredService<IOptions<DataAccessOptions>>().Value;

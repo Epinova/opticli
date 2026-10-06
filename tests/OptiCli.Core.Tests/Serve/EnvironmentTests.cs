@@ -83,6 +83,23 @@ public class EnvironmentTests
     }
 
     [Fact]
+    public void The_scheduler_stays_as_the_site_sets_it_only_when_asked_and_never_against_a_shared_database()
+    {
+        var local = ConnectionSafety.Verify(Connection);
+        var remote = ConnectionSafety.Approve("Server=tcp:dev.example.net,1433;Database=ExampleDb;User Id=app;Password=secret");
+
+        var off = Build(local);
+        var on = SiteEnvironment.Build("/agent.dll", "token", 5199, "EPiServerDB", local, approvedRemote: local, scheduler: true).ToDictionary(v => v.Key, v => v.Value);
+        var shared = SiteEnvironment.Build("/agent.dll", "token", 5199, "EPiServerDB", remote, approvedRemote: remote, scheduler: true).ToDictionary(v => v.Key, v => v.Value);
+
+        Assert.False(off.ContainsKey(AgentProtocol.SchedulerVariable));
+        Assert.Equal(AgentProtocol.SchedulerOn, on[AgentProtocol.SchedulerVariable]);
+        Assert.False(shared.ContainsKey(AgentProtocol.SchedulerVariable));
+        // An `opticli env` exported in the shell can't turn it on for a `serve` run.
+        Assert.Contains(AgentProtocol.SchedulerVariable, SiteEnvironment.NotSet(off));
+    }
+
+    [Fact]
     public void Tokens_are_random_and_url_safe()
     {
         var a = SiteEnvironment.NewToken();

@@ -49,6 +49,15 @@ public static class AgentProtocol
     public const string DriftFileVariable = "OPTICLI_DRIFT_FILE";
 
     /// <summary>
+    /// Environment variable that leaves the site's scheduler as the site sets it, when it is <see cref="SchedulerOn"/>.
+    /// Unset (or anything else), the agent turns the scheduler off: a restored production database has overdue jobs
+    /// that would otherwise run as the site starts. Against a shared database it is always off.
+    /// </summary>
+    public const string SchedulerVariable = "OPTICLI_SCHEDULER";
+
+    public const string SchedulerOn = "on";
+
+    /// <summary>
     /// Request header confirming a write although the build and the shared database differ: the
     /// <see cref="DriftReport.Fingerprint"/> the user agreed to. Without it (or with another one) such writes fail with
     /// <see cref="AgentErrorCodes.Drift"/>.

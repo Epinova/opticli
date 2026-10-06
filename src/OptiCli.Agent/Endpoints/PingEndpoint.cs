@@ -1,6 +1,7 @@
 using System.Reflection;
 using EPiServer;
 using EPiServer.Data;
+using EPiServer.Scheduler;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Options;
 using OptiCli.Agent.Hosting;
@@ -34,6 +35,7 @@ internal static class PingEndpoint
                 verdict.IsLocal,
                 settings.PinnedConnection is not null && string.Equals(used?.ConnectionString, settings.PinnedConnection, StringComparison.Ordinal)),
             ProcessId = Environment.ProcessId,
+            Scheduler = request.Service<IOptions<SchedulerOptions>>().Value.Enabled,
         };
     }
 

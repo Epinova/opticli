@@ -26,6 +26,12 @@ public sealed record PingResponse
     /// to stop. Null from agents older than this field.
     /// </summary>
     public int? ProcessId { get; init; }
+
+    /// <summary>
+    /// Whether the CMS's scheduler runs jobs on their schedule in this site (<c>SchedulerOptions.Enabled</c>, as the site
+    /// resolved it). Null from agents older than this field.
+    /// </summary>
+    public bool? Scheduler { get; init; }
 }
 
 /// <summary>Response of <see cref="AgentRoutes.Shutdown"/>.</summary>

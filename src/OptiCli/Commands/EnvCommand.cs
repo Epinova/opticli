@@ -35,6 +35,7 @@ internal static class EnvCommand
             --include-connection. Set them only for the site (a subshell or a launch profile): every .NET process started with
             DOTNET_STARTUP_HOOKS loads the agent's hook, and another ASP.NET Core app started that way gets the agent too.
             launchSettings.json is often committed: keep the token (and any connection string) out of git.
+            Unlike `serve`, it leaves the site's scheduler as the site sets it (OPTICLI_SCHEDULER=on): that run is yours.
             Example: (eval "$(opticli env)" && dotnet run --no-launch-profile)    or: opticli env --format launchSettings
             """);
         command.Options.Add(format);
@@ -73,7 +74,7 @@ internal static class EnvCommand
             var pinned = parse.GetValue(includeConnection) ? connection : null;
             var siteEndpoints = KestrelEndpoints.Configured(project, context.Environment);
             var built = SiteEnvironment.Build(agentDll, token, selectedPort, context.ConnectionRequest.Name, pinned,
-                includeUrls: chosen != EnvFormat.LaunchSettings, approvedRemote: connection, kestrelEndpoints: siteEndpoints.Count > 0);
+                includeUrls: chosen != EnvFormat.LaunchSettings, approvedRemote: connection, kestrelEndpoints: siteEndpoints.Count > 0, scheduler: true);
             // Blank what this run leaves out but an earlier `opticli env` exported in this shell, as `serve` does for its
             // site: a stale OPTICLI_DB would still pin the site, a stale OPTICLI_REMOTE_DB still approve that database.
             var stale = SiteEnvironment.NotSet(built).Where(name => context.Environment.Variable(name) is not null).ToList();

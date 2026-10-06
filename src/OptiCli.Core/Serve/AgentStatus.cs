@@ -57,6 +57,12 @@ public sealed record AgentStatus(AgentState State, string Message)
     /// <summary>Against a shared database: how the site's code differs from it (<c>opticli drift</c> has the list).</summary>
     public DriftSummary? Drift { get; init; }
 
+    /// <summary>
+    /// <c>on</c> or <c>off</c>: whether the site's scheduler starts jobs on their schedule, as the running site reports it.
+    /// Null when no site answers (or its agent is older than the field).
+    /// </summary>
+    public string? Scheduler { get; init; }
+
     public string? Hint { get; init; }
 
     /// <summary>For <see cref="AgentState.Stale"/>: the state file itself is unreadable, so nothing is known about the site.</summary>
@@ -145,7 +151,7 @@ public static class AgentProbe
             return status with { State = AgentState.Incompatible, Message = ex.Message, Hint = ex.Hint, Failure = ex.Code };
         }
 
-        status = status with { Agent = AgentSummary.From(ping), Database = ping.Database };
+        status = status with { Agent = AgentSummary.From(ping), Database = ping.Database, Scheduler = SchedulerText(ping.Scheduler) };
         if (expected is not null
             && DatabaseMatch.Problem(ping.Database, expected, requirePinned: state.Mode != ServeMode.External) is { } problem)
         {
@@ -177,6 +183,8 @@ public static class AgentProbe
             _ => throw new UnreachableException(status.Message, status.Hint),
         };
     }
+
+    public static string? SchedulerText(bool? enabled) => enabled switch { true => "on", false => "off", null => null };
 
     public static AgentStatus Describe(ServeState state, StateStore store) => new(AgentState.Running, "")
     {

@@ -34,6 +34,10 @@ internal static class ServeCommand
         {
             Description = "Against a shared database: start even though this build has EF Core migrations the database lacks. Without it serve refuses (exit 3), since a site that migrates at startup would apply them for everyone.",
         };
+        var scheduler = new Option<bool>("--scheduler")
+        {
+            Description = "Leave the site's scheduler as the site sets it, so jobs run on their schedule (overdue ones at once). Default: off for every run (\"scheduler\": true in the user config turns it on; --scheduler false off again). Not against a shared database.",
+        };
         var https = new Option<bool>("--https")
         {
             Description = "Also listen on https://localhost:<next free port> with the ASP.NET Core development certificate, to browse a site that redirects to HTTPS. Default: \"https\" in the user config; --https false turns it off.",
@@ -49,9 +53,11 @@ internal static class ServeCommand
             Against a shared (remote) development database it turns off what would change that database at startup, refuses
             to start a build with EF Core migrations the database lacks, and reports what differs between this build and the
             database (drift; `opticli drift`): writes then stop until the user confirms. Stop it when done.
+            The site's scheduler is off for the run (a restored database's overdue jobs would otherwise all start: imports,
+            emails, emptying the recycle bin); --scheduler leaves it on.
             Example: opticli serve    then: opticli serve --status | opticli serve --logs --tail 40 | opticli serve --stop
             """);
-        foreach (var option in new Option[] { build, port, foreground, output, timeout, https, allowPendingMigrations, status, logs, tail, stop })
+        foreach (var option in new Option[] { build, port, foreground, output, timeout, https, scheduler, allowPendingMigrations, status, logs, tail, stop })
         {
             command.Options.Add(option);
         }
@@ -60,7 +66,7 @@ internal static class ServeCommand
         {
             var parse = context.Parse;
             var modes = new[] { parse.GetValue(status), parse.GetValue(logs), parse.GetValue(stop) }.Count(m => m);
-            var starting = parse.GetValue(build) || parse.GetValue(port) is not null || parse.GetValue(foreground) || parse.GetValue(output) is not null || parse.GetResult(https) is { Implicit: false } || parse.GetValue(allowPendingMigrations);
+            var starting = parse.GetValue(build) || parse.GetValue(port) is not null || parse.GetValue(foreground) || parse.GetValue(output) is not null || parse.GetResult(https) is { Implicit: false } || parse.GetResult(scheduler) is { Implicit: false } || parse.GetValue(allowPendingMigrations);
             if (modes > 1 || (modes == 1 && starting))
             {
                 throw new UsageException("--status, --logs and --stop are separate actions; don't combine them with each other or with start options.");
@@ -89,16 +95,24 @@ internal static class ServeCommand
             {
                 throw new UsageException("--timeout must be a positive number of seconds.");
             }
-            return await StartAsync(context, parse.GetValue(build), parse.GetValue(port), parse.GetValue(foreground), parse.GetValue(output), parse.GetResult(https) is { Implicit: false } ? parse.GetValue(https) : null, parse.GetValue(allowPendingMigrations), TimeSpan.FromSeconds(seconds), cancellationToken);
+            return await StartAsync(context, parse.GetValue(build), parse.GetValue(port), parse.GetValue(foreground), parse.GetValue(output), parse.GetResult(https) is { Implicit: false } ? parse.GetValue(https) : null,
+                parse.GetResult(scheduler) is { Implicit: false } ? parse.GetValue(scheduler) : null, parse.GetValue(allowPendingMigrations), TimeSpan.FromSeconds(seconds), cancellationToken);
         });
         return command;
     }
 
-    private static async Task<CommandResult> StartAsync(CliContext context, bool build, int? port, bool foreground, string? output, bool? https, bool allowPendingMigrations, TimeSpan timeout, CancellationToken cancellationToken)
+    /// <param name="scheduler">--scheduler as given; null to take the user config's.</param>
+    private static async Task<CommandResult> StartAsync(CliContext context, bool build, int? port, bool foreground, string? output, bool? https, bool? scheduler, bool allowPendingMigrations, TimeSpan timeout, CancellationToken cancellationToken)
     {
         var project = context.Project;
         // The database check comes before anything is started or even looked for.
         var connection = RequireServable(context);
+        if (scheduler == true && !connection.IsLocal)
+        {
+            throw new UsageException(
+                "--scheduler doesn't apply against a shared database: its scheduler stays off, or the jobs would run beside the deployed site's.",
+                "Leave out --scheduler. Run a job in that environment's own admin UI.");
+        }
         var store = context.StateStore;
 
         // Held until the new state file is written, so a second `serve` started meanwhile sees this one's site.
@@ -128,6 +142,7 @@ internal static class ServeCommand
         }
 
         var settings = UserConfig.ForProject(context.Environment.UserConfigFile, project.Directory);
+        var schedulerOn = connection.IsLocal && (scheduler ?? settings?.Scheduler ?? false);
         if (build)
         {
             await SiteBuild.RunAsync(project, Console.Error, cancellationToken);
@@ -147,6 +162,18 @@ internal static class ServeCommand
             startup.ThrowIfBlocked(allowPendingMigrations);
             warnings.AddRange(startup.Warnings);
             driftFile = store.WriteStartupDrift(startup.Drift);
+        }
+        if (!connection.IsLocal && scheduler is null && settings?.Scheduler == true)
+        {
+            warnings.Add("\"scheduler\": true in the user config doesn't apply against a shared database: the scheduler stays off.");
+        }
+        if (schedulerOn)
+        {
+            await using var db = await context.OpenDatabaseAsync(cancellationToken);
+            if (await OverdueJobsAsync(db, cancellationToken) is { Count: > 0 } overdue)
+            {
+                warnings.Add(OverdueWarning(overdue, "start as soon as the site's scheduler runs (--scheduler)"));
+            }
         }
         if (OutputLocator.NewerSource(project, siteOutput.Dll) is { } newer)
         {
@@ -168,7 +195,8 @@ internal static class ServeCommand
             timeout,
             (https ?? settings?.Https == true) ? PortSelector.Select(null, null, p => p != httpPort && PortSelector.IsFree(p)) : null,
             siteEndpoints,
-            driftFile);
+            driftFile,
+            schedulerOn);
 
         if (!foreground)
         {
@@ -180,6 +208,10 @@ internal static class ServeCommand
             if (DriftWarning(store, started: true) is { } drift)
             {
                 warnings.Add(drift);
+            }
+            if (schedulerOn && started.Scheduler == "off")
+            {
+                warnings.Add("The site turns its scheduler off itself (SchedulerOptions in its code or configuration): --scheduler leaves the site's own setting.");
             }
             return new CommandResult(started, Warnings: warnings.Count > 0 ? warnings : null, Source: WriteExecutor.AgentSource);
         }
@@ -265,6 +297,16 @@ internal static class ServeCommand
         $"The site runs against the remote development database '{connection.Database}' on '{connection.Server}', which others may use too. "
         + "For this run opticli turned off its scheduler, automatic database schema updates, content type sync and store remapping, so content types "
         + "or properties that exist only in your local code are not added to the database (writes to them fail). The site's own startup code still runs.";
+
+    /// <summary>Enabled jobs whose next run has passed: the scheduler starts each as soon as it runs.</summary>
+    internal static async Task<IReadOnlyList<Core.Jobs.JobRow>> OverdueJobsAsync(Core.Data.CmsDatabase db, CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        return (await Core.Jobs.JobReader.ListAsync(db, cancellationToken)).Where(j => j.Enabled && j.NextRun is { } next && next < now).ToList();
+    }
+
+    internal static string OverdueWarning(IReadOnlyList<Core.Jobs.JobRow> overdue, string when) =>
+        $"{overdue.Count} overdue job{(overdue.Count == 1 ? "" : "s")} will {when}: {string.Join(", ", overdue.Take(10).Select(j => j.Name))}{(overdue.Count > 10 ? ", ..." : "")}. `opticli jobs` lists them.";
 
     /// <summary>What the agent reported as drift once the site answered, kept in the state file; null when nothing differs.</summary>
     /// <param name="started">The site was just started: the longer summary; otherwise the short warning other commands give.</param>

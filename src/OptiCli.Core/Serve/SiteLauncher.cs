@@ -11,6 +11,7 @@ namespace OptiCli.Core.Serve;
 /// <param name="Timeout">How long to wait for the agent to answer after starting the process.</param>
 /// <param name="SiteEndpoints">The site's own <c>Kestrel:Endpoints</c>; when it has any, opticli's address is added as one more.</param>
 /// <param name="DriftFile">What was compared before the start (shared mode), for the agent's drift report.</param>
+/// <param name="Scheduler">Leave the site's scheduler on (<c>serve --scheduler</c>); otherwise the agent turns it off.</param>
 public sealed record LaunchRequest(
     ProjectInfo Project,
     VerifiedConnectionString Connection,
@@ -21,7 +22,8 @@ public sealed record LaunchRequest(
     TimeSpan Timeout,
     int? HttpsPort = null,
     IReadOnlyList<string>? SiteEndpoints = null,
-    string? DriftFile = null);
+    string? DriftFile = null,
+    bool Scheduler = false);
 
 /// <summary>Starts the site with the agent injected, waits until the agent answers and checks it uses the pinned database.</summary>
 public static class SiteLauncher
@@ -196,7 +198,8 @@ public static class SiteLauncher
             approvedRemote: request.Connection,
             httpsPort: request.HttpsPort,
             kestrelEndpoints: request.SiteEndpoints is { Count: > 0 },
-            driftFile: request.DriftFile);
+            driftFile: request.DriftFile,
+            scheduler: request.Scheduler);
         // The site inherits this process's environment. Other spellings of the pinned ConnectionStrings variable go first
         // (removed, not blanked: an empty one would still be read). Then blank what this run doesn't set, so a stale export
         // from `opticli env` can't approve another remote database or pin another connection name.

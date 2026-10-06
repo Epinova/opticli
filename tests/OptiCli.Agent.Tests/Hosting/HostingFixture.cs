@@ -17,8 +17,9 @@ internal static class HostingFixture
     public const string Remote = "Server=tcp:dev.example.net,1433;Database=ExampleDb;User Id=app;Password=secret";
     public const string OtherRemote = "Server=tcp:prod.example.net,1433;Database=ExampleDb;User Id=app;Password=secret";
 
-    public static AgentSettings Settings(string? pinned = null, string? approvedRemote = null) =>
-        new(AgentProtocol.DefaultConnectionName, pinned, "token", AgentProtocol.ParseRemote(approvedRemote));
+    /// <param name="scheduler">As <c>serve --scheduler</c>: leave the site's scheduler as it is.</param>
+    public static AgentSettings Settings(string? pinned = null, string? approvedRemote = null, bool scheduler = false) =>
+        new(AgentProtocol.DefaultConnectionName, pinned, "token", AgentProtocol.ParseRemote(approvedRemote), Scheduler: scheduler);
 
     /// <summary>The approval the CLI passes for <see cref="Remote"/>.</summary>
     public const string RemoteApproval = "tcp:dev.example.net,1433|ExampleDb";
