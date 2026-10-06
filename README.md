@@ -94,7 +94,7 @@ When stdout is redirected, every command prints a single JSON line:
 
 ```json
 {"ok":true,"data":{"ref":"123","type":"ArticlePage","name":"News","status":"published","url":"/en/news/",
- "properties":{"Heading":{"type":"String","value":"Hello"}}},"meta":{"source":"db","version":"0.11.0"}}
+ "properties":{"Heading":{"type":"String","value":"Hello"}}},"meta":{"source":"db","version":"0.12.0"}}
 ```
 
 ## Using opticli with coding agents
@@ -1053,7 +1053,7 @@ Set the new version as `<Version>` in [Directory.Build.props](Directory.Build.pr
 [skill/SKILL.md](skill/SKILL.md), and add the release to [CHANGELOG.md](CHANGELOG.md). Commit, then push a matching tag:
 
 ```sh
-git tag v0.11.0 && git push origin v0.11.0
+git tag v0.12.0 && git push origin v0.12.0
 ```
 
 The [release workflow](.github/workflows/release.yml) checks that the tag matches both versions and is on `main`,
