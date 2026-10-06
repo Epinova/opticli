@@ -34,6 +34,17 @@ again to update the skill.
   stored `values` (on content and in versions), and warns about such properties. Reads only: opticli doesn't remove
   types or properties.
 
+- **`opticli history <ref>`** reads the CMS's change log for one item: creates, publishes, scheduled publishes, review
+  requests, moves (from, to), deletes to and restores from the recycle bin, permanent deletes and deleted versions, with
+  who and when. It is the only record of moves and deletes. `--since`, `--by`.
+- **`find --status scheduled|expired`**: content with a version waiting to be published (`publishAt`), and published
+  content whose stop-publish date has passed (`expiredAt`).
+- **`opticli categories`** lists the category tree with the names `set` takes, whether each is selectable, and how many
+  items have it; **`opticli visitor-groups`** lists the visitor groups (the ids ContentAreas store, names, how the
+  criteria combine), reading only that store's names and settings, never its criteria or notes. `get` already shows
+  category names and the visitor groups of ContentArea items, and `set` already takes category names. A `set` with an
+  unknown category on a site with many of them now points to `opticli categories` instead of listing them all.
+
 ### Development
 
 - The edge-case site gets `UsersFixture.cs`: a user opticli didn't make, which `users remove` must refuse. The

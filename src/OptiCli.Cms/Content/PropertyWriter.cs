@@ -497,6 +497,9 @@ internal sealed class PropertyWriter(
             : "~/" + path;
     }
 
+    /// <summary>Above this, a hint doesn't list every selectable category: a site can have hundreds.</summary>
+    private const int MaxListedCategories = 30;
+
     /// <summary>Categories by name (<c>Name</c>, else the display name), or id; an array or a comma-separated string.</summary>
     private List<int> Categories(JsonElement value, string what)
     {
@@ -518,7 +521,9 @@ internal sealed class PropertyWriter(
             {
                 var names = all.Where(c => c.Selectable).Select(c => c.Name).ToList();
                 var suggestion = Suggestions.DidYouMean(item, names);
-                var list = names.Count == 0 ? "The site has no categories (they're made in admin mode)." : $"Categories: {string.Join(", ", names)}.";
+                var list = names.Count == 0 ? "The site has no categories (they're made in admin mode)."
+                    : names.Count <= MaxListedCategories ? $"Categories: {string.Join(", ", names)}."
+                    : call.ForCaller("`opticli categories` lists them.", $"The site has {names.Count} categories to choose from.");
                 throw AgentException.Usage($"No category '{item}'.", suggestion is null ? list : $"{suggestion} {list}");
             }
             if (!match.Selectable)

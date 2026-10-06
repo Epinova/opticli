@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.RegularExpressions;
 using Microsoft.Data.SqlClient;
 using OptiCli.Core.Content;
 using OptiCli.Core.Data;
@@ -116,51 +115,24 @@ public sealed class TrashReader(ContentSession session, Serve.AgentClient? agent
 /// while <c>serve</c> runs (<see cref="ThroughSiteAsync"/>); without it, <see cref="ReadAsync"/> reads the store's rows.
 /// </summary>
 /// <remarks>
-/// <para>The store lives in <c>tblSystemBigTable</c>, which <c>sql</c> treats as personal data: the Dynamic Data Store's
-/// tables hold user profiles, form submissions and site secrets too. <see cref="ReadAsync"/> reads only that one store's
-/// rows, and of them only two content references (the item and its parent), which are no more personal than
-/// <c>tblContent</c>'s <c>fkParentID</c>. It doesn't loosen <c>sql</c>'s guard: <c>sql</c> still refuses those tables
-/// without <c>--include-personal-data</c>.</para>
-/// <para>Which columns hold the two properties is the store's own mapping. The CMS regenerates the store's view
-/// (<c>VW_EPiParentRestoreStore</c>) whenever it maps the store anew, so its definition says what the running CMS uses;
-/// the mapping in <c>tblBigTableStoreInfo</c> can lag behind it (seen on a database where entries written by an older CMS
-/// sit in <c>Indexed_String01</c> and newer ones, which the CMS reads, in <c>String01</c>, while the mapping still names
-/// the first). So the view comes first, and that table only when the view can't be read.</para>
+/// The store lives in <c>tblSystemBigTable</c>, which <c>sql</c> treats as personal data: the Dynamic Data Store's tables
+/// hold user profiles, form submissions and site secrets too. <see cref="ReadAsync"/> reads only that one store's rows, and
+/// of them only two content references (the item and its parent), which are no more personal than <c>tblContent</c>'s
+/// <c>fkParentID</c>. It doesn't loosen <c>sql</c>'s guard: <c>sql</c> still refuses those tables without
+/// <c>--include-personal-data</c>. Which columns hold the two: <see cref="DynamicDataStore"/>.
 /// </remarks>
-public static partial class RestoreParents
+public static class RestoreParents
 {
     public const string StoreName = "EPiParentRestoreStore";
-
-    /// <summary>The store's view, whose definition maps each property to a column (<c>R01.String01 as "ParentLink"</c>).</summary>
-    private const string ViewSql = "SELECT OBJECT_DEFINITION(OBJECT_ID(N'dbo.VW_EPiParentRestoreStore')) AS Definition";
-
-    /// <summary>The mapping the store was created with.</summary>
-    private const string MappingSql = """
-        SELECT i.PropertyName, i.ColumnName
-        FROM tblBigTableStoreInfo i
-        JOIN tblBigTableStoreConfig s ON s.pkId = i.fkStoreId
-        WHERE s.StoreName = @store AND s.TableName = N'tblSystemBigTable' AND i.PropertyName IN (N'SourceLink', N'ParentLink') AND i.Active = 1
-        """;
 
     /// <returns>Content id to the id of its stored parent, for the items that have an entry.</returns>
     public static async Task<IReadOnlyDictionary<int, int>> ReadAsync(CmsDatabase db, IEnumerable<int> contentIds, CancellationToken cancellationToken)
     {
         var ids = contentIds.Distinct().ToList();
         var result = new Dictionary<int, int>();
-        if (ids.Count == 0)
-        {
-            return result;
-        }
-        var view = (await db.QueryAsync(ViewSql, r => r.GetStringOrNull("Definition"), cancellationToken)).FirstOrDefault();
-        var (source, parent) = (Column(view, "SourceLink"), Column(view, "ParentLink"));
-        if (source is null || parent is null)
-        {
-            var mapping = (await db.QueryAsync(MappingSql, r => (Property: r.GetString("PropertyName"), Column: r.GetStringOrNull("ColumnName")), cancellationToken,
-                new SqlParameter("@store", StoreName))).ToDictionary(m => m.Property, m => m.Column);
-            (source, parent) = (mapping.GetValueOrDefault("SourceLink"), mapping.GetValueOrDefault("ParentLink"));
-        }
-        // Only the big table's string columns are taken, so nothing else from the database reaches the SQL.
-        if (source is null || parent is null || !StringColumn().IsMatch(source) || !StringColumn().IsMatch(parent))
+        if (ids.Count == 0
+            || await DynamicDataStore.FindAsync(db, StoreName, ["SourceLink", "ParentLink"], cancellationToken) is not { } store
+            || store.Column("SourceLink") is not { } source || store.Column("ParentLink") is not { } parent)
         {
             return result;
         }
@@ -170,7 +142,7 @@ public static partial class RestoreParents
             // content provider's (which isn't in tblContent). Only plain ids are matched.
             var sql = $"""
                 SELECT b.{source} AS SourceLink, b.{parent} AS ParentLink
-                FROM tblSystemBigTable b
+                FROM {store.Table} b
                 WHERE b.StoreName = @store AND b.{source} IN ({string.Join(",", list.Split(',').Select(id => $"N'{id}'"))})
                 """;
             foreach (var (item, stored) in await db.QueryAsync(sql, r => (r.GetStringOrNull("SourceLink"), r.GetStringOrNull("ParentLink")), cancellationToken,
@@ -212,17 +184,6 @@ public static partial class RestoreParents
         return result;
     }
 
-    /// <summary>The column a store's view maps <paramref name="property"/> to; null when it doesn't say.</summary>
-    public static string? Column(string? viewDefinition, string property)
-    {
-        if (viewDefinition is null)
-        {
-            return null;
-        }
-        var match = Regex.Match(viewDefinition, $@"\bR01\.\[?(?<column>[A-Za-z_0-9]+)\]?\s+as\s+[""\[]{Regex.Escape(property)}[""\]]", RegexOptions.IgnoreCase);
-        return match.Success ? match.Groups["column"].Value : null;
-    }
-
     /// <summary>The content id of a stored <c>ContentReference</c>: <c>123</c> or <c>123_456</c>; null for anything else.</summary>
     public static int? Id(string? stored)
     {
@@ -232,7 +193,4 @@ public static partial class RestoreParents
             ? null
             : value;
     }
-
-    [GeneratedRegex("^(Indexed_)?String[0-9]{2}$")]
-    private static partial Regex StringColumn();
 }

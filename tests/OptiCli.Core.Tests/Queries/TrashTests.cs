@@ -1,3 +1,4 @@
+using OptiCli.Core.Data;
 using OptiCli.Core.Queries;
 
 namespace OptiCli.Core.Tests.Queries;
@@ -30,10 +31,10 @@ public class TrashTests
     [Fact]
     public void The_stores_view_says_which_column_holds_each_property()
     {
-        Assert.Equal("String01", RestoreParents.Column(View, "ParentLink"));
-        Assert.Equal("String02", RestoreParents.Column(View, "SourceLink"));
-        Assert.Equal("Indexed_String02", RestoreParents.Column("R01.[Indexed_String02] as [SourceLink]", "SourceLink"));
-        Assert.Null(RestoreParents.Column(View, "Other"));
-        Assert.Null(RestoreParents.Column(null, "ParentLink"));
+        Assert.Equal("String01", DynamicDataStore.ViewColumn(View, "ParentLink"));
+        Assert.Equal("String02", DynamicDataStore.ViewColumn(View, "SourceLink"));
+        Assert.Equal("Indexed_String02", DynamicDataStore.ViewColumn("R01.[Indexed_String02] as [SourceLink]", "SourceLink"));
+        Assert.Null(DynamicDataStore.ViewColumn(View, "Other"));
+        Assert.Null(DynamicDataStore.ViewColumn(null, "ParentLink"));
     }
 }

@@ -84,9 +84,12 @@ internal partial class Program
         root.Subcommands.Add(WhereUsedCommand.Create(options));
         root.Subcommands.Add(AllowedInCommand.Create(options));
         root.Subcommands.Add(VersionsCommand.Create(options));
+        root.Subcommands.Add(HistoryCommand.Create(options));
         root.Subcommands.Add(DraftsCommand.Create(options));
         root.Subcommands.Add(ProjectsCommand.Create(options));
         root.Subcommands.Add(TrashCommand.Create(options));
+        root.Subcommands.Add(CategoriesCommand.Create(options));
+        root.Subcommands.Add(VisitorGroupsCommand.Create(options));
         root.Subcommands.Add(JobsCommand.Create(options));
         root.Subcommands.Add(BlobCommand.Create(options));
         root.Subcommands.Add(SqlCommand.Create(options));

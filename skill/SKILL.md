@@ -63,6 +63,9 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
 | Text anywhere in names or text properties | `opticli search "opening hours" --in strings` |
 | Who may read or edit an item (access rights) | `opticli access 123` (`inherited`, `from`: where they come from) |
 | Version history / unpublished work | `opticli versions 123` / `opticli drafts --since 2024-06-01 --kind page` |
+| Who moved, deleted or published an item, and when | `opticli history 123` (`--since 30d`) |
+| Content waiting to go live / expired | `opticli find --type ArticlePage --status scheduled` (`expired`) |
+| Which categories / visitor groups exist | `opticli categories` / `opticli visitor-groups` |
 | What was deleted, and where it goes back | `opticli trash` (`--since 7d`, `--by`); `opticli restore <ref> --dry-run` (needs `serve`; only when asked) |
 | What differs between this build and a shared database? | `opticli drift` (needs `serve`) |
 | Which scheduled jobs exist, which are overdue or failed last time? | `opticli jobs` (`--failed`) |

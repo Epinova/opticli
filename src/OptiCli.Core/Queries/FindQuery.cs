@@ -20,7 +20,17 @@ public enum FindStatus
 
     /// <summary>The branch was never published, or has a version newer than the published one.</summary>
     Draft,
+
+    /// <summary>The branch has a version waiting to be published at a set time (<c>delayedPublish</c>).</summary>
+    Scheduled,
+
+    /// <summary>The branch is published, and its stop-publish date has passed: visitors don't see it.</summary>
+    Expired,
 }
+
+/// <param name="PublishAt">For <see cref="FindStatus.Scheduled"/>: when the first scheduled version is published, UTC.</param>
+/// <param name="ExpiredAt">For <see cref="FindStatus.Expired"/>: when the published version stopped publishing, UTC.</param>
+public sealed record FoundItem(int Id, DateTime? PublishAt = null, DateTime? ExpiredAt = null);
 
 /// <summary>
 /// <c>find</c>: content of one type, filtered in SQL. <c>--where</c> compares the primary (published, or
@@ -30,8 +40,8 @@ public sealed class FindQuery(ContentSession session)
 {
     private const string NamePseudoProperty = "Name";
 
-    /// <returns>Up to <paramref name="limit"/> + 1 matching ids (the extra one signals more), ordered by id.</returns>
-    public async Task<IReadOnlyList<int>> RunAsync(
+    /// <returns>Up to <paramref name="limit"/> + 1 matching items (the extra one signals more), ordered by id.</returns>
+    public async Task<IReadOnlyList<FoundItem>> RunAsync(
         ContentTypeInfo type,
         IReadOnlyList<WhereClause> where,
         int? underId,
@@ -47,8 +57,13 @@ public sealed class FindQuery(ContentSession session)
             new("@offset", offset),
             new("@take", limit + 1),
         };
+        // A branch's first scheduled version: when the CMS's job publishes it.
+        var scheduled = $"""
+            (SELECT MIN(wc.DelayPublishUntil) FROM tblWorkContent wc
+             WHERE wc.fkContentID = c.pkID AND wc.fkLanguageBranchID = cl.fkLanguageBranchID AND wc.Status = {(int)VersionStatus.DelayedPublish})
+            """;
         var sql = new StringBuilder($"""
-            SELECT c.pkID
+            SELECT c.pkID, {(status == FindStatus.Scheduled ? scheduled : "NULL")} AS PublishAt, {(status == FindStatus.Expired ? "cl.StopPublish" : "NULL")} AS ExpiredAt
             FROM tblContent c
             JOIN tblContentLanguage cl ON cl.fkContentID = c.pkID AND cl.fkLanguageBranchID = {(language is null ? "c.fkMasterLanguageBranchID" : "@lang")}
             WHERE c.fkContentTypeID = @type AND c.Deleted = 0
@@ -72,8 +87,19 @@ public sealed class FindQuery(ContentSession session)
                       WHERE wc.fkContentID = c.pkID AND wc.fkLanguageBranchID = cl.fkLanguageBranchID
                         AND wc.Status IN ({VersionStatuses.UnpublishedSql}) AND wc.pkID > ISNULL(cl.Version, 0)))
                 """,
+            FindStatus.Scheduled => $"""
+
+                  AND EXISTS (SELECT 1 FROM tblWorkContent wc
+                      WHERE wc.fkContentID = c.pkID AND wc.fkLanguageBranchID = cl.fkLanguageBranchID AND wc.Status = {(int)VersionStatus.DelayedPublish})
+                """,
+            // Dates are UTC in the database; the CLI's clock decides what has passed, as for every other UTC time it prints.
+            FindStatus.Expired => $"\n  AND cl.Status = {(int)VersionStatus.Published} AND cl.StopPublish IS NOT NULL AND cl.StopPublish <= @now",
             _ => "",
         });
+        if (status == FindStatus.Expired)
+        {
+            parameters.Add(new SqlParameter("@now", System.Data.SqlDbType.DateTime) { Value = DateTime.UtcNow });
+        }
 
         for (var i = 0; i < where.Count; i++)
         {
@@ -81,7 +107,8 @@ public sealed class FindQuery(ContentSession session)
         }
         sql.Append("\nORDER BY c.pkID\nOFFSET @offset ROWS FETCH NEXT @take ROWS ONLY");
 
-        return await session.Db.QueryAsync(sql.ToString(), r => r.GetInt32("pkID"), cancellationToken, parameters.ToArray());
+        return await session.Db.QueryAsync(sql.ToString(), r => new FoundItem(r.GetInt32("pkID"), r.GetDateTimeOrNull("PublishAt"), r.GetDateTimeOrNull("ExpiredAt")),
+            cancellationToken, parameters.ToArray());
     }
 
     private async Task<string> ConditionAsync(ContentTypeInfo type, WhereClause clause, int index, List<SqlParameter> parameters, CancellationToken cancellationToken)

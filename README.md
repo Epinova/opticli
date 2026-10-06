@@ -255,11 +255,13 @@ add-ons need first.
 | `allowed-in <type>` | which ContentArea/reference properties accept a type, from `[AllowedTypes]` in code |
 | `get <ref> [--lang] [--version] [--fields] [--expand]` | one item, typed and decoded (ContentAreas, local blocks, rich-text links) |
 | `tree`, `children`, `ancestors` | the content tree |
-| `find --type T [--where Prop=value] [--under] [--status]` | items of a type, filtered |
+| `find --type T [--where Prop=value] [--under] [--status]` | items of a type, filtered; `--status scheduled` (a version waits to be published: `publishAt`) and `expired` (published, stop-publish date passed: `expiredAt`) |
 | `search <text> [--in names\|strings\|all]` | names and text properties containing a string |
 | `where-used <ref> [--pages]`, `where-used --type T` | ContentAreas, references, links and rich text pointing at an item (`--pages`: through nested blocks up to pages); `--type`: for every instance of a type |
 | `resolve <url>`, `url <ref>` | URL to content, and content to URL per language |
 | `versions <ref>`, `drafts [--since] [--by] [--kind] [--type]` | version history; unpublished changes |
+| `history <ref> [--since] [--by]` | the CMS's change log for one item: creates, publishes, moves (from, to), deletes and restores, with who and when; the only record of moves and deletes (drafts saved aren't in it) |
+| `categories`, `visitor-groups` | the category tree (names `set` takes, selectable, how many items use each); visitor groups (ids ContentAreas store, names, how criteria combine), without their criteria or notes |
 | `projects [<id>]` | projects, and the versions in one |
 | `trash [--since] [--by] [--type]` | what is in the recycle bin: who deleted it and when, what came along (`descendants`), and `originalParent`, where `restore` puts it back |
 | `jobs [--failed]`, `jobs log [<job>] [--failed] [--since]` | scheduled jobs: schedule, next and last run, how it ended, overdue, running; their runs with status and message (see [Scheduled jobs](#scheduled-jobs)) |
