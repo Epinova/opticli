@@ -29,12 +29,13 @@ public class SiteProcessTests : IDisposable
         try
         {
             await WaitForAsync(() => File.Exists(log) && File.ReadAllText(log).Contains("started", StringComparison.Ordinal));
+            // The script logs before its own exec, so the shell may not have become sleep yet: wait for that too.
+            await WaitForAsync(() => File.ReadAllText($"/proc/{process.Id}/comm").Trim() == "sleep");
 
             // The process started is the site itself (everything execs), and it leads its own session.
             var stat = File.ReadAllText($"/proc/{process.Id}/stat");
             var fields = stat[(stat.LastIndexOf(')') + 2)..].Split(' ');
             Assert.Equal(process.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), fields[3]);
-            Assert.Equal("sleep", File.ReadAllText($"/proc/{process.Id}/comm").Trim());
         }
         finally
         {
