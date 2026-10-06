@@ -62,6 +62,10 @@ public sealed class CmsDatabase : IAsyncDisposable
             // SqlClient checks some values only here, e.g. a database file to attach that it can't find a path for.
             throw new RefusedException($"{ConnectionSafety.UnusableHere} {ex.Message}", ConnectionSafety.UnusableHint);
         }
+        catch (NotSupportedException ex)
+        {
+            throw new RefusedException($"{ConnectionSafety.UnusableHere} {ex.Message}", ConnectionSafety.ProtocolHint);
+        }
         if (connectionString.IsLocal
             ? !ConnectionSafety.IsLocalDataSource(connection.DataSource)
             : !string.Equals(connection.DataSource, connectionString.Server, StringComparison.OrdinalIgnoreCase))
@@ -73,6 +77,12 @@ public sealed class CmsDatabase : IAsyncDisposable
         try
         {
             await connection.OpenAsync(cancellationToken);
+        }
+        catch (NotSupportedException ex)
+        {
+            // A protocol SqlClient has only on Windows, e.g. a named pipe (np:): PlatformNotSupportedException.
+            await connection.DisposeAsync();
+            throw new RefusedException($"{ConnectionSafety.UnusableHere} {ex.Message}", ConnectionSafety.ProtocolHint);
         }
         catch (SqlException ex)
         {

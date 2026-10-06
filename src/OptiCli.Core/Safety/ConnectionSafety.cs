@@ -34,8 +34,9 @@ public static class ConnectionSafety
         {
             builder = new SqlConnectionStringBuilder(connectionString);
         }
-        catch (Exception ex) when (ex is ArgumentException or FormatException or KeyNotFoundException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or FormatException or KeyNotFoundException or InvalidOperationException or NotSupportedException)
         {
+            // NotSupportedException: keywords SqlClient knows but doesn't support on this OS, e.g. Network Library off Windows.
             return new SafetyVerdict(false, null, null, $"Not a valid SQL Server connection string: {ex.Message}", IsValid: false);
         }
 
@@ -59,6 +60,9 @@ public static class ConnectionSafety
 
     /// <summary>The start of the message when SqlClient can't use a string on this machine (<see cref="Unusable"/>).</summary>
     public const string UnusableHere = "This connection string can't be used here:";
+
+    /// <summary>What to do about a server address SqlClient can't use on this OS (a named pipe away from Windows).</summary>
+    public const string ProtocolHint = "Give the server as a TCP address in the connection string: Server=<host>,<port> (or tcp:<host>,<port>), e.g. Server=localhost,1433.";
 
     /// <summary>What to do about a string <see cref="Unusable"/> refuses.</summary>
     public const string UnusableHint =

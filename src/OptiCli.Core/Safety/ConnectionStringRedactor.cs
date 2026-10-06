@@ -24,7 +24,7 @@ public static partial class ConnectionStringRedactor
             }
             return builder.ConnectionString;
         }
-        catch (Exception ex) when (ex is ArgumentException or FormatException or KeyNotFoundException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or FormatException or KeyNotFoundException or InvalidOperationException or NotSupportedException)
         {
             // Unparseable: fall back to masking anything that looks like a password value.
             return PasswordPattern().Replace(connectionString, m => $"{m.Groups["key"].Value}={Mask}");

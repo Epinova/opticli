@@ -141,4 +141,37 @@ public class ConnectionSafetyTests
         Assert.DoesNotContain("secret", verified.ToString(), StringComparison.Ordinal);
         Assert.Contains("localhost", verified.ToString(), StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Network_library_off_windows_is_refused_not_thrown()
+    {
+        // SqlClient knows the keyword but supports it only on Windows; elsewhere it threw NotSupportedException (internal).
+        const string connectionString = "Server=localhost,1433;Database=Cms;Network Library=DBMSSOCN";
+        var verdict = ConnectionSafety.Check(connectionString);
+
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.True(verdict.IsLocal, verdict.Reason);
+            return;
+        }
+        Assert.False(verdict.IsValid);
+        Assert.Contains("Network Library", verdict.Reason, StringComparison.Ordinal);
+        Assert.Throws<RefusedException>(() => ConnectionSafety.Verify(connectionString));
+        Assert.Throws<RefusedException>(() => ConnectionSafety.Approve(connectionString));
+    }
+
+    [Fact]
+    public async Task A_named_pipe_off_windows_is_refused_not_thrown()
+    {
+        // np: is never local, but a remote one may be read from (--db); off Windows SqlClient has no named pipes at all.
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        var verified = ConnectionSafety.Approve(@"Server=np:\\sql.example.invalid\pipe\sql\query;Database=Cms;Connect Timeout=1");
+
+        var error = await Assert.ThrowsAsync<RefusedException>(() => OptiCli.Core.Data.CmsDatabase.OpenAsync(verified, CancellationToken.None));
+        Assert.StartsWith(ConnectionSafety.UnusableHere, error.Message, StringComparison.Ordinal);
+        Assert.Equal(ConnectionSafety.ProtocolHint, error.Hint);
+    }
 }
