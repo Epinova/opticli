@@ -112,7 +112,7 @@ directly: see [Approval sequences](#approval-sequences).
 | `sites host add <site> <host> [--type T] [--lang] [--https]` / `sites host remove <site> <host>` | `opticli sites host add "Site A" localhost:5001 --dry-run` |
 | `jobs run <job> [--no-wait] [--timeout s] [--allow-destructive]` | `opticli jobs run "Publish Delayed Content Versions"` (only when the user asked; see [Scheduled jobs](#scheduled-jobs)) |
 | `jobs stop <job>` | `opticli jobs stop "Content import"` |
-| `jobs set <job> [--enabled true\|false] [--every 30m\|1h\|1d\|1w\|1mo\|1y\|manual] [--next now\|<time>]` | `opticli jobs set "Content import" --every 1h --next now --dry-run` (only when the user asked) |
+| `jobs set <job> [--enabled true\|false] [--every 30m\|1h\|1d\|1w\|1mo\|1y\|manual] [--next now\|<time>] [--allow-destructive]` | `opticli jobs set "Content import" --every 1h --next now --dry-run` (only when the user asked) |
 | `apply <plan.json\|->` | `opticli apply plan.json --dry-run` |
 
 `unpublish` takes a published branch offline as the edit UI's expiry does: a copy of the published version with
@@ -319,21 +319,26 @@ its name only it has (several matches: `usage`, listing them).
 - `jobs run <job>` starts it as the admin UI's "Start manually" does (also with the scheduler off), as the user
   `opticli`, and waits by reading the job tables (status messages go to stderr on a terminal). Output: `job`, `id`,
   `started`, `since`, `status`, `duration`, `durationMs`, `finished`, `message`. Exit 0 when it succeeded; 7
-  (`job_failed`, `error.details` the same fields) when it failed, couldn't start, or was stopped or aborted.
+  (`job_failed`, `error.details` the same fields, plus `warnings`) when it failed, couldn't start, or was stopped or
+  aborted.
   `--no-wait` returns after the start; `--timeout <s>` ends the waiting with `timeout` (exit 4) and Ctrl+C with
-  `cancelled`: the job goes on running either way (`jobs stop`, `jobs log`). Already running: `conflict` (exit 5). The
-  site's own jobs run without asking, with `meta.warnings` "runs the site's own code; opticli can't tell what it
-  changes": they may call external systems (imports, syncs, emails), so run one only when the user asked for it. A run
+  `cancelled`: the job goes on running either way (`jobs stop`, `jobs log`). Already running: `conflict` (exit 5). Jobs
+  other than the CMS's own (the site's, add-ons' such as Commerce or Search & Navigation) run without asking, with
+  `meta.warnings` "runs code opticli doesn't know: it may change content or contact external systems" (imports, syncs,
+  emails), so run one only when the user asked for it. A run
   of an overdue job moves its next run on, as the admin UI does.
-- Built-in jobs that delete for good are refused (exit 3) unless `--allow-destructive`: Automatic Emptying of Trash
-  (the recycle bin), Remove Abandoned BLOBs, Trim Content Versions, Remove Unrelated Content Assets, Change Log Auto
-  Truncate (the activity log), Notification Message Truncate, Monitored Tasks Auto Truncate and Archive Function. Pass
-  it only after the user confirmed that job by name: on a restored database these are often the only copy.
+- Jobs that delete for good are refused (exit 3) unless `--allow-destructive`: Automatic Emptying of Trash (the
+  recycle bin), Remove Abandoned BLOBs, Trim Content Versions, Remove Unrelated Content Assets, Change Log Auto
+  Truncate (the activity log), Notification Message Truncate, Monitored Tasks Auto Truncate, and Commerce's Remove
+  Expired Carts, Permanently Delete Archived and Remove Expired Lowest Price; so is Archive Function, which moves every
+  expired page to its archive page. Pass it only after the user confirmed that job by name: on a restored database
+  these are often the only copy. `jobs set` needs it too for a change that lets the scheduler run one of them (enabled
+  with a next run, an earlier next run, a shorter interval); disabling one or making it manual doesn't.
 - `jobs stop <job>`: as the admin UI's Stop; the job's code decides when it stops. Waits up to 30 s: `stopped`,
   `status` (`cancelled`), `message`; `stopped: false` with a warning when it hasn't ended yet. Not stoppable: `refused`;
   not running (in the site `serve` runs): `conflict`.
 - `jobs set <job>`: `--enabled true|false`, `--every` (`30m`, `1h`, `6h`, `1d`, `1w`, `1mo`, `1y`, or `manual`, which
-  clears the next run; under a minute is refused), `--next now|<time>` (UTC unless it has an offset; a time that has
+  clears the next run; under a minute is refused, and so is `M`: `m` is minutes, `mo` months), `--next now|<time>` (UTC unless it has an offset; a time that has
   passed makes it overdue). `--every` on a job without a next run needs `--next`. Output: `before`, `after` (`enabled`,
   `schedule`, `every`, `nextRun`, ...), `changes[]`, `saved`; nothing changed: `saved: false`. Schedules aren't
   versioned: report `before`.
@@ -535,6 +540,6 @@ Plans that run again (a section rebuilt after a database refresh, or repaired af
 | `refused` (exit 3) from `serve`, `details.reason: "pendingMigrations"` or `"schemaVersion"` | The build doesn't fit the shared database: migrations it lacks, or a CMS schema the packages can't run. Tell the user (check out what is deployed, or pull); `--allow-pending-migrations` only when they say the site doesn't migrate at startup. |
 | `job_failed` (exit 7) | The job `jobs run` ran didn't succeed: `error.details.status` and `message` say how it ended; `opticli jobs log <job>` has its earlier runs, `opticli serve --logs` the site's log. Tell the user; don't run it again unasked. |
 | `timeout` (exit 4) from `jobs run` | `--timeout` ran out and the job still runs: `opticli jobs log <job>` later shows how it ended; `opticli jobs stop <job>` only if the user wants it stopped. |
-| `refused` (exit 3) from `jobs run`, naming what the job deletes | A built-in job that deletes for good. Ask the user, naming the job and what it deletes; only then `--allow-destructive`. |
+| `refused` (exit 3) from `jobs run` or `jobs set`, naming what the job deletes | A job that deletes for good (or moves content across the site). Ask the user, naming the job and what it does; only then `--allow-destructive`. |
 | `conflict` (exit 5) | A newer version exists: `opticli versions <ref> --limit 3`, then re-run. With `details.reason: "pendingDraft"`: someone else's unpublished changes would go live too; show `details.draft` and ask the user before `--include-draft`. |
 | Values look cut off | `truncated: true`: use `get <ref> --fields Prop` or `--full`. |

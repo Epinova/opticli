@@ -128,7 +128,7 @@ internal static class JobsCommand
         var timeout = new Option<int?>("--timeout") { Description = "Stop waiting after this many seconds (exit 4, timeout): the job goes on running. Default: wait as long as it runs.", HelpName = "seconds" };
         var allowDestructive = new Option<bool>("--allow-destructive")
         {
-            Description = "Run a built-in job that deletes for good (emptying the recycle bin, removing unused files, trimming versions, truncating the change log, ...). Without it such a job is refused (exit 3). Never implied by anything else: ask the user first.",
+            Description = "Run a job that deletes for good (emptying the recycle bin, removing unused files, trimming versions, truncating the change log, Commerce's expired carts and archived items, ...) or moves content across the site (Archive Function). Without it such a job is refused (exit 3). Never implied by anything else: ask the user first.",
         };
         var write = new WriteOptions();
         write.DryRun.Description = "Check that the job would be started (it exists, isn't running, isn't refused) without starting it.";
@@ -137,9 +137,10 @@ internal static class JobsCommand
             while the scheduler is off. It runs as the user opticli. By default the command waits for it, reading its state
             from the database, shows its status messages on a terminal, and ends with the run's status, duration and message:
             exit 0 when it succeeded, 7 (job_failed) when it failed, couldn't start, or was stopped or aborted. Ctrl+C and
-            --timeout stop the waiting, not the job. Already running: conflict (exit 5). Built-in jobs that delete for good
-            need --allow-destructive (refused, exit 3, otherwise); the site's own jobs run without asking, with a warning:
-            opticli can't tell what they change. Refused against a shared database (exit 3).
+            --timeout stop the waiting, not the job. Already running: conflict (exit 5). Jobs that delete for good (and Archive
+            Function, which moves content) need --allow-destructive (refused, exit 3, otherwise). Jobs other than the CMS's
+            own (the site's, add-ons') run without asking, with a warning: opticli doesn't know what they change or contact.
+            Refused against a shared database (exit 3).
             Example: opticli jobs run "Publish Delayed Content Versions"
             Example: opticli jobs run MyImportJob --no-wait
             """);
@@ -209,12 +210,18 @@ internal static class JobsCommand
         var enabled = new Option<string?>("--enabled") { Description = "Enable (true) or disable (false) the job: the scheduler only starts enabled jobs.", HelpName = "true|false" };
         var every = new Option<string?>("--every") { Description = $"How often the scheduler starts it: {JobIntervals.Syntax}. manual also clears the next run (unless --next).", HelpName = "interval" };
         var next = new Option<string?>("--next") { Description = $"When the scheduler starts it next: {JobTimes.NextSyntax}. now: its next round; a time that has passed makes it overdue. Default: as it is (a job without a next run needs it with --every).", HelpName = "time" };
+        var allowDestructive = new Option<bool>("--allow-destructive")
+        {
+            Description = "Allow a change that lets the scheduler run a job that deletes for good (or changes content across the site) when it didn't, sooner, or more often. Disabling such a job or making it manual never needs it.",
+        };
         var write = new WriteOptions();
         var command = new Command("set", """
             Change a job's schedule through the site (needs `opticli serve`), as the admin UI's form does: enabled, interval and
             next run, saved through the CMS's job repository so the scheduler sees it. Schedules aren't versioned: the output
             has the job before and after. A next run in a site whose scheduler is off (the default for `opticli serve`) only
-            takes effect where the scheduler runs. Refused against a shared database (exit 3).
+            takes effect where the scheduler runs. Enabling a built-in job that deletes for good with a next run, or bringing
+            its next run or interval closer, needs --allow-destructive (refused, exit 3, otherwise). Refused against a shared
+            database (exit 3).
             Example: opticli jobs set "Content import" --every 1h --next now --dry-run
             Example: opticli jobs set MyImportJob --enabled false
             """);
@@ -222,6 +229,7 @@ internal static class JobsCommand
         command.Options.Add(enabled);
         command.Options.Add(every);
         command.Options.Add(next);
+        command.Options.Add(allowDestructive);
         command.Options.Add(write.DryRun);
 
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
@@ -243,8 +251,9 @@ internal static class JobsCommand
             await using var db = await context.OpenDatabaseAsync(cancellationToken);
             var target = JobReferences.Resolve(parse.GetValue(job)!, await JobReader.ListAsync(db, cancellationToken), Sources(context, null));
             var shared = !db.ConnectionString.IsLocal;
-            JobRunner.RequireLocal(shared);
-            var result = await JobRunner.SetAsync(await context.ConnectAgentAsync(cancellationToken), target, shared, enable, interval, when, parse.GetValue(write.DryRun), cancellationToken);
+            JobRunner.RequireSettable(target, shared, enable, interval, when, parse.GetValue(allowDestructive));
+            var result = await JobRunner.SetAsync(await context.ConnectAgentAsync(cancellationToken), target, shared, enable, interval, when,
+                parse.GetValue(allowDestructive), parse.GetValue(write.DryRun), cancellationToken);
             var warnings = result.Warnings?.ToList() ?? [];
             if (result.Changes.Count == 0)
             {

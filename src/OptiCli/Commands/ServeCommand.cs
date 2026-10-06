@@ -79,7 +79,16 @@ internal static class ServeCommand
             if (parse.GetValue(status))
             {
                 var current = await StatusAsync(context, cancellationToken);
-                return new CommandResult(current, Warnings: DriftWarning(context.StateStore, started: false) is { } drifted ? [drifted] : null, Source: WriteExecutor.AgentSource);
+                List<string> statusWarnings = [];
+                if (DriftWarning(context.StateStore, started: false) is { } drifted)
+                {
+                    statusWarnings.Add(drifted);
+                }
+                if (current is { State: AgentState.Running, Scheduler: null, Database.Local: true })
+                {
+                    statusWarnings.Add(OldAgentSchedulerWarning(current, null));
+                }
+                return new CommandResult(current, Warnings: statusWarnings.Count > 0 ? statusWarnings : null, Source: WriteExecutor.AgentSource);
             }
             if (parse.GetValue(logs))
             {
@@ -297,6 +306,16 @@ internal static class ServeCommand
         $"The site runs against the remote development database '{connection.Database}' on '{connection.Server}', which others may use too. "
         + "For this run opticli turned off its scheduler, automatic database schema updates, content type sync and store remapping, so content types "
         + "or properties that exist only in your local code are not added to the database (writes to them fail). The site's own startup code still runs.";
+
+    /// <summary>
+    /// The site runs an agent from before opticli 0.12, which doesn't turn the scheduler off (or say whether it is on): the
+    /// site's own setting holds, and overdue jobs may run there.
+    /// </summary>
+    /// <param name="overdue">Enabled jobs whose next run has passed; null when not counted.</param>
+    internal static string OldAgentSchedulerWarning(AgentStatus agent, int? overdue) =>
+        $"The running site's agent ({agent.Agent?.Version ?? "unknown version"}) is older than opticli 0.12, which turns the site's scheduler off: its scheduler may be on"
+        + (overdue is { } count ? $", with {count} overdue job{(count == 1 ? "" : "s")} it would start" : "")
+        + ". Restart it with this opticli: `opticli serve --stop`, then `opticli serve`.";
 
     /// <summary>Enabled jobs whose next run has passed: the scheduler starts each as soon as it runs.</summary>
     internal static async Task<IReadOnlyList<Core.Jobs.JobRow>> OverdueJobsAsync(Core.Data.CmsDatabase db, CancellationToken cancellationToken)

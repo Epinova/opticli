@@ -11,6 +11,7 @@ namespace OptiCli.Core.Jobs;
 /// <param name="Since">When the site started it (UTC).</param>
 /// <param name="Status">One of <see cref="JobStatuses"/>; null when it didn't wait.</param>
 /// <param name="Message">The job's message (it can be HTML); null when it didn't wait.</param>
+/// <param name="Warnings">In <c>error.details</c> of a run that failed, the warnings a successful run has in <c>meta.warnings</c>.</param>
 public sealed record JobRunView(
     string Job,
     Guid Id,
@@ -21,7 +22,8 @@ public sealed record JobRunView(
     long? DurationMs = null,
     DateTime? Finished = null,
     string? Message = null,
-    bool? DryRun = null);
+    bool? DryRun = null,
+    IReadOnlyList<string>? Warnings = null);
 
 /// <summary>What <c>jobs stop</c> prints.</summary>
 /// <param name="Stopped">The job's run ended within the wait; false when it is still finishing.</param>
@@ -88,7 +90,7 @@ public static class JobRunner
                 $"'{job.Name}' {Ended(log.Status)}{(JobViews.OneLine(log.Message) is { } message ? $": {message}" : ".")}",
                 $"details.message has the job's message; `opticli jobs log \"{job.Name}\"` shows its earlier runs, and `opticli serve --logs` the site's log.")
             {
-                Details = view,
+                Details = warnings.Count > 0 ? view with { Warnings = warnings } : view,
             };
         }
         return (view, warnings);
@@ -123,12 +125,41 @@ public static class JobRunner
         }
     }
 
-    /// <exception cref="RefusedException">Shared database.</exception>
-    public static Task<JobSetResult> SetAsync(AgentClient agent, JobRow job, bool sharedDatabase, bool? enabled, string? every, DateTime? next, bool dryRun, CancellationToken cancellationToken)
+    /// <exception cref="RefusedException">Shared database; a change that arms a destructive job, without <paramref name="allowDestructive"/>.</exception>
+    public static Task<JobSetResult> SetAsync(AgentClient agent, JobRow job, bool sharedDatabase, bool? enabled, string? every, DateTime? next, bool allowDestructive, bool dryRun,
+        CancellationToken cancellationToken)
+    {
+        RequireSettable(job, sharedDatabase, enabled, every, next, allowDestructive);
+        return SendAsync<JobSetResult>(agent, AgentRoutes.JobSet,
+            new JobSetRequest { Job = job.Id, Enabled = enabled, Every = every, Next = next, AllowDestructive = allowDestructive, DryRun = dryRun }, cancellationToken);
+    }
+
+    /// <summary>
+    /// What the CLI checks before it asks the site (which checks again): the schedule <c>jobs set</c> would leave, worked
+    /// out the way the site does, mustn't arm a destructive job (<see cref="DestructiveJobs.Arms"/>) without the flag.
+    /// </summary>
+    /// <exception cref="RefusedException">Shared database; a change that arms a destructive job.</exception>
+    public static void RequireSettable(JobRow job, bool sharedDatabase, bool? enabled, string? every, DateTime? next, bool allowDestructive)
     {
         RequireLocal(sharedDatabase);
-        return SendAsync<JobSetResult>(agent, AgentRoutes.JobSet,
-            new JobSetRequest { Job = job.Id, Enabled = enabled, Every = every, Next = next, DryRun = dryRun }, cancellationToken);
+        if (allowDestructive || DestructiveJobs.SetRefusal(job.Name, job.TypeName) is not { } refusal)
+        {
+            return;
+        }
+        var before = new JobSchedule(job.Enabled, job.NextRun, JobIntervals.TypeOf(job.DatePart), job.Interval);
+        var after = before with { Enabled = enabled ?? before.Enabled };
+        if (every is not null && JobIntervals.TryParse(every, out var type, out var length, out _))
+        {
+            after = after with { IntervalType = type, IntervalLength = type == 0 ? 0 : length, NextRun = type == 0 && next is null ? null : after.NextRun };
+        }
+        if (next is { } at)
+        {
+            after = after with { NextRun = at };
+        }
+        if (DestructiveJobs.Arms(before, after))
+        {
+            throw new RefusedException(refusal, DestructiveJobs.Hint);
+        }
     }
 
     /// <summary>
@@ -220,9 +251,9 @@ public static class JobRunner
     public static void RequireRunnable(JobRow job, bool sharedDatabase, bool allowDestructive)
     {
         RequireLocal(sharedDatabase);
-        if (DestructiveJobs.Find(job.TypeName) is { } what && !allowDestructive)
+        if (DestructiveJobs.Refusal(job.Name, job.TypeName) is { } refusal && !allowDestructive)
         {
-            throw new RefusedException(DestructiveJobs.Refusal(job.Name, what), DestructiveJobs.Hint);
+            throw new RefusedException(refusal, DestructiveJobs.Hint);
         }
         if (JobViews.IsRunning(job))
         {

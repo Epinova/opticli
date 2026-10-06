@@ -191,13 +191,14 @@ order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a cod
   `opticli sites primary --from-config`; `--forget <site>` drops a saved site that is gone). Site definitions aren't
   versioned: report the `changes` from the output. Tell the user to restart the site if it also runs elsewhere (their
   IDE), as `meta.warnings` says. Against a shared database they are refused (exit 3): don't work around it.
-- Never run, stop or reschedule a scheduled job (`jobs run`, `jobs stop`, `jobs set`) unless the user asked for it. A
-  site's own jobs may reach external systems (imports, syncs, emails): `jobs run` warns that opticli can't tell what
-  they change. When "an import didn't run", start with `opticli jobs log "<job>"` (status, message, trigger) and
+- Never run, stop or reschedule a scheduled job (`jobs run`, `jobs stop`, `jobs set`) unless the user asked for it. Jobs
+  that aren't the CMS's own (the site's, add-ons') may reach external systems (imports, syncs, emails): `jobs run`
+  warns that opticli doesn't know what they do. When "an import didn't run", start with `opticli jobs log "<job>"` (status, message, trigger) and
   `opticli jobs` (enabled, next run): `serve` keeps the site's scheduler off, so nothing runs on its schedule there,
-  and only `jobs run` starts a job. `jobs run` waits and ends with the run's status and message; report them. Built-in
-  jobs that delete for good (emptying the recycle bin, trimming versions, truncating the change log, ...) are refused
-  without `--allow-destructive`: pass it only after the user confirmed that job by name. Never pass
+  and only `jobs run` starts a job. `jobs run` waits and ends with the run's status and message; report them. Jobs that
+  delete for good (emptying the recycle bin, trimming versions, truncating the change log, Commerce's expired carts,
+  ...) are refused without `--allow-destructive`, by `jobs run` and by a `jobs set` that lets the scheduler run one:
+  pass it only after the user confirmed that job by name. Never pass
   `serve --scheduler` on your own initiative: overdue jobs would all start. Schedules aren't versioned: report the
   `before` from `jobs set`.
 - Always `--dry-run` a multi-step `apply` plan first, and a single write when you are unsure of its effect.

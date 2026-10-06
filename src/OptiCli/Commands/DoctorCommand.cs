@@ -248,7 +248,11 @@ internal static class DoctorCommand
             var running = agent?.State == AgentState.Running ? agent.Scheduler : null;
             await using var db = await context.OpenDatabaseAsync(cancellationToken);
             var overdue = await ServeCommand.OverdueJobsAsync(db, cancellationToken);
-            if (overdue.Count > 0 && running == "on")
+            if (agent is { State: AgentState.Running, Scheduler: null } && chosen?.IsLocal != false)
+            {
+                warnings.Add(ServeCommand.OldAgentSchedulerWarning(agent, overdue.Count));
+            }
+            else if (overdue.Count > 0 && running == "on")
             {
                 warnings.Add(ServeCommand.OverdueWarning(overdue, "start in the running site, whose scheduler is on"));
             }

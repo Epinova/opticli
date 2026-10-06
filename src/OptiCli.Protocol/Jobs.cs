@@ -62,8 +62,11 @@ public sealed record JobSetRequest
     /// <summary>The interval, <see cref="JobIntervals.Syntax"/>: <c>30m</c>, <c>1h</c>, <c>1d</c>, <c>1w</c>, <c>1mo</c>, <c>1y</c>, or <c>manual</c>.</summary>
     public string? Every { get; init; }
 
-    /// <summary>The next run (UTC), or null to leave it. <see cref="JobSetResult"/> says what it became.</summary>
+    /// <summary>The next run, or null to leave it; a time without an offset is UTC. <see cref="JobSetResult"/> says what it became.</summary>
     public DateTime? Next { get; init; }
+
+    /// <summary>Allow a change that arms a <see cref="DestructiveJobs"/> job (<see cref="DestructiveJobs.Arms"/>).</summary>
+    public bool AllowDestructive { get; init; }
 
     public bool DryRun { get; init; }
 }
@@ -91,45 +94,116 @@ public static class JobRequests
     public const string SharedHint =
         "Run, stop or reschedule jobs on a shared database in that environment's own admin UI. `opticli jobs` and `opticli jobs log` still read them.";
 
-    /// <summary>The warning a run of a job that isn't one of the CMS's own carries.</summary>
-    public const string CustomJobWarning = "runs the site's own code; opticli can't tell what it changes";
+    /// <summary>The warning a run of a job that isn't one of <see cref="CmsJobs"/> carries: the site's own, or an add-on's.</summary>
+    public const string UnknownCodeWarning = "runs code opticli doesn't know: it may change content or contact external systems";
+
+    /// <summary>What a run of the job warns about; null for the CMS's own jobs.</summary>
+    public static string? Warning(string? typeName) => CmsJobs.Contains(typeName) ? null : UnknownCodeWarning;
 }
 
 /// <summary>
-/// The CMS's built-in jobs that delete (or move) data for good, by class name (<c>tblScheduledItem.TypeName</c>), with
-/// what each deletes. <c>jobs run</c> refuses them without <c>--allow-destructive</c>; the agent decides, and the CLI
-/// checks first. Names checked by reflection over EPiServer.dll (CMS 12).
+/// The jobs of the CMS itself (EPiServer.CMS.Core, EPiServer.LinkAnalyzer, EPiServer.UI, EPiServer.Cms.Shell.UI), by
+/// class name: what they do is known. Checked by reflection over the CMS 12.0 and 12.21 assemblies; every other job,
+/// add-ons from Optimizely (Commerce, Find, Forms, ...) included, is code opticli doesn't know.
+/// </summary>
+public static class CmsJobs
+{
+    private static readonly HashSet<string> Classes = new(StringComparer.Ordinal)
+    {
+        "EPiServer.Util.BlobCleanupJob",
+        "EPiServer.Util.CleanUnusedAssetsFoldersJob",
+        "EPiServer.Util.DelayedPublishJob",
+        "EPiServer.Util.EmptyWastebasketJob",
+        "EPiServer.Util.PageArchiveJob",
+        "EPiServer.Util.TaskMonitorTruncateJob",
+        "EPiServer.Util.ThumbnailPropertiesClearJob",
+        "EPiServer.Util.Internal.TrimContentVersionsJob",
+        "EPiServer.Notification.Internal.NotificationDispatcherJob",
+        "EPiServer.Notification.Internal.NotificationMessageTruncateJob",
+        "EPiServer.DataAbstraction.Activities.Internal.ActivityTruncateJob",
+        "EPiServer.LinkAnalyzer.LinkValidationJob",
+        "EPiServer.Shell.Notification.RemoveInUseNotificationJob",
+        "EPiServer.Cms.Shell.UI.Notifications.Feature.FeatureNotificationJob",
+    };
+
+    public static bool Contains(string? typeName) => typeName is not null && Classes.Contains(typeName);
+}
+
+/// <summary>
+/// Jobs that delete data for good, or change content across the site, by class name (<c>tblScheduledItem.TypeName</c>),
+/// with what each does. <c>jobs run</c> refuses them, and <c>jobs set</c> refuses to arm them (enable them with a next
+/// run, or bring their next run or interval closer), without <c>--allow-destructive</c>; the agent decides, and the CLI
+/// checks first. The CMS's from reflection over EPiServer.dll (CMS 12); Commerce's from EPiServer.Business.Commerce
+/// 14.x, whose code was read to see what each deletes.
 /// </summary>
 public static class DestructiveJobs
 {
-    private static readonly Dictionary<string, string> Jobs = new(StringComparer.Ordinal)
+    /// <param name="Deletes">It deletes for good; otherwise it changes content in a way that can be undone by hand.</param>
+    private sealed record Effect(string What, bool Deletes);
+
+    private static readonly Dictionary<string, Effect> Jobs = new(StringComparer.Ordinal)
     {
-        ["EPiServer.Util.EmptyWastebasketJob"] = "permanently deletes the content in the recycle bin",
-        ["EPiServer.Util.BlobCleanupJob"] = "deletes media files (blobs) no content refers to",
-        ["EPiServer.Util.Internal.TrimContentVersionsJob"] = "deletes old content versions",
-        ["EPiServer.Util.CleanUnusedAssetsFoldersJob"] = "deletes content asset folders whose content is gone",
-        ["EPiServer.DataAbstraction.Activities.Internal.ActivityTruncateJob"] = "deletes old change log entries (the activity log)",
-        ["EPiServer.Notification.Internal.NotificationMessageTruncateJob"] = "deletes old notification messages",
-        ["EPiServer.Util.TaskMonitorTruncateJob"] = "deletes old monitored task entries",
-        ["EPiServer.Util.PageArchiveJob"] = "moves expired content to its archive page",
+        ["EPiServer.Util.EmptyWastebasketJob"] = new("permanently deletes the content in the recycle bin", true),
+        ["EPiServer.Util.BlobCleanupJob"] = new("deletes media files (blobs) no content refers to", true),
+        ["EPiServer.Util.Internal.TrimContentVersionsJob"] = new("deletes old content versions", true),
+        ["EPiServer.Util.CleanUnusedAssetsFoldersJob"] = new("deletes content asset folders whose content is gone", true),
+        ["EPiServer.DataAbstraction.Activities.Internal.ActivityTruncateJob"] = new("deletes old change log entries (the activity log)", true),
+        ["EPiServer.Notification.Internal.NotificationMessageTruncateJob"] = new("deletes old notification messages", true),
+        ["EPiServer.Util.TaskMonitorTruncateJob"] = new("deletes old monitored task entries", true),
+        ["EPiServer.Util.PageArchiveJob"] = new("moves every expired page to its archive page", false),
+        ["EPiServer.Business.Commerce.ScheduledJobs.RemoveExpiredCartsJob"] = new("deletes carts older than its threshold (30 days by default)", true),
+        ["EPiServer.Business.Commerce.ScheduledJobs.ArchivedJob"] = new("permanently deletes archived catalog items older than their threshold", true),
+        ["EPiServer.Business.Commerce.ScheduledJobs.RemoveExpiredLowestPriceJob"] = new("deletes lowest-price history older than its threshold (30 days by default)", true),
     };
 
-    /// <summary>What the job deletes, or null when it isn't one of these.</summary>
-    public static string? Find(string? typeName) => typeName is not null && Jobs.TryGetValue(typeName, out var what) ? what : null;
+    /// <summary>What the job does, or null when it isn't one of these.</summary>
+    public static string? Find(string? typeName) => typeName is not null && Jobs.TryGetValue(typeName, out var effect) ? effect.What : null;
 
     public static IReadOnlyCollection<string> Classes => Jobs.Keys;
 
-    public static string Refusal(string name, string what) =>
-        $"'{name}' {what}, which can't be undone. Run it with --allow-destructive if that is what you want.";
+    /// <summary>Why <c>jobs run</c> refuses it; null when it isn't one of these.</summary>
+    public static string? Refusal(string name, string? typeName) => typeName is not null && Jobs.TryGetValue(typeName, out var effect)
+        ? effect.Deletes
+            ? $"'{name}' {effect.What}, which can't be undone. Run it with --allow-destructive if that is what you want."
+            : $"'{name}' {effect.What}, changing content across the site (each move can be undone by hand, e.g. `opticli move`). Run it with --allow-destructive if that is what you want."
+        : null;
+
+    /// <summary>Why <c>jobs set</c> refuses a change that arms it; null when it isn't one of these.</summary>
+    public static string? SetRefusal(string name, string? typeName) => Find(typeName) is { } what
+        ? $"This change lets the scheduler run '{name}' (or run it sooner), and it {what}. Give --allow-destructive if that is what you want."
+        : null;
 
     public const string Hint =
-        "--allow-destructive runs it; it is never implied by --yes or a prompt. Ask the user first: a restored database's recycle bin, versions and change log are often the only copy.";
+        "--allow-destructive allows it; it is never implied by --yes or a prompt. Ask the user first: a restored database's recycle bin, versions and change log are often the only copy.";
 
     /// <summary>
-    /// Whether the job is one of the CMS's own (or an add-on's from Optimizely), whose effects are documented, rather than
-    /// the site's own code.
+    /// Whether going from <paramref name="before"/> to <paramref name="after"/> arms the job: the scheduler will start it
+    /// (enabled, with a next run) and didn't, or will start it sooner (an earlier next run) or more often (a shorter
+    /// interval). Disabling it, or making it manual, never does.
     /// </summary>
-    public static bool IsBuiltIn(string? typeName) => typeName is not null && typeName.StartsWith("EPiServer.", StringComparison.Ordinal);
+    public static bool Arms(JobSchedule before, JobSchedule after)
+    {
+        if (!after.Armed)
+        {
+            return false;
+        }
+        if (!before.Armed)
+        {
+            return true;
+        }
+        return after.NextRun < before.NextRun
+            || (JobIntervals.Approximate(after.IntervalType, after.IntervalLength) is { } shorter
+                && (JobIntervals.Approximate(before.IntervalType, before.IntervalLength) is not { } longer || shorter < longer));
+    }
+}
+
+/// <summary>What decides when the scheduler starts a job.</summary>
+/// <param name="IntervalType">The <c>ScheduledIntervalType</c> value; 0 for a manual job.</param>
+/// <param name="NextRun">UTC; null when it has none.</param>
+public sealed record JobSchedule(bool Enabled, DateTime? NextRun, int IntervalType, int IntervalLength)
+{
+    /// <summary>The scheduler starts it at its next run.</summary>
+    public bool Armed => Enabled && NextRun is not null;
 }
 
 /// <summary>
@@ -178,8 +252,8 @@ public static class JobIntervals
         type = 0;
         length = 0;
         error = null;
-        var value = text.Trim().ToLowerInvariant();
-        if (value == Manual)
+        var value = text.Trim();
+        if (value.Equals(Manual, StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
@@ -188,7 +262,13 @@ public static class JobIntervals
         {
             digits++;
         }
-        var suffix = value[digits..];
+        // Case doesn't matter, except for a lone M: minutes (m) or months (M, as in .NET's format strings)?
+        if (value[digits..] == "M")
+        {
+            error = $"'{text}' is ambiguous: give {value[..digits]}m for minutes or {value[..digits]}mo for months.";
+            return false;
+        }
+        var suffix = value[digits..].ToLowerInvariant();
         var unit = Units.FirstOrDefault(u => u.Suffix == suffix || u.Singular == suffix || u.Plural == suffix);
         if (digits == 0 || unit is null || !int.TryParse(value[..digits], NumberStyles.None, CultureInfo.InvariantCulture, out length) || length <= 0)
         {
@@ -203,6 +283,20 @@ public static class JobIntervals
         type = unit.Type;
         return true;
     }
+
+    /// <summary>The interval's length, a month taken as 30 days and a year as 365; null for no interval.</summary>
+    public static TimeSpan? Approximate(int type, int length) => Find(type, length) is { } unit
+        ? unit.Type switch
+        {
+            1 => TimeSpan.FromDays(365 * length),
+            2 => TimeSpan.FromDays(30 * length),
+            3 => TimeSpan.FromDays(7 * length),
+            4 => TimeSpan.FromDays(length),
+            5 => TimeSpan.FromHours(length),
+            6 => TimeSpan.FromMinutes(length),
+            _ => TimeSpan.FromSeconds(length),
+        }
+        : null;
 
     private static Unit? Find(int type, int length) => length > 0 ? Units.FirstOrDefault(u => u.Type == type) : null;
 }

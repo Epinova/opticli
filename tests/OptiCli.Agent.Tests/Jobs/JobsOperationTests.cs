@@ -110,7 +110,7 @@ public class JobsOperationTests
         Assert.True(result.Started);
         Assert.NotNull(result.Since);
         Assert.Equal(("opticli", (string?)null), executor.StartedWith);
-        Assert.Equal([JobRequests.CustomJobWarning], result.Warnings);
+        Assert.Equal([JobRequests.UnknownCodeWarning], result.Warnings);
     }
 
     [Fact]
@@ -254,6 +254,61 @@ public class JobsOperationTests
         Assert.Equal((false, true, false), (dry.Saved, dry.DryRun, dry.After.Enabled));
         Assert.Equal(["enabled: true → false"], dry.Changes);
         Assert.Empty(repository.Saved);
+    }
+
+    [Fact]
+    public void An_add_on_job_runs_with_the_warning_and_a_cms_job_without_one()
+    {
+        var addOnId = Guid.Parse("0b1c2d3e-0000-4000-8000-000000000003");
+        var repository = new Repository(
+            Job(addOnId, "Find content indexing job", "EPiServer.Find.Cms.Job.IndexingJob"),
+            Job(ImportId, "Publish Delayed Content Versions", "EPiServer.Util.DelayedPublishJob"));
+
+        var addOn = JobsOperation.Run(Request(repository, new Executor()), new JobRunRequest { Job = addOnId, DryRun = true });
+        var cms = JobsOperation.Run(Request(repository, new Executor()), new JobRunRequest { Job = ImportId, DryRun = true });
+
+        Assert.Equal([JobRequests.UnknownCodeWarning], addOn.Warnings);
+        Assert.Null(cms.Warnings);
+    }
+
+    [Fact]
+    public void Set_refuses_to_arm_a_destructive_job_without_the_flag_but_disarms_it_freely()
+    {
+        var trash = Job(TrashId, "Automatic Emptying of Trash", "EPiServer.Util.EmptyWastebasketJob");
+        trash.IntervalType = ScheduledIntervalType.Weeks;
+        trash.IntervalLength = 1;
+        trash.NextExecution = trash.NextExecutionUTC = DateTime.UtcNow.AddDays(3);
+        trash.IsEnabled = false;
+        var repository = new Repository(trash);
+
+        var enable = Assert.Throws<AgentException>(() => JobsOperation.Set(Request(repository, new Executor()), new JobSetRequest { Job = TrashId, Enabled = true }));
+        trash.IsEnabled = false;
+        var allowed = JobsOperation.Set(Request(repository, new Executor()), new JobSetRequest { Job = TrashId, Enabled = true, AllowDestructive = true });
+        var sooner = Assert.Throws<AgentException>(() => JobsOperation.Set(Request(repository, new Executor()), new JobSetRequest { Job = TrashId, Next = DateTime.UtcNow }));
+        var manual = JobsOperation.Set(Request(repository, new Executor()), new JobSetRequest { Job = TrashId, Every = "manual" });
+
+        Assert.Equal((AgentErrorCodes.Refused, AgentErrorCodes.Refused), (enable.Code, sooner.Code));
+        Assert.Contains("permanently deletes the content in the recycle bin", enable.Message);
+        Assert.True(allowed.Saved);
+        Assert.True(manual.Saved);
+        Assert.Equal(2, repository.Saved.Count);
+    }
+
+    [Fact]
+    public void A_next_run_with_an_offset_is_converted_and_one_without_counts_as_utc()
+    {
+        var job = Job(ImportId, "Content import", "Example.Jobs.ImportJob");
+        var repository = new Repository(job);
+        var withOffset = System.Text.Json.JsonSerializer.Deserialize<JobSetRequest>(
+            """{"job":"0b1c2d3e-0000-4000-8000-000000000001","next":"2026-10-07T05:00:00+02:00"}""", AgentRequest.RequestOptions)!;
+        var bare = System.Text.Json.JsonSerializer.Deserialize<JobSetRequest>(
+            """{"job":"0b1c2d3e-0000-4000-8000-000000000001","next":"2026-10-08T03:00:00"}""", AgentRequest.RequestOptions)!;
+
+        JobsOperation.Set(Request(repository, new Executor()), withOffset);
+        Assert.Equal(new DateTime(2026, 10, 7, 3, 0, 0, DateTimeKind.Utc), job.NextExecution);
+        Assert.Equal(DateTimeKind.Utc, job.NextExecution.Kind);
+        JobsOperation.Set(Request(repository, new Executor()), bare);
+        Assert.Equal(new DateTime(2026, 10, 8, 3, 0, 0, DateTimeKind.Utc), job.NextExecution);
     }
 
     [Fact]

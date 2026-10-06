@@ -42,7 +42,7 @@ public static class JobReferences
             if (matches.Count > 1)
             {
                 throw new UsageException(
-                    $"'{wanted}' matches {matches.Count} jobs: {string.Join(", ", matches.Select(m => $"'{m.Name}'"))}.",
+                    $"'{wanted}' matches {matches.Count} jobs: {string.Join(", ", matches.Select(m => $"'{m.Name}' ({m.TypeName ?? "no class"}, {m.Id})"))}.",
                     "Give the full name in quotes, the class, or the id (`opticli jobs --all` lists them).");
             }
         }

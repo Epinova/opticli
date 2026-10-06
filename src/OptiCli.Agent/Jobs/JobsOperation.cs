@@ -38,9 +38,9 @@ internal static class JobsOperation
         var job = Require(request, body.Job);
         var executor = request.Service<IScheduledJobExecutor>();
         var ping = request.Service<IOptions<SchedulerOptions>>().Value.PingTime;
-        if (DestructiveJobs.Find(job.TypeName) is { } what && !body.AllowDestructive)
+        if (DestructiveJobs.Refusal(job.Name, job.TypeName) is { } refusal && !body.AllowDestructive)
         {
-            throw new AgentException(AgentErrorCodes.Refused, DestructiveJobs.Refusal(job.Name, what), DestructiveJobs.Hint);
+            throw AgentException.Refused(refusal, DestructiveJobs.Hint);
         }
         if (RunningHere(executor, job.ID) is not null)
         {
@@ -58,9 +58,9 @@ internal static class JobsOperation
             }
             warnings.Add($"'{job.Name}' was marked as running, but whatever ran it stopped pinging {job.SecondsAfterLastPing} s ago (the process stopped).");
         }
-        if (!DestructiveJobs.IsBuiltIn(job.TypeName))
+        if (JobRequests.Warning(job.TypeName) is { } unknown)
         {
-            warnings.Add(JobRequests.CustomJobWarning);
+            warnings.Add(unknown);
         }
         if (body.DryRun)
         {
@@ -113,6 +113,7 @@ internal static class JobsOperation
         var job = Require(request, body.Job);
         var running = RunningHere(request.Service<IScheduledJobExecutor>(), job.ID) is not null;
         var before = State(job, running);
+        var scheduleBefore = Schedule(job);
         var changes = new List<string>();
         var warnings = new List<string>();
 
@@ -150,7 +151,8 @@ internal static class JobsOperation
         }
         if (body.Next is { } next)
         {
-            nextRun = DateTime.SpecifyKind(next, DateTimeKind.Utc);
+            // JSON gives a time with an offset as local time (Kind Local), one with Z as UTC; one without either counts as UTC.
+            nextRun = next.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(next, DateTimeKind.Utc) : next.ToUniversalTime();
         }
         if (nextRun != NextRun(job))
         {
@@ -170,6 +172,11 @@ internal static class JobsOperation
             {
                 warnings.Add("The scheduler is off in this site, so nothing starts it at its next run here: `opticli jobs run` runs it now, and the site with its scheduler on runs it then (`opticli serve --scheduler`).");
             }
+        }
+
+        if (!body.AllowDestructive && DestructiveJobs.Arms(scheduleBefore, Schedule(job)) && DestructiveJobs.SetRefusal(job.Name, job.TypeName) is { } refusal)
+        {
+            throw AgentException.Refused(refusal, DestructiveJobs.Hint);
         }
 
         var saved = false;
@@ -263,6 +270,8 @@ internal static class JobsOperation
             running || job.IsRunning,
             job.IsStoppable);
     }
+
+    private static JobSchedule Schedule(ScheduledJob job) => new(job.IsEnabled, NextRun(job), (int)job.IntervalType, job.IntervalLength);
 
     private static DateTime? NextRun(ScheduledJob job) =>
         job.NextExecutionUTC == DateTime.MinValue ? null : DateTime.SpecifyKind(job.NextExecutionUTC, DateTimeKind.Utc);

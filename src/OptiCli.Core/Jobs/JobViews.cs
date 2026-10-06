@@ -120,7 +120,8 @@ public static partial class JobViews
     public static JobLogView From(JobLogRow row) => new(
         row.JobName,
         row.JobId,
-        row.Duration is { } duration ? row.Finished - duration : null,
+        // To the millisecond, like the database's own times.
+        row.Duration is { } duration ? Milliseconds(row.Finished - duration) : null,
         row.Finished,
         row.Duration is { } length ? Duration(length) : null,
         row.Duration is { } ms ? (long)ms.TotalMilliseconds : null,
@@ -128,6 +129,9 @@ public static partial class JobViews
         JobTriggers.Name(row.Trigger),
         row.Server,
         row.Text);
+
+    private static DateTime Milliseconds(DateTime time) =>
+        new((time.Ticks + TimeSpan.TicksPerMillisecond / 2) / TimeSpan.TicksPerMillisecond * TimeSpan.TicksPerMillisecond, time.Kind);
 
     public static string Schedule(JobRow row) => JobIntervals.Describe(JobIntervals.TypeOf(row.DatePart), row.Interval);
 

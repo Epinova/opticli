@@ -55,6 +55,9 @@ public class JobsTests
     [InlineData("1mo", 2, 1)]
     [InlineData("1y", 1, 1)]
     [InlineData("2hours", 5, 2)]
+    [InlineData("1MO", 2, 1)]
+    [InlineData("12H", 5, 12)]
+    [InlineData("Manual", 0, 0)]
     [InlineData("manual", 0, 0)]
     public void Every_reads_as_the_cms_interval_type(string text, int type, int length)
     {
@@ -64,6 +67,7 @@ public class JobsTests
 
     [Theory]
     [InlineData("10s", "shorter than a minute")]
+    [InlineData("1M", "ambiguous: give 1m for minutes or 1mo for months")]
     [InlineData("0h", "not an interval")]
     [InlineData("h", "not an interval")]
     [InlineData("1x", "not an interval")]
@@ -99,11 +103,88 @@ public class JobsTests
         Assert.Contains("recycle bin", DestructiveJobs.Find("EPiServer.Util.EmptyWastebasketJob"));
         Assert.NotNull(DestructiveJobs.Find("EPiServer.Util.Internal.TrimContentVersionsJob"));
         Assert.NotNull(DestructiveJobs.Find("EPiServer.DataAbstraction.Activities.Internal.ActivityTruncateJob"));
+        Assert.Contains("carts", DestructiveJobs.Find("EPiServer.Business.Commerce.ScheduledJobs.RemoveExpiredCartsJob"));
+        Assert.Contains("archived catalog items", DestructiveJobs.Find("EPiServer.Business.Commerce.ScheduledJobs.ArchivedJob"));
         Assert.Null(DestructiveJobs.Find("Example.Jobs.EmptyWastebasketJob"));
         Assert.Null(DestructiveJobs.Find("EPiServer.Util.DelayedPublishJob"));
         Assert.Null(DestructiveJobs.Find(null));
-        Assert.True(DestructiveJobs.IsBuiltIn("EPiServer.Util.DelayedPublishJob"));
-        Assert.False(DestructiveJobs.IsBuiltIn("Example.Jobs.ImportJob"));
+    }
+
+    [Fact]
+    public void A_job_that_deletes_cant_be_undone_but_one_that_moves_content_can()
+    {
+        var trash = DestructiveJobs.Refusal("Automatic Emptying of Trash", "EPiServer.Util.EmptyWastebasketJob");
+        var archive = DestructiveJobs.Refusal("Archive Function", "EPiServer.Util.PageArchiveJob");
+
+        Assert.Contains("which can't be undone", trash);
+        Assert.DoesNotContain("can't be undone", archive);
+        Assert.Contains("moves every expired page to its archive page", archive);
+        Assert.Null(DestructiveJobs.Refusal("Content import", "Example.Jobs.ImportJob"));
+    }
+
+    [Theory]
+    [InlineData("EPiServer.Util.DelayedPublishJob", false)]
+    [InlineData("EPiServer.LinkAnalyzer.LinkValidationJob", false)]
+    [InlineData("EPiServer.Shell.Notification.RemoveInUseNotificationJob", false)]
+    [InlineData("EPiServer.Cms.Shell.UI.Notifications.Feature.FeatureNotificationJob", false)]
+    [InlineData("EPiServer.Business.Commerce.ScheduledJobs.PaymentPlanJob", true)]
+    [InlineData("EPiServer.Business.Commerce.ScheduledJobs.RotateEncryptionJob", true)]
+    [InlineData("EPiServer.Commerce.ODP.ODPExportJob", true)]
+    [InlineData("EPiServer.Find.Cms.Job.IndexingJob", true)]
+    [InlineData("Example.Jobs.ImportJob", true)]
+    [InlineData(null, true)]
+    public void Only_the_cms_core_jobs_run_without_a_warning(string? typeName, bool warns)
+    {
+        Assert.Equal(warns ? JobRequests.UnknownCodeWarning : null, JobRequests.Warning(typeName));
+        Assert.Equal(!warns, CmsJobs.Contains(typeName));
+    }
+
+    [Fact]
+    public void The_list_of_cms_jobs_has_every_destructive_cms_job()
+    {
+        Assert.All(DestructiveJobs.Classes.Where(c => !c.StartsWith("EPiServer.Business.Commerce.", StringComparison.Ordinal)), c => Assert.True(CmsJobs.Contains(c), c));
+    }
+
+    private static JobSchedule Schedule(bool enabled, int? nextInHours, string every = "1d")
+    {
+        JobIntervals.TryParse(every, out var type, out var length, out _);
+        return new JobSchedule(enabled, nextInHours is { } hours ? Now.AddHours(hours) : null, type, length);
+    }
+
+    public static TheoryData<string, JobSchedule, JobSchedule, bool> Arming() => new()
+    {
+        { "enabled with a next run", Schedule(false, 5), Schedule(true, 5), true },
+        { "given a next run", Schedule(true, null, "manual"), Schedule(true, 5), true },
+        { "next run earlier", Schedule(true, 5), Schedule(true, 1), true },
+        { "more often", Schedule(true, 5, "1w"), Schedule(true, 5, "1d"), true },
+        { "next run later", Schedule(true, 1), Schedule(true, 5), false },
+        { "less often", Schedule(true, 5, "1d"), Schedule(true, 5, "1w"), false },
+        { "disabled", Schedule(true, 5), Schedule(false, 1), false },
+        { "made manual", Schedule(true, 5), Schedule(true, null, "manual"), false },
+        { "enabled without a next run", Schedule(false, null, "manual"), Schedule(true, null, "manual"), false },
+    };
+
+    [Theory]
+    [MemberData(nameof(Arming))]
+    public void A_change_arms_a_job_when_the_scheduler_will_run_it_newly_sooner_or_more_often(string change, JobSchedule before, JobSchedule after, bool arms) =>
+        Assert.True(arms == DestructiveJobs.Arms(before, after), change);
+
+    [Fact]
+    public void Set_needs_the_flag_to_arm_a_destructive_job_and_never_to_disarm_one()
+    {
+        var trash = Job("Automatic Emptying of Trash", "EPiServer.Util.EmptyWastebasketJob", datePart: "wk", interval: 1, next: Now.AddDays(3), enabled: false);
+
+        var enable = Assert.Throws<RefusedException>(() => JobRunner.RequireSettable(trash, false, true, null, null, allowDestructive: false));
+        var sooner = Assert.Throws<RefusedException>(() => JobRunner.RequireSettable(trash with { Enabled = true }, false, null, null, Now, allowDestructive: false));
+
+        Assert.Contains("permanently deletes the content in the recycle bin", enable.Message);
+        Assert.Contains("--allow-destructive", sooner.Message);
+        JobRunner.RequireSettable(trash, false, true, null, null, allowDestructive: true);
+        JobRunner.RequireSettable(trash with { Enabled = true }, false, false, null, null, allowDestructive: false);
+        JobRunner.RequireSettable(trash with { Enabled = true }, false, null, "manual", null, allowDestructive: false);
+        JobRunner.RequireSettable(trash with { Enabled = true }, false, null, null, Now.AddDays(30), allowDestructive: false);
+        JobRunner.RequireSettable(Job("Content import"), false, true, "1h", Now, allowDestructive: false);
+        Assert.Throws<RefusedException>(() => JobRunner.RequireSettable(trash, true, false, null, null, allowDestructive: true));
     }
 
     [Theory]
@@ -122,8 +203,9 @@ public class JobsTests
         var name = Assert.Throws<UsageException>(() => JobReferences.Resolve("content", Jobs));
         var shortClass = Assert.Throws<UsageException>(() => JobReferences.Resolve("IndexJob", Jobs));
 
-        Assert.Equal("'content' matches 2 jobs: 'Content import', 'Content export'.", name.Message);
-        Assert.Contains("'Search index', 'Other index'", shortClass.Message);
+        Assert.Equal($"'content' matches 2 jobs: 'Content import' (Example.Jobs.ImportJob, {ImportId}), 'Content export' (Example.Jobs.ExportJob, {Jobs[1].Id}).", name.Message);
+        Assert.Contains("'Search index' (Example.Search.IndexJob, ", shortClass.Message);
+        Assert.Contains("'Other index' (Example.Other.IndexJob, ", shortClass.Message);
     }
 
     [Fact]
@@ -181,6 +263,8 @@ public class JobsTests
 
         Assert.Equal((finished.AddMilliseconds(-1240), "1.2 s", 1240L, "succeeded", "scheduler", "<b>Done</b>"), (view.Started, view.Duration, view.DurationMs, view.Status, view.Trigger, view.Message));
         Assert.Null(JobViews.From(row with { Duration = null }).Started);
+        // Rounded to the millisecond, as the database's own times are.
+        Assert.Equal(finished.AddMilliseconds(-1000), JobViews.From(row with { Duration = TimeSpan.FromTicks(10_000_009) }).Started);
     }
 
     [Theory]

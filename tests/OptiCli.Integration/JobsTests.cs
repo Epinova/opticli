@@ -52,7 +52,7 @@ public sealed class JobsTests
         Assert.Equal((true, JobStatuses.Succeeded, "Done: 3 steps, as opticli."), (view.Started, view.Status, view.Message));
         Assert.InRange(view.DurationMs!.Value, 2500, 30_000);
         Assert.Contains("Step 3 of 3", messages);
-        Assert.Equal([JobRequests.CustomJobWarning], warnings);
+        Assert.Equal([JobRequests.UnknownCodeWarning], warnings);
         var logged = (await JobReader.LogAsync(site.Session.Db, new JobLogQuery(FixtureJob), 0, 1, cancellationToken)).Single();
         Assert.Equal((1, 2, "Done: 3 steps, as opticli."), (logged.Status, logged.Trigger, logged.Text));
     }
@@ -75,7 +75,10 @@ public sealed class JobsTests
             Assert.Equal(ErrorCode.JobFailed, ex.Code);
             Assert.Equal(7, ExitCodes.For(ex.Code));
             Assert.StartsWith("'opticli test job' failed: The opticli test job failed on purpose", ex.Message);
-            Assert.Equal(JobStatuses.Failed, Assert.IsType<JobRunView>(ex.Details).Status);
+            var details = Assert.IsType<JobRunView>(ex.Details);
+            Assert.Equal(JobStatuses.Failed, details.Status);
+            // A failed run has no meta: the run's warnings come with the error.
+            Assert.Equal([JobRequests.UnknownCodeWarning], details.Warnings);
             var failed = await JobReader.LogAsync(site.Session.Db, new JobLogQuery(FixtureJob, FailedOnly: true), 0, 1, cancellationToken);
             Assert.Contains("failed on purpose", failed.Single().Text);
         }
@@ -130,31 +133,31 @@ public sealed class JobsTests
         }
         try
         {
-            var dry = await JobRunner.SetAsync(site.Agent, job, false, null, "1h", DateTime.UtcNow, dryRun: true, cancellationToken);
+            var dry = await JobRunner.SetAsync(site.Agent, job, false, null, "1h", DateTime.UtcNow, allowDestructive: false, dryRun: true, cancellationToken);
             Assert.Equal((false, "every 1 hour"), (dry.Saved, dry.After.Schedule));
             Assert.Equal("manual", JobViews.Schedule((await JobReader.GetAsync(site.Session.Db, FixtureJob, cancellationToken))!));
 
-            var set = await JobRunner.SetAsync(site.Agent, job, false, null, "1h", DateTime.UtcNow, dryRun: false, cancellationToken);
+            var set = await JobRunner.SetAsync(site.Agent, job, false, null, "1h", DateTime.UtcNow, allowDestructive: false, dryRun: false, cancellationToken);
             var row = (await JobReader.GetAsync(site.Session.Db, FixtureJob, cancellationToken))!;
             Assert.True(set.Saved);
             Assert.Equal(("every 1 hour", true), (JobViews.Schedule(row), JobViews.From(row, null, DateTime.UtcNow.AddSeconds(1)).Overdue));
             // The scheduler is off in the site `serve` runs: an overdue job is only started by `jobs run`.
             Assert.Contains(set.Warnings!, w => w.Contains("scheduler is off", StringComparison.Ordinal));
 
-            var disabled = await JobRunner.SetAsync(site.Agent, job, false, false, null, null, dryRun: false, cancellationToken);
+            var disabled = await JobRunner.SetAsync(site.Agent, job, false, false, null, null, allowDestructive: false, dryRun: false, cancellationToken);
             Assert.Equal(["enabled: true → false"], disabled.Changes);
             Assert.False((await JobReader.GetAsync(site.Session.Db, FixtureJob, cancellationToken))!.Enabled);
         }
         finally
         {
-            await JobRunner.SetAsync(site.Agent, job, false, true, "manual", null, dryRun: false, cancellationToken);
+            await JobRunner.SetAsync(site.Agent, job, false, true, "manual", null, allowDestructive: false, dryRun: false, cancellationToken);
             var back = (await JobReader.GetAsync(site.Session.Db, FixtureJob, cancellationToken))!;
             Assert.Equal(("manual", true, (DateTime?)null), (JobViews.Schedule(back), back.Enabled, back.NextRun));
         }
     }
 
     [SiteFact]
-    public async Task A_destructive_built_in_job_is_refused_without_the_flag_by_the_cli_and_the_site()
+    public async Task A_destructive_built_in_job_is_neither_run_nor_armed_without_the_flag_by_the_cli_and_the_site()
     {
         var cancellationToken = CancellationToken.None;
         await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
@@ -164,6 +167,14 @@ public sealed class JobsTests
         var agent = await Assert.ThrowsAsync<RefusedException>(() => site.Agent.SendAsync<JobRunResult>(HttpMethod.Post, AgentRoutes.JobRun, new JobRunRequest { Job = trash.Id }, cancellationToken));
         var dry = await site.Agent.SendAsync<JobRunResult>(HttpMethod.Post, AgentRoutes.JobRun, new JobRunRequest { Job = trash.Id, AllowDestructive = true, DryRun = true }, cancellationToken);
 
+        // Weekly to daily runs it more often: arming it needs the flag too, in the CLI and in the site. Dry runs: nothing changes.
+        var setCli = Assert.Throws<RefusedException>(() => JobRunner.RequireSettable(trash, false, null, "1d", null, allowDestructive: false));
+        var setAgent = await Assert.ThrowsAsync<RefusedException>(() => site.Agent.SendAsync<JobSetResult>(HttpMethod.Post, AgentRoutes.JobSet, new JobSetRequest { Job = trash.Id, Every = "1d", DryRun = true }, cancellationToken));
+        var disarm = await JobRunner.SetAsync(site.Agent, trash, false, false, null, null, allowDestructive: false, dryRun: true, cancellationToken);
+
+        Assert.Contains("--allow-destructive", setCli.Message);
+        Assert.Contains("permanently deletes the content in the recycle bin", setAgent.Message);
+        Assert.Equal((false, false), (disarm.Saved, disarm.After.Enabled));
         Assert.Contains("permanently deletes the content in the recycle bin", cli.Message);
         Assert.Contains("--allow-destructive", agent.Message);
         Assert.Equal((false, true), (dry.Started, dry.DryRun));

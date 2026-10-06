@@ -30,14 +30,20 @@ again to update the skill.
   scheduler is off, as the user `opticli`. It waits by reading the job tables, shows the job's status messages on a
   terminal, and ends with the run's status, duration and message: exit 0 when it succeeded, the new exit code 7
   (`job_failed`) when it didn't. `--no-wait` returns once it has started; `--timeout <s>` (the new error code
-  `timeout`, exit 4) and Ctrl+C stop the waiting, not the job. The CMS's built-in jobs that delete for good (emptying
-  the recycle bin, removing unused files, trimming versions, truncating the change log, ...) need
-  `--allow-destructive`; the site's own jobs run with a warning that opticli can't tell what they change.
+  `timeout`, exit 4) and Ctrl+C stop the waiting, not the job. Jobs that delete for good (the CMS's emptying of the
+  recycle bin, removal of unused files, trimming of versions, truncating of the change log, ...; Commerce's removal of
+  expired carts, archived items and lowest-price history) and Archive Function, which moves content across the site,
+  need `--allow-destructive`. Jobs other than the CMS's own (the site's, add-ons') run with a warning, in
+  `meta.warnings` or, when the run fails, `error.details.warnings`: opticli doesn't know what they change or contact.
 - **`opticli jobs stop <job>`** stops a job the site runs, as the admin UI's Stop does, and waits up to 30 s for it to
   end; **`opticli jobs set <job>`** changes `--enabled`, the interval (`--every 1h`, `manual`) and the next run
-  (`--next now|<time>`) through the CMS's job repository, showing the job before and after. Both take `--dry-run`.
+  (`--next now|<time>`) through the CMS's job repository, showing the job before and after; a change that lets the
+  scheduler run a job `jobs run` needs `--allow-destructive` for (enabled with a next run, sooner, more often) needs it
+  too. `--every 1M` is refused as ambiguous (`m` is minutes, `mo` months). Both take `--dry-run`.
 - Against a shared database `jobs run`, `stop` and `set` are refused (exit 3): the deployed site's scheduler uses the
   same jobs. The MCP module has no such tools.
+- `doctor` and `serve --status` warn when the running site's agent is older than this release: it doesn't turn the
+  scheduler off, so overdue jobs may run there.
 
 ### Development
 
