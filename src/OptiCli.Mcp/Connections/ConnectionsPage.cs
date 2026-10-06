@@ -71,6 +71,10 @@ internal sealed class ConnectionsPage(
         {
             return Message(context, HttpStatusCode.Forbidden, "Not signed in", "Sign in to the site first.");
         }
+        if (CrossSite(context) is { } crossSite)
+        {
+            return crossSite;
+        }
         if (!context.Request.HasFormContentType || !await antiforgery.IsRequestValidAsync(context))
         {
             return Message(context, HttpStatusCode.BadRequest, "Page expired", "The page expired. Open the connections page again.");

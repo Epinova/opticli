@@ -12,7 +12,8 @@ internal static class TypeOperation
     public static ContentTypeModel Run(CmsCall call, string name)
     {
         var types = call.Service<IContentTypeRepository>();
-        var describer = new ContentTypeDescriber(types, call.Service<ContentTypeAvailabilityService>());
+        // An editor gets the properties the edit UI may show them; the content decides the rest (get_content).
+        var describer = new ContentTypeDescriber(types, call.Service<ContentTypeAvailabilityService>(), call.Properties.Shown);
         return describer.Describe(Find(call, types, name));
     }
 

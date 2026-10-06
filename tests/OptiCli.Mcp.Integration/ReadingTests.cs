@@ -55,6 +55,59 @@ public sealed class ReadingTests(SharedSessions sessions)
     }
 
     [McpSiteFact]
+    public async Task A_reference_to_content_the_editor_cannot_read_is_the_same_not_found_in_every_form_it_can_be_given()
+    {
+        var product = await sessions.ForAsync(TestUsers.Product);
+        var id = (await product.OkAsync("get_content", new { reference = TestUsers.HiddenPage })).GetProperty("id").GetInt32().ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var start = WritingTests.Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        var page = WritingTests.Id((await editor.OkAsync("create_content", new { type = "StandardPage", name = $"opticli-mcp-it {Guid.NewGuid():N}", parent = start })).GetProperty("content"));
+        try
+        {
+            var same = new Comparer(editor, [(id, MissingId, "<id>"), (TestUsers.HiddenPage, MissingGuid, "<guid>")]);
+            const string block = "<div data-classid=\"36f4349b-8093-492b-b616-05d8964e4c89\" {0}>x</div>";
+            await same.ErrorAsync("update_content", id, MissingId, r => new { reference = page, properties = new { MainBody = string.Format(block, $"data-contentlink=\"{r}\"") }, dryRun = true });
+            await same.ErrorAsync("update_content", TestUsers.HiddenPage, MissingGuid, r => new { reference = page, properties = new { MainBody = string.Format(block, $"data-contentguid=\"{r}\"") }, dryRun = true });
+            await same.ErrorAsync("update_content", id, MissingId, r => new { reference = page, properties = new { MainContentArea = new[] { new { @ref = r } } }, dryRun = true });
+            await same.ErrorAsync("create_content", id, MissingId, r => new { type = "McpFieldsBlock", name = "x", forContent = page, properties = new { Related = new[] { r } }, dryRun = true });
+            await same.ErrorAsync("create_content", id, MissingId, r => new { type = "McpFieldsBlock", name = "x", forContent = page, properties = new { Target = int.Parse(r, System.Globalization.CultureInfo.InvariantCulture) }, dryRun = true });
+
+            // The CMS's own text forms aren't looked up, so they aren't taken from an editor at all, whatever they name.
+            foreach (var arguments in new object[]
+            {
+                new { reference = page, properties = new { MainContentArea = id }, dryRun = true },
+                new { reference = page, properties = new { MainContentArea = int.Parse(id, System.Globalization.CultureInfo.InvariantCulture) }, dryRun = true },
+            })
+            {
+                var text = await editor.ErrorAsync("update_content", arguments);
+                Assert.Equal("usage", text.GetProperty("code").GetString());
+                Assert.Contains("takes an array", text.GetProperty("message").GetString());
+            }
+            var list = await editor.ErrorAsync("create_content", new { type = "McpFieldsBlock", name = "x", forContent = page, properties = new { Related = id }, dryRun = true });
+            Assert.Contains("takes an array", list.GetProperty("message").GetString());
+        }
+        finally
+        {
+            await WritingTests.DeleteAsync(editor, page);
+        }
+    }
+
+    [McpSiteFact]
+    public async Task A_search_does_not_say_it_was_cut_short_for_content_the_editor_cannot_read()
+    {
+        // The fixture's folder holds "find-fixture 1 shown" and "find-fixture 2 hidden", which only administrators see.
+        var arguments = new { name = "find-fixture", root = TestUsers.FindFolder, limit = 1 };
+        foreach (var user in new[] { TestUsers.Editor, TestUsers.Product })
+        {
+            var found = await (await sessions.ForAsync(user)).OkAsync("find_content", arguments);
+            Assert.Equal("find-fixture 1 shown", Assert.Single(found.GetProperty("items").EnumerateArray()).GetProperty("name").GetString());
+            Assert.False(found.TryGetProperty("truncated", out var truncated) && truncated.GetBoolean(), $"{user}: {found}");
+        }
+        var admin = await (await sessions.ForAsync(TestUsers.Admin)).OkAsync("find_content", arguments);
+        Assert.True(admin.GetProperty("truncated").GetBoolean());
+    }
+
+    [McpSiteFact]
     public async Task Paging_through_children_counts_only_what_the_editor_can_read()
     {
         var product = await sessions.ForAsync(TestUsers.Product);

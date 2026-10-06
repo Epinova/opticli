@@ -137,38 +137,79 @@ internal sealed class DdsOAuthStore(DynamicDataStoreFactory stores) : IOAuthStor
         return Task.CompletedTask;
     }
 
-    public Task<int> DeleteExpiredAsync(DateTimeOffset now, DateTimeOffset unusedClientsBefore, CancellationToken cancellationToken)
+    public Task<int> DeleteExpiredAsync(DateTimeOffset now, DateTimeOffset unusedClientsBefore, int limit, CancellationToken cancellationToken)
     {
         var cutoff = now.UtcDateTime;
         var deleted = 0;
         var codes = Store<McpCodeData>();
-        foreach (var code in codes.Items<McpCodeData>().Where(c => c.Expires < cutoff).ToList())
+        foreach (var code in codes.Items<McpCodeData>().Where(c => c.Expires < cutoff).Take(limit).ToList())
         {
             codes.Delete(code.Id);
             deleted++;
         }
         var grants = Store<McpGrantData>();
-        foreach (var grant in grants.Items<McpGrantData>().Where(g => g.Expires < cutoff).ToList())
+        if (deleted < limit)
         {
-            lock (GrantLocks.For(grant.GrantId))
+            foreach (var grant in grants.Items<McpGrantData>().Where(g => g.Expires < cutoff).Take(limit - deleted).ToList())
             {
-                grants.Delete(grant.Id);
-                DeleteUses(grant.GrantId);
+                lock (GrantLocks.For(grant.GrantId))
+                {
+                    grants.Delete(grant.Id);
+                    DeleteUses(grant.GrantId);
+                }
+                deleted++;
             }
-            deleted++;
         }
-        var inUse = grants.LoadAll<McpGrantData>().Select(g => g.ClientId)
-            .Concat(codes.LoadAll<McpCodeData>().Select(c => c.ClientId))
-            .ToHashSet(StringComparer.Ordinal);
+        if (deleted >= limit)
+        {
+            return Task.FromResult(deleted);
+        }
+        var inUse = ClientsInUse();
         var clients = Store<McpClientData>();
         var clientCutoff = unusedClientsBefore.UtcDateTime;
-        foreach (var client in clients.Items<McpClientData>().Where(c => c.Created < clientCutoff).ToList().Where(c => !inUse.Contains(c.ClientId)))
+        // The oldest first, a batch at a time; those in use stay, and the next batch starts after them.
+        var kept = 0;
+        while (deleted < limit)
         {
-            clients.Delete(client.Id);
-            deleted++;
+            var batch = clients.Items<McpClientData>().Where(c => c.Created < clientCutoff).OrderBy(c => c.Created).ThenBy(c => c.ClientId)
+                .Skip(kept).Take(limit).ToList();
+            foreach (var client in batch)
+            {
+                if (inUse.Contains(client.ClientId))
+                {
+                    kept++;
+                }
+                else if (deleted < limit)
+                {
+                    clients.Delete(client.Id);
+                    deleted++;
+                }
+            }
+            if (batch.Count < limit)
+            {
+                break;
+            }
         }
         return Task.FromResult(deleted);
     }
+
+    /// <summary>The registered clients without a grant or a code: all of them, less those a grant or a code names.</summary>
+    public Task<int> CountUnusedClientsAsync(CancellationToken cancellationToken)
+    {
+        var registered = Store<McpClientData>().Items<McpClientData>().Count();
+        // A metadata document client's id is its URL, and it isn't stored.
+        var used = ClientsInUse().Count(id => !ClientMetadataDocument.IsUrl(id));
+        return Task.FromResult(Math.Max(0, registered - used));
+    }
+
+    /// <summary>
+    /// The clients a grant or a code names. Loaded whole: there are only as many grants and codes as editors allowed,
+    /// unlike clients, which anyone may register, and which are only ever queried with a filter.
+    /// </summary>
+    private HashSet<string> ClientsInUse() =>
+        Store<McpGrantData>().Items<McpGrantData>().ToList().Select(g => g.ClientId)
+            .Concat(Store<McpCodeData>().Items<McpCodeData>().ToList().Select(c => c.ClientId))
+            .ToHashSet(StringComparer.Ordinal);
 
     private McpGrantData? FindGrantData(string grantId) =>
         Store<McpGrantData>().Find<McpGrantData>(nameof(McpGrantData.GrantId), grantId).FirstOrDefault();

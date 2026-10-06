@@ -20,6 +20,22 @@ internal static class RedirectUris
         && (u.Scheme == Uri.UriSchemeHttps || (u.Scheme == Uri.UriSchemeHttp && IsLoopback(u)));
 
     /// <summary>
+    /// Whether this site sends codes to <paramref name="uri"/> at all (<see cref="OptiCliMcpOptions.AllowedRedirectHosts"/>):
+    /// one <see cref="IsAllowed"/> on a loopback address, which any app may use, since the code then stays on the
+    /// editor's own machine; or https on one of <paramref name="hosts"/>, exactly, ignoring case. <c>"*"</c> among them
+    /// lets any https host through.
+    /// </summary>
+    public static bool IsPermitted(string uri, IReadOnlyCollection<string> hosts) =>
+        IsAllowed(uri) && Uri.TryCreate(uri, UriKind.Absolute, out var u)
+        && (IsLoopback(u) || hosts.Contains(OptiCliMcpOptions.AnyRedirectHost) || hosts.Any(h => string.Equals(h, u.Host, StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>The hosts a return address may be on, for a message: "a loopback address, or https on claude.ai or claude.com".</summary>
+    public static string DescribePermitted(IReadOnlyCollection<string> hosts) =>
+        hosts.Contains(OptiCliMcpOptions.AnyRedirectHost)
+            ? "https, or http on a loopback address"
+            : $"http or https on a loopback address{(hosts.Count == 0 ? "" : $", or https on {string.Join(" or ", hosts)}")}";
+
+    /// <summary>
     /// Exact match, except that a loopback http redirect may use any port (RFC 8252 7.3): native clients pick a free one
     /// for each sign-in. Scheme, host, path and query must still match exactly.
     /// </summary>

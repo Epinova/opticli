@@ -58,6 +58,26 @@ public sealed class SignInTests(SharedSessions sessions)
     }
 
     [McpSiteFact]
+    public async Task Only_claudes_and_loopback_return_addresses_may_register_and_the_metadata_is_never_cached()
+    {
+        using var http = new HttpClient { BaseAddress = McpSiteSettings.Url! };
+        async Task<HttpResponseMessage> Register(string redirect) => await http.PostAsync("episerver/opticli/oauth/register", new StringContent(
+            JsonSerializer.Serialize(new { redirect_uris = new[] { redirect }, client_name = "Claude", token_endpoint_auth_method = "none" }), System.Text.Encoding.UTF8, "application/json"));
+
+        using var elsewhere = await Register("https://attacker.example/cb");
+        Assert.Equal(HttpStatusCode.BadRequest, elsewhere.StatusCode);
+        Assert.Contains("invalid_redirect_uri", await elsewhere.Content.ReadAsStringAsync());
+        using var claude = await Register("https://claude.ai/api/mcp/auth_callback");
+        Assert.Equal(HttpStatusCode.Created, claude.StatusCode);
+
+        foreach (var path in new[] { ".well-known/oauth-protected-resource/episerver/opticli/mcp", ".well-known/oauth-authorization-server/episerver/opticli" })
+        {
+            using var metadata = await http.GetAsync(path);
+            Assert.True(metadata.Headers.CacheControl?.NoStore, path);
+        }
+    }
+
+    [McpSiteFact]
     public async Task The_sites_error_pages_and_controllers_leave_the_module_alone()
     {
         using var http = new HttpClient { BaseAddress = McpSiteSettings.Url! };

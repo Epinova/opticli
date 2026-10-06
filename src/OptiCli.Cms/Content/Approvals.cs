@@ -28,6 +28,22 @@ internal static class Approvals
     }
 
     /// <summary>
+    /// Whether moving <paramref name="link"/> below <paramref name="destination"/> changes the approval sequence that
+    /// applies to it, and so to everything below it that inherits it. A sequence defined on the content itself moves
+    /// with it; an inherited one is compared with the one that applies below the destination, by its id.
+    /// </summary>
+    public static bool MoveChangesSequence(CmsCall call, ContentReference link, ContentReference destination)
+    {
+        var resolved = call.Service<IApprovalDefinitionRepository>().ResolveAsync(link.ToReferenceWithoutVersion()).GetAwaiter().GetResult();
+        if (resolved is { Definition: not null, IsInherited: false })
+        {
+            return false;
+        }
+        var current = resolved?.Definition is { IsEnabled: true } definition ? definition.ID : (int?)null;
+        return current != Applying(call, destination)?.ID;
+    }
+
+    /// <summary>
     /// How a write saves: null for a draft, <see cref="SaveAction.Publish"/>, or <see cref="SaveAction.RequestApproval"/>
     /// where a sequence applies and the caller asked for that.
     /// </summary>

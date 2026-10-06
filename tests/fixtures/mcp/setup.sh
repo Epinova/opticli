@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Builds the MCP test site for the MCP module's end-to-end tests (tests/OptiCli.Mcp.Integration): a copy of the
 # edge-case site (tests/fixtures/edge-cases/setup.sh) and of its database, with this repository's src/OptiCli.Mcp
-# added, McpFixture.cs (test users and access rights, a named API route, an add-on route, a custom error page), custom
-# error pages and the site's controllers in Startup.cs, and a client ID metadata document. Then starts it with serve.sh.
+# added, McpFixture.cs (test users and access rights, content types for the access and edit UI rules, a language only
+# administrators may edit, a search fixture, a named API route, an add-on route, a custom error page), custom error
+# pages and the site's controllers in Startup.cs, and a client ID metadata document. Then starts it with serve.sh.
 # The edge-case site and its database are not changed.
 #
 #   setup.sh [<edge-site-dir> [<target-dir> [<source-db> [<target-db>]]]]

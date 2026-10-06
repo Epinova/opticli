@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text.Json;
+using EPiServer.Cms.Shell.UI.Configurations;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -151,7 +152,7 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
             DryRun = dryRun,
         }), editor =>
         {
-            ToolGates.Upload(data, Site);
+            ToolGates.Upload(fileName, data, Site, CmsUploadRules.From(RequestService<UploadOptions>()));
             PublishingIf(publish)?.Invoke(editor);
         });
 

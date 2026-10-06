@@ -579,36 +579,50 @@ Requirements: .NET 8 or newer, `EPiServer.CMS.Core` 12.12.1 or newer and `EPiSer
 ### Options
 
 The options are read from the `OptiCli:Mcp` configuration section, then from the delegate passed to `AddOptiCliMcp`,
-which wins. In configuration, an `AllowedRoles` list replaces the default list.
+which wins. In configuration, an `AllowedRoles` or `AllowedRedirectHosts` list replaces the default list.
 
 | Option | Default | Meaning |
 |---|---|---|
 | `BasePath` | `/episerver/opticli` | where the module lives: the MCP endpoint is `{BasePath}/mcp`, the OAuth issuer `{origin}{BasePath}`; `""` for a host of its own (with `RequireHost`) |
 | `RequireHost` | none | only answer on this host name (`host` or `host:port`), e.g. an editors' host |
 | `AllowedRoles` | WebEditors, WebAdmins, CmsEditors, CmsAdmins, Administrators | who may connect an assistant at all; the CMS's access rights then decide per item |
+| `AllowedRedirectHosts` | claude.ai, claude.com | the hosts an app's return address (OAuth redirect URI) may be on, https only, matched exactly (no subdomains or wildcards); a loopback address on the editor's own machine is always allowed. `["*"]` allows any https host, and logs a warning at startup (see below) |
 | `AccessTokenLifetime` | 1 hour | how long an access token works; also how long a removed role can keep working |
 | `RefreshTokenLifetime` | 30 days | how long a connection survives unused; each refresh extends it |
 | `ConnectionLifetime` | 30 days | the longest a connection lasts, however often it is used; then the editor connects again, through the site's login (see below) |
 | `RefreshTokenReuseGrace` | 1 minute | how long after a refresh the refresh token it replaced, sent again by the same client, is only refused; later (or from another client) it revokes the connection |
 | `AllowPublish` | `false` | let assistants publish, unpublish and schedule publishing (the `content:publish` scope) |
 | `AllowDelete` | `false` | let assistants delete content, always to the recycle bin |
-| `MaxUploadBytes` | 10 MB | the largest media file an assistant may upload (at most 50 MB) |
+| `MaxUploadBytes` | 10 MB | the largest media file an assistant may upload (at most 50 MB); the CMS UI's own upload limit applies too, if it is lower (see below) |
 | `RateLimits` | see below | requests a minute the OAuth endpoints take |
 
 ```json
 {"OptiCli": {"Mcp": {"AllowDelete": true, "AllowedRoles": ["WebEditors", "WebAdmins", "ProductEditors"]}}}
 ```
 
+`AllowedRedirectHosts` is what stops a stranger from connecting an app to an editor's account. Registration is open to
+anyone and an app names itself, so without it someone could register an app called "Claude" with a return address of
+their own, send a signed-in editor the link to connect it, and receive the code that the editor's Allow sends there.
+The module checks the return address when an app registers and again at every sign-in, also for apps with a metadata
+document and for apps registered before the list changed. Add a host only for a web app the site knowingly accepts.
+
 `RateLimits` are fixed windows of a minute, counted per instance; over a limit, a request gets 429 with `Retry-After`.
 claude.ai calls `register` and `token` from Anthropic's addresses (below), which every editor of the site who uses
-claude.ai shares, so the token endpoint counts per client as well as per address:
+claude.ai shares, so the token endpoint counts per client as well as per address. An IPv6 address counts by its /64,
+which one machine usually has whole. Behind a proxy or load balancer, the site needs ASP.NET Core's forwarded headers
+set up (as its login usually already does), limited to its known proxies: otherwise every request seems to come from
+the proxy, and everyone shares one window.
 
 | `RateLimits.` | Default | Counts |
 |---|---|---|
 | `TokenPerMinute` | 60 | token requests (code exchanges, refreshes) per client and address |
 | `TokenPerAddressPerMinute` | 600 | token requests per address, whatever the client |
-| `RegisterPerMinute` | 60 | client registrations per address (clients with a metadata document, as Claude has, don't register) |
+| `RegisterPerMinute` | 10 | client registrations per address (clients with a metadata document, as Claude has, don't register) |
 | `AuthorizePerMinute` | 60 | the consent page and its post, per address (the editor's browser) |
+
+Besides the rate limit, registration stops at 5,000 registered apps that have no connection and no sign-in under way:
+`register` then answers 429 until the cleanup has deleted some. An app that registers and doesn't sign in within a day
+is deleted.
 
 ```json
 {"OptiCli": {"Mcp": {"RateLimits": {"TokenPerAddressPerMinute": 1200}}}}
@@ -683,9 +697,48 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
 - **Claude is the editor.** Every read is checked against the editor's Read access; content they can't read gives
   exactly the same `not_found` as content that doesn't exist, and lists leave it out. Every save, publish, move and
   delete goes through the CMS's own access checks for the editor. The CMS records the editor as the one who saved.
-  What the CMS leaves to the edit UI is checked too: a content type's own access rights (who may create it), and
-  restoring from the recycle bin, which the module doesn't do at all (a move out of the recycle bin is refused, with a
-  hint to restore it in the CMS, where the editor sees what comes back live).
+- **What the CMS leaves to the edit UI is checked too**, since the CMS's repository doesn't check it on save:
+  - a content type's own access rights (who may create it), and the access its group of types requires on the parent;
+  - the access rights per language (admin mode, Languages): an editor who may not edit a language gets no draft,
+    publish, unpublish or discard in it, and can't add it to content;
+  - properties the edit UI hides or locks for the editor: not displayed in edit mode (`[ScaffoldColumn(false)]`),
+    read-only (`[Editable(false)]`), on a tab whose required access they lack, or hidden or locked for them by an editor
+    descriptor or metadata extender. The module asks the CMS UI's own metadata, as the edit UI's form builds it (local
+    blocks nested in their content's), and when that can't be built for an item, the model's settings decide what is
+    shown and nothing of the item may be changed. `get_content` leaves these properties out, and so do diffs, also
+    inside local blocks and block lists; writing them is refused, and a block list rewritten keeps what its items had of
+    them. `get_content_type` leaves out what the type's settings hide or lock; what depends on the content and the
+    editor only `get_content` knows;
+  - content references: every one is looked up as the editor, also in rich text (embedded blocks), so an assistant
+    can't point to content the edit UI's pickers wouldn't offer, or learn from a dry run that it exists. The CMS's own
+    text forms of a ContentArea or a reference list, which skip that, are refused: give an array of refs;
+  - restoring from the recycle bin, which the module doesn't do at all (a move out of the recycle bin is refused, with
+    a hint to restore it in the CMS, where the editor sees what comes back live).
+- **No script in rich text or links.** The CMS saves rich text as it is given, and the edit UI's TinyMCE only cleans it
+  in the browser. A draft with script would run it in the edit UI of whoever opens it, with their session, and could
+  publish through the CMS's own API, past `AllowPublish`. So rich text with `<script>`, event handler attributes
+  (`onerror=...`), `javascript:`, `vbscript:` or non-image `data:` URLs, `<iframe>`, `<object>`, `<embed>`, `<form>`,
+  `<base>`, `<meta>`, `<link>`, `<svg>` and the like is refused, however it is written (character references, tabs or
+  odd case in a scheme, attributes without quotes), and so are links (link properties, link collections, URL
+  properties, URLs in a list property's items, a shortcut's external link) other than http, https, mailto, tel and
+  relative ones, and links with attributes other than href, title and target (the CMS renders every attribute a link
+  has), or with a control character in them. Links are given as `{href, text, title, target}`, never as the CMS's
+  stored markup. Ordinary rich text passes: tables, images, links, embedded blocks, `style` and `class`. What a property
+  already has may be written back as it is, so an editor's assistant can still fix a typo in rich text with a video's
+  `<iframe>` or a link collection with an sms: link; anything new is refused, also such a construct copied once more or
+  into another property. Only what a browser surely reads as live counts as already there: script inside an element it
+  reads as text or keeps inert (`<textarea>`, `<style>`, `<template>`, `<svg>`, ...) is never written back live, nor a
+  live construct moved into one. Set the CMS's own script parser to remove script as well, for every save, the edit
+  UI's included (CMS 12.15 or newer): `"EPiServer": {"Cms": {"ScriptParser": {"SavingMode": "Remove"}}}`.
+- **No files that run script.** A file uploaded to the CMS is served from the site's own origin, so one a browser runs
+  script in would run it with the session of whoever opens it. An editor's assistant can't upload HTML, XML, XSLT or
+  JavaScript files (`.html`, `.htm`, `.xhtml`, `.xht`, `.shtml`, `.mht`, `.mhtml`, `.xml`, `.xsl`, `.xslt`, `.js`, `.mjs`)
+  or compressed SVG (`.svgz`); the hint says to upload such a file in the CMS. An SVG file is read: one with
+  `<script>`, `<foreignObject>`, event handler attributes, `javascript:` or non-image `data:` links (also set by an
+  animation), entity or attribute list declarations or an `xml-stylesheet` instruction is refused, and an ordinary
+  drawing uploads. A file named as a raster image (`.jpg`, `.png`, ...) that starts like markup is refused too. Have the
+  site send `X-Content-Type-Options: nosniff` with its media, so a browser never takes a file for anything but what its
+  content type says.
 - **The role gate** (`AllowedRoles`) is checked against the editor's roles as they are now (the CMS UI's role
   provider), not the ones in their login cookie: at consent and at every token refresh. So is their account, where the
   site manages it: an ASP.NET Identity user who is disabled, locked out or deleted gets no consent and no new tokens.
@@ -707,11 +760,24 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
 - **Publishing and deleting are opt-in** (`AllowPublish`, `AllowDelete`). Without `AllowPublish` the consent page
   doesn't offer the `content:publish` scope, and every publish is refused with a hint to save a draft instead; with it,
   the editor still chooses on the consent page, and their Publish rights still apply. Besides each tool's own check,
-  every save that would publish or schedule is checked against the same gate. Deleting only moves content to the
-  recycle bin. Changing access rights and removing language branches aren't offered at all.
+  every save that would publish or schedule is checked against the same gate, and so is every other change that puts
+  something live at once: moving content that has a published version or anything below it (its URLs change, it takes
+  the access rights of its new parent; the CMS itself only asks for Publish on the destination when the moved item is
+  published), discarding a version scheduled for publishing, and saving content without versions. Content that may be
+  live isn't moved from one approval sequence to another at all (move it in the CMS). Changing access rights and
+  removing language branches aren't offered at all.
+- **Deleting** only moves content to the recycle bin, but note that this takes published content offline, with
+  `AllowDelete` alone (and the editor's Delete rights): `delete_content` needs no publishing rights. Discarding a draft
+  someone else saved deletes their work for good, so it needs `AllowDelete` too; an editor's own drafts can always be
+  discarded.
+- **`includeDraft` is a confirmation, not a boundary.** It stops the assistant from putting live or deleting someone
+  else's changes without asking the user, but the assistant sets it itself; what the site allows is decided by
+  `AllowPublish`, `AllowDelete` and the editor's access rights.
 - **The consent page** lists what the app may do, with a checkbox each: reading is required, writing and (where the
-  site allows it) publishing can be unticked, and the connection gets only what was left ticked. The connections page
-  shows each connection's scopes.
+  site allows it) publishing can be unticked, and the connection gets only what was left ticked. For an app that
+  registered itself, a warning says plainly that it chose its own name and the site can't confirm who made it; an app
+  with a metadata document is named with the domain that publishes it. The connections page shows each connection's
+  scopes.
 - **OAuth:** PKCE (S256) is required; codes work once, for 5 minutes. Refresh tokens rotate, as a compare-and-swap, so
   of two refreshes with the same token only one succeeds and a connection revoked meanwhile stays revoked. The refresh
   token before the current one, used again, revokes the connection (RFC 9700), since the site can't tell a leaked
@@ -721,10 +787,11 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   gets those, and the connection keeps what the editor approved. Tokens are bound to the MCP endpoint and checked
   against their connection on every use, so revoking one cuts the client off at once (another instance of a
   load-balanced site notices within 30 seconds). Codes, secrets and refresh tokens are stored as hashes only. Redirect
-  URIs must match exactly (any port on loopback). The consent page can't be framed and checks an antiforgery token.
-  Client metadata documents are only fetched from public addresses, checked on the connected socket, without
-  redirects. Registration, authorization and token requests are rate-limited (`RateLimits`). Registered clients
-  without a connection are deleted 30 days after they registered.
+  URIs must match exactly (any port on loopback), and be on a loopback address or one of `AllowedRedirectHosts`. The
+  consent page can't be framed and checks an antiforgery token. Client metadata documents are only fetched from public
+  addresses, checked on the connected socket, without redirects. Registration, authorization and token requests are
+  rate-limited (`RateLimits`). Registered clients without a connection are deleted a day after they registered, and
+  registration stops at 5,000 of them; the cleanup runs in the background, a bounded amount at a time.
 - **Load-balanced sites:** the Dynamic Data Store has no conditional update, so a refresh's compare-and-swap is
   atomic within an instance only. Two instances given the same refresh token within milliseconds could both rotate
   it (the later one wins, and the other new refresh token never works), and a revocation on one instance in the same
@@ -732,11 +799,21 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
 - **What an editor can still tell about content they can't read:** that a page they can read has a parent (its
   `parent` id, which they can't open), and that a ContentArea or content reference they can read points to something
   (its id, which they can't open). Both are by design: a bare id, never the content's name, type or values.
-  `list_children`'s cursor counts only what the editor can read, so paging tells nothing of what lies between.
+  `list_children`'s cursor counts only what the editor can read, so paging tells nothing of what lies between, and
+  `find_content` counts only what they can read too; it stops after loading 20,000 items in all, hidden ones included,
+  and then says `truncated`: a search below a great deal of hidden content can still tell that much.
+- **Uploads follow the site's own upload rules** as well as `MaxUploadBytes`: the CMS UI's size limit
+  (`EPiServer:CmsUI:Upload:FileSizeLimit`, the lower of the two applies) and, from CMS UI 12.33, its list of allowed
+  file extensions (`AllowedFileExtensions`), so a site that keeps SVG out of its uploads keeps it out here too.
+- **Host names:** the module builds its issuer, resource and metadata URLs from the request's host, as the site's own
+  login does, and its metadata documents are never cached (`Cache-Control: no-store`). Still, limit which hosts the site
+  answers on: set `RequireHost` (or the site's `AllowedHosts`), and behind a proxy accept forwarded headers from the
+  known proxies only.
 - **Content is data.** The server's instructions tell the model to read first, show the user a dry run, save drafts,
   publish only when asked, and never follow instructions found in content. That lowers, but can't remove, the risk of
   prompt injection through content: the editor reviews the drafts (every write result has `editUrl`, the version in the
-  CMS edit UI).
+  CMS edit UI). Advise editors not to use this connector in the same chat as tools that fetch web pages or read other
+  outside content: what such a page says is then one step from the CMS.
 
 ### Error pages and security headers
 
@@ -751,6 +828,10 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   `meta` elements, which the browser applies besides the site's header, but `frame-ancestors` and `X-Frame-Options`
   only work as headers. So have such middleware leave `{BasePath}` (`/episerver/opticli`) alone, or only set headers
   the response doesn't already have; or check that the site's own values forbid framing.
+- **Whatever the headers:** a page the browser asks for to show in a frame (`Sec-Fetch-Dest: iframe`, `frame`,
+  `fencedframe`, `object` or `embed`) gets a 403 page instead, and the consent and revoke posts are refused when the
+  browser says they came from another site or origin (`Sec-Fetch-Site` other than `same-origin`). A browser too old to
+  send these headers gets the page as before. The metadata documents are sent with `Cache-Control: no-store`.
 
 ### Connections and audit log
 
@@ -764,7 +845,9 @@ secrets or property values. A site that logs Warning and up by default needs
 
 ### Uploads on IIS
 
-The MCP endpoint takes requests up to `MaxUploadBytes` as base64 plus 1 MB, and refuses larger ones with a 413. IIS has
+The MCP endpoint takes requests up to `MaxUploadBytes` as base64 plus 1 MB, and refuses larger ones with a 413; a file
+larger than the CMS UI's own upload limit (`EPiServer:CmsUI:Upload:FileSizeLimit`: 4 MB by default up to CMS UI 12.31,
+30,000,000 bytes from 12.33) is refused too, as the edit UI refuses it, so raise that as well for larger uploads. IIS has
 a limit of its own, `maxAllowedContentLength`, 30,000,000 bytes by default, so a site that raises `MaxUploadBytes` past
 about 20 MB must raise that too, in `web.config`:
 
@@ -870,16 +953,26 @@ site and starts it with `serve.sh` on `http://127.0.0.1:5180` (`MCP_PORT`).
 `tests/OptiCli.Mcp.Integration` connects to it as Claude does, with the official MCP SDK's client: discovery from the
 401, registration, the CMS login form and the consent page (both scripted), then tool calls. It covers sign-in, the
 role gate and CIMD; the module's 401 untouched by the site's error pages, and the site's named route working beside
-the module; that hidden content is the same `not_found` as missing content; drafts in the editor's name,
-publish refused without Publish rights, approval sequences, `baseVersion` conflicts, uploads, `editUrl` and
-`resolve_url`; review requests without publishing (none where no sequence applies), content type access rights,
-restores refused, a branch not published before its master, `list_children` paging; parallel refreshes, refresh
-token rotation and reuse within and after the grace period, fewer scopes on a refresh, revocation on
-the connections page, and a removed role or a disabled account caught at the next refresh (which changes the test
-site's own database and changes it back). `McpFixture.cs` also adds `RestrictedBlock`, a block type only WebAdmins
-may create, and `setup.sh` gives the site high `RateLimits`, as the tests sign in many times a minute, and a
-`RefreshTokenReuseGrace` of 3 seconds, so the reuse test needn't wait a minute. The tests are skipped unless
-the site is configured, and delete the content they create:
+the module; that hidden content is the same `not_found` as missing content, also when it is named in a reference or
+rich text, and that a search doesn't count it; return addresses only on Claude's hosts or loopback, and metadata that
+isn't cached; drafts in the editor's name, publish refused without Publish rights, approval sequences, `baseVersion`
+conflicts, uploads, `editUrl` and `resolve_url`; review requests without publishing (none where no sequence applies),
+content type access rights, restores refused, a branch not published before its master, `list_children` paging; script
+in rich text and links refused, properties the edit UI hides or locks (also by an editor descriptor, or a tab only
+administrators see) left out and refused, a language only administrators may edit refused to an editor, live content
+not moved below another approval sequence; links as markup refused, what a property already has written back while
+anything new is refused, SVG files with script and HTML files not uploaded, locks inside local blocks and block lists;
+parallel refreshes, refresh token rotation and reuse within and after the grace period, fewer scopes on a refresh,
+revocation on the connections page, and a removed role or a disabled account caught at the next refresh (which changes
+the test site's own database and changes it back). `McpFixture.cs` also adds `RestrictedBlock`, a block type only
+WebAdmins may create; `McpFieldsBlock`, with a property not shown in edit mode, a read-only one, one an editor
+descriptor locks for all but WebAdmins and one on a tab that needs Administer, plus rich text, link, URL, ContentArea
+and reference properties, a local block and a block list (`McpInnerBlock`, with a property locked for all but
+WebAdmins); an "opticli write-back fixture" block with a video's `<iframe>` and an sms: link; the language `de`,
+enabled and editable by administrators only; and a folder "opticli find fixture" in the global assets with one folder
+editors see and one only administrators see. `setup.sh` gives the site high `RateLimits`, as the tests sign in many
+times a minute, and a `RefreshTokenReuseGrace` of 3 seconds, so the reuse test needn't wait a minute. The tests are
+skipped unless the site is configured, and delete the content they create:
 
 ```sh
 SQLCMDPASSWORD=... FRESH=1 tests/fixtures/mcp/setup.sh path/to/AlloyEdge path/to/AlloyMcp
@@ -888,8 +981,10 @@ OPTICLI_MCP_IT_USERS=path/to/AlloyMcp/App_Data/mcp-test-users.json \
 dotnet test tests/OptiCli.Mcp.Integration
 ```
 
-The test for a site that doesn't allow publishing needs a second instance of the same site, started with
-`OptiCli__Mcp__AllowPublish=false`, and `OPTICLI_MCP_IT_NO_PUBLISH_URL`:
+The tests for a site with the module's defaults, which allows neither publishing nor deleting (publishing refused,
+moves of live content and discards of scheduled versions refused, discarding someone else's draft refused), need a
+second instance of the same site, started with `OptiCli__Mcp__AllowPublish=false` and `OptiCli__Mcp__AllowDelete=false`
+(`serve.sh --no-publish`), and `OPTICLI_MCP_IT_NO_PUBLISH_URL`:
 
 ```sh
 tests/fixtures/mcp/serve.sh path/to/AlloyMcp --port 5181 --no-publish

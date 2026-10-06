@@ -36,6 +36,14 @@ public class ClientMetadataDocumentTests
     }
 
     [Fact]
+    public void A_document_may_list_return_addresses_on_other_hosts_too_authorize_decides()
+    {
+        var (client, error) = Parse($$"""{"client_id":"{{Id}}","redirect_uris":["https://claude.ai/api/mcp/auth_callback","https://client.example/cb"]}""");
+        Assert.Null(error);
+        Assert.Equal(2, client!.RedirectUris.Count);
+    }
+
+    [Fact]
     public void Without_a_name_the_host_is_shown() =>
         Assert.Equal("client.example", Parse($$"""{"client_id":"{{Id}}","redirect_uris":["https://client.example/cb"]}""").Client!.ClientName);
 
@@ -107,6 +115,9 @@ public sealed class ClientResolverTests : IAsyncLifetime
         _server.MapGet("/client.json", (HttpContext c) => Results.Text(Document(c, "Loopback test client"), "application/json"));
         _server.MapGet("/big.json", (HttpContext c) => Results.Text(Document(c, new string('x', 6000)) , "application/json"));
         _server.MapGet("/redirect.json", () => Results.Redirect("/client.json"));
+        _server.MapGet("/elsewhere.json", (HttpContext c) => Results.Text(
+            $$"""{"client_id":"{{c.Request.Scheme}}://{{c.Request.Host}}{{c.Request.Path}}","client_name":"Claude","redirect_uris":["https://claude.ai/api/mcp/auth_callback","https://attacker.example/cb"]}""",
+            "application/json"));
         _server.MapGet("/slow.json", async (HttpContext c) =>
         {
             await Task.Delay(TimeSpan.FromSeconds(30), c.RequestAborted);
@@ -221,6 +232,24 @@ public sealed class ClientResolverTests : IAsyncLifetime
         var grant = Assert.Single(await site.Store.ListGrantsAsync(null, default));
         Assert.Equal("Loopback test client", grant.ClientName);
         Assert.Null(await site.Store.FindClientAsync(clientId, default));
+    }
+
+    [Fact]
+    public async Task A_metadata_document_clients_return_address_on_another_host_is_refused_at_authorize()
+    {
+        await using var site = await TestSite.StartAsync(environment: Environments.Development);
+        var clientId = _origin + "/elsewhere.json";
+        var browser = site.Browser("editor");
+
+        var elsewhere = await browser.GetAsync(TestSite.AuthorizeUrl(clientId, Pkce.Challenge(TestSite.Verifier()), "https://attacker.example/cb"));
+        Assert.Equal(HttpStatusCode.BadRequest, elsewhere.StatusCode);
+        Assert.Null(elsewhere.Headers.Location);
+        Assert.Contains("Return address not allowed", await elsewhere.Content.ReadAsStringAsync());
+
+        var claude = await browser.GetAsync(TestSite.AuthorizeUrl(clientId, Pkce.Challenge(TestSite.Verifier()), "https://claude.ai/api/mcp/auth_callback"));
+        Assert.Equal(HttpStatusCode.OK, claude.StatusCode);
+        // Published by a domain: no warning that it named itself.
+        Assert.DoesNotContain("class=\"warning\"", await claude.Content.ReadAsStringAsync());
     }
 
     private sealed class Environment(string name) : IHostEnvironment

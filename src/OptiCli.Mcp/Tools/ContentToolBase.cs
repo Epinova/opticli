@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OptiCli.Cms;
@@ -17,6 +18,9 @@ internal abstract class ContentToolBase(IHttpContextAccessor http, IOptions<Opti
     private readonly ILogger _logger = loggers.CreateLogger(ToolErrors.LogCategory);
 
     protected OptiCliMcpOptions Site => options.Value;
+
+    /// <summary>A service of the request, if the site registers it.</summary>
+    protected T? RequestService<T>() where T : class => http.HttpContext?.RequestServices.GetService<T>();
 
     /// <summary>Runs a read, or any operation whose result has no content to link to.</summary>
     /// <param name="gate">Checks beyond <paramref name="scope"/>, before anything is loaded.</param>

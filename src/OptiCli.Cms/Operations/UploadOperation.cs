@@ -19,6 +19,10 @@ internal static class UploadOperation
         var extension = MediaFileNames.Extension(body.FileName) ?? throw AgentException.Usage(
             $"fileName '{body.FileName}' must be a file name with an extension, without directories.");
         var data = Data(body);
+        if (!call.MayWriteScript)
+        {
+            RequireNoScript(extension, data);
+        }
         if (body.Replace is { } replaced)
         {
             return Replace(call, flow, body, replaced, extension, data);
@@ -145,6 +149,63 @@ internal static class UploadOperation
         {
             call.Service<IBlobFactory>().Delete(blob.ID);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Files a browser runs script in when it opens them from the site, on its own origin, with the visitor's (or the
+    /// editor's) session: HTML, XML (also through an XSLT stylesheet), JavaScript, and compressed SVG, which can't be read
+    /// here. An SVG file is read instead (<see cref="MarkupSafety.SvgFile"/>), so an ordinary drawing still uploads.
+    /// </summary>
+    private static readonly HashSet<string> ScriptFiles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".html", ".htm", ".xhtml", ".xht", ".shtml", ".mht", ".mhtml", ".js", ".mjs", ".xml", ".xsl", ".xslt", ".svgz",
+    };
+
+    /// <summary>Raster image extensions: such a file is served as an image, and starts with its format's signature, never with markup.</summary>
+    private static readonly HashSet<string> RasterImages = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".jpg", ".jpeg", ".jpe", ".png", ".gif", ".webp", ".bmp", ".ico", ".tif", ".tiff", ".avif", ".heic", ".heif",
+    };
+
+    /// <summary>Whether the bytes, after a byte order mark and whitespace, start with '&lt;': markup, which a browser that sniffs could take for HTML.</summary>
+    private static bool StartsLikeMarkup(byte[] data)
+    {
+        var (start, step) = data switch
+        {
+            [0xEF, 0xBB, 0xBF, ..] => (3, 1),
+            [0xFF, 0xFE, ..] => (2, 2),
+            [0xFE, 0xFF, ..] => (3, 2),
+            _ => (0, 1),
+        };
+        for (var i = start; i < data.Length; i += step)
+        {
+            if (data[i] is not ((byte)' ' or (byte)'\t' or (byte)'\n' or (byte)'\r' or (byte)'\f'))
+            {
+                return data[i] == (byte)'<';
+            }
+        }
+        return false;
+    }
+
+    /// <summary>For an editor (<see cref="CmsCall.MayWriteScript"/>): no file that could run script on the site's origin.</summary>
+    /// <exception cref="AgentException"><c>usage</c>.</exception>
+    internal static void RequireNoScript(string extension, byte[]? data)
+    {
+        if (ScriptFiles.Contains(extension))
+        {
+            throw AgentException.Usage($"{extension} files can run script when they are opened from the site, so they aren't uploaded here.",
+                "Ask the user to upload it in the CMS edit UI, if the site should have it. Nothing was uploaded.");
+        }
+        if (RasterImages.Contains(extension) && data is not null && StartsLikeMarkup(data))
+        {
+            throw AgentException.Usage($"The file is named {extension}, but it starts like markup (HTML or XML), not like an image.",
+                "Upload the image itself, with the extension of its format. Nothing was uploaded.");
+        }
+        if (extension.Equals(".svg", StringComparison.OrdinalIgnoreCase) && data is not null && MarkupSafety.SvgFile(data) is { } problem)
+        {
+            throw AgentException.Usage($"The SVG file has {problem}, which could run script when it is opened from the site.",
+                "Upload a drawing without it (export it again as a plain SVG), or ask the user to upload it in the CMS edit UI. Nothing was uploaded.");
         }
     }
 

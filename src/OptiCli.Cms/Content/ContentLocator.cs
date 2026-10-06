@@ -183,7 +183,7 @@ internal sealed class ContentLocator(CmsCall call)
                     $"{based.ContentLink.ID.ToString(CultureInfo.InvariantCulture)}_{candidate.Id.ToString(CultureInfo.InvariantCulture)}",
                     candidate.SavedBy,
                     candidate.Saved.ToUniversalTime(),
-                    PropertyValues.Diff(published, basedValues));
+                    call.Properties.Shown(based, PropertyValues.Diff(published, basedValues)));
             }
         }
         return null;

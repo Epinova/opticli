@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using OptiCli.Mcp.OAuth;
 using OptiCli.Mcp.Tests.Support;
@@ -41,16 +42,91 @@ public sealed class AuthorizationServerTests : IAsyncLifetime
 
     [Theory]
     [InlineData("""{"redirect_uris":["http://evil.example/cb"]}""", "invalid_redirect_uri")]
+    [InlineData("""{"redirect_uris":["https://evil.example/cb"]}""", "invalid_redirect_uri")]
+    [InlineData("""{"redirect_uris":["https://claude.ai/cb","https://evil.example/cb"]}""", "invalid_redirect_uri")]
     [InlineData("""{"redirect_uris":[]}""", "invalid_redirect_uri")]
     [InlineData("""{"client_name":"No redirects"}""", "invalid_redirect_uri")]
-    [InlineData("""{"redirect_uris":["https://ok.example/cb"],"token_endpoint_auth_method":"private_key_jwt"}""", "invalid_client_metadata")]
-    [InlineData("""{"redirect_uris":["https://ok.example/cb"],"grant_types":["client_credentials"]}""", "invalid_client_metadata")]
+    [InlineData("""{"redirect_uris":["https://claude.ai/cb"],"token_endpoint_auth_method":"private_key_jwt"}""", "invalid_client_metadata")]
+    [InlineData("""{"redirect_uris":["https://claude.ai/cb"],"grant_types":["client_credentials"]}""", "invalid_client_metadata")]
     [InlineData("""not json""", "invalid_client_metadata")]
     public async Task Bad_registrations_are_refused(string body, string error)
     {
         var response = await _site.Client().PostAsync("/episerver/opticli/oauth/register", new StringContent(body, Encoding.UTF8, "application/json"));
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal(error, await Error(response));
+    }
+
+    [Theory]
+    [InlineData("https://claude.ai/api/mcp/auth_callback")]
+    [InlineData("https://claude.com/api/mcp/auth_callback")]
+    [InlineData("https://CLAUDE.AI/api/mcp/auth_callback")]
+    [InlineData("http://127.0.0.1:53682/callback")]
+    [InlineData("http://localhost:4000/callback")]
+    [InlineData("https://localhost:8443/callback")]
+    public async Task Claudes_return_addresses_and_the_editors_own_machine_are_accepted(string redirect)
+    {
+        var (clientId, _) = await _site.RegisterAsync(redirectUri: redirect);
+        var page = await _site.Browser("editor").GetAsync(TestSite.AuthorizeUrl(clientId, Pkce.Challenge(TestSite.Verifier()), redirect));
+        Assert.Equal(HttpStatusCode.OK, page.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_return_address_on_another_host_is_refused_at_registration_naming_what_the_site_takes()
+    {
+        var response = await _site.Client().PostAsync("/episerver/opticli/oauth/register",
+            TestSite.Json(new { redirect_uris = new[] { "https://attacker.example/cb" }, client_name = "Claude", token_endpoint_auth_method = "none" }));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("invalid_redirect_uri", body.RootElement.GetProperty("error").GetString());
+        Assert.Contains("https on claude.ai or claude.com", body.RootElement.GetProperty("error_description").GetString());
+        Assert.Equal(0, _site.Store.ClientCount);
+    }
+
+    [Fact]
+    public async Task A_client_stored_with_another_host_is_refused_at_authorize_without_a_redirect()
+    {
+        // Registered before the site limited return addresses, or before it narrowed AllowedRedirectHosts.
+        await _site.Store.AddClientAsync(new RegisteredClient
+        {
+            ClientId = "mcp_before", ClientName = "Claude", RedirectUris = ["https://attacker.example/cb"], AuthMethod = ClientAuthMethods.None, Created = _site.Time.GetUtcNow(),
+        }, default);
+
+        var response = await _site.Browser("editor").GetAsync(TestSite.AuthorizeUrl("mcp_before", Pkce.Challenge(TestSite.Verifier()), "https://attacker.example/cb"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(response.Headers.Location);
+        var html = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Return address not allowed", html);
+        Assert.Contains("attacker.example", html);
+        Assert.Equal(0, _site.Store.CodeCount);
+    }
+
+    [Fact]
+    public async Task With_a_wildcard_any_https_host_is_accepted_and_the_site_is_warned()
+    {
+        await using var site = await TestSite.StartAsync(o => o.AllowedRedirectHosts = ["*"]);
+        Assert.Contains("AllowedRedirectHosts is [\"*\"]", site.Audit.All);
+        Assert.DoesNotContain("AllowedRedirectHosts is", _site.Audit.All);
+
+        var (clientId, _) = await site.RegisterAsync(redirectUri: "https://other-client.example/cb");
+        var page = await site.Browser("editor").GetAsync(TestSite.AuthorizeUrl(clientId, Pkce.Challenge(TestSite.Verifier()), "https://other-client.example/cb"));
+        Assert.Equal(HttpStatusCode.OK, page.StatusCode);
+        var http = await site.Client().PostAsync("/episerver/opticli/oauth/register", TestSite.Json(new { redirect_uris = new[] { "http://other-client.example/cb" } }));
+        Assert.Equal(HttpStatusCode.BadRequest, http.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_site_may_name_its_own_hosts_in_place_of_claudes()
+    {
+        await using var site = await TestSite.StartAsync(configuration: new() { ["OptiCli:Mcp:AllowedRedirectHosts:0"] = "client.example" });
+        Assert.Equal(["client.example"], site.Options.AllowedRedirectHosts);
+
+        await site.RegisterAsync(redirectUri: "https://client.example/cb");
+        var claude = await site.Client().PostAsync("/episerver/opticli/oauth/register", TestSite.Json(new { redirect_uris = new[] { "https://claude.ai/cb" } }));
+        Assert.Equal(HttpStatusCode.BadRequest, claude.StatusCode);
+        var subdomain = await site.Client().PostAsync("/episerver/opticli/oauth/register", TestSite.Json(new { redirect_uris = new[] { "https://evil.client.example/cb" } }));
+        Assert.Equal(HttpStatusCode.BadRequest, subdomain.StatusCode);
     }
 
     [Fact]
@@ -135,6 +211,76 @@ public sealed class AuthorizationServerTests : IAsyncLifetime
         Assert.Contains(Scopes.Describe(Scopes.Read), html);
         Assert.Contains(Scopes.Describe(Scopes.Write), html);
         Assert.DoesNotContain(Scopes.Describe(Scopes.Publish), html);
+    }
+
+    [Fact]
+    public async Task The_consent_page_warns_plainly_that_an_app_which_registered_itself_chose_its_own_name()
+    {
+        var (clientId, _) = await _site.RegisterAsync(name: "Claude");
+        var html = await (await _site.Browser("editor").GetAsync(TestSite.AuthorizeUrl(clientId, Pkce.Challenge(TestSite.Verifier())))).Content.ReadAsStringAsync();
+
+        Assert.Contains("<p class=\"warning\"><b>The app registered itself under this name; the site can't confirm who made it.</b>", html);
+    }
+
+    [Theory]
+    [InlineData("iframe")]
+    [InlineData("frame")]
+    [InlineData("fencedframe")]
+    [InlineData("object")]
+    [InlineData("embed")]
+    public async Task The_consent_page_is_never_rendered_for_a_frame_whatever_headers_the_site_sends(string destination)
+    {
+        var (clientId, _) = await _site.RegisterAsync();
+        var request = new HttpRequestMessage(HttpMethod.Get, TestSite.AuthorizeUrl(clientId, Pkce.Challenge(TestSite.Verifier())));
+        request.Headers.Add("Sec-Fetch-Dest", destination);
+
+        var response = await _site.Browser("editor").SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var html = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Not in a frame", html);
+        Assert.DoesNotContain("Allow", html);
+    }
+
+    [Theory]
+    [InlineData("document")]
+    [InlineData(null)]
+    public async Task The_consent_page_is_rendered_in_a_tab_and_for_a_browser_that_doesnt_say(string? destination)
+    {
+        var (clientId, _) = await _site.RegisterAsync();
+        var request = new HttpRequestMessage(HttpMethod.Get, TestSite.AuthorizeUrl(clientId, Pkce.Challenge(TestSite.Verifier())));
+        if (destination is not null)
+        {
+            request.Headers.Add("Sec-Fetch-Dest", destination);
+        }
+        Assert.Equal(HttpStatusCode.OK, (await _site.Browser("editor").SendAsync(request)).StatusCode);
+    }
+
+    [Theory]
+    [InlineData("cross-site", false)]
+    [InlineData("same-site", false)]
+    [InlineData("none", false)]
+    [InlineData("same-origin", true)]
+    [InlineData(null, true)]
+    public async Task A_consent_post_counts_only_from_the_modules_own_page(string? site, bool counts)
+    {
+        var (clientId, _) = await _site.RegisterAsync();
+        var browser = _site.Browser("editor");
+        var html = await (await browser.GetAsync(TestSite.AuthorizeUrl(clientId, Pkce.Challenge(TestSite.Verifier())))).Content.ReadAsStringAsync();
+        var post = new HttpRequestMessage(HttpMethod.Post, Browser.FormAction(html)) { Content = new FormUrlEncodedContent(Browser.Inputs(html, "allow")) };
+        if (site is not null)
+        {
+            post.Headers.Add("Sec-Fetch-Site", site);
+        }
+
+        var response = await browser.SendAsync(post);
+
+        Assert.Equal(counts ? HttpStatusCode.SeeOther : HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(counts ? 1 : 0, _site.Store.CodeCount);
+        if (!counts)
+        {
+            Assert.Contains("Not sent from this site", await response.Content.ReadAsStringAsync());
+        }
     }
 
     [Fact]
@@ -646,37 +792,43 @@ public sealed class AuthorizationServerTests : IAsyncLifetime
         Assert.Equal("invalid_grant", await Error(await site.TokenAsync(RefreshForm(refreshed))));
     }
 
+    private Task CleanedUp() => _site.Services.GetRequiredService<OAuthMaintenance>().LastRun;
+
     [Fact]
     public async Task Expired_codes_and_grants_are_cleaned_up_when_tokens_are_issued()
     {
         var (clientId, _) = await _site.RegisterAsync();
         await _site.AuthorizeAsync(clientId, TestSite.Verifier()); // a code never exchanged
         await _site.ConnectAsync();
+        await CleanedUp();
         _site.Time.Advance(TimeSpan.FromDays(31));
         Assert.Equal(1, _site.Store.CodeCount);
         await _site.ConnectAsync();
+        await CleanedUp();
         Assert.Equal(0, _site.Store.CodeCount);
         Assert.Single(await _site.Store.ListGrantsAsync(null, default));
     }
 
     [Fact]
-    public async Task Registered_clients_left_unused_for_30_days_are_deleted_and_used_ones_kept()
+    public async Task Registered_clients_left_unused_for_a_day_are_deleted_and_used_ones_kept()
     {
-        // A connection may outlast its client's first 30 days only on a site that lets connections last longer.
-        await using var site = await TestSite.StartAsync(o => o.ConnectionLifetime = TimeSpan.FromDays(60));
-        var (unused, _) = await site.RegisterAsync();
-        var connected = await site.ConnectAsync();
-        site.Time.Advance(TimeSpan.FromDays(29));
-        await site.TokenAsync(RefreshForm(connected)); // the connection stays in use
-        site.Time.Advance(TimeSpan.FromDays(2));
-        var (recent, _) = await site.RegisterAsync();
-        Assert.Equal(3, site.Store.ClientCount);
+        var (unused, _) = await _site.RegisterAsync();
+        var connected = await _site.ConnectAsync();
+        await CleanedUp();
+        _site.Time.Advance(TimeSpan.FromHours(23));
+        await _site.TokenAsync(RefreshForm(connected)); // a cleanup runs, but the unused client isn't a day old yet
+        await CleanedUp();
+        Assert.NotNull(await _site.Store.FindClientAsync(unused, default));
+        _site.Time.Advance(TimeSpan.FromHours(2));
+        var (recent, _) = await _site.RegisterAsync();
+        Assert.Equal(3, _site.Store.ClientCount);
 
-        await site.ConnectAsync(); // a token issue runs the cleanup
+        await _site.ConnectAsync(); // a token issue runs the cleanup
+        await CleanedUp();
 
-        Assert.Null(await site.Store.FindClientAsync(unused, default));
-        Assert.NotNull(await site.Store.FindClientAsync(connected.ClientId, default));
-        Assert.NotNull(await site.Store.FindClientAsync(recent, default));
+        Assert.Null(await _site.Store.FindClientAsync(unused, default));
+        Assert.NotNull(await _site.Store.FindClientAsync(connected.ClientId, default));
+        Assert.NotNull(await _site.Store.FindClientAsync(recent, default));
     }
 
     [Fact]
@@ -685,12 +837,109 @@ public sealed class AuthorizationServerTests : IAsyncLifetime
         var connected = await _site.ConnectAsync();
         _site.Time.Advance(TimeSpan.FromDays(29));
         await _site.TokenAsync(RefreshForm(connected));
+        await CleanedUp();
         _site.Time.Advance(TimeSpan.FromDays(2));
 
         await _site.ConnectAsync();
+        await CleanedUp();
 
         Assert.Null(await _site.Store.FindClientAsync(connected.ClientId, default));
         Assert.Single(await _site.Store.ListGrantsAsync(null, default));
+    }
+
+    [Fact]
+    public async Task A_cleanup_deletes_at_most_its_share_and_the_next_one_goes_on()
+    {
+        var registered = _site.Time.GetUtcNow();
+        for (var i = 0; i < OAuthMaintenance.MaxDeletedPerRun * 2 + 100; i++)
+        {
+            await _site.Store.AddClientAsync(new RegisteredClient { ClientId = $"mcp_{i}", ClientName = "x", RedirectUris = [TestSite.RedirectUri], AuthMethod = ClientAuthMethods.None, Created = registered }, default);
+        }
+        var maintenance = _site.Services.GetRequiredService<OAuthMaintenance>();
+        var now = registered + OAuthMaintenance.UnusedClientLifetime + TimeSpan.FromMinutes(1);
+
+        maintenance.MaybeCleanUp(_site.Store, now);
+        await maintenance.LastRun;
+        Assert.Equal(OAuthMaintenance.MaxDeletedPerRun + 100, _site.Store.ClientCount);
+        maintenance.MaybeCleanUp(_site.Store, now + TimeSpan.FromSeconds(30)); // within the interval: no run
+        await maintenance.LastRun;
+        Assert.Equal(OAuthMaintenance.MaxDeletedPerRun + 100, _site.Store.ClientCount);
+        maintenance.MaybeCleanUp(_site.Store, now + OAuthMaintenance.Interval);
+        await maintenance.LastRun;
+        Assert.Equal(100, _site.Store.ClientCount);
+    }
+
+    [Fact]
+    public async Task The_token_response_never_waits_for_the_cleanup()
+    {
+        var store = new SlowCleanupStore();
+        await using var site = await TestSite.StartAsync(services: s => s.AddSingleton<IOAuthStore>(store));
+
+        var tokens = await site.ConnectAsync();
+
+        Assert.StartsWith("oc_", tokens.Access);
+        Assert.False(site.Services.GetRequiredService<OAuthMaintenance>().LastRun.IsCompleted);
+        store.Release.SetResult();
+        await site.Services.GetRequiredService<OAuthMaintenance>().LastRun;
+    }
+
+    [Fact]
+    public async Task The_cleanup_runs_without_the_request_it_was_started_from()
+    {
+        // The CMS's database executor isn't thread-safe and belongs to the request: a run that carried the request's
+        // context along would use it from another thread, after the request.
+        var store = new SlowCleanupStore();
+        store.Release.SetResult();
+        await using var site = await TestSite.StartAsync(services: s => s.AddSingleton<IOAuthStore>(store));
+
+        await site.ConnectAsync();
+        await site.Services.GetRequiredService<OAuthMaintenance>().LastRun;
+
+        Assert.True(store.CleanupRan);
+        Assert.Null(store.CleanupContext);
+    }
+
+    [Fact]
+    public async Task Registration_counts_the_unused_clients_at_most_once_a_minute()
+    {
+        var store = new SlowCleanupStore();
+        store.Release.SetResult();
+        await using var site = await TestSite.StartAsync(services: s => s.AddSingleton<IOAuthStore>(store));
+
+        await site.RegisterAsync();
+        await site.RegisterAsync();
+        await site.RegisterAsync();
+        Assert.Equal(1, store.Counted);
+        site.Time.Advance(OAuthMaintenance.Interval);
+        await site.RegisterAsync();
+        Assert.Equal(2, store.Counted);
+    }
+
+    [Fact]
+    public async Task Registration_stops_at_the_most_unused_clients_the_site_keeps_until_the_cleanup_deletes_some()
+    {
+        var registered = _site.Time.GetUtcNow();
+        for (var i = 0; i < OAuthMaintenance.MaxUnusedClients; i++)
+        {
+            await _site.Store.AddClientAsync(new RegisteredClient { ClientId = $"mcp_{i}", ClientName = "x", RedirectUris = [TestSite.RedirectUri], AuthMethod = ClientAuthMethods.None, Created = registered }, default);
+        }
+        var body = new { redirect_uris = new[] { TestSite.RedirectUri }, token_endpoint_auth_method = "none" };
+
+        var full = await _site.Client().PostAsync("/episerver/opticli/oauth/register", TestSite.Json(body));
+        Assert.Equal(HttpStatusCode.TooManyRequests, full.StatusCode);
+        Assert.Equal(TimeSpan.FromMinutes(10), full.Headers.RetryAfter!.Delta);
+        Assert.Equal("temporarily_unavailable", await Error(full));
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await _site.Client().PostAsync("/episerver/opticli/oauth/register", TestSite.Json(body))).StatusCode);
+        // Warned once a window, not once a request.
+        Assert.Single(_site.Audit.Entries, e => e.Message.Contains("MCP client registration is refused"));
+        await CleanedUp();
+        Assert.Equal(OAuthMaintenance.MaxUnusedClients, _site.Store.ClientCount); // none is a day old yet
+
+        _site.Time.Advance(OAuthMaintenance.UnusedClientLifetime + TimeSpan.FromMinutes(1));
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await _site.Client().PostAsync("/episerver/opticli/oauth/register", TestSite.Json(body))).StatusCode);
+        await CleanedUp();
+        Assert.Equal(HttpStatusCode.Created, (await _site.Client().PostAsync("/episerver/opticli/oauth/register", TestSite.Json(body))).StatusCode);
+        Assert.Equal(2, _site.Audit.Entries.Count(e => e.Message.Contains("MCP client registration is refused")));
     }
 
     [Fact]
@@ -742,5 +991,53 @@ public sealed class AuthorizationServerTests : IAsyncLifetime
     {
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return body.RootElement.TryGetProperty("error", out var error) ? error.GetString() : null;
+    }
+
+    /// <summary>
+    /// The in-memory store, with a cleanup that waits until the test lets it go on and records what it ran with, and a
+    /// count of how often the unused clients were counted.
+    /// </summary>
+    private sealed class SlowCleanupStore : IOAuthStore
+    {
+        private readonly InMemoryOAuthStore _inner = new();
+
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>The request the cleanup saw as the current one; null when it saw none, as it should.</summary>
+        public HttpContext? CleanupContext { get; private set; }
+
+        public bool CleanupRan { get; private set; }
+
+        public int Counted;
+
+        public async Task<int> DeleteExpiredAsync(DateTimeOffset now, DateTimeOffset unusedClientsBefore, int limit, CancellationToken cancellationToken)
+        {
+            CleanupContext = new HttpContextAccessor().HttpContext;
+            CleanupRan = true;
+            await Release.Task;
+            return await _inner.DeleteExpiredAsync(now, unusedClientsBefore, limit, cancellationToken);
+        }
+
+        public Task<RegisteredClient?> FindClientAsync(string clientId, CancellationToken cancellationToken) => _inner.FindClientAsync(clientId, cancellationToken);
+        public Task AddClientAsync(RegisteredClient client, CancellationToken cancellationToken) => _inner.AddClientAsync(client, cancellationToken);
+        public Task AddCodeAsync(AuthorizationCode code, CancellationToken cancellationToken) => _inner.AddCodeAsync(code, cancellationToken);
+        public Task<AuthorizationCode?> TakeCodeAsync(string codeHash, CancellationToken cancellationToken) => _inner.TakeCodeAsync(codeHash, cancellationToken);
+        public Task<Grant?> FindGrantAsync(string grantId, CancellationToken cancellationToken) => _inner.FindGrantAsync(grantId, cancellationToken);
+        public Task<Grant?> FindGrantByRefreshAsync(string refreshHash, CancellationToken cancellationToken) => _inner.FindGrantByRefreshAsync(refreshHash, cancellationToken);
+        public Task<Grant?> FindGrantByPreviousRefreshAsync(string refreshHash, CancellationToken cancellationToken) => _inner.FindGrantByPreviousRefreshAsync(refreshHash, cancellationToken);
+        public Task AddGrantAsync(Grant grant, CancellationToken cancellationToken) => _inner.AddGrantAsync(grant, cancellationToken);
+
+        public Task<bool> TryRotateRefreshAsync(string grantId, string currentRefreshHash, string newRefreshHash, DateTimeOffset issued, DateTimeOffset expires,
+            IReadOnlyList<string> roles, string scope, CancellationToken cancellationToken) =>
+            _inner.TryRotateRefreshAsync(grantId, currentRefreshHash, newRefreshHash, issued, expires, roles, scope, cancellationToken);
+
+        public Task TouchGrantAsync(string grantId, DateTimeOffset at, CancellationToken cancellationToken) => _inner.TouchGrantAsync(grantId, at, cancellationToken);
+        public Task<IReadOnlyList<Grant>> ListGrantsAsync(string? userName, CancellationToken cancellationToken) => _inner.ListGrantsAsync(userName, cancellationToken);
+        public Task DeleteGrantAsync(string grantId, CancellationToken cancellationToken) => _inner.DeleteGrantAsync(grantId, cancellationToken);
+        public Task<int> CountUnusedClientsAsync(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref Counted);
+            return _inner.CountUnusedClientsAsync(cancellationToken);
+        }
     }
 }

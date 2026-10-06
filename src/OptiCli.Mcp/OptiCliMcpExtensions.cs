@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
+using OptiCli.Cms.Content;
 using OptiCli.Mcp.Connections;
 using OptiCli.Mcp.OAuth;
 using OptiCli.Mcp.Tools;
@@ -55,6 +56,8 @@ public static class OptiCliMcpExtensions
         services.AddSingleton<OAuthMaintenance>();
         services.AddSingleton<McpAudit>();
         services.AddScoped<EditorGate>();
+        // What the CMS edit UI shows an editor of each content item, for the content operations (EditUiProperties).
+        services.AddScoped<IEditUiMetadata, CmsUiMetadata>();
         services.AddScoped<AuthorizationServer>();
         services.AddScoped<ConnectionsPage>();
 
@@ -109,10 +112,16 @@ public static class OptiCliMcpExtensions
     public static IEndpointRouteBuilder MapOptiCliMcp(this IEndpointRouteBuilder endpoints)
     {
         var options = endpoints.ServiceProvider.GetRequiredService<IOptions<OptiCliMcpOptions>>().Value;
+        var logger = endpoints.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(OptiCliMcpExtensions).FullName!);
         if (endpoints.DataSources.Count == 0 && endpoints.ServiceProvider.GetServices<IEndpointRoutingExtension>().Any())
         {
-            endpoints.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(OptiCliMcpExtensions).FullName!).LogWarning(
+            logger.LogWarning(
                 "MapOptiCliMcp() is the site's first endpoint mapping. Mapped before MapContent(), it makes a MapControllers() after MapContent() map the site's controllers twice (\"Duplicate endpoint name\"): call MapOptiCliMcp() after MapContent() and the site's own endpoints.");
+        }
+        if (options.AllowedRedirectHosts.Contains(OptiCliMcpOptions.AnyRedirectHost))
+        {
+            logger.LogWarning(
+                "OptiCli:Mcp:AllowedRedirectHosts is [\"*\"]: any app that registers itself may have the codes editors approve sent to any https host it names. Only do this for a site that knowingly accepts web apps other than Claude; list their hosts instead where you can.");
         }
         var all = new List<IEndpointConventionBuilder>();
 
@@ -164,17 +173,22 @@ public static class OptiCliMcpExtensions
     private static ConnectionsPage Connections(HttpContext context) => context.RequestServices.GetRequiredService<ConnectionsPage>();
 
     /// <summary>
-    /// The configuration section, with one difference from plain binding: a role list there replaces the default list
-    /// instead of adding to it, so a site can narrow it.
+    /// The configuration section, with one difference from plain binding: a role or redirect host list there replaces the
+    /// default list instead of adding to it, so a site can narrow it.
     /// </summary>
     private static void BindSection(OptiCliMcpOptions options, IConfiguration configuration)
     {
         var section = configuration.GetSection(OptiCliMcpOptions.SectionName);
         var defaultRoles = options.AllowedRoles;
+        var defaultHosts = options.AllowedRedirectHosts;
         section.Bind(options);
-        var roles = section.GetSection(nameof(OptiCliMcpOptions.AllowedRoles));
-        options.AllowedRoles = roles.Exists() ? roles.Get<string[]>() ?? [] : defaultRoles;
+        options.AllowedRoles = Replacing(section, nameof(OptiCliMcpOptions.AllowedRoles), defaultRoles);
+        options.AllowedRedirectHosts = Replacing(section, nameof(OptiCliMcpOptions.AllowedRedirectHosts), defaultHosts);
     }
+
+    /// <summary>The list in <paramref name="section"/>'s <paramref name="key"/>, if it has one; otherwise the default.</summary>
+    private static string[] Replacing(IConfigurationSection section, string key, string[] defaults) =>
+        section.GetSection(key) is { } list && list.Exists() ? list.Get<string[]>() ?? [] : defaults;
 
     /// <summary>The package's version (Directory.Build.props), as the server's MCP <c>serverInfo</c>; without build metadata.</summary>
     internal static string Version =>

@@ -1,4 +1,5 @@
 using EPiServer.Core;
+using EPiServer.DataAccess;
 using EPiServer.Security;
 using OptiCli.Cms.Content;
 using OptiCli.Protocol;
@@ -9,6 +10,11 @@ namespace OptiCli.Cms.Operations;
 /// Deletes one version that was never published (the agent's <c>POST /v1/content/{ref}/discard</c>), the latest by
 /// default; never the published version, the history, or a branch's only version.
 /// </summary>
+/// <remarks>
+/// A version is deleted for good, so for an editor discarding what someone else saved takes what deleting takes (the
+/// caller's deleting gate) besides <c>includeDraft</c>, which only confirms it; and discarding a version scheduled for
+/// publishing, which cancels that publish, takes what publishing takes. Both are checked for a dry run too.
+/// </remarks>
 internal static class DiscardOperation
 {
     public static WriteResult Run(CmsCall call, string reference, DiscardRequest body)
@@ -53,14 +59,26 @@ internal static class DiscardOperation
             throw AgentException.Refused($"{what} is the only version{(versionLanguage is null ? "" : $" of the '{versionLanguage.Name}' branch")}; discarding it would delete the content.",
                 "Move the content to the recycle bin instead (delete).");
         }
+        call.RequireLanguageAccess(version);
+        if (stamp.Status == VersionStatus.DelayedPublish)
+        {
+            // Discarding it cancels the scheduled publish: a change to what visitors will see.
+            call.RequirePublishing(SaveAction.Schedule);
+        }
 
         // What is lost: the version's values compared with what stays, the published version or else the one before it.
         var kept = ContentLocator.PublishedVersion(branch)
             ?? branch.Where(v => v.ContentLink.WorkID != stamp.ContentLink.WorkID).Select(v => v.ContentLink.WorkID).First();
-        var changes = PropertyValues.Diff(PropertyValues.Snapshot(flow.Repository.Get<IContent>(new ContentReference(link.ID, kept))), PropertyValues.Snapshot(version));
+        var changes = call.Properties.Shown(version,
+            PropertyValues.Diff(PropertyValues.Snapshot(flow.Repository.Get<IContent>(new ContentReference(link.ID, kept))), PropertyValues.Snapshot(version)));
         var pending = PendingDrafts.SavedBy(stamp.SavedBy, call.UserName)
             ? null
             : new PendingDraft(stamp.ContentLink.ToString(), stamp.SavedBy, stamp.Saved.ToUniversalTime(), changes);
+        if (pending is not null)
+        {
+            // Someone else's work, deleted for good: includeDraft only confirms it.
+            call.RequireDeleting();
+        }
         if (pending is not null && !body.IncludeDraft && !body.DryRun)
         {
             throw new AgentException(AgentErrorCodes.Conflict,
@@ -75,7 +93,7 @@ internal static class DiscardOperation
         if (!body.DryRun)
         {
             flow.ThrowIfAborted();
-            flow.Versions.Delete(version.ContentLink);
+            call.DeleteVersion(version);
         }
         return new WriteResult
         {

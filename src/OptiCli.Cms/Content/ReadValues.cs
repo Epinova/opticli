@@ -13,7 +13,11 @@ namespace OptiCli.Cms.Content;
 /// Renders property values in the <see cref="ContentItemProperty"/> shapes. Reads <see cref="PropertyData.Value"/>,
 /// not the model's CLR getters, so values computed in code (fallbacks, defaults) don't hide what is stored.
 /// </summary>
-internal sealed class ReadValues(IContentTypeRepository types)
+/// <param name="shown">
+/// Which properties to render, of content or of a block in it: for an editor those the CMS edit UI shows them
+/// (<see cref="EditUiProperties.Shown(IContentData, PropertyData)"/>); every one when null.
+/// </param>
+internal sealed class ReadValues(IContentTypeRepository types, Func<IContentData, PropertyData, bool>? shown = null)
 {
     /// <summary>How the CMS serialises the items of list properties (<c>PropertyList&lt;T&gt;</c>) for storage.</summary>
     private static readonly JsonSerializerOptions StoredListOptions = new(JsonSerializerDefaults.Web)
@@ -35,7 +39,7 @@ internal sealed class ReadValues(IContentTypeRepository types)
         var result = new Dictionary<string, ContentItemProperty>(StringComparer.Ordinal);
         foreach (var property in data.Property)
         {
-            if (property.IsMetaData)
+            if (property.IsMetaData || shown?.Invoke(data, property) == false)
             {
                 continue;
             }

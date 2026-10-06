@@ -102,14 +102,14 @@ internal sealed class InMemoryOAuthStore : IOAuthStore
         return Task.CompletedTask;
     }
 
-    public Task<int> DeleteExpiredAsync(DateTimeOffset now, DateTimeOffset unusedClientsBefore, CancellationToken cancellationToken)
+    public Task<int> DeleteExpiredAsync(DateTimeOffset now, DateTimeOffset unusedClientsBefore, int limit, CancellationToken cancellationToken)
     {
         var deleted = 0;
-        foreach (var code in _codes.Values.Where(c => c.Expires < now))
+        foreach (var code in _codes.Values.Where(c => c.Expires < now).Take(limit).ToList())
         {
             deleted += _codes.TryRemove(code.CodeHash, out _) ? 1 : 0;
         }
-        foreach (var grant in _grants.Values.Where(g => g.Expires < now))
+        foreach (var grant in _grants.Values.Where(g => g.Expires < now).Take(limit - deleted).ToList())
         {
             lock (GrantLocks.For(grant.GrantId))
             {
@@ -117,13 +117,21 @@ internal sealed class InMemoryOAuthStore : IOAuthStore
                 _used.TryRemove(grant.GrantId, out _);
             }
         }
-        var inUse = _grants.Values.Select(g => g.ClientId).Concat(_codes.Values.Select(c => c.ClientId)).ToHashSet(StringComparer.Ordinal);
-        foreach (var client in _clients.Values.Where(c => c.Created < unusedClientsBefore && !inUse.Contains(c.ClientId)))
+        var inUse = InUse();
+        foreach (var client in _clients.Values.Where(c => c.Created < unusedClientsBefore && !inUse.Contains(c.ClientId)).Take(limit - deleted).ToList())
         {
             deleted += _clients.TryRemove(client.ClientId, out _) ? 1 : 0;
         }
         return Task.FromResult(deleted);
     }
+
+    public Task<int> CountUnusedClientsAsync(CancellationToken cancellationToken)
+    {
+        var inUse = InUse();
+        return Task.FromResult(_clients.Keys.Count(id => !inUse.Contains(id)));
+    }
+
+    private HashSet<string> InUse() => _grants.Values.Select(g => g.ClientId).Concat(_codes.Values.Select(c => c.ClientId)).ToHashSet(StringComparer.Ordinal);
 
     /// <summary>For tests: how many codes are waiting.</summary>
     public int CodeCount => _codes.Count;

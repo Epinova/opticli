@@ -95,6 +95,20 @@ public sealed class McpEndpointTests : IAsyncLifetime
     }
 
     [Theory]
+    [InlineData("/.well-known/oauth-protected-resource/episerver/opticli/mcp")]
+    [InlineData("/.well-known/oauth-authorization-server/episerver/opticli")]
+    [InlineData("/.well-known/openid-configuration/episerver/opticli")]
+    [InlineData("/episerver/opticli/.well-known/openid-configuration")]
+    public async Task The_metadata_documents_name_the_requests_host_so_no_cache_keeps_them(string path)
+    {
+        // A copy made for a request with a forged Host header would send everyone else there.
+        var response = await _site.Client("evil.example").GetAsync(path);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("evil.example", await response.Content.ReadAsStringAsync());
+        Assert.True(response.Headers.CacheControl?.NoStore);
+    }
+
+    [Theory]
     [InlineData("/.well-known/oauth-protected-resource")]
     [InlineData("/.well-known/oauth-authorization-server")]
     [InlineData("/.well-known/openid-configuration")]

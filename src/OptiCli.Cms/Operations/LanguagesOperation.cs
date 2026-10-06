@@ -13,6 +13,7 @@ internal static class LanguagesOperation
         var flow = new WriteFlow(call);
         var link = flow.Locator.ResolveContent(reference);
         var culture = flow.Locator.EnabledLanguage(body.Lang);
+        call.RequireLanguageAccess(culture);
 
         var master = flow.Locator.LoadAnyLanguage(link);
         if (master is not ILocalizable localizable)

@@ -223,9 +223,78 @@ public sealed class ToolTests
     public void An_upload_of_exactly_the_largest_size_passes()
     {
         var site = new OptiCliMcpOptions { MaxUploadBytes = 10 };
-        ToolGates.Upload(Convert.ToBase64String(new byte[10]), site);
-        ToolGates.Upload(null, site);
-        Assert.ThrowsAny<McpException>(() => ToolGates.Upload(Convert.ToBase64String(new byte[11]), site));
+        ToolGates.Upload("a.png", Convert.ToBase64String(new byte[10]), site);
+        ToolGates.Upload("a.png", null, site);
+        Assert.ThrowsAny<McpException>(() => ToolGates.Upload("a.png", Convert.ToBase64String(new byte[11]), site));
+    }
+
+    [Fact]
+    public void An_upload_follows_the_CMS_UIs_own_extensions_and_size_limit_where_the_site_sets_them()
+    {
+        var site = new OptiCliMcpOptions { MaxUploadBytes = 10 };
+        var rules = new CmsUploadRules(4, [".jpg", "png", ".PDF"]);
+
+        ToolGates.Upload("photo.JPG", Convert.ToBase64String(new byte[4]), site, rules);
+        ToolGates.Upload("logo.png", null, site, rules);
+        ToolGates.Upload("report.pdf", null, site, rules);
+        var svg = Parse(Assert.ThrowsAny<McpException>(() => ToolGates.Upload("logo.svg", null, site, rules)));
+        Assert.Equal(AgentErrorCodes.Usage, svg.Code);
+        Assert.Contains(".svg", svg.Message);
+        Assert.Contains(".jpg, png, .PDF", svg.Hint);
+        // The lower of the two limits: the CMS UI's 4 bytes, not MaxUploadBytes' 10.
+        var large = Parse(Assert.ThrowsAny<McpException>(() => ToolGates.Upload("photo.jpg", Convert.ToBase64String(new byte[5]), site, rules)));
+        Assert.Contains("larger than this site lets assistants upload", large.Message);
+
+        // Unset: the module's own limit alone, any extension.
+        ToolGates.Upload("logo.svg", Convert.ToBase64String(new byte[10]), site, new CmsUploadRules(null, []));
+        ToolGates.Upload("logo.svg", Convert.ToBase64String(new byte[10]), site, null);
+        ToolGates.Upload("logo.svg", Convert.ToBase64String(new byte[10]), site, new CmsUploadRules(0, []));
+        Assert.ThrowsAny<McpException>(() => ToolGates.Upload("logo.svg", Convert.ToBase64String(new byte[11]), site, new CmsUploadRules(100, [])));
+    }
+
+    [Fact]
+    public void The_CMS_UIs_upload_rules_are_read_from_its_options_also_the_extensions_only_newer_versions_have()
+    {
+        Assert.Null(CmsUploadRules.From(null));
+        var old = CmsUploadRules.From(new EPiServer.Cms.Shell.UI.Configurations.UploadOptions { FileSizeLimit = 1234 })!;
+        Assert.Equal((1234L, 0), (old.FileSizeLimit, old.AllowedExtensions.Count));
+
+        var newer = CmsUploadRules.From(new NewerUploadOptions { FileSizeLimit = 99, AllowedFileExtensions = " .jpg, .png ,," })!;
+        Assert.Equal([".jpg", ".png"], newer.AllowedExtensions);
+        Assert.True(newer.Allows(".PNG"));
+        Assert.False(newer.Allows(".svg"));
+        Assert.Empty(CmsUploadRules.From(new NewerUploadOptions { AllowedFileExtensions = ".jpg,*" })!.AllowedExtensions);
+    }
+
+    [Fact]
+    public async Task An_upload_with_an_extension_the_site_doesnt_allow_is_refused_before_it_reaches_the_cms()
+    {
+        // Registered as the CMS UI registers its options: the options type itself.
+        await using var site = await TestSite.StartAsync(services: s => s.AddSingleton<EPiServer.Cms.Shell.UI.Configurations.UploadOptions>(
+            new NewerUploadOptions { FileSizeLimit = 3, AllowedFileExtensions = ".jpg,.png" }));
+        await using var client = await Connect(site);
+
+        var svg = await CallFailing(client, "upload_media", """{"fileName":"logo.svg","parent":"123","dryRun":true}""");
+        Assert.Equal(AgentErrorCodes.Usage, svg.Code);
+        Assert.Contains("doesn't allow uploading .svg files", svg.Message);
+        var large = await CallFailing(client, "upload_media", JsonSerializer.Serialize(new { fileName = "a.png", parent = "123", data = Convert.ToBase64String(new byte[4]) }));
+        Assert.Contains("larger than this site lets assistants upload", large.Message);
+    }
+
+    /// <summary>The CMS UI's upload options as from version 12.33, with the extension list (the module builds against an older one).</summary>
+    private sealed class NewerUploadOptions : EPiServer.Cms.Shell.UI.Configurations.UploadOptions
+    {
+        public string? AllowedFileExtensions { get; set; }
+    }
+
+    [Fact]
+    public void Discarding_what_someone_else_saved_needs_the_site_to_allow_deleting()
+    {
+        var off = Parse(Assert.ThrowsAny<McpException>(() => Editor("content:read content:write").Call(new OptiCliMcpOptions()).RequireDeleting()));
+        Assert.Equal((AgentErrorCodes.Refused, McpErrorReasons.DeletingOff), (off.Code, off.Reason));
+        Assert.Contains("discard what someone else saved", off.Message);
+
+        Editor("content:read content:write").Call(new OptiCliMcpOptions { AllowDelete = true }).RequireDeleting();
     }
 
     [Fact]

@@ -13,11 +13,23 @@ using OptiCli.Protocol;
 namespace OptiCli.Cms.Content;
 
 /// <summary>Applies a request's property map to a writable content instance.</summary>
+/// <remarks>
+/// For an editor, a value must also be one the CMS edit UI would let them set: only properties it shows them as
+/// editable (<see cref="EditUiProperties"/>), no script in rich text or links (<see cref="CmsCall.MayWriteScript"/>),
+/// and content references only to content they can read (<see cref="CmsCall.MayReferenceUnchecked"/>).
+/// </remarks>
 internal sealed class PropertyWriter(
-    ContentLocator locator, BlockFactory blocks, CategoryRepository categories, IFrameRepository frames, DisplayOptions displayOptions)
+    CmsCall call, ContentLocator locator, BlockFactory blocks, CategoryRepository categories, IFrameRepository frames, DisplayOptions displayOptions)
 {
     /// <summary>Pseudo-property for the content name in snapshots and diffs.</summary>
     public const string NameKey = "Name";
+
+    /// <summary>
+    /// For an editor: each block of a block list being written, with the item it replaces (the one at its index, of its
+    /// type). What that item had is what the new one may keep (<see cref="CheckValue"/>), and its values the editor can't
+    /// see or change are carried over (<see cref="BlockList"/>).
+    /// </summary>
+    private readonly Dictionary<IContentData, IContentData> _blockBaselines = new(ReferenceEqualityComparer.Instance);
 
     /// <summary>Built-in metadata an agent may reasonably need to set; all other metadata is refused.</summary>
     public static readonly HashSet<string> WritableMetadata = new(StringComparer.OrdinalIgnoreCase) { "PageURLSegment", "PageVisibleInMenu" };
@@ -88,12 +100,14 @@ internal sealed class PropertyWriter(
         }
     }
 
-    public static PropertyData Find(IContentData content, string name)
+    /// <summary>The property to set, by name (any case): one the caller may change.</summary>
+    /// <exception cref="AgentException"><c>usage</c> for no such property, built-in metadata, or one the edit UI doesn't let an editor change.</exception>
+    public PropertyData Find(IContentData content, string name)
     {
         var property = content.Property.FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
         if (property is null)
         {
-            var known = content.Property.Where(p => !p.IsMetaData).Select(p => p.Name);
+            var known = content.Property.Where(p => !p.IsMetaData && call.Properties.Shown(content, p)).Select(p => p.Name);
             throw AgentException.Usage($"'{name}' is not a property of {content.GetOriginalType().Name}.",
                 $"Properties: {string.Join(", ", known)}.");
         }
@@ -102,6 +116,7 @@ internal sealed class PropertyWriter(
             throw AgentException.Usage($"'{property.Name}' is built-in metadata and can't be set through opticli.",
                 "Use the request's name field to rename content.");
         }
+        call.Properties.RequireEditable(content, property);
         return property;
     }
 
@@ -168,6 +183,8 @@ internal sealed class PropertyWriter(
             throw AgentException.Usage($"'{property.Name}' is not culture-specific, so it can only be changed on the master language ({master.Name}).");
         }
 
+        // What the value had before, which an editor may write back as it was (see CheckValue).
+        var before = Collect(_blockBaselines.TryGetValue(content, out var previous) ? previous.Property[property.Name]?.Value : property.Value);
         try
         {
             SetValue(property, value);
@@ -175,6 +192,197 @@ internal sealed class PropertyWriter(
         catch (Exception ex) when (ex is FormatException or ArgumentException or InvalidCastException or JsonException or OverflowException or InvalidPropertyValueException)
         {
             throw AgentException.Usage($"Can't set '{property.Name}' ({property.GetType().Name}): {ex.Message}");
+        }
+        CheckValue(property, before);
+    }
+
+    /// <summary>
+    /// For an editor, the value as set, whatever form it was given in: rich text without script and with embedded blocks
+    /// only from content they can read, links (also in a list property's items) with a web, mail or phone scheme or none
+    /// and no attributes but href, title and target. What the property already had, construct by construct and as often
+    /// as it had it, may be written back as it was: rich text with a video's <c>&lt;iframe&gt;</c>, or an sms: link, is
+    /// still the editor's to correct a typo in. Anything new is refused, also an old construct copied once more.
+    /// </summary>
+    /// <param name="before">What the value had before the write (<see cref="Collect(object?)"/>).</param>
+    /// <exception cref="AgentException"><c>usage</c> naming what was found; <c>not_found</c> for an embedded block they can't read.</exception>
+    private void CheckValue(PropertyData property, Constructs before)
+    {
+        if (call.MayWriteScript && call.MayReferenceUnchecked)
+        {
+            return;
+        }
+        var after = Collect(property.Value);
+        foreach (var finding in call.MayWriteScript ? [] : after.Findings)
+        {
+            if (before.Take(finding))
+            {
+                continue;
+            }
+            throw finding.Link
+                ? AgentException.Usage($"'{property.Name}' has {finding.Problem}.",
+                    "Give an http, https, mailto or tel link, a relative one, or a content ref, as {href, text, title, target}. A link the property already had may stay as it is. Nothing was saved.")
+                : AgentException.Usage($"'{property.Name}' has {finding.Problem}, which could run script in the CMS edit UI or on the site.",
+                    "Leave it out: rich text may have text, links, images, tables and embedded blocks, not script. What the property already had may stay as it is, but nothing new. Nothing was saved.");
+        }
+        if (!call.MayReferenceUnchecked)
+        {
+            // As the markup names them (the CMS fills in the other form), so content an editor can't read fails exactly as
+            // missing content does; what the stored value already named, the editor has seen there.
+            foreach (var reference in after.References.Where(r => !before.TakeReference(r)))
+            {
+                locator.Resolve(reference, $"embedded block in {property.Name}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// What a value holds that an editor may not add (<see cref="CheckValue"/>), each as often as it holds it: findings of
+    /// <see cref="MarkupSafety"/> in rich text and links, and the content embedded blocks in rich text name.
+    /// </summary>
+    private sealed class Constructs
+    {
+        private readonly Dictionary<string, int> _findings = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, int> _references = new(StringComparer.Ordinal);
+
+        public List<(string Key, string Problem, bool Link, bool Live)> Findings { get; } = [];
+
+        public List<string> References { get; } = [];
+
+        /// <param name="live">
+        /// Whether a browser surely reads it as live (<see cref="MarkupSafety.Finding.Live"/>): only such a construct counts
+        /// as one the value has, which the value written back may keep.
+        /// </param>
+        public void Add(string key, string problem, bool link, bool live = true)
+        {
+            Findings.Add((key, problem, link, live));
+            if (live)
+            {
+                _findings[key] = _findings.GetValueOrDefault(key) + 1;
+            }
+        }
+
+        public void AddReference(string reference)
+        {
+            References.Add(reference);
+            _references[reference] = _references.GetValueOrDefault(reference) + 1;
+        }
+
+        /// <summary>Uses up one of this construct; false when there is none (left), or the one written isn't live itself.</summary>
+        public bool Take((string Key, string Problem, bool Link, bool Live) finding) => finding.Live && Take(_findings, finding.Key);
+
+        public bool TakeReference(string reference) => Take(_references, reference);
+
+        private static bool Take(Dictionary<string, int> counts, string key)
+        {
+            if (counts.GetValueOrDefault(key) is var count and > 0)
+            {
+                counts[key] = count - 1;
+                return true;
+            }
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Whether a list item's text member is a URL: marked as one (<c>[UIHint("Url")]</c>, <c>[DataType(DataType.Url)]</c>,
+    /// <c>[Url]</c>), or named like one (<c>...Url</c>, <c>...Href</c>, <c>...Link</c>).
+    /// </summary>
+    private static bool IsUrl(System.Reflection.PropertyInfo member)
+    {
+        var attributes = member.GetCustomAttributes(inherit: true);
+        return attributes.OfType<System.ComponentModel.DataAnnotations.UIHintAttribute>().Any(a => a.UIHint.Equals("Url", StringComparison.OrdinalIgnoreCase))
+            || attributes.OfType<System.ComponentModel.DataAnnotations.DataTypeAttribute>().Any(a => a.DataType == System.ComponentModel.DataAnnotations.DataType.Url)
+            || attributes.OfType<System.ComponentModel.DataAnnotations.UrlAttribute>().Any()
+            || member.Name.EndsWith("Url", StringComparison.OrdinalIgnoreCase) || member.Name.EndsWith("Href", StringComparison.OrdinalIgnoreCase)
+            || member.Name.EndsWith("Link", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The attributes a link may have; the CMS renders every attribute a link holds, an <c>onclick</c> as well.</summary>
+    private static readonly HashSet<string> LinkAttributes = new(StringComparer.OrdinalIgnoreCase) { "href", "title", "target" };
+
+    /// <summary>What <paramref name="value"/> holds that an editor may not add; nothing for the developer, who may.</summary>
+    private Constructs Collect(object? value)
+    {
+        var constructs = new Constructs();
+        if (!call.MayWriteScript || !call.MayReferenceUnchecked)
+        {
+            Collect(value, constructs, depth: 0);
+        }
+        return constructs;
+    }
+
+    private static void Collect(object? value, Constructs constructs, int depth)
+    {
+        switch (value)
+        {
+            case null or string or ContentArea or IContentData:
+                // Blocks are checked property by property as they are written.
+                return;
+            case XhtmlString html:
+                var markup = html.ToInternalString() ?? "";
+                foreach (var finding in MarkupSafety.Scripts(markup))
+                {
+                    constructs.Add(finding.Key, finding.Problem, link: false, finding.Live);
+                }
+                foreach (var (_, reference) in MarkupSafety.ContentReferences(markup))
+                {
+                    constructs.AddReference(reference);
+                }
+                return;
+            case LinkItem link:
+                // The attributes it has, whether read from markup or set one by one (where an unset one is empty).
+                var key = "link " + string.Join(" ", link.Attributes.Where(a => !string.IsNullOrEmpty(a.Value))
+                    .OrderBy(a => a.Key, StringComparer.OrdinalIgnoreCase).Select(a => $"{a.Key.ToLowerInvariant()}=\"{a.Value}\""));
+                if (link.Href is { } href && MarkupSafety.Link(href) is { } problem)
+                {
+                    constructs.Add(key, problem, link: true);
+                }
+                else if (link.Attributes.FirstOrDefault(a => !LinkAttributes.Contains(a.Key) && !string.IsNullOrEmpty(a.Value)).Key is { } attribute)
+                {
+                    constructs.Add(key, $"a link with the attribute '{attribute}' (only href, title and target)", link: true);
+                }
+                return;
+            case Url url:
+                if (MarkupSafety.Link(url.OriginalString) is { } urlProblem)
+                {
+                    constructs.Add("url " + url.OriginalString, urlProblem, link: true);
+                }
+                return;
+            case System.Collections.IEnumerable items:
+                foreach (var item in items)
+                {
+                    Collect(item, constructs, depth);
+                }
+                return;
+            default:
+                // A list property's item (PropertyList<T>): its links, URLs and rich text, a few levels deep.
+                if (depth < 3 && value.GetType() is { IsPrimitive: false, IsEnum: false } type
+                    && type.Namespace?.StartsWith("System", StringComparison.Ordinal) != true && type.Namespace?.StartsWith("EPiServer", StringComparison.Ordinal) != true)
+                {
+                    foreach (var member in type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+                        .Where(m => m.CanRead && m.GetIndexParameters().Length == 0 && !m.PropertyType.IsValueType))
+                    {
+                        object? memberValue;
+                        try
+                        {
+                            memberValue = member.GetValue(value);
+                        }
+                        catch (System.Reflection.TargetInvocationException)
+                        {
+                            continue;
+                        }
+                        if (memberValue is string text)
+                        {
+                            if (IsUrl(member) && MarkupSafety.Link(text) is { } textProblem)
+                            {
+                                constructs.Add($"url {member.Name} {text}", textProblem, link: true);
+                            }
+                            continue;
+                        }
+                        Collect(memberValue, constructs, depth + 1);
+                    }
+                }
+                return;
         }
     }
 
@@ -231,6 +439,11 @@ internal sealed class PropertyWriter(
         }
         else if (type == PageShortcutType.External)
         {
+            if (!call.MayWriteScript && shortcut.Url is { } url && MarkupSafety.Link(url) is { } problem)
+            {
+                throw AgentException.Usage($"The shortcut has {problem}.",
+                    "Give an http, https, mailto or tel link, a relative one, or a page (\"to\"). Nothing was saved.");
+            }
             var anchor = shortcut.Anchor is { } fragment ? "#" + fragment : "";
             page.LinkURL = (shortcut.To is { } to ? PermanentLink(to) : shortcut.Url) + anchor;
         }
@@ -342,9 +555,24 @@ internal sealed class PropertyWriter(
             case JsonValueKind.Array when property is PropertyContentArea:
                 property.Value = BuildArea(value.Deserialize<List<AreaItemValue>>(AgentJson.Options)!, property.Value as ContentArea);
                 return;
+            case JsonValueKind.String or JsonValueKind.Number when !call.MayReferenceUnchecked && (property is PropertyContentArea || IsReferenceList(property)):
+                // The stored text form names content without the read check: refs only, as an array.
+                throw AgentException.Usage(
+                    $"'{property.Name}' takes an array, not text.",
+                    property is PropertyContentArea
+                        ? "Give its items as an array of refs, e.g. [{\"ref\": \"123\"}], or change it with areaOps."
+                        : "Give its content as an array of refs, e.g. [\"123\", \"124\"].");
             case JsonValueKind.Array when property is PropertyLinkCollection:
                 property.Value = BuildLinks(value.Deserialize<List<LinkItemValue>>(AgentJson.Options)!);
                 return;
+            case JsonValueKind.String when !call.MayWriteScript
+                && (property is PropertyLinkCollection || (property.PropertyValueType == typeof(LinkItem) && value.GetString()!.TrimStart().StartsWith('<'))):
+                // The stored markup keeps every attribute of a link, and the CMS renders them all.
+                throw AgentException.Usage(
+                    $"'{property.Name}' takes links as objects, not markup.",
+                    property is PropertyLinkCollection
+                        ? "Give an array of {href, text, title, target}, as get_content shows it."
+                        : "Give {href, text, title, target}, or just the href.");
             case JsonValueKind.Object when property.PropertyValueType == typeof(LinkItem):
                 property.Value = NewLink(value.Deserialize<LinkItemValue>(AgentJson.Options)!);
                 return;
@@ -360,6 +588,9 @@ internal sealed class PropertyWriter(
                 // Accept GUIDs too, which ParseToSelf doesn't.
                 property.ParseToSelf(locator.ResolveContent(value.GetString(), $"reference for {property.Name}").ToString());
                 return;
+            case JsonValueKind.Number when !call.MayReferenceUnchecked && property is PropertyContentReference or PropertyPageReference:
+                property.ParseToSelf(locator.ResolveContent(value.GetRawText(), $"reference for {property.Name}").ToString());
+                return;
             case JsonValueKind.String:
                 property.ParseToSelf(value.GetString());
                 return;
@@ -371,6 +602,10 @@ internal sealed class PropertyWriter(
                 return;
         }
     }
+
+    /// <summary>A list of content references (<c>IList&lt;ContentReference&gt;</c>).</summary>
+    private static bool IsReferenceList(PropertyData property) =>
+        property.PropertyValueType != typeof(ContentReference) && typeof(IEnumerable<ContentReference>).IsAssignableFrom(property.PropertyValueType);
 
     /// <summary>Lists and other structured values: deserialized straight into the property's value type.</summary>
     private object? Structured(PropertyData property, JsonElement value)
@@ -389,15 +624,34 @@ internal sealed class PropertyWriter(
                 .ToList();
         }
 
+        if (value.ValueKind == JsonValueKind.Object && value.TryGetProperty("type", out _) && value.EnumerateObject().All(p => p.Name is "type" or "value" or "blockType"))
+        {
+            throw AgentException.Usage($"'{property.Name}' was given get_content's {{type, value}} shape.",
+                "Give the value alone: for a block, an object of its property names to their values.");
+        }
         // Interfaces like IList<string> can't be instantiated; a List<T> satisfies them.
         var target = element is not null && type.IsInterface ? typeof(List<>).MakeGenericType(element) : type;
-        return value.Deserialize(target, AgentJson.Options);
+        try
+        {
+            return value.Deserialize(target, AgentJson.Options);
+        }
+        catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
+        {
+            // The type isn't one JSON can make (a URL, a CMS type): no fault of the site's.
+            throw AgentException.Usage($"Can't set '{property.Name}' ({property.GetType().Name}) from this JSON: {ex.Message}",
+                "Give a string for a URL or a link, or see get_content_type for what the property takes.");
+        }
     }
 
-    /// <summary>A block list: one new block per object, with the object's values set like a local block's.</summary>
+    /// <summary>
+    /// A block list: one new block per object, with the object's values set like a local block's. For an editor, each new
+    /// block keeps what the item at its index had that they can't see or change (it would otherwise be lost unseen), and
+    /// a shorter list is refused when an item it drops has such a value.
+    /// </summary>
     private System.Collections.IList BlockList(PropertyData property, Type element, JsonElement value)
     {
         var list = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(element))!;
+        var current = (property.Value as System.Collections.IEnumerable)?.OfType<IContentData>().ToList() ?? [];
         var index = 0;
         foreach (var item in value.EnumerateArray())
         {
@@ -406,12 +660,30 @@ internal sealed class PropertyWriter(
                 throw AgentException.Usage($"{property.Name}[{index}] must be an object of {element.Name} property names to values, e.g. {{\"Name\": \"...\"}}.");
             }
             var block = blocks.Create(element);
+            var replaced = index < current.Count && current[index].GetOriginalType() == block.GetOriginalType() ? current[index] : null;
+            if (replaced is not null)
+            {
+                _blockBaselines[block] = replaced;
+            }
             Apply(block, item.Deserialize<Dictionary<string, JsonElement>>(AgentJson.Options));
+            foreach (var kept in replaced is null ? [] : Unseen(replaced))
+            {
+                block.Property[kept.Name].Value = kept.Value;
+            }
             list.Add(block);
             index++;
         }
+        if (current.Skip(index).FirstOrDefault(dropped => Unseen(dropped).Any(p => !p.IsNull)) is not null)
+        {
+            throw AgentException.Usage($"{property.Name} would lose items with values you can't see or change in the CMS edit UI.",
+                "Keep as many items as it has, or ask someone who may change those values to edit the list in the CMS. Nothing was saved.");
+        }
         return list;
     }
+
+    /// <summary>The properties of <paramref name="block"/> the caller can't see or change: none for the developer.</summary>
+    private IEnumerable<PropertyData> Unseen(IContentData block) =>
+        block.Property.Where(p => !p.IsMetaData && call.Properties.Access(block, p) != PropertyAccess.Editable).ToList();
 
     /// <summary>
     /// The area of <paramref name="items"/>, replacing <paramref name="current"/>. Each item takes over the current item

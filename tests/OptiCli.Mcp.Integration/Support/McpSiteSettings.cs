@@ -61,6 +61,21 @@ internal static class TestUsers
 
     /// <summary>The edge-case site's approval root (EdgeCasesSetup.ApprovalRoot): an approval sequence applies below it.</summary>
     public const string ApprovalRoot = "6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e02";
+
+    /// <summary>The language only administrators may edit (McpFixture.AdminLanguage).</summary>
+    public const string AdminLanguage = "de";
+
+    /// <summary>
+    /// The search fixture's folder (McpFixture.FindFolder): "find-fixture 1 shown" below it is for editors,
+    /// "find-fixture 2 hidden" for administrators only.
+    /// </summary>
+    public const string FindFolder = "c3d4e5f6-a7b8-4c9d-8e0f-1a2b3c4d5e6f";
+
+    /// <summary>The write-back fixture (McpFixture.WriteBackBlock): rich text with a video's iframe, and an sms: link.</summary>
+    public const string WriteBackBlock = "d4e5f6a7-b8c9-4d0e-9f1a-2b3c4d5e6f70";
+
+    /// <summary>The inert fixture (McpFixture.InertBlock): script inside a <c>&lt;textarea&gt;</c> in its rich text.</summary>
+    public const string InertBlock = "e5f6a7b8-c9d0-4e1f-8a2b-3c4d5e6f7081";
 }
 
 /// <summary>

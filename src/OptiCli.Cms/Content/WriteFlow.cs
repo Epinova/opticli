@@ -20,7 +20,7 @@ internal sealed class WriteFlow
         Types = call.Service<IContentTypeRepository>();
         Versions = call.Service<IContentVersionRepository>();
         Locator = new ContentLocator(call);
-        Writer = new PropertyWriter(Locator, new BlockFactory(
+        Writer = new PropertyWriter(call, Locator, new BlockFactory(
             call.Service<EPiServer.Construction.IContentDataFactory<BlockData>>(), call.Service<EPiServer.Construction.IContentDataBuilder>(), Types),
             call.Service<CategoryRepository>(), call.Service<IFrameRepository>(), call.Service<EPiServer.Web.DisplayOptions>());
         Areas = new AreaEditor(Locator, Writer);
@@ -143,7 +143,13 @@ internal sealed class WriteFlow
         IEnumerable<ValidationIssue>? precheck = null,
         Action? beforeSave = null)
     {
-        var changes = PropertyValues.Diff(before, PropertyValues.Snapshot(writable));
+        // For an editor: edit access to the language, and the publish gate for a save that would put something live, are
+        // checked for a dry run too, so the assistant learns before it tries.
+        Call.RequireLanguageAccess(writable);
+        Call.RequirePublishing(action, writable);
+        var diff = PropertyValues.Diff(before, PropertyValues.Snapshot(writable));
+        // What is reported: an editor never sees a hidden property's value, also not in a diff.
+        var changes = Call.Properties.Shown(writable, diff);
         var issues = (precheck ?? []).Concat(ValidationErrors.Validate(Validation, writable, action)).ToList();
         var valid = !ValidationErrors.HasErrors(issues);
         var published = Kind(action) == SaveAction.Publish;
@@ -165,12 +171,11 @@ internal sealed class WriteFlow
         {
             throw AgentException.Invalid(issues);
         }
-        // Before anything changes (beforeSave may restore content) and outside the try below, whose filter could take
-        // the gate's refusal for a site failure after a save.
-        Call.RequirePublishing(action);
+        // The gates above ran before anything changes (beforeSave may restore content) and outside the try below, whose
+        // filter could take a refusal for a site failure after a save.
         ThrowIfAborted();
         beforeSave?.Invoke();
-        if (changes.Count == 0 && !saveUnchanged)
+        if (diff.Count == 0 && !saveUnchanged)
         {
             return new WriteResult { Content = shown, BaseVersion = baseVersion, Validation = issues.Count > 0 ? issues : null };
         }
@@ -196,7 +201,7 @@ internal sealed class WriteFlow
             siteError = $"{ex.Message} ({ex.GetType().FullName})";
         }
         var result = Repository.Get<IContent>(saved);
-        if (!published && writable is IVersionable)
+        if (!published && writable is IVersionable && saved.WorkID > 0)
         {
             // ForceNewVersion leaves the old primary draft in place, and edit mode would keep opening that one.
             Versions.SetCommonDraft(saved);
@@ -225,11 +230,26 @@ internal sealed class WriteFlow
     /// existing content newer than <paramref name="newestBefore"/>. Null when nothing was saved, or it can't be told
     /// (content without versions).
     /// </summary>
+    /// <remarks>
+    /// New content found by its GUID counts only with a version stored: a save that failed inside the CMS's own
+    /// transaction (a value the database can't take) may still be found by its GUID for a moment, with nothing of it kept.
+    /// </remarks>
     private ContentReference? SavedAnyway(IContent writable, bool isNew, int newestBefore)
     {
         if (isNew)
         {
-            return Saved(writable)?.ContentLink;
+            if (Saved(writable) is not { } stored || writable is not IVersionable)
+            {
+                return Saved(writable)?.ContentLink;
+            }
+            try
+            {
+                return Versions.List(stored.ContentLink.ToReferenceWithoutVersion()).OrderByDescending(v => v.ContentLink.WorkID).FirstOrDefault()?.ContentLink;
+            }
+            catch (ContentNotFoundException)
+            {
+                return null;
+            }
         }
         if (newestBefore == 0)
         {

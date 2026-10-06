@@ -47,10 +47,11 @@ internal sealed class McpEditor
     public void Require(string scope) => ToolGates.Scope(_scopes, scope);
 
     /// <summary>
-    /// A content operation as this editor: every load and save checked against their access rights, and every save
-    /// that publishes or schedules against the publish gate (<see cref="ToolGates.Publishing"/>) as well, whatever the
-    /// tool's arguments said.
+    /// A content operation as this editor: every load and save checked against their access rights, every save that
+    /// publishes or schedules against the publish gate (<see cref="ToolGates.Publishing"/>) as well, whatever the
+    /// tool's arguments said, and every change that deletes someone else's work for good against the delete gate
+    /// (<see cref="ToolGates.Deleting"/>).
     /// </summary>
     public CmsCall Call(OptiCliMcpOptions site) =>
-        new(_context.RequestServices, _context.RequestAborted, CmsCaller.Editor, () => ToolGates.Publishing(_scopes, site));
+        new(_context.RequestServices, _context.RequestAborted, CmsCaller.Editor, () => ToolGates.Publishing(_scopes, site), () => ToolGates.Deleting(site));
 }

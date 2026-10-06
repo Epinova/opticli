@@ -3,6 +3,73 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## Unreleased
+
+### MCP server for editors (preview): security fixes
+
+Fixes from a security review of `OptiCli.Mcp` 0.9.0-preview (the same module shipped in 0.10.0-preview and 0.10.1-preview). Update before using it on a real site.
+
+- **Return addresses are limited to Claude's and the editor's own machine.** A new option, `AllowedRedirectHosts`
+  (`claude.ai` and `claude.com` by default), lists the hosts an app's OAuth redirect URI may be on, over https and
+  matched exactly; a loopback address is always allowed. Checked when an app registers and again at every sign-in, also
+  for apps with a metadata document and apps registered before. Before, any app could register any https return
+  address under any name, and an editor's Allow would send the code there. `["*"]` allows any https host (with a
+  warning at startup). The consent page now says plainly, in a warning, that an app which registered itself chose its
+  own name.
+- **Registration can't fill the database.** `RateLimits.RegisterPerMinute` is 10 by default (was 60), an IPv6 address
+  counts by its /64, and registration stops (429) at 5,000 registered apps with no connection and no sign-in under way.
+  Such an app is deleted a day after it registered (was 30 days). The cleanup runs in the background, never holding up
+  a token response, without the request's context, and deletes at most 500 rows a run. Clients are only queried with a
+  filter; grants and codes, which exist only by an editor's consent, are still loaded whole, and `register` counts the
+  unused clients at most once a minute.
+- **No script in rich text or links for editors.** Rich text with `<script>`, event handler attributes, `javascript:`,
+  `vbscript:` or non-image `data:` URLs, `<iframe>`, `<object>`, `<form>` and the like is refused, however it is
+  written; links (link properties and collections, URL properties, URLs in list properties' items, a shortcut's
+  external link) must be http, https, mailto, tel or relative, have no attributes but href, title and target, and are
+  given as objects, not as the CMS's stored markup, without control characters. What a property already has, live, may
+  be written back as it is, but nothing new: script inside a `<textarea>`, `<style>`, `<template>`, `<svg>` and the like
+  doesn't count as already there. The README recommends the CMS's own `ScriptParser` `SavingMode=Remove` too.
+- **No files that run script for editors:** HTML, XML, XSLT, JavaScript and compressed SVG uploads are refused, an SVG
+  file with script, `foreignObject`, event handlers or script links is refused (an ordinary drawing uploads), and so is
+  markup named as a raster image. The README recommends `X-Content-Type-Options: nosniff` for the site's media.
+- **Changes that put content live need the publish gate.** Moving content that has a published version or anything
+  below it, discarding a version scheduled for publishing, and saving content without versions are refused
+  (`publishingOff`) where the site doesn't allow publishing, also in a dry run. Content that may be live isn't moved
+  below another approval sequence (`approvalSequence`).
+- **Discarding someone else's draft needs `AllowDelete`** (`deletingOff`), as well as `includeDraft`. An editor's own
+  drafts can be discarded as before.
+- **What the edit UI checks is checked for editors:** the access rights per language (no draft, publish, unpublish,
+  discard or new branch in a language the editor may not edit); properties the edit UI hides or locks for the editor
+  (not shown in edit mode, `[Editable(false)]`, a tab whose required access they lack, or an editor descriptor or
+  metadata extender, through the CMS UI's own metadata, also inside local blocks), which `get_content`,
+  `get_content_type` and diffs leave out and writes refuse (and refused altogether for an item whose metadata can't be
+  built), and which a rewritten block list keeps; and the access a group of content types requires on the parent of
+  new content.
+- **Content references given as text get the read check.** A ContentArea or reference list given as text (or a
+  number) is refused, with a hint to give an array of refs; a content reference given as a number, and an embedded
+  block in rich text, is looked up as the editor, so content they can't read is the same `not_found` as missing content.
+- **Uploads follow the CMS UI's own upload rules:** its size limit (the lower of it and `MaxUploadBytes` applies) and,
+  from CMS UI 12.33, its allowed file extensions.
+- **The consent and connections pages refuse to be framed** whatever headers the site sends (`Sec-Fetch-Dest`), and
+  their posts are refused when the browser says they came from another site (`Sec-Fetch-Site`).
+- **The metadata documents are sent with `Cache-Control: no-store`.** The README recommends `RequireHost` or the
+  site's `AllowedHosts`, and forwarded headers from known proxies only.
+- `find_content` doesn't count content the editor can't read, so `truncated` no longer tells of it.
+
+- A value in `get_content`'s `{type, value}` shape, or one JSON can't make into the property's type, is a usage error
+  rather than an internal one, for the CLI as well. New content whose save failed inside the CMS (a value the database
+  can't take) is no longer reported as saved because it could still be found by its GUID for a moment.
+
+**Breaking** for a site that implements `IOAuthStore` itself: `DeleteExpiredAsync` takes a limit,
+`CountUnusedClientsAsync` is new, and the store is called from a background thread after the request (without its
+HttpContext or services, with the site's `ApplicationStopping` as the token), so it must be thread-safe and not scoped.
+The developer's site agent (`opticli serve`) behaves as before.
+
+### Development
+
+- The MCP test site has a block type with properties the edit UI hides or locks, a language only administrators may
+  edit, and a search fixture; `serve.sh --no-publish` now also turns deleting off (the module's defaults).
+
 ## 0.10.1 (5 October 2026)
 
 ### Fixed

@@ -59,7 +59,8 @@ public class RateLimitTests
     public async Task The_limits_are_options_with_defaults_for_shared_addresses()
     {
         var defaults = new OptiCliMcpRateLimits();
-        Assert.Equal((60, 60, 600, 60), (defaults.RegisterPerMinute, defaults.TokenPerMinute, defaults.TokenPerAddressPerMinute, defaults.AuthorizePerMinute));
+        Assert.Equal((10, 60, 600, 60), (defaults.RegisterPerMinute, defaults.TokenPerMinute, defaults.TokenPerAddressPerMinute, defaults.AuthorizePerMinute));
+        Assert.Equal(10, new OAuthRateLimits().RegisterPerMinute);
 
         await using var site = await TestSite.StartAsync(configuration: new()
         {
@@ -78,6 +79,32 @@ public class RateLimitTests
         var url = TestSite.AuthorizeUrl(clientId, Pkce.Challenge(TestSite.Verifier()));
         Assert.Equal(HttpStatusCode.OK, (await site.Browser("editor").GetAsync(url)).StatusCode);
         Assert.Equal(HttpStatusCode.TooManyRequests, (await site.Browser("editor").PostFormAsync(url, new() { ["decision"] = "allow" })).StatusCode);
+    }
+
+    [Theory]
+    [InlineData("203.0.113.7", "203.0.113.7")]
+    [InlineData("::ffff:203.0.113.7", "203.0.113.7")]
+    [InlineData("2001:db8:1:2:3:4:5:6", "2001:db8:1:2::/64")]
+    [InlineData("2001:db8:1:2::", "2001:db8:1:2::/64")]
+    [InlineData("::1", "::/64")]
+    public void An_ipv6_address_counts_by_its_64(string address, string key) =>
+        Assert.Equal(key, OAuthRateLimiter.AddressKey(IPAddress.Parse(address)));
+
+    [Fact]
+    public void Addresses_of_one_ipv6_64_share_a_window()
+    {
+        using var limiter = new OAuthRateLimiter(new OAuthRateLimits { RegisterPerMinute = 1 });
+        Microsoft.AspNetCore.Http.HttpContext From(string address)
+        {
+            var context = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+            context.Connection.RemoteIpAddress = IPAddress.Parse(address);
+            return context;
+        }
+
+        Assert.Null(limiter.Check(OAuthRateLimiter.Register, From("2001:db8:1:2::1")));
+        Assert.NotNull(limiter.Check(OAuthRateLimiter.Register, From("2001:db8:1:2:ffff:ffff:ffff:ffff")));
+        Assert.Null(limiter.Check(OAuthRateLimiter.Register, From("2001:db8:1:3::1")));
+        Assert.Equal("unknown", OAuthRateLimiter.AddressKey(null));
     }
 
     [Fact]
@@ -161,6 +188,38 @@ public sealed class ConnectionsPageTests : IAsyncLifetime
         Assert.Single(await _site.Store.ListGrantsAsync("other", default));
     }
 
+    [Theory]
+    [InlineData("cross-site", false)]
+    [InlineData("same-site", false)]
+    [InlineData("same-origin", true)]
+    [InlineData(null, true)]
+    public async Task A_revoke_counts_only_from_the_connections_page_itself(string? site, bool counts)
+    {
+        await _site.ConnectAsync("editor");
+        var browser = _site.Browser("editor");
+        var form = Browser.Inputs(await (await browser.GetAsync("/episerver/opticli/connections")).Content.ReadAsStringAsync());
+        var post = new HttpRequestMessage(HttpMethod.Post, "/episerver/opticli/connections") { Content = new FormUrlEncodedContent(form) };
+        if (site is not null)
+        {
+            post.Headers.Add("Sec-Fetch-Site", site);
+        }
+
+        var response = await browser.SendAsync(post);
+
+        Assert.Equal(counts ? HttpStatusCode.SeeOther : HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(counts ? 0 : 1, (await _site.Store.ListGrantsAsync(null, default)).Count);
+    }
+
+    [Fact]
+    public async Task The_connections_page_is_never_rendered_for_a_frame()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, "/episerver/opticli/connections");
+        request.Headers.Add("Sec-Fetch-Dest", "iframe");
+        var response = await _site.Browser("editor").SendAsync(request);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.DoesNotContain("Revoke", await response.Content.ReadAsStringAsync());
+    }
+
     [Fact]
     public async Task A_revoke_without_the_antiforgery_token_is_refused()
     {
@@ -191,7 +250,30 @@ public class OptionsTests
         Assert.Null(new OptiCliMcpOptions { ConnectionLifetime = TimeSpan.MaxValue }.Problem());
         Assert.Equal(DateTimeOffset.MaxValue, new OptiCliMcpOptions { ConnectionLifetime = TimeSpan.MaxValue }.ConnectionEnds(DateTimeOffset.UtcNow));
         Assert.Equal(new[] { "WebEditors", "WebAdmins", "CmsEditors", "CmsAdmins", "Administrators" }, options.AllowedRoles);
+        Assert.Equal(new[] { "claude.ai", "claude.com" }, options.AllowedRedirectHosts);
     }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("https://claude.ai")]
+    [InlineData("claude.ai/api")]
+    [InlineData("claude.ai:443")]
+    [InlineData("*.claude.ai")]
+    [InlineData("user@claude.ai")]
+    public async Task A_redirect_host_that_isnt_a_plain_host_name_fails_at_startup(string host)
+    {
+        Assert.Contains("AllowedRedirectHosts", new OptiCliMcpOptions { AllowedRedirectHosts = ["claude.ai", host] }.Problem());
+        var error = await Assert.ThrowsAsync<OptionsValidationException>(() => TestSite.StartAsync(o => o.AllowedRedirectHosts = [host]));
+        Assert.Contains("AllowedRedirectHosts", error.Message);
+    }
+
+    [Theory]
+    [InlineData("*")]
+    [InlineData("client.example")]
+    [InlineData("203.0.113.7")]
+    public void A_host_name_or_the_wildcard_is_a_usable_redirect_host(string host) =>
+        Assert.Null(new OptiCliMcpOptions { AllowedRedirectHosts = [host] }.Problem());
 
     [Fact]
     public async Task Options_bind_from_the_configuration_section_and_code_wins()

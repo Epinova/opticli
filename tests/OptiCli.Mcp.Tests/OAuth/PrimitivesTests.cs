@@ -95,6 +95,32 @@ public class RedirectUrisTests
 
     [Fact]
     public void An_empty_redirect_never_matches() => Assert.False(RedirectUris.AnyMatches(["https://claude.ai/cb"], ""));
+
+    [Theory]
+    [InlineData("https://claude.ai/api/mcp/auth_callback", true)]
+    [InlineData("https://claude.com/api/mcp/auth_callback", true)]
+    [InlineData("https://Claude.AI/api/mcp/auth_callback", true)]
+    [InlineData("http://127.0.0.1:53682/callback", true)]
+    [InlineData("https://127.0.0.1:53682/callback", true)]
+    [InlineData("http://localhost:4000/cb", true)]
+    [InlineData("http://[::1]:4000/cb", true)]
+    [InlineData("https://attacker.example/cb", false)]
+    [InlineData("https://claude.ai.attacker.example/cb", false)]
+    [InlineData("https://www.claude.ai/cb", false)]
+    [InlineData("https://claude.ai./cb", false)]
+    [InlineData("http://claude.ai/cb", false)]
+    [InlineData("https://claude.ai/cb#x", false)]
+    public void Codes_go_to_the_listed_hosts_over_https_or_to_the_editors_own_machine(string uri, bool permitted) =>
+        Assert.Equal(permitted, RedirectUris.IsPermitted(uri, ["claude.ai", "claude.com"]));
+
+    [Fact]
+    public void The_wildcard_permits_any_https_host_but_still_not_plain_http()
+    {
+        Assert.True(RedirectUris.IsPermitted("https://attacker.example/cb", ["*"]));
+        Assert.False(RedirectUris.IsPermitted("http://attacker.example/cb", ["*"]));
+        Assert.True(RedirectUris.IsPermitted("http://127.0.0.1/cb", []));
+        Assert.False(RedirectUris.IsPermitted("https://claude.ai/cb", []));
+    }
 }
 
 public class NetworkAddressesTests

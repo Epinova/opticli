@@ -5,14 +5,15 @@
 #   serve.sh <site-dir> [--port <port>] [--no-publish] [--stop]
 #
 # --port        default 5180 (MCP_PORT)
-# --no-publish  start with OptiCli__Mcp__AllowPublish=false: the second configuration the E2E tests check, usually
-#               on another port beside the default one (both use the same database)
+# --no-publish  start with OptiCli__Mcp__AllowPublish=false and OptiCli__Mcp__AllowDelete=false (the module's
+#               defaults): the second configuration the E2E tests check, usually on another port beside the default
+#               one (both use the same database)
 # --stop        stop the instance on that port
 # Other OptiCli__Mcp__* settings in the environment (e.g. OptiCli__Mcp__AccessTokenLifetime=00:00:30) are passed on.
 set -euo pipefail
 
 if [ $# -lt 1 ]; then
-  sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 fi
 SITE=$(cd "$1" && pwd)
@@ -71,7 +72,7 @@ fi
 mkdir -p "$SITE/App_Data"
 settings=()
 if [ "$NO_PUBLISH" = 1 ]; then
-  settings+=("OptiCli__Mcp__AllowPublish=false")
+  settings+=("OptiCli__Mcp__AllowPublish=false" "OptiCli__Mcp__AllowDelete=false")
 fi
 cd "$SITE"
 # setsid: the site outlives this shell (and the container session that ran it).

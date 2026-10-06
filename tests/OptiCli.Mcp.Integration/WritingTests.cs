@@ -172,6 +172,34 @@ public sealed class WritingTests(SharedSessions sessions)
     }
 
     [McpSiteFact]
+    public async Task Published_content_is_not_moved_below_another_approval_sequence_and_a_draft_is()
+    {
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var start = Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        var root = Id(await editor.OkAsync("get_content", new { reference = TestUsers.ApprovalRoot }));
+        var published = Id((await editor.OkAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = start, publish = true })).GetProperty("content"));
+        var draft = Id((await editor.OkAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = start })).GetProperty("content"));
+        try
+        {
+            foreach (var dryRun in new[] { true, false })
+            {
+                // Moved there, its published version would be live below the sequence without its reviewers.
+                var refused = await editor.ErrorAsync("move_content", new { reference = published, destination = root, dryRun });
+                Assert.Equal(("refused", "approvalSequence"), (refused.GetProperty("code").GetString(), refused.GetProperty("reason").GetString()));
+                Assert.Contains("CMS edit UI", refused.GetProperty("hint").GetString());
+            }
+            Assert.Equal(start, (await editor.OkAsync("get_content", new { reference = published })).GetProperty("parent").GetString());
+            // A draft never published goes live only through the sequence where it ends up.
+            Assert.Equal(root, (await editor.OkAsync("move_content", new { reference = draft, destination = root })).GetProperty("parent").GetString());
+        }
+        finally
+        {
+            await DeleteAsync(editor, published);
+            await DeleteAsync(editor, draft);
+        }
+    }
+
+    [McpSiteFact]
     public async Task A_review_request_never_publishes_and_needs_no_publish_scope()
     {
         // The editor has Publish rights, but left publishing unticked on the consent page.

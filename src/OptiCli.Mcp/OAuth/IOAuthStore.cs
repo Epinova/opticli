@@ -128,6 +128,12 @@ public sealed record Grant
 /// The authorization server's state. The site's store is the CMS database (Dynamic Data Store), so every instance
 /// behind a load balancer sees the same clients, codes and grants. Secrets arrive here already hashed.
 /// </summary>
+/// <remarks>
+/// The store is a singleton, called from requests and, for <see cref="DeleteExpiredAsync"/>, from a background thread
+/// after the request that started it, without its HttpContext or request services, and with the site's
+/// <c>ApplicationStopping</c> as the cancellation token. So an implementation must be thread-safe and use nothing
+/// scoped to a request.
+/// </remarks>
 public interface IOAuthStore
 {
     /// <returns>The registered client; null for an unknown id.</returns>
@@ -178,10 +184,17 @@ public interface IOAuthStore
     /// <summary>
     /// Deletes codes and grants that expired before <paramref name="now"/>, and registered clients created before
     /// <paramref name="unusedClientsBefore"/> that have neither a grant nor a code waiting: registration is open to
-    /// anyone, so what it stores must not pile up.
+    /// anyone, so what it stores must not pile up. At most <paramref name="limit"/> in all, so a run stays short; what
+    /// is left, the next run deletes. Only what may be deleted is loaded: the store's own queries, not whole tables.
     /// </summary>
     /// <returns>How many were deleted.</returns>
-    Task<int> DeleteExpiredAsync(DateTimeOffset now, DateTimeOffset unusedClientsBefore, CancellationToken cancellationToken);
+    Task<int> DeleteExpiredAsync(DateTimeOffset now, DateTimeOffset unusedClientsBefore, int limit, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// How many registered clients have neither a grant nor a code waiting: what registration, which is open to anyone,
+    /// has stored that nobody uses (<see cref="OAuthMaintenance.MaxUnusedClients"/>).
+    /// </summary>
+    Task<int> CountUnusedClientsAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>

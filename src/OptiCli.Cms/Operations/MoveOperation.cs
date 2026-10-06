@@ -1,4 +1,6 @@
+using EPiServer;
 using EPiServer.Core;
+using EPiServer.DataAccess;
 using EPiServer.Web;
 using OptiCli.Cms.Content;
 using OptiCli.Protocol;
@@ -41,6 +43,20 @@ internal static class MoveOperation
         {
             throw AgentException.Invalid(issues);
         }
+        // Also for a dry run, so the assistant learns before it tries.
+        if (call.ChecksLiveMoves && MayBeLive(flow, link, content))
+        {
+            call.RequirePublishing(SaveAction.Publish);
+            if (Approvals.MoveChangesSequence(call, link, destination))
+            {
+                throw new AgentException(AgentErrorCodes.Refused,
+                    $"Content {link.ID} ('{content.Name}') may be live, and another approval sequence applies below {destination.ID} than where it is now: moved there, what of it is published would skip that sequence's reviewers.",
+                    "Ask the user to move it in the CMS edit UI. Nothing was changed.")
+                {
+                    Reason = AgentErrorReasons.ApprovalSequence,
+                };
+            }
+        }
         if (body.DryRun)
         {
             return new MoveResult
@@ -74,6 +90,16 @@ internal static class MoveOperation
         }
         return flow.Locator.LoadAnyLanguage(link);
     }
+
+    /// <summary>
+    /// Whether moving <paramref name="content"/> may change what visitors see: it has a published version in any language,
+    /// or it has children (any of which may be live, whatever the editor can read), or it has no versions at all and is
+    /// live as it is. An empty folder shows visitors nothing.
+    /// </summary>
+    private static bool MayBeLive(WriteFlow flow, ContentReference link, IContent content) =>
+        content is not (IVersionable or ContentFolder)
+        || (content is IVersionable && flow.Versions.List(link.ToReferenceWithoutVersion()).Any(v => v.Status == VersionStatus.Published))
+        || flow.Call.Service<IContentLoader>().GetChildren<IContent>(link.ToReferenceWithoutVersion(), new LoaderOptions { LanguageLoaderOption.FallbackWithMaster() }, 0, 1).Any();
 
     internal static MoveResult Result(WriteFlow flow, ContentReference link, ContentReference previousParent)
     {

@@ -108,7 +108,7 @@ internal static class CreateOperation
     {
         var parentType = plannedParent
             ?? (assetsFolder && parent is not ContentFolder ? types.Load(typeof(ContentAssetFolder)) : types.Load(parent.ContentTypeID));
-        return parentType is null ? [] : Placement(call, type, parentType, parent.ContentLink.ID, creating: true);
+        return parentType is null ? [] : Placement(call, type, parentType, parent.ContentLink.ID, creating: true, parent);
     }
 
     /// <summary>
@@ -116,7 +116,8 @@ internal static class CreateOperation
     /// as the CMS's <see cref="ContentTypeAvailabilityService"/> answers it, for create, upload and move alike; for new
     /// content (<paramref name="creating"/>) also whether the caller may create the type at all (<see cref="CmsCall.MayCreate"/>).
     /// </summary>
-    internal static IReadOnlyList<ValidationIssue> Placement(CmsCall call, ContentType type, ContentType parentType, int parentId, bool creating)
+    /// <param name="parent">The parent itself, for the access its type groups require on it (<see cref="CmsCall.MayCreate"/>).</param>
+    internal static IReadOnlyList<ValidationIssue> Placement(CmsCall call, ContentType type, ContentType parentType, int parentId, bool creating, IContent? parent = null)
     {
         var availability = call.Service<ContentTypeAvailabilityService>();
         var allowed = availability.IsAllowed(parentType.Name, type.Name);
@@ -125,8 +126,8 @@ internal static class CreateOperation
             return [new ValidationIssue(null, problem)];
         }
         // A move isn't a create: the type's access rights only say who may create its content, as in the CMS.
-        return creating && !call.MayCreate(type, parentType)
-            ? [new ValidationIssue(null, $"You may not create {type.Name} content: the content type's access rights don't allow it.")]
+        return creating && !call.MayCreate(type, parentType, parent)
+            ? [new ValidationIssue(null, $"You may not create {type.Name} content here: the content type's access rights, or those of its group of types, don't allow it.")]
             : [];
     }
 

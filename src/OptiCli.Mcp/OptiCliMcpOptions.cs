@@ -34,6 +34,21 @@ public sealed class OptiCliMcpOptions
     public string[] AllowedRoles { get; set; } = ["WebEditors", "WebAdmins", "CmsEditors", "CmsAdmins", "Administrators"];
 
     /// <summary>
+    /// The hosts an app's return address (OAuth redirect URI) may be on, besides a loopback address on the editor's own
+    /// machine (<c>http</c> or <c>https</c>, for desktop apps and Claude Code), which any app may use. Claude's own,
+    /// <c>claude.ai</c> and <c>claude.com</c>, by default. The host must match exactly, ignoring case: no subdomains, no
+    /// wildcards, https only. <c>["*"]</c> lets any https host through, for a site that knowingly accepts other web apps;
+    /// the module logs a warning at startup then. In configuration, a list here replaces the default one.
+    /// </summary>
+    /// <remarks>
+    /// Registration is open to anyone, and an app names itself: without this, someone could register "Claude" with a
+    /// return address of their own, send an editor who is signed in to the site the link to connect it, and get the code
+    /// the editor's Allow sends there, with the verifier that goes with it. Checked at registration and again at every
+    /// authorization, for apps registered before the list changed and for apps with a metadata document too.
+    /// </remarks>
+    public string[] AllowedRedirectHosts { get; set; } = ["claude.ai", "claude.com"];
+
+    /// <summary>
     /// How long an access token works. The editor's roles are looked up again on every refresh, so this is also how long
     /// a removed role can keep working.
     /// </summary>
@@ -86,6 +101,9 @@ public sealed class OptiCliMcpOptions
     /// <summary>How many requests the OAuth endpoints take a minute (<see cref="OptiCliMcpRateLimits"/>).</summary>
     public OptiCliMcpRateLimits RateLimits { get; set; } = new();
 
+    /// <summary>The <see cref="AllowedRedirectHosts"/> entry that lets any https host through.</summary>
+    internal const string AnyRedirectHost = "*";
+
     /// <summary>The MCP endpoint's path: the resource access tokens are issued for.</summary>
     internal string McpPath => BasePath + "/mcp";
 
@@ -111,6 +129,10 @@ public sealed class OptiCliMcpOptions
         if (AllowedRoles.Length == 0 || AllowedRoles.Any(string.IsNullOrWhiteSpace))
         {
             return "AllowedRoles must name at least one role, and no empty ones.";
+        }
+        if (AllowedRedirectHosts is null || AllowedRedirectHosts.Any(h => h != AnyRedirectHost && Uri.CheckHostName(h) is not (UriHostNameType.Dns or UriHostNameType.IPv4)))
+        {
+            return "AllowedRedirectHosts must list host names (claude.ai), without a scheme, port, path or wildcard, and no empty ones; or be [\"*\"] for any https host.";
         }
         if (AccessTokenLifetime <= TimeSpan.Zero || RefreshTokenLifetime <= TimeSpan.Zero)
         {
@@ -143,7 +165,9 @@ public sealed class OptiCliMcpOptions
 /// <summary>
 /// The OAuth endpoints' rate limits: requests a minute, a fixed window, counted per instance (behind a load balancer
 /// each instance counts on its own). Over the limit, a request gets 429 with <c>Retry-After</c>. The client IP address
-/// is the connection's, or the one the site's forwarded headers give behind a proxy.
+/// is the connection's, or the one the site's forwarded headers give behind a proxy (without them, every request seems
+/// to come from the proxy, and all share one window); an IPv6 address counts by its /64, which one machine usually has
+/// whole.
 /// </summary>
 /// <remarks>
 /// claude.ai's connectors call the token and register endpoints from Anthropic's cloud (<c>160.79.104.0/21</c>), so
@@ -156,7 +180,7 @@ public sealed class OptiCliMcpRateLimits
     /// Client registrations (dynamic client registration) per IP address. Clients with a metadata document, as Claude
     /// has, don't register at all; others register once per connector, not per sign-in.
     /// </summary>
-    public int RegisterPerMinute { get; set; } = 60;
+    public int RegisterPerMinute { get; set; } = 10;
 
     /// <summary>Token requests (code exchanges and refreshes) per client and IP address.</summary>
     public int TokenPerMinute { get; set; } = 60;

@@ -36,6 +36,7 @@ internal static class PublishOperation
         var version = flow.Locator.Version(link, versionId);
         // After the id check: a version id of other content loads that content, whose existence mustn't leak.
         call.RequireRead(version);
+        call.RequireLanguageAccess(version);
         // The published version taken offline (unpublish) is published again as a new version, without its stop date.
         var expired = version is IVersionable { Status: VersionStatus.Published, StopPublish: { } stop } && stop <= DateTime.Now;
         if (version is IVersionable { Status: VersionStatus.Published } && !expired)
@@ -79,7 +80,7 @@ internal static class PublishOperation
 
         // Outside the try below, whose filter could take the gate's refusal for a site failure after the save (a version
         // already scheduled looks saved).
-        call.RequirePublishing(action);
+        call.RequirePublishing(action, writable);
         flow.ThrowIfAborted();
         ContentReference saved;
         string? siteError = null;

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using System.Security.Principal;
 using EPiServer;
@@ -34,9 +35,17 @@ public class CmsCallTests
         _services = new ServiceCollection()
             .AddSingleton(repository)
             .AddSingleton(Recorder<IContentVersionRepository>.Create().Proxy)
-            .AddSingleton(Recorder<ILanguageBranchRepository>.Create().Proxy)
+            .AddSingleton(EditableLanguages())
             .AddSingleton<IPrincipalAccessor>(new PrincipalAccessor(new GenericPrincipal(new GenericIdentity(EditorName), [])))
             .BuildServiceProvider();
+    }
+
+    /// <summary>Languages the editor may edit, every one.</summary>
+    private static ILanguageBranchRepository EditableLanguages()
+    {
+        var (languages, recorder) = Recorder<ILanguageBranchRepository>.Create();
+        recorder.Answer = (method, args) => method.Name == nameof(ILanguageBranchRepository.Load) && args[0] is CultureInfo culture ? new Branch(culture, edit: true) : null;
+        return languages;
     }
 
     private CmsCall Call(CmsCaller caller) => new(_services, CancellationToken.None, caller);
@@ -65,7 +74,7 @@ public class CmsCallTests
     [Fact]
     public void A_save_that_publishes_or_schedules_passes_the_callers_publishing_gate_first()
     {
-        var content = new Secured(Page, AccessLevel.FullAccess);
+        var content = new Versioned(Page, AccessLevel.FullAccess);
         var gated = new List<SaveAction>();
         var call = new CmsCall(_services, CancellationToken.None, CmsCaller.Editor, () => throw new InvalidOperationException("publishing off"));
         var counting = new CmsCall(_services, CancellationToken.None, CmsCaller.Editor, () => gated.Add(default));
@@ -82,6 +91,93 @@ public class CmsCallTests
 
         Assert.Single(gated);
         Assert.Equal(4, _repository.Calls.Count(c => c.Method == "Save"));
+    }
+
+    [Fact]
+    public void A_save_of_content_without_versions_is_live_at_once_and_passes_the_publishing_gate_but_a_folders_doesnt()
+    {
+        var gated = 0;
+        var call = new CmsCall(_services, CancellationToken.None, CmsCaller.Editor, () => gated++);
+
+        call.Save(new Secured(Page, AccessLevel.FullAccess), SaveAction.Save);
+        call.Save(new Versioned(Page, AccessLevel.FullAccess), SaveAction.Save);
+        call.Save(new ContentFolder { ContentLink = Page }, SaveAction.Save);
+
+        Assert.Equal(1, gated);
+        Assert.Equal(3, _repository.Calls.Count(c => c.Method == "Save"));
+    }
+
+    [Fact]
+    public void The_deleting_gate_runs_when_asked_for_and_only_where_there_is_one()
+    {
+        var call = new CmsCall(_services, CancellationToken.None, CmsCaller.Editor, deleting: () => throw new InvalidOperationException("deleting off"));
+
+        Assert.Equal("deleting off", Assert.Throws<InvalidOperationException>(call.RequireDeleting).Message);
+        Call(CmsCaller.Developer).RequireDeleting();
+        Call(CmsCaller.Editor).RequireDeleting();
+    }
+
+    [Fact]
+    public void Only_an_editor_is_held_to_the_edit_UIs_rules_for_script_text_references_and_live_moves()
+    {
+        Assert.True(Call(CmsCaller.Developer).MayWriteScript);
+        Assert.True(Call(CmsCaller.Developer).MayReferenceUnchecked);
+        Assert.False(Call(CmsCaller.Developer).ChecksLiveMoves);
+        Assert.False(Call(CmsCaller.Editor).MayWriteScript);
+        Assert.False(Call(CmsCaller.Editor).MayReferenceUnchecked);
+        Assert.True(Call(CmsCaller.Editor).ChecksLiveMoves);
+    }
+
+    [Fact]
+    public void An_editor_saves_and_deletes_a_language_branch_only_with_edit_access_to_the_language()
+    {
+        var swedish = CultureInfo.GetCultureInfo("sv");
+        var languages = Recorder<ILanguageBranchRepository>.Create();
+        languages.Recorder.Answer = (method, args) => method.Name == nameof(ILanguageBranchRepository.Load) && args[0] is CultureInfo culture
+            ? new Branch(culture, edit: culture.Name == "en")
+            : null;
+        var services = new ServiceCollection()
+            .AddSingleton((IContentRepository)(object)_repository)
+            .AddSingleton(languages.Proxy)
+            .AddSingleton(Recorder<IContentVersionRepository>.Create().Proxy)
+            .AddSingleton<IPrincipalAccessor>(new PrincipalAccessor(new GenericPrincipal(new GenericIdentity(EditorName), [])))
+            .BuildServiceProvider();
+        var editor = new CmsCall(services, CancellationToken.None, CmsCaller.Editor);
+        var developer = new CmsCall(services, CancellationToken.None, CmsCaller.Developer);
+
+        var refused = Assert.Throws<AgentException>(() => editor.Save(new Localized(Page, swedish), SaveAction.Save));
+        Assert.Equal(AgentErrorCodes.Refused, refused.Code);
+        Assert.Contains("'sv'", refused.Message);
+        Assert.Throws<AgentException>(() => editor.DeleteLanguageBranch(Page, "sv"));
+        Assert.Throws<AgentException>(() => editor.DeleteVersion(new Localized(new ContentReference(123, 7), swedish)));
+        Assert.Empty(_repository.Calls);
+
+        editor.Save(new Localized(Page, CultureInfo.GetCultureInfo("en")), SaveAction.Save);
+        developer.Save(new Localized(Page, swedish), SaveAction.Save);
+        developer.DeleteLanguageBranch(Page, "sv");
+        Assert.Equal(["Save", "Save", "DeleteLanguageBranch"], _repository.Calls.Select(c => c.Method));
+    }
+
+    [Fact]
+    public void An_editor_may_create_what_the_edit_UI_offers_below_the_parent_itself_when_it_is_known()
+    {
+        var article = new ContentType { ID = 7, Name = "ArticlePage" };
+        var parentType = new ContentType { ID = 3, Name = "StartPage" };
+        var availability = new Availability(byName: [article], byContent: []);
+        var services = new ServiceCollection()
+            .AddSingleton<ContentTypeAvailabilityService>(availability)
+            .AddSingleton<IPrincipalAccessor>(new PrincipalAccessor(new GenericPrincipal(new GenericIdentity(EditorName), [])))
+            .BuildServiceProvider();
+        var editor = new CmsCall(services, CancellationToken.None, CmsCaller.Editor);
+        var parent = new Secured(new ContentReference(5), AccessLevel.FullAccess) { ContentTypeID = parentType.ID };
+
+        // The type's own access rights allow it, but its group's required access on this parent doesn't.
+        Assert.False(editor.MayCreate(article, parentType, parent));
+        Assert.Equal("content", availability.Asked);
+        // A dry run's stand-in parent, of another type, is checked by the type's own access rights.
+        Assert.True(editor.MayCreate(article, parentType, new Secured(new ContentReference(6), AccessLevel.FullAccess) { ContentTypeID = 99 }));
+        Assert.Equal("name", availability.Asked);
+        Assert.True(new CmsCall(services, CancellationToken.None, CmsCaller.Developer).MayCreate(article, parentType, parent));
     }
 
     [Fact]
@@ -224,12 +320,40 @@ public class CmsCallTests
         return true;
     }
 
-    private sealed class PrincipalAccessor(IPrincipal principal) : IPrincipalAccessor
+    internal sealed class PrincipalAccessor(IPrincipal principal) : IPrincipalAccessor
     {
         public IPrincipal Principal { get; set; } = principal;
     }
 
-    private class Unsecured(ContentReference link) : IContent
+    /// <summary>A language whose access rights give exactly edit access, or none.</summary>
+    internal sealed class Branch(CultureInfo culture, bool edit) : LanguageBranch(culture)
+    {
+        public override bool QueryEditAccessRights(IPrincipal user) => edit;
+    }
+
+    /// <summary>The CMS's lists of types to create: by the parent's type name (the type's own access rights), or for the parent itself.</summary>
+    private sealed class Availability(IList<ContentType> byName, IList<ContentType> byContent) : ContentTypeAvailabilityService
+    {
+        public string? Asked { get; private set; }
+
+        public override AvailableSetting GetSetting(string contentTypeName) => new();
+
+        public override bool IsAllowed(string parentContentTypeName, string childContentTypeName) => true;
+
+        public override IList<ContentType> ListAvailable(string contentTypeName, IPrincipal user)
+        {
+            Asked = "name";
+            return byName;
+        }
+
+        public override IList<ContentType> ListAvailable(IContent content, bool contentFolder, IPrincipal user)
+        {
+            Asked = "content";
+            return byContent;
+        }
+    }
+
+    internal class Unsecured(ContentReference link) : IContent
     {
         public PropertyDataCollection Property { get; } = new();
 
@@ -247,13 +371,43 @@ public class CmsCallTests
     }
 
     /// <summary>Content whose access rights give everyone exactly <paramref name="granted"/>.</summary>
-    private sealed class Secured(ContentReference link, AccessLevel granted) : Unsecured(link), ISecurable, ISecurityDescriptor
+    internal class Secured(ContentReference link, AccessLevel granted) : Unsecured(link), ISecurable, ISecurityDescriptor
     {
         public ISecurityDescriptor GetSecurityDescriptor() => this;
 
         public bool HasAccess(IPrincipal principal, AccessLevel access) => (granted & access) == access;
 
         public AccessLevel GetAccessLevel(IPrincipal principal) => granted;
+    }
+
+    /// <summary>Content with versions, which a save only puts live when it publishes.</summary>
+    internal sealed class Versioned(ContentReference link, AccessLevel granted) : Secured(link, granted), IVersionable
+    {
+        public VersionStatus Status { get; set; } = VersionStatus.CheckedOut;
+
+        public bool IsPendingPublish { get; set; }
+
+        public DateTime? StartPublish { get; set; }
+
+        public DateTime? StopPublish { get; set; }
+    }
+
+    /// <summary>A language branch of content with versions, master language English.</summary>
+    internal sealed class Localized(ContentReference link, CultureInfo language) : Secured(link, AccessLevel.FullAccess), ILocalizable, IVersionable
+    {
+        public CultureInfo Language { get; set; } = language;
+
+        public IEnumerable<CultureInfo> ExistingLanguages { get; set; } = [CultureInfo.GetCultureInfo("en"), language];
+
+        public CultureInfo MasterLanguage { get; set; } = CultureInfo.GetCultureInfo("en");
+
+        public VersionStatus Status { get; set; } = VersionStatus.CheckedOut;
+
+        public bool IsPendingPublish { get; set; }
+
+        public DateTime? StartPublish { get; set; }
+
+        public DateTime? StopPublish { get; set; }
     }
 }
 

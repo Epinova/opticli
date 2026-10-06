@@ -17,7 +17,7 @@ internal sealed class AreaEditor(ContentLocator locator, PropertyWriter writer)
         for (var i = 0; i < operations.Count; i++)
         {
             var op = operations[i];
-            var property = PropertyWriter.Find(content, op.Property);
+            var property = writer.Find(content, op.Property);
             if (property is not PropertyContentArea)
             {
                 throw AgentException.Usage($"areaOps[{i}]: '{property.Name}' is a {property.GetType().Name}, not a ContentArea.");

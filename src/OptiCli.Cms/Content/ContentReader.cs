@@ -9,7 +9,8 @@ using OptiCli.Protocol;
 namespace OptiCli.Cms.Content;
 
 /// <summary>Describes a loaded content version as <see cref="ContentItem"/>.</summary>
-internal sealed class ContentReader(IContentTypeRepository types, IContentVersionRepository versions, IUrlResolver urls)
+/// <param name="shown">Which properties to describe (see <see cref="ReadValues"/>); every one when null.</param>
+internal sealed class ContentReader(IContentTypeRepository types, IContentVersionRepository versions, IUrlResolver urls, Func<IContentData, PropertyData, bool>? shown = null)
 {
     public ContentItem Describe(IContent content)
     {
@@ -39,7 +40,7 @@ internal sealed class ContentReader(IContentTypeRepository types, IContentVersio
             Saved = tracked?.Saved,
             ChangedBy = tracked?.ChangedBy,
             Url = Url(link, language),
-            Properties = new ReadValues(types).Properties(content),
+            Properties = new ReadValues(types, shown).Properties(content),
         };
     }
 

@@ -48,20 +48,28 @@ internal sealed class AuthorizationServer(
     private OptiCliMcpOptions Options => optionsAccessor.Value;
 
     // --- Metadata --------------------------------------------------------------------------------------------------
+    //
+    // Both documents name URLs made from the request's host (McpUrls), so neither may be kept by a shared cache: a copy
+    // made for a request with a forged Host header would send others to that host.
 
     /// <summary>Protected resource metadata (RFC 9728): where to get tokens for the MCP endpoint.</summary>
-    public IResult ResourceMetadata(HttpContext context) => Results.Json(new Dictionary<string, object>
+    public IResult ResourceMetadata(HttpContext context)
     {
-        ["resource"] = McpUrls.Resource(context.Request, Options),
-        ["authorization_servers"] = new[] { McpUrls.Issuer(context.Request, Options) },
-        ["scopes_supported"] = Scopes.Supported(Options),
-        ["bearer_methods_supported"] = new[] { "header" },
-        ["resource_name"] = "Optimizely CMS content (opticli)",
-    }, OAuthJson.Options);
+        context.Response.Headers.CacheControl = "no-store";
+        return Results.Json(new Dictionary<string, object>
+        {
+            ["resource"] = McpUrls.Resource(context.Request, Options),
+            ["authorization_servers"] = new[] { McpUrls.Issuer(context.Request, Options) },
+            ["scopes_supported"] = Scopes.Supported(Options),
+            ["bearer_methods_supported"] = new[] { "header" },
+            ["resource_name"] = "Optimizely CMS content (opticli)",
+        }, OAuthJson.Options);
+    }
 
     /// <summary>Authorization server metadata (RFC 8414), also served as OpenID Connect discovery for clients that only look there.</summary>
     public IResult ServerMetadata(HttpContext context)
     {
+        context.Response.Headers.CacheControl = "no-store";
         var issuer = McpUrls.Issuer(context.Request, Options);
         var origin = McpUrls.Origin(context.Request);
         return Results.Json(new Dictionary<string, object>
@@ -88,6 +96,14 @@ internal sealed class AuthorizationServer(
         if (limiter.Check(OAuthRateLimiter.Register, context) is { } limited)
         {
             return limited;
+        }
+        // Registration is open to anyone: however many addresses they use, what it stores is bounded.
+        if (await maintenance.RegistrationsFullAsync(store, time.GetUtcNow(), context.RequestAborted))
+        {
+            context.Response.Headers.RetryAfter = ((int)OAuthMaintenance.FullFor.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return OAuthJson.Error(context, "temporarily_unavailable",
+                "The site has as many app registrations nobody uses as it keeps; try again later. Apps with a client ID metadata document (as Claude has) needn't register.",
+                StatusCodes.Status429TooManyRequests);
         }
         var body = await ReadLimitedAsync(context.Request.Body, MaxRegistrationBytes, context.RequestAborted);
         if (body is null)
@@ -120,6 +136,11 @@ internal sealed class AuthorizationServer(
         {
             return OAuthJson.Error(context, "invalid_redirect_uri", $"{Shorten(bad)} must be https, or http on a loopback address, without a fragment.");
         }
+        if (uris.FirstOrDefault(u => !RedirectUris.IsPermitted(u, Options.AllowedRedirectHosts)) is { } elsewhere)
+        {
+            return OAuthJson.Error(context, "invalid_redirect_uri",
+                $"{Shorten(elsewhere)} isn't a return address this site accepts: it takes {RedirectUris.DescribePermitted(Options.AllowedRedirectHosts)} (AllowedRedirectHosts).");
+        }
         var method = String(root, "token_endpoint_auth_method") ?? ClientAuthMethods.SecretBasic;
         if (!ClientAuthMethods.All.Contains(method))
         {
@@ -143,6 +164,7 @@ internal sealed class AuthorizationServer(
             Created = now,
         };
         await store.AddClientAsync(client, context.RequestAborted);
+        maintenance.Registered();
 
         var response = new Dictionary<string, object>
         {
@@ -189,6 +211,12 @@ internal sealed class AuthorizationServer(
         {
             return (null, Message(context, HttpStatusCode.BadRequest, "Wrong return address",
                 "The app asked to be sent back somewhere it didn't register, so the site won't send it there."));
+        }
+        // Also for an app with a metadata document, and one registered before the site's list changed.
+        if (!RedirectUris.IsPermitted(redirect, Options.AllowedRedirectHosts))
+        {
+            return (null, Message(context, HttpStatusCode.BadRequest, "Return address not allowed",
+                $"The app asked to be sent back to {new Uri(redirect).Host}, which this site doesn't accept for AI assistant connections. Only connect apps the site's administrators allow."));
         }
 
         var state = Get("state");
@@ -244,9 +272,10 @@ internal sealed class AuthorizationServer(
 
         var form = antiforgery.GetAndStoreTokens(context);
         var redirect = new Uri(request.RedirectUri);
+        // An app that registered itself chose its own name: said plainly, where the editor looks.
         var identity = ClientMetadataDocument.IsUrl(request.Client.ClientId)
-            ? $"The app's description is published by <b>{H(new Uri(request.Client.ClientId).Host)}</b>."
-            : "The app registered itself under this name; the site can't confirm who made it.";
+            ? $"<p>The app's description is published by <b>{H(new Uri(request.Client.ClientId).Host)}</b>.</p>"
+            : "<p class=\"warning\"><b>The app registered itself under this name; the site can't confirm who made it.</b> Only allow it if you just added this connection yourself, from the app you expect.</p>";
         // Read is what every call needs, so it can't be unticked; the others are the editor's choice.
         var scopes = string.Concat(request.Scope.Split(' ').Select(s => s == Scopes.Read
             ? $"<li><label><input type=\"checkbox\" checked disabled> {H(Scopes.Describe(s))} (always)</label></li>"
@@ -255,7 +284,8 @@ internal sealed class AuthorizationServer(
         var action = context.Request.PathBase + context.Request.Path + context.Request.QueryString;
         return Render(context, HttpStatusCode.OK, "Connect an AI assistant", $"""
             <h1>Connect {H(request.Client.ClientName)}?</h1>
-            <p>Signed in as <b>{H(user)}</b>. {identity}</p>
+            <p>Signed in as <b>{H(user)}</b>.</p>
+            {identity}
             <p>If you allow it, you'll be sent back to <b>{H(redirect.Authority)}</b>, and the app will act as you, with your access rights in the CMS. Untick what it shouldn't do. It may:</p>
             <form method="post" action="{H(action)}">
               <ul class="scopes">{scopes}</ul>
@@ -273,6 +303,10 @@ internal sealed class AuthorizationServer(
         if (limiter.Check(OAuthRateLimiter.Authorize, context) is { } limited)
         {
             return limited;
+        }
+        if (CrossSite(context) is { } crossSite)
+        {
+            return crossSite;
         }
         if (!context.Request.HasFormContentType || !await antiforgery.IsRequestValidAsync(context))
         {
@@ -529,7 +563,8 @@ internal sealed class AuthorizationServer(
 
         cache.Evict(grant.GrantId);
         var (access, expiresIn) = tokens.Issue(grant, accessScope);
-        await maintenance.MaybeCleanUpAsync(store, now, context.RequestAborted);
+        // In the background: the cleanup mustn't hold up, or fail, the token response.
+        maintenance.MaybeCleanUp(store, now);
         return Results.Json(new Dictionary<string, object>
         {
             ["access_token"] = access,

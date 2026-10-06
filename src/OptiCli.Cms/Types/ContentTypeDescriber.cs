@@ -15,7 +15,12 @@ namespace OptiCli.Cms.Types;
 /// Builds the runtime model of a content type: the stored definition from <see cref="IContentTypeRepository"/>
 /// plus what only the C# model knows, read by reflection from its attributes.
 /// </summary>
-internal sealed class ContentTypeDescriber(IContentTypeRepository types, ContentTypeAvailabilityService availability)
+/// <param name="shown">
+/// Which properties to describe, from the definition and the model's property: for an editor those the CMS edit UI may
+/// show them as editable (<see cref="Content.EditUiProperties.Shown(PropertyDefinition, PropertyInfo?)"/>); every one
+/// when null.
+/// </param>
+internal sealed class ContentTypeDescriber(IContentTypeRepository types, ContentTypeAvailabilityService availability, Func<PropertyDefinition, PropertyInfo?, bool>? shown = null)
 {
     /// <summary>Attributes mapped to dedicated fields, so they aren't repeated in <c>attributes</c>.</summary>
     private static readonly HashSet<Type> Mapped =
@@ -50,7 +55,9 @@ internal sealed class ContentTypeDescriber(IContentTypeRepository types, Content
             Children = type is PageType ? ChildRules(type) : null,
             Properties = type.PropertyDefinitions
                 .OrderBy(d => d.FieldOrder)
-                .Select(d => DescribeProperty(d, model?.GetProperty(d.Name, BindingFlags.Public | BindingFlags.Instance)))
+                .Select(d => (Definition: d, Member: model?.GetProperty(d.Name, BindingFlags.Public | BindingFlags.Instance)))
+                .Where(p => shown?.Invoke(p.Definition, p.Member) != false)
+                .Select(p => DescribeProperty(p.Definition, p.Member))
                 .ToList(),
         };
     }
