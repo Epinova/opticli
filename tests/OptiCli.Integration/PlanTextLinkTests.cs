@@ -25,6 +25,14 @@ public sealed class PlanTextLinkTests
               {"op": "create", "id": "b", "parent": "{{{parent}}}", "type": "StandardPage", "name": "opticli-it b", "properties": {"MainBody": "<p><a href=\"$a\">back to A</a></p>"}},
               {"op": "set", "ref": "{{{existing}}}", "properties": {"MainBody": "<p><a href=\"$b\">to B</a></p>"}}]}
             """);
+        if (site.Session.Model.Schema.Major >= 13)
+        {
+            // CMS 13 refuses a link to content that doesn't exist yet: the plan says so before anything is saved.
+            var refused = await Assert.ThrowsAsync<Core.Errors.UsageException>(() => new PlanRunner(site.Session, writes, Path.GetTempPath()).RunAsync(plan, dryRun: true, publishAll: false, cancellationToken));
+            Assert.Contains("operations[0]: the text links to '$b'", refused.Message);
+            await writes.RunAsync(new DeleteOperation(existing, IgnoreReferences: true), dryRun: false, cancellationToken);
+            return;
+        }
         var created = new List<string>();
         try
         {

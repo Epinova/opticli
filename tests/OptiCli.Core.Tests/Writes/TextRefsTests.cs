@@ -54,6 +54,20 @@ public class TextRefsTests
     }
 
     [Fact]
+    public void On_cms_13_a_link_to_a_later_step_is_refused_unless_the_content_exists()
+    {
+        var steps = WritePlan.LinkText(WritePlan.Parse(Plan(Namespace, "<a href='$b'>B</a>", "<a href='$a'>A</a>")).Steps);
+
+        var problem = Assert.Throws<UsageException>(() => WritePlan.RequireNoForwardLinks(steps, new Dictionary<string, int>()));
+        Assert.Contains("operations[0]: the text links to '$b', which a later operation (operations[1]) creates.", problem.Message);
+        Assert.DoesNotContain("operations[1]", problem.Message.Replace("(operations[1])", ""));
+        Assert.Contains("later set operation", problem.Hint);
+        // A run with --update-existing that finds the content made by an earlier run.
+        WritePlan.RequireNoForwardLinks(steps, new Dictionary<string, int> { ["b"] = 42 });
+        WritePlan.RequireNoForwardLinks(WritePlan.LinkText(WritePlan.Parse(Plan("", "<p>A</p>", "<a href='$a'>A</a>")).Steps), new Dictionary<string, int>());
+    }
+
+    [Fact]
     public void A_block_by_id_and_an_unknown_id_are_problems()
     {
         var later = Assert.Throws<UsageException>(() => WritePlan.LinkText(WritePlan.Parse(Plan(Namespace, "<div data-contentlink='$b'></div>")).Steps));

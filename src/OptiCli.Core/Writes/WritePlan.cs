@@ -191,6 +191,41 @@ public sealed partial class WritePlan
             : throw new UsageException($"The plan has {problems.Count} problem(s): {string.Join(" ", problems)}", PlanHint) { Details = new { problems } };
     }
 
+    /// <summary>
+    /// On CMS 13, which refuses to save a link to content that doesn't exist (its reference validation): rich text that
+    /// links to content this step or a later one creates. With <c>--update-existing</c>, content that exists already counts
+    /// as existing.
+    /// </summary>
+    /// <exception cref="UsageException">Every such link, in <c>details.problems</c>.</exception>
+    public static void RequireNoForwardLinks(IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing)
+    {
+        var creating = steps.Where(s => s.Operation.Id is not null).GroupBy(s => s.Operation.Id!).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var problems = new List<string>();
+        foreach (var step in steps)
+        {
+            step.Operation.MapRefs(value =>
+            {
+                foreach (var found in TextRefs.Find(value).Distinct())
+                {
+                    if (creating.TryGetValue(found.Id, out var target) && target.Index >= step.Index && !existing.ContainsKey(found.Id))
+                    {
+                        problems.Add($"operations[{step.Index}]: the text links to '${found.Id}', which {(target.Index == step.Index ? "this operation" : $"a later operation (operations[{target.Index}])")} creates.");
+                    }
+                }
+                return value;
+            });
+        }
+        if (problems.Count > 0)
+        {
+            throw new UsageException(
+                $"CMS 13 refuses to save a link to content that doesn't exist yet, and the plan has {problems.Count} such link(s): {string.Join(" ", problems)}",
+                "Move the operation that creates the linked content before the one that links to it. For links both ways, create both first and add one of the links with a later set operation.")
+            {
+                Details = new { problems },
+            };
+        }
+    }
+
     private static IReadOnlySet<string> Dependencies(WriteOperation op, int index, IReadOnlyDictionary<string, int> defined, IReadOnlySet<string> allIds, List<string> problems)
     {
         var dependsOn = new HashSet<string>(StringComparer.Ordinal);

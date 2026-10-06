@@ -71,6 +71,10 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         var guids = WritePlan.FixedGuids(steps);
 
         var existing = executor.UpdateExisting ? await ExistingAsync(steps, cancellationToken) : new Dictionary<string, int>();
+        if (session.Model.Schema.Major >= 13)
+        {
+            WritePlan.RequireNoForwardLinks(steps, existing);
+        }
         var resolved = steps.Select(s => s with { Operation = WritePlan.Resolve(s, existing, guids) }).ToList();
         var targets = await TargetsAsync(resolved, existing, cancellationToken);
         var masters = await PlannedMastersAsync(resolved, existing, cancellationToken);
@@ -331,7 +335,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                 // Earlier steps change this content first; today's database doesn't have their changes yet.
                 if (PlanSimulation.OnExisting(resolvedStep, resolved, targets, existing, executor.UpdateExisting) is { } onExisting)
                 {
-                    return await SimulateAsync(step, onExisting, steps, cancellationToken);
+                    return await SimulateAsync(step, onExisting, steps, existing, cancellationToken);
                 }
             }
             else
@@ -344,11 +348,21 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                 }
                 if (PlanSimulation.For(step, steps, existing, executor.UpdateExisting) is { } simulation)
                 {
-                    return await SimulateAsync(step, simulation, steps, cancellationToken);
+                    return await SimulateAsync(step, simulation, steps, existing, cancellationToken);
                 }
                 if (PlanSimulation.WithStandInLinks(op, steps, existing) is { } linking)
                 {
-                    var linked = await executor.RunAsync(linking, dryRun: true, cancellationToken);
+                    WriteOutcome linked;
+                    try
+                    {
+                        linked = await executor.RunAsync(linking, dryRun: true, cancellationToken);
+                    }
+                    catch (ContentValidationException ex) when (ex.Details is WriteOutput { Validation: { } issues } invalid
+                        && issues.Where(v => v.Severity == "error").All(v => PlanSimulation.OnlyLinksPlannedContent(v, steps, existing)))
+                    {
+                        // CMS 13 checks that linked content exists; the plan creates it first.
+                        linked = new WriteOutcome(invalid with { Validation = issues.Where(v => v.Severity != "error").ToList() is { Count: > 0 } rest ? rest : null }, WriteExecutor.AgentSource, null, []);
+                    }
                     if (linked.Output is WriteOutput { PendingDraft: { } pending } && !op.IncludeDraft)
                     {
                         throw WriteExecutor.UnconfirmedDraft(pending, op);
@@ -470,7 +484,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     }
 
     /// <summary>The step as a dry run against stand-ins; validation errors on the properties it had to leave out don't count.</summary>
-    private async Task<(PlanStepResult Result, OptiCliException? Failure)> SimulateAsync(PlanStep step, Simulation simulation, IReadOnlyList<PlanStep> steps, CancellationToken cancellationToken)
+    private async Task<(PlanStepResult Result, OptiCliException? Failure)> SimulateAsync(PlanStep step, Simulation simulation, IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing, CancellationToken cancellationToken)
     {
         var op = step.Operation;
         var notes = new List<string>(simulation.Notes ?? []);
@@ -508,11 +522,12 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             errors = (invalid.Validation ?? [])
                 .Where(v => v.Severity == "error" && !Left(v.Property, simulation.Unchecked))
                 .Where(v => simulation.StandIns.Count == 0 || !string.Equals(v.Property, "PageURLSegment", StringComparison.OrdinalIgnoreCase))
+                .Where(v => !PlanSimulation.OnlyLinksPlannedContent(v, steps, existing))
                 .ToList();
             details = invalid with { Validation = errors };
             if (errors.Count < (invalid.Validation ?? []).Count(v => v.Severity == "error"))
             {
-                notes.Add("Validation errors that only the stand-in causes were ignored (on properties not checked yet, or a URL segment clash with the stand-in's children).");
+                notes.Add("Validation errors that only the stand-in causes were ignored (on properties not checked yet, a URL segment clash with the stand-in's children, or a link to content the plan creates first).");
             }
         }
 

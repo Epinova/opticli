@@ -373,4 +373,26 @@ public class PlanSimulationOnExistingTests
 
         Assert.StartsWith("Operation 0 creates the 'sv' branch of 123", error.Message);
     }
+
+    [Fact]
+    public void Cms_13s_refusal_of_a_link_to_planned_content_is_left_out_of_a_dry_run()
+    {
+        // The plan fixes the GUIDs (guidNamespace), so the dry run links them; CMS 13 checks that the linked content exists.
+        var plan = WritePlan.Parse("""
+            {"guidNamespace": "6f1c2b3a-9d4e-4f5a-8b7c-1d2e3f4a5b6c", "operations": [
+              {"op": "create", "id": "root", "parent": "100", "type": "CategoryPage", "name": "Root"},
+              {"op": "create", "id": "page", "parent": "$root", "type": "ArticlePage", "name": "Page", "properties": {"MainBody": "<a href=\"$root\">up</a>"}}
+            ]}
+            """);
+        var none = new Dictionary<string, int>();
+        var root = plan.Steps[0].Operation.ContentGuid!.Value;
+        var other = Guid.Parse("0b8e1f6c-1111-4222-8333-944455556666");
+        var issue = (Guid guid) => new Protocol.ValidationIssue("MainBody", $"Property 'MainBody' has an unresolved reference to content with ID {guid}.");
+
+        Assert.True(PlanSimulation.OnlyLinksPlannedContent(issue(root), plan.Steps, none));
+        Assert.False(PlanSimulation.OnlyLinksPlannedContent(issue(other), plan.Steps, none));
+        Assert.False(PlanSimulation.OnlyLinksPlannedContent(new Protocol.ValidationIssue("MainBody", $"Something else about {root}."), plan.Steps, none));
+        // Content that exists already (--update-existing) is linked for real: the CMS's check stands.
+        Assert.False(PlanSimulation.OnlyLinksPlannedContent(issue(root), plan.Steps, new Dictionary<string, int> { ["root"] = 7 }));
+    }
 }
