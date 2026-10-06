@@ -458,6 +458,13 @@ public class OrphanRemovalOperationTests : IDisposable
             RemovalRecords.DefaultPath(name => name == "XDG_STATE_HOME" ? "/x/state" : null));
         Assert.Equal(Path.Combine("/home/someone", ".local", "state", "opticli", OrphanRemoval.RecordFileName),
             RemovalRecords.DefaultPath(name => name == "HOME" ? "/home/someone" : null));
+        Assert.Equal("/site/App_Data/removals.jsonl",
+            RemovalRecords.DefaultPath(name => name switch
+            {
+                RemovalRecords.PathVariable => "/site/App_Data/removals.jsonl",
+                "XDG_STATE_HOME" => "/x/state",
+                _ => null,
+            }));
     }
 
     [Fact]

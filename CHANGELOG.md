@@ -44,6 +44,8 @@ again to update the skill.
   recycle bin), `EdgeRemovedEmptyPage` and its block type `EdgeRemovedBlock` (orphans nothing uses), the property
   `EdgeRemovedEmptyText` (no values) and `EdgeAdminPage` (made in admin mode), makes them again at every start, and
   answers `POST /opticli-fixture/orphans` on loopback so the removal tests can make them again and run twice.
+- `OPTICLI_REMOVALS_FILE` names another file for the removal record. The edge-case site sets it to its own
+  `App_Data/opticli-removals.jsonl`, so the integration tests' removals stay out of your `removals.jsonl`.
 
 ## 0.13.0 (6 October 2026)
 

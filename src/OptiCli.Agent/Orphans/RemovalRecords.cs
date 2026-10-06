@@ -33,14 +33,21 @@ internal sealed class RemovalRecords(string path, string project, string databas
             Console.Out);
     }
 
+    /// <summary>Overrides the record file's path; the edge-case test site sets it, so test runs stay out of the real one.</summary>
+    public const string PathVariable = "OPTICLI_REMOVALS_FILE";
+
     /// <summary>
     /// The same state directory the CLI uses (<c>%LOCALAPPDATA%\opticli</c> on Windows, else
     /// <c>$XDG_STATE_HOME/opticli</c>, default <c>~/.local/state/opticli</c>): the site runs as the same user, with the
-    /// environment <c>serve</c> gave it.
+    /// environment <c>serve</c> gave it. <see cref="PathVariable"/> names another file.
     /// </summary>
     internal static string DefaultPath(Func<string, string?> variable)
     {
         static string? Set(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+        if (Set(variable(PathVariable)) is { } file)
+        {
+            return file;
+        }
         var directory = Set(variable("LOCALAPPDATA")) is { } localAppData
             ? System.IO.Path.Combine(localAppData, "opticli")
             : System.IO.Path.Combine(Set(variable("XDG_STATE_HOME")) ?? System.IO.Path.Combine(Set(variable("HOME")) ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "state"), "opticli");

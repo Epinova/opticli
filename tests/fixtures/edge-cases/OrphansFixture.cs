@@ -69,6 +69,9 @@ public class OptiCliOrphansFixture : IConfigurableModule
 
     public void Initialize(InitializationEngine context)
     {
+        // The removal tests' records go to the site's own App_Data, not the developer's real record file.
+        Environment.SetEnvironmentVariable("OPTICLI_REMOVALS_FILE",
+            Path.Combine(context.Locate.Advanced.GetInstance<IWebHostEnvironment>().ContentRootPath, "App_Data", "opticli-removals.jsonl"));
         try
         {
             Seed(context.Locate.Advanced);

@@ -559,6 +559,7 @@ are often committed, so keep the token out of git.
 | `ConnectionStrings__<Name>` | `serve`, `env --include-connection` | the same connection string, for code that reads it before the agent's pin; `serve` also removes other spellings of it (`ConnectionStrings:<Name>`, another case) |
 | `OPTICLI_REMOTE_DB` | against a remote development database | the one remote database the site agent accepts; turns on shared-database mode |
 | `OPTICLI_DRIFT_FILE` | `serve`, against a remote development database | what `serve` compared before the start (EF Core migrations, CMS schema version), for the site agent's drift report |
+| `OPTICLI_REMOVALS_FILE` | never (the edge-case test site sets it) | another file for the record of `types remove`, `remove-property` and `prune`, instead of `removals.jsonl` in opticli's state directory |
 | `OPTICLI_SCHEDULER` | `serve --scheduler`, `env` (not against a remote database) | `on` leaves the site's scheduler as the site sets it; without it the site agent turns the scheduler off |
 
 ### How the injection works
@@ -1048,7 +1049,8 @@ when `App_Data/opticli-job-fail` exists; the `jobs` tests run it. `OrphansFixtur
 exist, used by one page), `EdgeTrashedPage` (its only page is in the recycle bin) and `EdgeRemovedEmptyPage` (used by
 nothing, with a property `Teaser` whose block type `EdgeRemovedBlock` has no class either), the EdgePage properties
 `EdgeRemovedText` (one value) and `EdgeRemovedEmptyText` (none) that its class doesn't declare, and `EdgeAdminPage`, a
-type made in admin mode. They are made at the second start, once the plan's content exists, and again at every start
+type made in admin mode. It points `OPTICLI_REMOVALS_FILE` at the site's `App_Data/opticli-removals.jsonl`, so the
+tests' removals stay out of your own `removals.jsonl`. They are made at the second start, once the plan's content exists, and again at every start
 (the CMS removes an unused type whose class is gone when the site starts); the tests that remove them make them again
 with `POST /opticli-fixture/orphans`, which the fixture answers on loopback only. `UsersFixture.cs` makes the user `edge-fixture-user` at startup (WebEditors, no password, not
 made by opticli), which the `users` tests check `users remove` refuses; they also sign in on `/util/login` as a user
