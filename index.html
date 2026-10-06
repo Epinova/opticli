@@ -161,7 +161,7 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
       <div class="term-bar"><i></i><i></i><i></i><span>opticli on the Alloy sample site</span></div>
       <div class="player" id="player"></div>
     </div>
-    <ol class="chapters" id="chapters"><li><button type="button" data-index="0" data-start="4.016" data-end="28.108" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">1</span><span class="time">0:04</span></span><span class="t">No setup</span></button></li><li><button type="button" data-index="1" data-start="28.108" data-end="56.876" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">2</span><span class="time">0:28</span></span><span class="t">Find the content</span></button></li><li><button type="button" data-index="2" data-start="56.876" data-end="73.891" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">3</span><span class="time">0:56</span></span><span class="t">Find the code</span></button></li><li><button type="button" data-index="3" data-start="73.891" data-end="154.586" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">4</span><span class="time">1:13</span></span><span class="t">Make the change</span></button></li><li><button type="button" data-index="4" data-start="154.586" data-end="226.779" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">5</span><span class="time">2:34</span></span><span class="t">A section as a plan</span></button></li><li><button type="button" data-index="5" data-start="226.779" data-end="254.919" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">6</span><span class="time">3:46</span></span><span class="t">Run it again</span></button></li><li><button type="button" data-index="6" data-start="254.919" data-end="323.133" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">7</span><span class="time">4:14</span></span><span class="t">Safety nets</span></button></li><li><button type="button" data-index="7" data-start="323.133" data-end="366.104" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">8</span><span class="time">5:23</span></span><span class="t">Scheduled jobs</span></button></li><li><button type="button" data-index="8" data-start="366.104" data-end="419.596" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">9</span><span class="time">6:06</span></span><span class="t">Let an agent do it</span></button></li></ol>
+    <ol class="chapters" id="chapters"><li><button type="button" data-index="0" data-start="4.018" data-end="28.164" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">1</span><span class="time">0:04</span></span><span class="t">No setup</span></button></li><li><button type="button" data-index="1" data-start="28.164" data-end="57.092" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">2</span><span class="time">0:28</span></span><span class="t">Find the content</span></button></li><li><button type="button" data-index="2" data-start="57.092" data-end="74.239" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">3</span><span class="time">0:57</span></span><span class="t">Find the code</span></button></li><li><button type="button" data-index="3" data-start="74.239" data-end="155.04" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">4</span><span class="time">1:14</span></span><span class="t">Make the change</span></button></li><li><button type="button" data-index="4" data-start="155.04" data-end="229.146" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">5</span><span class="time">2:35</span></span><span class="t">A section as a plan</span></button></li><li><button type="button" data-index="5" data-start="229.146" data-end="257.621" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">6</span><span class="time">3:49</span></span><span class="t">Run it again</span></button></li><li><button type="button" data-index="6" data-start="257.621" data-end="326.141" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">7</span><span class="time">4:17</span></span><span class="t">Safety nets</span></button></li><li><button type="button" data-index="7" data-start="326.141" data-end="368.516" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">8</span><span class="time">5:26</span></span><span class="t">Scheduled jobs</span></button></li><li><button type="button" data-index="8" data-start="368.516" data-end="406.265" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">9</span><span class="time">6:08</span></span><span class="t">Clean up leftovers</span></button></li><li><button type="button" data-index="9" data-start="406.265" data-end="461.052" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">10</span><span class="time">6:46</span></span><span class="t">Let an agent do it</span></button></li></ol>
   </div>
 
   <section id="what-its-for">
@@ -230,10 +230,14 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
           it, or change when it runs. <code>serve</code> keeps a restored database's overdue jobs from all running at
           once, and jobs that delete for good need an explicit flag.</p>
         <code class="eg">opticli jobs run "Content import"</code></li>
-      <li><h3>What's left over, and what happened</h3>
+      <li><h3>Clean up what removed code left behind</h3>
         <p><code>types --orphaned</code> finds content types whose code is gone, and <code>type</code> shows leftover
-          properties with their stored values. <code>history</code> reads the change log for one item: moves, deletes,
-          restores and publishes, with who and when.</p>
+          properties with their stored values. <code>types prune</code> removes what can go through the CMS, never
+          content, records every removal first, and needs a flag before it deletes stored values.</p>
+        <code class="eg">opticli types prune --dry-run</code></li>
+      <li><h3>What happened to it?</h3>
+        <p><code>history</code> reads the change log for one item: moves, deletes, restores and publishes, with who and
+          when.</p>
         <code class="eg">opticli history 123</code></li>
       <li><h3>Nothing to add to your solution</h3>
         <p><code>serve</code> starts your existing build with a small agent injected at startup, through a .NET startup hook and a hosting startup. Your site's code and config stay as they are.</p>
@@ -320,6 +324,16 @@ https://your-site.example/episerver/opticli/mcp</pre>
         <code>opticli skill install</code> again to update the skill.</p>
     </div>
     <ol class="changelog">
+      <li><div class="v"><b>0.14.0</b><span>6 October 2026</span></div>
+        <ul>
+          <li><b>Remove what removed code left behind:</b> <code>types remove</code>, <code>types remove-property</code> and
+            <code>types prune</code>, through the site with the CMS's own API. Only orphans as the running site sees them;
+            a type stays while any content uses it, also in the recycle bin, and stored values need
+            <code>--allow-destructive</code>. Each removal is written to <code>removals.jsonl</code> before it happens.</li>
+          <li><b>Changed:</b> <code>type</code>'s <code>values</code> count content items and versions, including values
+            inside block properties: what removing the property deletes.</li>
+          <li><b>Fixed:</b> a restored block or media file is "published again", not "live at its URL".</li>
+        </ul></li>
       <li><div class="v"><b>0.13.0</b><span>6 October 2026</span></div>
         <ul>
           <li><b>Recycle bin:</b> <code>trash</code> lists what was deleted, by whom and from where, and
