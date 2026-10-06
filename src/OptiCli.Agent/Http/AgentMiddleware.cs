@@ -9,6 +9,7 @@ using OptiCli.Agent.Hosting;
 using OptiCli.Agent.Jobs;
 using OptiCli.Agent.Safety;
 using OptiCli.Agent.Sites;
+using OptiCli.Agent.Users;
 using OptiCli.Cms;
 using OptiCli.Cms.Content;
 using OptiCli.Cms.Operations;
@@ -23,7 +24,8 @@ namespace OptiCli.Agent.Http;
 /// <remarks>
 /// The content endpoints are <c>OptiCli.Cms</c> operations, which the MCP module runs too; this class adds only what is
 /// HTTP: the body, the status code, and the request's <see cref="AgentRequest.Call"/> as the developer. Site hosts
-/// (<see cref="SiteHostsOperation"/>) and scheduled jobs (<see cref="JobsOperation"/>) are the agent's own, never the module's.
+/// (<see cref="SiteHostsOperation"/>), scheduled jobs (<see cref="JobsOperation"/>) and users (<see cref="UsersOperation"/>) are
+/// the agent's own, never the module's.
 /// </remarks>
 internal static class AgentMiddleware
 {
@@ -89,6 +91,10 @@ internal static class AgentMiddleware
         [AgentEndpoint.JobRun] = Write(r => r.ReadBodyAsync<JobRunRequest>(), b => b.DryRun, (r, b) => Ok(JobsOperation.Run(r, b))),
         [AgentEndpoint.JobStop] = Write(r => r.ReadBodyAsync<JobStopRequest>(), b => b.DryRun, (r, b) => Ok(JobsOperation.Stop(r, b))),
         [AgentEndpoint.JobSet] = Write(r => r.ReadBodyAsync<JobSetRequest>(), b => b.DryRun, (r, b) => Ok(JobsOperation.Set(r, b))),
+        // Users are the developer's only too: a local login for a restored database.
+        [AgentEndpoint.UserAdd] = Write(r => r.ReadBodyAsync<UserAddRequest>(), b => b.DryRun, async (r, b) => Ok(await UsersOperation.AddAsync(r, b))),
+        [AgentEndpoint.UserRemove] = Write(r => r.ReadBodyAsync<UserRemoveRequest>(), b => b.DryRun, async (r, b) => Ok(await UsersOperation.RemoveAsync(r, b))),
+        [AgentEndpoint.UserRoles] = new(false, async request => (200, (object)await UsersOperation.RolesAsync(request))),
         // No body and no dry run: a delete is always real.
         [AgentEndpoint.Delete] = Write(Task.FromResult, _ => false, (r, _) => Ok(DeleteOperation.Run(r.Call, r.Argument))),
     };

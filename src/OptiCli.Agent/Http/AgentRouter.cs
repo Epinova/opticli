@@ -28,6 +28,9 @@ internal enum AgentEndpoint
     JobRun,
     JobStop,
     JobSet,
+    UserAdd,
+    UserRemove,
+    UserRoles,
 }
 
 /// <param name="Argument">The <c>{name}</c> or <c>{ref}</c> segment, when the route has one.</param>
@@ -43,7 +46,7 @@ internal static partial class AgentRouter
 
     private static readonly string RouteList =
         $"GET {AgentRoutes.Prefix}/ping, POST {AgentRoutes.Prefix}/shutdown, GET {AgentRoutes.Prefix}/drift, GET {AgentRoutes.Prefix}/restore-parents, GET {AgentRoutes.Prefix}/types/{{name}}, POST {AgentRoutes.Prefix}/content, POST {AgentRoutes.Prefix}/media, " +
-        $"POST {AgentRoutes.Prefix}/content/{{ref}}/draft|languages|remove-language|publish|unpublish|discard|move|restore|access, GET|DELETE {AgentRoutes.Prefix}/content/{{ref}}, POST {AgentRoutes.Prefix}/sites/hosts, POST {AgentRoutes.Prefix}/jobs/run|stop|set";
+        $"POST {AgentRoutes.Prefix}/content/{{ref}}/draft|languages|remove-language|publish|unpublish|discard|move|restore|access, GET|DELETE {AgentRoutes.Prefix}/content/{{ref}}, POST {AgentRoutes.Prefix}/sites/hosts, POST {AgentRoutes.Prefix}/jobs/run|stop|set, POST {AgentRoutes.Prefix}/users/add|remove, GET {AgentRoutes.Prefix}/users/roles";
 
     /// <exception cref="AgentException">No route matches, or it belongs to another protocol version.</exception>
     public static RouteMatch Match(string method, string? path)
@@ -77,6 +80,9 @@ internal static partial class AgentRouter
             ["jobs", "run"] => (AgentEndpoint.JobRun, (string?)null),
             ["jobs", "stop"] => (AgentEndpoint.JobStop, (string?)null),
             ["jobs", "set"] => (AgentEndpoint.JobSet, (string?)null),
+            ["users", "add"] => (AgentEndpoint.UserAdd, (string?)null),
+            ["users", "remove"] => (AgentEndpoint.UserRemove, (string?)null),
+            ["users", "roles"] => (AgentEndpoint.UserRoles, (string?)null),
             ["content", var reference] when IsMethod(method, "GET") => (AgentEndpoint.Read, reference),
             ["content", var reference] => (AgentEndpoint.Delete, reference),
             ["content", var reference, "draft"] => (AgentEndpoint.Draft, reference),
@@ -127,6 +133,9 @@ internal static partial class AgentRouter
         [AgentEndpoint.JobRun] = "POST",
         [AgentEndpoint.JobStop] = "POST",
         [AgentEndpoint.JobSet] = "POST",
+        [AgentEndpoint.UserAdd] = "POST",
+        [AgentEndpoint.UserRemove] = "POST",
+        [AgentEndpoint.UserRoles] = "GET",
     };
 
     private static bool IsMethod(string method, string expected) => string.Equals(method, expected, StringComparison.OrdinalIgnoreCase);

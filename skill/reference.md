@@ -115,6 +115,8 @@ directly: see [Approval sequences](#approval-sequences).
 | `jobs run <job> [--no-wait] [--timeout s] [--allow-destructive]` | `opticli jobs run "Publish Delayed Content Versions"` (only when the user asked; see [Scheduled jobs](#scheduled-jobs)) |
 | `jobs stop <job>` | `opticli jobs stop "Content import"` |
 | `jobs set <job> [--enabled true\|false] [--every 30m\|1h\|1d\|1w\|1mo\|1y\|manual] [--next now\|<time>] [--allow-destructive]` | `opticli jobs set "Content import" --every 1h --next now --dry-run` (only when the user asked) |
+| `users add <name> [--role R]... [--password-stdin]` | `opticli users add dev --dry-run` (only when the user asked; see [Local users](#local-users)) |
+| `users remove <name>` | `opticli users remove dev` |
 | `apply <plan.json\|->` | `opticli apply plan.json --dry-run` |
 
 `unpublish` takes a published branch offline as the edit UI's expiry does: a copy of the published version with
@@ -355,6 +357,23 @@ its name only it has (several matches: `usage`, listing them).
   passed makes it overdue). `--every` on a job without a next run needs `--next`. Output: `before`, `after` (`enabled`,
   `schedule`, `every`, `nextRun`, ...), `changes[]`, `saved`; nothing changed: `saved: false`. Schedules aren't
   versioned: report `before`.
+
+### Local users
+
+A login for a restored database, through the site's ASP.NET Identity (`serve`). `users roles` (a read, through the site):
+`roles[]` (`name`, `members`: a count, `virtualRoles` it gives), `virtualRoles[]` (`name`, `kind`: `mapped` or the
+provider's class, `roles` and `matchAll` for a mapped one), `userType`, `optiCliUsers` (how many opticli made). Never
+names or addresses.
+- `users add <name>`: approved, address `<name>@opticli.localhost`, claim `opticli:created`, in `WebAdmins` unless
+  `--role` (repeatable); a missing role is created (`createdRoles`, with a warning). A warning names the roles
+  `CmsAdmins` maps to when the user gets none of them. Password: `--password-stdin` (one line), a hidden prompt on a
+  terminal, else generated and written to a file only the user can read: `password` (`stdin`, `prompt`, `generated`)
+  and `passwordFile` (the path) in the output, never the password. Errors: `conflict` (name exists), `validation`
+  (`details.reason: "users"`, the site's password or name rules, one issue each; nothing is made), `refused` (shared
+  database; a site whose CMS users don't come from ASP.NET Identity, naming its user provider). `--dry-run` checks it
+  all and writes no file.
+- `users remove <name>`: only a user `users add` made (`refused` otherwise, `not_found` for none); deletes its password
+  file too (`passwordFileRemoved`). Roles stay.
 
 ### Concurrency
 

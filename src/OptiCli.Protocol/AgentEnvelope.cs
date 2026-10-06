@@ -63,6 +63,12 @@ public static class AgentErrorReasons
     /// names the change, and the error's hint says what to do (not the hint for content properties).
     /// </summary>
     public const string SiteHosts = "siteHosts";
+
+    /// <summary>
+    /// Validation: ASP.NET Identity refused a new user (<see cref="AgentRoutes.UserAdd"/>): its password or name rules;
+    /// each issue says which, and the error's hint applies (not the hint for content properties).
+    /// </summary>
+    public const string Users = "users";
 }
 
 /// <summary>Error codes and the HTTP status each one is sent with.</summary>

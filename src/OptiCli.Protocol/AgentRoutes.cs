@@ -85,6 +85,28 @@ public static class AgentRoutes
     public static readonly string JobSet = $"{Prefix}/jobs/set";
 
     /// <summary>
+    /// <c>POST /v1/users/add</c>. Body: <see cref="UserAddRequest"/>. Response: <see cref="UserAddResult"/>. Creates a user
+    /// through the site's ASP.NET Identity (<c>UserManager</c> for the user class the CMS UI's user provider uses), tagged
+    /// with <see cref="LocalUsers.CreatedClaim"/>, in the given roles (created if missing). Errors: <c>conflict</c> (the
+    /// name exists), <c>validation</c> (the site's password or user name rules), <c>refused</c> (a site without ASP.NET
+    /// Identity; shared mode). Developer-only: the MCP module has no such tool.
+    /// </summary>
+    public static readonly string UserAdd = $"{Prefix}/users/add";
+
+    /// <summary>
+    /// <c>POST /v1/users/remove</c>. Body: <see cref="UserRemoveRequest"/>. Response: <see cref="UserRemoveResult"/>.
+    /// Deletes a user opticli made. Errors: <c>not_found</c>, <c>refused</c> (a user opticli didn't make; no ASP.NET
+    /// Identity; shared mode).
+    /// </summary>
+    public static readonly string UserRemove = $"{Prefix}/users/remove";
+
+    /// <summary>
+    /// <c>GET /v1/users/roles</c>. Response: <see cref="UserRolesResult"/>: role names with member counts and the virtual
+    /// role mapping; never user names or addresses. Errors: <c>refused</c> (no ASP.NET Identity; shared mode).
+    /// </summary>
+    public static readonly string UserRoles = $"{Prefix}/users/roles";
+
+    /// <summary>
     /// <c>POST /v1/content</c>. Body: <see cref="CreateRequest"/>. Response: <see cref="WriteResult"/>
     /// (201 when saved). Errors: <c>not_found</c> (parent, type), <c>usage</c> (unknown property, bad value),
     /// <c>validation</c> 422 (required property, type not allowed under the parent, ...), <c>conflict</c> 409 (the GUID

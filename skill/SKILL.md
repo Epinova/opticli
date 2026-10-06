@@ -1,6 +1,6 @@
 ---
 name: opticli
-description: Inspect and change content of an Optimizely CMS 12 (EPiServer) site the user develops locally (against its local or development database) with the opticli CLI instead of hand-written SQL or guessing from code. Use when you need to know what CMS content exists (pages, blocks, media, folders), what a page or block contains (properties, ContentArea items, rich text), which page type or block type something is and which C# class and Razor view render it, where a block or page is used, which content a URL shows, what drafts and versions exist, or when the user asks you to create or edit CMS content (set properties, add a block to a ContentArea, create a page or block, translate, publish) in their development site, or to point the sites of a restored database at localhost (their host names). Also for scheduled jobs: which exist, whether a job (an import, a sync) ran and how it ended, and running or rescheduling one. And for the recycle bin: what was deleted, by whom, and bringing it back.
+description: Inspect and change content of an Optimizely CMS 12 (EPiServer) site the user develops locally (against its local or development database) with the opticli CLI instead of hand-written SQL or guessing from code. Use when you need to know what CMS content exists (pages, blocks, media, folders), what a page or block contains (properties, ContentArea items, rich text), which page type or block type something is and which C# class and Razor view render it, where a block or page is used, which content a URL shows, what drafts and versions exist, or when the user asks you to create or edit CMS content (set properties, add a block to a ContentArea, create a page or block, translate, publish) in their development site, or to point the sites of a restored database at localhost (their host names). Also for scheduled jobs: which exist, whether a job (an import, a sync) ran and how it ended, and running or rescheduling one. And for the recycle bin: what was deleted, by whom, and bringing it back; and a local login for a restored database.
 opticli-version: 0.12.0
 ---
 
@@ -67,6 +67,7 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
 | Which scheduled jobs exist, which are overdue or failed last time? | `opticli jobs` (`--failed`) |
 | Did a job (an import, a sync) run, and how did it end? | `opticli jobs log "<job name>"` (`--failed --since 1d` for every job) |
 | Run a job now (only when asked) | `opticli jobs run "<job name>"` (needs `serve`; waits for it) |
+| Sign in locally to a restored database (only when asked) | `opticli users add <name> --dry-run` (needs `serve`); `opticli users roles` |
 | Anything else (read-only) | `opticli sql "SELECT TOP 10 ... FROM tblContent ..."` |
 
 ## Recipes
@@ -206,6 +207,11 @@ order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a cod
   pass it only after the user confirmed that job by name. Never pass
   `serve --scheduler` on your own initiative: overdue jobs would all start. Schedules aren't versioned: report the
   `before` from `jobs set`.
+- Never add or remove users (`users add`, `users remove`) unless the user asked for a local login. Don't pass
+  `--password-stdin` with a password you made up: let opticli generate it, and give the user `passwordFile` (the path),
+  never the password or the file's content. `users remove` only removes users opticli made; a refusal there or on a
+  site without ASP.NET Identity (exit 3) is final: tell the user. Never list users or read the user tables (`sql
+  --include-personal-data`) to find names; `users roles` has the counts.
 - Always `--dry-run` a multi-step `apply` plan first, and a single write when you are unsure of its effect.
 - A write that timed out (`unreachable`, "no response within") or a plan that stopped halfway (`details.partial`) may
   have saved more than it reports: check with `opticli versions <ref>` before running it again.

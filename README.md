@@ -196,6 +196,7 @@ Once the site answers, `serve` reports drift: what differs between the build and
 | Against a shared database, `sites primary` and `sites host remove` are refused (exit 3), and `sites host add` only adds hosts of type undefined: the deployed site uses the same site definitions. There is no override; change those sites in their own admin UI. Site definitions are never reachable from the MCP module. | Site agent, CLI first |
 | `delete` moves content to the recycle bin; nothing empties it, and `restore` brings it back. Site roots, start pages, asset roots and anything above them can't be moved or deleted. The MCP module doesn't restore. | Site agent |
 | `serve` turns the site's scheduler off, so a restored database's overdue jobs don't all start (`--scheduler` leaves it on). `jobs run` refuses jobs that delete for good (emptying the recycle bin, trimming versions, truncating the change log, Commerce's expired carts and archived items, ...) or move content across the site, and `jobs set` refuses to let the scheduler run one (sooner), without `--allow-destructive`. Against a shared database jobs aren't run, stopped or changed, and the scheduler stays off. | Site agent, CLI first |
+| `users add` only adds users to the site's ASP.NET Identity, tagged as made by opticli, and `users remove` only removes those: an existing account's password, address and roles are never touched. A generated password is written to a file only you can read and never printed. No command lists users; `users roles` counts them per role. Refused against a shared database, and on a site whose CMS users come from elsewhere (OpenID Connect). | Site agent, CLI first |
 | Reads use fixed queries. `sql` accepts a single SELECT, refuses anything that writes, runs code, reaches another database or reads server-wide views, logs and traces (in `sys`, only the views that describe the database's own schema), and always runs in a rolled-back transaction. Personal-data tables (form submissions, users) need `--include-personal-data`. Where another command's fixed query reads the Dynamic Data Store's tables, it reads only one store's rows and only what it shows (the parents the CMS stored for `trash`, visitor group names), nothing that names a person. | CLI |
 | Passwords are never printed; `doctor` redacts connection strings. The exception is `opticli env`: it prints the per-run token, and with `--include-connection` the connection string too. | CLI |
 
@@ -297,6 +298,8 @@ These commands write:
 - `sites primary` and `sites host add|remove` change site definitions' host names; see
   [Site hosts after a database restore](#site-hosts-after-a-database-restore).
 - `jobs run`, `jobs stop` and `jobs set` run, stop and reschedule scheduled jobs; see [Scheduled jobs](#scheduled-jobs).
+- `users add` and `users remove` make and remove a local login for a restored database; see
+  [Local users](#local-users-after-a-database-restore).
 - `apply plan.json` runs several operations validated together. Later operations can refer to an item an earlier
   one created as `$id`. A property value `"@texts/body.html"` is that file's text, as `Prop=@file` is on the command
   line. Files in a plan are relative to the plan file and must stay inside its folder. With `"guidNamespace"`, what a
@@ -427,6 +430,32 @@ name only it has. Several matches are a `usage` error that lists them.
 deployed site's scheduler uses the same jobs, and a job writes to the content everyone shares. `jobs` and `jobs log`
 work there.
 
+### Local users after a database restore
+
+A restored copy of a production database has production's users: often accounts from another identity provider, or
+local ones whose passwords nobody knows here. `users add` makes a login to sign in with locally, through the site's own
+ASP.NET Identity (`services.AddCmsAspNetIdentity<...>()`, the user class the CMS UI uses, found at runtime), as the
+CMS's first-admin registration does:
+
+```sh
+opticli users roles                    # the roles, how many users each has, and what CmsAdmins, CmsEditors, ... map to
+opticli users add dev --dry-run        # the name, the password against the site's rules, the roles
+opticli users add dev                  # in WebAdmins (--role, repeatable, for others); a missing role is created
+opticli users remove dev               # only a user opticli made
+```
+
+| Command | Does |
+|---|---|
+| `users add <name> [--role R]... [--password-stdin]` | makes the user, approved, with the address `<name>@opticli.localhost` (it reaches nobody) and the claim `opticli:created`, in `WebAdmins` (the role the first-admin registration uses) unless `--role` says otherwise; a role that doesn't exist is created (`createdRoles`). A warning says when the roles don't give `CmsAdmins` (admin mode) on this site. The password: `--password-stdin` reads one line; on a terminal opticli asks without showing it; otherwise it generates one and writes it to a file only you can read (`passwordFile`, see [Files](#files)), never to the output. The site's password rules apply (`validation`, exit 5). A name that exists is a `conflict`. |
+| `users remove <name>` | removes a user `users add` made (it has the claim; in a user store without claims, the address), and its password file. Any other user is `refused` (exit 3); roles stay. |
+| `users roles` | role names with their member counts, the virtual roles each gives, the virtual roles (mapped ones with the roles that give them), and how many users opticli made. No user names or addresses. |
+
+All three go through the site (`serve`) and take no part of an existing account. Against a shared database they are
+refused (exit 3): its users are real. On a site whose CMS users come from OpenID Connect, Opti ID or another identity
+provider (no ASP.NET Identity), they are refused (exit 3) with the user provider the site has: sign in through that
+provider. `doctor` doesn't hint at `users add`: whether anyone can sign in locally depends on password hashes and
+external logins in the user tables, which are personal data.
+
 ## serve and env
 
 `opticli serve` runs the site's existing build output in `Development` on `http://127.0.0.1:<port>`, with the site
@@ -535,6 +564,7 @@ runtime. It ships no copies of them.
 |---|---|---|
 | User config | `$XDG_CONFIG_HOME/opticli/config.json` (default `~/.config/opticli/config.json`) | `%APPDATA%\opticli\config.json` |
 | `serve` state, start lock and logs (the last 3 runs) | `$XDG_STATE_HOME/opticli/` (default `~/.local/state/opticli/`) | `%LOCALAPPDATA%\opticli\` |
+| Generated passwords of `users add` (readable by you only) | `$XDG_STATE_HOME/opticli/users/<project>/<name>.txt` | `%LOCALAPPDATA%\opticli\users\<project>\<name>.txt` |
 
 You can set per-project defaults in the user config (`output`, `port`, `https` and `scheduler` for `serve`).
 `opticli db use` adds the chosen `database` there, and `opticli sites primary --save` the `sites.primary` mapping.
@@ -965,9 +995,11 @@ an approval sequence, language fallback settings, a media type for PDF files, th
 tests change (and put back), and a scheduled job of its own. `tests/fixtures/edge-cases/` builds them from an Alloy
 site (`dotnet new epi-alloy-mvc`) without changing it. `setup.sh` copies the site and its database, adds
 `EdgeCasesFixture.cs` (the extra content types, plus a startup module for what a plan can't create) and
-`JobsFixture.cs`, and applies `edge-cases.plan.json`. `JobsFixture.cs` has "opticli test job", a manual, stoppable job
+`JobsFixture.cs` and `UsersFixture.cs`, and applies `edge-cases.plan.json`. `JobsFixture.cs` has "opticli test job", a manual, stoppable job
 that writes a status message a second for 3 steps (the number in `App_Data/opticli-job-steps`, if it exists) and fails
-when `App_Data/opticli-job-fail` exists; the `jobs` tests run it. With `OPTICLI_FIXTURE_SCHEDULER=on` in the environment
+when `App_Data/opticli-job-fail` exists; the `jobs` tests run it. `UsersFixture.cs` makes the user `edge-fixture-user` at startup (WebEditors, no password, not
+made by opticli), which the `users` tests check `users remove` refuses; they also sign in on `/util/login` as a user
+they add. With `OPTICLI_FIXTURE_SCHEDULER=on` in the environment
 of `serve`, it also turns the scheduler on in the site's own configuration, as a real site has it (Alloy turns it off in
 Development), to see that `serve` turns it off again and `serve --scheduler` doesn't. Run `setup.sh` again to update
 the content: the plan is applied with `--update-existing`, and the database copy is kept unless `FRESH=1`.

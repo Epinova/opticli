@@ -50,10 +50,10 @@ internal partial class Program
 
             Refs: {{{ContentRefParser.Syntax}}}
             Reads query the database directly and need nothing running.
-            Writes (set, create, area, block, upload, translate, publish, unpublish, discard, move, delete, restore, access, apply,
-              sites primary, sites host, jobs run|stop|set) go through the CMS inside the running site: `opticli serve` first,
-              `opticli serve --stop` when done. They save drafts unless --publish, delete only moves to the recycle bin, and
-              every write takes --dry-run.
+            Writes (set, create, area, block, upload, translate, publish, unpublish, discard, move, delete, restore, access,
+              apply, sites primary, sites host, jobs run|stop|set, users add|remove) go through the CMS inside the running
+              site: `opticli serve` first, `opticli serve --stop` when done. They save drafts unless --publish, delete only
+              moves to the recycle bin, and every write takes --dry-run.
             Output: compact JSON {"ok": true, "data": ..., "meta": {"source", "version", "next", "warnings", "database"}} when
               stdout is redirected, tables on a terminal; --json / --text force one, --jsonl (list commands) prints one item per
               line. Lists return 50 items: pass meta.next as --cursor for more, or raise --limit.
@@ -106,6 +106,7 @@ internal partial class Program
         root.Subcommands.Add(DeleteCommand.Create(options));
         root.Subcommands.Add(RestoreCommand.Create(options));
         root.Subcommands.Add(AccessCommand.Create(options));
+        root.Subcommands.Add(UsersCommand.Create(options));
         root.Subcommands.Add(ApplyCommand.Create(options));
         root.Subcommands.Add(SkillCommand.Create(options));
         return root;

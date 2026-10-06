@@ -18,6 +18,19 @@ again to update the skill.
   exists and isn't in the recycle bin too, and that its type is allowed there. Content keeps its versions, so what was
   published is live again; a warning says so. `--dry-run`; in a plan `{"op": "restore", "ref": ..., "to": ...}`. The
   MCP module has no such tool. `delete`'s undo hint is now `opticli restore <ref>`.
+- **`opticli users add <name>`** makes a local login for a restored database through the site's ASP.NET Identity (the
+  user class the CMS UI uses, found at runtime), as the CMS's first-admin registration does: approved, in `WebAdmins`
+  unless `--role` says otherwise (a missing role is created), tagged as made by opticli. The password comes from
+  `--password-stdin`, a hidden prompt on a terminal, or is generated and written to a file only you can read
+  (`passwordFile`); it is never printed. **`opticli users remove <name>`** removes only users opticli made, and
+  **`opticli users roles`** shows the roles with member counts and what the virtual roles map to, never names or
+  addresses. Refused against a shared database and on sites without ASP.NET Identity (exit 3); the MCP module has no
+  such tools.
+
+### Development
+
+- The edge-case site gets `UsersFixture.cs`: a user opticli didn't make, which `users remove` must refuse. The
+  integration tests add a user, sign in with it on the CMS's login page, and remove it again.
 
 ## 0.12.0 (6 October 2026)
 
