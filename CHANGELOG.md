@@ -3,11 +3,12 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
-## Unreleased
+## 0.11.0 (6 October 2026)
 
 ### MCP server for editors (preview): security fixes
 
-Fixes from a security review of `OptiCli.Mcp` 0.9.0-preview (the same module shipped in 0.10.0-preview and 0.10.1-preview). Update before using it on a real site.
+Fixes from a security review of `OptiCli.Mcp` 0.9.0-preview (the same module shipped in 0.10.0-preview and
+0.10.1-preview). Update before using it on a real site.
 
 - **Return addresses are limited to Claude's and the editor's own machine.** A new option, `AllowedRedirectHosts`
   (`claude.ai` and `claude.com` by default), lists the hosts an app's OAuth redirect URI may be on, over https and
@@ -56,14 +57,16 @@ Fixes from a security review of `OptiCli.Mcp` 0.9.0-preview (the same module shi
   site's `AllowedHosts`, and forwarded headers from known proxies only.
 - `find_content` doesn't count content the editor can't read, so `truncated` no longer tells of it.
 
-- A value in `get_content`'s `{type, value}` shape, or one JSON can't make into the property's type, is a usage error
-  rather than an internal one, for the CLI as well. New content whose save failed inside the CMS (a value the database
-  can't take) is no longer reported as saved because it could still be found by its GUID for a moment.
-
 **Breaking** for a site that implements `IOAuthStore` itself: `DeleteExpiredAsync` takes a limit,
 `CountUnusedClientsAsync` is new, and the store is called from a background thread after the request (without its
 HttpContext or services, with the site's `ApplicationStopping` as the token), so it must be thread-safe and not scoped.
 The developer's site agent (`opticli serve`) behaves as before.
+
+### Fixed
+
+- A value in `get_content`'s `{type, value}` shape, or one JSON can't make into the property's type, is a usage error
+  rather than an internal one, for the CLI as well. New content whose save failed inside the CMS (a value the database
+  can't take) is no longer reported as saved because it could still be found by its GUID for a moment.
 
 ### Development
 
