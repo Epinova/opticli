@@ -11,6 +11,10 @@ public sealed class ReplaceMediaTests
     {
         var cancellationToken = CancellationToken.None;
         await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
+        if (!EdgeFixture.TakesPdf(site))
+        {
+            return;
+        }
         var writes = new WriteExecutor(site.Session, _ => Task.FromResult(site.Agent), projectDirectory: site.ProjectDirectory);
         var parent = site.Session.Model.Sites.GlobalAssetsRoot ?? throw new InvalidOperationException("The site has no global assets folder.");
         var folder = WriteOutput.Id((await writes.RunAsync(new CreateOperation(WriteOutput.Id(parent), "SysContentFolder", $"opticli-it {Guid.NewGuid():N}"), dryRun: false, cancellationToken)).CreatedId!.Value);

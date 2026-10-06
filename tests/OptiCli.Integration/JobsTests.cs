@@ -24,8 +24,10 @@ public sealed class JobsTests
             return;
         }
 
-        var rows = await JobReader.ListAsync(site.Session.Db, cancellationToken);
-        var views = JobViews.List(rows, ScheduledJobSources.Find(CSharpSourceIndex.Build(site.ProjectDirectory)), ScheduledJobSources.Assemblies(site.ProjectDirectory), DateTime.UtcNow, all: false);
+        // As `opticli jobs` reads them: on CMS 13 the database has the class name, and the site's own job's name comes from its source.
+        var sources = Sources(site);
+        var rows = await JobReader.ListAsync(site.Session.Db, cancellationToken, sources);
+        var views = JobViews.List(rows, sources, ScheduledJobSources.Assemblies(site.ProjectDirectory), DateTime.UtcNow, all: false);
 
         var fixture = views.Single(v => v.Id == FixtureJob);
         Assert.Equal(("opticli test job", "manual", true, "OptiCliEdgeCases.OptiCliTestJob"), (fixture.Name, fixture.Schedule, fixture.Stoppable, fixture.Class));
@@ -212,15 +214,19 @@ public sealed class JobsTests
     /// <summary>The fixture job, not running; null (the test then passes without checking) on a site without JobsFixture.cs.</summary>
     private static async Task<JobRow?> FixtureAsync(SiteUnderTest site, CancellationToken cancellationToken)
     {
-        var job = await JobReader.GetAsync(site.Session.Db, FixtureJob, cancellationToken);
+        // The job as the CLI reads it, with its readable name on CMS 13 too.
+        var sources = Sources(site);
+        var job = await JobReader.GetAsync(site.Session.Db, FixtureJob, cancellationToken, sources);
         for (var i = 0; job is { Running: true } && i < 60; i++)
         {
             // A run an earlier test left going.
             await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
-            job = await JobReader.GetAsync(site.Session.Db, FixtureJob, cancellationToken);
+            job = await JobReader.GetAsync(site.Session.Db, FixtureJob, cancellationToken, sources);
         }
         return job;
     }
+
+    private static IReadOnlyList<ScheduledJobSource> Sources(SiteUnderTest site) => ScheduledJobSources.Find(CSharpSourceIndex.Build(site.ProjectDirectory));
 
     /// <summary>The fixture job once the CMS has marked it as running.</summary>
     private static async Task<JobRow> RunningAsync(SiteUnderTest site, CancellationToken cancellationToken)

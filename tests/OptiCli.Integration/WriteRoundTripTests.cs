@@ -85,6 +85,10 @@ public sealed class WriteRoundTripTests
     {
         var cancellationToken = CancellationToken.None;
         await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
+        if (!EdgeFixture.TakesPdf(site))
+        {
+            return;
+        }
         var writes = new WriteExecutor(site.Session, _ => Task.FromResult(site.Agent), projectDirectory: site.ProjectDirectory);
 
         var folder = await ScratchFolderAsync(site, writes, cancellationToken);
@@ -136,6 +140,10 @@ public sealed class WriteRoundTripTests
 
             // The agent saves only as opticli, so the draft becomes another user's in the database. The CMS caches
             // version lists until the next save, so this has to come before the agent lists them again.
+            if (!site.SeesSavedByChangedInSql)
+            {
+                return;
+            }
             await site.Session.Db.QueryAsync("UPDATE tblWorkContent SET ChangedByName = 'someone-else@example.com' WHERE pkID = @version; SELECT @@ROWCOUNT",
                 r => r.GetInt32(0), cancellationToken, new Microsoft.Data.SqlClient.SqlParameter("@version", int.Parse(draft.Version!.Split('_')[1], System.Globalization.CultureInfo.InvariantCulture)));
 
@@ -183,6 +191,10 @@ public sealed class WriteRoundTripTests
     {
         var cancellationToken = CancellationToken.None;
         await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
+        if (!EdgeFixture.TakesPdf(site))
+        {
+            return;
+        }
         var writes = new WriteExecutor(site.Session, _ => Task.FromResult(site.Agent), projectDirectory: site.ProjectDirectory);
 
         var folder = await ScratchFolderAsync(site, writes, cancellationToken);

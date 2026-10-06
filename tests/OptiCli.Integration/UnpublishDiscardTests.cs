@@ -65,6 +65,10 @@ public sealed class UnpublishDiscardTests
             // The agent saves only as opticli; the draft becomes someone else's before the agent lists the versions again
             // (the CMS caches the list until the next save).
             var draft = Assert.IsType<WriteOutput>((await writes.RunAsync(new SetOperation(page, Name: "someone else's"), dryRun: false, cancellationToken)).Output);
+            if (!site.SeesSavedByChangedInSql)
+            {
+                return;
+            }
             await site.Session.Db.QueryAsync("UPDATE tblWorkContent SET ChangedByName = 'someone-else@example.com' WHERE pkID = @version; SELECT @@ROWCOUNT",
                 r => r.GetInt32(0), cancellationToken, new SqlParameter("@version", int.Parse(draft.Version!.Split('_')[1], System.Globalization.CultureInfo.InvariantCulture)));
 

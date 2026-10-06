@@ -31,6 +31,12 @@ internal static class EdgeFixture
     /// <summary>The visitor group the personalized page's ContentArea uses ("Edge visitors").</summary>
     public static readonly Guid VisitorGroup = Guid.Parse("6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e10");
 
+    /// <summary>
+    /// Whether the site can take a PDF upload: the edge-case fixture's EdgeDocument, since Alloy (CMS 12's and CMS 13's
+    /// template alike) has no media type for .pdf.
+    /// </summary>
+    public static bool TakesPdf(SiteUnderTest site) => site.Session.Model.Types.Any(t => t.Name == "EdgeDocument");
+
     /// <returns>The content id, or null when the site has no such content (not the edge-case site).</returns>
     public static async Task<ContentHeader?> FindAsync(SiteUnderTest site, Guid guid, CancellationToken cancellationToken)
     {

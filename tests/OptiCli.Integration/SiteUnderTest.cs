@@ -26,6 +26,13 @@ internal sealed class SiteUnderTest : IAsyncDisposable
 
     public AgentClient Agent { get; }
 
+    /// <summary>
+    /// Whether a version's "saved by" changed in SQL reaches the agent, which the tests use to make "someone else's"
+    /// draft. On CMS 13 it doesn't: the CMS keeps the content's version list cached after the agent's own save (the
+    /// cache is only cleared by the CMS's own changes), so those tests stop where they would change it.
+    /// </summary>
+    public bool SeesSavedByChangedInSql => Session.Model.Schema.Major < 13;
+
     public static async Task<SiteUnderTest> ConnectAsync(CancellationToken cancellationToken)
     {
         var environment = OptiCliEnvironment.FromProcess();

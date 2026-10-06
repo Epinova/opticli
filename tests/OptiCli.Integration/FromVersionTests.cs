@@ -29,6 +29,10 @@ public sealed class FromVersionTests
             // The agent saves only as opticli; the draft becomes someone else's before the agent lists the versions again
             // (the CMS caches the list until the next save).
             var draft = Assert.IsType<WriteOutput>((await writes.RunAsync(new SetOperation(page, new JsonObject { ["MetaTitle"] = "Their draft" }), dryRun: false, cancellationToken)).Output).Version!;
+            if (!site.SeesSavedByChangedInSql)
+            {
+                return;
+            }
             await site.Session.Db.QueryAsync("UPDATE tblWorkContent SET ChangedByName = 'someone-else@example.com' WHERE pkID = @version; SELECT @@ROWCOUNT",
                 r => r.GetInt32(0), cancellationToken, new SqlParameter("@version", VersionId(draft)));
 
