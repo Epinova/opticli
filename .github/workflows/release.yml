@@ -20,10 +20,12 @@ jobs:
         with:
           fetch-depth: 0 # the main check below needs the branch history
 
-      # SDK 10 reads opticli.slnx and builds the net8.0 projects.
+      # SDK 10 reads opticli.slnx; the 8 runtime runs the net8.0 test projects.
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Check the tag matches the version
         run: |
@@ -43,8 +45,18 @@ jobs:
             exit 1
           fi
 
+      - name: Build
+        run: dotnet build opticli.slnx -c Release
+
+      # Project by project, as CI does: failures become annotations that can be read without signing in.
       - name: Test
-        run: dotnet test opticli.slnx -c Release
+        shell: pwsh
+        run: .github/scripts/test-projects.ps1
+
+      - name: Report failed tests
+        if: failure()
+        shell: pwsh
+        run: .github/scripts/report-test-failures.ps1
 
       - name: Pack
         run: |
