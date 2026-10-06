@@ -2,7 +2,7 @@
 // plan (edge-cases.plan.json) needs, and at startup sets up what a plan can't create: a visitor group, a second site
 // whose start page is under the first site's, three sites for the site host tests, an approval sequence and language
 // settings. Each is made once, and only once the plan's content exists, so setup.sh restarts the site after applying
-// the plan.
+// the plan. The sites are made by EdgeSitesFixture.cs on CMS 12 and by Cms13Fixture.cs (as applications) on CMS 13.
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using EPiServer.Approvals;
@@ -52,7 +52,7 @@ public class EdgeDocument : MediaData
 
 [InitializableModule]
 [ModuleDependency(typeof(EPiServer.Web.InitializationModule))]
-public class EdgeCasesSetup : IInitializableModule
+public partial class EdgeCasesSetup : IInitializableModule
 {
     /// <summary>The GUIDs the plan gives these items ("guid" on their steps).</summary>
     public static readonly Guid NestedStart = Guid.Parse("6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e01");
@@ -83,33 +83,7 @@ public class EdgeCasesSetup : IInitializableModule
         {
             EnsureVisitorGroup(locate.GetInstance<IVisitorGroupRepository>());
             var content = locate.GetInstance<IContentRepository>();
-            var sites = locate.GetInstance<ISiteDefinitionRepository>();
-            if (Find(content, NestedStart) is { } nested)
-            {
-                EnsureNestedSite(sites, nested);
-            }
-            if (Find(content, HostsStartA) is { } hostsA)
-            {
-                EnsureSite(sites, HostsSiteA, hostsA, "https://hosts-a.localhost/",
-                [
-                    new HostDefinition { Name = "hosts-a.localhost", Type = HostDefinitionType.Primary },
-                    new HostDefinition { Name = "sv.hosts-a.example", Type = HostDefinitionType.Primary, Language = CultureInfo.GetCultureInfo("sv") },
-                    new HostDefinition { Name = "edit.hosts-a.localhost", Type = HostDefinitionType.Edit },
-                ]);
-            }
-            if (Find(content, HostsStartB) is { } hostsB)
-            {
-                EnsureSite(sites, HostsSiteB, hostsB, "https://hosts-b.localhost/", [new HostDefinition { Name = "hosts-b.localhost", Type = HostDefinitionType.Primary }]);
-            }
-            if (Find(content, HostsStartC) is { } hostsC)
-            {
-                var english = CultureInfo.GetCultureInfo("en");
-                EnsureSite(sites, HostsSiteC, hostsC, "https://hosts-c.localhost/",
-                [
-                    new HostDefinition { Name = "hosts-c.localhost", Type = HostDefinitionType.Primary, Language = english, UseSecureConnection = true },
-                    new HostDefinition { Name = "alt.hosts-c.localhost", Language = english, UseSecureConnection = true },
-                ]);
-            }
+            EnsureSites(locate, content);
             if (Find(content, ApprovalRoot) is { } approval)
             {
                 EnsureApproval(locate.GetInstance<IApprovalDefinitionRepository>(), approval);
@@ -131,6 +105,9 @@ public class EdgeCasesSetup : IInitializableModule
     {
     }
 
+    /// <summary>The nested site and the three hosts sites, as sites (CMS 12) or applications (CMS 13).</summary>
+    static partial void EnsureSites(IServiceProvider locate, IContentRepository content);
+
     private static ContentReference Find(IContentRepository content, Guid guid) =>
         content.TryGet<IContent>(guid, out var found) && !found.IsDeleted ? found.ContentLink.ToReferenceWithoutVersion() : null;
 
@@ -143,33 +120,6 @@ public class EdgeCasesSetup : IInitializableModule
         // No criteria: nobody matches, which is all a fixture needs.
         groups.Save(new VisitorGroup { Id = VisitorGroup, Name = "Edge visitors", Notes = "opticli edge-case fixture" });
         Console.Error.WriteLine("[edge-cases] created visitor group 'Edge visitors'");
-    }
-
-    private static void EnsureNestedSite(ISiteDefinitionRepository sites, ContentReference start)
-    {
-        if (sites.List().Any(s => s.Name == NestedSiteName))
-        {
-            return;
-        }
-        var site = new SiteDefinition
-        {
-            Name = NestedSiteName,
-            StartPage = start,
-            SiteUrl = new Uri($"http://{NestedHost}/"),
-            Hosts = [new HostDefinition { Name = NestedHost }],
-        };
-        sites.Save(site);
-        Console.Error.WriteLine($"[edge-cases] created site '{NestedSiteName}' with start page {start}");
-    }
-
-    private static void EnsureSite(ISiteDefinitionRepository sites, string name, ContentReference start, string url, IList<HostDefinition> hosts)
-    {
-        if (sites.List().Any(s => s.Name == name))
-        {
-            return;
-        }
-        sites.Save(new SiteDefinition { Name = name, StartPage = start, SiteUrl = new Uri(url), Hosts = hosts });
-        Console.Error.WriteLine($"[edge-cases] created site '{name}' with start page {start}");
     }
 
     private static void EnsureApproval(IApprovalDefinitionRepository approvals, ContentReference root)

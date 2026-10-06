@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Builds the edge-case site for opticli's integration tests: a copy of an Alloy site and of its database, with
-# EdgeCasesFixture.cs, JobsFixture.cs, UsersFixture.cs and OrphansFixture.cs added, and the content of
-# edge-cases.plan.json. The original site and database are not changed.
+# EdgeCasesFixture.cs, EdgeSitesFixture.cs, JobsFixture.cs, UsersFixture.cs and OrphansFixture.cs added (on CMS 13,
+# Cms13Fixture.cs instead of EdgeSitesFixture.cs and OrphansFixture.cs), and the content of edge-cases.plan.json. The
+# original site and database are not changed. The source can be CMS 12's Alloy or CMS 13's (tests/fixtures/cms13/
+# setup.sh's /demo/Alloy13, database alloy13).
 #
 #   setup.sh <alloy-project-dir> <target-dir> [<source-db> [<target-db>]]
 #
@@ -11,7 +13,7 @@
 set -euo pipefail
 
 if [ $# -lt 2 ]; then
-  sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 fi
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -44,7 +46,21 @@ if [ -d "$SOURCE/App_Data/blobs" ]; then
   rsync -a "$SOURCE/App_Data/blobs/" "$TARGET/App_Data/blobs/"
 fi
 mkdir -p "$TARGET/EdgeCases"
-cp "$HERE/EdgeCasesFixture.cs" "$HERE/JobsFixture.cs" "$HERE/UsersFixture.cs" "$HERE/OrphansFixture.cs" "$TARGET/EdgeCases/"
+project=$(find "$TARGET" -maxdepth 1 -name '*.csproj' | head -n 1)
+cms_major=$(sed -n 's:.*Include="EPiServer\.CMS" Version="\([0-9]*\)\..*:\1:p' "$project" | head -n 1)
+fixtures=("$HERE/EdgeCasesFixture.cs" "$HERE/EdgeSitesFixture.cs" "$HERE/JobsFixture.cs" "$HERE/UsersFixture.cs" "$HERE/OrphansFixture.cs")
+if [ "${cms_major:-12}" -ge 13 ]; then
+  # Orphan removal isn't supported on CMS 13 yet, and the fixture's property-definition API is gone there.
+  # Cms13Fixture.cs turns on visitor groups, which CMS 13 only registers when the site asks. No nested or hosts sites:
+  # CMS 13 refuses applications whose start pages overlap (see Cms13Fixture.cs).
+  echo "== CMS $cms_major: with Cms13Fixture.cs, without OrphansFixture.cs (orphan removal is CMS 12 only for now)"
+  fixtures=("$HERE/EdgeCasesFixture.cs" "$HERE/JobsFixture.cs" "$HERE/UsersFixture.cs" "$HERE/Cms13Fixture.cs")
+fi
+cp "${fixtures[@]}" "$TARGET/EdgeCases/"
+# The fixture names Alloy's StandardPage; the CMS 13 template's Alloy lives in the project's own namespace (Alloy13).
+namespace=$(sed -n 's:.*<RootNamespace>\(.*\)</RootNamespace>.*:\1:p' "$project" | head -n 1)
+namespace=${namespace:-$(basename "$project" .csproj)}
+sed -i "s/typeof(Alloy\.Models\./typeof($namespace.Models./g" "$TARGET/EdgeCases/EdgeCasesFixture.cs"
 for settings in "$TARGET"/appsettings*.json; do
   sed -i "s/Database=$SOURCE_DB;/Database=$TARGET_DB;/g; s/Initial Catalog=$SOURCE_DB;/Initial Catalog=$TARGET_DB;/g" "$settings"
 done
