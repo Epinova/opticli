@@ -50,7 +50,7 @@ public static class SiteHostsRunner
     {
         if (sharedDatabase && changes.FirstOrDefault(c => !SiteHostsRequest.AllowedOnSharedDatabase(c)) is { } refused)
         {
-            var name = Guid.TryParse(refused.Site, out var guid) ? sites.FirstOrDefault(s => s.Guid == guid)?.Name ?? refused.Site : refused.Site;
+            var name = sites.FirstOrDefault(s => string.Equals(s.Key, refused.Site, StringComparison.OrdinalIgnoreCase))?.Name ?? refused.Site;
             throw new RefusedException($"{Describe(refused, name)}: {SiteHostsRequest.SharedRefusal}", SiteHostsRequest.SharedHint);
         }
     }

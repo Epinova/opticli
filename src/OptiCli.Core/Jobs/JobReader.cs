@@ -1,5 +1,6 @@
 using Microsoft.Data.SqlClient;
 using OptiCli.Core.Data;
+using OptiCli.Core.SourceScan;
 
 namespace OptiCli.Core.Jobs;
 
@@ -82,25 +83,47 @@ public static class JobReader
         ORDER BY l.pkID
         """;
 
-    public static async Task<IReadOnlyList<JobRow>> ListAsync(CmsDatabase db, CancellationToken cancellationToken)
+    /// <summary>Every job, by name; on CMS 13 with the name admin mode shows rather than the class name it stores (<see cref="JobNames"/>).</summary>
+    /// <param name="sources">The jobs in the site's source, for the names of the site's own jobs on CMS 13; null when not scanned.</param>
+    public static async Task<IReadOnlyList<JobRow>> ListAsync(CmsDatabase db, CancellationToken cancellationToken, IReadOnlyList<ScheduledJobSource>? sources = null)
     {
         var hasHidden = (await db.QueryAsync(HasHiddenSql, r => r.GetInt32(0), cancellationToken)).Single() == 1;
-        return await db.QueryAsync(hasHidden ? ListWithHiddenSql : ListSql, ReadJob, cancellationToken);
+        var rows = await db.QueryAsync(hasHidden ? ListWithHiddenSql : ListSql, ReadJob, cancellationToken);
+        if ((await db.SchemaAsync(cancellationToken)).Major < 13)
+        {
+            return rows;
+        }
+        return rows
+            .Select(r => r with { Name = JobNames.Readable(r.Id, r.Name, r.TypeName, sources) })
+            .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     /// <returns>Null when there is no such job.</returns>
-    public static async Task<JobRow?> GetAsync(CmsDatabase db, Guid id, CancellationToken cancellationToken) =>
-        (await ListAsync(db, cancellationToken)).FirstOrDefault(j => j.Id == id);
+    public static async Task<JobRow?> GetAsync(CmsDatabase db, Guid id, CancellationToken cancellationToken, IReadOnlyList<ScheduledJobSource>? sources = null) =>
+        (await ListAsync(db, cancellationToken, sources)).FirstOrDefault(j => j.Id == id);
 
     /// <summary>Runs, the latest first.</summary>
     /// <param name="take">Rows to read; pass the page size + 1 to know whether there are more.</param>
-    public static Task<IReadOnlyList<JobLogRow>> LogAsync(CmsDatabase db, JobLogQuery query, int offset, int take, CancellationToken cancellationToken) =>
-        db.QueryAsync(LogSql, ReadLog, cancellationToken,
+    /// <param name="sources">As for <see cref="ListAsync"/>: the names of the site's own jobs on CMS 13.</param>
+    public static async Task<IReadOnlyList<JobLogRow>> LogAsync(CmsDatabase db, JobLogQuery query, int offset, int take, CancellationToken cancellationToken, IReadOnlyList<ScheduledJobSource>? sources = null) =>
+        await ReadableAsync(db, await db.QueryAsync(LogSql, ReadLog, cancellationToken,
             new SqlParameter("@job", System.Data.SqlDbType.UniqueIdentifier) { Value = (object?)query.Job ?? DBNull.Value },
             new SqlParameter("@failed", System.Data.SqlDbType.Bit) { Value = query.FailedOnly },
             new SqlParameter("@since", System.Data.SqlDbType.DateTime) { Value = (object?)query.Since ?? DBNull.Value },
             new SqlParameter("@offset", offset),
-            new SqlParameter("@take", take));
+            new SqlParameter("@take", take)), sources, cancellationToken);
+
+    /// <summary>On CMS 13, log rows with the jobs' shown names instead of the class names stored.</summary>
+    private static async Task<IReadOnlyList<JobLogRow>> ReadableAsync(CmsDatabase db, IReadOnlyList<JobLogRow> rows, IReadOnlyList<ScheduledJobSource>? sources, CancellationToken cancellationToken)
+    {
+        if (rows.Count == 0 || (await db.SchemaAsync(cancellationToken)).Major < 13)
+        {
+            return rows;
+        }
+        var names = (await ListAsync(db, cancellationToken, sources)).ToDictionary(j => j.Id, j => j.Name);
+        return rows.Select(r => names.TryGetValue(r.JobId, out var name) ? r with { JobName = name } : r).ToList();
+    }
 
     /// <summary>The id of the job's latest log row, 0 when it has none: the row a run writes after it has a higher one.</summary>
     public static async Task<long> LatestLogIdAsync(CmsDatabase db, Guid job, CancellationToken cancellationToken) =>
@@ -108,10 +131,10 @@ public static class JobReader
             new SqlParameter("@job", System.Data.SqlDbType.UniqueIdentifier) { Value = job })).Single();
 
     /// <summary>The job's first log row after <paramref name="after"/>; null while there is none.</summary>
-    public static async Task<JobLogRow?> LogAfterAsync(CmsDatabase db, Guid job, long after, CancellationToken cancellationToken) =>
-        (await db.QueryAsync(LogAfterSql, ReadLog, cancellationToken,
+    public static async Task<JobLogRow?> LogAfterAsync(CmsDatabase db, Guid job, long after, CancellationToken cancellationToken, IReadOnlyList<ScheduledJobSource>? sources = null) =>
+        (await ReadableAsync(db, await db.QueryAsync(LogAfterSql, ReadLog, cancellationToken,
             new SqlParameter("@job", System.Data.SqlDbType.UniqueIdentifier) { Value = job },
-            new SqlParameter("@after", System.Data.SqlDbType.BigInt) { Value = after })).FirstOrDefault();
+            new SqlParameter("@after", System.Data.SqlDbType.BigInt) { Value = after }), sources, cancellationToken)).FirstOrDefault();
 
     private static JobRow ReadJob(SqlDataReader r) => new(
         r.GetGuid("pkID"),

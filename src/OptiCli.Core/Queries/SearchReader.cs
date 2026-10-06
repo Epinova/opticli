@@ -19,7 +19,11 @@ public sealed record SearchMatch(string Property, string Snippet);
 
 public sealed record SearchHit(
     string Ref, Guid Guid, string Type, string? Name, string? Language, string Status, string? Url, bool? Deleted,
-    IReadOnlyList<SearchMatch> Matches);
+    IReadOnlyList<SearchMatch> Matches)
+{
+    /// <summary>CMS 13: true for a Visual Builder blueprint.</summary>
+    public bool? Blueprint { get; init; }
+}
 
 /// <summary>
 /// <c>search</c>: content names and text properties containing a string, in every language. Reads only
@@ -106,7 +110,10 @@ public sealed partial class SearchReader(ContentSession session)
                 var header = session.Identities.Header(group.Key.ContentId)!;
                 var identity = session.Identities.Describe(header, session.Model.Language(group.Key.LanguageId));
                 return new SearchHit(identity.Ref!, identity.Guid, identity.Type!, identity.Name, identity.Language, identity.Status!, identity.Url,
-                    identity.Deleted, group.Select(m => m.Match).DistinctBy(m => m.Property).ToList());
+                    identity.Deleted, group.Select(m => m.Match).DistinctBy(m => m.Property).ToList())
+                {
+                    Blueprint = identity.Blueprint,
+                };
             })
             .OrderBy(h => h.Matches.Any(m => m.Property == "name") ? 0 : 1)
             .ThenBy(h => h.Name, StringComparer.CurrentCultureIgnoreCase)

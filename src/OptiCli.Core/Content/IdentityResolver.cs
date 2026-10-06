@@ -88,6 +88,7 @@ public sealed class IdentityResolver(CmsDatabase db, CmsModel model)
             Urls.UrlOf(header, shown is { IsInvariant: false } ? shown : null)?.Path)
         {
             Deleted = header.Deleted ? true : null,
+            Blueprint = header.Blueprint ? true : null,
         };
     }
 }

@@ -7,6 +7,10 @@ namespace OptiCli.Core.Content;
 /// <summary>One row of <c>tblWorkContent</c>: a saved version of one language branch.</summary>
 /// <param name="Ref"><c>content_version</c>, usable as a ref.</param>
 /// <param name="Primary">True for the branch's primary version (the published one, when published).</param>
+/// <param name="Variation">
+/// CMS 13: the content variation the version belongs to (<c>tblContentVariation.Key</c>); null for a version of the
+/// content itself. A variation's version holds only the properties it changes.
+/// </param>
 public sealed record VersionInfo(
     string Ref,
     string? Language,
@@ -16,7 +20,8 @@ public sealed record VersionInfo(
     string? ChangedBy,
     DateTime? StartPublish,
     DateTime? DelayPublishUntil,
-    bool? Primary)
+    bool? Primary,
+    string? Variation = null)
 {
     [JsonIgnore] public int Id { get; init; }
 
@@ -52,30 +57,34 @@ public sealed record VersionInfo(
 
 public static class VersionReader
 {
-    private const string Columns = """
+    private static string Columns(CmsSchema schema) => $"""
         wc.pkID, wc.fkContentID, wc.fkLanguageBranchID, wc.Status, wc.Name, wc.Saved, wc.ChangedByName, wc.StartPublish,
         wc.StopPublish, wc.DelayPublishUntil, wc.ChildOrderRule, wc.PeerOrder, wc.LinkType, wc.LinkURL, wc.ContentLinkGUID, wc.ExternalURL,
-        f.FrameName, cl.Status AS BranchStatus, cl.Version AS BranchVersion, cd.CommonDraftId
+        f.FrameName, cl.Status AS BranchStatus, cl.Version AS BranchVersion, cd.CommonDraftId, {(schema.Variations ? "v.[Key]" : "NULL")} AS Variation
         """;
 
-    private static readonly string From = $"""
+    private static string From(CmsSchema schema) => $"""
         FROM tblWorkContent wc
         LEFT JOIN tblContentLanguage cl ON cl.fkContentID = wc.fkContentID AND cl.fkLanguageBranchID = wc.fkLanguageBranchID
         LEFT JOIN tblFrame f ON f.pkID = wc.fkFrameID
-        {ContentHeaderReader.CommonDraftApply}
+        {(schema.Variations ? "LEFT JOIN tblContentVariation v ON v.pkID = wc.fkVariationID" : "")}
+        {ContentHeaderReader.CommonDraftApply(schema)}
         """;
 
+    private static string Select(CmsModel model, string top = "") => $"SELECT {top}{Columns(model.Schema)} {From(model.Schema)}";
+
     public static async Task<VersionInfo?> ByIdAsync(CmsDatabase db, CmsModel model, int versionId, CancellationToken cancellationToken) =>
-        (await db.QueryAsync($"SELECT {Columns} {From} WHERE wc.pkID = @version", r => Map(r, model), cancellationToken,
+        (await db.QueryAsync($"{Select(model)} WHERE wc.pkID = @version", r => Map(r, model), cancellationToken,
             new SqlParameter("@version", versionId))).FirstOrDefault();
 
+    /// <summary>The branch's newest version, not counting a content variation's (CMS 13).</summary>
     public static async Task<VersionInfo?> LatestAsync(CmsDatabase db, CmsModel model, int contentId, int languageId, CancellationToken cancellationToken) =>
-        (await db.QueryAsync($"SELECT TOP 1 {Columns} {From} WHERE wc.fkContentID = @id AND wc.fkLanguageBranchID = @lang ORDER BY wc.pkID DESC",
+        (await db.QueryAsync($"{Select(model, "TOP 1 ")} WHERE wc.fkContentID = @id AND wc.fkLanguageBranchID = @lang{model.Schema.DefaultVariationOnly("wc")} ORDER BY wc.pkID DESC",
             r => Map(r, model), cancellationToken, new SqlParameter("@id", contentId), new SqlParameter("@lang", languageId))).FirstOrDefault();
 
-    /// <summary>The branch's published version; null when it isn't published.</summary>
+    /// <summary>The branch's published version, not a content variation's (CMS 13); null when it isn't published.</summary>
     public static async Task<VersionInfo?> PublishedAsync(CmsDatabase db, CmsModel model, int contentId, int languageId, CancellationToken cancellationToken) =>
-        (await db.QueryAsync($"SELECT TOP 1 {Columns} {From} WHERE wc.fkContentID = @id AND wc.fkLanguageBranchID = @lang AND wc.Status = {(int)VersionStatus.Published} ORDER BY wc.pkID DESC",
+        (await db.QueryAsync($"{Select(model, "TOP 1 ")} WHERE wc.fkContentID = @id AND wc.fkLanguageBranchID = @lang AND wc.Status = {(int)VersionStatus.Published}{model.Schema.DefaultVariationOnly("wc")} ORDER BY wc.pkID DESC",
             r => Map(r, model), cancellationToken, new SqlParameter("@id", contentId), new SqlParameter("@lang", languageId))).FirstOrDefault();
 
     /// <summary>
@@ -87,10 +96,10 @@ public static class VersionReader
         CmsDatabase db, CmsModel model, int contentId, int languageId, int upTo, string except, CancellationToken cancellationToken)
     {
         var sql = $"""
-            SELECT {Columns} {From}
-            WHERE wc.fkContentID = @id AND wc.fkLanguageBranchID = @lang AND wc.pkID <= @upTo
+            {Select(model)}
+            WHERE wc.fkContentID = @id AND wc.fkLanguageBranchID = @lang AND wc.pkID <= @upTo{model.Schema.DefaultVariationOnly("wc")}
               AND wc.pkID > ISNULL((SELECT MAX(p.pkID) FROM tblWorkContent p
-                                    WHERE p.fkContentID = @id AND p.fkLanguageBranchID = @lang AND p.Status = {(int)VersionStatus.Published}), 0)
+                                    WHERE p.fkContentID = @id AND p.fkLanguageBranchID = @lang AND p.Status = {(int)VersionStatus.Published}{model.Schema.DefaultVariationOnly("p")}), 0)
               AND ISNULL(LTRIM(RTRIM(wc.ChangedByName)), '') <> @except
             ORDER BY wc.pkID DESC
             """;
@@ -99,12 +108,15 @@ public static class VersionReader
             new SqlParameter("@except", except));
     }
 
-    /// <summary>Newest first; fetches one row more than <paramref name="limit"/> so callers can tell whether more exist.</summary>
+    /// <summary>
+    /// Newest first, a content variation's versions (CMS 13) included, marked as such; fetches one row more than
+    /// <paramref name="limit"/> so callers can tell whether more exist.
+    /// </summary>
     public static Task<IReadOnlyList<VersionInfo>> ListAsync(
         CmsDatabase db, CmsModel model, int contentId, int? languageId, int offset, int limit, CancellationToken cancellationToken)
     {
         var sql = $"""
-            SELECT {Columns} {From}
+            {Select(model)}
             WHERE wc.fkContentID = @id AND (@lang IS NULL OR wc.fkLanguageBranchID = @lang)
             ORDER BY wc.pkID DESC
             OFFSET @offset ROWS FETCH NEXT @take ROWS ONLY
@@ -122,6 +134,7 @@ public static class VersionReader
         var contentId = r.GetInt32("fkContentID");
         var languageId = r.GetInt32("fkLanguageBranchID");
         var status = VersionStatuses.From(r.GetInt32OrNull("Status"));
+        var variation = r.GetStringOrNull("Variation");
         return new VersionInfo(
             ContentIdentity.RefFor(contentId, id),
             model.Language(languageId)?.DisplayCode,
@@ -131,9 +144,10 @@ public static class VersionReader
             r.GetStringOrNull("ChangedByName"),
             r.GetDateTimeOrNull("StartPublish"),
             r.GetDateTimeOrNull("DelayPublishUntil"),
-            VersionStatuses.PrimaryVersion(VersionStatuses.From(r.GetInt32OrNull("BranchStatus")), r.GetInt32OrNull("BranchVersion"), r.GetInt32OrNull("CommonDraftId")) == id
+            variation is null && VersionStatuses.PrimaryVersion(VersionStatuses.From(r.GetInt32OrNull("BranchStatus")), r.GetInt32OrNull("BranchVersion"), r.GetInt32OrNull("CommonDraftId")) == id
                 ? true
-                : null)
+                : null,
+            variation)
         {
             Id = id,
             ContentId = contentId,

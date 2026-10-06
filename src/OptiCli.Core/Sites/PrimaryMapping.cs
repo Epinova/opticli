@@ -66,7 +66,7 @@ public static class PrimaryMapping
         // The options are the site's: one entry's keepEdit keeps the Edit host that the site's other entries would demote.
         return pairs.Select(p =>
         {
-            var site = pairs.Where(o => o.Site.Guid == p.Site.Guid).ToList();
+            var site = pairs.Where(o => o.Site.Id == p.Site.Id).ToList();
             return p with { KeepEdit = site.Any(o => o.KeepEdit), KeepSiteUrl = site.Any(o => o.KeepSiteUrl) };
         }).ToList();
     }

@@ -382,7 +382,7 @@ public sealed class SiteHostsTests
 
     private static SiteHostChange Primary(SiteInfo site, string host, string? language = null, string? https = null, bool keepEdit = false) => new()
     {
-        Site = site.Guid.ToString("D"),
+        Site = site.Key,
         Host = host,
         Action = SiteHostActions.Primary,
         Language = language,
@@ -392,7 +392,7 @@ public sealed class SiteHostsTests
 
     private static SiteHostChange Add(SiteInfo site, string host, HostInfo? like = null) => new()
     {
-        Site = site.Guid.ToString("D"),
+        Site = site.Key,
         Host = host,
         Action = SiteHostActions.Add,
         Type = like is null ? null : HostTypes.FromValue((int)like.Type),
@@ -400,7 +400,7 @@ public sealed class SiteHostsTests
         Https = like is null ? null : HostHttps.Format(like.Https),
     };
 
-    private static SiteHostChange Remove(SiteInfo site, string host) => new() { Site = site.Guid.ToString("D"), Host = host, Action = SiteHostActions.Remove };
+    private static SiteHostChange Remove(SiteInfo site, string host) => new() { Site = site.Key, Host = host, Action = SiteHostActions.Remove };
 
     /// <summary>As <c>sites primary</c> sends a pair: the host as typed, with the https setting.</summary>
     private static SiteHostChange ToChange(PrimaryPair pair) =>

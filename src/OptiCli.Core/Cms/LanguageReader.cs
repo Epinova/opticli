@@ -18,9 +18,19 @@ public static class LanguageReader
         ORDER BY s.pkID
         """;
 
+    private static readonly string ApplicationMasterLanguagesSql = $"""
+        SELECT c.fkMasterLanguageBranchID AS LanguageId, a.DisplayName AS Name
+        FROM tblApplication a
+        JOIN tblContent c ON c.pkID = TRY_CAST(a.RoutingEntryPoint AS int)
+        WHERE a.Type IN ({ApplicationTypes.InProcessWebsite}, {ApplicationTypes.Website})
+        ORDER BY a.pkID
+        """;
+
     public static async Task<IReadOnlyList<LanguageInfo>> ListAsync(CmsDatabase db, CancellationToken cancellationToken)
     {
-        var masters = await db.QueryAsync(MasterLanguagesSql, r => (LanguageId: r.GetInt32("LanguageId"), Site: r.GetString("Name")), cancellationToken);
+        // The sites' names as `opticli sites` prints them: on CMS 13 the applications' display names.
+        var sql = (await db.SchemaAsync(cancellationToken)).Applications ? ApplicationMasterLanguagesSql : MasterLanguagesSql;
+        var masters = await db.QueryAsync(sql, r => (LanguageId: r.GetInt32("LanguageId"), Site: r.GetString("Name")), cancellationToken);
         var sitesByLanguage = masters.ToLookup(m => m.LanguageId, m => m.Site);
 
         return await db.QueryAsync(LanguagesSql, r =>

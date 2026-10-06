@@ -15,6 +15,12 @@ public static class PackageVersions
     public static string? FindCms(CsprojFile project) =>
         Find(project, CsprojFile.CmsPackage) ?? FindResolved(project, CsprojFile.CmsPackage);
 
+    /// <summary>The major version of a package version (<c>13.3.0</c> → 13); null when there is none or it doesn't parse.</summary>
+    public static int? Major(string? version) =>
+        version?.Trim().Split('.', '-', '+')[0] is { Length: > 0 } major && int.TryParse(major, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var value)
+            ? value
+            : null;
+
     /// <summary>
     /// The version of <paramref name="packageId"/> as the project declares it: on its PackageReference,
     /// or, with central package management, in the nearest Directory.Packages.props above it.

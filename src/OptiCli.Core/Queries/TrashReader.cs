@@ -120,7 +120,8 @@ public sealed class TrashReader(ContentSession session, Func<CancellationToken, 
 /// <summary>
 /// The parent each item had before its last move, as the CMS stores it for the edit UI's Restore: its
 /// <c>ParentRestoreService</c> saves every move's previous parent in the Dynamic Data Store, store
-/// <c>EPiParentRestoreStore</c>, keyed on the moved item (<c>SourceLink</c>), and deletes the entry when the item is
+/// <c>EPiParentRestoreStore</c>, keyed on the moved item (<c>SourceLink</c>; CMS 13 renamed the two properties
+/// <c>Source</c> and <c>Parent</c> when it upgrades the store), and deletes the entry when the item is
 /// deleted for good. <c>restore</c> reads it through the CMS (<c>IParentRestoreRepository</c>), and so does <c>trash</c>
 /// while <c>serve</c> runs (<see cref="ThroughSiteAsync"/>); without it, <see cref="ReadAsync"/> reads the store's rows.
 /// </summary>
@@ -141,11 +142,12 @@ public static class RestoreParents
         var ids = contentIds.Distinct().ToList();
         var result = new Dictionary<int, int>();
         if (ids.Count == 0
-            || await DynamicDataStore.FindAsync(db, StoreName, ["SourceLink", "ParentLink"], cancellationToken) is not { } store
-            || store.Column("SourceLink") is not { } source || store.Column("ParentLink") is not { } parent)
+            || await DynamicDataStore.FindAsync(db, StoreName, [.. Cms13Properties, .. Cms12Properties], cancellationToken) is not { } store
+            || Columns(store) is not { } columns)
         {
             return result;
         }
+        var (source, parent) = columns;
         foreach (var list in SqlLists.Ints(ids))
         {
             // A ContentReference is stored as ContentReference.ToString(): "123", "123_456", or "123__provider" for a
@@ -166,6 +168,17 @@ public static class RestoreParents
         }
         return result;
     }
+
+    /// <summary>The item's and the parent's property names: CMS 13's, which its <c>ParentRestoreRemapService</c> renames the store to.</summary>
+    private static readonly string[] Cms13Properties = ["Source", "Parent"];
+
+    private static readonly string[] Cms12Properties = ["SourceLink", "ParentLink"];
+
+    /// <summary>The columns of the item and its parent: CMS 13's names when the store maps them, else CMS 12's; null for neither.</summary>
+    internal static (string Source, string Parent)? Columns(DynamicDataStore store) =>
+        store.Column(Cms13Properties[0]) is { } source && store.Column(Cms13Properties[1]) is { } parent ? (source, parent)
+        : store.Column(Cms12Properties[0]) is { } oldSource && store.Column(Cms12Properties[1]) is { } oldParent ? (oldSource, oldParent)
+        : null;
 
     /// <summary>The same, through the running site: the CMS's own answer, as <c>restore</c> gets it.</summary>
     /// <exception cref="Errors.OptiCliException">The site couldn't answer (an agent older than this opticli: <c>not_found</c>).</exception>

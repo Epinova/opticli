@@ -15,11 +15,11 @@ public sealed record CsprojFile(
     string? AssemblyName,
     IReadOnlyDictionary<string, string?> PackageReferences)
 {
-    /// <summary>The package that makes a project a CMS 12 web site.</summary>
+    /// <summary>The package that makes a project a CMS 12 or 13 web site.</summary>
     public const string CmsPackage = "EPiServer.CMS.AspNetCore";
 
     /// <summary>The CMS meta package, which brings <see cref="CmsPackage"/> in transitively.</summary>
-    private const string CmsMetaPackage = "EPiServer.CMS";
+    public const string CmsMetaPackage = "EPiServer.CMS";
 
     public bool IsCmsProject => PackageReferences.ContainsKey(CmsPackage) || PackageReferences.ContainsKey(CmsMetaPackage);
 

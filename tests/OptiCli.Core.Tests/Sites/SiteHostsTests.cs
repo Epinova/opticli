@@ -311,7 +311,7 @@ public class SiteHostsTests : IDisposable
     [Fact]
     public void Shared_mode_refuses_everything_but_adding_an_undefined_host_before_the_agent_is_asked()
     {
-        SiteHostChange Change(string action, string? type = null) => new() { Site = Sites[0].Guid.ToString(), Host = "localhost:5001", Action = action, Type = type };
+        SiteHostChange Change(string action, string? type = null) => new() { Site = Sites[0].Key, Host = "localhost:5001", Action = action, Type = type };
 
         var refused = Assert.Throws<RefusedException>(() => SiteHostsRunner.RequireAllowed([Change(SiteHostActions.Primary)], Sites, sharedDatabase: true));
         Assert.StartsWith("sites primary \"Site A=localhost:5001\": ", refused.Message);

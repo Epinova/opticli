@@ -154,7 +154,7 @@ internal static class SitesCommand
 
             var changes = list.Select(p => new SiteHostChange
             {
-                Site = p.Site.Guid.ToString("D"),
+                Site = p.Site.Key,
                 Host = p.Typed,
                 Action = SiteHostActions.Primary,
                 Language = p.Language,
@@ -259,7 +259,7 @@ internal static class SitesCommand
             var target = PrimaryPairs.RequireSite(parse.GetValue(site)!, session.Model.Sites.All);
             var change = new SiteHostChange
             {
-                Site = target.Guid.ToString("D"),
+                Site = target.Key,
                 // As typed: the site normalises it the same way, with the https setting deciding which port is the default one.
                 Host = parse.GetValue(name)!.Trim(),
                 Action = SiteHostActions.Add,
@@ -294,7 +294,7 @@ internal static class SitesCommand
             var host = parse.GetValue(name)!.Trim();
             await using var session = await context.OpenContentAsync(cancellationToken);
             var target = PrimaryPairs.RequireSite(parse.GetValue(site)!, session.Model.Sites.All);
-            var change = new SiteHostChange { Site = target.Guid.ToString("D"), Host = host, Action = SiteHostActions.Remove };
+            var change = new SiteHostChange { Site = target.Key, Host = host, Action = SiteHostActions.Remove };
             return await RunAsync(context, session, [change], parse.GetValue(write.DryRun), [], cancellationToken);
         });
         return command;

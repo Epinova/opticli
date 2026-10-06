@@ -1,4 +1,5 @@
 using Microsoft.Data.SqlClient;
+using OptiCli.Core.Content;
 using OptiCli.Core.Data;
 using OptiCli.Protocol;
 
@@ -27,12 +28,12 @@ public static class ContentTypeReader
         ORDER BY ct.Name
         """;
 
-    private const string PropertiesSql = """
-        SELECT pd.pkID, pd.Name, pdt.Name AS DataType, bt.Name AS BlockType, pd.IsList, pd.LanguageSpecific,
+    internal static string PropertiesSql(CmsSchema schema) => $"""
+        SELECT pd.pkID, pd.Name, {CmsModel.PropertyTypeName(schema)} AS DataType, bt.Name AS BlockType, pd.IsList, pd.LanguageSpecific,
                pd.Required, g.Name AS Tab, pd.FieldOrder, pd.EditCaption, pd.ExistsOnModel
         FROM tblPropertyDefinition pd
         LEFT JOIN tblPropertyDefinitionType pdt ON pdt.pkID = pd.fkPropertyDefinitionTypeID
-        LEFT JOIN tblContentType bt ON bt.ContentTypeGUID = pdt.fkContentTypeGUID
+        {CmsModel.BlockTypeJoin(schema)}
         LEFT JOIN tblPropertyDefinitionGroup g ON g.pkID = pd.Advanced
         WHERE pd.fkContentTypeID = @typeId
         ORDER BY pd.Name
@@ -73,8 +74,8 @@ public static class ContentTypeReader
         return values;
     }
 
-    public static Task<IReadOnlyList<PropertyDefinitionInfo>> ListPropertiesAsync(CmsDatabase db, int contentTypeId, CancellationToken cancellationToken) =>
-        db.QueryAsync(PropertiesSql, r => new PropertyDefinitionInfo(
+    public static async Task<IReadOnlyList<PropertyDefinitionInfo>> ListPropertiesAsync(CmsDatabase db, int contentTypeId, CancellationToken cancellationToken) =>
+        await db.QueryAsync(PropertiesSql(await db.SchemaAsync(cancellationToken)), r => new PropertyDefinitionInfo(
             r.GetInt32("pkID"),
             r.GetString("Name"),
             r.GetStringOrNull("DataType"),

@@ -15,12 +15,13 @@ public static class ContentKinds
     /// <summary>
     /// Derives the kind from <c>tblContentType.Base</c> (Page, Block, Folder, Media, Image, Video,
     /// Setting, ...) and falls back to <c>tblContentType.ContentType</c> (0 page, 1 block) when
-    /// Base is missing.
+    /// Base is missing. CMS 13's Visual Builder experiences are pages (<c>ExperienceData : PageData</c>) and its
+    /// sections blocks (<c>SectionData : BlockData</c>), though their <c>ContentType</c> is 2.
     /// </summary>
     public static ContentKind From(int contentType, string? typeBase) => typeBase?.ToLowerInvariant() switch
     {
-        "page" => ContentKind.Page,
-        "block" => ContentKind.Block,
+        "page" or "experience" => ContentKind.Page,
+        "block" or "section" => ContentKind.Block,
         "folder" => ContentKind.Folder,
         "media" or "image" or "video" => ContentKind.Media,
         null or "" => contentType switch

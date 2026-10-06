@@ -12,13 +12,32 @@ namespace OptiCli.Core.Content;
 /// </summary>
 public sealed class CmsModel
 {
-    private const string PropertiesSql = """
-        SELECT pd.pkID, ISNULL(pd.fkContentTypeID, 0) AS ContentTypeId, pd.Name, pdt.Name AS TypeName,
+    /// <summary>Every property definition with its block type, if it is a block property (<see cref="BlockTypeJoin"/>).</summary>
+    internal static string PropertiesSql(CmsSchema schema) => $"""
+        SELECT pd.pkID, ISNULL(pd.fkContentTypeID, 0) AS ContentTypeId, pd.Name, {PropertyTypeName(schema)} AS TypeName,
                pdt.Property AS BaseType, bt.pkID AS BlockTypeId, pd.LanguageSpecific, pd.IsList
         FROM tblPropertyDefinition pd
         JOIN tblPropertyDefinitionType pdt ON pdt.pkID = pd.fkPropertyDefinitionTypeID
-        LEFT JOIN tblContentType bt ON bt.ContentTypeGUID = pdt.fkContentTypeGUID
+        {BlockTypeJoin(schema)}
         """;
+
+    /// <summary>
+    /// <c>LEFT JOIN tblContentType bt</c> on a block property's block type, for a query over <c>tblPropertyDefinition pd</c>
+    /// and <c>tblPropertyDefinitionType pdt</c>. CMS 12 gives every block type a property type of its own
+    /// (<c>pdt.fkContentTypeGUID</c>); CMS 13 has one generic <c>Block</c> type (<c>Property</c> 12, whose row id differs
+    /// per database) and keeps the block type in <c>pd.ItemTypeID</c>.
+    /// </summary>
+    internal static string BlockTypeJoin(CmsSchema schema) => schema.BlockTypeOnPropertyDefinition
+        ? $"LEFT JOIN tblContentType bt ON pdt.Property = {(int)PropertyBaseType.Block} AND bt.ContentTypeGUID = pd.ItemTypeID"
+        : "LEFT JOIN tblContentType bt ON bt.ContentTypeGUID = pdt.fkContentTypeGUID";
+
+    /// <summary>
+    /// A property's type name, as CMS 12 names it: a block property's is its block type's name (<c>SiteLogotypeBlock</c>),
+    /// which CMS 13's one generic type (<c>Block</c>) no longer is, so there it comes from <see cref="BlockTypeJoin"/>.
+    /// </summary>
+    internal static string PropertyTypeName(CmsSchema schema) => schema.BlockTypeOnPropertyDefinition
+        ? "CASE WHEN bt.pkID IS NOT NULL THEN bt.Name ELSE pdt.Name END"
+        : "pdt.Name";
 
     private const string LanguagesSql = """
         SELECT pkID, RTRIM(ISNULL(LanguageID, '')) AS Code, Name, URLSegment, Enabled
@@ -67,8 +86,10 @@ public sealed class CmsModel
         int? contentAssetsRoot,
         IReadOnlyDictionary<int, string>? categories = null,
         LanguageSettings? languageSettings = null,
-        IReadOnlyDictionary<Guid, string>? visitorGroups = null)
+        IReadOnlyDictionary<Guid, string>? visitorGroups = null,
+        CmsSchema? schema = null)
     {
+        Schema = schema ?? CmsSchema.Cms12;
         VisitorGroups = visitorGroups ?? new Dictionary<Guid, string>();
         LanguageSettings = languageSettings ?? LanguageSettings.None;
         _categories = categories ?? new Dictionary<int, string>();
@@ -79,6 +100,9 @@ public sealed class CmsModel
         Languages = languages;
         Sites = new SiteMap(sites, languages, globalAssetsRoot, contentAssetsRoot, LanguageSettings);
     }
+
+    /// <summary>The database's schema: which SQL variant a reader working from the model uses.</summary>
+    public CmsSchema Schema { get; }
 
     /// <summary>Visitor group names by id, from the Dynamic Data Store's visitor group store (names only).</summary>
     public IReadOnlyDictionary<Guid, string> VisitorGroups { get; }
@@ -99,8 +123,9 @@ public sealed class CmsModel
 
     public static async Task<CmsModel> LoadAsync(CmsDatabase db, CancellationToken cancellationToken)
     {
+        var schema = await db.SchemaAsync(cancellationToken);
         var types = await ContentTypeReader.ListAsync(db, cancellationToken);
-        var properties = await db.QueryAsync(PropertiesSql, r => new PropertyDefinition(
+        var properties = await db.QueryAsync(PropertiesSql(schema), r => new PropertyDefinition(
             r.GetInt32("pkID"),
             r.GetInt32("ContentTypeId"),
             r.GetString("Name"),
@@ -130,7 +155,7 @@ public sealed class CmsModel
         int? Root(string name) => roots.Where(r => r.Name == name).Select(r => (int?)r.Id).FirstOrDefault();
         return new CmsModel(types, properties, languages, sites, Root("SysGlobalAssets"), Root("SysContentAssets"),
             categories.ToDictionary(c => c.Id, c => c.Name), new LanguageSettings(settings),
-            visitorGroups.GroupBy(g => g.Id).ToDictionary(g => g.Key, g => g.First().Name));
+            visitorGroups.GroupBy(g => g.Id).ToDictionary(g => g.Key, g => g.First().Name), schema);
     }
 
     public ContentTypeInfo? Type(int id) => _types.GetValueOrDefault(id);

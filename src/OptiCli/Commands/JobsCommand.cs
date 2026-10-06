@@ -51,14 +51,15 @@ internal static class JobsCommand
             {
                 throw new UsageException("--enabled and --disabled exclude each other; leave both out for every job.");
             }
+            var warnings = new List<string>();
+            var sources = Sources(context, warnings);
             IReadOnlyList<JobRow> rows;
             await using (var db = await context.OpenDatabaseAsync(cancellationToken))
             {
-                rows = await JobReader.ListAsync(db, cancellationToken);
+                rows = await JobReader.ListAsync(db, cancellationToken, sources);
             }
-            var warnings = new List<string>();
             var project = context.TryGetProject(out _);
-            var views = JobViews.List(rows, Sources(context, warnings), project is null ? new HashSet<string>() : ScheduledJobSources.Assemblies(project.SourceRoot), DateTime.UtcNow, parse.GetValue(all))
+            var views = JobViews.List(rows, sources, project is null ? new HashSet<string>() : ScheduledJobSources.Assemblies(project.SourceRoot), DateTime.UtcNow, parse.GetValue(all))
                 .Where(v => !parse.GetValue(enabled) || v.Enabled)
                 .Where(v => !parse.GetValue(disabled) || !v.Enabled)
                 .Where(v => !parse.GetValue(failed) || v.LastStatus is JobStatuses.Failed or JobStatuses.UnableToStart or JobStatuses.Aborted)
@@ -110,12 +111,15 @@ internal static class JobsCommand
             var (offset, limit) = Paging.Window(parse.GetValue(list.Limit) ?? DefaultLogLimit, parse.GetValue(list.Cursor));
             await using var db = await context.OpenDatabaseAsync(cancellationToken);
             Guid? id = null;
-            if (parse.GetValue(job) is { } reference)
+            // The site's jobs' names: to find one by name, and on CMS 13, where the database has only class names, to show them.
+            var reference = parse.GetValue(job);
+            var sources = reference is not null || (await db.SchemaAsync(cancellationToken)).Major >= 13 ? Sources(context, null) : null;
+            if (reference is not null)
             {
-                var rows = await JobReader.ListAsync(db, cancellationToken);
-                id = JobReferences.Resolve(reference, rows, Sources(context, null)).Id;
+                var rows = await JobReader.ListAsync(db, cancellationToken, sources);
+                id = JobReferences.Resolve(reference, rows, sources).Id;
             }
-            var runs = await JobReader.LogAsync(db, new JobLogQuery(id, parse.GetValue(failed), from), offset, limit + 1, cancellationToken);
+            var runs = await JobReader.LogAsync(db, new JobLogQuery(id, parse.GetValue(failed), from), offset, limit + 1, cancellationToken, sources);
             return CommandResult.From(Paging.FromWindow(runs.Select(JobViews.From).ToList(), offset, limit));
         });
         return command;
@@ -162,7 +166,8 @@ internal static class JobsCommand
                 throw new UsageException("--timeout is how long to wait; --no-wait and --dry-run don't wait.");
             }
             await using var db = await context.OpenDatabaseAsync(cancellationToken);
-            var target = JobReferences.Resolve(parse.GetValue(job)!, await JobReader.ListAsync(db, cancellationToken), Sources(context, null));
+            var jobSources = Sources(context, null);
+            var target = JobReferences.Resolve(parse.GetValue(job)!, await JobReader.ListAsync(db, cancellationToken, jobSources), jobSources);
             var shared = !db.ConnectionString.IsLocal;
             JobRunner.RequireRunnable(target, shared, parse.GetValue(allowDestructive));
             var agent = await context.ConnectAgentAsync(cancellationToken);
@@ -195,7 +200,8 @@ internal static class JobsCommand
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
         {
             await using var db = await context.OpenDatabaseAsync(cancellationToken);
-            var target = JobReferences.Resolve(context.Parse.GetValue(job)!, await JobReader.ListAsync(db, cancellationToken), Sources(context, null));
+            var jobSources = Sources(context, null);
+            var target = JobReferences.Resolve(context.Parse.GetValue(job)!, await JobReader.ListAsync(db, cancellationToken, jobSources), jobSources);
             var shared = !db.ConnectionString.IsLocal;
             JobRunner.RequireLocal(shared);
             var (view, warnings) = await JobRunner.StopAsync(await context.ConnectAgentAsync(cancellationToken), db, target, shared, context.Parse.GetValue(write.DryRun), cancellationToken);
@@ -249,7 +255,8 @@ internal static class JobsCommand
                 throw new UsageException("Nothing to change: give --enabled, --every or --next.");
             }
             await using var db = await context.OpenDatabaseAsync(cancellationToken);
-            var target = JobReferences.Resolve(parse.GetValue(job)!, await JobReader.ListAsync(db, cancellationToken), Sources(context, null));
+            var jobSources = Sources(context, null);
+            var target = JobReferences.Resolve(parse.GetValue(job)!, await JobReader.ListAsync(db, cancellationToken, jobSources), jobSources);
             var shared = !db.ConnectionString.IsLocal;
             JobRunner.RequireSettable(target, shared, enable, interval, when, parse.GetValue(allowDestructive));
             var result = await JobRunner.SetAsync(await context.ConnectAgentAsync(cancellationToken), target, shared, enable, interval, when,

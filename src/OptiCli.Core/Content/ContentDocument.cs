@@ -4,6 +4,7 @@ namespace OptiCli.Core.Content;
 
 /// <summary>The result of <c>get</c>: identity, version facts and decoded properties.</summary>
 /// <param name="Version">The version shown, as a ref (<c>123_456</c>).</param>
+/// <param name="Variation">CMS 13: the content variation the version shown belongs to; null for the content's own versions.</param>
 /// <param name="Languages">All language branches the item has.</param>
 /// <param name="LatestDraft">A newer unpublished version of this branch, when one exists.</param>
 /// <param name="ChildSortOrder">Pages only: how its children are sorted (<c>FilterSortOrder</c> name).</param>
@@ -28,6 +29,7 @@ public sealed record ContentDocument(
     string? Url,
     string Kind,
     string? Version,
+    string? Variation,
     string? MasterLanguage,
     IReadOnlyList<string> Languages,
     string? Parent,
@@ -47,7 +49,11 @@ public sealed record ContentDocument(
     Queries.ApprovalSequence? Approval,
     IReadOnlyList<Queries.ItemProject>? Projects,
     IReadOnlyList<string>? Notes,
-    JsonObject Properties);
+    JsonObject Properties)
+{
+    /// <summary>CMS 13: true for a Visual Builder blueprint, a template for new content rather than content itself.</summary>
+    public bool? Blueprint { get; init; }
+}
 
 /// <summary>A page's shortcut, in the shape <c>set Shortcut</c> takes (with <see cref="To"/> as an identity).</summary>
 /// <param name="Type"><c>shortcut</c>, <c>external</c>, <c>fetchData</c> or <c>inactive</c>.</param>

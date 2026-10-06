@@ -26,6 +26,17 @@ public sealed class CmsDatabase : IAsyncDisposable
 
     public string? Database => ConnectionString.Database;
 
+    private CmsSchema? _schema;
+
+    /// <summary>The database's CMS schema, read on first use and kept for the connection's life (one invocation).</summary>
+    public async Task<CmsSchema> SchemaAsync(CancellationToken cancellationToken) =>
+        _schema ??= (await QueryAsync(CmsSchema.Sql, r => new CmsSchema(
+            r.GetInt32OrNull("SchemaVersion"),
+            r.GetBooleanOrNull("ItemTypeID") == true,
+            r.GetBooleanOrNull("Applications") == true,
+            r.GetBooleanOrNull("Variations") == true,
+            r.GetBooleanOrNull("Blueprints") == true), cancellationToken)).Single();
+
     public static async Task<CmsDatabase> OpenAsync(VerifiedConnectionString connectionString, CancellationToken cancellationToken)
     {
         var builder = new SqlConnectionStringBuilder(connectionString.Value) { ApplicationName = "opticli" };

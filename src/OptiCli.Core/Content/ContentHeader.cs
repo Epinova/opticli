@@ -18,6 +18,12 @@ public sealed record ContentHeader(
     int PeerOrder,
     IReadOnlyDictionary<int, ContentLanguageRow> Languages)
 {
+    /// <summary>
+    /// CMS 13: a Visual Builder blueprint (<c>tblContent.Blueprint</c>), a template new content is made from, not content
+    /// visitors see.
+    /// </summary>
+    public bool Blueprint { get; init; }
+
     /// <summary>Ancestor ids from the root down to the parent.</summary>
     public IReadOnlyList<int> AncestorIds => ContentPaths.Parse(ContentPath);
 

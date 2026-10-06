@@ -117,7 +117,7 @@ public static class PrimaryPairs
         return (RequireSite(text, sites), null);
     }
 
-    /// <summary>A site by name (case-insensitive), id or GUID, as <c>opticli sites</c> prints them.</summary>
+    /// <summary>A site by name (case-insensitive), id or GUID, as <c>opticli sites</c> prints them; on CMS 13 also by application name.</summary>
     /// <exception cref="NotFoundException">No such site; the hint has close names.</exception>
     public static SiteInfo RequireSite(string text, IReadOnlyList<SiteInfo> sites) =>
         Find(text, sites) ?? throw new NotFoundException(
@@ -129,7 +129,8 @@ public static class PrimaryPairs
     private static SiteInfo? Find(string text, IReadOnlyList<SiteInfo> sites)
     {
         var input = text.Trim();
-        if (sites.FirstOrDefault(s => s.Name.Equals(input, StringComparison.OrdinalIgnoreCase)) is { } byName)
+        if ((sites.FirstOrDefault(s => s.Name.Equals(input, StringComparison.OrdinalIgnoreCase))
+            ?? sites.FirstOrDefault(s => string.Equals(s.Application, input, StringComparison.OrdinalIgnoreCase))) is { } byName)
         {
             return byName;
         }

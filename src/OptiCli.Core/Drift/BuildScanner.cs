@@ -23,7 +23,9 @@ public static class BuildScanner
     /// <summary>The CMS's own schema version check, in <c>EPiServer.Data.dll</c>.</summary>
     private const string SchemaValidatorNamespace = "EPiServer.Data.SchemaUpdates.Internal";
     private const string SchemaValidatorType = "DatabaseVersionValidator";
-    private const string SchemaVersionField = "RequiredDatabaseVersion";
+
+    /// <summary>The constant with the schema version the packages need: CMS 12's name, then CMS 13's.</summary>
+    private static readonly string[] SchemaVersionFields = ["RequiredDatabaseVersion", "MinimumDatabaseVersion"];
 
     public const string CmsDataAssembly = "EPiServer.Data.dll";
 
@@ -118,7 +120,7 @@ public static class BuildScanner
             foreach (var fieldHandle in type.GetFields())
             {
                 var field = reader.GetFieldDefinition(fieldHandle);
-                if (reader.StringComparer.Equals(field.Name, SchemaVersionField) && field.GetDefaultValue() is { IsNil: false } constantHandle
+                if (SchemaVersionFields.Any(name => reader.StringComparer.Equals(field.Name, name)) && field.GetDefaultValue() is { IsNil: false } constantHandle
                     && reader.GetConstant(constantHandle) is { TypeCode: ConstantTypeCode.Int32 } constant)
                 {
                     return reader.GetBlobReader(constant.Value).ReadInt32();

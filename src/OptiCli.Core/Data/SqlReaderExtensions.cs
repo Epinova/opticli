@@ -31,13 +31,18 @@ internal static class SqlReaderExtensions
 
     /// <summary>
     /// CMS 12 stores every date (publish dates, saved, Date properties) in UTC; the value is marked as such,
-    /// so output says so (<c>Z</c>) instead of passing for local time.
+    /// so output says so (<c>Z</c>) instead of passing for local time. CMS 13's <c>datetime2</c> columns are rounded to the
+    /// millisecond, the most CMS 12's <c>datetime</c> ever gave, so times print the same on both.
     /// </summary>
     public static DateTime? GetDateTimeOrNull(this SqlDataReader reader, string column)
     {
         var ordinal = reader.GetOrdinal(column);
-        return reader.IsDBNull(ordinal) ? null : DateTime.SpecifyKind(reader.GetDateTime(ordinal), DateTimeKind.Utc);
+        return reader.IsDBNull(ordinal) ? null : DateTime.SpecifyKind(ToMilliseconds(reader.GetDateTime(ordinal)), DateTimeKind.Utc);
     }
+
+    /// <summary>Rounded to the nearest millisecond; a CMS 12 <c>datetime</c> value already is.</summary>
+    public static DateTime ToMilliseconds(DateTime time) =>
+        new((time.Ticks + TimeSpan.TicksPerMillisecond / 2) / TimeSpan.TicksPerMillisecond * TimeSpan.TicksPerMillisecond, time.Kind);
 
     public static double? GetDoubleOrNull(this SqlDataReader reader, string column)
     {

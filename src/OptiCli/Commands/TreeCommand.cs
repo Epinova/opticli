@@ -54,6 +54,7 @@ internal static class TreeCommand
                 .Append("  [").Append(node.Ref).Append(' ').Append(node.Type).Append(' ').Append(node.Status)
                 .Append(node.Languages.Count > 0 ? " " + string.Join(",", node.Languages) : "")
                 .Append(node.Deleted == true ? " deleted" : "")
+                .Append(node.Blueprint == true ? " blueprint" : "")
                 .Append(']')
                 .Append(node.Url is null ? "" : "  " + node.Url)
                 .Append(node.Children is null && node.ChildCount > 0 ? $"  ({node.ChildCount} children)" : "")

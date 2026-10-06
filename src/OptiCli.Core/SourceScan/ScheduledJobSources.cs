@@ -4,7 +4,10 @@ using OptiCli.Protocol;
 
 namespace OptiCli.Core.SourceScan;
 
-/// <summary>A class with <c>[ScheduledPlugIn]</c> in the site's source: a scheduled job the site registers when it starts.</summary>
+/// <summary>
+/// A class with <c>[ScheduledPlugIn]</c> (CMS 13: <c>[ScheduledJob]</c>, of which <c>ScheduledPlugIn</c> is now an obsolete
+/// subclass) in the site's source: a scheduled job the site registers when it starts.
+/// </summary>
 /// <param name="TypeName">The class's full name, as the CMS writes it to <c>tblScheduledItem.TypeName</c>.</param>
 /// <param name="Guid">The attribute's <c>GUID</c>, which becomes the job's id; null without one.</param>
 /// <param name="IntervalType">The attribute's <c>IntervalType</c> as a <c>ScheduledIntervalType</c> value; 0 without one.</param>
@@ -109,7 +112,7 @@ public static partial class ScheduledJobSources
         return index.Constants.GetValueOrDefault($"{parts[^2]}.{parts[^1]}") ?? value;
     }
 
-    [GeneratedRegex(@"\[\s*(?:[\w.]*\.)?ScheduledPlugIn(?:Attribute)?\s*\(")]
+    [GeneratedRegex(@"\[\s*(?:[\w.]*\.)?(?:ScheduledPlugIn|ScheduledJob)(?:Attribute)?\s*\(")]
     private static partial Regex AttributePattern();
 
     [GeneratedRegex(@"\bIntervalType\s*=\s*(?:[\w.]*\.)?(?<type>\w+)")]

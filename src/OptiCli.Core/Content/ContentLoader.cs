@@ -54,6 +54,12 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
         var branchLanguage = Model.Language(branch);
         var row = header.Languages.GetValueOrDefault(branch);
         var rows = await RowsAsync(header, branch, shownVersion, cancellationToken);
+        if (shownVersion?.Variation is { } variation)
+        {
+            notes.Add(row is { Status: VersionStatus.Published, VersionId: { } published }
+                ? $"Version {shownVersion.Id} belongs to the content variation '{variation}': it stores only the properties it changes; the others are those of the published version {ContentIdentity.RefFor(contentId, published)}, as the CMS loads it."
+                : $"Version {shownVersion.Id} belongs to the content variation '{variation}': it stores only the properties it changes; the others are the branch's primary values, as it isn't published.");
+        }
         var fields = ValidateFields(header, options.Fields);
         var properties = await DecodeAsync(header, branch, rows, options with { Fields = fields }, branchLanguage, cancellationToken);
 
@@ -79,6 +85,11 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
         var category = kind is Cms.ContentKind.Page or Cms.ContentKind.Block or Cms.ContentKind.Media
             ? await PropertyRowReader.BuiltInCategoriesAsync(db, contentId, branch, shownVersion?.Id, cancellationToken)
             : [];
+        if (category.Count == 0 && shownVersion?.Variation is not null && row is { Status: VersionStatus.Published, VersionId: { } publishedVersion })
+        {
+            // A variation that doesn't change the category has the published version's.
+            category = await PropertyRowReader.BuiltInCategoriesAsync(db, contentId, branch, publishedVersion, cancellationToken);
+        }
         var identity = identities.Describe(
             header,
             branchLanguage,
@@ -100,6 +111,7 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
             identity.Url,
             Model.Kind(header.TypeId).ToString().ToLowerInvariant(),
             ContentIdentity.RefFor(contentId, shownVersion?.Id ?? row?.VersionId),
+            shownVersion?.Variation,
             Model.Language(header.MasterLanguageId)?.DisplayCode,
             header.Languages.Keys.Select(id => Model.Language(id)?.DisplayCode).OfType<string>().Order().ToList(),
             header.ParentId is { } parent ? ContentIdentity.RefFor(parent) : null,
@@ -120,7 +132,10 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
             await Queries.ApprovalReader.ResolveAsync(db, Model, header, cancellationToken),
             await Queries.ProjectReader.ForContentAsync(db, contentId, cancellationToken) is { Count: > 0 } projects ? projects : null,
             notes.Count == 0 ? null : notes,
-            properties);
+            properties)
+        {
+            Blueprint = header.Blueprint ? true : null,
+        };
     }
 
     /// <summary>Decoded primary properties of several items (for <c>--expand</c>), keyed by GUID; references stay identity-only.</summary>
@@ -226,6 +241,15 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
         else
         {
             rows = await PropertyRowReader.VersionAsync(db, header.Id, version.Id, branch, cancellationToken);
+            if (version.Variation is not null)
+            {
+                // CMS 13: what the variation doesn't change comes from the published version (the primary values otherwise).
+                var own = header.Languages.GetValueOrDefault(branch);
+                var basis = own is { Status: VersionStatus.Published, VersionId: { } published }
+                    ? await PropertyRowReader.VersionAsync(db, header.Id, published, branch, cancellationToken)
+                    : (await PropertyRowReader.PrimaryAsync(db, [header.Id], [branch], cancellationToken)).Where(r => r.LanguageId == branch).ToList();
+                rows = PropertyRows.Variation(rows.ToList(), basis);
+            }
             if (branch != header.MasterLanguageId)
             {
                 rows = rows.Concat(await PropertyRowReader.PrimaryAsync(db, [header.Id], [header.MasterLanguageId], cancellationToken));
@@ -287,6 +311,6 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
     private static readonly HashSet<string> IdentityFields = new(StringComparer.OrdinalIgnoreCase)
     {
         "ref", "guid", "type", "name", "language", "status", "url", "kind", "version", "masterLanguage", "languages",
-        "parent", "saved", "changedBy", "startPublish", "stopPublish", "deleted",
+        "parent", "saved", "changedBy", "startPublish", "stopPublish", "deleted", "variation", "blueprint",
     };
 }

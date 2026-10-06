@@ -22,8 +22,9 @@ public sealed class DraftReader(ContentSession session)
     // every unpublished version: sites with import jobs can have millions of never-published versions.
     // The count per branch is only computed for the rows of the page returned. RECOMPILE lets the
     // optimizer drop the unused optional filters; a cached generic plan is ten times slower.
-    // The type filter is an inlined id list (see SqlLists), empty when every type is wanted.
-    private static string Sql(string typeFilter) => $"""
+    // The type filter is an inlined id list (see SqlLists), empty when every type is wanted. A content variation's
+    // versions (CMS 13) are left out: they are changes to a variation, not drafts of the content.
+    private static string Sql(string typeFilter, CmsSchema schema) => $"""
         WITH newest AS (
             SELECT cl.fkContentID, cl.fkLanguageBranchID, cl.Status AS BranchStatus, cl.Version AS BranchVersion,
                    d.pkID, d.Status, d.Name, d.Saved, d.ChangedByName, d.DelayPublishUntil
@@ -34,7 +35,7 @@ public sealed class DraftReader(ContentSession session)
                 FROM tblWorkContent wc
                 WHERE wc.fkContentID = cl.fkContentID AND wc.fkLanguageBranchID = cl.fkLanguageBranchID
                   AND wc.Status IN ({VersionStatuses.UnpublishedSql})
-                  AND (cl.Status <> {(int)VersionStatus.Published} OR wc.pkID > ISNULL(cl.Version, 0))
+                  AND (cl.Status <> {(int)VersionStatus.Published} OR wc.pkID > ISNULL(cl.Version, 0)){schema.DefaultVariationOnly("wc")}
                 ORDER BY wc.pkID DESC) d
             WHERE (@lang IS NULL OR cl.fkLanguageBranchID = @lang)
         )
@@ -42,7 +43,7 @@ public sealed class DraftReader(ContentSession session)
                (SELECT COUNT(*) FROM tblWorkContent w
                 WHERE w.fkContentID = n.fkContentID AND w.fkLanguageBranchID = n.fkLanguageBranchID
                   AND w.Status IN ({VersionStatuses.UnpublishedSql})
-                  AND (n.BranchStatus <> {(int)VersionStatus.Published} OR w.pkID > ISNULL(n.BranchVersion, 0))) AS Drafts
+                  AND (n.BranchStatus <> {(int)VersionStatus.Published} OR w.pkID > ISNULL(n.BranchVersion, 0)){schema.DefaultVariationOnly("w")}) AS Drafts
         FROM newest n
         WHERE (@since IS NULL OR n.Saved >= @since) AND (@by IS NULL OR n.ChangedByName LIKE @by ESCAPE '\')
         ORDER BY n.Saved DESC, n.pkID DESC
@@ -61,7 +62,7 @@ public sealed class DraftReader(ContentSession session)
             return [];
         }
         var typeFilter = typeIds is null ? "" : $" AND c.fkContentTypeID IN ({string.Join(",", SqlLists.Ints(typeIds))})";
-        var rows = await session.Db.QueryAsync(Sql(typeFilter), r => (
+        var rows = await session.Db.QueryAsync(Sql(typeFilter, session.Model.Schema), r => (
                 Version: r.GetInt32("pkID"),
                 ContentId: r.GetInt32("fkContentID"),
                 LanguageId: r.GetInt32("fkLanguageBranchID"),

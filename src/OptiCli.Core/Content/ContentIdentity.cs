@@ -14,6 +14,9 @@ public sealed record ContentIdentity(string? Ref, Guid Guid, string? Type, strin
     /// <summary>True for items in the recycle bin.</summary>
     public bool? Deleted { get; init; }
 
+    /// <summary>CMS 13: true for a Visual Builder blueprint, a template for new content rather than content itself.</summary>
+    public bool? Blueprint { get; init; }
+
     /// <summary>Content served by a content provider (e.g. a DAM), referenced as <c>id__provider</c>; not stored in this database.</summary>
     public string? Provider { get; init; }
 

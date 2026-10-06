@@ -61,13 +61,22 @@ public static class StartupDriftCheck
 
     /// <summary>
     /// EPiServer.Framework from this version on starts against a schema one version newer than its packages need (for a
-    /// rolling deployment). 12.15 and earlier don't; 12.16 wasn't checked, so it counts as not.
+    /// rolling deployment). 12.15 and earlier don't; 12.16 wasn't checked, so it counts as not. CMS 13 doesn't
+    /// (<see cref="AcceptsOneNewer"/>).
     /// </summary>
     public static readonly Version AcceptsOneNewerFrom = new(12, 17);
 
     /// <summary>
-    /// The CMS starts against a schema of exactly the version its packages need, and from <see cref="AcceptsOneNewerFrom"/>
-    /// one newer. Older doesn't start in shared mode, where schema updates are off; newer than that never does.
+    /// Whether packages of this EPiServer.Framework version start against a schema one newer than they need: CMS 12 from
+    /// <see cref="AcceptsOneNewerFrom"/>. CMS 13 stops at any newer schema unless the site turns
+    /// <c>DataAccessOptions.ThrowOnNewerDatabaseSchema</c> off, which opticli can't see, so it counts as not.
+    /// </summary>
+    public static bool AcceptsOneNewer(Version? framework) => framework is { Major: 12 } version && version >= AcceptsOneNewerFrom;
+
+    /// <summary>
+    /// The CMS starts against a schema of exactly the version its packages need, and on CMS 12 from
+    /// <see cref="AcceptsOneNewerFrom"/> one newer. Older doesn't start in shared mode, where schema updates are off; newer
+    /// than that never does.
     /// </summary>
     /// <param name="database"><c>sp_DatabaseVersion</c>; null when it couldn't be read.</param>
     /// <param name="required">What the build's <c>EPiServer.Data</c> needs; null when it couldn't be read.</param>
@@ -91,7 +100,7 @@ public static class StartupDriftCheck
         {
             return ([], null, null);
         }
-        if (stored == needed + 1 && framework is { } version && version >= AcceptsOneNewerFrom)
+        if (stored == needed + 1 && AcceptsOneNewer(framework))
         {
             return ([new DriftItem("CMS", DriftAhead.Database, $"{Versions(stored, needed)}; the CMS accepts one version newer, but the environment runs newer CMS packages")], null, null);
         }

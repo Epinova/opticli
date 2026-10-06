@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using OptiCli.Cli;
 using OptiCli.Core.Cms;
 using OptiCli.Core.Configuration;
+using OptiCli.Core.Data;
 using OptiCli.Core.Discovery;
 using OptiCli.Core.Drift;
 using OptiCli.Core.Errors;
@@ -41,6 +42,7 @@ internal static class DoctorCommand
     private sealed record SchedulerSection(string Serve, string? Running, int? OverdueJobs);
 
     /// <param name="Imports">The files besides the project file read for its properties (Directory.Build.props and imports).</param>
+    /// <param name="CmsMajor">The CMS major the project builds against (12 or 13), from <paramref name="CmsVersion"/>.</param>
     private sealed record ProjectSection(
         bool Found,
         string? Path = null,
@@ -49,6 +51,7 @@ internal static class DoctorCommand
         string? HowFound = null,
         string? TargetFramework = null,
         string? CmsVersion = null,
+        int? CmsMajor = null,
         string? UserSecretsId = null,
         IReadOnlyList<string>? Imports = null,
         Problem? Error = null);
@@ -76,7 +79,8 @@ internal static class DoctorCommand
         CandidateStatus Status,
         string? Reason);
 
-    private sealed record DatabaseSection(bool Reachable, string? Server = null, string? Database = null, int? SchemaVersion = null, string? SqlServerVersion = null, int? ContentTypes = null, int? ContentItems = null, Problem? Error = null);
+    /// <param name="CmsMajor">The CMS major the database's schema belongs to (12 or 13), from <paramref name="SchemaVersion"/>.</param>
+    private sealed record DatabaseSection(bool Reachable, string? Server = null, string? Database = null, int? SchemaVersion = null, int? CmsMajor = null, string? SqlServerVersion = null, int? ContentTypes = null, int? ContentItems = null, Problem? Error = null);
 
     private sealed record Problem(string Code, string Message, string? Hint);
 
@@ -98,6 +102,7 @@ internal static class DoctorCommand
             var warnings = new List<string>();
 
             var project = context.TryGetProject(out var projectError);
+            var cmsVersion = project is null ? null : PackageVersions.FindCms(project.Project);
             var projectSection = project is null
                 ? new ProjectSection(false, Error: ToProblem(projectError!))
                 : new ProjectSection(
@@ -107,7 +112,8 @@ internal static class DoctorCommand
                     project.SourceRoot,
                     project.HowFound,
                     project.Project.TargetFramework,
-                    PackageVersions.FindCms(project.Project),
+                    cmsVersion,
+                    PackageVersions.Major(cmsVersion),
                     project.Project.UserSecretsId,
                     project.Project.Imports.Count > 0 ? project.Project.Imports : null);
             warnings.AddRange(project?.Project.Warnings ?? []);
@@ -137,6 +143,13 @@ internal static class DoctorCommand
             }
 
             var databaseSection = await ProbeDatabaseAsync(context, cancellationToken);
+            if (projectSection.CmsMajor is { } builds && databaseSection.CmsMajor is { } stored && builds != stored)
+            {
+                warnings.Add($"The project builds against CMS {builds} ({projectSection.CmsVersion}), but the database has a CMS {stored} schema (version {databaseSection.SchemaVersion}): "
+                    + (builds > stored
+                        ? $"the site upgrades it to CMS {builds} when it starts, after which CMS {stored} can't use it. Check that the connection string points at the right database before starting the site."
+                        : $"CMS {builds} won't start against it. Check that the connection string points at the right database, or update the project's EPiServer packages."));
+            }
             var agent = project is null
                 ? null
                 : await AgentProbe.ProbeAsync(context.StateStore, resolution.Chosen is null ? null : TryVerify(resolution), cancellationToken);
@@ -312,7 +325,8 @@ internal static class DoctorCommand
         {
             await using var db = await context.OpenDatabaseAsync(cancellationToken);
             var info = await DatabaseInfoReader.ReadAsync(db, cancellationToken);
-            return new DatabaseSection(true, db.Server, info.Database, info.SchemaVersion, info.SqlServerVersion, info.ContentTypes, info.ContentItems);
+            return new DatabaseSection(true, db.Server, info.Database, info.SchemaVersion, info.SchemaVersion is { } version ? CmsSchema.MajorOf(version) : null,
+                info.SqlServerVersion, info.ContentTypes, info.ContentItems);
         }
         catch (OptiCliException ex)
         {

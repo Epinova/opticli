@@ -9,6 +9,7 @@ namespace OptiCli.Core.Queries;
 /// <param name="Children">Nested children (tree only), in the order the CMS lists them.</param>
 /// <param name="SortIndex">Set when the parent sorts its children by sort index (<c>children</c> and <c>tree</c>).</param>
 /// <param name="More">How many further children exist beyond those listed.</param>
+/// <param name="Blueprint">CMS 13: true for a Visual Builder blueprint.</param>
 public sealed record TreeNode(
     string Ref,
     Guid Guid,
@@ -22,7 +23,8 @@ public sealed record TreeNode(
     bool? Deleted,
     int? SortIndex = null,
     IReadOnlyList<TreeNode>? Children = null,
-    int? More = null);
+    int? More = null,
+    bool? Blueprint = null);
 
 /// <summary><c>tree</c>, <c>children</c> and <c>ancestors</c>, all from <c>tblTree</c>.</summary>
 public sealed class TreeReader(ContentSession session)
@@ -139,7 +141,10 @@ public sealed class TreeReader(ContentSession session)
             header.Languages.Keys.Select(id => session.Model.Language(id)?.DisplayCode).OfType<string>().Order().ToList(),
             childCount,
             identity.Deleted,
-            sortIndex);
+            sortIndex)
+        {
+            Blueprint = identity.Blueprint,
+        };
     }
 
     private async Task<Dictionary<int, int>> ChildCountsAsync(IEnumerable<int> ids, CancellationToken cancellationToken)

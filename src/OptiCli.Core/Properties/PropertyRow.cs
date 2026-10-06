@@ -35,6 +35,21 @@ public sealed record PropertyRow(
 public static class PropertyRows
 {
     /// <summary>
+    /// A CMS 13 content variation's version as the CMS loads it (<c>netContentLoadVersion</c>): the variation stores only
+    /// the properties it changes, so every property it has no row for, with everything nested in it (scoped rows under the
+    /// same top-level property), comes from <paramref name="published"/>.
+    /// </summary>
+    public static IEnumerable<PropertyRow> Variation(IReadOnlyList<PropertyRow> patch, IEnumerable<PropertyRow> published)
+    {
+        var patched = patch.Select(TopLevelProperty).ToHashSet();
+        return patch.Concat(published.Where(row => !patched.Contains(TopLevelProperty(row))));
+    }
+
+    /// <summary>The top-level property a row belongs to: its own, or the outermost one of its scope.</summary>
+    public static int TopLevelProperty(PropertyRow row) =>
+        ScopePath.Parse(row.ScopeName) is { Steps: [var outermost, ..] } ? outermost.PropertyId : row.DefinitionId;
+
+    /// <summary>
     /// The rows that make up <paramref name="languageId"/>'s view of an item: culture-specific values from
     /// that branch, shared values from the master branch (which is the only place the CMS stores them).
     /// </summary>

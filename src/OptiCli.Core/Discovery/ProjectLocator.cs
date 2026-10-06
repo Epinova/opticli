@@ -86,7 +86,7 @@ public static class ProjectLocator
         {
             1 => Create(cms[0], solution, howFound),
             0 => throw new NotFoundException(
-                $"No Optimizely CMS 12 project (a .csproj referencing {CsprojFile.CmsPackage}) found under {root}.",
+                $"No Optimizely CMS 12 or 13 project (a .csproj referencing {CsprojFile.CmsMetaPackage} or {CsprojFile.CmsPackage}) found under {root}.",
                 "Run opticli from the site's repository, or pass --project <path to the site's .csproj>."),
             _ => throw new UsageException(
                 $"Found {cms.Count} Optimizely CMS projects under {root}: {string.Join(", ", cms.Select(p => Path.GetRelativePath(root, p.Path)))}.",

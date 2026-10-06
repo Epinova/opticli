@@ -32,12 +32,15 @@ public sealed record ContentUrl(string Path, string? Absolute, string? Site);
 /// <summary>
 /// The routing rules opticli reproduces from the site definitions: which site and language a URL
 /// selects, and what URL a content item has. Pure logic over <c>tblSiteDefinition</c> /
-/// <c>tblHostDefinition</c> / <c>tblLanguageBranch</c>; the tree walk itself lives in <see cref="UrlResolver"/>.
+/// <c>tblHostDefinition</c> (CMS 13: <c>tblApplication</c> / <c>tblApplicationHost</c>) / <c>tblLanguageBranch</c>; the
+/// tree walk itself lives in <see cref="UrlResolver"/>.
 /// </summary>
 /// <remarks>
 /// Pages: <c>/{language}/{segment}/.../</c>, where the language prefix is left out when a host of the site
 /// is mapped to that language. Media: <c>/globalassets/...</c>, <c>/siteassets/...</c> or
 /// <c>/contentassets/...</c>, no language prefix.
+/// On CMS 13 the default application (<see cref="SiteInfo.IsDefault"/>) takes the place of the site with the <c>*</c> host,
+/// and a host matches only with its port, as the CMS's application resolver matches it.
 /// </remarks>
 /// <param name="settings">Language settings: a site whose start page has them only takes its active languages as prefixes.</param>
 public sealed class SiteMap(IReadOnlyList<SiteInfo> sites, IReadOnlyList<LanguageBranch> languages, int? globalAssetsRoot, int? contentAssetsRoot, LanguageSettings? settings = null)
@@ -54,12 +57,13 @@ public sealed class SiteMap(IReadOnlyList<SiteInfo> sites, IReadOnlyList<Languag
 
     public static int? AssetsRootId(SiteInfo site) => ParseId(site.AssetsRoot);
 
-    /// <summary><c>--site</c>: a site name, host name or id.</summary>
+    /// <summary><c>--site</c>: a site name, host name or id; on CMS 13 also the application's name.</summary>
     /// <exception cref="NotFoundException">No such site.</exception>
     public SiteInfo RequireSite(string nameOrHost)
     {
         var input = nameOrHost.Trim();
         var site = All.FirstOrDefault(s => string.Equals(s.Name, input, StringComparison.OrdinalIgnoreCase))
+            ?? All.FirstOrDefault(s => string.Equals(s.Application, input, StringComparison.OrdinalIgnoreCase))
             ?? All.FirstOrDefault(s => s.Hosts.Any(h => string.Equals(h.Name, input, StringComparison.OrdinalIgnoreCase)))
             ?? All.FirstOrDefault(s => s.Id.ToString(CultureInfo.InvariantCulture) == input);
         return site ?? throw new NotFoundException(
@@ -68,7 +72,7 @@ public sealed class SiteMap(IReadOnlyList<SiteInfo> sites, IReadOnlyList<Languag
                 ?? $"Sites: {string.Join(", ", All.Select(s => s.Name))}.");
     }
 
-    /// <summary>The site a bare path belongs to: the only site, or the one answering unknown hosts (<c>*</c>).</summary>
+    /// <summary>The site a bare path belongs to: the only site, or the one answering unknown hosts (<c>*</c>, CMS 13: the default application).</summary>
     /// <exception cref="UsageException">Several sites and none takes the wildcard host.</exception>
     public SiteInfo DefaultSite()
     {
@@ -76,11 +80,16 @@ public sealed class SiteMap(IReadOnlyList<SiteInfo> sites, IReadOnlyList<Languag
         {
             return All[0];
         }
-        return All.FirstOrDefault(s => s.Hosts.Any(h => h.Name == Wildcard))
+        return All.FirstOrDefault(AnswersUnknownHosts)
             ?? throw new UsageException(
-                $"{All.Count} sites are defined and none has the '*' host, so a path alone does not say which site it is on.",
+                All.Any(s => s.IsDefault is not null)
+                    ? $"{All.Count} applications are defined and none is the default one, so a path alone does not say which site it is on."
+                    : $"{All.Count} sites are defined and none has the '*' host, so a path alone does not say which site it is on.",
                 $"Pass --site <name|host> ({string.Join(", ", All.Select(s => s.Name))}) or a full URL.");
     }
+
+    /// <summary>Whether the site answers hosts no site has: it has the <c>*</c> host, or (CMS 13) is the default application.</summary>
+    public static bool AnswersUnknownHosts(SiteInfo site) => site.IsDefault ?? site.Hosts.Any(h => h.Name == Wildcard);
 
     /// <summary>The language a URL without a language prefix gets on this site.</summary>
     public LanguageBranch? DefaultLanguage(SiteInfo site, HostInfo? host = null)
@@ -234,12 +243,13 @@ public sealed class SiteMap(IReadOnlyList<SiteInfo> sites, IReadOnlyList<Languag
             segments);
     }
 
-    private (SiteInfo Site, HostInfo Host) SiteForHost(string authority)
+    private (SiteInfo Site, HostInfo? Host) SiteForHost(string authority)
     {
         var bare = authority.Split(':')[0];
         foreach (var candidate in new[] { authority, bare })
         {
-            foreach (var site in All)
+            // CMS 13's resolver matches a host with its port only.
+            foreach (var site in All.Where(s => candidate == authority || s.IsDefault is null))
             {
                 if (site.Hosts.FirstOrDefault(h => string.Equals(h.Name, candidate, StringComparison.OrdinalIgnoreCase)) is { } host)
                 {
@@ -253,6 +263,11 @@ public sealed class SiteMap(IReadOnlyList<SiteInfo> sites, IReadOnlyList<Languag
             {
                 return (site, wildcard);
             }
+        }
+        if (All.FirstOrDefault(s => s.IsDefault == true) is { } application)
+        {
+            // No host of its own matched: it answers as the default, in no language of its own.
+            return (application, null);
         }
         throw new NotFoundException(
             $"No site answers host '{authority}'.",

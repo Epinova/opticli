@@ -57,10 +57,12 @@ public sealed class FindQuery(ContentSession session)
             new("@offset", offset),
             new("@take", limit + 1),
         };
+        // A content variation's versions (CMS 13) don't make the content a draft or scheduled.
+        var variations = session.Model.Schema.DefaultVariationOnly("wc");
         // A branch's first scheduled version: when the CMS's job publishes it.
         var scheduled = $"""
             (SELECT MIN(wc.DelayPublishUntil) FROM tblWorkContent wc
-             WHERE wc.fkContentID = c.pkID AND wc.fkLanguageBranchID = cl.fkLanguageBranchID AND wc.Status = {(int)VersionStatus.DelayedPublish})
+             WHERE wc.fkContentID = c.pkID AND wc.fkLanguageBranchID = cl.fkLanguageBranchID AND wc.Status = {(int)VersionStatus.DelayedPublish}{variations})
             """;
         var sql = new StringBuilder($"""
             SELECT c.pkID, {(status == FindStatus.Scheduled ? scheduled : "NULL")} AS PublishAt, {(status == FindStatus.Expired ? "cl.StopPublish" : "NULL")} AS ExpiredAt
@@ -85,12 +87,12 @@ public sealed class FindQuery(ContentSession session)
                   AND (cl.Status <> {(int)VersionStatus.Published} OR EXISTS (
                       SELECT 1 FROM tblWorkContent wc
                       WHERE wc.fkContentID = c.pkID AND wc.fkLanguageBranchID = cl.fkLanguageBranchID
-                        AND wc.Status IN ({VersionStatuses.UnpublishedSql}) AND wc.pkID > ISNULL(cl.Version, 0)))
+                        AND wc.Status IN ({VersionStatuses.UnpublishedSql}) AND wc.pkID > ISNULL(cl.Version, 0){variations}))
                 """,
             FindStatus.Scheduled => $"""
 
                   AND EXISTS (SELECT 1 FROM tblWorkContent wc
-                      WHERE wc.fkContentID = c.pkID AND wc.fkLanguageBranchID = cl.fkLanguageBranchID AND wc.Status = {(int)VersionStatus.DelayedPublish})
+                      WHERE wc.fkContentID = c.pkID AND wc.fkLanguageBranchID = cl.fkLanguageBranchID AND wc.Status = {(int)VersionStatus.DelayedPublish}{variations})
                 """,
             // Dates are UTC in the database; the CLI's clock decides what has passed, as for every other UTC time it prints.
             FindStatus.Expired => $"\n  AND cl.Status = {(int)VersionStatus.Published} AND cl.StopPublish IS NOT NULL AND cl.StopPublish <= @now",

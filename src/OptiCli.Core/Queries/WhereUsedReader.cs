@@ -14,6 +14,9 @@ public sealed record Usage(
     string Ref, Guid Guid, string Type, string? Name, string? Language, string Status, string? Url, bool? Deleted,
     string Property, string Kind, IReadOnlyList<string> Sources, DateTime? Saved, string? ChangedBy)
 {
+    /// <summary>CMS 13: true when the owner is a Visual Builder blueprint, not content visitors see.</summary>
+    public bool? Blueprint { get; init; }
+
     /// <summary>
     /// For a reference in rich text that is only inside personalized sections: the visitor groups that see it (ids, and
     /// <see cref="VisitorGroupNames"/>). Null when everyone does.
@@ -123,6 +126,7 @@ public sealed class WhereUsedReader(ContentSession session, PropertyReferenceInd
                     branch?.Saved,
                     string.IsNullOrEmpty(branch?.ChangedBy) ? null : branch.ChangedBy)
                 {
+                    Blueprint = identity.Blueprint,
                     VisitorGroups = visitorGroups,
                     VisitorGroupNames = visitorGroups?.Select(session.Model.VisitorGroupName).ToList(),
                 };
