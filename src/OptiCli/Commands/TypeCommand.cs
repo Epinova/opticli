@@ -51,8 +51,8 @@ internal static class TypeCommand
         string? UiHint,
         StoredValues? Values = null);
 
-    /// <param name="Content">Values on content items (tblContentProperty: the published or primary version per branch).</param>
-    /// <param name="Versions">Values in every version (tblWorkContentProperty).</param>
+    /// <param name="Content">Content items with a value (in any language, the recycle bin included).</param>
+    /// <param name="Versions">Versions with a value. Both count values inside a block property and category selections too: what removing it deletes.</param>
     private sealed record StoredValues(int Content, int Versions);
 
     /// <param name="BaseTypes">The base class and interfaces as declared, e.g. to check a type against another type's allowedTypes.</param>
@@ -72,9 +72,10 @@ internal static class TypeCommand
             Views are matched by name and @model, so teaser/partial views appear next to the page template; a controller
             (ContentController/PageController<T>) or view component is not listed: search the code for the class name.
             Reverse question (which properties accept a type): opticli allowed-in <type>.
-            A property in the database but not in code has existsOnModel: false and values (how many are stored on content
-            and in versions): the CMS keeps a property removed from code while it has values. One added in admin mode looks
-            the same. `opticli types --orphaned` lists whole types whose class is gone.
+            A property in the database but not in code has existsOnModel: false and values (how many content items and versions
+            hold a value): the CMS keeps a property removed from code while it has values. One added in admin mode looks the
+            same. `opticli types --orphaned` lists whole types whose class is gone; `opticli types remove-property` removes such
+            a property.
             Example: opticli type ArticlePage
             """);
         command.Arguments.Add(name);
@@ -85,7 +86,7 @@ internal static class TypeCommand
             var types = await ContentTypeReader.ListAsync(db, cancellationToken, countInstances: true);
             var type = ContentTypeLookup.Find(types, context.Parse.GetValue(name)!);
             var properties = await ContentTypeReader.ListPropertiesAsync(db, type.Id, cancellationToken);
-            var orphanValues = properties.Any(p => !p.ExistsOnModel) ? await ContentTypeReader.OrphanValuesAsync(db, type.Id, cancellationToken) : new Dictionary<int, (int, int)>();
+            var orphanValues = await ContentTypeReader.OrphanValuesAsync(db, properties, cancellationToken);
 
             var project = context.TryGetProject(out var projectError);
             var details = project is null

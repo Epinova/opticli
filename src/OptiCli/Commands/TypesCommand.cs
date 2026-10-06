@@ -35,6 +35,7 @@ internal static class TypesCommand
             gone, with modelType; the CMS keeps such a type while content uses it. With `opticli serve` running the site says
             which classes it can't load; without it the site's sources are scanned (by GUID, then name) for the types of its
             own assemblies only (a warning says so).
+            `types remove`, `types remove-property` and `types prune` remove such orphans through the site (needs `opticli serve`).
             Example: opticli types --kind block --sort instances --limit 10
             Example: opticli types --orphaned
             """);
@@ -43,6 +44,10 @@ internal static class TypesCommand
         command.Options.Add(orphaned);
         command.Options.Add(sort);
         list.AddTo(command);
+        foreach (var subcommand in TypesRemoveCommand.Create(options))
+        {
+            command.Subcommands.Add(subcommand);
+        }
 
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
         {

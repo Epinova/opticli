@@ -1,5 +1,6 @@
 using Microsoft.Data.SqlClient;
 using OptiCli.Core.Data;
+using OptiCli.Protocol;
 
 namespace OptiCli.Core.Cms;
 
@@ -37,16 +38,6 @@ public static class ContentTypeReader
         ORDER BY pd.Name
         """;
 
-    // Only for the properties the model sync left in the database: counting every property's values would scan the
-    // property tables for each one.
-    private const string OrphanValuesSql = """
-        SELECT pd.pkID,
-               (SELECT COUNT(*) FROM tblContentProperty cp WHERE cp.fkPropertyDefinitionID = pd.pkID) AS ContentValues,
-               (SELECT COUNT(*) FROM tblWorkContentProperty wp WHERE wp.fkPropertyDefinitionID = pd.pkID) AS VersionValues
-        FROM tblPropertyDefinition pd
-        WHERE pd.fkContentTypeID = @typeId AND pd.ExistsOnModel = 0
-        """;
-
     /// <summary><c>tblPropertyDefinition.LanguageSpecific</c> value for culture-specific properties.</summary>
     private const int CultureSpecificFlag = 4;
 
@@ -64,14 +55,23 @@ public static class ContentTypeReader
             r.GetInt32OrNull("Instances")), cancellationToken);
 
     /// <summary>
-    /// For each property of the type that isn't in its code (<c>ExistsOnModel = 0</c>): how many values are stored, on
-    /// content (<c>tblContentProperty</c>: what is published, or the draft where nothing is) and in versions
-    /// (<c>tblWorkContentProperty</c>). The model sync deletes a property removed from code only when it has none.
+    /// For each property that isn't in its type's code (<c>ExistsOnModel = 0</c>): how many content items and versions hold
+    /// a value of it, counted as the site agent counts before <c>types remove-property</c>
+    /// (<see cref="OrphanRemoval.PropertyValuesSql"/>): what the CMS deletes with the property, values inside a block
+    /// property and category selections included. Only for those properties: counting every property's values would scan
+    /// the property tables for each one. The model sync deletes a property removed from code only when it has none.
     /// </summary>
-    public static async Task<IReadOnlyDictionary<int, (int Content, int Versions)>> OrphanValuesAsync(CmsDatabase db, int contentTypeId, CancellationToken cancellationToken) =>
-        (await db.QueryAsync(OrphanValuesSql, r => (Id: r.GetInt32("pkID"), Content: r.GetInt32("ContentValues"), Versions: r.GetInt32("VersionValues")), cancellationToken,
-            new SqlParameter("@typeId", contentTypeId)))
-        .ToDictionary(r => r.Id, r => (r.Content, r.Versions));
+    public static async Task<IReadOnlyDictionary<int, (int Content, int Versions)>> OrphanValuesAsync(CmsDatabase db, IEnumerable<PropertyDefinitionInfo> properties, CancellationToken cancellationToken)
+    {
+        var values = new Dictionary<int, (int, int)>();
+        foreach (var property in properties.Where(p => !p.ExistsOnModel))
+        {
+            var row = await db.QueryAsync(OrphanRemoval.PropertyValuesSql(property.BlockType is not null), r => (r.GetInt32("Content"), r.GetInt32("Versions")), cancellationToken,
+                new SqlParameter("@id", property.Id));
+            values[property.Id] = row.Single();
+        }
+        return values;
+    }
 
     public static Task<IReadOnlyList<PropertyDefinitionInfo>> ListPropertiesAsync(CmsDatabase db, int contentTypeId, CancellationToken cancellationToken) =>
         db.QueryAsync(PropertiesSql, r => new PropertyDefinitionInfo(
