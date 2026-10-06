@@ -40,11 +40,14 @@ if [ "$FRESH_DB" = "$SOURCE_DB" ] || [ "$UPGRADED_DB" = "$SOURCE_DB" ] || [ "$FR
   exit 1
 fi
 source_site=$(realpath -m "$SOURCE_SITE")
-# FRESH=1 deletes both target directories: neither may be (or contain) the source site, or be the other one.
+# FRESH=1 deletes both target directories: neither may be (or contain, or be inside) the source site, or be the other one.
 for dir in "$FRESH_DIR" "$UPGRADED_DIR"; do
   target=$(realpath -m "$dir")
   case "$source_site/" in
     "$target"/*) echo "$dir is or contains the source site ($SOURCE_SITE); pick another directory." >&2; exit 1 ;;
+  esac
+  case "$target/" in
+    "$source_site"/*) echo "$dir is inside the source site ($SOURCE_SITE); pick another directory." >&2; exit 1 ;;
   esac
   if [ "$target" = / ]; then
     echo "$dir is the root directory; pick another directory." >&2
