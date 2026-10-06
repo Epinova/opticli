@@ -40,9 +40,16 @@ internal static class SqlReaderExtensions
         return reader.IsDBNull(ordinal) ? null : DateTime.SpecifyKind(ToMilliseconds(reader.GetDateTime(ordinal)), DateTimeKind.Utc);
     }
 
-    /// <summary>Rounded to the nearest millisecond; a CMS 12 <c>datetime</c> value already is.</summary>
+    /// <summary>
+    /// Rounded to the nearest millisecond; a CMS 12 <c>datetime</c> value already is. The last half millisecond of
+    /// 9999-12-31 (where <see cref="DateTime.MaxValue"/> is stored in a <c>datetime2</c>) stays in it rather than rounding
+    /// past the largest date there is.
+    /// </summary>
     public static DateTime ToMilliseconds(DateTime time) =>
-        new((time.Ticks + TimeSpan.TicksPerMillisecond / 2) / TimeSpan.TicksPerMillisecond * TimeSpan.TicksPerMillisecond, time.Kind);
+        new(Math.Min((time.Ticks + TimeSpan.TicksPerMillisecond / 2) / TimeSpan.TicksPerMillisecond, LastMillisecond) * TimeSpan.TicksPerMillisecond, time.Kind);
+
+    /// <summary><see cref="DateTime.MaxValue"/> in whole milliseconds: 9999-12-31 23:59:59.999.</summary>
+    private static readonly long LastMillisecond = DateTime.MaxValue.Ticks / TimeSpan.TicksPerMillisecond;
 
     public static double? GetDoubleOrNull(this SqlDataReader reader, string column)
     {
