@@ -49,6 +49,13 @@ public static class AgentRoutes
     public static string Type(string nameOrGuid) => $"{Prefix}/types/{Uri.EscapeDataString(nameOrGuid)}";
 
     /// <summary>
+    /// <c>GET /v1/types-without-code</c>. Response: <see cref="TypesWithoutCodeResult"/>: the content types whose model
+    /// type the running site can't load (<c>ContentType.ModelType</c> null while <c>ModelTypeString</c> is set), for
+    /// <c>opticli types --orphaned</c>. Read-only.
+    /// </summary>
+    public static readonly string TypesWithoutCode = $"{Prefix}/types-without-code";
+
+    /// <summary>
     /// <c>POST /v1/sites/hosts</c>. Body: <see cref="SiteHostsRequest"/>. Response: <see cref="SiteHostsResult"/>. Saves
     /// through <c>ISiteDefinitionRepository</c>, which clears the site definition cache and raises its change events, so
     /// the running site uses the new hosts at once. Listing sites stays a database read (<c>opticli sites</c>).

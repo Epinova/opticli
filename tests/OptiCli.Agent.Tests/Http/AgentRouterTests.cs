@@ -22,6 +22,7 @@ public class AgentRouterTests
     [InlineData("POST", "/v1/content/123/move", "Move", "123")]
     [InlineData("POST", "/v1/content/123/restore", "Restore", "123")]
     [InlineData("GET", "/v1/restore-parents", "RestoreParents", null)]
+    [InlineData("GET", "/v1/types-without-code", "TypesWithoutCode", null)]
     [InlineData("POST", "/v1/content/123/access", "Access", "123")]
     [InlineData("POST", "/v1/sites/hosts", "SiteHosts", null)]
     [InlineData("POST", "/v1/jobs/run", "JobRun", null)]

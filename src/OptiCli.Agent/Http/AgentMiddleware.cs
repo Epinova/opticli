@@ -72,6 +72,7 @@ internal static class AgentMiddleware
         [AgentEndpoint.Shutdown] = Read(request => ShutdownEndpoint.Handle(request)),
         [AgentEndpoint.Drift] = Read(request => DriftEndpoint.Handle(request)),
         [AgentEndpoint.Type] = Read(request => TypeOperation.Run(request.Call, request.Argument)),
+        [AgentEndpoint.TypesWithoutCode] = Read(request => TypesWithoutCodeEndpoint.Handle(request)),
         [AgentEndpoint.Read] = Read(request => ReadEndpoint.Handle(request)),
         [AgentEndpoint.RestoreParents] = Read(request => RestoreParentsEndpoint.Handle(request)),
         [AgentEndpoint.Create] = Write(r => r.ReadBodyAsync<CreateRequest>(), b => b.DryRun, (r, b) => Created(CreateOperation.Run(r.Call, b))),

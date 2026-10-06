@@ -250,8 +250,8 @@ add-ons need first.
 | `doctor` | project, connection string candidates, database, schema version, site agent, drift (against a shared database), sites whose primary host differs from the saved `sites primary` mapping, installed skill |
 | `db list`, `db use`, `db forget` | the development database (see [Which database](#which-database)) |
 | `sites`, `languages` | site definitions and hosts; language branches |
-| `types [--kind] [--unused] [--sort]` | content types with instance counts |
-| `type <name>` | properties (type, culture-specific, required, tab, order, source line, `[AllowedTypes]`), C# class file, views |
+| `types [--kind] [--unused] [--orphaned] [--sort]` | content types with instance counts; `--orphaned`: types whose class is gone from the code, which the CMS keeps while content uses them (the running site checks every class; without `serve`, the site's sources are scanned for its own types) |
+| `type <name>` | properties (type, culture-specific, required, tab, order, source line, `[AllowedTypes]`; one that isn't in the code with how many values it has stored), C# class file, views |
 | `allowed-in <type>` | which ContentArea/reference properties accept a type, from `[AllowedTypes]` in code |
 | `get <ref> [--lang] [--version] [--fields] [--expand]` | one item, typed and decoded (ContentAreas, local blocks, rich-text links) |
 | `tree`, `children`, `ancestors` | the content tree |
@@ -995,9 +995,11 @@ an approval sequence, language fallback settings, a media type for PDF files, th
 tests change (and put back), and a scheduled job of its own. `tests/fixtures/edge-cases/` builds them from an Alloy
 site (`dotnet new epi-alloy-mvc`) without changing it. `setup.sh` copies the site and its database, adds
 `EdgeCasesFixture.cs` (the extra content types, plus a startup module for what a plan can't create) and
-`JobsFixture.cs` and `UsersFixture.cs`, and applies `edge-cases.plan.json`. `JobsFixture.cs` has "opticli test job", a manual, stoppable job
+`JobsFixture.cs`, `UsersFixture.cs` and `OrphansFixture.cs`, and applies `edge-cases.plan.json`. `JobsFixture.cs` has "opticli test job", a manual, stoppable job
 that writes a status message a second for 3 steps (the number in `App_Data/opticli-job-steps`, if it exists) and fails
-when `App_Data/opticli-job-fail` exists; the `jobs` tests run it. `UsersFixture.cs` makes the user `edge-fixture-user` at startup (WebEditors, no password, not
+when `App_Data/opticli-job-fail` exists; the `jobs` tests run it. `OrphansFixture.cs` leaves what removed code leaves behind: the page type `EdgeRemovedPage`, whose class doesn't exist,
+used by one page, and a property `EdgeRemovedText` of EdgePage that its class doesn't declare, with one value (made at
+the second start, once the plan's content exists). `UsersFixture.cs` makes the user `edge-fixture-user` at startup (WebEditors, no password, not
 made by opticli), which the `users` tests check `users remove` refuses; they also sign in on `/util/login` as a user
 they add. With `OPTICLI_FIXTURE_SCHEDULER=on` in the environment
 of `serve`, it also turns the scheduler on in the site's own configuration, as a real site has it (Alloy turns it off in

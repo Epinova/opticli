@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds the edge-case site for opticli's integration tests: a copy of an Alloy site and of its database, with
-# EdgeCasesFixture.cs, JobsFixture.cs and UsersFixture.cs added, and the content of edge-cases.plan.json. The original
-# site and database are not changed.
+# EdgeCasesFixture.cs, JobsFixture.cs, UsersFixture.cs and OrphansFixture.cs added, and the content of
+# edge-cases.plan.json. The original site and database are not changed.
 #
 #   setup.sh <alloy-project-dir> <target-dir> [<source-db> [<target-db>]]
 #
@@ -44,7 +44,7 @@ if [ -d "$SOURCE/App_Data/blobs" ]; then
   rsync -a "$SOURCE/App_Data/blobs/" "$TARGET/App_Data/blobs/"
 fi
 mkdir -p "$TARGET/EdgeCases"
-cp "$HERE/EdgeCasesFixture.cs" "$HERE/JobsFixture.cs" "$HERE/UsersFixture.cs" "$TARGET/EdgeCases/"
+cp "$HERE/EdgeCasesFixture.cs" "$HERE/JobsFixture.cs" "$HERE/UsersFixture.cs" "$HERE/OrphansFixture.cs" "$TARGET/EdgeCases/"
 for settings in "$TARGET"/appsettings*.json; do
   sed -i "s/Database=$SOURCE_DB;/Database=$TARGET_DB;/g; s/Initial Catalog=$SOURCE_DB;/Initial Catalog=$TARGET_DB;/g" "$settings"
 done
@@ -82,7 +82,7 @@ if ! result=$($OPTICLI apply "$HERE/edge-cases.plan.json" --update-existing); th
   exit 1
 fi
 echo "$result" | jq -c '.data.operations[] | {index, op, id, status}'
-echo "== restart (creates the nested site, the hosts sites, the approval sequence and the language settings)"
+echo "== restart (creates the nested site, the hosts sites, the approval sequence, the language settings and the orphans)"
 restart
 if $OPTICLI serve --logs --tail 400 | jq -r '.data.lines[]' | grep -A3 '\[edge-cases\] setup failed'; then
   exit 1

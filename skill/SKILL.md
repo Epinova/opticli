@@ -52,6 +52,7 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
 | Point a restored database's sites at localhost (only when asked) | `opticli sites primary "Site A=localhost:5001" --dry-run` (needs `serve`) |
 | Which page/block types exist, how many items each? | `opticli types --kind block --sort instances` (`page`, `media`, `folder`) |
 | A type's properties, C# class file and views | `opticli type ArticlePage` |
+| Types or properties left behind by removed code | `opticli types --orphaned`; `opticli type <Name>` (`existsOnModel: false`, `values`) |
 | Which ContentAreas/references accept a type | `opticli allowed-in TeaserBlock --kind page` |
 | Everything in one item, decoded | `opticli get 123` (`--fields Heading,MainArea`, `--lang en`) |
 | Which content a URL shows | `opticli resolve https://www.example.com/en/news/` |

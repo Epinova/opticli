@@ -30,6 +30,7 @@ internal static class TypeCommand
     /// <param name="Source">Where the property is declared in code (<c>path:line</c>, relative to sourceRoot).</param>
     /// <param name="DeclaredIn">The base class declaring it, when that is not the type's own class.</param>
     /// <param name="ExistsOnModel">Only present (false) for properties that exist in the DB but not in code.</param>
+    /// <param name="Values">For those: how many values are stored, on content and in versions.</param>
     /// <param name="AllowedTypes">From <c>[AllowedTypes]</c> in code; absent means any type (of the right kind) is accepted.</param>
     /// <param name="RestrictedTypes">Types <c>[AllowedTypes]</c> refuses even though they match <paramref name="AllowedTypes"/>.</param>
     private sealed record PropertyDetails(
@@ -47,7 +48,12 @@ internal static class TypeCommand
         bool? ExistsOnModel,
         IReadOnlyList<string>? AllowedTypes,
         IReadOnlyList<string>? RestrictedTypes,
-        string? UiHint);
+        string? UiHint,
+        StoredValues? Values = null);
+
+    /// <param name="Content">Values on content items (tblContentProperty: the published or primary version per branch).</param>
+    /// <param name="Versions">Values in every version (tblWorkContentProperty).</param>
+    private sealed record StoredValues(int Content, int Versions);
 
     /// <param name="BaseTypes">The base class and interfaces as declared, e.g. to check a type against another type's allowedTypes.</param>
     private sealed record ClassFile(string File, int Line, string MatchedBy, IReadOnlyList<string> BaseTypes);
@@ -66,6 +72,9 @@ internal static class TypeCommand
             Views are matched by name and @model, so teaser/partial views appear next to the page template; a controller
             (ContentController/PageController<T>) or view component is not listed: search the code for the class name.
             Reverse question (which properties accept a type): opticli allowed-in <type>.
+            A property in the database but not in code has existsOnModel: false and values (how many are stored on content
+            and in versions): the CMS keeps a property removed from code while it has values. One added in admin mode looks
+            the same. `opticli types --orphaned` lists whole types whose class is gone.
             Example: opticli type ArticlePage
             """);
         command.Arguments.Add(name);
@@ -76,16 +85,23 @@ internal static class TypeCommand
             var types = await ContentTypeReader.ListAsync(db, cancellationToken, countInstances: true);
             var type = ContentTypeLookup.Find(types, context.Parse.GetValue(name)!);
             var properties = await ContentTypeReader.ListPropertiesAsync(db, type.Id, cancellationToken);
+            var orphanValues = properties.Any(p => !p.ExistsOnModel) ? await ContentTypeReader.OrphanValuesAsync(db, type.Id, cancellationToken) : new Dictionary<int, (int, int)>();
 
             var project = context.TryGetProject(out var projectError);
-            return new CommandResult(project is null
-                ? Describe(type, properties, null, $"C# sources not scanned: {projectError?.Message}")
-                : Describe(type, properties, project, null));
+            var details = project is null
+                ? Describe(type, properties, orphanValues, null, $"C# sources not scanned: {projectError?.Message}")
+                : Describe(type, properties, orphanValues, project, null);
+            var notInCode = details.Properties.Where(p => p.ExistsOnModel == false).Select(p => p.Name).ToList();
+            return new CommandResult(details, Warnings: notInCode.Count == 0 ? null :
+            [
+                $"In the database but not in the type's code (existsOnModel: false): {string.Join(", ", notInCode)}. The CMS keeps a property removed from code while it has values (values), and properties added in admin mode look the same.",
+            ]);
         });
         return command;
     }
 
-    private static TypeDetails Describe(ContentTypeInfo type, IReadOnlyList<PropertyDefinitionInfo> properties, ProjectInfo? project, string? sourceNote)
+    private static TypeDetails Describe(ContentTypeInfo type, IReadOnlyList<PropertyDefinitionInfo> properties, IReadOnlyDictionary<int, (int Content, int Versions)> orphanValues,
+        ProjectInfo? project, string? sourceNote)
     {
         IReadOnlyList<ClassMatch> classes = [];
         IReadOnlyDictionary<string, PropertySource> code = new Dictionary<string, PropertySource>();
@@ -129,7 +145,8 @@ internal static class TypeCommand
                     p.ExistsOnModel ? null : false,
                     source?.AllowedTypes is { Allowed.Count: > 0 } allowed ? allowed.Allowed : null,
                     source?.AllowedTypes is { Restricted.Count: > 0 } restricted ? restricted.Restricted : null,
-                    source?.UiHint);
+                    source?.UiHint,
+                    orphanValues.TryGetValue(p.Id, out var values) ? new StoredValues(values.Content, values.Versions) : null);
             })
             .OrderBy(p => p.Order ?? int.MaxValue)
             .ThenBy(p => p.Name, StringComparer.OrdinalIgnoreCase)

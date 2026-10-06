@@ -27,10 +27,19 @@ again to update the skill.
   addresses. Refused against a shared database and on sites without ASP.NET Identity (exit 3); the MCP module has no
   such tools.
 
+- **`opticli types --orphaned`** lists content types whose class is gone from the code, which the CMS keeps while
+  content uses them, with their class on record (`modelType`) and how many items use them. With `serve` running the site
+  says which classes it can't load (packages' too); otherwise the site's sources are scanned for the types of its own
+  assemblies, with a warning. **`opticli type`** now gives a property that isn't in the code (`existsOnModel: false`) its
+  stored `values` (on content and in versions), and warns about such properties. Reads only: opticli doesn't remove
+  types or properties.
+
 ### Development
 
 - The edge-case site gets `UsersFixture.cs`: a user opticli didn't make, which `users remove` must refuse. The
   integration tests add a user, sign in with it on the CMS's login page, and remove it again.
+- And `OrphansFixture.cs`: a page type whose class doesn't exist, used by a page, and an EdgePage property its class
+  doesn't declare, with a value.
 
 ## 0.12.0 (6 October 2026)
 
