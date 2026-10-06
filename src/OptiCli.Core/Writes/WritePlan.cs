@@ -37,6 +37,7 @@ public sealed partial class WritePlan
         ["discard"] = ["ref*", "version", "lang", "includeDraft"],
         ["move"] = ["ref*", "to*"],
         ["delete"] = ["ref*", "ignoreReferences"],
+        ["restore"] = ["ref*", "to"],
         ["access"] = ["ref*", "grant", "grantUsers", "revoke", "breakInheritance", "inherit", "allowUnknownRole"],
     };
 
@@ -288,6 +289,7 @@ public sealed partial class WritePlan
             "unpublish" => new UnpublishOperation(reader.Ref("ref"), reader.String("lang")),
             "discard" => new DiscardOperation(reader.Ref("ref"), reader.Int("version"), reader.String("lang")),
             "move" => new MoveOperation(reader.Ref("ref"), reader.Ref("to")),
+            "restore" => new RestoreOperation(reader.Ref("ref"), reader.OptionalRef("to")),
             "access" => new AccessOperation(reader.Ref("ref"), reader.Levels("grant"), reader.Levels("grantUsers"), reader.Strings("revoke"),
                 reader.Bool("breakInheritance"), reader.Bool("inherit"), reader.Bool("allowUnknownRole")),
             _ => new DeleteOperation(reader.Ref("ref"), reader.Bool("ignoreReferences")),

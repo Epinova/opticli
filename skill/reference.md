@@ -49,6 +49,7 @@ the one saved with `opticli db use`, else `connection` in the user config (`~/.c
 | `versions <ref> [--lang]` | Newest first: `ref` (`id_version`), `language`, `status`, `name`, `saved`, `changedBy`, `startPublish`, `primary`. |
 | `drafts [--since <date>] [--by <user>] [--kind K] [--type T] [--lang]` | One row per item and language with unpublished changes: `status` and `version` of the newest draft, `saved`, `changedBy`, `drafts` (unpublished versions newer than the published one), `publishAt` for a scheduled one. `--since` is UTC. |
 | `projects [<id>]` | Projects (versions of several items published together): `id`, `name`, `status`, `created`, `createdBy`, `publishAt`, `items`. With an id, its items: `ref`, `version`, `type`, `name`, `language`, `status`. Read-only. |
+| `trash [--since <date\|7d>] [--by <user>] [--type T]` | What is directly in the recycle bin (what was deleted), newest first: identity, `deletedBy`, `deleted` (UTC), `descendants` (below it, coming back with it), `originalParent` (`ref`, `name`, `type`, `path`, `url`; `deleted: true` when it is in the recycle bin too, `missing: true` when it is gone): the parent the CMS stored when it was deleted, where `restore` puts it. Null when the CMS has no record of it (`restore --to`). Read from the database, or from the site while `serve` runs (as `restore` reads it). |
 | `blob <ref>` | Media only: blob URI, file path on disk, `exists`; same for the thumbnail. |
 | `jobs [--all] [--enabled\|--disabled] [--failed]` | Scheduled jobs: `id`, `name`, `enabled`, `schedule` (`every 1 hour`, `manual`), `nextRun`, `overdue` (enabled, next run passed), `lastRun`, `lastStatus` (`succeeded`, `failed`, `cancelled`, `unableToStart`, `aborted`), `lastMessage` (one line), `running` (`true`, `false`, `"stale"`: its process stopped pinging), `stoppable`, `class`, `source` (file:line in the site's code; null for a job from a package), `registered: false` for a job in the code the database lacks (the site registers jobs when it starts). `--all` adds jobs the CMS hides. See [Scheduled jobs](#scheduled-jobs). |
 | `jobs log [<job>] [--failed] [--since <date\|7d>] [--limit N]` | Runs, latest first (20 by default): `job`, `jobId`, `started`, `finished`, `duration`, `durationMs`, `status`, `trigger` (`scheduler`, `user`, `restart`), `server`, `message` (whole; it can be HTML). Without `<job>`: every job's runs. |
@@ -106,6 +107,7 @@ directly: see [Approval sequences](#approval-sequences).
 | `discard <ref> [--version id] [--lang] [--include-draft]` | `opticli discard 123_457 --dry-run` (only when the user asked) |
 | `move <ref> --to <parent-ref>` | `opticli move 123 --to 45` |
 | `delete <ref> [--ignore-references]` | `opticli delete 123 --dry-run` (recycle bin; only when the user asked) |
+| `restore <ref> [--to <parent-ref>]` | `opticli restore 123 --dry-run` (out of the recycle bin; only when the user asked) |
 | `access <ref> [--grant Role=Levels] [--user Name=Levels] [--revoke Name] [--break-inheritance \| --inherit]` | `opticli access 123 --break-inheritance --revoke Everyone --grant Authenticated=Read --dry-run` (only when the user asked) |
 | `sites primary <site>[@<lang>]=<host>... [--https true\|false\|unset] [--keep-edit] [--keep-site-url] [--save]` | `opticli sites primary "Site A=localhost:5001" "Site B=localhost:5002" --dry-run` (see [Site hosts](#site-hosts)) |
 | `sites primary --from-config` / `sites primary --forget <site>` | `opticli sites primary --from-config --dry-run` |
@@ -150,6 +152,17 @@ the recycle bin: `references[]` (`from`, `name`, `type`, `language`, `to`, `prop
 `details.reason: "referenced"`, `details.references`. `--ignore-references` (in a plan `"ignoreReferences": true`)
 deletes all the same. In a plan, references from content that earlier steps change (an `area remove`, say) only warn;
 the delete checks again when it runs. A `move` keeps references working (they follow the content by id).
+`restore` brings deleted content back as the edit UI's Restore does: below the parent the CMS stored when it was deleted
+(`trash`'s `originalParent`; it keeps one for every move, not the change log, so truncating that changes nothing), or
+below `--to`. Output: `ref`, `parent`, `previousParent` (the recycle bin), `from` (`originalParent` or `to`),
+`originalParent` (what the CMS stored, also when `--to` overrode it), `restored`, `descendants` (they come back with it).
+It keeps its versions: content that was published is live again at once (a warning says so). Errors: `conflict` when it
+isn't in the recycle bin, or the parent is in the recycle bin too or gone (the hint names what to restore first);
+`usage` for content below deleted content (the hint names what was deleted), and when the CMS has no parent for it and
+no `--to` was given; `validation` when its type isn't allowed below the parent, as for `move`. `--dry-run` asks the
+site, which runs every check. Undo: `opticli delete <ref>`. In a plan: `{"op": "restore", "ref": "123", "to": "45"}`
+(`to` optional); a restore of what an earlier step deletes is checked when the plan runs (`deferred`), and with
+`--update-existing` content that isn't in the recycle bin is left as it is.
 `create`, `block create`, `upload` and `move` put content only where it can go, or fail with `validation` (exit 5):
 pages below pages (not in asset folders), blocks, media and folders in asset folders (not below pages: a page's own
 go in its "For this page" folder, `--for <page>`), nothing below blocks or media, and only types the parent's type
@@ -430,7 +443,7 @@ step by step. `get` and `access` show it as `approval`: `definedOn`, `inherited`
 ```
 
 Ops: `set`, `create`, `area`, `block`, `upload`, `translate`, `publish`, `unpublish`, `discard`, `move`, `delete`,
-`access`, with the same fields as the commands (`opticli apply --help` lists them). `"$id"` refers to what an earlier
+`restore`, `access`, with the same fields as the commands (`opticli apply --help` lists them). `"$id"` refers to what an earlier
 `create`, `block` or `upload` with that `id` made.
 - In rich text (and `@file` HTML), `href="$id"` (or `"$id#anchor"`) links to planned content: it is stored as its
   permanent link, `~/link/<guid>.aspx`, as the CMS does. A block in the text takes `data-contentguid="$id"` (or

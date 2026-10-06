@@ -41,7 +41,7 @@ internal static class ApplyCommand
             "guidNamespace": "<a GUID>" next to "operations" derives each create/block/upload's GUID from its "id" (a step's
             "guid" overrides it), so its content has the same GUID and permanent links (~/link/<guid-without-dashes>.aspx) in
             every database. Without --update-existing a GUID that exists is a conflict; with it, that content is updated
-            (moved back out of the recycle bin first if needed), and area adds, translations, publishes and deletes that are
+            (moved back out of the recycle bin first if needed), and area adds, translations, publishes, deletes and restores that are
             already done are skipped. Content the plan no longer has is left alone. Each step reports its "guid".
             Operations and fields (* required; the same as the matching command):
             {{{string.Join(Environment.NewLine, WritePlan.Fields.Select(f => $"  {f.Key}: {string.Join(", ", f.Value)}"))}}}

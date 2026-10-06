@@ -164,3 +164,31 @@ public sealed record MoveResult
 
     public required string Parent { get; init; }
 }
+
+/// <summary>Response of <see cref="AgentRoutes.Restore"/>.</summary>
+public sealed record RestoreResult
+{
+    /// <summary>The content, after the restore (before it, for a dry run).</summary>
+    public required ContentSummary Content { get; init; }
+
+    /// <summary>Where it went (would go, for a dry run).</summary>
+    public required string Parent { get; init; }
+
+    /// <summary>The recycle bin, where it was.</summary>
+    public required string PreviousParent { get; init; }
+
+    /// <summary>The parent the CMS stored when it was deleted; null when it has none (the request then named one).</summary>
+    public string? StoredParent { get; init; }
+
+    /// <summary>False for a dry run.</summary>
+    public bool Restored { get; init; }
+
+    public bool DryRun { get; init; }
+}
+
+/// <summary>Response of <see cref="AgentRoutes.RestoreParents"/>.</summary>
+/// <param name="Parents">Content id to the parent the CMS stored for it (a ref, <c>123</c>); items without one are left out.</param>
+public sealed record RestoreParentsResult(IReadOnlyDictionary<string, string> Parents)
+{
+    public const int MaxIds = 1000;
+}

@@ -153,6 +153,31 @@ public sealed record MoveOutput(
         : this with { References = found.References, ReferenceCount = found.Count };
 }
 
+/// <summary>Result of restore: content moved back out of the recycle bin.</summary>
+/// <param name="Parent">Where it went (would go, for a dry run).</param>
+/// <param name="PreviousParent">The recycle bin.</param>
+/// <param name="From">
+/// <c>originalParent</c> when <paramref name="Parent"/> is the parent the CMS stored when it was deleted, <c>to</c> when
+/// <c>--to</c> named it.
+/// </param>
+/// <param name="OriginalParent">The parent the CMS stored, also when <c>--to</c> overrode it; null when it has none.</param>
+/// <param name="Restored">False for a dry run.</param>
+/// <param name="Descendants">Content items below it, which came back with it.</param>
+public sealed record RestoreOutput(
+    string Ref,
+    Guid? Guid,
+    string? Type,
+    string? Name,
+    string? Language,
+    string? Status,
+    string Parent,
+    string? PreviousParent,
+    string From,
+    string? OriginalParent,
+    bool Restored,
+    bool DryRun,
+    int Descendants);
+
 /// <summary><c>details</c> of a delete stopped because other content references what it deletes.</summary>
 public sealed record ReferencedDetails(string Reason, IReadOnlyList<Queries.IncomingReference> References, int Count);
 
@@ -168,7 +193,7 @@ public sealed record AccessOutput(
     AccessList Before,
     AccessList After);
 
-/// <param name="Output">A <see cref="WriteOutput"/>, <see cref="MoveOutput"/> or <see cref="AccessOutput"/>.</param>
+/// <param name="Output">A <see cref="WriteOutput"/>, <see cref="MoveOutput"/>, <see cref="RestoreOutput"/> or <see cref="AccessOutput"/>.</param>
 /// <param name="Source"><c>agent</c> when the site did the work, <c>db</c> for dry runs opticli checks itself.</param>
 /// <param name="CreatedId">Content id of what a create made (for plans' <c>$id</c>).</param>
 public sealed record WriteOutcome(object Output, string Source, int? CreatedId, IReadOnlyList<string> Warnings);

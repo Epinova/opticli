@@ -16,7 +16,7 @@ internal static class DeleteCommand
         };
         var command = new Command("delete", """
             Move content, with everything below it, to the recycle bin. Needs `opticli serve`. Nothing is deleted permanently.
-            Undo with `opticli move <ref> --to <previousParent>`. Prints what moved, including how many descendants, and
+            Undo with `opticli restore <ref>` (`opticli trash` lists the recycle bin). Prints what moved, including how many descendants, and
             references from other content to any of it (references, referenceCount): those would point into the recycle
             bin, so a delete with references needs --ignore-references. --dry-run shows all that without asking the site.
             Example: opticli delete 123 --dry-run

@@ -112,6 +112,7 @@ public sealed class WriteExecutor(
             DiscardOperation discard => await DiscardAsync(discard, dryRun, cancellationToken),
             MoveOperation move => await MoveAsync(move, dryRun, cancellationToken),
             DeleteOperation delete => await DeleteAsync(delete, dryRun, cancellationToken),
+            RestoreOperation restore => await RestoreAsync(restore, dryRun, cancellationToken),
             AccessOperation access => await AccessAsync(access, dryRun, cancellationToken),
             _ => throw new InvalidOperationException($"Unknown operation {operation.GetType().Name}."),
         };
@@ -813,6 +814,75 @@ public sealed class WriteExecutor(
         var agent = await AgentAsync(cancellationToken);
         var result = await agent.SendAsync<MoveResult>(HttpMethod.Delete, AgentRoutes.Delete(target.ContentRef), null, cancellationToken);
         return new WriteOutcome(Moved(result, descendants, recycleBin: true, dryRun: false).WithReferences(references), AgentSource, null, warnings);
+    }
+
+    /// <summary>
+    /// Moves content out of the recycle bin through the site, which finds the parent the CMS stored when it was deleted
+    /// (<c>--to</c> overrides it). What can be told from the database is checked first: that the item is in the recycle bin,
+    /// and is what was deleted (not something below it). A dry run asks the site too, which knows the stored parent and
+    /// which types may go below it.
+    /// </summary>
+    private async Task<WriteOutcome> RestoreAsync(RestoreOperation op, bool dryRun, CancellationToken cancellationToken)
+    {
+        var target = await EditableAsync(op.Ref, cancellationToken);
+        // Read again rather than from the session's cache: an earlier step of a plan may have deleted it.
+        var header = await ContentHeaderReader.ByIdAsync(session.Db, target.Id, cancellationToken) ?? target.Header;
+        if (!header.Deleted)
+        {
+            if (updateExisting)
+            {
+                var identity = session.Identities.Describe(header, null);
+                return new WriteOutcome(
+                    new RestoreOutput(WriteOutput.Id(target.Id), identity.Guid, identity.Type, identity.Name, identity.Language, identity.Status,
+                        header.ParentId is { } parent ? WriteOutput.Id(parent) : "", null, "unchanged", null, Restored: false, DryRun: dryRun, Descendants: 0),
+                    DbSource, null, [$"Content {target.Id} is not in the recycle bin; nothing to do."]);
+            }
+            throw new ConflictException($"Content {target.Id} is not in the recycle bin.", "`opticli trash` lists what is.");
+        }
+        await session.Identities.LoadAsync(header.AncestorIds, [], cancellationToken);
+        var deletedRoot = header.AncestorIds.SkipWhile(id => session.Identities.Header(id) is not { } h || session.Model.TypeName(h.TypeId) != TrashReader.RecycleBinType).Skip(1).FirstOrDefault();
+        if (deletedRoot != 0)
+        {
+            var name = session.Identities.ById(deletedRoot, null).Name;
+            throw new UsageException(
+                $"Content {target.Id} is in the recycle bin because {deletedRoot} ('{name}') above it was deleted.",
+                $"Restore {deletedRoot}, which brings {target.Id} back with it (`opticli restore {deletedRoot}`); then move {target.Id} if it should go elsewhere.");
+        }
+        string? to = null;
+        if (op.To is not null)
+        {
+            var destination = await EditableAsync(op.To, cancellationToken, "--to");
+            if (destination.Id == target.Id || destination.Header.AncestorIds.Contains(target.Id))
+            {
+                throw new UsageException($"Can't restore {target.Id} below itself.");
+            }
+            to = destination.ContentRef;
+        }
+        var descendants = await DescendantCountAsync(header, cancellationToken);
+        RestoreResult result;
+        try
+        {
+            result = await PostAsync<RestoreResult>(AgentRoutes.Restore(target.ContentRef), new RestoreRequest { Parent = to, DryRun = dryRun }, cancellationToken);
+        }
+        catch (NotFoundException ex) when (ex.Message.StartsWith("No agent route", StringComparison.Ordinal))
+        {
+            throw new NotFoundException("The site's agent is older than this opticli and can't restore content.", AgentErrors.OutOfDateHint);
+        }
+        var content = result.Content;
+        var output = new RestoreOutput(WriteOutput.Id(content.Id), content.Guid, content.Type, content.Name, content.Language, content.Status,
+            result.Parent, result.PreviousParent, op.To is null ? "originalParent" : "to", result.StoredParent, result.Restored, result.DryRun, descendants);
+        var warnings = new List<string>();
+        if (content.Status == "published")
+        {
+            warnings.Add(dryRun
+                ? $"{content.Id} has a published version: once restored it is live again, at its URL below {result.Parent}."
+                : $"{content.Id} has a published version, so it is live again, at its URL below {result.Parent}.");
+        }
+        if (op.To is not null && result.StoredParent is { } stored && stored != result.Parent)
+        {
+            warnings.Add($"Restored below {result.Parent} as --to says, not below {stored}, where it was before it was deleted.");
+        }
+        return new WriteOutcome(output, AgentSource, null, warnings);
     }
 
     private async Task<WriteOutcome> AccessAsync(AccessOperation op, bool dryRun, CancellationToken cancellationToken)

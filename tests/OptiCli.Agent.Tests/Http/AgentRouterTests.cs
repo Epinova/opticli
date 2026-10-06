@@ -20,6 +20,8 @@ public class AgentRouterTests
     [InlineData("POST", "/v1/content/123/languages", "Languages", "123")]
     [InlineData("POST", "/v1/content/123/publish", "Publish", "123")]
     [InlineData("POST", "/v1/content/123/move", "Move", "123")]
+    [InlineData("POST", "/v1/content/123/restore", "Restore", "123")]
+    [InlineData("GET", "/v1/restore-parents", "RestoreParents", null)]
     [InlineData("POST", "/v1/content/123/access", "Access", "123")]
     [InlineData("POST", "/v1/sites/hosts", "SiteHosts", null)]
     [InlineData("POST", "/v1/jobs/run", "JobRun", null)]
@@ -97,6 +99,7 @@ public class AgentRouterTests
         Assert.Equal(new RouteMatch(AgentEndpoint.Languages, "123"), AgentRouter.Match("POST", AgentRoutes.Languages("123")));
         Assert.Equal(new RouteMatch(AgentEndpoint.Publish, "123"), AgentRouter.Match("POST", AgentRoutes.Publish("123")));
         Assert.Equal(new RouteMatch(AgentEndpoint.Move, "123"), AgentRouter.Match("POST", AgentRoutes.Move("123")));
+        Assert.Equal(new RouteMatch(AgentEndpoint.Restore, "123"), AgentRouter.Match("POST", AgentRoutes.Restore("123")));
         Assert.Equal(new RouteMatch(AgentEndpoint.Delete, "123"), AgentRouter.Match("DELETE", AgentRoutes.Delete("123")));
         Assert.Equal(new RouteMatch(AgentEndpoint.Read, "123"), AgentRouter.Match("GET", AgentRoutes.Read("123")));
     }

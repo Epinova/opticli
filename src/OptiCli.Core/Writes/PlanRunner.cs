@@ -274,6 +274,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     {
         WriteOutput write => write.Saved || write.Restored == true || write.Discarded == true,
         MoveOutput move => move.Moved,
+        RestoreOutput restore => restore.Restored,
         AccessOutput access => access.Saved,
         RemoveLanguageOutput removed => removed.Removed,
         _ => true,
@@ -321,6 +322,12 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             {
                 var resolvedStep = resolved.First(s => s.Index == step.Index);
                 op = resolvedStep.Operation;
+                // A restore of what an earlier step deletes: the database doesn't have it in the recycle bin yet.
+                if (op is RestoreOperation restore && resolved.Any(s => s.Index < step.Index && s.Operation is DeleteOperation delete && delete.Ref == restore.Ref))
+                {
+                    return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Deferred,
+                        Warnings: [$"An earlier operation deletes {restore.Ref}, so the site checks the restore when the plan runs."]), null);
+                }
                 // Earlier steps change this content first; today's database doesn't have their changes yet.
                 if (PlanSimulation.OnExisting(resolvedStep, resolved, targets, existing, executor.UpdateExisting) is { } onExisting)
                 {

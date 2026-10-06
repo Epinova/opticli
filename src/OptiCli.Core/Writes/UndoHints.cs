@@ -12,7 +12,7 @@ public static class UndoHints
             $"{restored.Ref} was moved back out of the recycle bin (opticli delete {restored.Ref} returns it there){(restored.Saved ? $"; {Version(restored)}" : ".")}",
         (DiscardOperation, WriteOutput { Discarded: true } discarded) =>
             $"None: {discarded.Version} was deleted for good, and opticli can't bring it back (changes shows what it held).",
-        (_, WriteOutput { Saved: false }) or (_, MoveOutput { Moved: false }) or (_, AccessOutput { Saved: false }) => null,
+        (_, WriteOutput { Saved: false }) or (_, MoveOutput { Moved: false }) or (_, RestoreOutput { Restored: false }) or (_, AccessOutput { Saved: false }) => null,
         (UnpublishOperation, WriteOutput { Unpublished: true } offline) =>
             $"{offline.Ref} is offline{In(offline)}; to put it back, publish the version that was live: opticli publish {offline.Ref} --version {VersionId(offline.PreviouslyPublished)}",
         (AccessOperation, AccessOutput access) => Access(access),
@@ -32,7 +32,9 @@ public static class UndoHints
         (PublishOperation, WriteOutput published) => Republish(published),
         (_, WriteOutput saved) => Version(saved),
         (DeleteOperation, MoveOutput deleted) =>
-            $"opticli move {deleted.Ref} --to {deleted.PreviousParent} (restores it from the recycle bin)",
+            $"opticli restore {deleted.Ref} (brings it back below {deleted.PreviousParent})",
+        (_, RestoreOutput restored) =>
+            $"opticli delete {restored.Ref} (moves it back to the recycle bin)",
         (_, MoveOutput moved) =>
             $"opticli move {moved.Ref} --to {moved.PreviousParent}",
         _ => null,

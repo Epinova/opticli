@@ -3,6 +3,22 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## Unreleased
+
+### New
+
+- **`opticli trash`** lists the recycle bin, newest first: what was deleted (what was below it is counted in
+  `descendants`), who deleted it and when, and `originalParent`, where `restore` puts it back. That is the parent the
+  CMS itself stores for every move, for the edit UI's Restore (not the change log, so truncating that changes nothing):
+  read through the site while `serve` runs, otherwise from that store's rows in the database (only those). `--since`,
+  `--by`, `--type`.
+- **`opticli restore <ref>`** brings deleted content back out of the recycle bin through the site, as the edit UI's
+  Restore does: below the parent it had, or below `--to <parent>` (needed when the CMS has no record of it). It checks
+  first that the item is what was deleted (not something below it: the hint names what to restore), that the parent
+  exists and isn't in the recycle bin too, and that its type is allowed there. Content keeps its versions, so what was
+  published is live again; a warning says so. `--dry-run`; in a plan `{"op": "restore", "ref": ..., "to": ...}`. The
+  MCP module has no such tool. `delete`'s undo hint is now `opticli restore <ref>`.
+
 ## 0.12.0 (6 October 2026)
 
 ### Changed

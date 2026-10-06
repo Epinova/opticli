@@ -355,6 +355,19 @@ public sealed record DeleteOperation(string Ref, bool IgnoreReferences = false) 
 }
 
 /// <summary>
+/// Brings content back out of the recycle bin, as the edit UI's Restore does: below the parent it had before it was
+/// deleted (as the CMS stored it), or below <paramref name="To"/>.
+/// </summary>
+public sealed record RestoreOperation(string Ref, string? To = null) : WriteOperation
+{
+    public override string Kind => "restore";
+
+    public override IEnumerable<string?> Refs => [Ref, To];
+
+    public override WriteOperation MapRefs(Func<string, string> map) => this with { Ref = map(Ref), To = Map(To, map) };
+}
+
+/// <summary>
 /// Changes one item's access rights. <paramref name="Grant"/> and <paramref name="GrantUsers"/> map a role or user name
 /// to levels (<c>Read,Edit</c>, <c>FullAccess</c>) and set that entry to exactly those; <paramref name="Revoke"/> removes
 /// entries by name.

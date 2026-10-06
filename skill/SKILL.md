@@ -1,6 +1,6 @@
 ---
 name: opticli
-description: Inspect and change content of an Optimizely CMS 12 (EPiServer) site the user develops locally (against its local or development database) with the opticli CLI instead of hand-written SQL or guessing from code. Use when you need to know what CMS content exists (pages, blocks, media, folders), what a page or block contains (properties, ContentArea items, rich text), which page type or block type something is and which C# class and Razor view render it, where a block or page is used, which content a URL shows, what drafts and versions exist, or when the user asks you to create or edit CMS content (set properties, add a block to a ContentArea, create a page or block, translate, publish) in their development site, or to point the sites of a restored database at localhost (their host names). Also for scheduled jobs: which exist, whether a job (an import, a sync) ran and how it ended, and running or rescheduling one.
+description: Inspect and change content of an Optimizely CMS 12 (EPiServer) site the user develops locally (against its local or development database) with the opticli CLI instead of hand-written SQL or guessing from code. Use when you need to know what CMS content exists (pages, blocks, media, folders), what a page or block contains (properties, ContentArea items, rich text), which page type or block type something is and which C# class and Razor view render it, where a block or page is used, which content a URL shows, what drafts and versions exist, or when the user asks you to create or edit CMS content (set properties, add a block to a ContentArea, create a page or block, translate, publish) in their development site, or to point the sites of a restored database at localhost (their host names). Also for scheduled jobs: which exist, whether a job (an import, a sync) ran and how it ended, and running or rescheduling one. And for the recycle bin: what was deleted, by whom, and bringing it back.
 opticli-version: 0.12.0
 ---
 
@@ -62,6 +62,7 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
 | Text anywhere in names or text properties | `opticli search "opening hours" --in strings` |
 | Who may read or edit an item (access rights) | `opticli access 123` (`inherited`, `from`: where they come from) |
 | Version history / unpublished work | `opticli versions 123` / `opticli drafts --since 2024-06-01 --kind page` |
+| What was deleted, and where it goes back | `opticli trash` (`--since 7d`, `--by`); `opticli restore <ref> --dry-run` (needs `serve`; only when asked) |
 | What differs between this build and a shared database? | `opticli drift` (needs `serve`) |
 | Which scheduled jobs exist, which are overdue or failed last time? | `opticli jobs` (`--failed`) |
 | Did a job (an import, a sync) run, and how did it end? | `opticli jobs log "<job name>"` (`--failed --since 1d` for every job) |
@@ -177,10 +178,14 @@ order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a cod
   user said yes. `translate --remove` deletes every version of the branch: pass `--confirm` only after the user
   confirmed.
 - Never run `delete` unless the user explicitly asked to delete that content. (It only moves content to the recycle
-  bin; undo with `opticli move <ref> --to <previousParent>`. Start pages, site and asset roots, and anything that
-  contains them, are refused.) When other content references it, the delete stops (`conflict`,
+  bin; undo with `opticli restore <ref>`. Start pages, site and asset roots, and anything that contains them, are
+  refused.) When other content references it, the delete stops (`conflict`,
   `details.reason: "referenced"`): show the user `details.references`, and pass `--ignore-references` only after they
   said to delete it anyway.
+- Never run `restore` unless the user asked to bring that content back: content that was published is live again at
+  once. Dry-run it first and tell the user where it goes (`parent`) and what comes along (`descendants`). It goes back
+  below `originalParent` from `opticli trash`; when that is null, or in the recycle bin too, ask the user where it
+  should go (`--to <parent>`), or restore that parent first. Restore what was deleted, not something below it.
 - Never change access rights (`access` with `--grant`, `--user`, `--revoke`, `--break-inheritance`, `--inherit`) unless
   the user explicitly asked for it. They aren't versioned: report the `before` from the output, which is the only
   record of what they were. Root, start pages and asset roots, and changes that leave no role with Administer, are

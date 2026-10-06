@@ -194,9 +194,9 @@ Once the site answers, `serve` reports drift: what differs between the build and
 | A publish that would also put live changes someone else saved after the published version stops: on a terminal it shows who saved what and asks, elsewhere it fails with `conflict` (exit 5) listing them. `--include-draft` (a plan step's `"includeDraft": true`) confirms; `publish --version <id>` publishes that version as it is; `--from published` bases the change on the published version, leaving them out. | Site agent |
 | Against a shared database, writes stop while the build and the database differ (drift): on a terminal it shows the differences and asks, elsewhere it fails with `drift` (exit 5). `--accept-drift <fingerprint>` confirms; the fingerprint stops counting when the differences change. | Site agent, CLI first |
 | Against a shared database, `sites primary` and `sites host remove` are refused (exit 3), and `sites host add` only adds hosts of type undefined: the deployed site uses the same site definitions. There is no override; change those sites in their own admin UI. Site definitions are never reachable from the MCP module. | Site agent, CLI first |
-| `delete` moves content to the recycle bin; nothing empties it. Site roots, start pages, asset roots and anything above them can't be moved or deleted. | Site agent |
+| `delete` moves content to the recycle bin; nothing empties it, and `restore` brings it back. Site roots, start pages, asset roots and anything above them can't be moved or deleted. The MCP module doesn't restore. | Site agent |
 | `serve` turns the site's scheduler off, so a restored database's overdue jobs don't all start (`--scheduler` leaves it on). `jobs run` refuses jobs that delete for good (emptying the recycle bin, trimming versions, truncating the change log, Commerce's expired carts and archived items, ...) or move content across the site, and `jobs set` refuses to let the scheduler run one (sooner), without `--allow-destructive`. Against a shared database jobs aren't run, stopped or changed, and the scheduler stays off. | Site agent, CLI first |
-| Reads use fixed queries. `sql` accepts a single SELECT, refuses anything that writes, runs code, reaches another database or reads server-wide views, logs and traces (in `sys`, only the views that describe the database's own schema), and always runs in a rolled-back transaction. Personal-data tables (form submissions, users) need `--include-personal-data`. | CLI |
+| Reads use fixed queries. `sql` accepts a single SELECT, refuses anything that writes, runs code, reaches another database or reads server-wide views, logs and traces (in `sys`, only the views that describe the database's own schema), and always runs in a rolled-back transaction. Personal-data tables (form submissions, users) need `--include-personal-data`. Where another command's fixed query reads the Dynamic Data Store's tables, it reads only one store's rows and only what it shows (the parents the CMS stored for `trash`, visitor group names), nothing that names a person. | CLI |
 | Passwords are never printed; `doctor` redacts connection strings. The exception is `opticli env`: it prints the per-run token, and with `--include-connection` the connection string too. | CLI |
 
 Things these rules can't see:
@@ -260,6 +260,7 @@ add-ons need first.
 | `resolve <url>`, `url <ref>` | URL to content, and content to URL per language |
 | `versions <ref>`, `drafts [--since] [--by] [--kind] [--type]` | version history; unpublished changes |
 | `projects [<id>]` | projects, and the versions in one |
+| `trash [--since] [--by] [--type]` | what is in the recycle bin: who deleted it and when, what came along (`descendants`), and `originalParent`, where `restore` puts it back |
 | `jobs [--failed]`, `jobs log [<job>] [--failed] [--since]` | scheduled jobs: schedule, next and last run, how it ended, overdue, running; their runs with status and message (see [Scheduled jobs](#scheduled-jobs)) |
 | `blob <ref>` | where a media file lives on disk |
 | `drift` | what differs between the build and a shared database (needs `serve`; see [Shared databases](#shared-databases)) |
@@ -282,6 +283,10 @@ These commands write:
 - `publish`, `unpublish` (takes a published branch offline, as the edit UI's expiry does), `discard` (deletes one
   unpublished version; it can't be undone), `move` and `delete` (to the recycle bin). `delete` stops when other content
   references what it deletes, unless `--ignore-references`.
+- `restore <ref>` brings deleted content back out of the recycle bin, as the edit UI's Restore does: below the parent
+  it had before it was deleted, which the CMS stores for every move (`trash` shows it as `originalParent`), or below
+  `--to <parent>`. It keeps its versions, so what was published is live again. Something below deleted content can't be
+  restored on its own (restore what was deleted), and a parent that is in the recycle bin too is a `conflict`.
 - `create`, `block create`, `upload` and `move` put content only where it can go: pages below pages, blocks, media and
   folders in asset folders, and only where the parent type allows the type (`[AvailableContentTypes]` and admin mode's
   settings, as the CMS answers it).

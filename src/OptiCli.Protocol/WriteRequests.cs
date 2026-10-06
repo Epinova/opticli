@@ -371,3 +371,16 @@ public sealed record MoveRequest
     /// <summary>Run every check (protected content, the type allowed below the new parent) without moving.</summary>
     public bool DryRun { get; init; }
 }
+
+/// <summary>Body of <see cref="AgentRoutes.Restore"/>.</summary>
+public sealed record RestoreRequest
+{
+    /// <summary>
+    /// The parent to restore below, content id or GUID; default: the parent it had before it was deleted, as the CMS
+    /// stored it (what the edit UI's Restore uses).
+    /// </summary>
+    public string? Parent { get; init; }
+
+    /// <summary>Run every check (where it goes, that the parent can take it) without moving it.</summary>
+    public bool DryRun { get; init; }
+}

@@ -69,11 +69,16 @@ public class UndoHintsTests
         Assert.Contains("unpublished draft", UndoHints.For(new AreaEdit("123", "MainArea", "add", "5"), Output()));
     }
 
+    private static RestoreOutput Restored(bool restored = true) =>
+        new("123", Guid.Empty, "ArticlePage", "Name", "en", "published", "10", "2", "originalParent", "10", restored, DryRun: !restored, Descendants: 0);
+
     [Fact]
-    public void Move_and_delete_are_undone_by_moving_back()
+    public void A_move_is_undone_by_moving_back_a_delete_by_a_restore_and_a_restore_by_a_delete()
     {
         Assert.Equal("opticli move 123 --to 10", UndoHints.For(new MoveOperation("123", "20"), Moved()));
-        Assert.Equal("opticli move 123 --to 10 (restores it from the recycle bin)", UndoHints.For(new DeleteOperation("123"), Moved()));
+        Assert.Equal("opticli restore 123 (brings it back below 10)", UndoHints.For(new DeleteOperation("123"), Moved()));
+        Assert.Equal("opticli delete 123 (moves it back to the recycle bin)", UndoHints.For(new RestoreOperation("123"), Restored()));
+        Assert.Null(UndoHints.For(new RestoreOperation("123"), Restored(restored: false)));
     }
 
     [Fact]

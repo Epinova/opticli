@@ -162,6 +162,25 @@ public static class AgentRoutes
     public static string Move(string contentRef) => $"{Content(contentRef)}/move";
 
     /// <summary>
+    /// <c>GET /v1/restore-parents?ids=1,2,3</c> (at most <see cref="RestoreParentsResult.MaxIds"/> ids). Response:
+    /// <see cref="RestoreParentsResult"/>: for each item that has one, the parent the CMS stored when it was last moved
+    /// (<c>IParentRestoreRepository</c>, what the edit UI's Restore and <see cref="Restore"/> use). Read-only; for
+    /// <c>opticli trash</c>. Developer-only: the MCP module has no such tool.
+    /// </summary>
+    public static string RestoreParents(IEnumerable<int> ids) =>
+        $"{Prefix}/restore-parents?ids={string.Join(",", ids.Select(id => id.ToString(System.Globalization.CultureInfo.InvariantCulture)))}";
+
+    /// <summary>
+    /// <c>POST /v1/content/{ref}/restore</c>. Body: <see cref="RestoreRequest"/>. Response: <see cref="RestoreResult"/>.
+    /// Moves content that was deleted out of the recycle bin, as the edit UI's Restore does: below the parent the CMS
+    /// stored when it was deleted (<c>IParentRestoreRepository</c>), or below <see cref="RestoreRequest.Parent"/>.
+    /// Errors: <c>conflict</c> when it isn't in the recycle bin, or the parent is (or is gone); <c>usage</c> for content
+    /// below deleted content (restore what was deleted), and when no parent was stored and none given; <c>validation</c>
+    /// when its type isn't allowed below the parent; <c>refused</c> for an editor. The MCP module has no such tool.
+    /// </summary>
+    public static string Restore(string contentRef) => $"{Content(contentRef)}/restore";
+
+    /// <summary>
     /// <c>POST /v1/content/{ref}/access</c>. Body: <see cref="AccessRequest"/>. Response: <see cref="AccessResult"/>.
     /// Replaces the item's ACL (<c>SecuritySaveType.Replace</c>); descendants that inherit follow, nothing else is changed.
     /// Access rights aren't versioned: <see cref="AccessResult.Before"/> is the only record of the previous state.

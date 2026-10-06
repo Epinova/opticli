@@ -50,7 +50,7 @@ internal partial class Program
 
             Refs: {{{ContentRefParser.Syntax}}}
             Reads query the database directly and need nothing running.
-            Writes (set, create, area, block, upload, translate, publish, unpublish, discard, move, delete, access, apply,
+            Writes (set, create, area, block, upload, translate, publish, unpublish, discard, move, delete, restore, access, apply,
               sites primary, sites host, jobs run|stop|set) go through the CMS inside the running site: `opticli serve` first,
               `opticli serve --stop` when done. They save drafts unless --publish, delete only moves to the recycle bin, and
               every write takes --dry-run.
@@ -86,6 +86,7 @@ internal partial class Program
         root.Subcommands.Add(VersionsCommand.Create(options));
         root.Subcommands.Add(DraftsCommand.Create(options));
         root.Subcommands.Add(ProjectsCommand.Create(options));
+        root.Subcommands.Add(TrashCommand.Create(options));
         root.Subcommands.Add(JobsCommand.Create(options));
         root.Subcommands.Add(BlobCommand.Create(options));
         root.Subcommands.Add(SqlCommand.Create(options));
@@ -103,6 +104,7 @@ internal partial class Program
         root.Subcommands.Add(DiscardCommand.Create(options));
         root.Subcommands.Add(MoveCommand.Create(options));
         root.Subcommands.Add(DeleteCommand.Create(options));
+        root.Subcommands.Add(RestoreCommand.Create(options));
         root.Subcommands.Add(AccessCommand.Create(options));
         root.Subcommands.Add(ApplyCommand.Create(options));
         root.Subcommands.Add(SkillCommand.Create(options));

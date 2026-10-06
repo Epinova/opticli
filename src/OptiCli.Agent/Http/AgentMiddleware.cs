@@ -71,6 +71,7 @@ internal static class AgentMiddleware
         [AgentEndpoint.Drift] = Read(request => DriftEndpoint.Handle(request)),
         [AgentEndpoint.Type] = Read(request => TypeOperation.Run(request.Call, request.Argument)),
         [AgentEndpoint.Read] = Read(request => ReadEndpoint.Handle(request)),
+        [AgentEndpoint.RestoreParents] = Read(request => RestoreParentsEndpoint.Handle(request)),
         [AgentEndpoint.Create] = Write(r => r.ReadBodyAsync<CreateRequest>(), b => b.DryRun, (r, b) => Created(CreateOperation.Run(r.Call, b))),
         [AgentEndpoint.Upload] = Write(r => r.ReadBodyAsync<UploadRequest>(UploadBodyBytes), b => b.DryRun, (r, b) => Created(UploadOperation.Run(r.Call, b))),
         [AgentEndpoint.Draft] = Write(r => r.ReadBodyAsync<DraftRequest>(), b => b.DryRun, (r, b) => Ok(DraftOperation.Run(r.Call, r.Argument, b))),
@@ -80,6 +81,7 @@ internal static class AgentMiddleware
         [AgentEndpoint.Unpublish] = Write(async r => await r.ReadOptionalBodyAsync<UnpublishRequest>() ?? new UnpublishRequest(), b => b.DryRun, (r, b) => Ok(UnpublishOperation.Run(r.Call, r.Argument, b))),
         [AgentEndpoint.Discard] = Write(async r => await r.ReadOptionalBodyAsync<DiscardRequest>() ?? new DiscardRequest(), b => b.DryRun, (r, b) => Ok(DiscardOperation.Run(r.Call, r.Argument, b))),
         [AgentEndpoint.Move] = Write(r => r.ReadBodyAsync<MoveRequest>(), b => b.DryRun, (r, b) => Ok(MoveOperation.Run(r.Call, r.Argument, b))),
+        [AgentEndpoint.Restore] = Write(r => r.ReadBodyAsync<RestoreRequest>(), b => b.DryRun, (r, b) => Ok(RestoreOperation.Run(r.Call, r.Argument, b))),
         [AgentEndpoint.Access] = Write(r => r.ReadBodyAsync<AccessRequest>(), b => b.DryRun, async (r, b) => Ok(await AccessOperation.RunAsync(r.Call, r.Argument, b))),
         // Not a content operation: site definitions are the developer's only, so this one isn't in OptiCli.Cms.
         [AgentEndpoint.SiteHosts] = Write(r => r.ReadBodyAsync<SiteHostsRequest>(), b => b.DryRun, (r, b) => Ok(SiteHostsOperation.Run(r, b))),

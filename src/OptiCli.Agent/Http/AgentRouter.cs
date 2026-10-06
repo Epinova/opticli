@@ -15,6 +15,8 @@ internal enum AgentEndpoint
     Languages,
     Publish,
     Move,
+    Restore,
+    RestoreParents,
     Access,
     Delete,
     Read,
@@ -40,8 +42,8 @@ internal static partial class AgentRouter
     private static readonly string VersionSegment = AgentRoutes.Prefix.TrimStart('/');
 
     private static readonly string RouteList =
-        $"GET {AgentRoutes.Prefix}/ping, POST {AgentRoutes.Prefix}/shutdown, GET {AgentRoutes.Prefix}/drift, GET {AgentRoutes.Prefix}/types/{{name}}, POST {AgentRoutes.Prefix}/content, POST {AgentRoutes.Prefix}/media, " +
-        $"POST {AgentRoutes.Prefix}/content/{{ref}}/draft|languages|remove-language|publish|unpublish|discard|move|access, GET|DELETE {AgentRoutes.Prefix}/content/{{ref}}, POST {AgentRoutes.Prefix}/sites/hosts, POST {AgentRoutes.Prefix}/jobs/run|stop|set";
+        $"GET {AgentRoutes.Prefix}/ping, POST {AgentRoutes.Prefix}/shutdown, GET {AgentRoutes.Prefix}/drift, GET {AgentRoutes.Prefix}/restore-parents, GET {AgentRoutes.Prefix}/types/{{name}}, POST {AgentRoutes.Prefix}/content, POST {AgentRoutes.Prefix}/media, " +
+        $"POST {AgentRoutes.Prefix}/content/{{ref}}/draft|languages|remove-language|publish|unpublish|discard|move|restore|access, GET|DELETE {AgentRoutes.Prefix}/content/{{ref}}, POST {AgentRoutes.Prefix}/sites/hosts, POST {AgentRoutes.Prefix}/jobs/run|stop|set";
 
     /// <exception cref="AgentException">No route matches, or it belongs to another protocol version.</exception>
     public static RouteMatch Match(string method, string? path)
@@ -67,6 +69,7 @@ internal static partial class AgentRouter
             ["ping"] => (AgentEndpoint.Ping, (string?)null),
             ["shutdown"] => (AgentEndpoint.Shutdown, (string?)null),
             ["drift"] => (AgentEndpoint.Drift, (string?)null),
+            ["restore-parents"] => (AgentEndpoint.RestoreParents, (string?)null),
             ["types", var name] => (AgentEndpoint.Type, name),
             ["content"] => (AgentEndpoint.Create, (string?)null),
             ["media"] => (AgentEndpoint.Upload, (string?)null),
@@ -83,6 +86,7 @@ internal static partial class AgentRouter
             ["content", var reference, "unpublish"] => (AgentEndpoint.Unpublish, reference),
             ["content", var reference, "discard"] => (AgentEndpoint.Discard, reference),
             ["content", var reference, "move"] => (AgentEndpoint.Move, reference),
+            ["content", var reference, "restore"] => (AgentEndpoint.Restore, reference),
             ["content", var reference, "access"] => (AgentEndpoint.Access, reference),
             _ => throw NotFound(shown),
         };
@@ -116,6 +120,8 @@ internal static partial class AgentRouter
         [AgentEndpoint.Unpublish] = "POST",
         [AgentEndpoint.Discard] = "POST",
         [AgentEndpoint.Move] = "POST",
+        [AgentEndpoint.Restore] = "POST",
+        [AgentEndpoint.RestoreParents] = "GET",
         [AgentEndpoint.Access] = "POST",
         [AgentEndpoint.SiteHosts] = "POST",
         [AgentEndpoint.JobRun] = "POST",

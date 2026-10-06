@@ -52,6 +52,24 @@ public class WritePlanTests
     }
 
     [Fact]
+    public void A_restore_takes_a_ref_and_an_optional_parent_which_may_be_planned_content()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "restore", "ref": "123"},
+              {"op": "create", "id": "home", "parent": "1", "type": "ArticlePage", "name": "Home"},
+              {"op": "restore", "ref": "456", "to": "$home"}
+            ]}
+            """);
+
+        Assert.Equal(new RestoreOperation("123"), plan.Steps[0].Operation);
+        Assert.Equal(new RestoreOperation("456", "$home"), plan.Steps[2].Operation);
+        Assert.Equal(["home"], plan.Steps[2].DependsOn);
+        Assert.Equal("900", Assert.IsType<RestoreOperation>(WritePlan.Resolve(plan.Steps[2], new Dictionary<string, int> { ["home"] = 900 })).To);
+        Assert.Contains("unknown field \"parent\"", Assert.Throws<UsageException>(() => WritePlan.Parse("""{"operations": [{"op": "restore", "ref": "1", "parent": "2"}]}""")).Message);
+    }
+
+    [Fact]
     public void Every_shape_problem_is_reported_at_once()
     {
         const string json = """
