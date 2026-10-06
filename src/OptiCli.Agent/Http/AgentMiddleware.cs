@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using OptiCli.Agent.Drift;
 using OptiCli.Agent.Endpoints;
 using OptiCli.Agent.Hosting;
+using OptiCli.Agent.Jobs;
 using OptiCli.Agent.Safety;
 using OptiCli.Agent.Sites;
 using OptiCli.Cms;
@@ -22,7 +23,7 @@ namespace OptiCli.Agent.Http;
 /// <remarks>
 /// The content endpoints are <c>OptiCli.Cms</c> operations, which the MCP module runs too; this class adds only what is
 /// HTTP: the body, the status code, and the request's <see cref="AgentRequest.Call"/> as the developer. Site hosts
-/// (<see cref="SiteHostsOperation"/>) are the agent's own, never the module's.
+/// (<see cref="SiteHostsOperation"/>) and scheduled jobs (<see cref="JobsOperation"/>) are the agent's own, never the module's.
 /// </remarks>
 internal static class AgentMiddleware
 {
@@ -82,6 +83,10 @@ internal static class AgentMiddleware
         [AgentEndpoint.Access] = Write(r => r.ReadBodyAsync<AccessRequest>(), b => b.DryRun, async (r, b) => Ok(await AccessOperation.RunAsync(r.Call, r.Argument, b))),
         // Not a content operation: site definitions are the developer's only, so this one isn't in OptiCli.Cms.
         [AgentEndpoint.SiteHosts] = Write(r => r.ReadBodyAsync<SiteHostsRequest>(), b => b.DryRun, (r, b) => Ok(SiteHostsOperation.Run(r, b))),
+        // Scheduled jobs are the developer's only too. A job writes whatever its code writes, so a run is a write.
+        [AgentEndpoint.JobRun] = Write(r => r.ReadBodyAsync<JobRunRequest>(), b => b.DryRun, (r, b) => Ok(JobsOperation.Run(r, b))),
+        [AgentEndpoint.JobStop] = Write(r => r.ReadBodyAsync<JobStopRequest>(), b => b.DryRun, (r, b) => Ok(JobsOperation.Stop(r, b))),
+        [AgentEndpoint.JobSet] = Write(r => r.ReadBodyAsync<JobSetRequest>(), b => b.DryRun, (r, b) => Ok(JobsOperation.Set(r, b))),
         // No body and no dry run: a delete is always real.
         [AgentEndpoint.Delete] = Write(Task.FromResult, _ => false, (r, _) => Ok(DeleteOperation.Run(r.Call, r.Argument))),
     };

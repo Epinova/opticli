@@ -36,7 +36,7 @@ internal static class ServeCommand
         };
         var scheduler = new Option<bool>("--scheduler")
         {
-            Description = "Leave the site's scheduler as the site sets it, so jobs run on their schedule (overdue ones at once). Default: off for every run (\"scheduler\": true in the user config turns it on; --scheduler false off again). Not against a shared database.",
+            Description = "Leave the site's scheduler as the site sets it, so jobs run on their schedule (overdue ones at once). Default: off for every run (\"scheduler\": true in the user config turns it on; --scheduler false off again); `opticli jobs run` runs a job either way. Not against a shared database.",
         };
         var https = new Option<bool>("--https")
         {
@@ -54,7 +54,7 @@ internal static class ServeCommand
             to start a build with EF Core migrations the database lacks, and reports what differs between this build and the
             database (drift; `opticli drift`): writes then stop until the user confirms. Stop it when done.
             The site's scheduler is off for the run (a restored database's overdue jobs would otherwise all start: imports,
-            emails, emptying the recycle bin); --scheduler leaves it on.
+            emails, emptying the recycle bin); `opticli jobs run` still runs a job, and --scheduler leaves it on.
             Example: opticli serve    then: opticli serve --status | opticli serve --logs --tail 40 | opticli serve --stop
             """);
         foreach (var option in new Option[] { build, port, foreground, output, timeout, https, scheduler, allowPendingMigrations, status, logs, tail, stop })

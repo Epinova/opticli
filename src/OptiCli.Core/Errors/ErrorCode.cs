@@ -24,6 +24,12 @@ public enum ErrorCode
 
     /// <summary>A write in shared mode while the local build and the database differ, which the user hasn't confirmed.</summary>
     Drift,
+
+    /// <summary><c>jobs run</c>: the job ran and didn't succeed (failed, couldn't start, was stopped or aborted).</summary>
+    JobFailed,
+
+    /// <summary>Waiting for something that is still under way ran out of time (<c>jobs run --timeout</c>); it goes on.</summary>
+    Timeout,
 }
 
 public static class ExitCodes
@@ -36,6 +42,9 @@ public static class ExitCodes
     public const int Conflict = 5;
     public const int NeedsSelection = 6;
 
+    /// <summary><c>jobs run</c>: the job ran and failed (6 is <see cref="NeedsSelection"/>'s).</summary>
+    public const int JobFailed = 7;
+
     /// <summary>128 + SIGINT, as shells report a process stopped by Ctrl+C.</summary>
     public const int Cancelled = 130;
 
@@ -44,9 +53,10 @@ public static class ExitCodes
         ErrorCode.Usage => Usage,
         ErrorCode.NotFound => NotFound,
         ErrorCode.Refused => Refused,
-        ErrorCode.Unreachable => Unreachable,
+        ErrorCode.Unreachable or ErrorCode.Timeout => Unreachable,
         ErrorCode.Conflict or ErrorCode.Validation or ErrorCode.Drift => Conflict,
         ErrorCode.NeedsSelection => NeedsSelection,
+        ErrorCode.JobFailed => JobFailed,
         ErrorCode.Cancelled => Cancelled,
         // Unexpected failures share the usage code: the spec reserves 2-5 for specific outcomes.
         _ => Usage,
@@ -64,6 +74,8 @@ public static class ExitCodes
         ErrorCode.NeedsSelection => "needs_selection",
         ErrorCode.Cancelled => "cancelled",
         ErrorCode.Drift => "drift",
+        ErrorCode.JobFailed => "job_failed",
+        ErrorCode.Timeout => "timeout",
         _ => "internal",
     };
 }

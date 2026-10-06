@@ -3,6 +3,48 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## Unreleased (0.12.0)
+
+### Changed
+
+- **`opticli serve` turns the site's scheduler off.** A restored production database has its jobs enabled with next
+  runs in the past, and a site started against it started every overdue one at once: imports and syncs reached
+  external systems, emails went out, and Automatic Emptying of Trash deleted the recycle bin for good. Now the site
+  agent turns `SchedulerOptions.Enabled` off for every `serve` run (the site's output says so), as it already did
+  against a shared database. The site still registers its jobs, and `opticli jobs run` still runs one.
+  `serve --scheduler` (or `"scheduler": true` in the user config, which `--scheduler false` overrides) leaves the
+  scheduler as the site sets it and warns about the overdue jobs; against a shared database it is a `usage` error.
+  `serve --status`, `serve` and `doctor` report `scheduler: on|off` as the running site has it, and `doctor` counts the
+  overdue jobs. `opticli env` leaves the scheduler as the site sets it (`OPTICLI_SCHEDULER=on`): that run is yours.
+
+### New
+
+- **`opticli jobs`** lists the site's scheduled jobs from the database: schedule, next run, `overdue`, last run and
+  how it ended (`succeeded`, `failed`, `cancelled`, `unableToStart`, `aborted`), whether one runs now (`"stale"` when
+  the process running it stopped pinging), its class, and its file and line in the site's code. A job in the code that
+  the database doesn't have yet is listed with `registered: false`. `--failed`, `--enabled`, `--disabled`, `--all`.
+- **`opticli jobs log [<job>]`** lists runs, latest first, with status, trigger (scheduler, user, restart), server,
+  duration and the job's message in full; without a job, every job's runs (`--failed --since 1d`: what failed since
+  yesterday). A `<job>` is its id, name, class or a part of its name only it has.
+- **`opticli jobs run <job>`** runs a job now through the site, as the admin UI's "Start manually" does, also while the
+  scheduler is off, as the user `opticli`. It waits by reading the job tables, shows the job's status messages on a
+  terminal, and ends with the run's status, duration and message: exit 0 when it succeeded, the new exit code 7
+  (`job_failed`) when it didn't. `--no-wait` returns once it has started; `--timeout <s>` (the new error code
+  `timeout`, exit 4) and Ctrl+C stop the waiting, not the job. The CMS's built-in jobs that delete for good (emptying
+  the recycle bin, removing unused files, trimming versions, truncating the change log, ...) need
+  `--allow-destructive`; the site's own jobs run with a warning that opticli can't tell what they change.
+- **`opticli jobs stop <job>`** stops a job the site runs, as the admin UI's Stop does, and waits up to 30 s for it to
+  end; **`opticli jobs set <job>`** changes `--enabled`, the interval (`--every 1h`, `manual`) and the next run
+  (`--next now|<time>`) through the CMS's job repository, showing the job before and after. Both take `--dry-run`.
+- Against a shared database `jobs run`, `stop` and `set` are refused (exit 3): the deployed site's scheduler uses the
+  same jobs. The MCP module has no such tools.
+
+### Development
+
+- The edge-case site gets `JobsFixture.cs` (copied by `setup.sh`): "opticli test job", a manual, stoppable job with
+  status messages that fails on request, and, with `OPTICLI_FIXTURE_SCHEDULER=on`, a scheduler the site turns on itself.
+  The integration tests run, fail, stop and reschedule it.
+
 ## 0.11.0 (6 October 2026)
 
 ### MCP server for editors (preview): security fixes

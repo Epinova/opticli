@@ -62,6 +62,20 @@ public class ProtocolJsonTests
     }
 
     [Fact]
+    public void Job_requests_round_trip_and_need_the_job()
+    {
+        var next = new DateTime(2026, 10, 7, 3, 0, 0, DateTimeKind.Utc);
+        var set = new JobSetRequest { Job = Guid.Parse("0b1c2d3e-0000-4000-8000-000000000001"), Every = "6h", Next = next, DryRun = true };
+
+        var copy = JsonSerializer.Deserialize<JobSetRequest>(JsonSerializer.Serialize(set, AgentJson.Options), AgentRequest.RequestOptions)!;
+
+        Assert.Equal(set, copy);
+        Assert.Equal(next, copy.Next);
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<JobRunRequest>("""{"allowDestructive":true}""", AgentRequest.RequestOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<JobRunRequest>("""{"job":"0b1c2d3e-0000-4000-8000-000000000001","allowDestructve":true}""", AgentRequest.RequestOptions));
+    }
+
+    [Fact]
     public void Requests_reject_unknown_fields_so_typos_never_turn_a_dry_run_into_a_save()
     {
         var error = Assert.Throws<JsonException>(() =>

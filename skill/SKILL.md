@@ -1,6 +1,6 @@
 ---
 name: opticli
-description: Inspect and change content of an Optimizely CMS 12 (EPiServer) site the user develops locally (against its local or development database) with the opticli CLI instead of hand-written SQL or guessing from code. Use when you need to know what CMS content exists (pages, blocks, media, folders), what a page or block contains (properties, ContentArea items, rich text), which page type or block type something is and which C# class and Razor view render it, where a block or page is used, which content a URL shows, what drafts and versions exist, or when the user asks you to create or edit CMS content (set properties, add a block to a ContentArea, create a page or block, translate, publish) in their development site, or to point the sites of a restored database at localhost (their host names).
+description: Inspect and change content of an Optimizely CMS 12 (EPiServer) site the user develops locally (against its local or development database) with the opticli CLI instead of hand-written SQL or guessing from code. Use when you need to know what CMS content exists (pages, blocks, media, folders), what a page or block contains (properties, ContentArea items, rich text), which page type or block type something is and which C# class and Razor view render it, where a block or page is used, which content a URL shows, what drafts and versions exist, or when the user asks you to create or edit CMS content (set properties, add a block to a ContentArea, create a page or block, translate, publish) in their development site, or to point the sites of a restored database at localhost (their host names). Also for scheduled jobs: which exist, whether a job (an import, a sync) ran and how it ended, and running or rescheduling one.
 opticli-version: 0.11.0
 ---
 
@@ -63,6 +63,9 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
 | Who may read or edit an item (access rights) | `opticli access 123` (`inherited`, `from`: where they come from) |
 | Version history / unpublished work | `opticli versions 123` / `opticli drafts --since 2024-06-01 --kind page` |
 | What differs between this build and a shared database? | `opticli drift` (needs `serve`) |
+| Which scheduled jobs exist, which are overdue or failed last time? | `opticli jobs` (`--failed`) |
+| Did a job (an import, a sync) run, and how did it end? | `opticli jobs log "<job name>"` (`--failed --since 1d` for every job) |
+| Run a job now (only when asked) | `opticli jobs run "<job name>"` (needs `serve`; waits for it) |
 | Anything else (read-only) | `opticli sql "SELECT TOP 10 ... FROM tblContent ..."` |
 
 ## Recipes
@@ -106,7 +109,9 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
   says what to do next (a "Did you mean ...?" for mistyped types, properties or commands; which option to add).
 - Exit codes: `0` ok, `1` usage (bad arguments), `2` not found, `3` refused by a safety rule, `4` database or site
   not reachable, `5` write conflict, validation failure (`error.details` lists every issue) or `drift` (see Rules),
-  `6` the user must choose the development database (see "Which database"), `130` interrupted (Ctrl+C).
+  `6` the user must choose the development database (see "Which database"), `7` a job `jobs run` ran didn't succeed
+  (`error.details.status`, `message`), `130` interrupted (Ctrl+C). `timeout` (exit 4) from `jobs run --timeout`: the
+  job still runs.
 - `meta.warnings` means the result is valid but you should know something (e.g. a search was capped).
 - Statuses: `published`, `checkedOut` (draft), `checkedIn` (ready to publish), `previouslyPublished`,
   `delayedPublish` (scheduled), `awaitingApproval`, `rejected`. Deleted items (in the recycle bin) say `deleted: true`.
@@ -186,6 +191,15 @@ order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a cod
   `opticli sites primary --from-config`; `--forget <site>` drops a saved site that is gone). Site definitions aren't
   versioned: report the `changes` from the output. Tell the user to restart the site if it also runs elsewhere (their
   IDE), as `meta.warnings` says. Against a shared database they are refused (exit 3): don't work around it.
+- Never run, stop or reschedule a scheduled job (`jobs run`, `jobs stop`, `jobs set`) unless the user asked for it. A
+  site's own jobs may reach external systems (imports, syncs, emails): `jobs run` warns that opticli can't tell what
+  they change. When "an import didn't run", start with `opticli jobs log "<job>"` (status, message, trigger) and
+  `opticli jobs` (enabled, next run): `serve` keeps the site's scheduler off, so nothing runs on its schedule there,
+  and only `jobs run` starts a job. `jobs run` waits and ends with the run's status and message; report them. Built-in
+  jobs that delete for good (emptying the recycle bin, trimming versions, truncating the change log, ...) are refused
+  without `--allow-destructive`: pass it only after the user confirmed that job by name. Never pass
+  `serve --scheduler` on your own initiative: overdue jobs would all start. Schedules aren't versioned: report the
+  `before` from `jobs set`.
 - Always `--dry-run` a multi-step `apply` plan first, and a single write when you are unsure of its effect.
 - A write that timed out (`unreachable`, "no response within") or a plan that stopped halfway (`details.partial`) may
   have saved more than it reports: check with `opticli versions <ref>` before running it again.

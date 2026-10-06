@@ -166,8 +166,8 @@ When the database in use is remote, every response carries `meta.database` (`ser
 
 `serve` runs the site only against a local database or the chosen development database. It sets
 `ConnectionStrings__<Name>` to that database and removes other spellings of it inherited from the shell, so an
-exported one can't win over the pin. Against a remote one it turns off, for that run:
-- the site's scheduler;
+exported one can't win over the pin. It turns the site's scheduler off for every run (see
+[Scheduled jobs](#scheduled-jobs)), and against a remote one it also turns off, for that run:
 - automatic schema updates;
 - content type sync;
 - the remapping of Dynamic Data Store types whose properties changed.
@@ -195,6 +195,7 @@ Once the site answers, `serve` reports drift: what differs between the build and
 | Against a shared database, writes stop while the build and the database differ (drift): on a terminal it shows the differences and asks, elsewhere it fails with `drift` (exit 5). `--accept-drift <fingerprint>` confirms; the fingerprint stops counting when the differences change. | Site agent, CLI first |
 | Against a shared database, `sites primary` and `sites host remove` are refused (exit 3), and `sites host add` only adds hosts of type undefined: the deployed site uses the same site definitions. There is no override; change those sites in their own admin UI. Site definitions are never reachable from the MCP module. | Site agent, CLI first |
 | `delete` moves content to the recycle bin; nothing empties it. Site roots, start pages, asset roots and anything above them can't be moved or deleted. | Site agent |
+| `serve` turns the site's scheduler off, so a restored database's overdue jobs don't all start (`--scheduler` leaves it on). `jobs run` refuses the CMS's built-in jobs that delete for good (emptying the recycle bin, trimming versions, truncating the change log, ...) without `--allow-destructive`. Against a shared database jobs aren't run, stopped or changed, and the scheduler stays off. | Site agent, CLI first |
 | Reads use fixed queries. `sql` accepts a single SELECT, refuses anything that writes, runs code, reaches another database or reads server-wide views, logs and traces (in `sys`, only the views that describe the database's own schema), and always runs in a rolled-back transaction. Personal-data tables (form submissions, users) need `--include-personal-data`. | CLI |
 | Passwords are never printed; `doctor` redacts connection strings. The exception is `opticli env`: it prints the per-run token, and with `--include-connection` the connection string too. | CLI |
 
@@ -259,6 +260,7 @@ add-ons need first.
 | `resolve <url>`, `url <ref>` | URL to content, and content to URL per language |
 | `versions <ref>`, `drafts [--since] [--by] [--kind] [--type]` | version history; unpublished changes |
 | `projects [<id>]` | projects, and the versions in one |
+| `jobs [--failed]`, `jobs log [<job>] [--failed] [--since]` | scheduled jobs: schedule, next and last run, how it ended, overdue, running; their runs with status and message (see [Scheduled jobs](#scheduled-jobs)) |
 | `blob <ref>` | where a media file lives on disk |
 | `drift` | what differs between the build and a shared database (needs `serve`; see [Shared databases](#shared-databases)) |
 | `access <ref>` | who may read and edit an item: its access rights, and the ancestor they are inherited from |
@@ -289,6 +291,7 @@ These commands write:
   and asset roots are refused, and so is a change that leaves no role with Administer.
 - `sites primary` and `sites host add|remove` change site definitions' host names; see
   [Site hosts after a database restore](#site-hosts-after-a-database-restore).
+- `jobs run`, `jobs stop` and `jobs set` run, stop and reschedule scheduled jobs; see [Scheduled jobs](#scheduled-jobs).
 - `apply plan.json` runs several operations validated together. Later operations can refer to an item an earlier
   one created as `$id`. A property value `"@texts/body.html"` is that file's text, as `Prop=@file` is on the command
   line. Files in a plan are relative to the plan file and must stay inside its folder. With `"guidNamespace"`, what a
@@ -382,6 +385,43 @@ Saving through the site clears its site definition cache, so the site `serve` ru
 process running the site against the same database (your IDE's) keeps the old ones until it restarts, unless remote
 events are set up. Site definitions aren't versioned: the output lists every change and the hosts after it.
 
+### Scheduled jobs
+
+A restored copy of a production database has its jobs enabled, with next runs in the past. A site started against it
+would start every overdue job at once: imports and syncs reach external systems, emails go out, and the built-in
+Automatic Emptying of Trash deletes the recycle bin for good. So `serve` turns the site's scheduler off for its run
+(`[opticli] Scheduler is off for this run` in the site's output, `scheduler: off` in `serve --status` and `doctor`).
+The site still registers its jobs at startup, and `jobs run` still runs one. `serve --scheduler` (or `"scheduler": true`
+in the user config) leaves the scheduler as the site sets it, and then warns about the jobs that are overdue;
+`doctor` counts them too. `opticli env` leaves it as the site sets it: a site you start yourself is yours.
+
+```sh
+opticli jobs                                   # every job: schedule, next run, overdue, last run and how it ended
+opticli jobs log --failed --since 1d           # what failed since yesterday, with the jobs' messages
+opticli jobs run "Publish Delayed Content Versions"   # run it now (needs serve) and wait for it
+opticli jobs set "Content import" --every 1h --next now --dry-run
+```
+
+Reading (`jobs`, `jobs log`) comes from the database (`tblScheduledItem`, `tblScheduledItemLog`) and needs nothing
+running. A job in the site's code (a `[ScheduledPlugIn]` class) has its file and line as `source`, and one the database
+doesn't have yet is listed with `registered: false`: the site registers jobs when it starts. `running: "stale"` means
+the job is marked as running but the process that ran it stopped pinging. A run's `finished` is when the CMS logged
+it, and `started` that less its duration.
+
+A `<job>` is its id (GUID), its name, its class (`EPiServer.Util.BlobCleanupJob` or `BlobCleanupJob`), or a part of its
+name only it has. Several matches are a `usage` error that lists them.
+
+| Command | Does |
+|---|---|
+| `jobs run <job>` | runs it now through the site, as the admin UI's "Start manually" does, also while the scheduler is off, as the user `opticli`; waits for it by reading the job tables, shows its status messages on a terminal, and ends with its status, duration and message. Exit 0 when it succeeded, 7 (`job_failed`) when it failed, couldn't start, or was stopped or aborted. `--no-wait` returns once it has started, `--timeout <s>` stops waiting (exit 4, `timeout`) and Ctrl+C too: the job goes on running. Already running: `conflict`. The site's own jobs run without asking, with a warning in `meta.warnings`: opticli can't tell what they change. A run of an overdue job moves its next run on, as in the admin UI. |
+| `jobs run <job> --allow-destructive` | needed for the CMS's built-in jobs that delete for good: Automatic Emptying of Trash, Remove Abandoned BLOBs, Trim Content Versions, Remove Unrelated Content Assets, Change Log Auto Truncate, Notification Message Truncate, Monitored Tasks Auto Truncate and Archive Function (by class name). Without it they are `refused` (exit 3), naming what they delete; nothing implies it. |
+| `jobs stop <job>` | asks the job the site runs to stop, as the admin UI's Stop does (the job's own code decides when), and waits up to 30 s for its run to end: normally `cancelled`. A job whose class can't be stopped is `refused`; one that isn't running is a `conflict`. |
+| `jobs set <job> --enabled true\|false --every 30m\|1h\|1d\|1w\|1mo\|1y\|manual --next now\|<time>` | changes its schedule through the CMS's job repository, as the admin UI's form does; the output has it before and after (schedules aren't versioned). `--every` on a job without a next run needs `--next`; `manual` clears the next run. Intervals under a minute are refused. A next run in the past makes it overdue; with the scheduler off nothing starts it there. |
+
+`run`, `stop` and `set` take `--dry-run`. Against a shared database they are refused (exit 3), with no override: the
+deployed site's scheduler uses the same jobs, and a job writes to the content everyone shares. `jobs` and `jobs log`
+work there.
+
 ## serve and env
 
 `opticli serve` runs the site's existing build output in `Development` on `http://127.0.0.1:<port>`, with the site
@@ -395,6 +435,7 @@ agent injected, and returns once the site agent answers.
 | `--timeout <s>` | 180 seconds to wait for the site to answer |
 | `--foreground` | off: the site runs in the background; with it, the site's output streams until Ctrl+C (to stderr when stdout is redirected, so stdout stays one JSON envelope) |
 | `--https` | off (or `"https": true` in the user config, which `--https false` overrides): also listen on `https://localhost:<next free port>` with the development certificate, printed as `browseUrl`, for sites that redirect to HTTPS. `serve` warns when a site does |
+| `--scheduler` | off (or `"scheduler": true` in the user config, which `--scheduler false` overrides): the site's scheduler stays as the site sets it, so jobs run on their schedule and overdue ones start at once. Without it the scheduler is off for the run. A `usage` error against a shared database, where it stays off |
 | `--allow-pending-migrations` | off: against a shared database, `serve` refuses a build with EF Core migrations the database lacks |
 
 `serve --status`, `serve --logs [--tail N]` and `serve --stop` manage the running site:
@@ -412,6 +453,7 @@ agent injected, and returns once the site agent answers.
 To run the site yourself (IDE, `dotnet run`, hot reload), `opticli env` prints the variables `serve` would set:
 - `--format shell|powershell|dotenv|json|launchSettings` picks the format. `--json` is the same as `--format json`.
 - `--port` picks the port.
+- The site's scheduler stays as the site sets it (`OPTICLI_SCHEDULER=on`): that run is yours.
 - `OPTICLI_*` variables that this run leaves out but the shell still exports (from an earlier `opticli env`) are set
   to empty, so they can't pin or approve another database.
 
@@ -437,6 +479,7 @@ are often committed, so keep the token out of git.
 | `ConnectionStrings__<Name>` | `serve`, `env --include-connection` | the same connection string, for code that reads it before the agent's pin; `serve` also removes other spellings of it (`ConnectionStrings:<Name>`, another case) |
 | `OPTICLI_REMOTE_DB` | against a remote development database | the one remote database the site agent accepts; turns on shared-database mode |
 | `OPTICLI_DRIFT_FILE` | `serve`, against a remote development database | what `serve` compared before the start (EF Core migrations, CMS schema version), for the site agent's drift report |
+| `OPTICLI_SCHEDULER` | `serve --scheduler`, `env` (not against a remote database) | `on` leaves the site's scheduler as the site sets it; without it the site agent turns the scheduler off |
 
 ### How the injection works
 
@@ -446,7 +489,9 @@ tool package under `agent/`. The startup hook makes the site agent's assembly re
 1. pins the connection string, added as the last configuration source and as a `PostConfigure` of the CMS's data
    access options;
 2. fails the start if the effective connection string is neither local nor the approved development database;
-3. maps `/_opticli/v1/*` ahead of the site's own middleware.
+3. turns the scheduler off (`SchedulerOptions.Enabled`, as a `PostConfigure`) unless `OPTICLI_SCHEDULER=on`; a site
+   that turns it on in a `PostConfigure` of its own wins, and `serve --status` then says `scheduler: on`;
+4. maps `/_opticli/v1/*` ahead of the site's own middleware.
 
 The site agent is compiled against `EPiServer.CMS.Core` 12.0 and binds to the site's own, newer CMS assemblies at
 runtime. It ships no copies of them.
@@ -473,8 +518,10 @@ runtime. It ships no copies of them.
 | 2 | `not_found` | project, connection string, content, type or version not found |
 | 3 | `refused` | a safety rule blocked it |
 | 4 | `unreachable` | database or site agent not reachable, or a query failed on the server (a write that timed out may still have been saved) |
+| 4 | `timeout` | `jobs run --timeout` ran out: the job goes on running |
 | 5 | `conflict` / `validation` / `drift` | a newer version exists, a publish would include someone else's unpublished changes (`details.reason: "pendingDraft"`), the CMS rejected the values, or a write against a shared database that differs from the build wasn't confirmed (`details` is the drift report) |
 | 6 | `needs_selection` | the user must choose the development database first (`error.details.choices`) |
+| 7 | `job_failed` | a job `jobs run` ran didn't succeed: it failed, couldn't start, or was stopped or aborted (`error.details` has its status and message) |
 | 130 | `cancelled` | interrupted (Ctrl+C); an `apply` reports what it saved until then |
 
 ## Files
@@ -484,9 +531,9 @@ runtime. It ships no copies of them.
 | User config | `$XDG_CONFIG_HOME/opticli/config.json` (default `~/.config/opticli/config.json`) | `%APPDATA%\opticli\config.json` |
 | `serve` state, start lock and logs (the last 3 runs) | `$XDG_STATE_HOME/opticli/` (default `~/.local/state/opticli/`) | `%LOCALAPPDATA%\opticli\` |
 
-You can set per-project defaults in the user config. `opticli db use` adds the chosen `database` there, and
-`opticli sites primary --save` the `sites.primary` mapping. opticli keeps the file's permissions when it rewrites it,
-and creates it readable by you only on Linux and macOS.
+You can set per-project defaults in the user config (`output`, `port`, `https` and `scheduler` for `serve`).
+`opticli db use` adds the chosen `database` there, and `opticli sites primary --save` the `sites.primary` mapping.
+opticli keeps the file's permissions when it rewrites it, and creates it readable by you only on Linux and macOS.
 
 ```json
 {"projects": {"/abs/path/to/Site": {"connection": "...", "output": "bin/Debug/net8.0/Site.dll", "port": 5199, "https": true,
@@ -909,12 +956,16 @@ with the reason in `tests/OptiCli.Integration/Comparison/KnownDifferences.cs`; a
 
 A sample site lacks much of what real sites have: fetch-data pages, a site whose start page is under another site's,
 simple addresses on several sites, culture-specific properties in shared and local blocks, personalized ContentAreas,
-an approval sequence, language fallback settings, a media type for PDF files, and three sites whose hosts the site host
-tests change (and put back). `tests/fixtures/edge-cases/` builds
-them from an Alloy site (`dotnet new epi-alloy-mvc`) without changing it. `setup.sh` copies the site and its
-database, adds `EdgeCasesFixture.cs` (the extra content types, plus a startup module for what a plan can't create),
-and applies `edge-cases.plan.json`. Run it again to update the content: the plan is applied with
-`--update-existing`, and the database copy is kept unless `FRESH=1`.
+an approval sequence, language fallback settings, a media type for PDF files, three sites whose hosts the site host
+tests change (and put back), and a scheduled job of its own. `tests/fixtures/edge-cases/` builds them from an Alloy
+site (`dotnet new epi-alloy-mvc`) without changing it. `setup.sh` copies the site and its database, adds
+`EdgeCasesFixture.cs` (the extra content types, plus a startup module for what a plan can't create) and
+`JobsFixture.cs`, and applies `edge-cases.plan.json`. `JobsFixture.cs` has "opticli test job", a manual, stoppable job
+that writes a status message a second for 3 steps (the number in `App_Data/opticli-job-steps`, if it exists) and fails
+when `App_Data/opticli-job-fail` exists; the `jobs` tests run it. With `OPTICLI_FIXTURE_SCHEDULER=on` in the environment
+of `serve`, it also turns the scheduler on in the site's own configuration, as a real site has it (Alloy turns it off in
+Development), to see that `serve` turns it off again and `serve --scheduler` doesn't. Run `setup.sh` again to update
+the content: the plan is applied with `--update-existing`, and the database copy is kept unless `FRESH=1`.
 
 ```sh
 SQLCMDPASSWORD=... tests/fixtures/edge-cases/setup.sh path/to/Alloy path/to/AlloyEdge alloy alloy-edge

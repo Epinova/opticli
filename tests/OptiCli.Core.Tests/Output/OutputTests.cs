@@ -32,6 +32,8 @@ public class OutputTests
     [InlineData(ErrorCode.Validation, "validation", 5)]
     [InlineData(ErrorCode.Internal, "internal", 1)]
     [InlineData(ErrorCode.Cancelled, "cancelled", 130)]
+    [InlineData(ErrorCode.JobFailed, "job_failed", 7)]
+    [InlineData(ErrorCode.Timeout, "timeout", 4)]
     public void Error_envelope_carries_code_message_hint_and_exit_code(ErrorCode code, string name, int exitCode)
     {
         var (writer, stdout, stderr) = Create(OutputFormat.Json);

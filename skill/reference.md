@@ -31,7 +31,7 @@ the one saved with `opticli db use`, else `connection` in the user config (`~/.c
 
 | Command | Notes |
 |---|---|
-| `doctor` | Always exits 0. `data.healthy`, `data.warnings`; `connection.candidates`, `database`, `agent`, `skills`, `sitesMapping` (each entry of the saved `sites primary` mapping: `key`, `saved`, `primary`, `status`: `matches`, `differs`, `noSite`, `invalid`). |
+| `doctor` | Always exits 0. `data.healthy`, `data.warnings`; `connection.candidates`, `database`, `agent` (`scheduler`: `on`/`off` in the running site), `scheduler` (`serve`: what `serve` does, `running`, `overdueJobs`), `skills`, `sitesMapping` (each entry of the saved `sites primary` mapping: `key`, `saved`, `primary`, `status`: `matches`, `differs`, `noSite`, `invalid`). |
 | `sites` | Hosts (`name`, `type`: undefined, primary, edit, redirectPermanent, redirectTemporary; `language`, `https`), URL (SiteUrl), start page, master language, assets root. |
 | `languages [--all]` | Enabled branches (all with `--all`), item counts, which sites use each as master. |
 | `types [--kind page\|block\|media\|folder\|other] [--unused] [--sort name\|instances]` | `instances` = non-deleted items. Sorted by name unless `--sort instances`. |
@@ -50,6 +50,8 @@ the one saved with `opticli db use`, else `connection` in the user config (`~/.c
 | `drafts [--since <date>] [--by <user>] [--kind K] [--type T] [--lang]` | One row per item and language with unpublished changes: `status` and `version` of the newest draft, `saved`, `changedBy`, `drafts` (unpublished versions newer than the published one), `publishAt` for a scheduled one. `--since` is UTC. |
 | `projects [<id>]` | Projects (versions of several items published together): `id`, `name`, `status`, `created`, `createdBy`, `publishAt`, `items`. With an id, its items: `ref`, `version`, `type`, `name`, `language`, `status`. Read-only. |
 | `blob <ref>` | Media only: blob URI, file path on disk, `exists`; same for the thumbnail. |
+| `jobs [--all] [--enabled\|--disabled] [--failed]` | Scheduled jobs: `id`, `name`, `enabled`, `schedule` (`every 1 hour`, `manual`), `nextRun`, `overdue` (enabled, next run passed), `lastRun`, `lastStatus` (`succeeded`, `failed`, `cancelled`, `unableToStart`, `aborted`), `lastMessage` (one line), `running` (`true`, `false`, `"stale"`: its process stopped pinging), `stoppable`, `class`, `source` (file:line in the site's code; null for a job from a package), `registered: false` for a job in the code the database lacks (the site registers jobs when it starts). `--all` adds jobs the CMS hides. See [Scheduled jobs](#scheduled-jobs). |
+| `jobs log [<job>] [--failed] [--since <date\|7d>] [--limit N]` | Runs, latest first (20 by default): `job`, `jobId`, `started`, `finished`, `duration`, `durationMs`, `status`, `trigger` (`scheduler`, `user`, `restart`), `server`, `message` (whole; it can be HTML). Without `<job>`: every job's runs. |
 | `access <ref>` | `inherited`, `from` (the item the entries are stored on: itself, or the nearest ancestor with its own), `entries[]` (`name`, `kind`: role, user or visitorGroup, `levels`: `FullAccess` or e.g. `["Read","Edit"]`, `mask`). Read from the database; no `serve` needed. |
 | `sql "<SELECT ...>" [--limit N] [--full] [--include-personal-data]` | One SELECT/WITH statement, run in a rolled-back transaction; returns 100 rows unless `--limit` (`truncated: true` when there were more); `--jsonl` prints rows. Forms submissions and user/membership tables need `--include-personal-data`. In `sys`, only the views that describe this database's schema (`sys.objects`, `tables`, `columns`, `indexes`, `index_columns`, `types`, `schemas`, `foreign_keys`, `sql_modules`, ...) are allowed, and `INFORMATION_SCHEMA` views; `sys.dm_*`, `fn_*`, `sys*` compatibility views and server-wide views are refused. Put a space between a number and a following word (`1 AS x`, not `1AS x`). |
 
@@ -108,6 +110,9 @@ directly: see [Approval sequences](#approval-sequences).
 | `sites primary <site>[@<lang>]=<host>... [--https true\|false\|unset] [--keep-edit] [--keep-site-url] [--save]` | `opticli sites primary "Site A=localhost:5001" "Site B=localhost:5002" --dry-run` (see [Site hosts](#site-hosts)) |
 | `sites primary --from-config` / `sites primary --forget <site>` | `opticli sites primary --from-config --dry-run` |
 | `sites host add <site> <host> [--type T] [--lang] [--https]` / `sites host remove <site> <host>` | `opticli sites host add "Site A" localhost:5001 --dry-run` |
+| `jobs run <job> [--no-wait] [--timeout s] [--allow-destructive]` | `opticli jobs run "Publish Delayed Content Versions"` (only when the user asked; see [Scheduled jobs](#scheduled-jobs)) |
+| `jobs stop <job>` | `opticli jobs stop "Content import"` |
+| `jobs set <job> [--enabled true\|false] [--every 30m\|1h\|1d\|1w\|1mo\|1y\|manual] [--next now\|<time>]` | `opticli jobs set "Content import" --every 1h --next now --dry-run` (only when the user asked) |
 | `apply <plan.json\|->` | `opticli apply plan.json --dry-run` |
 
 `unpublish` takes a published branch offline as the edit UI's expiry does: a copy of the published version with
@@ -303,6 +308,36 @@ For a restored copy of a production database, whose sites still have the product
 - Against a shared database `sites primary` and `sites host remove` are refused (exit 3), and `host add` takes only
   `--type undefined`, which makes a site reachable on a local host without changing its URLs for anyone else.
 
+### Scheduled jobs
+
+`jobs` and `jobs log` read the database; `jobs run|stop|set` go through the site (`serve`), and are refused against a
+shared database (exit 3). A `<job>` is its id, its name, its class (`BlobCleanupJob` or the full name), or a part of
+its name only it has (several matches: `usage`, listing them).
+- `serve` turns the site's scheduler off (a restored database's overdue jobs would all start at once): no job runs on
+  its schedule. `serve --status` and `doctor` say `scheduler: off`; `serve --scheduler` (only when the user asks for
+  it) leaves it as the site sets it, and warns about overdue jobs. `opticli env` doesn't change it.
+- `jobs run <job>` starts it as the admin UI's "Start manually" does (also with the scheduler off), as the user
+  `opticli`, and waits by reading the job tables (status messages go to stderr on a terminal). Output: `job`, `id`,
+  `started`, `since`, `status`, `duration`, `durationMs`, `finished`, `message`. Exit 0 when it succeeded; 7
+  (`job_failed`, `error.details` the same fields) when it failed, couldn't start, or was stopped or aborted.
+  `--no-wait` returns after the start; `--timeout <s>` ends the waiting with `timeout` (exit 4) and Ctrl+C with
+  `cancelled`: the job goes on running either way (`jobs stop`, `jobs log`). Already running: `conflict` (exit 5). The
+  site's own jobs run without asking, with `meta.warnings` "runs the site's own code; opticli can't tell what it
+  changes": they may call external systems (imports, syncs, emails), so run one only when the user asked for it. A run
+  of an overdue job moves its next run on, as the admin UI does.
+- Built-in jobs that delete for good are refused (exit 3) unless `--allow-destructive`: Automatic Emptying of Trash
+  (the recycle bin), Remove Abandoned BLOBs, Trim Content Versions, Remove Unrelated Content Assets, Change Log Auto
+  Truncate (the activity log), Notification Message Truncate, Monitored Tasks Auto Truncate and Archive Function. Pass
+  it only after the user confirmed that job by name: on a restored database these are often the only copy.
+- `jobs stop <job>`: as the admin UI's Stop; the job's code decides when it stops. Waits up to 30 s: `stopped`,
+  `status` (`cancelled`), `message`; `stopped: false` with a warning when it hasn't ended yet. Not stoppable: `refused`;
+  not running (in the site `serve` runs): `conflict`.
+- `jobs set <job>`: `--enabled true|false`, `--every` (`30m`, `1h`, `6h`, `1d`, `1w`, `1mo`, `1y`, or `manual`, which
+  clears the next run; under a minute is refused), `--next now|<time>` (UTC unless it has an offset; a time that has
+  passed makes it overdue). `--every` on a job without a next run needs `--next`. Output: `before`, `after` (`enabled`,
+  `schedule`, `every`, `nextRun`, ...), `changes[]`, `saved`; nothing changed: `saved: false`. Schedules aren't
+  versioned: report `before`.
+
 ### Concurrency
 
 `set` and `area` base the draft on the latest version, read just before saving. If someone saved a newer version
@@ -454,11 +489,12 @@ Plans that run again (a section rebuilt after a database refresh, or repaired af
 
 ## serve and env
 
-- `opticli serve [--build] [--port N] [--https] [--foreground] [--output <dll>] [--timeout s] [--allow-pending-migrations]`: runs the existing build
+- `opticli serve [--build] [--port N] [--https] [--scheduler] [--foreground] [--output <dll>] [--timeout s] [--allow-pending-migrations]`: runs the existing build
   output (`bin/Debug/<tfm>/<Site>.dll`) with the site agent injected through `DOTNET_STARTUP_HOOKS`, in Development, on
   `http://127.0.0.1:<port>` (default 5199, else the first free port up to 5299), waiting up to `--timeout`
   (default 180 s) for it to answer. A warning says when sources are newer than the
-  build; `--build` runs `dotnet build` first. The site's code and files are not changed.
+  build; `--build` runs `dotnet build` first. The site's code and files are not changed. The site's scheduler is off for
+  the run (`scheduler: off` in the output) unless `--scheduler` (see [Scheduled jobs](#scheduled-jobs)).
 - `opticli serve --status | --logs [--tail N] | --stop`. `--logs` shows the latest run; `data.previous` lists the
   logs of the two runs before it. A `serve` started while another is starting the same site waits for that one.
 - A site that redirects HTTP to HTTPS can't be browsed on the agent's address (`serve` warns). `--https` also binds
@@ -467,9 +503,9 @@ Plans that run again (a section rebuilt after a database refresh, or repaired af
 - The agent refuses to start if the site would use a different database, or a remote one other than the development
   database (exit 3). It answers only loopback callers with the per-run token, and only in Development. `serve`
   refuses a remote database that isn't the development one.
-- Against a remote development database the site runs with the scheduler, automatic schema updates, content type
-  sync and Dynamic Data Store remapping off (a warning says so): content types or properties that exist only in local
-  code aren't in the database, so writes to them fail. Before it starts the site, `serve` refuses (exit 3) a build with
+- Against a remote development database the site runs with the scheduler (`--scheduler` is a `usage` error there),
+  automatic schema updates, content type sync and Dynamic Data Store remapping off (a warning says so): content types
+  or properties that exist only in local code aren't in the database, so writes to them fail. Before it starts the site, `serve` refuses (exit 3) a build with
   EF Core migrations the database's `__EFMigrationsHistory` lacks (`details.reason: "pendingMigrations"`; a site that
   migrates at startup would apply them; `--allow-pending-migrations` starts it anyway), and a CMS schema version the
   CMS won't start with (`"schemaVersion"`). Once the site answers it reports drift (see
@@ -477,7 +513,7 @@ Plans that run again (a section rebuilt after a database refresh, or repaired af
 - `opticli env [--format shell|powershell|dotenv|json|launchSettings] [--include-connection]` prints the variables
   to start the site yourself (IDE, `dotnet run`). Set them only for the site process (a subshell or launch profile):
   `DOTNET_STARTUP_HOOKS` affects every .NET process started from a shell that exports it. The connection string is
-  left out unless `--include-connection`.
+  left out unless `--include-connection`. The scheduler stays as the site sets it (`OPTICLI_SCHEDULER=on`).
 
 ## Troubleshooting
 
@@ -497,5 +533,8 @@ Plans that run again (a section rebuilt after a database refresh, or repaired af
 | `conflict` (exit 5), `details.reason: "referenced"` | Other content references what `delete` would remove (`details.references`). Show them; remove the references, or ask the user before `--ignore-references`. |
 | `drift` (exit 5) | This build and the shared database differ (`error.details`, `opticli drift`). Show the user the differences and which side is ahead; pass `--accept-drift <details.fingerprint>` only after they said to write anyway. |
 | `refused` (exit 3) from `serve`, `details.reason: "pendingMigrations"` or `"schemaVersion"` | The build doesn't fit the shared database: migrations it lacks, or a CMS schema the packages can't run. Tell the user (check out what is deployed, or pull); `--allow-pending-migrations` only when they say the site doesn't migrate at startup. |
+| `job_failed` (exit 7) | The job `jobs run` ran didn't succeed: `error.details.status` and `message` say how it ended; `opticli jobs log <job>` has its earlier runs, `opticli serve --logs` the site's log. Tell the user; don't run it again unasked. |
+| `timeout` (exit 4) from `jobs run` | `--timeout` ran out and the job still runs: `opticli jobs log <job>` later shows how it ended; `opticli jobs stop <job>` only if the user wants it stopped. |
+| `refused` (exit 3) from `jobs run`, naming what the job deletes | A built-in job that deletes for good. Ask the user, naming the job and what it deletes; only then `--allow-destructive`. |
 | `conflict` (exit 5) | A newer version exists: `opticli versions <ref> --limit 3`, then re-run. With `details.reason: "pendingDraft"`: someone else's unpublished changes would go live too; show `details.draft` and ask the user before `--include-draft`. |
 | Values look cut off | `truncated: true`: use `get <ref> --fields Prop` or `--full`. |

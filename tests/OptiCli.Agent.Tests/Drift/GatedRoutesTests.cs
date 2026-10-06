@@ -37,6 +37,8 @@ public class GatedRoutesTests
     [InlineData(nameof(AgentEndpoint.Draft), """{"name":"x"}""")]
     [InlineData(nameof(AgentEndpoint.Move), """{"parent":"5"}""")]
     [InlineData(nameof(AgentEndpoint.SiteHosts), """{"changes":[{"site":"Site A","host":"localhost:5001","action":"add"}]}""")]
+    [InlineData(nameof(AgentEndpoint.JobRun), """{"job":"0b1c2d3e-0000-4000-8000-000000000001"}""")]
+    [InlineData(nameof(AgentEndpoint.JobSet), """{"job":"0b1c2d3e-0000-4000-8000-000000000001","enabled":false}""")]
     public async Task A_gated_write_stops_on_drift_before_its_endpoint_runs(string name, string? body)
     {
         var endpoint = Enum.Parse<AgentEndpoint>(name);

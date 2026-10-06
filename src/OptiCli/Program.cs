@@ -51,16 +51,18 @@ internal partial class Program
             Refs: {{{ContentRefParser.Syntax}}}
             Reads query the database directly and need nothing running.
             Writes (set, create, area, block, upload, translate, publish, unpublish, discard, move, delete, access, apply,
-              sites primary, sites host) go through the CMS inside the running site: `opticli serve` first,
+              sites primary, sites host, jobs run|stop|set) go through the CMS inside the running site: `opticli serve` first,
               `opticli serve --stop` when done. They save drafts unless --publish, delete only moves to the recycle bin, and
               every write takes --dry-run.
             Output: compact JSON {"ok": true, "data": ..., "meta": {"source", "version", "next", "warnings", "database"}} when
               stdout is redirected, tables on a terminal; --json / --text force one, --jsonl (list commands) prints one item per
               line. Lists return 50 items: pass meta.next as --cursor for more, or raise --limit.
             Errors: {"ok": false, "error": {"code", "message", "hint"}}; the hint says what to do next.
-            Exit codes: 0 ok, 1 usage, 2 not found, 3 refused by a safety rule, 4 database/site unreachable, 5 write conflict,
-              validation failure or unconfirmed drift (a shared database that differs from this build: `opticli drift`),
-              6 the user must choose the development database first (error.details lists the choices).
+            Exit codes: 0 ok, 1 usage, 2 not found, 3 refused by a safety rule, 4 database/site unreachable (or a wait timed
+              out), 5 write conflict, validation failure or unconfirmed drift (a shared database that differs from this build:
+              `opticli drift`),
+              6 the user must choose the development database first (error.details lists the choices),
+              7 a job `opticli jobs run` ran didn't succeed.
             Details and an example for each command: opticli <command> --help
             """);
         options.AddTo(root);
@@ -84,6 +86,7 @@ internal partial class Program
         root.Subcommands.Add(VersionsCommand.Create(options));
         root.Subcommands.Add(DraftsCommand.Create(options));
         root.Subcommands.Add(ProjectsCommand.Create(options));
+        root.Subcommands.Add(JobsCommand.Create(options));
         root.Subcommands.Add(BlobCommand.Create(options));
         root.Subcommands.Add(SqlCommand.Create(options));
         root.Subcommands.Add(ServeCommand.Create(options));

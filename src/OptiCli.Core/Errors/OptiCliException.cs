@@ -26,6 +26,8 @@ public abstract class OptiCliException(ErrorCode code, string message, string? h
         ErrorCode.NeedsSelection => new NeedsSelectionException(message, hint) { Details = details },
         ErrorCode.Cancelled => new CancelledException(message, hint) { Details = details },
         ErrorCode.Drift => new DriftException(message, hint) { Details = details },
+        ErrorCode.JobFailed => new JobFailedException(message, hint) { Details = details },
+        ErrorCode.Timeout => new TimedOutException(message, hint) { Details = details },
         _ => new InternalException(message, hint) { Details = details },
     };
 }
@@ -67,6 +69,14 @@ public sealed class NeedsSelectionException(string message, string? hint = null)
 /// </summary>
 public sealed class DriftException(string message, string? hint = null)
     : OptiCliException(ErrorCode.Drift, message, hint);
+
+/// <summary><c>jobs run</c>: the job ran and didn't succeed; <see cref="OptiCliException.Details"/> is the run, with its log entry.</summary>
+public sealed class JobFailedException(string message, string? hint = null)
+    : OptiCliException(ErrorCode.JobFailed, message, hint);
+
+/// <summary>Waiting ran out of time while the work goes on (a job still runs after <c>jobs run --timeout</c>).</summary>
+public sealed class TimedOutException(string message, string? hint = null)
+    : OptiCliException(ErrorCode.Timeout, message, hint);
 
 /// <summary>The user interrupted the command (Ctrl+C).</summary>
 public sealed class CancelledException(string message, string? hint = null)

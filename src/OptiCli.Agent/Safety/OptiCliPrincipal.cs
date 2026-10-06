@@ -33,12 +33,15 @@ internal sealed class OptiCliPrincipal : IDisposable
         _previousUser = context.User;
         _previousPrincipal = _accessor.Principal;
 
-        var principal = new GenericPrincipal(new GenericIdentity(AgentProtocol.PrincipalName, "opticli"), Roles);
+        var principal = Create();
         _accessor.Principal = principal;
         context.User = principal;
     }
 
     public static IDisposable Enter(HttpContext context) => new OptiCliPrincipal(context);
+
+    /// <summary>The <c>opticli</c> user with the admin roles, for a request or a job the agent starts.</summary>
+    public static ClaimsPrincipal Create() => new GenericPrincipal(new GenericIdentity(AgentProtocol.PrincipalName, "opticli"), Roles);
 
     public void Dispose()
     {
