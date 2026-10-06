@@ -6,13 +6,24 @@
     reach for ASP.NET Core, the agent's HTTP plumbing or MCP types.
   -->
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <!-- Both CMS majors, as the agent builds them; the MCP module compiles these sources for CMS 12 only. -->
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <RootNamespace>OptiCli.Cms</RootNamespace>
     <IsPackable>false</IsPackable>
+    <!-- Audit the packages referenced here, as a net8.0-only project does by default: a project that also targets
+         net10.0 audits the whole graph, and the CMS's transitive packages (old ones for CMS 12.0, MailKit for 13.0)
+         never ship with the agent: it compiles against the CMS (ExcludeAssets="runtime") and runs on the site's copies. -->
+    <NuGetAuditMode>direct</NuGetAuditMode>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <DefineConstants>$(DefineConstants);CMS13</DefineConstants>
+    <!-- As in the agent: CMS 12's site definition and page reference APIs are obsolete shims on CMS 13, warnings until ported. -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);CS0618</WarningsNotAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Compile against the oldest CMS 12, as the agent does; the host's own (newer) copy is what runs. -->
+    <!-- Compile against the oldest CMS 12 (or 13), as the agent does; the host's own (newer) copy is what runs. -->
     <PackageReference Include="EPiServer.CMS.Core" ExcludeAssets="runtime" PrivateAssets="all" />
     <!-- GetRequiredService, without the ASP.NET Core framework: these operations mustn't depend on HTTP. -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" PrivateAssets="all" />

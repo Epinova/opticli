@@ -1,5 +1,7 @@
 using EPiServer.Data;
 using EPiServer.Data.Dynamic;
+// ContentModelOptions: in RuntimeModel.Internal on CMS 12, in RuntimeModel on CMS 13.
+using EPiServer.DataAbstraction.RuntimeModel;
 using EPiServer.DataAbstraction.RuntimeModel.Internal;
 using EPiServer.Scheduler;
 using Microsoft.AspNetCore.Hosting;
@@ -72,6 +74,11 @@ public sealed class AgentHostingStartup : IHostingStartup
             DatabasePin.EnsureAllowed(settings, settings.ConnectionName, effective);
             DatabasePin.WarnAboutOtherRemoteStrings(settings, context.Configuration, settings.ConnectionName);
 
+            if (settings.SharedDatabase && Compat.AgentBuild.CmsMajor >= 13)
+            {
+                // The CLI refuses this before starting; this is for a site started with an older `opticli env`'s variables.
+                throw new InvalidOperationException("[opticli] Refusing to start: this opticli doesn't run CMS 13 sites against a shared database yet (it can't check what the site would change there). Use a local copy of the database.");
+            }
             services.AddSingleton(settings);
             if (settings.PinnedConnection is not null)
             {

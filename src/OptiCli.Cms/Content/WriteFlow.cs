@@ -3,7 +3,6 @@ using EPiServer;
 using EPiServer.Core;
 using EPiServer.DataAbstraction;
 using EPiServer.DataAccess;
-using EPiServer.Validation;
 using OptiCli.Protocol;
 
 namespace OptiCli.Cms.Content;
@@ -24,7 +23,6 @@ internal sealed class WriteFlow
             call.Service<EPiServer.Construction.IContentDataFactory<BlockData>>(), call.Service<EPiServer.Construction.IContentDataBuilder>(), Types),
             call.Service<CategoryRepository>(), call.Service<IFrameRepository>(), call.Service<EPiServer.Web.DisplayOptions>());
         Areas = new AreaEditor(Locator, Writer);
-        Validation = call.Service<IValidationService>();
     }
 
     /// <summary>Who the write is for; every save, move and delete goes through it.</summary>
@@ -44,8 +42,6 @@ internal sealed class WriteFlow
     public IContentVersionRepository Versions { get; }
 
     public IContentRepository Repository => Locator.Repository;
-
-    public IValidationService Validation { get; }
 
     /// <summary>New content as stored, if a save got that far.</summary>
     public IContent? Saved(IContent writable) =>
@@ -150,7 +146,7 @@ internal sealed class WriteFlow
         var diff = PropertyValues.Diff(before, PropertyValues.Snapshot(writable));
         // What is reported: an editor never sees a hidden property's value, also not in a diff.
         var changes = Call.Properties.Shown(writable, diff);
-        var issues = (precheck ?? []).Concat(ValidationErrors.Validate(Validation, writable, action)).ToList();
+        var issues = (precheck ?? []).Concat(ValidationErrors.Validate(Call, writable, action)).ToList();
         var valid = !ValidationErrors.HasErrors(issues);
         var published = Kind(action) == SaveAction.Publish;
 

@@ -1,6 +1,8 @@
 using System.Reflection;
 using EPiServer.Data;
 using EPiServer.Data.Dynamic;
+// ContentModelOptions: RuntimeModel.Internal on CMS 12, RuntimeModel on CMS 13.
+using EPiServer.DataAbstraction.RuntimeModel;
 using EPiServer.DataAbstraction.RuntimeModel.Internal;
 using EPiServer.Scheduler;
 using Microsoft.AspNetCore.Hosting;
@@ -84,6 +86,16 @@ public class AgentHostingStartupTests
         Assert.Contains("[opticli] The CMS would connect with 'EPiServerDB', which is not the pinned connection string.", ex.Failures);
     }
 
+#if CMS13
+    [Fact]
+    public void A_shared_database_is_refused_on_cms_13_for_now()
+    {
+        // The CLI refuses first; this is the backstop for a site started with an older `opticli env`'s variables.
+        var ex = Assert.Throws<InvalidOperationException>(() => Stderr(() => Build(Settings(pinned: Remote, approvedRemote: RemoteApproval)).Dispose()));
+
+        Assert.StartsWith("[opticli] Refusing to start: this opticli doesn't run CMS 13 sites against a shared database yet", ex.Message, StringComparison.Ordinal);
+    }
+#else
     [Fact]
     public void A_shared_database_turns_off_what_would_change_it_for_others()
     {
@@ -99,6 +111,7 @@ public class AgentHostingStartupTests
         Assert.False(host.Services.GetRequiredService<IOptions<DynamicDataStoreOptions>>().Value.AutoRemapStores);
         Assert.Contains("Shared database: scheduler, automatic schema updates, content type sync and store remapping are off", stderr, StringComparison.Ordinal);
     }
+#endif
 
     [Fact]
     public void The_scheduler_is_off_for_every_run_unless_serve_asks_to_leave_it()
@@ -117,6 +130,7 @@ public class AgentHostingStartupTests
         Assert.False(siteOff.Services.GetRequiredService<IOptions<SchedulerOptions>>().Value.Enabled);
     }
 
+#if !CMS13
     [Fact]
     public void A_shared_database_keeps_the_scheduler_off_even_when_serve_asks_to_leave_it()
     {
@@ -124,6 +138,7 @@ public class AgentHostingStartupTests
 
         Assert.False(host.Services.GetRequiredService<IOptions<SchedulerOptions>>().Value.Enabled);
     }
+#endif
 
     [Fact]
     public void A_local_database_keeps_the_sites_own_settings()

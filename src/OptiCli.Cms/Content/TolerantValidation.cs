@@ -2,14 +2,15 @@ using System.Globalization;
 using System.Reflection;
 using EPiServer.DataAnnotations;
 using EPiServer.Validation;
-using EPiServer.Validation.Internal;
+using OptiCli.Cms.Compat;
 
 namespace OptiCli.Cms.Content;
 
 /// <summary>
 /// The CMS's recursive validation walk (<c>ValidationService.ValidateRecursively</c>), minus its one
 /// fragility: a site validator that returns null instead of an empty list makes the CMS's own loop
-/// throw, which would turn every valid save into an internal error.
+/// throw, which would turn every valid save into an internal error. CMS 13 still has it: with a save context, a
+/// validator's null goes to <c>ToList()</c>.
 /// </summary>
 /// <remarks>
 /// Only used as a fallback, because it bypasses any post-processing a site's own service subclass adds.
@@ -21,26 +22,26 @@ internal static class TolerantValidation
         typeof(string), typeof(DateTime), typeof(DateTimeOffset), typeof(TimeSpan), typeof(Guid), typeof(decimal), typeof(CultureInfo),
     ];
 
-    public static List<ValidationError> Validate(ValidationService service, object instance, object? context)
+    public static List<ValidationError> Validate(IReadOnlyList<RegisteredValidator> validators, object instance, object? context)
     {
         var errors = new List<ValidationError>();
-        Walk(service, instance, context, new HashSet<object>(ReferenceEqualityComparer.Instance), "", errors);
+        Walk(validators, instance, context, new HashSet<object>(ReferenceEqualityComparer.Instance), "", errors);
         return errors
             .GroupBy(e => (e.PropertyName, e.ErrorMessage))
             .Select(g => g.First())
             .ToList();
     }
 
-    private static void Walk(ValidationService service, object instance, object? context, HashSet<object> visited, string prefix, List<ValidationError> errors)
+    private static void Walk(IReadOnlyList<RegisteredValidator> validators, object instance, object? context, HashSet<object> visited, string prefix, List<ValidationError> errors)
     {
         if (!visited.Add(instance))
         {
             return;
         }
 
-        foreach (var validator in service.RegisteredValidators.Where(v => v.TypeToValidate.IsInstanceOfType(instance)))
+        foreach (var validator in validators.Where(v => v.TypeToValidate.IsInstanceOfType(instance)))
         {
-            var found = context is null ? validator.Validate(instance) : validator.Validate(instance, context);
+            var found = validator.Validate(instance, context);
             foreach (var error in found ?? [])
             {
                 error.PropertyName = prefix + error.PropertyName;
@@ -70,7 +71,7 @@ internal static class TolerantValidation
             }
             if (value is not null)
             {
-                Walk(service, value, context, visited, $"{prefix}{property.Name}.", errors);
+                Walk(validators, value, context, visited, $"{prefix}{property.Name}.", errors);
             }
         }
     }

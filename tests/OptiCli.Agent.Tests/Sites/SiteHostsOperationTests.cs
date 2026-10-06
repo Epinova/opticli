@@ -48,6 +48,7 @@ public class SiteHostsOperationTests
         }
     }
 
+#if !CMS13
     [Fact]
     public void Every_changed_site_is_saved_with_the_planned_hosts_and_site_url()
     {
@@ -105,6 +106,21 @@ public class SiteHostsOperationTests
         Assert.Contains("nothing was saved", error.Message);
         Assert.Empty(repository.SavedNames);
     }
+#else
+    [Fact]
+    public void On_cms_13_nothing_is_planned_or_saved_yet()
+    {
+        // CMS 13 keeps sites as applications; its site definition shim refuses to save.
+        var repository = new SiteRepository(Site(A, "Site A", "site-a.example"));
+
+        var (result, error) = Run(repository, Primary("Site A", "localhost:5001"));
+
+        Assert.Null(result);
+        Assert.Equal(AgentErrorCodes.Refused, error!.Code);
+        Assert.StartsWith("Changing site hosts (sites primary, sites host) isn't supported on CMS 13", error.Message, StringComparison.Ordinal);
+        Assert.Empty(repository.SavedNames);
+    }
+#endif
 
     /// <summary>The repository's contract as the operation uses it: List, Get, Save.</summary>
     private sealed class SiteRepository(params SiteDefinition[] sites) : ISiteDefinitionRepository

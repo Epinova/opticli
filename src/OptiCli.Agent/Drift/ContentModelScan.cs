@@ -45,8 +45,8 @@ internal static partial class ContentModelScan
         register.AnalyzeProperties();
 
         var renames = services.GetRequiredService<MigrationStepRepository>().Changes.ToList();
-        var synchronizer = services.GetRequiredService<PropertyDefinitionSynchronizer>();
-        var matches = models.Select(m => Match(m, renames, synchronizer)).ToList();
+        var resolve = Compat.AgentBuild.PropertyTypeResolver(services);
+        var matches = models.Select(m => Match(m, renames, resolve)).ToList();
         var matched = models.Where(m => m.State != SynchronizationStatus.New && m.ExistingContentType is not null).Select(m => m.ExistingContentType.ID).ToHashSet();
         var onlyInDatabase = services.GetRequiredService<IContentTypeRepository>().List()
             .Where(t => !string.IsNullOrEmpty(t.ModelTypeString) && !SystemTypes.Contains(t.Name) && !matched.Contains(t.ID)
@@ -55,7 +55,7 @@ internal static partial class ContentModelScan
         return ContentModelComparison.Items(matches, onlyInDatabase);
     }
 
-    private static TypeMatch Match(ContentTypeModel model, IReadOnlyList<ContentTypeChange> renames, PropertyDefinitionSynchronizer synchronizer)
+    private static TypeMatch Match(ContentTypeModel model, IReadOnlyList<ContentTypeChange> renames, Func<PropertyDefinitionModel, PropertyDefinitionType?> resolve)
     {
         var code = Settings(model);
         if (model.State == SynchronizationStatus.New || model.ExistingContentType is not { } existing)
@@ -70,7 +70,7 @@ internal static partial class ContentModelScan
         var change = renames.FirstOrDefault(c => string.Equals(c.Name, model.Name, StringComparison.OrdinalIgnoreCase));
         var renamedFrom = change?.OldName is { Length: > 0 } old && string.Equals(old, existing.Name, StringComparison.Ordinal)
             && !string.Equals(old, model.Name, StringComparison.Ordinal) ? old : null;
-        var properties = model.PropertyDefinitionModels.Select(p => Match(p, change, synchronizer)).ToList();
+        var properties = model.PropertyDefinitionModels.Select(p => Match(p, change, resolve)).ToList();
         var onlyInDatabase = existing.PropertyDefinitions
             .Where(d => d.ExistsOnModel && !model.PropertyDefinitionModels.Any(p => p.State != SynchronizationStatus.New && p.ExistingPropertyDefinition?.ID == d.ID))
             .Select(d => d.Name)
@@ -78,9 +78,9 @@ internal static partial class ContentModelScan
         return new TypeMatch(code, stored, properties, onlyInDatabase, renamedFrom);
     }
 
-    private static PropertyMatch Match(PropertyDefinitionModel model, ContentTypeChange? change, PropertyDefinitionSynchronizer synchronizer)
+    private static PropertyMatch Match(PropertyDefinitionModel model, ContentTypeChange? change, Func<PropertyDefinitionModel, PropertyDefinitionType?> resolve)
     {
-        var code = Settings(model, synchronizer);
+        var code = Settings(model, resolve);
         if (model.State == SynchronizationStatus.New || model.ExistingPropertyDefinition is not { } existing)
         {
             return new PropertyMatch(code, null);
@@ -98,9 +98,9 @@ internal static partial class ContentModelScan
 
     private static TypeSettings Settings(ContentType type) => new(type.Name, WithoutVersion(type.ModelTypeString), BaseName(type.Base), type.GUID);
 
-    private static PropertySettings Settings(PropertyDefinitionModel model, PropertyDefinitionSynchronizer synchronizer)
+    private static PropertySettings Settings(PropertyDefinitionModel model, Func<PropertyDefinitionModel, PropertyDefinitionType?> resolve)
     {
-        var type = ResolveType(model, synchronizer);
+        var type = ResolveType(model, resolve);
         return new PropertySettings(model.Name, TypeName(type), type?.ID, model.CultureSpecific ?? false);
     }
 
@@ -119,11 +119,11 @@ internal static partial class ContentModelScan
         typeof(PropertyDefinition).GetProperty("CultureSpecificValue", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
 
     /// <summary>The CMS type the sync would give the property; null when it can't say (the sync itself then fails on it).</summary>
-    private static PropertyDefinitionType? ResolveType(PropertyDefinitionModel model, PropertyDefinitionSynchronizer synchronizer)
+    private static PropertyDefinitionType? ResolveType(PropertyDefinitionModel model, Func<PropertyDefinitionModel, PropertyDefinitionType?> resolve)
     {
         try
         {
-            return synchronizer.ResolveType(model);
+            return resolve(model);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {

@@ -185,7 +185,7 @@ internal sealed class ContentModelSource(IServiceProvider services) : IContentMo
     }
 
     public void Remove(SiteProperty property) =>
-        _properties.Delete(_properties.Load(property.Id) ?? throw AgentExceptionFor(property.Record.Name));
+        Compat.AgentBuild.DeleteProperty(_properties, _properties.Load(property.Id) ?? throw AgentExceptionFor(property.Record.Name));
 
     public void Remove(SiteType type) =>
         _types.Delete(_types.Load(type.Id) ?? throw AgentExceptionFor(type.Name));

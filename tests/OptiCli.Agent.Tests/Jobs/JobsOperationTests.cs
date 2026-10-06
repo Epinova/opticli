@@ -25,7 +25,10 @@ public class JobsOperationTests
         Name = name,
         TypeName = typeName,
         AssemblyName = "Example",
+#if !CMS13
+        // Gone on CMS 13, where every job is a ScheduledJobBase.
         MethodName = "Execute",
+#endif
         IsStoppable = stoppable,
     };
 
@@ -38,6 +41,10 @@ public class JobsOperationTests
         public ScheduledJob? Get(Guid id) => jobs.FirstOrDefault(j => j.ID == id);
 
         public ScheduledJob Get(string method, string typeName, string assemblyName) => throw new NotSupportedException();
+#if CMS13
+
+        public ScheduledJob Get(Type jobType) => throw new NotSupportedException();
+#endif
 
         public IEnumerable<ScheduledJob> List() => jobs;
 

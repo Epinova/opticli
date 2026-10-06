@@ -106,6 +106,10 @@ public class PublishGateTests
         public DateTime? StartPublish { get; set; }
 
         public DateTime? StopPublish { get; set; }
+#if CMS13
+
+        public string? Variation { get; set; }
+#endif
 
         public VersionStatus Status { get; set; } = VersionStatus.CheckedOut;
     }

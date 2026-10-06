@@ -5,6 +5,7 @@ using EPiServer;
 using EPiServer.Core;
 using EPiServer.DataAbstraction;
 using EPiServer.SpecializedProperties;
+using OptiCli.Cms.Compat;
 using OptiCli.Protocol;
 
 namespace OptiCli.Cms.Content;
@@ -95,7 +96,7 @@ internal sealed class ReadValues(IContentTypeRepository types, Func<IContentData
     /// its items are the site's own classes, whose serialised shape only the property knows. Properties that store
     /// text (JSON, usually) return it as is; list properties return their items, which the CMS stores as camelCase JSON.
     /// </summary>
-    private static JsonElement? Stored(PropertyData property, PropertyDataCollection owner) => property.SaveData(owner) switch
+    private static JsonElement? Stored(PropertyData property, PropertyDataCollection owner) => CmsApi.SaveData(property, owner) switch
     {
         null => null,
         string { Length: 0 } => null,

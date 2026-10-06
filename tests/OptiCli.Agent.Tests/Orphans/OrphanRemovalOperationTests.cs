@@ -467,6 +467,21 @@ public class OrphanRemovalOperationTests : IDisposable
             }));
     }
 
+#if CMS13
+    [Fact]
+    public void Removal_is_refused_on_cms_13_for_now()
+    {
+        var request = new AgentRequest(new DefaultHttpContext
+        {
+            RequestServices = new ServiceCollection().AddSingleton(Settings(pinned: Local)).BuildServiceProvider(),
+        }, null);
+
+        var error = Assert.Throws<AgentException>(() => OrphanRemovalOperation.Run(request, new OrphanRemovalRequest { Prune = true, DryRun = true }));
+
+        Assert.Equal(AgentErrorCodes.Refused, error.Code);
+        Assert.StartsWith("Removing content types and properties isn't supported on CMS 13", error.Message, StringComparison.Ordinal);
+    }
+#else
     [Fact]
     public void Nothing_is_removed_against_a_shared_database()
     {
@@ -479,4 +494,5 @@ public class OrphanRemovalOperationTests : IDisposable
 
         Assert.Equal((AgentErrorCodes.Refused, OrphanRemoval.SharedRefusal), (error.Code, error.Message));
     }
+#endif
 }

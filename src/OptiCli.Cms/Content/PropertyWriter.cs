@@ -8,6 +8,7 @@ using EPiServer.SpecializedProperties;
 using EPiServer.ServiceLocation;
 using EPiServer.Web;
 using OptiCli.Core.Text;
+using OptiCli.Cms.Compat;
 using OptiCli.Protocol;
 
 namespace OptiCli.Cms.Content;
@@ -742,19 +743,16 @@ internal sealed class PropertyWriter(
     {
         // Link only: on newer CMS versions setting ContentGuid clears ContentLink (they are alternatives).
         var item = new ContentAreaItem { ContentLink = link };
-        foreach (var (key, value) in takenOver?.RenderSettings ?? new Dictionary<string, object>())
+        foreach (var (key, value) in CmsApi.RenderSettings(takenOver))
         {
             if (key != PropertyValues.DisplayOptionKey)
             {
-                // Null until something is set on a new item.
-                item.RenderSettings ??= new Dictionary<string, object>();
-                item.RenderSettings[key] = value;
+                CmsApi.SetRenderSetting(item, key, value);
             }
         }
         if (DisplayOptionId(displayOption, takenOver is null ? null : PropertyValues.DisplayOption(takenOver)) is { } id)
         {
-            item.RenderSettings ??= new Dictionary<string, object>();
-            item.RenderSettings[PropertyValues.DisplayOptionKey] = id;
+            CmsApi.SetRenderSetting(item, PropertyValues.DisplayOptionKey, id);
         }
         return item;
     }

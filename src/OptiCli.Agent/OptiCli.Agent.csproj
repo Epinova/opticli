@@ -1,16 +1,29 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <!-- Two builds from the same sources: net8.0 against CMS 12, net10.0 against CMS 13 (CMS13 defined); the CLI ships
+         both and injects the one that matches the site's CMS major. Directory.Packages.props picks the CMS per framework. -->
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <RootNamespace>OptiCli.Agent</RootNamespace>
     <!-- Loaded into a foreign process: never ship our own copies of the host's assemblies. -->
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
     <IsPackable>false</IsPackable>
+    <!-- Audit the packages referenced here, as a net8.0-only project does by default: a project that also targets
+         net10.0 audits the whole graph, and the CMS's transitive packages (old ones for CMS 12.0, MailKit for 13.0)
+         never ship with the agent: it compiles against the CMS (ExcludeAssets="runtime") and runs on the site's copies. -->
+    <NuGetAuditMode>direct</NuGetAuditMode>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <DefineConstants>$(DefineConstants);CMS13</DefineConstants>
+    <!-- The CMS 13 build still uses CMS 12's site definition and page reference APIs, which CMS 13 keeps as obsolete
+         compatibility shims: warnings (each one listed in the build) rather than errors until they're ported. -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);CS0618</WarningsNotAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <!-- Compile against the oldest CMS 12; the host's own (newer) copy is what runs. -->
+    <!-- Compile against the oldest CMS 12 (or 13); the host's own (newer) copy is what runs. -->
     <PackageReference Include="EPiServer.CMS.Core" ExcludeAssets="runtime" PrivateAssets="all" />
   </ItemGroup>
 

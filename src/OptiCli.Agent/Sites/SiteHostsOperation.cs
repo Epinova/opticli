@@ -25,6 +25,8 @@ internal static class SiteHostsOperation
 
     public static SiteHostsResult Run(AgentRequest request, SiteHostsRequest body)
     {
+        // CMS 13 keeps sites as applications; its site definition shim lists them but refuses to save them.
+        Compat.AgentBuild.RequireCms12("Changing site hosts (sites primary, sites host)", "Change the application's hosts in the CMS's admin mode (Applications) for now.");
         var repository = request.Service<ISiteDefinitionRepository>();
         var languages = request.Service<ILanguageBranchRepository>().ListEnabled()
             .Select(l => l.LanguageID?.Trim() ?? "")

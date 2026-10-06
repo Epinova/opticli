@@ -68,7 +68,7 @@ internal static class PublishOperation
         {
             action |= SaveAction.ForceNewVersion;
         }
-        var issues = ValidationErrors.Validate(flow.Validation, writable, action);
+        var issues = ValidationErrors.Validate(call, writable, action);
         if (cleared is not null)
         {
             issues = [.. issues, cleared];

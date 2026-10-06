@@ -6,6 +6,7 @@ using EPiServer.Core;
 using EPiServer.DataAbstraction;
 using EPiServer.ServiceLocation;
 using EPiServer.SpecializedProperties;
+using OptiCli.Cms.Compat;
 using OptiCli.Protocol;
 
 namespace OptiCli.Cms.Content;
@@ -122,7 +123,7 @@ internal static class PropertyValues
         if (page.LinkType == PageShortcutType.External)
         {
             // As saved to the database (a permanent link stays one); LinkURL gives the friendly URL.
-            shortcut["url"] = page.Property["PageLinkURL"]?.SaveData(page.Property)?.ToString() ?? page.LinkURL;
+            shortcut["url"] = (page.Property["PageLinkURL"] is { } linkUrl ? CmsApi.SaveData(linkUrl, page.Property)?.ToString() : null) ?? page.LinkURL;
         }
         if (page.Property["PageTargetFrame"] is PropertyFrame { IsNull: false } frame)
         {

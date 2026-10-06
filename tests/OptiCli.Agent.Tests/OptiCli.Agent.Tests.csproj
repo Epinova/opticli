@@ -1,12 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <!-- Both agent builds: net8.0 runs against CMS 12, net10.0 against CMS 13 (Directory.Packages.props). -->
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <RollForward>Major</RollForward>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <!-- CMS 12.0's EPiServer.Framework asks for SqlClient 3.x; the tests never connect, so the newer one is fine. -->
+    <!-- CMS 12.0's EPiServer.Framework asks for SqlClient 3.x (CMS 13.0's for 6.x); the tests never connect, so the newer one is fine. -->
     <NoWarn>$(NoWarn);NU1608</NoWarn>
+    <!-- As in the agent: audit the direct references; with net10.0 the whole graph would be, CMS 12.0's old packages included. -->
+    <NuGetAuditMode>direct</NuGetAuditMode>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,6 +22,12 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <DefineConstants>$(DefineConstants);CMS13</DefineConstants>
+    <!-- As in the agent's CMS 13 build: CMS 12's site definition APIs are obsolete shims there, warnings until ported. -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);CS0618</WarningsNotAsErrors>
+  </PropertyGroup>
 
   <ItemGroup>
     <Using Include="Xunit" />

@@ -2,7 +2,7 @@ using EPiServer;
 using EPiServer.Core;
 using EPiServer.DataAccess;
 using EPiServer.Validation;
-using EPiServer.Validation.Internal;
+using OptiCli.Cms.Compat;
 using OptiCli.Protocol;
 using DataAnnotationsValidationException = System.ComponentModel.DataAnnotations.ValidationException;
 
@@ -20,18 +20,19 @@ internal static class ValidationErrors
     /// decorate or replace the former, and the CMS only registers its validators on whatever instance
     /// that resolves to. A site that replaces it leaves the context service registered but empty.
     /// </remarks>
-    public static List<ValidationIssue> Validate(IValidationService validation, IContent content, SaveAction action)
+    public static List<ValidationIssue> Validate(CmsCall call, IContent content, SaveAction action)
     {
-        var context = new ContentSaveValidationContext(action, newVersionRequired: true);
+        var validation = call.Service<IValidationService>();
+        var context = CmsApi.SaveValidationContext(content, action);
         List<ValidationError> errors;
         try
         {
             errors = (validation is IContextValidationService contextual ? contextual.Validate(content, context) : validation.Validate(content)).ToList();
         }
-        catch (ArgumentNullException) when (validation is ValidationService service)
+        catch (ArgumentNullException) when (RegisteredValidators.Of(validation, call) is { } validators)
         {
             // A site validator returned null rather than an empty list; walk the validators ourselves.
-            errors = TolerantValidation.Validate(service, content, validation is IContextValidationService ? context : null);
+            errors = TolerantValidation.Validate(validators, content, validation is IContextValidationService ? context : null);
         }
         return errors.Where(e => e.Severity != ValidationErrorSeverity.None).Select(ToIssue).ToList();
     }

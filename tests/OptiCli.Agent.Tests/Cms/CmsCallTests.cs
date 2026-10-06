@@ -65,10 +65,11 @@ public class CmsCallTests
         Call(CmsCaller.Developer).Save(content, SaveAction.Publish);
         Call(CmsCaller.Editor).Save(content, SaveAction.Publish);
 
-        // Undefined makes the CMS work out the level from the action (Publish here), as the edit UI's saves do.
+        // Undefined makes the CMS work out the level from the action (Publish here), as the edit UI's saves do. On CMS 13
+        // the two-argument Save is the interface's own default method, which passes Undefined itself.
         Assert.Equal(
             [("Save", AccessLevel.NoAccess), ("Save", AccessLevel.Undefined)],
-            _repository.Calls.Select(c => (c.Method, (AccessLevel)c.Args[2]!)));
+            _repository.Calls.Select(c => (c.Method, c.Args.Length > 2 ? (AccessLevel)c.Args[2]! : AccessLevel.Undefined)));
     }
 
     [Fact]
@@ -214,10 +215,15 @@ public class CmsCallTests
         Call(CmsCaller.Developer).Move(Page, destination);
         Call(CmsCaller.Editor).Move(Page, destination);
 
-        var moves = _repository.Calls.Where(c => c.Method == "Move").Select(c => ((AccessLevel)c.Args[2]!, (AccessLevel)c.Args[3]!)).ToList();
-        Assert.Equal((AccessLevel.NoAccess, AccessLevel.NoAccess), moves[0]);
-        Assert.Equal(AccessLevel.Read | AccessLevel.Delete, moves[1].Item1);
-        Assert.True(moves[1].Item2.HasFlag(AccessLevel.Create));
+        var moves = _repository.Calls.Where(c => c.Method == "Move").ToList();
+        Assert.Equal((AccessLevel.NoAccess, AccessLevel.NoAccess), ((AccessLevel)moves[0].Args[2]!, (AccessLevel)moves[0].Args[3]!));
+#if CMS13
+        // The two-argument Move is the interface's own default method on CMS 13, which works out the editor's levels itself.
+        Assert.Equal(2, moves[1].Args.Length);
+#else
+        Assert.Equal(AccessLevel.Read | AccessLevel.Delete, (AccessLevel)moves[1].Args[2]!);
+        Assert.True(((AccessLevel)moves[1].Args[3]!).HasFlag(AccessLevel.Create));
+#endif
     }
 
     [Fact]
@@ -235,9 +241,17 @@ public class CmsCallTests
         Call(CmsCaller.Developer).Delete(Page);
         Call(CmsCaller.Editor).Delete(Page);
 
+#if CMS13
+        // CMS 13 records the current principal itself, and checks the access level given: none for the developer, as a
+        // fresh CMS 13 database grants administrators nothing on content.
+        Assert.Equal(
+            [("MoveToWastebasket", (object)AccessLevel.NoAccess), ("MoveToWastebasket", AccessLevel.Delete)],
+            _repository.Calls.Select(c => (c.Method, c.Args[1]!)));
+#else
         Assert.Equal(
             [("MoveToWastebasket", AgentProtocol.PrincipalName), ("MoveToWastebasket", EditorName)],
             _repository.Calls.Select(c => (c.Method, (string)c.Args[1]!)));
+#endif
     }
 
     [Fact]
@@ -390,6 +404,10 @@ public class CmsCallTests
         public DateTime? StartPublish { get; set; }
 
         public DateTime? StopPublish { get; set; }
+#if CMS13
+
+        public string? Variation { get; set; }
+#endif
     }
 
     /// <summary>A language branch of content with versions, master language English.</summary>
@@ -408,6 +426,10 @@ public class CmsCallTests
         public DateTime? StartPublish { get; set; }
 
         public DateTime? StopPublish { get; set; }
+#if CMS13
+
+        public string? Variation { get; set; }
+#endif
     }
 }
 

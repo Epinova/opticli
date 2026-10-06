@@ -28,6 +28,7 @@ internal static class OrphanRemovalOperation
 
     public static OrphanRemovalResult Run(AgentRequest request, OrphanRemovalRequest body)
     {
+        Compat.AgentBuild.RequireCms12("Removing content types and properties", Compat.AgentBuild.RemovalHint);
         if (request.Service<AgentSettings>().SharedDatabase)
         {
             throw AgentException.Refused(OrphanRemoval.SharedRefusal, OrphanRemoval.SharedHint);

@@ -228,10 +228,12 @@ internal sealed class CmsCall(IServiceProvider services, CancellationToken abort
     }
 
     /// <summary>
-    /// Moves content to the recycle bin, attributed to <see cref="UserName"/>. The CMS checks Delete against the current
-    /// principal either way: the developer's opticli principal has the admin roles, an editor their own.
+    /// Moves content to the recycle bin, attributed to <see cref="UserName"/>. On CMS 12 the CMS checks Delete against the
+    /// current principal either way: the developer's opticli principal has the admin roles, an editor their own. On CMS 13
+    /// it checks the access level given: Delete for an editor, none for the developer, as for a save.
     /// </summary>
-    public void Delete(ContentReference link) => Repository.MoveToWastebasket(link, UserName);
+    public void Delete(ContentReference link) =>
+        Compat.CmsApi.MoveToWastebasket(Repository, link, UserName, Checked ? AccessLevel.Delete : AccessLevel.NoAccess);
 
     /// <summary>
     /// Removes a language branch: for an editor with Delete, as the edit UI's "Delete language branch" requires, and edit
@@ -247,13 +249,14 @@ internal sealed class CmsCall(IServiceProvider services, CancellationToken abort
     }
 
     /// <summary>
-    /// Deletes one version for good. The CMS checks nothing here; the caller has checked Delete on the content
-    /// (<see cref="RequireAccess"/>). For an editor, this also takes edit access to the version's language.
+    /// Deletes one version for good. CMS 12 checks nothing here (CMS 13 checks Delete for an editor, nothing for the
+    /// developer); the caller has checked Delete on the content (<see cref="RequireAccess"/>). For an editor, this also
+    /// takes edit access to the version's language.
     /// </summary>
     public void DeleteVersion(IContent version)
     {
         RequireLanguageAccess(version);
-        Service<IContentVersionRepository>().Delete(version.ContentLink);
+        Compat.CmsApi.DeleteVersion(Service<IContentVersionRepository>(), version.ContentLink, Checked ? AccessLevel.Delete : AccessLevel.NoAccess);
     }
 
     /// <summary>Whether the caller may see <paramref name="content"/>: always for the developer, with Read for an editor.</summary>
