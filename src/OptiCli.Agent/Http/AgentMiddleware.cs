@@ -7,6 +7,7 @@ using OptiCli.Agent.Drift;
 using OptiCli.Agent.Endpoints;
 using OptiCli.Agent.Hosting;
 using OptiCli.Agent.Jobs;
+using OptiCli.Agent.Orphans;
 using OptiCli.Agent.Safety;
 using OptiCli.Agent.Sites;
 using OptiCli.Agent.Users;
@@ -24,8 +25,8 @@ namespace OptiCli.Agent.Http;
 /// <remarks>
 /// The content endpoints are <c>OptiCli.Cms</c> operations, which the MCP module runs too; this class adds only what is
 /// HTTP: the body, the status code, and the request's <see cref="AgentRequest.Call"/> as the developer. Site hosts
-/// (<see cref="SiteHostsOperation"/>), scheduled jobs (<see cref="JobsOperation"/>) and users (<see cref="UsersOperation"/>) are
-/// the agent's own, never the module's.
+/// (<see cref="SiteHostsOperation"/>), scheduled jobs (<see cref="JobsOperation"/>), users (<see cref="UsersOperation"/>) and orphaned content types
+/// (<see cref="OrphanRemovalOperation"/>) are the agent's own, never the module's.
 /// </remarks>
 internal static class AgentMiddleware
 {
@@ -96,6 +97,8 @@ internal static class AgentMiddleware
         [AgentEndpoint.UserAdd] = Write(r => r.ReadBodyAsync<UserAddRequest>(), b => b.DryRun, async (r, b) => Ok(await UsersOperation.AddAsync(r, b))),
         [AgentEndpoint.UserRemove] = Write(r => r.ReadBodyAsync<UserRemoveRequest>(), b => b.DryRun, async (r, b) => Ok(await UsersOperation.RemoveAsync(r, b))),
         [AgentEndpoint.UserRoles] = new(false, async request => (200, (object)await UsersOperation.RolesAsync(request))),
+        // The content model is the developer's only too: content types and properties that removed code left behind.
+        [AgentEndpoint.TypesRemove] = Write(r => r.ReadBodyAsync<OrphanRemovalRequest>(), b => b.DryRun, (r, b) => Ok(OrphanRemovalOperation.Run(r, b))),
         // No body and no dry run: a delete is always real.
         [AgentEndpoint.Delete] = Write(Task.FromResult, _ => false, (r, _) => Ok(DeleteOperation.Run(r.Call, r.Argument))),
     };

@@ -56,6 +56,18 @@ public static class AgentRoutes
     public static readonly string TypesWithoutCode = $"{Prefix}/types-without-code";
 
     /// <summary>
+    /// <c>POST /v1/types/remove</c>. Body: <see cref="OrphanRemovalRequest"/>. Response: <see cref="OrphanRemovalResult"/>.
+    /// Removes content types whose class the running site can't load and properties that aren't in their type's code,
+    /// through <c>IContentTypeRepository.Delete</c> and <c>IPropertyDefinitionRepository.Delete</c>; nothing else. Errors
+    /// for named items (all are checked before anything is removed): <c>refused</c> (not an orphan: made in admin mode, a
+    /// system type, a class the site loads, a property in the code; stored values without
+    /// <see cref="OrphanRemovalRequest.AllowDestructive"/>; anything in shared mode), <c>conflict</c> (content of the
+    /// type, also in the recycle bin, or a property that uses it as its block type), <c>not_found</c>; each item is in
+    /// <c>validation</c>. Developer-only: the MCP module has no such tool.
+    /// </summary>
+    public static readonly string TypesRemove = $"{Prefix}/types/remove";
+
+    /// <summary>
     /// <c>POST /v1/sites/hosts</c>. Body: <see cref="SiteHostsRequest"/>. Response: <see cref="SiteHostsResult"/>. Saves
     /// through <c>ISiteDefinitionRepository</c>, which clears the site definition cache and raises its change events, so
     /// the running site uses the new hosts at once. Listing sites stays a database read (<c>opticli sites</c>).

@@ -10,6 +10,7 @@ internal enum AgentEndpoint
     Shutdown,
     Type,
     TypesWithoutCode,
+    TypesRemove,
     Create,
     Upload,
     Draft,
@@ -46,7 +47,7 @@ internal static partial class AgentRouter
     private static readonly string VersionSegment = AgentRoutes.Prefix.TrimStart('/');
 
     private static readonly string RouteList =
-        $"GET {AgentRoutes.Prefix}/ping, POST {AgentRoutes.Prefix}/shutdown, GET {AgentRoutes.Prefix}/drift, GET {AgentRoutes.Prefix}/restore-parents, GET {AgentRoutes.Prefix}/types/{{name}}, GET {AgentRoutes.Prefix}/types-without-code, POST {AgentRoutes.Prefix}/content, POST {AgentRoutes.Prefix}/media, " +
+        $"GET {AgentRoutes.Prefix}/ping, POST {AgentRoutes.Prefix}/shutdown, GET {AgentRoutes.Prefix}/drift, GET {AgentRoutes.Prefix}/restore-parents, GET {AgentRoutes.Prefix}/types/{{name}}, GET {AgentRoutes.Prefix}/types-without-code, POST {AgentRoutes.Prefix}/types/remove, POST {AgentRoutes.Prefix}/content, POST {AgentRoutes.Prefix}/media, " +
         $"POST {AgentRoutes.Prefix}/content/{{ref}}/draft|languages|remove-language|publish|unpublish|discard|move|restore|access, GET|DELETE {AgentRoutes.Prefix}/content/{{ref}}, POST {AgentRoutes.Prefix}/sites/hosts, POST {AgentRoutes.Prefix}/jobs/run|stop|set, POST {AgentRoutes.Prefix}/users/add|remove, GET {AgentRoutes.Prefix}/users/roles";
 
     /// <exception cref="AgentException">No route matches, or it belongs to another protocol version.</exception>
@@ -74,6 +75,8 @@ internal static partial class AgentRouter
             ["shutdown"] => (AgentEndpoint.Shutdown, (string?)null),
             ["drift"] => (AgentEndpoint.Drift, (string?)null),
             ["restore-parents"] => (AgentEndpoint.RestoreParents, (string?)null),
+            // Before types/{name}: a type can't be read by the name "remove" with POST, nor removed with GET.
+            ["types", "remove"] when IsMethod(method, "POST") => (AgentEndpoint.TypesRemove, (string?)null),
             ["types", var name] => (AgentEndpoint.Type, name),
             ["types-without-code"] => (AgentEndpoint.TypesWithoutCode, (string?)null),
             ["content"] => (AgentEndpoint.Create, (string?)null),
@@ -118,6 +121,7 @@ internal static partial class AgentRouter
         [AgentEndpoint.Drift] = "GET",
         [AgentEndpoint.Type] = "GET",
         [AgentEndpoint.TypesWithoutCode] = "GET",
+        [AgentEndpoint.TypesRemove] = "POST",
         [AgentEndpoint.Create] = "POST",
         [AgentEndpoint.Upload] = "POST",
         [AgentEndpoint.Read] = "GET",

@@ -75,6 +75,12 @@ public static class AgentErrorReasons
     /// allowed there; the error's hint applies.
     /// </summary>
     public const string Restore = "restore";
+
+    /// <summary>
+    /// Refused, conflict or not_found from <see cref="AgentRoutes.TypesRemove"/>: one or more named types or properties
+    /// can't be removed; <see cref="AgentError.Validation"/> has each one and why, and nothing was removed.
+    /// </summary>
+    public const string Orphans = "orphans";
 }
 
 /// <summary>Error codes and the HTTP status each one is sent with.</summary>

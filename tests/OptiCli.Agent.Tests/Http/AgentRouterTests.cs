@@ -23,6 +23,9 @@ public class AgentRouterTests
     [InlineData("POST", "/v1/content/123/restore", "Restore", "123")]
     [InlineData("GET", "/v1/restore-parents", "RestoreParents", null)]
     [InlineData("GET", "/v1/types-without-code", "TypesWithoutCode", null)]
+    [InlineData("POST", "/v1/types/remove", "TypesRemove", null)]
+    // A type named "remove" is still read with GET.
+    [InlineData("GET", "/v1/types/remove", "Type", "remove")]
     [InlineData("POST", "/v1/content/123/access", "Access", "123")]
     [InlineData("POST", "/v1/sites/hosts", "SiteHosts", null)]
     [InlineData("POST", "/v1/jobs/run", "JobRun", null)]
@@ -106,6 +109,7 @@ public class AgentRouterTests
         Assert.Equal(new RouteMatch(AgentEndpoint.Restore, "123"), AgentRouter.Match("POST", AgentRoutes.Restore("123")));
         Assert.Equal(new RouteMatch(AgentEndpoint.Delete, "123"), AgentRouter.Match("DELETE", AgentRoutes.Delete("123")));
         Assert.Equal(new RouteMatch(AgentEndpoint.Read, "123"), AgentRouter.Match("GET", AgentRoutes.Read("123")));
+        Assert.Equal(AgentEndpoint.TypesRemove, AgentRouter.Match("POST", AgentRoutes.TypesRemove).Endpoint);
     }
 
     [Theory]
