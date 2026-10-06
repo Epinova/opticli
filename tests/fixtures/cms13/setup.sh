@@ -16,7 +16,7 @@
 set -euo pipefail
 
 WHICH=${1:-both}
-case "$WHICH" in fresh|upgraded|both) ;; *) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;; esac
+case "$WHICH" in fresh|upgraded|both) ;; *) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;; esac
 HERE=$(cd "$(dirname "$0")" && pwd)
 CMS_VERSION=${CMS_VERSION:-13.3.0}
 FRESH_DIR=${FRESH_DIR:-/demo/Alloy13}
