@@ -1,6 +1,6 @@
 ---
 name: opticli
-description: Inspect and change content of an Optimizely CMS 12 (EPiServer) site the user develops locally (against its local or development database) with the opticli CLI instead of hand-written SQL or guessing from code. Use when you need to know what CMS content exists (pages, blocks, media, folders), what a page or block contains (properties, ContentArea items, rich text), which page type or block type something is and which C# class and Razor view render it, where a block or page is used, which content a URL shows, what drafts and versions exist, or when the user asks you to create or edit CMS content (set properties, add a block to a ContentArea, create a page or block, translate, publish) in their development site, or to point the sites of a restored database at localhost (their host names). Also for scheduled jobs: which exist, whether a job (an import, a sync) ran and how it ended, and running or rescheduling one. And for the recycle bin: what was deleted, by whom, and bringing it back; and a local login for a restored database.
+description: Inspect and change content of an Optimizely CMS 12 (EPiServer) site the user develops locally (against its local or development database) with the opticli CLI instead of hand-written SQL or guessing from code. Use when you need to know what CMS content exists (pages, blocks, media, folders), what a page or block contains (properties, ContentArea items, rich text), which page type or block type something is and which C# class and Razor view render it, where a block or page is used, which content a URL shows, what drafts and versions exist, or when the user asks you to create or edit CMS content (set properties, add a block to a ContentArea, create a page or block, translate, publish) in their development site, or to point the sites of a restored database at localhost (their host names). Also for scheduled jobs: which exist, whether a job (an import, a sync) ran and how it ended, and running or rescheduling one. And for the recycle bin: what was deleted, by whom, and bringing it back; a local login for a restored database; and content types and properties that removed code left in the database.
 opticli-version: 0.13.0
 ---
 
@@ -53,6 +53,7 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
 | Which page/block types exist, how many items each? | `opticli types --kind block --sort instances` (`page`, `media`, `folder`) |
 | A type's properties, C# class file and views | `opticli type ArticlePage` |
 | Types or properties left behind by removed code | `opticli types --orphaned`; `opticli type <Name>` (`existsOnModel: false`, `values`) |
+| Remove them (only when asked) | `opticli types prune --dry-run`; `opticli types remove <Type>`, `opticli types remove-property <Type> <Prop>` (needs `serve`) |
 | Which ContentAreas/references accept a type | `opticli allowed-in TeaserBlock --kind page` |
 | Everything in one item, decoded | `opticli get 123` (`--fields Heading,MainArea`, `--lang en`) |
 | Which content a URL shows | `opticli resolve https://www.example.com/en/news/` |
@@ -216,6 +217,15 @@ order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a cod
   never the password or the file's content. `users remove` only removes users opticli made; a refusal there or on a
   site without ASP.NET Identity (exit 3) is final: tell the user. Never list users or read the user tables (`sql
   --include-personal-data`) to find names; `users roles` has the counts.
+- Never remove content types or properties (`types remove`, `types remove-property`, `types prune`) unless the user asked
+  for it, and dry-run first: they aren't versioned and can't be restored. Report what the output records (names, GUIDs,
+  properties, `values`), the only record of what was there. Only orphans go: a type whose class the running site can't
+  load, a property not in its type's code. Content keeps a type (`conflict`, also content in the recycle bin): opticli
+  never deletes content, so tell the user what uses it (`find --type`, `trash --type`) instead of working around it.
+  A property with stored values needs `--allow-destructive`, which deletes them in every version and language: show the
+  user `values` and pass it only after they agreed for those properties. A property added in admin mode looks the same
+  as one removed from the code: name the properties to the user before removing them, and use `types prune --properties`
+  only when they want every one of them gone.
 - Always `--dry-run` a multi-step `apply` plan first, and a single write when you are unsure of its effect.
 - A write that timed out (`unreachable`, "no response within") or a plan that stopped halfway (`details.partial`) may
   have saved more than it reports: check with `opticli versions <ref>` before running it again.

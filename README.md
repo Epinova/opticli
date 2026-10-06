@@ -197,6 +197,7 @@ Once the site answers, `serve` reports drift: what differs between the build and
 | `delete` moves content to the recycle bin; nothing empties it, and `restore` brings it back. Site roots, start pages, asset roots and anything above them can't be moved or deleted. The MCP module doesn't restore. | Site agent |
 | `serve` turns the site's scheduler off, so a restored database's overdue jobs don't all start (`--scheduler` leaves it on). `jobs run` refuses jobs that delete for good (emptying the recycle bin, trimming versions, truncating the change log, Commerce's expired carts and archived items, ...) or move content across the site, and `jobs set` refuses to let the scheduler run one (sooner), without `--allow-destructive`. Against a shared database jobs aren't run, stopped or changed, and the scheduler stays off. | Site agent, CLI first |
 | `users add` only adds users to the site's ASP.NET Identity, tagged as made by opticli, and `users remove` only removes those: an existing account's password, address and roles are never touched. A generated password is written to a file only you can read and never printed. No command lists users; `users roles` counts them per role. Refused against a shared database, and on a site whose CMS users come from elsewhere (OpenID Connect). | Site agent, CLI first |
+| `types remove`, `types remove-property` and `types prune` only remove what removed code left in the database, as the running site judges it: a content type whose class the site can't load (never one made in admin mode, nor one of the CMS's own) and a property that isn't in its type's code. A type stays while content of it exists, also in the recycle bin (opticli doesn't delete content), while a property has it as its block type, and while page-type values name it. A property's stored values go with it only with `--allow-destructive`. Only through the site, refused against a shared database, and never reachable from the MCP module. | Site agent, CLI first |
 | Reads use fixed queries. `sql` accepts a single SELECT, refuses anything that writes, runs code, reaches another database or reads server-wide views, logs and traces (in `sys`, only the views that describe the database's own schema), and always runs in a rolled-back transaction. Personal-data tables (form submissions, users) need `--include-personal-data`. Where another command's fixed query reads the Dynamic Data Store's tables, it reads only one store's rows and only what it shows (the parents the CMS stored for `trash`, visitor group names), nothing that names a person. | CLI |
 | Passwords are never printed; `doctor` redacts connection strings. The exception is `opticli env`: it prints the per-run token, and with `--include-connection` the connection string too. | CLI |
 
@@ -250,7 +251,7 @@ add-ons need first.
 | `doctor` | project, connection string candidates, database, schema version, site agent, drift (against a shared database), sites whose primary host differs from the saved `sites primary` mapping, installed skill |
 | `db list`, `db use`, `db forget` | the development database (see [Which database](#which-database)) |
 | `sites`, `languages` | site definitions and hosts; language branches |
-| `types [--kind] [--unused] [--orphaned] [--sort]` | content types with instance counts; `--orphaned`: types whose class is gone from the code, which the CMS keeps while content uses them (the running site checks every class, `meta.source: agent`; otherwise the site's sources are scanned for its own types, with a warning saying why) |
+| `types [--kind] [--unused] [--orphaned] [--sort]` | content types with instance counts; `--orphaned`: types whose class is gone from the code, which the CMS keeps while content uses them (the running site checks every class, `meta.source: agent`; otherwise the site's sources are scanned for its own types, with a warning saying why); see [Orphaned content types](#orphaned-content-types-and-properties) for removing them |
 | `type <name>` | properties (type, culture-specific, required, tab, order, source line, `[AllowedTypes]`; one that isn't in the code with how many values it has stored), C# class file, views |
 | `allowed-in <type>` | which ContentArea/reference properties accept a type, from `[AllowedTypes]` in code |
 | `get <ref> [--lang] [--version] [--fields] [--expand]` | one item, typed and decoded (ContentAreas, local blocks, rich-text links) |
@@ -303,6 +304,8 @@ These commands write:
 - `jobs run`, `jobs stop` and `jobs set` run, stop and reschedule scheduled jobs; see [Scheduled jobs](#scheduled-jobs).
 - `users add` and `users remove` make and remove a local login for a restored database; see
   [Local users](#local-users-after-a-database-restore).
+- `types remove`, `types remove-property` and `types prune` remove content types and properties that removed code left
+  in the database; see [Orphaned content types](#orphaned-content-types-and-properties).
 - `apply plan.json` runs several operations validated together. Later operations can refer to an item an earlier
   one created as `$id`. A property value `"@texts/body.html"` is that file's text, as `Prop=@file` is on the command
   line. Files in a plan are relative to the plan file and must stay inside its folder. With `"guidNamespace"`, what a
@@ -458,6 +461,39 @@ refused (exit 3), even `users roles`: its users are real, and opticli doesn't ev
 CMS users come from OpenID Connect, Opti ID or another identity provider (no ASP.NET Identity), they are refused (exit
 3) with the user provider the site has: sign in through that provider. `doctor` doesn't hint at `users add`: whether
 anyone can sign in locally depends on password hashes and external logins in the user tables, which are personal data.
+
+### Orphaned content types and properties
+
+When a content type's class or a property is removed from the code, the CMS deletes it from the database when the site
+next starts, but only if nothing uses it. A type with content (also in the recycle bin), or a block type a property
+still has, stays; so does a property with stored values, marked `existsOnModel: false`. Old databases collect years of
+them, and admin mode removes them one at a time. `types --orphaned` and `type <name>` show them; these commands remove
+them through the site (`opticli serve`), with the CMS's own `IContentTypeRepository.Delete` and
+`IPropertyDefinitionRepository.Delete`, as admin mode's Delete does:
+
+```sh
+opticli types prune --dry-run                          # what would go and what stays (kept), with why
+opticli types remove OldNewsPage OldTeaserBlock        # these types; all are checked first, or none goes
+opticli types remove-property ArticlePage OldIntro --dry-run   # the values that would go with it
+opticli types prune --properties --allow-destructive --dry-run
+```
+
+| Command | Does |
+|---|---|
+| `types remove <type>...` | removes content types whose class the running site can't load. Refused (exit 3): a type made in admin mode (no class on record), one of the CMS's own, one whose class the site loads. `conflict` (exit 5): content of the type, also in the recycle bin, inline blocks of it in ContentAreas, a property that has it as its block type (unless that property's type goes in the same run: it is removed first), or page-type properties whose values name it (the CMS would clear those values). Every named type is checked before any is removed; `details.validation` has each one that can't go. |
+| `types remove-property <type> <property>...` | removes properties that aren't in their type's code (`existsOnModel: false`), on a type defined in code. The CMS deletes the values with them, in every version and language, values inside a block property and category selections included: a property with values needs `--allow-destructive` (refused, exit 3, otherwise), which nothing implies. A property added in admin mode to a type that has a class looks the same in the database, so check before removing one; a property of a type made in admin mode is refused. |
+| `types prune [--properties] [--allow-destructive]` | every orphaned type that can go, and with `--properties` every orphaned property (with values only with `--allow-destructive`); `kept` lists the rest with the reason and the counts. A block type whose only users are properties or types removed in the same run goes after them. |
+
+The output records what was removed, to make it again by hand: each type's name, GUID, base, class, display name and
+properties (data type, block type, culture-specific, required, tab, ...), the types it allowed below it and those that
+allowed it, and each property's stored values (`content` items and `versions`). Content types and properties aren't
+versioned and there is no undo. The CMS records a type's removal in its activity log (`tblActivityLog`, type
+`ContentType`), not a property's. The site `serve` runs uses the new content model at once; another process running the
+site against the same database (your IDE's) keeps its cached content types until it restarts.
+
+Without `serve` these commands are `unreachable` (exit 4): only the running site can tell which classes it loads, and
+there is no database fallback for removing. Against a shared database they are refused (exit 3), with no override: the
+deployed site uses the same content model. `apply` has no such steps, and the MCP module no such tools.
 
 ## serve and env
 
@@ -1000,9 +1036,13 @@ site (`dotnet new epi-alloy-mvc`) without changing it. `setup.sh` copies the sit
 `EdgeCasesFixture.cs` (the extra content types, plus a startup module for what a plan can't create) and
 `JobsFixture.cs`, `UsersFixture.cs` and `OrphansFixture.cs`, and applies `edge-cases.plan.json`. `JobsFixture.cs` has "opticli test job", a manual, stoppable job
 that writes a status message a second for 3 steps (the number in `App_Data/opticli-job-steps`, if it exists) and fails
-when `App_Data/opticli-job-fail` exists; the `jobs` tests run it. `OrphansFixture.cs` leaves what removed code leaves behind: the page type `EdgeRemovedPage`, whose class doesn't exist,
-used by one page, and a property `EdgeRemovedText` of EdgePage that its class doesn't declare, with one value (made at
-the second start, once the plan's content exists). `UsersFixture.cs` makes the user `edge-fixture-user` at startup (WebEditors, no password, not
+when `App_Data/opticli-job-fail` exists; the `jobs` tests run it. `OrphansFixture.cs` leaves what removed code leaves behind: the page types `EdgeRemovedPage` (whose class doesn't
+exist, used by one page), `EdgeTrashedPage` (its only page is in the recycle bin) and `EdgeRemovedEmptyPage` (used by
+nothing, with a property `Teaser` whose block type `EdgeRemovedBlock` has no class either), the EdgePage properties
+`EdgeRemovedText` (one value) and `EdgeRemovedEmptyText` (none) that its class doesn't declare, and `EdgeAdminPage`, a
+type made in admin mode. They are made at the second start, once the plan's content exists, and again at every start
+(the CMS removes an unused type whose class is gone when the site starts); the tests that remove them make them again
+with `POST /opticli-fixture/orphans`, which the fixture answers on loopback only. `UsersFixture.cs` makes the user `edge-fixture-user` at startup (WebEditors, no password, not
 made by opticli), which the `users` tests check `users remove` refuses; they also sign in on `/util/login` as a user
 they add. With `OPTICLI_FIXTURE_SCHEDULER=on` in the environment
 of `serve`, it also turns the scheduler on in the site's own configuration, as a real site has it (Alloy turns it off in

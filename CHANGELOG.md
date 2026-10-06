@@ -3,6 +3,37 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## Unreleased
+
+### New
+
+- **`opticli types remove <type>...`**, **`opticli types remove-property <type> <prop>...`** and **`opticli types prune`**
+  remove content types and properties that removed code left in the database, through the site (`serve`) with the CMS's
+  own `IContentTypeRepository.Delete` and `IPropertyDefinitionRepository.Delete`. Only orphans, as the running site
+  judges them: a type whose class it can't load (never one made in admin mode, nor one of the CMS's own) and a property
+  that isn't in its type's code (`existsOnModel: false`) on a type defined in code. A type stays (`conflict`, exit 5)
+  while content of it exists, also in the recycle bin, while a property has it as its block type, and while page-type
+  values name it (the CMS would clear them); opticli never deletes content. A property's stored values, which the CMS
+  deletes with it in every version and language, need `--allow-destructive`. Named items are all checked first, and
+  nothing is removed if one can't go. `prune` removes every orphaned type that can go (a block type after the
+  properties and types that used it) and lists the rest under `kept` with the reason; `--properties` adds orphaned
+  properties, which it leaves alone otherwise, since one added in admin mode looks the same. Every command takes
+  `--dry-run`. The output records what was removed (names, GUIDs, classes, properties, value counts) to make it again
+  by hand: content types aren't versioned. Without `serve`, `unreachable` (exit 4); refused against a shared database
+  (exit 3); `apply` has no such steps and the MCP module no such tools.
+
+### Changed
+
+- **`type`**'s `values` for a property that isn't in the code count content items and versions holding a value (they
+  counted rows), and include values stored inside a block property and category selections: what removing it deletes.
+
+### Development
+
+- The edge-case site's `OrphansFixture.cs` adds `EdgeTrashedPage` (an orphaned page type whose only page is in the
+  recycle bin), `EdgeRemovedEmptyPage` and its block type `EdgeRemovedBlock` (orphans nothing uses), the property
+  `EdgeRemovedEmptyText` (no values) and `EdgeAdminPage` (made in admin mode), makes them again at every start, and
+  answers `POST /opticli-fixture/orphans` on loopback so the removal tests can make them again and run twice.
+
 ## 0.13.0 (6 October 2026)
 
 ### New

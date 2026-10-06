@@ -34,8 +34,8 @@ the one saved with `opticli db use`, else `connection` in the user config (`~/.c
 | `doctor` | Always exits 0. `data.healthy`, `data.warnings`; `connection.candidates`, `database`, `agent` (`scheduler`: `on`/`off` in the running site), `scheduler` (`serve`: what `serve` does, `running`, `overdueJobs`), `skills`, `sitesMapping` (each entry of the saved `sites primary` mapping: `key`, `saved`, `primary`, `status`: `matches`, `differs`, `noSite`, `invalid`). |
 | `sites` | Hosts (`name`, `type`: undefined, primary, edit, redirectPermanent, redirectTemporary; `language`, `https`), URL (SiteUrl), start page, master language, assets root. |
 | `languages [--all]` | Enabled branches (all with `--all`), item counts, which sites use each as master. |
-| `types [--kind page\|block\|media\|folder\|other] [--unused] [--orphaned] [--sort name\|instances]` | `instances` = non-deleted items. Sorted by name unless `--sort instances`. `--orphaned`: types defined in code (the CMS has a class on record, `modelType`) whose class is gone; the CMS keeps such a type while content (or a block property) uses it. Through the running site when `serve` runs (every class it can't load, packages' too; `meta.source: agent`); otherwise a source scan of the site's own assemblies' types (by GUID, then name), with a warning that says why the site wasn't asked (not running, an older agent, or its error). Only reads: opticli doesn't delete types or properties. |
-| `type <name\|class\|guid>` | `properties[]` (name, type, blockType, list, cultureSpecific, required, tab, order, displayName, `source` file:line, `declaredIn`, `allowedTypes`/`restrictedTypes` from `[AllowedTypes]`, `uiHint`), `classes[]` (file, line, `baseTypes`), `views[]` (file, `matchedBy`: fileName, partialName, viewComponent, model), `sourceRoot`. `existsOnModel: false` = in the DB but not in code (removed from code, which the CMS keeps while it has values, or added in admin mode), with `values` (`content`: stored on content items, `versions`: in all versions) and a warning. Controllers are not listed. |
+| `types [--kind page\|block\|media\|folder\|other] [--unused] [--orphaned] [--sort name\|instances]` | `instances` = non-deleted items. Sorted by name unless `--sort instances`. `--orphaned`: types defined in code (the CMS has a class on record, `modelType`) whose class is gone; the CMS keeps such a type while content (or a block property) uses it. Through the running site when `serve` runs (every class it can't load, packages' too; `meta.source: agent`); otherwise a source scan of the site's own assemblies' types (by GUID, then name), with a warning that says why the site wasn't asked (not running, an older agent, or its error). `types remove|remove-property|prune` remove them: see [Orphaned content types](#orphaned-content-types). |
+| `type <name\|class\|guid>` | `properties[]` (name, type, blockType, list, cultureSpecific, required, tab, order, displayName, `source` file:line, `declaredIn`, `allowedTypes`/`restrictedTypes` from `[AllowedTypes]`, `uiHint`), `classes[]` (file, line, `baseTypes`), `views[]` (file, `matchedBy`: fileName, partialName, viewComponent, model), `sourceRoot`. `existsOnModel: false` = in the DB but not in code (removed from code, which the CMS keeps while it has values, or added in admin mode), with `values` (`content`: content items holding a value, `versions`: versions holding one; values inside a block property and category selections count, as removing it deletes them) and a warning. Controllers are not listed. |
 | `allowed-in <type> [--kind K] [--explicit]` | ContentArea/reference properties of every type that can hold `<type>`, from `[AllowedTypes]` in code: `allowed` (`explicit` + `matchedBy`, or `any` for a ContentArea/reference list without the attribute), `allowedTypes`, `uiHint`, `source`. Base classes and interfaces declared in the sources count. Editor descriptors (`uiHint`) and metadata extenders can change the rules at runtime; they are not evaluated. |
 | `get <ref>` | `--lang`, `--version published\|latest\|<id>` (default: published, or the latest draft if the branch was never published), `--fields A,B` (whole values; identity fields like `name`, `saved` are always shown, so `--fields name` gives just those), `--full`, `--all-properties`, `--expand` (inline ContentArea items / referenced content one level). `saved`/`changedBy` belong to the version shown. With `--lang`, language settings apply: a replacement language, or (no branch) the first fallback language that has one; `languageRule` (`replacement`, `fallback`, `none`) and `notes` say so. `projects` lists the projects that hold a version of it. |
 | `resolve <url>` | `--site`. Result has `site`, `host`, `languageSource`, `matchedBy`. |
@@ -379,6 +379,31 @@ names or addresses.
 - `users remove <name>`: only a user `users add` made (claim `opticli:created` = `true` and an `opticli.localhost`
   address; `refused` otherwise, `not_found` for none); deletes its password
   files too (`passwordFileRemoved`). Roles stay.
+
+### Orphaned content types
+
+Through the site (`serve`; without it `unreachable`, exit 4), with the CMS's `IContentTypeRepository.Delete` and
+`IPropertyDefinitionRepository.Delete`. Refused against a shared database (exit 3). Not in `apply`.
+- `types remove <type>...` (name or GUID): only a type whose class (`modelType`) the running site can't load. `refused`:
+  made in admin mode, one of the CMS's own, a class the site loads. `conflict`: content of the type (also in the recycle
+  bin), its inline blocks in ContentAreas, page-type values naming it (the CMS would clear them), a property that has it
+  as its block type (fine when that property's type is removed in the same run: it goes first). `not_found` with "did
+  you mean". All named types are checked first; if one can't go, nothing is removed: `error.details.reason: "orphans"`,
+  `details.validation[]` (`property`: the type or `Type.Property`, `message`: why), in the order named; the code is
+  `refused` if any is, else `conflict`, else `not_found`.
+- `types remove-property <type> <prop>...`: only properties with `existsOnModel: false` on a type defined in code (a
+  type made in admin mode is refused, and a property the site's model has). Stored values (any version, language,
+  inside a block property, category selections) need `--allow-destructive` (`refused` otherwise, with the counts).
+- `types prune [--properties] [--allow-destructive]`: every orphaned type that can go; `--properties` adds every orphaned
+  property (without it they are listed under `kept`, since one added in admin mode looks the same).
+  `--allow-destructive` without `--properties` is `usage`.
+- Output: `types[]` (`id`, `guid`, `name`, `base`, `displayName`, `description`, `modelType`, `properties[]`,
+  `allowedChildren`, `availableUnder`), `properties[]` (`type`, `property`: `name`, `dataType`, `typeName`, `blockType`,
+  `cultureSpecific`, `required`, `searchable`, `displayEditUi`, `editCaption`, `helpText`, `tab`, `fieldOrder`; `values`:
+  `content`, `versions`), `kept[]` for prune (`type`, `property`, `code`, `reason`, `values` or `usage`: `content`,
+  `inRecycleBin`, `inlineBlocks`, `pageTypeValues`, `usedBy`, `otherUses`), `removed`, `dryRun`. `meta.warnings`: no
+  undo; admin-mode properties look the same; which values were (would be) deleted; another process running the site
+  keeps its cached content types until it restarts.
 
 ### Concurrency
 
