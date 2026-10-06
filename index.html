@@ -223,6 +223,11 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
           SiteUrl with it, so links and canonical URLs stay local. The production hosts stay too. Save the mapping once and
           run it again after every restore.</p>
         <code class="eg">opticli sites primary --from-config</code></li>
+      <li><h3>Scheduled jobs, without surprises</h3>
+        <p>See every job's schedule, last run and log, and where its code lives. Run one and wait for its result, stop
+          it, or change when it runs. <code>serve</code> keeps a restored database's overdue jobs from all running at
+          once, and jobs that delete for good need an explicit flag.</p>
+        <code class="eg">opticli jobs run "Content import"</code></li>
       <li><h3>Nothing to add to your solution</h3>
         <p><code>serve</code> starts your existing build with a small agent injected at startup, through a .NET startup hook and a hosting startup. Your site's code and config stay as they are.</p>
         <code class="eg">opticli serve</code></li>
@@ -308,6 +313,18 @@ https://your-site.example/episerver/opticli/mcp</pre>
         <code>opticli skill install</code> again to update the skill.</p>
     </div>
     <ol class="changelog">
+      <li><div class="v"><b>0.12.0</b><span>6 October 2026</span></div>
+        <ul>
+          <li><b>Changed: <code>serve</code> turns the site's scheduler off.</b> A restored production database has
+            overdue jobs, and they all ran when the site started: imports, syncs, emails, and emptying the recycle bin.
+            <code>serve --scheduler</code> leaves it as the site sets it, and <code>doctor</code> counts the overdue jobs.</li>
+          <li><b>Scheduled jobs:</b> <code>jobs</code> lists them with schedule, last run and status, and their file and
+            line in your code; <code>jobs log</code> shows runs and messages (<code>--failed --since 1d</code>).</li>
+          <li><b>Run, stop and reschedule:</b> <code>jobs run &lt;job&gt;</code> runs a job through the site and waits for
+            it, with exit code 7 when it fails; <code>jobs stop</code>, and <code>jobs set --enabled --every --next</code>.
+            Jobs that delete for good need <code>--allow-destructive</code>, and jobs other than the CMS's own run with a
+            warning.</li>
+        </ul></li>
       <li><div class="v"><b>0.11.0</b><span>6 October 2026</span></div>
         <ul>
           <li><b>MCP server security fixes:</b> update <code>OptiCli.Mcp</code> to <code>0.11.0-preview</code> before
