@@ -1,4 +1,5 @@
 using EPiServer.DataAbstraction;
+using OptiCli.Agent.Compat;
 using OptiCli.Agent.Drift;
 using OptiCli.Protocol;
 
@@ -156,4 +157,30 @@ public class ContentModelComparisonTests
         Assert.True(ContentModelScan.CultureSpecificByAdmin(byAdmin));
         Assert.False(ContentModelScan.CultureSpecificByAdmin(new PropertyDefinition()));
     }
+}
+
+/// <summary>How a stored content type shows it came from code, which differs between CMS 12 and 13.</summary>
+public class StoredTypeOriginTests
+{
+    [Fact]
+    public void A_type_with_a_class_on_record_came_from_code_and_one_made_in_admin_mode_didnt()
+    {
+        Assert.True(AgentBuild.FromCode(new ContentType { Name = "ArticlePage", ModelTypeString = "Site.Models.ArticlePage, Site" }));
+        Assert.False(AgentBuild.FromCode(new ContentType { Name = "AdminPage" }));
+        Assert.Equal("1.2", AgentBuild.SyncedVersion(new ContentType { ModelTypeString = "Site.Models.ArticlePage, Site, Version=1.2.3.4, Culture=neutral, PublicKeyToken=null" }));
+    }
+
+#if CMS13
+    [Fact]
+    public void On_cms_13_a_type_synced_from_a_class_with_a_guid_has_only_the_assembly_version_on_record()
+    {
+        // CMS 13 stores no class for a model with a GUID, only the version of its assembly; admin mode sets none.
+        var synced = new ContentType { Name = "ArticlePage", Version = new Version(1, 0, 0, 0) };
+
+        Assert.True(AgentBuild.FromCode(synced));
+        Assert.Equal("1.0", AgentBuild.SyncedVersion(synced));
+        // A type of an external content source isn't the site's code.
+        Assert.False(AgentBuild.FromCode(new ContentType { Name = "Product", Version = new Version(1, 0), Source = "commerce" }));
+    }
+#endif
 }

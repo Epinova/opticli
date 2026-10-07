@@ -1,8 +1,14 @@
-// Copied into a CMS 12 edge-case site by setup.sh, beside EdgeCasesFixture.cs: the nested site and the three sites the
-// site host tests change, as site definitions. On CMS 13, Cms13Fixture.cs makes the three hosts sites as applications
-// instead, and no nested site.
+// Copied into a CMS 12 edge-case site by setup.sh (not into a CMS 13 one), beside EdgeCasesFixture.cs and
+// OrphansFixture.cs, for what CMS 13 does with other APIs (Cms13Fixture.cs there):
+// - the nested site and the three sites the site host tests change, as site definitions. On CMS 13, Cms13Fixture.cs makes
+//   the three hosts sites as applications instead, and no nested site.
+// - the orphans fixture's property definitions, saved through IPropertyDefinitionRepository, and its page moved to the
+//   recycle bin by name.
 using System.Globalization;
+using System.Security.Principal;
+using EPiServer.Security;
 using EPiServer.ServiceLocation;
+using EPiServer.SpecializedProperties;
 using EPiServer.Web;
 
 namespace OptiCliEdgeCases;
@@ -65,5 +71,36 @@ public partial class EdgeCasesSetup
         }
         sites.Save(new SiteDefinition { Name = name, StartPage = start, SiteUrl = new Uri(url), Hosts = hosts });
         Console.Error.WriteLine($"[edge-cases] created site '{name}' with start page {start}");
+    }
+}
+
+public partial class OptiCliOrphansFixture
+{
+    private static partial void SaveProperty(IServiceProvider locate, ContentType type, PropertyDefinition property, Guid? blockType)
+    {
+        var propertyTypes = locate.GetInstance<IPropertyDefinitionTypeRepository>();
+        property.ContentTypeID = type.ID;
+        property.Type = blockType is { } block ? propertyTypes.LoadByBlockType(block) : propertyTypes.Load(typeof(PropertyString));
+        locate.GetInstance<IPropertyDefinitionRepository>().Save(property);
+    }
+
+    private static partial ContentType NewBlockType() => new BlockType();
+
+    private static partial ContentType WithoutRecordedClass(ContentType type) => type;
+
+    private static partial void Trash(IServiceProvider locate, IContentRepository content, ContentReference page)
+    {
+        // Moving to the recycle bin checks Delete access, which no one has during startup.
+        var accessor = locate.GetInstance<IPrincipalAccessor>();
+        var principal = accessor.Principal;
+        accessor.Principal = new GenericPrincipal(new GenericIdentity("opticli-fixture"), ["Administrators", "WebAdmins"]);
+        try
+        {
+            content.MoveToWastebasket(page, "opticli-fixture");
+        }
+        finally
+        {
+            accessor.Principal = principal;
+        }
     }
 }

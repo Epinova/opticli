@@ -24,17 +24,28 @@ internal static class AgentBuild
 #endif
 
     /// <summary>
-    /// Refuses what this agent doesn't do on CMS 13 yet, before anything is read or changed.
+    /// Whether the content type came from code (the CMS's model sync made it), whether or not that code is still there.
+    /// CMS 12 records the class of every such type (<c>ModelTypeString</c>). CMS 13 records none for a model with a GUID,
+    /// only the version of its assembly (<c>Version</c>, which the sync sets and admin mode doesn't); a type of an external
+    /// content source (<c>Source</c>) isn't the site's code.
     /// </summary>
-    /// <param name="what">What was asked for, as the start of a sentence: "Removing content types and properties".</param>
-    /// <exception cref="AgentException"><c>refused</c> on CMS 13.</exception>
-    public static void RequireCms12(string what, string hint)
-    {
-        if (CmsMajor != 12)
-        {
-            throw AgentException.Refused($"{what} isn't supported on CMS 13 by this opticli yet.", hint);
-        }
-    }
+    public static bool FromCode(ContentType type) =>
+#if CMS13
+        string.IsNullOrEmpty(type.Source) && (!string.IsNullOrEmpty(type.ModelTypeString) || type.Version is not null);
+#else
+        !string.IsNullOrEmpty(type.ModelTypeString);
+#endif
+
+    /// <summary>
+    /// The version (major.minor) of the assembly the database's type was synced from, which the sync compares with the
+    /// model's: CMS 13's <c>Version</c>, else the one in the class on record.
+    /// </summary>
+    public static string? SyncedVersion(ContentType type) =>
+#if CMS13
+        type.Version is { } version ? $"{version.Major}.{version.Minor}" : Drift.ContentModelScan.AssemblyVersion(type.ModelTypeString);
+#else
+        Drift.ContentModelScan.AssemblyVersion(type.ModelTypeString);
+#endif
 
     /// <summary>
     /// The CMS type the content model sync would give a property: <c>PropertyDefinitionSynchronizer.ResolveType</c> on
@@ -86,20 +97,25 @@ internal static class AgentBuild
 #endif
 
     /// <summary>
-    /// Deletes a property definition. CMS 13 made <c>IPropertyDefinitionRepository.Delete</c> an error (properties go with
-    /// <c>IContentTypeRepository.Save</c> of their type); until that is ported the orphan removal refuses on CMS 13 before
-    /// it gets here.
+    /// Deletes a property definition, and its values with it. CMS 12: <c>IPropertyDefinitionRepository.Delete</c>. CMS 13
+    /// made that an error: a property goes when its type is saved without it (<c>IContentTypeRepository.Save</c>, which
+    /// deletes the definitions the type no longer lists, through the same delete), so a writable copy of the type is
+    /// saved without the property.
     /// </summary>
-    public static void DeleteProperty(IPropertyDefinitionRepository properties, PropertyDefinition definition)
+    /// <exception cref="AgentException"><c>conflict</c>: the type or the property was removed meanwhile.</exception>
+    public static void DeleteProperty(IContentTypeRepository types, IPropertyDefinitionRepository properties, PropertyDefinition definition)
     {
 #if CMS13
         _ = properties;
-        throw AgentException.Refused($"Removing the property '{definition.Name}' isn't supported on CMS 13 by this opticli yet.", RemovalHint);
+        var type = types.Load(definition.ContentTypeID)?.CreateWritableClone() as ContentType
+            ?? throw AgentException.Conflict($"The content type of '{definition.Name}' was removed meanwhile.");
+        var property = type.PropertyDefinitions.FirstOrDefault(p => p.ID == definition.ID)
+            ?? throw AgentException.Conflict($"'{definition.Name}' was removed meanwhile.");
+        type.PropertyDefinitions.Remove(property);
+        types.Save(type);
 #else
+        _ = types;
         properties.Delete(definition);
 #endif
     }
-
-    /// <summary>The hint of the CMS 13 refusals of <c>types remove</c>, <c>remove-property</c> and <c>prune</c>.</summary>
-    public const string RemovalHint = "Use the CMS's admin mode (Content Types) for now.";
 }

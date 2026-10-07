@@ -9,8 +9,9 @@ namespace OptiCli.Agent.Orphans;
 
 /// <summary>
 /// <c>POST /v1/types/remove</c>: removes content types and properties that removed code left in the database, through the
-/// CMS's <see cref="IContentTypeRepository.Delete(ContentType)"/> and <see cref="IPropertyDefinitionRepository.Delete"/>,
-/// which clear the content model's and the content's caches and raise the CMS's events.
+/// CMS's <see cref="IContentTypeRepository.Delete(ContentType)"/> and its property delete (CMS 12's
+/// <c>IPropertyDefinitionRepository.Delete</c>, CMS 13's save of the type without the property), which clear the content
+/// model's and the content's caches and raise the CMS's events.
 /// </summary>
 /// <remarks>
 /// <para>Here and not in <c>OptiCli.Cms</c>, which the MCP module compiles in: the content model is the developer's only,
@@ -28,7 +29,6 @@ internal static class OrphanRemovalOperation
 
     public static OrphanRemovalResult Run(AgentRequest request, OrphanRemovalRequest body)
     {
-        Compat.AgentBuild.RequireCms12("Removing content types and properties", Compat.AgentBuild.RemovalHint);
         if (request.Service<AgentSettings>().SharedDatabase)
         {
             throw AgentException.Refused(OrphanRemoval.SharedRefusal, OrphanRemoval.SharedHint);
@@ -68,7 +68,7 @@ internal static class OrphanRemovalOperation
         if (body.Prune)
         {
             typeCandidates.AddRange(types.Where(t => TypeRefusal(t) is null));
-            foreach (var type in types.Where(t => t.ModelType is not null && !typeCandidates.Contains(t)))
+            foreach (var type in types.Where(t => t.FromCode && !typeCandidates.Contains(t)))
             {
                 foreach (var property in type.Properties.Where(p => !p.ExistsOnModel && !p.InModel))
                 {
@@ -213,7 +213,7 @@ internal static class OrphanRemovalOperation
         {
             return $"{type.Name} is one of the CMS's own types.";
         }
-        if (type.ModelType is null)
+        if (!type.FromCode)
         {
             return $"{type.Name} was made in admin mode (it has no class on record), so it isn't left over from removed code; remove it in admin mode (Content Types) if it should go.";
         }
@@ -227,7 +227,7 @@ internal static class OrphanRemovalOperation
     /// <summary>Why a property isn't an orphan of removed code; null when it is one.</summary>
     internal static string? PropertyRefusal(SiteType type, SiteProperty property)
     {
-        if (type.ModelType is null)
+        if (!type.FromCode)
         {
             return $"{type.Name} was made in admin mode, so its properties were too: remove it in admin mode (Content Types) if it should go.";
         }
@@ -311,13 +311,15 @@ internal static class OrphanRemovalOperation
     /// </summary>
     private static AgentException Partial(Exception ex, Step failed, IReadOnlyList<Step> done, IReadOnlyList<Step> steps, RemovalRecords records, List<string> warnings, bool recorded)
     {
+        // CMS 13 validates a type when it is saved without a property (a contract it implements may need it).
+        var refusedByCms = ex is DataAbstractionException or System.ComponentModel.DataAnnotations.ValidationException;
         var code = ex switch
         {
             AgentException agent => agent.Code,
-            DataAbstractionException => AgentErrorCodes.Conflict,
+            _ when refusedByCms => AgentErrorCodes.Conflict,
             _ => AgentErrorCodes.Internal,
         };
-        var message = ex is DataAbstractionException ? $"The CMS refused to remove {failed.Label}: {ex.Message}" : ex.Message;
+        var message = refusedByCms ? $"The CMS refused to remove {failed.Label}: {ex.Message}" : ex.Message;
         var rest = steps.SkipWhile(s => s != failed).Select(s => s.Label).ToList();
         var removed = done.Count == 0 ? null : new OrphanRemovalResult(
             done.Where(s => s.Type is not null).Select(s => s.Type!).ToList(),

@@ -10,7 +10,7 @@ using OptiCli.Protocol;
 namespace OptiCli.Agent.Orphans;
 
 /// <summary>A content type as the running site has it.</summary>
-/// <param name="ModelType">The class the CMS has on record (<c>ModelTypeString</c>); null for a type made in admin mode.</param>
+/// <param name="ModelType">The class the CMS has on record (<c>ModelTypeString</c>); null for a type made in admin mode, and for a CMS 13 type with a GUID (see <see cref="SyncedFromCode"/>).</param>
 /// <param name="HasClass">The site can load that class.</param>
 /// <param name="AllowedChildren">The types it allows below it, when it names them (admin mode's "Available content types").</param>
 internal sealed record SiteType(
@@ -23,7 +23,17 @@ internal sealed record SiteType(
     string? ModelType,
     bool HasClass,
     IReadOnlyList<SiteProperty> Properties,
-    IReadOnlyList<string>? AllowedChildren = null);
+    IReadOnlyList<string>? AllowedChildren = null)
+{
+    /// <summary>
+    /// CMS 13: the model sync made it from a class it recorded no name for (a model with a GUID), so it came from code even
+    /// without a <see cref="ModelType"/> (<see cref="Compat.AgentBuild.FromCode"/>).
+    /// </summary>
+    public bool SyncedFromCode { get; init; }
+
+    /// <summary>Made from code, not in admin mode: a class on record, or <see cref="SyncedFromCode"/>.</summary>
+    public bool FromCode => ModelType is not null || SyncedFromCode;
+}
 
 /// <summary>A property definition as the running site has it.</summary>
 /// <param name="ExistsOnModel">The CMS's own flag: false once the model sync found it gone from the code (or for one made in admin mode).</param>
@@ -49,8 +59,9 @@ internal interface IContentModelSource
 
 /// <summary>
 /// <see cref="IContentModelSource"/> through the CMS: <see cref="IContentTypeRepository"/> and
-/// <see cref="IPropertyDefinitionRepository"/> for the model and the deletes, the CMS's own usage check, and counts read
-/// with the CMS's database executor.
+/// <see cref="IPropertyDefinitionRepository"/> for the model and the deletes (a property's through its type's save on
+/// CMS 13, <see cref="Compat.AgentBuild.DeleteProperty"/>), the CMS's own usage check, and counts read with the CMS's
+/// database executor.
 /// </summary>
 /// <remarks>
 /// The counts are fixed SELECTs: the CMS has no API that counts what its deletes remove (a property's values in local
@@ -123,7 +134,10 @@ internal sealed class ContentModelSource(IServiceProvider services) : IContentMo
                 string.IsNullOrWhiteSpace(t.ModelTypeString) ? null : t.ModelTypeString,
                 t.ModelType is not null,
                 t.PropertyDefinitions.Select(p => Property(t, p, hasModel, blockNames)).ToList(),
-                AllowedChildren(available, t)))
+                AllowedChildren(available, t))
+            {
+                SyncedFromCode = Compat.AgentBuild.FromCode(t),
+            })
             .ToList();
     }
 
@@ -185,7 +199,7 @@ internal sealed class ContentModelSource(IServiceProvider services) : IContentMo
     }
 
     public void Remove(SiteProperty property) =>
-        Compat.AgentBuild.DeleteProperty(_properties, _properties.Load(property.Id) ?? throw AgentExceptionFor(property.Record.Name));
+        Compat.AgentBuild.DeleteProperty(_types, _properties, _properties.Load(property.Id) ?? throw AgentExceptionFor(property.Record.Name));
 
     public void Remove(SiteType type) =>
         _types.Delete(_types.Load(type.Id) ?? throw AgentExceptionFor(type.Name));

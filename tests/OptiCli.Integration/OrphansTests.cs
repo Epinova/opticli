@@ -40,7 +40,9 @@ public sealed class OrphansTests
 
         Assert.Equal(OrphanedTypes, fromSite.Select(t => t.Name));
         Assert.Equal(1, fromSite.Single(t => t.Guid == RemovedType).Instances);
-        Assert.Equal(fromSite.Select(t => t.Name), fromSource.Select(t => t.Name));
+        // The source scan needs the class on record, which CMS 13 doesn't keep for a type with a GUID (EdgeTrashedPage there).
+        Assert.Equal(fromSite.Where(t => t.ModelType is not null).Select(t => t.Name), fromSource.Select(t => t.Name));
+        Assert.Equal(site.Session.Model.Schema.Major >= 13 ? ["EdgeTrashedPage"] : [], fromSite.Where(t => t.ModelType is null).Select(t => t.Name));
     }
 
     [SiteFact]
@@ -250,30 +252,11 @@ public sealed class OrphansTests
         return (await ContentTypeReader.ListPropertiesAsync(site.Session.Db, edgePage.Id, cancellationToken)).Where(p => !p.ExistsOnModel).Select(p => p.Name).ToList();
     }
 
-    [SiteFact]
-    public async Task On_cms_13_the_site_refuses_removal_before_it_looks()
-    {
-        var cancellationToken = CancellationToken.None;
-        await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
-        if (site.Session.Model.Schema.Major < 13)
-        {
-            return;
-        }
-
-        var refused = await Assert.ThrowsAsync<Core.Errors.RefusedException>(() => RemoveAsync(site, new OrphanRemovalRequest { Prune = true, DryRun = true }, cancellationToken));
-
-        Assert.StartsWith("Removing content types and properties isn't supported on CMS 13", refused.Message);
-        Assert.Contains("admin mode", refused.Hint);
-    }
-
     /// <summary>Makes whatever of OrphansFixture.cs is missing, through the site.</summary>
-    /// <returns>
-    /// False on a site that isn't the edge-case site (no EdgePage), and on CMS 13, where orphan removal isn't ported yet
-    /// (setup.sh leaves OrphansFixture.cs out there); on the CMS 12 edge-case site the fixture must answer.
-    /// </returns>
+    /// <returns>False on a site that isn't the edge-case site (no EdgePage); on the edge-case site the fixture must answer.</returns>
     private static async Task<bool> ReseedAsync(SiteUnderTest site, CancellationToken cancellationToken)
     {
-        if (site.Session.Model.Schema.Major >= 13 || !(await ContentTypeReader.ListAsync(site.Session.Db, cancellationToken)).Any(t => t.Name == "EdgePage"))
+        if (!(await ContentTypeReader.ListAsync(site.Session.Db, cancellationToken)).Any(t => t.Name == "EdgePage"))
         {
             return false;
         }

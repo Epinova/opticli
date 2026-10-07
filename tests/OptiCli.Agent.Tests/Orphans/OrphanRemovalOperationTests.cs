@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using OptiCli.Agent.Http;
 using OptiCli.Agent.Orphans;
+using OptiCli.Agent.Tests.Cms;
 using OptiCli.Cms;
 using OptiCli.Protocol;
 using static OptiCli.Agent.Tests.Hosting.HostingFixture;
@@ -151,6 +152,22 @@ public class OrphanRemovalOperationTests : IDisposable
 
         Assert.Equal(AgentErrorCodes.Refused, error.Code);
         Assert.Contains(reason, error.Message);
+    }
+
+    [Fact]
+    public void A_type_its_model_sync_made_without_a_class_on_record_is_removed_like_one_whose_class_is_gone()
+    {
+        // CMS 13 keeps no class for a model with a GUID: once the class is gone, only the sync's version says it came
+        // from code. Its properties count as code's too.
+        var synced = Type("OldPage", modelType: null, properties: Property("OldText")) with { SyncedFromCode = true };
+        var model = new Model(synced, Type("AdminPage", null, properties: Property("AdminText")));
+
+        var removed = Run(model, new OrphanRemovalRequest { Prune = true, PruneProperties = true, AllowDestructive = true });
+
+        Assert.Equal(["OldPage"], removed.Types.Select(t => t.Name));
+        Assert.Equal("", removed.Types[0].ModelType);
+        Assert.DoesNotContain(removed.Properties, p => p.Type == "AdminPage");
+        Assert.Contains("made in admin mode", Assert.Throws<AgentException>(() => Run(model, Remove("AdminPage") with { DryRun = true })).Message);
     }
 
     [Fact]
@@ -467,21 +484,6 @@ public class OrphanRemovalOperationTests : IDisposable
             }));
     }
 
-#if CMS13
-    [Fact]
-    public void Removal_is_refused_on_cms_13_for_now()
-    {
-        var request = new AgentRequest(new DefaultHttpContext
-        {
-            RequestServices = new ServiceCollection().AddSingleton(Settings(pinned: Local)).BuildServiceProvider(),
-        }, null);
-
-        var error = Assert.Throws<AgentException>(() => OrphanRemovalOperation.Run(request, new OrphanRemovalRequest { Prune = true, DryRun = true }));
-
-        Assert.Equal(AgentErrorCodes.Refused, error.Code);
-        Assert.StartsWith("Removing content types and properties isn't supported on CMS 13", error.Message, StringComparison.Ordinal);
-    }
-#else
     [Fact]
     public void Nothing_is_removed_against_a_shared_database()
     {
@@ -494,5 +496,36 @@ public class OrphanRemovalOperationTests : IDisposable
 
         Assert.Equal((AgentErrorCodes.Refused, OrphanRemoval.SharedRefusal), (error.Code, error.Message));
     }
+
+    [Fact]
+    public void A_property_is_deleted_through_the_cms_by_its_repository_on_cms_12_and_by_saving_its_type_without_it_on_cms_13()
+    {
+        var (types, typeCalls) = Recorder<IContentTypeRepository>.Create();
+        var (properties, propertyCalls) = Recorder<IPropertyDefinitionRepository>.Create();
+        var kept = new PropertyDefinition { ID = 11, Name = "Kept", ContentTypeID = 5 };
+        var gone = new PropertyDefinition { ID = 12, Name = "Gone", ContentTypeID = 5 };
+        var type = new ContentType { ID = 5, Name = "EdgePage" };
+        type.PropertyDefinitions.Add(kept);
+        type.PropertyDefinitions.Add(gone);
+        typeCalls.Answer = (method, args) => method.Name == nameof(IContentTypeRepository.Load) && args[0] is 5 ? type : null;
+
+        OptiCli.Agent.Compat.AgentBuild.DeleteProperty(types, properties, gone);
+
+#if CMS13
+        // A writable copy of the type, saved without the property; the CMS deletes the definitions a saved type lacks.
+        var saved = Assert.IsType<ContentType>(typeCalls.Calls.Single(c => c.Method == nameof(IContentTypeRepository.Save)).Args[0]);
+        Assert.NotSame(type, saved);
+        Assert.Equal(["Kept"], saved.PropertyDefinitions.Select(p => p.Name));
+        Assert.Empty(propertyCalls.Calls);
+
+        // Gone meanwhile: a conflict, and nothing saved.
+        typeCalls.Calls.Clear();
+        var error = Assert.Throws<AgentException>(() => OptiCli.Agent.Compat.AgentBuild.DeleteProperty(types, properties, new PropertyDefinition { ID = 13, Name = "Other", ContentTypeID = 5 }));
+        Assert.Equal(AgentErrorCodes.Conflict, error.Code);
+        Assert.DoesNotContain(typeCalls.Calls, c => c.Method == nameof(IContentTypeRepository.Save));
+#else
+        Assert.Equal([(nameof(IPropertyDefinitionRepository.Delete), (object?)gone)], propertyCalls.Calls.Select(c => (c.Method, c.Args[0])));
+        Assert.Empty(typeCalls.Calls);
 #endif
+    }
 }

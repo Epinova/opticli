@@ -2,8 +2,10 @@
 // - CMS 12 registers visitor groups with AddCms(); CMS 13 only when the site asks for them, which the CMS 13 Alloy
 //   template doesn't. The edge-case plan personalizes content with a visitor group, so this turns them on as a site that
 //   uses personalization does.
-// - The three hosts sites the site host tests change, as applications (EdgeSitesFixture.cs makes them as site definitions
+// - The three hosts sites the site host tests change, as applications (Cms12Fixture.cs makes them as site definitions
 //   on CMS 12), with start pages of their own below the root. No nested site: see EnsureSites below.
+// - OrphansFixture.cs's property definitions, through IContentTypeRepository.Save (CMS 13 made
+//   IPropertyDefinitionRepository.Save an error), and its page moved to the recycle bin without an access check.
 using System.Globalization;
 using EPiServer.Applications;
 using EPiServer.DataAbstraction;
@@ -13,6 +15,7 @@ using EPiServer.Framework;
 using EPiServer.Framework.Initialization;
 using EPiServer.Security;
 using EPiServer.ServiceLocation;
+using EPiServer.SpecializedProperties;
 
 namespace OptiCliEdgeCases;
 
@@ -42,7 +45,7 @@ public partial class EdgeCasesSetup
     public static readonly Guid HostsStartC13 = Guid.Parse("6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e16");
 
     /// <summary>
-    /// The three hosts sites as applications, in the shape of CMS 12's (EdgeSitesFixture.cs), with https on every host as
+    /// The three hosts sites as applications, in the shape of CMS 12's (Cms12Fixture.cs), with https on every host as
     /// their CMS 12 SiteUrl has it (CMS 13 has no unset). Application names differ from the display names the tests use,
     /// as an upgraded site's do (<c>Site_&lt;GUID&gt;</c>). No nested site: CMS 13 refuses overlapping entry points, so it
     /// has no equivalent.
@@ -102,4 +105,48 @@ public partial class EdgeCasesSetup
         applications.SaveAsync(application).GetAwaiter().GetResult();
         Console.Error.WriteLine($"[edge-cases] created application '{displayName}' ({name}) with start page {start}");
     }
+}
+
+public partial class OptiCliOrphansFixture
+{
+    /// <summary>
+    /// A writable copy of the type with the property added, saved: CMS 13 saves property definitions with their type. A
+    /// block property is the one generic Block type, with the block type as its item type.
+    /// </summary>
+    private static partial void SaveProperty(IServiceProvider locate, ContentType type, PropertyDefinition property, Guid? blockType)
+    {
+        var types = locate.GetInstance<IContentTypeRepository>();
+        var propertyTypes = locate.GetInstance<IPropertyDefinitionTypeRepository>();
+        if (blockType is { } block)
+        {
+            property.Type = propertyTypes.Load(PropertyDataType.Block);
+            property.ItemTypeReference = new ContentTypeReference(block);
+        }
+        else
+        {
+            property.Type = propertyTypes.Load(typeof(PropertyString));
+        }
+        var writable = (ContentType)types.Load(type.ID).CreateWritableClone();
+        writable.PropertyDefinitions.Add(property);
+        types.Save(writable);
+    }
+
+    /// <summary>
+    /// No class on record, the assembly's version instead: what CMS 13's model sync stores for a class with a GUID (the
+    /// site's own Alloy types look like this), so once the class is gone only the version says it came from code. Only
+    /// for a new type: a save keeps the class a type already has on record.
+    /// </summary>
+    private static partial ContentType WithoutRecordedClass(ContentType type)
+    {
+        type.ModelTypeString = null;
+        type.Version = typeof(OptiCliOrphansFixture).Assembly.GetName().Version;
+        return type;
+    }
+
+    /// <summary>A content type with the block base: CMS 13's <c>BlockType</c> is obsolete.</summary>
+    private static partial ContentType NewBlockType() => new() { Base = ContentTypeBase.Block };
+
+    /// <summary>With no access check: a fresh CMS 13 database gives no role Delete access on content.</summary>
+    private static partial void Trash(IServiceProvider locate, IContentRepository content, ContentReference page) =>
+        content.MoveToWastebasket(page, AccessLevel.NoAccess);
 }
