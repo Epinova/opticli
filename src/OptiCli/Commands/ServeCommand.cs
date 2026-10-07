@@ -197,7 +197,9 @@ internal static class ServeCommand
         {
             warnings.Add(KestrelEndpoints.Warning(siteEndpoints));
         }
-        var httpPort = PortSelector.Select(port, settings?.Port, PortSelector.IsFree);
+        // Claimed, so another serve starting at the same moment doesn't pick the same port before this site listens on it.
+        var free = PortClaims.ForUser.FreeAndClaimed(PortSelector.IsFree);
+        var httpPort = PortSelector.Select(port, settings?.Port, free);
         var request = new LaunchRequest(
             project,
             connection,
@@ -206,7 +208,7 @@ internal static class ServeCommand
             agent.Dll,
             httpPort,
             timeout,
-            (https ?? settings?.Https == true) ? PortSelector.Select(null, null, p => p != httpPort && PortSelector.IsFree(p)) : null,
+            (https ?? settings?.Https == true) ? PortSelector.Select(null, null, p => p != httpPort && free(p)) : null,
             siteEndpoints,
             driftFile,
             schedulerOn,

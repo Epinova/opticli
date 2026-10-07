@@ -5,20 +5,32 @@ using OptiCli.Core.Data;
 
 namespace OptiCli.Core.Tests.Safety;
 
-/// <summary>Runs only where SQL Server Express LocalDB is installed: Windows with it (GitHub's windows-latest image has it).</summary>
+/// <summary>
+/// Runs only where SQL Server Express LocalDB is installed: Windows with it (GitHub's windows-latest image has it as a
+/// Visual Studio component; CI makes sure). With <c>OPTICLI_REQUIRE_LOCALDB=1</c> (set by the Windows CI job) it never
+/// skips, so a runner without LocalDB fails instead of passing silently.
+/// </summary>
 public sealed class LocalDbFactAttribute : FactAttribute
 {
     public const string Instance = @"(localdb)\MSSQLLocalDB";
 
+    public const string RequireVariable = "OPTICLI_REQUIRE_LOCALDB";
+
     public LocalDbFactAttribute()
     {
-        if (!Installed())
+        if (!Installed() && !Required)
         {
-            Skip = "Needs SQL Server Express LocalDB (Windows only).";
+            Skip = $"Needs SQL Server Express LocalDB (Windows only); {RequireVariable}=1 makes it fail instead.";
         }
     }
 
-    private static bool Installed()
+    public static bool Required => Environment.GetEnvironmentVariable(RequireVariable) is "1" or "true";
+
+    /// <summary>For a required run: fails with why, instead of a connection error, when LocalDB isn't there.</summary>
+    public static void RequireInstalled() =>
+        Assert.True(Installed(), $"{RequireVariable} is set, but SQL Server Express LocalDB isn't installed here (no 'Installed Versions' under HKLM\\SOFTWARE\\Microsoft\\Microsoft SQL Server Local DB).");
+
+    public static bool Installed()
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -73,6 +85,7 @@ public class LocalDbTests : IDisposable
     [LocalDbFact]
     public async Task The_templates_connection_string_reads_the_sites_App_Data_database()
     {
+        LocalDbFactAttribute.RequireInstalled();
         var appData = Path.Combine(_site.ProjectPath, "App_Data");
         Directory.CreateDirectory(appData);
         var file = Path.Combine(appData, $"{_name}.mdf");

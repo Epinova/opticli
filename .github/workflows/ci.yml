@@ -1,6 +1,7 @@
 # Builds and runs the unit tests on every push and pull request, on the three operating systems opticli supports.
 # Every project under tests/ runs, the MCP module's included; the integration tests (OptiCli.Integration and
-# OptiCli.Mcp.Integration) skip themselves: they need a running site.
+# OptiCli.Mcp.Integration) skip themselves: they need a running site. OptiCli.Agent.Tests runs twice, for the CMS 12
+# (net8.0) and CMS 13 (net10.0) agent builds. On Windows, LocalDbTests must pass (it skips itself elsewhere).
 name: CI
 
 on:
@@ -30,8 +31,17 @@ jobs:
       - name: Build
         run: dotnet build opticli.slnx -c Release
 
+      # LocalDB (the CMS templates' connection string) exists only on Windows. windows-latest has it as a Visual Studio
+      # component; install it if it's missing, start the default instance, and make LocalDbTests fail rather than skip.
+      - name: Start SQL Server Express LocalDB
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .github/scripts/start-localdb.ps1
+
       - name: Test
         shell: pwsh
+        env:
+          OPTICLI_REQUIRE_LOCALDB: ${{ runner.os == 'Windows' && '1' || '' }}
         run: .github/scripts/test-projects.ps1
 
       - name: Report failed tests
