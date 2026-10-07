@@ -103,8 +103,9 @@ public static class JobRequests
 
 /// <summary>
 /// The jobs of the CMS itself (EPiServer.CMS.Core, EPiServer.LinkAnalyzer, EPiServer.UI, EPiServer.Cms.Shell.UI), by
-/// class name: what they do is known. Checked by reflection over the CMS 12.0 and 12.21 assemblies; every other job,
-/// add-ons from Optimizely (Commerce, Find, Forms, ...) included, is code opticli doesn't know.
+/// class name: what they do is known. Checked by reflection over the CMS 12.0 and 12.21 assemblies, and against the jobs
+/// CMS 13.3 registers (the same classes, and <c>VariationCleanupJob</c>); every other job, add-ons from Optimizely
+/// (Commerce, Find, Forms, ...) included, is code opticli doesn't know.
 /// </summary>
 public static class CmsJobs
 {
@@ -118,6 +119,7 @@ public static class CmsJobs
         "EPiServer.Util.TaskMonitorTruncateJob",
         "EPiServer.Util.ThumbnailPropertiesClearJob",
         "EPiServer.Util.Internal.TrimContentVersionsJob",
+        "EPiServer.Util.Internal.VariationCleanupJob",
         "EPiServer.Notification.Internal.NotificationDispatcherJob",
         "EPiServer.Notification.Internal.NotificationMessageTruncateJob",
         "EPiServer.DataAbstraction.Activities.Internal.ActivityTruncateJob",
@@ -133,8 +135,9 @@ public static class CmsJobs
 /// Jobs that delete data for good, or change content across the site, by class name (<c>tblScheduledItem.TypeName</c>),
 /// with what each does. <c>jobs run</c> refuses them, and <c>jobs set</c> refuses to arm them (enable them with a next
 /// run, or bring their next run or interval closer), without <c>--allow-destructive</c>; the agent decides, and the CLI
-/// checks first. The CMS's from reflection over EPiServer.dll (CMS 12); Commerce's from EPiServer.Business.Commerce
-/// 14.x, whose code was read to see what each deletes.
+/// checks first. The CMS's from reflection over EPiServer.dll (CMS 12; CMS 13.3 adds <c>VariationCleanupJob</c>, which
+/// deletes Visual Builder content variations that no version uses); Commerce's from EPiServer.Business.Commerce 14.x,
+/// whose code was read to see what each deletes.
 /// </summary>
 public static class DestructiveJobs
 {
@@ -147,6 +150,7 @@ public static class DestructiveJobs
         ["EPiServer.Util.BlobCleanupJob"] = new("deletes media files (blobs) no content refers to", true),
         ["EPiServer.Util.Internal.TrimContentVersionsJob"] = new("deletes old content versions", true),
         ["EPiServer.Util.CleanUnusedAssetsFoldersJob"] = new("deletes content asset folders whose content is gone", true),
+        ["EPiServer.Util.Internal.VariationCleanupJob"] = new("deletes content variations no version uses any more", true),
         ["EPiServer.DataAbstraction.Activities.Internal.ActivityTruncateJob"] = new("deletes old change log entries (the activity log)", true),
         ["EPiServer.Notification.Internal.NotificationMessageTruncateJob"] = new("deletes old notification messages", true),
         ["EPiServer.Util.TaskMonitorTruncateJob"] = new("deletes old monitored task entries", true),
