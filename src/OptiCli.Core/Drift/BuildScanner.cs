@@ -12,7 +12,7 @@ public sealed record EfMigration(string Id, string? Context, string Assembly);
 /// Reads what the site's build output says about its database without loading or running any of it: metadata only, with
 /// <see cref="System.Reflection.Metadata"/>.
 /// </summary>
-public static class BuildScanner
+public static partial class BuildScanner
 {
     private const string MigrationsNamespace = "Microsoft.EntityFrameworkCore.Migrations";
     private const string InfrastructureNamespace = "Microsoft.EntityFrameworkCore.Infrastructure";
@@ -46,6 +46,90 @@ public static class BuildScanner
             found.AddRange(Read(file, MigrationsIn) ?? []);
         }
         return found;
+    }
+
+    /// <summary>
+    /// The GUIDs of every content type class in the assemblies directly in <paramref name="directory"/> (the site's output
+    /// folder, packages' assemblies included): the <c>GUID</c> of each <c>[ContentType]</c> attribute (or one derived from it,
+    /// named <c>...ContentTypeAttribute</c>) on a class or interface. Empty when the folder doesn't exist.
+    /// </summary>
+    public static IReadOnlySet<Guid> ContentTypeGuids(string directory)
+    {
+        var found = new HashSet<Guid>();
+        if (!Directory.Exists(directory))
+        {
+            return found;
+        }
+        foreach (var file in Directory.EnumerateFiles(directory, "*.dll", SearchOption.TopDirectoryOnly).Order(StringComparer.Ordinal))
+        {
+            var name = Path.GetFileName(file);
+            if (name.StartsWith("System.", StringComparison.OrdinalIgnoreCase) || name.StartsWith("Microsoft.", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            found.UnionWith(Read(file, ContentTypeGuidsIn) ?? []);
+        }
+        return found;
+    }
+
+    private static List<Guid>? ContentTypeGuidsIn(MetadataReader reader, string file)
+    {
+        var found = new List<Guid>();
+        foreach (var handle in reader.TypeDefinitions)
+        {
+            foreach (var attributeHandle in reader.GetTypeDefinition(handle).GetCustomAttributes())
+            {
+                var attribute = reader.GetCustomAttribute(attributeHandle);
+                if (AttributeType(reader, attribute.Constructor).Item2.EndsWith("ContentTypeAttribute", StringComparison.Ordinal)
+                    && GuidArgument(reader, attribute) is { } guid)
+                {
+                    found.Add(guid);
+                }
+            }
+        }
+        return found;
+    }
+
+    /// <summary>The attribute's <c>GUID</c> named argument, when it is a GUID.</summary>
+    private static Guid? GuidArgument(MetadataReader reader, CustomAttribute attribute)
+    {
+        try
+        {
+            var value = attribute.DecodeValue(new AttributeTypes());
+            return value.NamedArguments.FirstOrDefault(a => a.Name == "GUID").Value is string text && Guid.TryParse(text, out var guid) ? guid : null;
+        }
+        catch (Exception ex) when (ex is BadImageFormatException or InvalidOperationException or ArgumentException or NotSupportedException)
+        {
+            // An argument this decoder can't type (an enum of another assembly): look for the GUID in the raw blob.
+            var blob = reader.GetBlobBytes(attribute.Value);
+            var text = System.Text.Encoding.UTF8.GetString(blob);
+            var at = text.IndexOf("GUID", StringComparison.Ordinal);
+            return at >= 0 && GuidText().Match(text, at) is { Success: true } match && Guid.TryParse(match.Value, out var guid) ? guid : null;
+        }
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex("[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")]
+    private static partial System.Text.RegularExpressions.Regex GuidText();
+
+    /// <summary>Types of attribute arguments, by name: enough to decode an attribute's named arguments.</summary>
+    private sealed class AttributeTypes : ICustomAttributeTypeProvider<string>
+    {
+        public string GetPrimitiveType(PrimitiveTypeCode typeCode) => typeCode.ToString();
+
+        public string GetSystemType() => "System.Type";
+
+        public string GetSZArrayType(string elementType) => elementType + "[]";
+
+        public string GetTypeFromDefinition(MetadataReader reader, TypeDefinitionHandle handle, byte rawTypeKind) => reader.GetString(reader.GetTypeDefinition(handle).Name);
+
+        public string GetTypeFromReference(MetadataReader reader, TypeReferenceHandle handle, byte rawTypeKind) => reader.GetString(reader.GetTypeReference(handle).Name);
+
+        public string GetTypeFromSerializedName(string name) => name;
+
+        // An enum's size isn't in the blob: the CMS's attribute enums are ints.
+        public PrimitiveTypeCode GetUnderlyingEnumType(string type) => PrimitiveTypeCode.Int32;
+
+        public bool IsSystemType(string type) => type is "System.Type" or "Type";
     }
 
     /// <summary>The CMS schema version the packages in <paramref name="cmsDataDll"/> need; null when it can't be read.</summary>

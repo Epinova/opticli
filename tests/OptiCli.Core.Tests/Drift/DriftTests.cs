@@ -27,6 +27,16 @@ public class BuildScannerTests
     }
 
     [Fact]
+    public void Content_type_guids_are_read_from_every_assembly_in_the_build_output()
+    {
+        var guids = BuildScanner.ContentTypeGuids(Output);
+
+        Assert.Contains(Guid.Parse("0b2b9c1e-3f4a-4b5c-8d6e-7f8091a2b301"), guids);
+        Assert.Contains(Guid.Parse("0b2b9c1e-3f4a-4b5c-8d6e-7f8091a2b302"), guids);
+        Assert.Empty(BuildScanner.ContentTypeGuids(Path.Combine(Output, "missing")));
+    }
+
+    [Fact]
     public void A_folder_without_assemblies_has_none()
     {
         using var empty = new TempDirectory();

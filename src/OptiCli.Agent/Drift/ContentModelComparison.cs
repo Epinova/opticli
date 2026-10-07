@@ -48,7 +48,11 @@ internal static class ContentModelComparison
     public const string OnlyInDatabase = "only in the database";
 
     /// <param name="typesOnlyInDatabase">Content types the sync made from code that no model in the build matches.</param>
-    public static (List<DriftItem> ContentTypes, List<DriftItem> Properties) Items(IEnumerable<TypeMatch> matches, IEnumerable<string> typesOnlyInDatabase)
+    /// <param name="typesOfUnknownOrigin">
+    /// CMS 13: content types with neither a class nor a model-sync version on record that no model in the build matches
+    /// (made in admin mode, or code types a content import overwrote).
+    /// </param>
+    public static (List<DriftItem> ContentTypes, List<DriftItem> Properties) Items(IEnumerable<TypeMatch> matches, IEnumerable<string> typesOnlyInDatabase, IEnumerable<string>? typesOfUnknownOrigin = null)
     {
         var types = new List<DriftItem>();
         var properties = new List<DriftItem>();
@@ -94,6 +98,7 @@ internal static class ContentModelComparison
             properties.AddRange(match.PropertiesOnlyInDatabase.Select(p => new DriftItem($"{name}.{p}", DriftAhead.Database, OnlyInDatabase)));
         }
         types.AddRange(typesOnlyInDatabase.Select(t => new DriftItem(t, DriftAhead.Database, OnlyInDatabase)));
+        types.AddRange((typesOfUnknownOrigin ?? []).Select(t => new DriftItem(t, DriftAhead.Unknown, $"{OnlyInDatabase}, {OrphanRemoval.UnknownOrigin}")));
         return (types, properties);
     }
 

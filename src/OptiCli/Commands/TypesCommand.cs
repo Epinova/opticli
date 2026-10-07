@@ -1,6 +1,8 @@
 using System.CommandLine;
 using OptiCli.Cli;
 using OptiCli.Core.Cms;
+using OptiCli.Core.Configuration;
+using OptiCli.Core.Drift;
 using OptiCli.Core.Serve;
 using OptiCli.Core.SourceScan;
 using OptiCli.Protocol;
@@ -13,11 +15,14 @@ internal static class TypesCommand
     {
         /// <summary>With --orphaned: the class the CMS has on record, which is gone.</summary>
         public string? ModelType { get; init; }
+
+        /// <summary>With --orphaned, CMS 13: no class or model-sync version on record (made in admin mode, or a code type a content import overwrote).</summary>
+        public bool? OriginUnknown { get; init; }
     }
 
     public static Command Create(GlobalOptions options)
     {
-        var kind = new Option<string?>("--kind") { Description = "Only types of this kind.", HelpName = "page|block|media|folder|other" };
+        var kind = new Option<string?>("--kind") { Description = "Only types of this kind: page, block, media, folder or other; on CMS 13 also experience, section, element or contract.", HelpName = "kind" };
         kind.AcceptOnlyFromAmong(Enum.GetNames<ContentKind>().Select(n => n.ToLowerInvariant()).ToArray());
         var unused = new Option<bool>("--unused") { Description = "Only types with no (non-deleted) content items." };
         var orphaned = new Option<bool>("--orphaned")
@@ -30,7 +35,9 @@ internal static class TypesCommand
 
         var command = new Command("types", """
             List content types with how many (non-deleted) content items use each, by name (--sort instances: most used first).
-            Kinds: page, block, media (incl. images and video), folder, other (settings, system types).
+            Kinds: page, block, media (incl. images and video), folder, other (settings, system types); on CMS 13 also
+            Visual Builder's experience (a page made of sections), section, element (a block type sections can hold) and
+            contract (an interface other types implement; contracts lists them on each type).
             --unused: types no content uses. --orphaned: types defined in code (the CMS has a class on record) whose class is
             gone, with modelType; the CMS keeps such a type while content uses it. With `opticli serve` running the site says
             which classes it can't load; without it the site's sources are scanned (by GUID, then name) for the types of its
@@ -67,7 +74,7 @@ internal static class TypesCommand
             var askedSite = false;
             if (context.Parse.GetValue(orphaned))
             {
-                var (found, warning, fromSite) = await OrphansAsync(context, types.ToList(), cancellationToken);
+                var (found, warning, fromSite) = await OrphansAsync(context, db, types.ToList(), cancellationToken);
                 types = found;
                 askedSite = fromSite;
                 if (warning is not null)
@@ -81,7 +88,11 @@ internal static class TypesCommand
                 types = types.OrderByDescending(t => t.Instances).ThenBy(t => t.Name, StringComparer.Ordinal);
             }
             var showModel = context.Parse.GetValue(orphaned);
-            var summaries = types.Select(t => new TypeSummary(t.Name, t.Kind, t.Instances ?? 0, t.DisplayName, t.Guid) { ModelType = showModel ? t.ModelType : null }).ToList();
+            var summaries = types.Select(t => new TypeSummary(t.Name, t.Kind, t.Instances ?? 0, t.DisplayName, t.Guid)
+            {
+                ModelType = showModel ? t.ModelType : null,
+                OriginUnknown = showModel ? t.OriginUnknown : null,
+            }).ToList();
             var page = list.Apply(context.Parse, summaries);
             return new CommandResult(page.Items, page.Next, Warnings: warnings.Count > 0 ? warnings : null,
                 Source: askedSite ? Core.Writes.WriteExecutor.AgentSource : CommandResult.DbSource);
@@ -94,7 +105,7 @@ internal static class TypesCommand
     /// source scan, for the types of the solution's own assemblies only.
     /// </summary>
     /// <returns>The orphaned types, a warning when the answer is the source scan's (saying why), and whether the site answered.</returns>
-    private static async Task<(IReadOnlyList<ContentTypeInfo> Types, string? Warning, bool FromSite)> OrphansAsync(CliContext context, IReadOnlyList<ContentTypeInfo> types, CancellationToken cancellationToken)
+    private static async Task<(IReadOnlyList<ContentTypeInfo> Types, string? Warning, bool FromSite)> OrphansAsync(CliContext context, Core.Data.CmsDatabase db, IReadOnlyList<ContentTypeInfo> types, CancellationToken cancellationToken)
     {
         var answer = await SiteFallback.AskAsync(context.ConnectAgentAsync,
             agent => agent.SendAsync<TypesWithoutCodeResult>(HttpMethod.Get, AgentRoutes.TypesWithoutCode, null, cancellationToken), cancellationToken);
@@ -104,7 +115,31 @@ internal static class TypesCommand
         }
         var project = context.TryGetProject(out var error) ?? throw error!;
         var index = CSharpSourceIndex.Build(project.SourceRoot);
-        return (OrphanedTypes.FromSource(types, index, ScheduledJobSources.Assemblies(project.SourceRoot)),
-            $"Checked against the site's sources ({answer.WhyNot}): only types of the solution's own assemblies whose class the scan doesn't find, by GUID or name. A type of a package that was removed isn't found this way; with `opticli serve` running this opticli, the site checks every type's class.", false);
+        var found = OrphanedTypes.FromSource(types, index, ScheduledJobSources.Assemblies(project.SourceRoot));
+        var warning = $"Checked against the site's sources ({answer.WhyNot}): only types of the solution's own assemblies whose class the scan doesn't find, by GUID or name. A type of a package that was removed isn't found this way; with `opticli serve` running this opticli, the site checks every type's class.";
+        var schema = await db.SchemaAsync(cancellationToken);
+        if (!schema.Compositions)
+        {
+            return (found, warning, false);
+        }
+        // CMS 13 records no class for a class with a GUID: those types are checked against the GUIDs of the build's classes.
+        string? output;
+        try
+        {
+            var settings = UserConfig.ForProject(context.Environment.UserConfigFile, project.Directory);
+            output = Path.GetDirectoryName(OutputLocator.Locate(project, null, settings?.Output, context.Environment.CurrentDirectory).Dll);
+        }
+        catch (Core.Errors.NotFoundException)
+        {
+            output = null;
+        }
+        if (output is null)
+        {
+            return (found, $"{warning} CMS 13 records no class for a type whose class has a GUID, and the site has no build output to look for those GUIDs in: build it (dotnet build) to check them too.", false);
+        }
+        var withoutClass = OrphanedTypes.WithoutClassOnRecord(types, BuildScanner.ContentTypeGuids(output), index).ToDictionary(t => t.Id);
+        var listed = found.Select(t => t.Id).ToHashSet();
+        return (types.Where(t => listed.Contains(t.Id) || withoutClass.ContainsKey(t.Id)).Select(t => withoutClass.GetValueOrDefault(t.Id) ?? t).ToList(),
+            $"{warning} CMS 13 records no class for a type whose class has a GUID: such types are listed when no class in the build output ({Path.GetRelativePath(project.Directory, output)}) has their GUID; originUnknown marks those without a model-sync version either (made in admin mode, or code types a content import overwrote).", false);
     }
 }

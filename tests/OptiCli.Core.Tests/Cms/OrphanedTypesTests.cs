@@ -67,6 +67,37 @@ public class OrphanedTypesTests : IDisposable
         Assert.Equal(["CampaignPage", "FormContainerBlock"], OrphanedTypes.FromSite(Types, site).Select(t => t.Name));
     }
 
+    [Fact]
+    public void The_site_marks_the_types_of_unknown_origin()
+    {
+        var site = new TypesWithoutCodeResult([new TypeWithoutCode(7, Types[6].Guid, "AdminMadePage", null) { OriginUnknown = true }, new TypeWithoutCode(5, Removed, "CampaignPage", "x")]);
+
+        Assert.Equal([("AdminMadePage", (bool?)true), ("CampaignPage", null)], OrphanedTypes.FromSite(Types, site).Select(t => (t.Name, t.OriginUnknown)).Order());
+    }
+
+    [Fact]
+    public void On_cms_13_types_without_a_class_on_record_are_checked_against_the_guids_of_the_build()
+    {
+        // CMS 13 records only the model sync's version for a class with a GUID, and an import leaves no version either.
+        var synced = Guid.NewGuid();
+        var imported = Guid.NewGuid();
+        var package = Guid.NewGuid();
+        IReadOnlyList<ContentTypeInfo> types =
+        [
+            Type(1, Guid.NewGuid(), "SysRoot", null),
+            Type(2, Article, "ArticlePage", null),
+            Type(3, synced, "SyncedRemovedPage", null) with { SyncedVersion = "1.0.0.0" },
+            Type(4, imported, "ImportedRemovedPage", null),
+            Type(5, package, "PackagePage", null) with { SyncedVersion = "3.1.0.0" },
+            Type(6, Guid.NewGuid(), "ExternalPage", null) with { Source = "dam" },
+            Type(7, Removed, "CampaignPage", "Example.Web.Models.CampaignPage, Example.Web"),
+        ];
+
+        var found = OrphanedTypes.WithoutClassOnRecord(types, new HashSet<Guid> { Article, package }, CSharpSourceIndex.Build(_root.Path));
+
+        Assert.Equal([("SyncedRemovedPage", (bool?)null), ("ImportedRemovedPage", true)], found.Select(t => (t.Name, t.OriginUnknown)));
+    }
+
     [Theory]
     [InlineData("Example.Web.Models.ArticlePage, Example.Web, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null", "Example.Web")]
     [InlineData("EPiServer.Core.ContentFolder,EPiServer", "EPiServer")]

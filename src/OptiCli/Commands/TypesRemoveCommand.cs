@@ -15,6 +15,8 @@ internal static class TypesRemoveCommand
     private const string Rules = """
         Only orphans, as the running site judges them: a type whose class the site can't load (never one made in admin mode
         or one of the CMS's own), and a property not in its type's code (existsOnModel: false) on a type defined in code.
+        CMS 13 records no class or version for a type made in admin mode nor for a code type a content import overwrote
+        (originUnknown in `opticli types --orphaned`): those go only with --include-unknown-origin.
         A type stays while content of it exists, also in the recycle bin, or a property uses it as its block type (conflict,
         exit 5): opticli never deletes content. Content types aren't versioned: the output records what was removed, to make
         it again by hand. Refused against a shared database (exit 3).
@@ -34,11 +36,18 @@ internal static class TypesRemoveCommand
             {Rules}
             Example: opticli types remove OldNewsPage --dry-run
             """);
+        var unknown = IncludeUnknownOrigin();
         command.Arguments.Add(names);
+        command.Options.Add(unknown);
         command.Options.Add(write.DryRun);
 
         CommandRunner.SetHandler(command, options, (context, cancellationToken) =>
-            RunAsync(context, new OrphanRemovalRequest { Types = Names(context.Parse.GetValue(names) ?? []), DryRun = context.Parse.GetValue(write.DryRun) }, cancellationToken));
+            RunAsync(context, new OrphanRemovalRequest
+            {
+                Types = Names(context.Parse.GetValue(names) ?? []),
+                IncludeUnknownOrigin = context.Parse.GetValue(unknown),
+                DryRun = context.Parse.GetValue(write.DryRun),
+            }, cancellationToken));
         return command;
     }
 
@@ -59,9 +68,11 @@ internal static class TypesRemoveCommand
             {Rules}
             Example: opticli types remove-property ArticlePage OldIntro --dry-run
             """);
+        var unknown = IncludeUnknownOrigin();
         command.Arguments.Add(type);
         command.Arguments.Add(properties);
         command.Options.Add(allowDestructive);
+        command.Options.Add(unknown);
         command.Options.Add(write.DryRun);
 
         CommandRunner.SetHandler(command, options, (context, cancellationToken) =>
@@ -69,6 +80,7 @@ internal static class TypesRemoveCommand
             {
                 Properties = OrphanRemover.Properties(context.Parse.GetValue(type)!, Names(context.Parse.GetValue(properties) ?? [])),
                 AllowDestructive = context.Parse.GetValue(allowDestructive),
+                IncludeUnknownOrigin = context.Parse.GetValue(unknown),
                 DryRun = context.Parse.GetValue(write.DryRun),
             }, cancellationToken));
         return command;
@@ -92,8 +104,10 @@ internal static class TypesRemoveCommand
             Example: opticli types prune --dry-run
             Example: opticli types prune --properties --dry-run
             """);
+        var unknown = IncludeUnknownOrigin();
         command.Options.Add(withProperties);
         command.Options.Add(allowDestructive);
+        command.Options.Add(unknown);
         command.Options.Add(write.DryRun);
 
         CommandRunner.SetHandler(command, options, (context, cancellationToken) =>
@@ -104,6 +118,7 @@ internal static class TypesRemoveCommand
                     ? throw new Core.Errors.UsageException("--allow-destructive is for properties' values, which prune only removes with --properties.", "opticli types prune --properties --allow-destructive --dry-run")
                     : false),
                 AllowDestructive = context.Parse.GetValue(allowDestructive),
+                IncludeUnknownOrigin = context.Parse.GetValue(unknown),
                 DryRun = context.Parse.GetValue(write.DryRun),
             }, cancellationToken));
         return command;
@@ -117,6 +132,11 @@ internal static class TypesRemoveCommand
         names.FirstOrDefault(n => n.StartsWith('-')) is { } option
             ? throw new Core.Errors.UsageException($"'{option}' isn't an option of this command.", "Run it with --help for its options.")
             : names;
+
+    private static Option<bool> IncludeUnknownOrigin() => new(OrphanRemoval.IncludeUnknownOriginFlag)
+    {
+        Description = "CMS 13: also remove types of unknown origin (originUnknown in `opticli types --orphaned`): no class or version on record and no class in the build with their GUID, so made in admin mode or code types a content import overwrote. Check with the user that none was made in admin mode on purpose.",
+    };
 
     private static Option<bool> AllowDestructive() => new("--allow-destructive")
     {

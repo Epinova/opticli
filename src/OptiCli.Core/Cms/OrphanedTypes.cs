@@ -7,16 +7,32 @@ namespace OptiCli.Core.Cms;
 /// <c>types --orphaned</c>: content types the CMS keeps after their class was removed from code. The model sync deletes a
 /// code-defined type whose class is gone only when nothing uses it, so what stays has content (or is a block type of a
 /// property, or has a rename pending). A type is code-defined when <c>tblContentType.ModelType</c> names its class; types
-/// made in admin mode have none and never count.
+/// made in admin mode have none and never count. CMS 13 records no class for a class with a GUID, only the version of its
+/// assembly (<c>tblContentType.Version</c>), and a content import (every Alloy-template site's) leaves neither: such a type
+/// whose GUID no class of the build has is listed too, as <see cref="ContentTypeInfo.OriginUnknown"/> when it has no version.
 /// </summary>
 public static class OrphanedTypes
 {
     /// <summary>Through the running site: the types whose class it can't load (<see cref="AgentRoutes.TypesWithoutCode"/>).</summary>
     public static IReadOnlyList<ContentTypeInfo> FromSite(IReadOnlyList<ContentTypeInfo> types, TypesWithoutCodeResult site)
     {
-        var missing = site.Types.Select(t => t.Guid).ToHashSet();
-        return types.Where(t => missing.Contains(t.Guid)).ToList();
+        var missing = site.Types.ToDictionary(t => t.Guid);
+        return types.Where(t => missing.ContainsKey(t.Guid))
+            .Select(t => missing[t.Guid].OriginUnknown == true ? t with { OriginUnknown = true } : t)
+            .ToList();
     }
+
+    /// <summary>
+    /// CMS 13, without the site: types with no class on record (<see cref="FromSource"/> can't place them) whose GUID no class
+    /// in the site's build output has (<paramref name="buildGuids"/>, packages' classes included) and that the source scan
+    /// doesn't find either (by GUID, then name). Those without a version are of unknown origin. The CMS's own types and an
+    /// external content source's are left out.
+    /// </summary>
+    public static IReadOnlyList<ContentTypeInfo> WithoutClassOnRecord(IReadOnlyList<ContentTypeInfo> types, IReadOnlySet<Guid> buildGuids, CSharpSourceIndex index) =>
+        types.Where(t => string.IsNullOrWhiteSpace(t.ModelType) && t.Source is null && !OrphanRemoval.SystemTypes.Contains(t.Name, StringComparer.Ordinal)
+                && !buildGuids.Contains(t.Guid) && ContentTypeSources.FindClasses(index, t.Guid, t.Name, null).Count == 0)
+            .Select(t => t.SyncedVersion is null ? t with { OriginUnknown = true } : t)
+            .ToList();
 
     /// <summary>
     /// Without the site: code-defined types of the solution's own assemblies (<paramref name="ownAssemblies"/>) whose

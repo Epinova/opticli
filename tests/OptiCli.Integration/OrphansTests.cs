@@ -34,15 +34,68 @@ public sealed class OrphansTests
             return;
         }
         var types = await ContentTypeReader.ListAsync(site.Session.Db, cancellationToken, countInstances: true);
+        var cms13 = site.Session.Model.Schema.Major >= 13;
 
         var fromSite = Core.Cms.OrphanedTypes.FromSite(types, await site.Agent.SendAsync<TypesWithoutCodeResult>(HttpMethod.Get, AgentRoutes.TypesWithoutCode, null, cancellationToken));
         var fromSource = Core.Cms.OrphanedTypes.FromSource(types, CSharpSourceIndex.Build(site.ProjectDirectory), ScheduledJobSources.Assemblies(site.ProjectDirectory));
 
-        Assert.Equal(OrphanedTypes, fromSite.Select(t => t.Name));
+        // CMS 13 records neither a class nor a version for a type made in admin mode: EdgeAdminPage is listed as of unknown
+        // origin there (it could be a code type a content import overwrote).
+        Assert.Equal(cms13 ? ["EdgeAdminPage", .. OrphanedTypes] : OrphanedTypes, fromSite.Select(t => t.Name));
+        Assert.Equal(cms13 ? ["EdgeAdminPage"] : [], fromSite.Where(t => t.OriginUnknown == true).Select(t => t.Name));
         Assert.Equal(1, fromSite.Single(t => t.Guid == RemovedType).Instances);
-        // The source scan needs the class on record, which CMS 13 doesn't keep for a type with a GUID (EdgeTrashedPage there).
+        // The source scan needs the class on record, which CMS 13 doesn't keep for a type with a GUID (EdgeTrashedPage there):
+        // there the GUIDs of the build output's classes stand in for it.
         Assert.Equal(fromSite.Where(t => t.ModelType is not null).Select(t => t.Name), fromSource.Select(t => t.Name));
-        Assert.Equal(site.Session.Model.Schema.Major >= 13 ? ["EdgeTrashedPage"] : [], fromSite.Where(t => t.ModelType is null).Select(t => t.Name));
+        Assert.Equal(cms13 ? ["EdgeAdminPage", "EdgeTrashedPage"] : [], fromSite.Where(t => t.ModelType is null).Select(t => t.Name));
+        if (cms13)
+        {
+            var project = Core.Discovery.ProjectLocator.Locate(site.ProjectDirectory, site.ProjectDirectory);
+            var output = Path.GetDirectoryName(OutputLocator.Locate(project, null, null, site.ProjectDirectory).Dll)!;
+            var withoutClass = Core.Cms.OrphanedTypes.WithoutClassOnRecord(types, Core.Drift.BuildScanner.ContentTypeGuids(output), CSharpSourceIndex.Build(site.ProjectDirectory));
+            Assert.Equal(fromSite.Where(t => t.ModelType is null).Select(t => (t.Name, t.OriginUnknown)), withoutClass.Select(t => (t.Name, t.OriginUnknown)));
+            // The template's content import left the Alloy types without a class and a version too, but their classes are in
+            // the build: they are neither orphaned nor of unknown origin.
+            var article = types.Single(t => t.Name == "ArticlePage");
+            Assert.Equal((null, null), (article.ModelType, article.SyncedVersion));
+            Assert.DoesNotContain(fromSite, t => t.Name == "ArticlePage");
+        }
+    }
+
+    [SiteFact]
+    public async Task On_cms_13_a_type_of_unknown_origin_goes_only_with_the_flag()
+    {
+        var cancellationToken = CancellationToken.None;
+        await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
+        if (site.Session.Model.Schema.Major < 13 || !await ReseedAsync(site, cancellationToken))
+        {
+            // CMS 12 records the class of every code type: a type without one was made in admin mode (the test above).
+            return;
+        }
+        var refused = await Assert.ThrowsAsync<RefusedException>(() => RemoveAsync(site, new OrphanRemovalRequest { Types = ["EdgeAdminPage"], DryRun = true }, cancellationToken));
+        Assert.Contains("origin unknown", refused.Message);
+        Assert.Contains(OrphanRemoval.IncludeUnknownOriginFlag, refused.Message);
+
+        var (pruned, _) = await RemoveAsync(site, new OrphanRemovalRequest { Prune = true, DryRun = true }, cancellationToken);
+        Assert.Contains(pruned.Kept!, k => (k.Type, k.Property, k.Code) == ("EdgeAdminPage", null, AgentErrorCodes.Refused) && k.Reason.Contains(OrphanRemoval.IncludeUnknownOriginFlag, StringComparison.Ordinal));
+        Assert.DoesNotContain(pruned.Types, t => t.Name == "EdgeAdminPage");
+
+        var (dry, _) = await RemoveAsync(site, new OrphanRemovalRequest { Prune = true, DryRun = true, IncludeUnknownOrigin = true }, cancellationToken);
+        Assert.Contains(dry.Types, t => t is { Name: "EdgeAdminPage", OriginUnknown: true });
+        try
+        {
+            var (removed, warnings) = await RemoveAsync(site, new OrphanRemovalRequest { Types = ["EdgeAdminPage"], IncludeUnknownOrigin = true }, cancellationToken);
+
+            var record = Assert.Single(removed.Types);
+            Assert.Equal(("EdgeAdminPage", AdminType, (bool?)true), (record.Name, record.Guid, record.OriginUnknown));
+            Assert.Contains(OrphanRemoval.NoUndo, warnings);
+            Assert.DoesNotContain(await ContentTypeReader.ListAsync(site.Session.Db, cancellationToken), t => t.Name == "EdgeAdminPage");
+        }
+        finally
+        {
+            await ReseedAsync(site, cancellationToken);
+        }
+        Assert.Contains(await ContentTypeReader.ListAsync(site.Session.Db, cancellationToken), t => t.Name == "EdgeAdminPage");
     }
 
     [SiteFact]
@@ -100,7 +153,8 @@ public sealed class OrphansTests
         var error = await Assert.ThrowsAsync<RefusedException>(() => RemoveAsync(site, new OrphanRemovalRequest { Types = [AdminType.ToString(), "EdgePage"] }, cancellationToken));
 
         var validation = Assert.IsType<AgentErrorDetails>(error.Details).Validation!;
-        Assert.Contains("made in admin mode", validation.Single(v => v.Property == "EdgeAdminPage").Message);
+        // CMS 13 can't tell it from a code type a content import overwrote: of unknown origin, removed only with the flag.
+        Assert.Contains(site.Session.Model.Schema.Major >= 13 ? "origin unknown" : "made in admin mode", validation.Single(v => v.Property == "EdgeAdminPage").Message);
         Assert.Contains("has a class the site loads", validation.Single(v => v.Property == "EdgePage").Message);
     }
 
@@ -177,7 +231,9 @@ public sealed class OrphansTests
             Assert.Contains(dry.Kept!, k => (k.Type, k.Property, k.Code) == ("EdgeRemovedPage", null, AgentErrorCodes.Conflict));
             Assert.Contains(dry.Kept!, k => (k.Type, k.Property, k.Code) == ("EdgeTrashedPage", null, AgentErrorCodes.Conflict));
             Assert.Contains(dry.Kept!, k => (k.Type, k.Property, k.Code) == ("EdgePage", "EdgeRemovedText", AgentErrorCodes.Refused));
-            Assert.DoesNotContain(dry.Kept!, k => k.Type is "EdgeAdminPage" or "EdgePage" && k.Property is null);
+            Assert.DoesNotContain(dry.Kept!, k => k.Type is "EdgePage" && k.Property is null);
+            // CMS 13: kept, saying what --include-unknown-origin does; CMS 12 knows it was made in admin mode.
+            Assert.Equal(site.Session.Model.Schema.Major >= 13, dry.Kept!.Any(k => k is { Type: "EdgeAdminPage", Property: null }));
 
             var (pruned, _) = await RemoveAsync(site, new OrphanRemovalRequest { Prune = true }, cancellationToken);
 
@@ -237,12 +293,12 @@ public sealed class OrphansTests
     private static async Task<(OrphanRemover.Output Output, IReadOnlyList<string> Warnings)> RemoveAsync(SiteUnderTest site, OrphanRemovalRequest request, CancellationToken cancellationToken) =>
         await OrphanRemover.RunAsync(site.Agent, request, cancellationToken);
 
-    /// <summary><c>types --orphaned</c> as the site answers it.</summary>
+    /// <summary><c>types --orphaned</c> as the site answers it, without CMS 13's types of unknown origin.</summary>
     private static async Task<IReadOnlyList<string>> OrphanedNamesAsync(SiteUnderTest site, CancellationToken cancellationToken)
     {
         var types = await ContentTypeReader.ListAsync(site.Session.Db, cancellationToken);
         var fromSite = await site.Agent.SendAsync<TypesWithoutCodeResult>(HttpMethod.Get, AgentRoutes.TypesWithoutCode, null, cancellationToken);
-        return Core.Cms.OrphanedTypes.FromSite(types, fromSite).Select(t => t.Name).ToList();
+        return Core.Cms.OrphanedTypes.FromSite(types, fromSite).Where(t => t.OriginUnknown != true).Select(t => t.Name).ToList();
     }
 
     /// <summary>EdgePage's properties that aren't in its class, from the database.</summary>

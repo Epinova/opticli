@@ -31,6 +31,12 @@ internal sealed record SiteType(
     /// </summary>
     public bool SyncedFromCode { get; init; }
 
+    /// <summary>
+    /// CMS 13: neither a class nor a model-sync version on record, and no class of the site has its GUID or name: made in
+    /// admin mode, or a code type a content import overwrote (<see cref="Compat.AgentBuild.OriginUnknown"/>).
+    /// </summary>
+    public bool OriginUnknown { get; init; }
+
     /// <summary>Made from code, not in admin mode: a class on record, or <see cref="SyncedFromCode"/>.</summary>
     public bool FromCode => ModelType is not null || SyncedFromCode;
 }
@@ -121,6 +127,7 @@ internal sealed class ContentModelSource(IServiceProvider services) : IContentMo
     public IReadOnlyList<SiteType> Types()
     {
         var hasModel = Compat.AgentBuild.HasPropertyModel(services);
+        var inBuild = Compat.AgentBuild.InBuild(services);
         var available = services.GetService<IAvailableSettingsRepository>();
         var all = _types.List().ToList();
         var blockNames = all.ToDictionary(t => t.GUID, t => t.Name);
@@ -137,6 +144,7 @@ internal sealed class ContentModelSource(IServiceProvider services) : IContentMo
                 AllowedChildren(available, t))
             {
                 SyncedFromCode = Compat.AgentBuild.FromCode(t),
+                OriginUnknown = Compat.AgentBuild.OriginUnknown(t, inBuild),
             })
             .ToList();
     }

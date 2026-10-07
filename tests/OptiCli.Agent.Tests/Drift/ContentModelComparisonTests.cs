@@ -43,6 +43,19 @@ public class ContentModelComparisonTests
     }
 
     [Fact]
+    public void A_type_of_unknown_origin_only_in_the_database_is_listed_as_such_without_saying_which_side_is_ahead()
+    {
+        var (types, _) = ContentModelComparison.Items([], ["EventPage"], ["AdminOrImportedPage"]);
+
+        Assert.Equal(
+            [
+                new DriftItem("EventPage", DriftAhead.Database, ContentModelComparison.OnlyInDatabase),
+                new DriftItem("AdminOrImportedPage", DriftAhead.Unknown, $"{ContentModelComparison.OnlyInDatabase}, {OrphanRemoval.UnknownOrigin}"),
+            ],
+            types);
+    }
+
+    [Fact]
     public void Everything_the_same_is_no_drift()
     {
         var (types, properties) = ContentModelComparison.Items([new TypeMatch(Article(), Article(), [Same(Heading())], [])], []);

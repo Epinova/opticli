@@ -61,8 +61,9 @@ LOCAL=$(jq -r '.ConnectionStrings.EPiServerDB' "$TARGET"/appsettings.Development
 
 build() { dotnet build 2>&1 | grep -q " 0 Error(s)" || { dotnet build; exit 1; }; }
 # The edge-case site's OrphansFixture.cs keeps content types whose class no build has (`opticli types --orphaned`):
-# drift lists them as the database's (ahead "database") on every run. `own` leaves them out of a list of differences.
-ORPHANS='["EdgeRemovedBlock", "EdgeRemovedEmptyPage", "EdgeRemovedPage", "EdgeTrashedPage"]'
+# drift lists them as the database's (ahead "database") on every run, and on CMS 13 its admin-mode type EdgeAdminPage as
+# of unknown origin (ahead "unknown"). `own` leaves them out of a list of differences.
+ORPHANS='["EdgeAdminPage", "EdgeRemovedBlock", "EdgeRemovedEmptyPage", "EdgeRemovedPage", "EdgeTrashedPage"]'
 expect() { # <jq filter that must be true> <json>
   if ! jq -e --argjson orphans "$ORPHANS" 'def own: map(select(.name as $n | $orphans | index($n) | not)); '"$1" >/dev/null <<<"$2"; then
     echo "unexpected (wanted $1):" >&2
@@ -83,7 +84,7 @@ build
 out=$($OPTICLI serve)
 expect '.ok and (.data.drift.differences == 0 or .data.drift.ahead == "database")' "$out"
 out=$($OPTICLI drift)
-expect '(.data.contentTypes | own) == [] and all(.data.contentTypes[]; .ahead == "database") and .data.differences == (.data.contentTypes | length)' "$out"
+expect '(.data.contentTypes | own) == [] and all(.data.contentTypes[]; .ahead == "database" or (.name == "EdgeAdminPage" and .ahead == "unknown")) and .data.differences == (.data.contentTypes | length)' "$out"
 $OPTICLI serve --stop >/dev/null
 
 echo "== 2. local ahead: a new property and a new type"

@@ -7,7 +7,8 @@
 //   is EdgeRemovedBlock, a block type whose class is gone too. The CMS removes such an empty type when the site starts,
 //   so this module makes it again on every start.
 // - EdgeRemovedText (one value) and EdgeRemovedEmptyText (none): properties of EdgePage that its class doesn't declare.
-// - EdgeAdminPage: a page type made in admin mode (no class on record), which isn't an orphan.
+// - EdgeAdminPage: a page type made in admin mode (no class on record), which isn't an orphan (on CMS 13, which records no
+//   class or version for it, of unknown origin: removed only with --include-unknown-origin).
 // Made through the CMS's repositories once the plan's language root exists, so setup.sh's second start makes them. The
 // removal tests make them again by posting to /opticli-fixture/orphans (loopback only), which runs the same code.
 // Property definitions are saved, and the page moved to the recycle bin, with APIs that differ between CMS 12 and 13:

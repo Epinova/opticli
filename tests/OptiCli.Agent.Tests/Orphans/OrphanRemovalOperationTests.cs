@@ -171,6 +171,57 @@ public class OrphanRemovalOperationTests : IDisposable
     }
 
     [Fact]
+    public void A_type_of_unknown_origin_is_refused_with_what_the_flag_does_and_removed_with_it()
+    {
+        // CMS 13: no class and no model-sync version on record, and no class of the site has its GUID. An import that
+        // overwrote a code type leaves exactly what admin mode leaves.
+        var imported = Type("ImportedPage", modelType: null, properties: Property("Intro", existsOnModel: true)) with { OriginUnknown = true };
+        var model = new Model(imported);
+
+        var refused = Assert.Throws<AgentException>(() => Run(model, Remove("ImportedPage") with { DryRun = true }));
+        Assert.Equal(AgentErrorCodes.Refused, refused.Code);
+        Assert.Contains("origin unknown", refused.Message);
+        Assert.Contains(OrphanRemoval.IncludeUnknownOriginFlag, refused.Message);
+
+        var dry = Run(model, Remove("ImportedPage") with { DryRun = true, IncludeUnknownOrigin = true });
+        Assert.Equal(("ImportedPage", true), (Assert.Single(dry.Types).Name, dry.Types[0].OriginUnknown));
+        Assert.Empty(model.Removed);
+
+        var removed = Run(model, Remove("ImportedPage") with { IncludeUnknownOrigin = true });
+        Assert.Equal(["type ImportedPage"], model.Removed);
+        Assert.True(Assert.Single(Records()).Type!.OriginUnknown);
+        Assert.True(removed.Removed);
+    }
+
+    [Fact]
+    public void Prune_keeps_types_of_unknown_origin_unless_asked_and_says_why()
+    {
+        var unknown = Type("AdminOrImportedPage", modelType: null, properties: Property("Text")) with { OriginUnknown = true };
+        var model = new Model(unknown, Type("OldPage"));
+
+        var pruned = Run(model, new OrphanRemovalRequest { Prune = true, PruneProperties = true, DryRun = true });
+        Assert.Equal(["OldPage"], pruned.Types.Select(t => t.Name));
+        var kept = Assert.Single(pruned.Kept, k => k.Type == "AdminOrImportedPage");
+        Assert.Equal((null, AgentErrorCodes.Refused), (kept.Property, kept.Code));
+        Assert.Contains(OrphanRemoval.IncludeUnknownOriginFlag, kept.Reason);
+
+        var withFlag = Run(model, new OrphanRemovalRequest { Prune = true, DryRun = true, IncludeUnknownOrigin = true });
+        Assert.Equal(["AdminOrImportedPage", "OldPage"], withFlag.Types.Select(t => t.Name).Order());
+        Assert.DoesNotContain(withFlag.Kept, k => k.Type == "AdminOrImportedPage");
+    }
+
+    [Fact]
+    public void A_property_of_a_type_of_unknown_origin_needs_the_flag_too()
+    {
+        var unknown = Type("AdminOrImportedPage", modelType: null, properties: Property("Text")) with { OriginUnknown = true };
+        var model = new Model(unknown);
+        var request = new OrphanRemovalRequest { Properties = [new OrphanPropertyRef("AdminOrImportedPage", "Text")], DryRun = true };
+
+        Assert.Contains(OrphanRemoval.IncludeUnknownOriginFlag, Assert.Throws<AgentException>(() => Run(model, request)).Message);
+        Assert.Equal("Text", Assert.Single(Run(model, request with { IncludeUnknownOrigin = true }).Properties).Property.Name);
+    }
+
+    [Fact]
     public void Named_items_are_all_checked_first_and_reported_in_order_with_the_weightiest_code()
     {
         var used = Type("UsedPage");

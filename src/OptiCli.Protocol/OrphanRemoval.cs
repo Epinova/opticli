@@ -28,6 +28,13 @@ public sealed record OrphanRemovalRequest
     /// <summary>Remove properties that have stored values, which go with them for good.</summary>
     public bool AllowDestructive { get; init; }
 
+    /// <summary>
+    /// CMS 13: also count types of unknown origin as orphans (<see cref="TypeWithoutCode.OriginUnknown"/>): no class and no
+    /// model-sync version on record, and no class of the site has their GUID. Made in admin mode, or code types a content
+    /// import overwrote: the database can't tell which.
+    /// </summary>
+    public bool IncludeUnknownOrigin { get; init; }
+
     /// <summary>Run every check without removing anything.</summary>
     public bool DryRun { get; init; }
 }
@@ -89,6 +96,9 @@ public sealed record RemovedContentType(
 
     /// <summary>Types that allowed it below them by name; the CMS takes it out of their settings.</summary>
     public IReadOnlyList<string>? AvailableUnder { get; init; }
+
+    /// <summary>CMS 13: true for a type of unknown origin (<see cref="TypeWithoutCode.OriginUnknown"/>), removed with <see cref="OrphanRemovalRequest.IncludeUnknownOrigin"/>.</summary>
+    public bool? OriginUnknown { get; init; }
 }
 
 /// <summary>A property removed on its own, with the values the CMS deleted with it.</summary>
@@ -196,6 +206,17 @@ public static class OrphanRemoval
 
     public const string ProviderHint =
         "A content provider (a catalog, a DAM, ...) keeps content of the site that uses the property; opticli can't count or see those values, and the provider may store them outside the CMS's tables. Remove its values through that provider (or remove the property in admin mode once it has none).";
+
+    /// <summary>The flag that lets <c>types remove</c> and <c>types prune</c> remove types of unknown origin (CMS 13).</summary>
+    public const string IncludeUnknownOriginFlag = "--include-unknown-origin";
+
+    /// <summary>Why a type of unknown origin isn't removed without <see cref="OrphanRemovalRequest.IncludeUnknownOrigin"/>.</summary>
+    public static string UnknownOriginRefusal(string type) =>
+        $"{type} has no class or model-sync version on record, and no class of the site has its GUID: it was made in admin mode, or it is a code type a content import overwrote (origin unknown). {IncludeUnknownOriginFlag} removes it as an orphan of removed code; otherwise remove it in admin mode (Content Types) if it should go.";
+
+    /// <summary>What drift and <c>types --orphaned</c> say about a type of unknown origin.</summary>
+    public const string UnknownOrigin =
+        "origin unknown: no class or model-sync version on record (made in admin mode, or a code type a content import overwrote), and no class in the build has its GUID";
 
     public const string AdminModeLookalike =
         "A property added in admin mode to a type that has a class looks the same in the database (existsOnModel: false) as one removed from the code: check that none of these was made in admin mode on purpose.";

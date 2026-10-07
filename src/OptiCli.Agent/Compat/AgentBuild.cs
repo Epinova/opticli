@@ -50,6 +50,35 @@ internal static class AgentBuild
 #endif
 
     /// <summary>
+    /// CMS 13: a type with neither a class nor a model-sync version on record, of no external content source, and whose
+    /// GUID and name no model of the running site has (<paramref name="inBuild"/>). Admin mode makes such types, and so does
+    /// a content import that overwrites a code type (it leaves <c>Version</c> unset; every Alloy-template site's types): the
+    /// database can't tell which. Never on CMS 12, which records the class of every code type.
+    /// </summary>
+    /// <param name="inBuild">Whether a model of the running site has the type's GUID or name.</param>
+    public static bool OriginUnknown(ContentType type, Func<ContentType, bool> inBuild)
+    {
+#if CMS13
+        return string.IsNullOrEmpty(type.Source) && string.IsNullOrEmpty(type.ModelTypeString) && type.Version is null && !inBuild(type);
+#else
+        _ = (type, inBuild);
+        return false;
+#endif
+    }
+
+    /// <summary>
+    /// Whether a model of the running site has the type's GUID or name, for <see cref="OriginUnknown"/>: the CMS fills a
+    /// type's class from the model it matches, so this only matters when that match failed.
+    /// </summary>
+    public static Func<ContentType, bool> InBuild(IServiceProvider services)
+    {
+        var models = ContentTypeModels(services).ToList();
+        var guids = models.Select(m => m.Guid).Where(g => g != Guid.Empty).ToHashSet();
+        var names = models.Select(m => m.Name).Where(n => !string.IsNullOrEmpty(n)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return type => guids.Contains(type.GUID) || names.Contains(type.Name);
+    }
+
+    /// <summary>
     /// The version (major.minor) of the assembly the database's type was synced from, which the sync compares with the
     /// model's: CMS 13's <c>Version</c>, else the one in the class on record.
     /// </summary>

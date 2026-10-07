@@ -17,7 +17,8 @@ namespace OptiCli.Agent.Orphans;
 /// <para>Here and not in <c>OptiCli.Cms</c>, which the MCP module compiles in: the content model is the developer's only,
 /// and a production site must never be able to lose part of it through opticli.</para>
 /// <para>The site decides what is an orphan, whatever the CLI checked: a type whose class (<c>ModelTypeString</c>) the
-/// site can't load, never one made in admin mode or one of the CMS's own; a property the CMS marked as gone from its type's
+/// site can't load, never one made in admin mode or one of the CMS's own (CMS 13's types of unknown origin, which may be
+/// either, only when asked: <see cref="OrphanRemovalRequest.IncludeUnknownOrigin"/>); a property the CMS marked as gone from its type's
 /// code (<c>ExistsOnModel</c> false), on a type defined in code, that the site's model doesn't have. The CMS's own deletes
 /// check much less: a property's goes ahead whatever is stored (the values go with it), and a type's clears page-type
 /// values that name it, so <see cref="OrphanPlanner"/> refuses both unless allowed.</para>
@@ -65,10 +66,14 @@ internal static class OrphanRemovalOperation
         // Where each named item was in the request, to report them in that order.
         var order = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         void Named(string type, string? property) => order.TryAdd(Label(type, property), order.Count);
+        var unknown = body.IncludeUnknownOrigin;
         if (body.Prune)
         {
-            typeCandidates.AddRange(types.Where(t => TypeRefusal(t) is null));
-            foreach (var type in types.Where(t => t.FromCode && !typeCandidates.Contains(t)))
+            typeCandidates.AddRange(types.Where(t => TypeRefusal(t, unknown) is null));
+            // Without the flag, types of unknown origin are kept, saying what the flag does.
+            kept.AddRange(types.Where(t => t.OriginUnknown && !unknown && !OrphanRemoval.SystemTypes.Contains(t.Name, StringComparer.Ordinal))
+                .Select(t => new KeptOrphan(t.Name, null, AgentErrorCodes.Refused, OrphanRemoval.UnknownOriginRefusal(t.Name))));
+            foreach (var type in types.Where(t => CodeDefined(t, unknown) && !typeCandidates.Contains(t)))
             {
                 foreach (var property in type.Properties.Where(p => !p.ExistsOnModel && !p.InModel))
                 {
@@ -125,11 +130,11 @@ internal static class OrphanRemovalOperation
             }
         }
 
-        var typeFacts = typeCandidates.Select(t => TypeRefusal(t) is { } refusal
+        var typeFacts = typeCandidates.Select(t => TypeRefusal(t, unknown) is { } refusal
                 ? new TypeFacts(t.Id, t.Name, refusal, TypeUsage.None, [])
                 : new TypeFacts(t.Id, t.Name, null, source.Usage(t), UsedBy(types, t)))
             .ToList();
-        var propertyFacts = propertyCandidates.Select(c => PropertyRefusal(c.Type, c.Property) is { } refusal
+        var propertyFacts = propertyCandidates.Select(c => PropertyRefusal(c.Type, c.Property, unknown) is { } refusal
                 ? new PropertyFacts(c.Property.Id, c.Type.Id, c.Type.Name, c.Property.Name, refusal, new StoredValueCounts(0, 0))
                 : new PropertyFacts(c.Property.Id, c.Type.Id, c.Type.Name, c.Property.Name, null, source.Values(c.Property)))
             .ToList();
@@ -206,14 +211,21 @@ internal static class OrphanRemovalOperation
         }
     }
 
+    /// <summary>Made from code, or of unknown origin when those count (<see cref="OrphanRemovalRequest.IncludeUnknownOrigin"/>).</summary>
+    private static bool CodeDefined(SiteType type, bool includeUnknownOrigin) => type.FromCode || (includeUnknownOrigin && type.OriginUnknown);
+
     /// <summary>Why a type isn't an orphan of removed code; null when it is one.</summary>
-    internal static string? TypeRefusal(SiteType type)
+    internal static string? TypeRefusal(SiteType type, bool includeUnknownOrigin = false)
     {
         if (OrphanRemoval.SystemTypes.Contains(type.Name, StringComparer.Ordinal))
         {
             return $"{type.Name} is one of the CMS's own types.";
         }
-        if (!type.FromCode)
+        if (type.OriginUnknown && !includeUnknownOrigin)
+        {
+            return OrphanRemoval.UnknownOriginRefusal(type.Name);
+        }
+        if (!CodeDefined(type, includeUnknownOrigin))
         {
             return $"{type.Name} was made in admin mode (it has no class on record), so it isn't left over from removed code; remove it in admin mode (Content Types) if it should go.";
         }
@@ -225,9 +237,13 @@ internal static class OrphanRemovalOperation
     }
 
     /// <summary>Why a property isn't an orphan of removed code; null when it is one.</summary>
-    internal static string? PropertyRefusal(SiteType type, SiteProperty property)
+    internal static string? PropertyRefusal(SiteType type, SiteProperty property, bool includeUnknownOrigin = false)
     {
-        if (!type.FromCode)
+        if (type.OriginUnknown && !includeUnknownOrigin)
+        {
+            return OrphanRemoval.UnknownOriginRefusal(type.Name);
+        }
+        if (!CodeDefined(type, includeUnknownOrigin))
         {
             return $"{type.Name} was made in admin mode, so its properties were too: remove it in admin mode (Content Types) if it should go.";
         }
@@ -251,6 +267,7 @@ internal static class OrphanRemovalOperation
         {
             AllowedChildren = type.AllowedChildren,
             AvailableUnder = types.Where(t => t.Id != type.Id && t.AllowedChildren?.Contains(type.Name, StringComparer.OrdinalIgnoreCase) == true).Select(t => t.Name).ToList() is { Count: > 0 } under ? under : null,
+            OriginUnknown = type.OriginUnknown ? true : null,
         };
 
     /// <summary>

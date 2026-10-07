@@ -29,6 +29,12 @@ public sealed record ContentTypeInfo(
     /// <summary>CMS 13: the contracts (interfaces) the type implements, by name.</summary>
     public IReadOnlyList<string> Contracts { get; init; } = [];
 
+    /// <summary>
+    /// CMS 13, set by <c>types --orphaned</c>: no class and no model-sync version on record, and no class of the site has its
+    /// GUID (made in admin mode, or a code type a content import overwrote).
+    /// </summary>
+    public bool? OriginUnknown { get; init; }
+
     /// <summary>CMS 13, when counted: the type's Visual Builder blueprints, which <see cref="Instances"/> leaves out; null for none.</summary>
     public int? Blueprints { get; init; }
 

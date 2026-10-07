@@ -55,11 +55,15 @@ internal static partial class ContentModelScan
         var types = services.GetRequiredService<IContentTypeRepository>();
         var matches = models.Select(m => Match(m, renames, resolve, types)).ToList();
         var matched = models.Where(m => m.State != SynchronizationStatus.New && m.ExistingContentType is not null).Select(m => m.ExistingContentType.ID).ToHashSet();
-        var onlyInDatabase = types.List()
-            .Where(t => Compat.AgentBuild.FromCode(t) && !SystemTypes.Contains(t.Name) && !matched.Contains(t.ID)
-                && !renames.Any(c => string.Equals(c.OldName, t.Name, StringComparison.Ordinal)))
-            .Select(t => t.Name);
-        return ContentModelComparison.Items(matches, onlyInDatabase);
+        // CMS 13: a type of unknown origin (no class or model-sync version on record, e.g. a code type a content import
+        // overwrote) that no model matches is listed as such: the database can't say whether code made it.
+        var inBuild = Compat.AgentBuild.InBuild(services);
+        var stored = types.List()
+            .Where(t => !SystemTypes.Contains(t.Name) && !matched.Contains(t.ID) && !renames.Any(c => string.Equals(c.OldName, t.Name, StringComparison.Ordinal)))
+            .ToList();
+        var onlyInDatabase = stored.Where(Compat.AgentBuild.FromCode).Select(t => t.Name);
+        var unknownOrigin = stored.Where(t => Compat.AgentBuild.OriginUnknown(t, inBuild)).Select(t => t.Name);
+        return ContentModelComparison.Items(matches, onlyInDatabase, unknownOrigin);
     }
 
     private static TypeMatch Match(ContentTypeModel model, IReadOnlyList<ContentTypeChange> renames, Func<PropertyDefinitionModel, PropertyDefinitionType?> resolve, IContentTypeRepository types)
