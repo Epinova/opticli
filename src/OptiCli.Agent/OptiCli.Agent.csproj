@@ -16,9 +16,6 @@
 
   <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
     <DefineConstants>$(DefineConstants);CMS13</DefineConstants>
-    <!-- The CMS 13 build still uses CMS 12's site definition and page reference APIs, which CMS 13 keeps as obsolete
-         compatibility shims: warnings (each one listed in the build) rather than errors until they're ported. -->
-    <WarningsNotAsErrors>$(WarningsNotAsErrors);CS0618</WarningsNotAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
