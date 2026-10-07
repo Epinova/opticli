@@ -71,8 +71,8 @@ To run from source without installing: `dotnet run --project src/OptiCli -- <com
 ## Quick start
 
 Run opticli from anywhere inside the site's repository. It walks up to the solution and picks the web project that
-references `EPiServer.CMS.AspNetCore` (or `EPiServer.CMS`). It then finds that project's development database, as described under
-[Which database](#which-database).
+references `EPiServer.CMS.AspNetCore` (or `EPiServer.CMS`). It then finds that project's development database, as
+described under [Which database](#which-database).
 
 ```sh
 opticli doctor                                      # what was found and where; does the database answer?
@@ -331,8 +331,8 @@ These commands write:
   halfway (a failure, Ctrl+C) still reports what it saved, with undo hints and `details.partial: true`.
 
 Every write command takes `--dry-run`. Structured values use `--values`, e.g.
-`--values '{"MainArea":[{"ref":"456"}]}'`; a value may also be given as `get` shows it (`{"type": ..., "value": ...}`). `set` and `area` check that nobody saved a newer version in the meantime
-(exit 5 on a conflict). `--base-version <id>` pins the version the change is based on, and `--force` skips the check.
+`--values '{"MainArea":[{"ref":"456"}]}'`; a value may also be given as `get` shows it (`{"type": ..., "value": ...}`).
+`set` and `area` check that nobody saved a newer version in the meantime (exit 5 on a conflict). `--base-version <id>` pins the version the change is based on, and `--force` skips the check.
 `--from published` (or `--from <version>`) bases the change on that version instead of the latest, and the check
 stays: newer drafts are left out and stay as they are, and the output lists them (`leftOut`).
 A publish puts the whole version live. When someone else saved unpublished changes in it, opticli shows them and asks on
@@ -412,7 +412,8 @@ to run `--from-config`.
 `--lang`, `--https`); a host the site has is a `conflict`. `sites host remove <site> <host>` removes one, but never the
 site's last host or SiteUrl's host. Both take `--dry-run`.
 
-On CMS 13 the sites are applications, and a few of these rules differ: see [Sites are applications](#sites-are-applications).
+On CMS 13 the sites are applications, and a few of these rules differ: see
+[Sites are applications](#sites-are-applications).
 
 Saving through the site clears its site definition cache, so the site `serve` runs uses the new hosts at once. Another
 process running the site against the same database (your IDE's) keeps the old ones until it restarts, unless remote
@@ -436,10 +437,10 @@ opticli jobs set "Content import" --every 1h --next now --dry-run
 ```
 
 Reading (`jobs`, `jobs log`) comes from the database (`tblScheduledItem`, `tblScheduledItemLog`) and needs nothing
-running. A job in the site's code (a `[ScheduledPlugIn]` or, on CMS 13, `[ScheduledJob]` class) has its file and line as `source`, and one the database
-doesn't have yet is listed with `registered: false`: the site registers jobs when it starts. `running: "stale"` means
-the job is marked as running but the process that ran it stopped pinging. A run's `finished` is when the CMS logged
-it, and `started` that less its duration.
+running. A job in the site's code (a `[ScheduledPlugIn]` or, on CMS 13, `[ScheduledJob]` class) has its file and line
+as `source`, and one the database doesn't have yet is listed with `registered: false`: the site registers jobs when it
+starts. `running: "stale"` means the job is marked as running but the process that ran it stopped pinging. A run's
+`finished` is when the CMS logged it, and `started` that less its duration.
 
 A `<job>` is its id (GUID), its name, its class (`EPiServer.Util.BlobCleanupJob` or `BlobCleanupJob`), or a part of its
 name only it has. Several matches are a `usage` error that lists them.
@@ -488,8 +489,9 @@ next starts, but only if nothing uses it. A type with content (also in the recyc
 still has, stays; so does a property with stored values, marked `existsOnModel: false`. Old databases collect years of
 them, and admin mode removes them one at a time. `types --orphaned` and `type <name>` show them; these commands remove
 them through the site (`opticli serve`), with the CMS's own `IContentTypeRepository.Delete` and
-`IPropertyDefinitionRepository.Delete` (on CMS 13 the type saved without the property), as admin mode's Delete does. On
-CMS 13, types of unknown origin go only with `--include-unknown-origin` (see [Content types on CMS 13](#content-types-on-cms-13)):
+`IPropertyDefinitionRepository.Delete` (on CMS 13 the type saved without the property), as admin mode's Delete does.
+On CMS 13, types of unknown origin go only with `--include-unknown-origin` (see
+[Content types on CMS 13](#content-types-on-cms-13)):
 
 ```sh
 opticli types prune --dry-run                          # what would go and what stays (kept), with why
@@ -678,6 +680,7 @@ agent injected, and returns once the site agent answers.
 - Each start writes a new log. `--logs` reads the latest from its end, and `data.previous` lists the two before it.
 - A state file opticli can't read is treated as stale: `--status` and `--stop` remove it, `doctor` reports it.
 - Two `serve` runs for the same project don't start two sites: the second waits for the first and reports its site.
+  `serve`s for different sites started at the same moment don't pick the same free port either.
 - Ctrl+C while `serve` waits for the site stops the site again.
 - A site that configures `Kestrel:Endpoints` ignores `ASPNETCORE_URLS`. `serve` and `env` then add opticli's address
   as one more endpoint (`Kestrel__Endpoints__OptiCli__Url`) and warn. If the site sets its addresses in code, a
