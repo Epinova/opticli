@@ -13,11 +13,12 @@ namespace OptiCli.Integration;
 /// </summary>
 internal sealed class SiteUnderTest : IAsyncDisposable
 {
-    private SiteUnderTest(ContentSession session, AgentClient agent, string projectDirectory)
+    private SiteUnderTest(ContentSession session, AgentClient agent, string projectDirectory, Uri? siteUrl)
     {
         Session = session;
         Agent = agent;
         ProjectDirectory = projectDirectory;
+        SiteUrl = siteUrl;
     }
 
     public ContentSession Session { get; }
@@ -25,6 +26,9 @@ internal sealed class SiteUnderTest : IAsyncDisposable
     public string ProjectDirectory { get; }
 
     public AgentClient Agent { get; }
+
+    /// <summary>Where `opticli serve` runs the site (http on loopback), to request pages as a visitor; null if unknown.</summary>
+    public Uri? SiteUrl { get; }
 
     /// <summary>
     /// Whether a version's "saved by" changed in SQL reaches the agent, which the tests use to make "someone else's"
@@ -39,11 +43,12 @@ internal sealed class SiteUnderTest : IAsyncDisposable
         var project = ProjectLocator.Locate(SiteSettings.ProjectDirectory, environment.CurrentDirectory);
         var connection = ConnectionResolver.Resolve(new ConnectionRequest(), project, environment).Require();
 
-        var agent = await AgentProbe.ConnectAsync(StateStore.For(environment, project.Directory), connection, cancellationToken);
+        var state = StateStore.For(environment, project.Directory);
+        var agent = await AgentProbe.ConnectAsync(state, connection, cancellationToken);
         var db = await CmsDatabase.OpenAsync(connection, cancellationToken);
         try
         {
-            return new SiteUnderTest(await ContentSession.OpenAsync(db, cancellationToken), agent, project.Directory);
+            return new SiteUnderTest(await ContentSession.OpenAsync(db, cancellationToken), agent, project.Directory, state.Read()?.BaseUrl);
         }
         catch
         {

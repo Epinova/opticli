@@ -51,8 +51,8 @@ cms_major=$(sed -n 's:.*Include="EPiServer\.CMS" Version="\([0-9]*\)\..*:\1:p' "
 fixtures=("$HERE/EdgeCasesFixture.cs" "$HERE/EdgeSitesFixture.cs" "$HERE/JobsFixture.cs" "$HERE/UsersFixture.cs" "$HERE/OrphansFixture.cs")
 if [ "${cms_major:-12}" -ge 13 ]; then
   # Orphan removal isn't supported on CMS 13 yet, and the fixture's property-definition API is gone there.
-  # Cms13Fixture.cs turns on visitor groups, which CMS 13 only registers when the site asks. No nested or hosts sites:
-  # CMS 13 refuses applications whose start pages overlap (see Cms13Fixture.cs).
+  # Cms13Fixture.cs turns on visitor groups, which CMS 13 only registers when the site asks, and makes the hosts sites as
+  # applications with start pages of their own. No nested site: CMS 13 refuses applications whose start pages overlap.
   echo "== CMS $cms_major: with Cms13Fixture.cs, without OrphansFixture.cs (orphan removal is CMS 12 only for now)"
   fixtures=("$HERE/EdgeCasesFixture.cs" "$HERE/JobsFixture.cs" "$HERE/UsersFixture.cs" "$HERE/Cms13Fixture.cs")
 fi
@@ -98,7 +98,7 @@ if ! result=$($OPTICLI apply "$HERE/edge-cases.plan.json" --update-existing); th
   exit 1
 fi
 echo "$result" | jq -c '.data.operations[] | {index, op, id, status}'
-echo "== restart (creates the nested site, the hosts sites, the approval sequence, the language settings and the orphans)"
+echo "== restart (creates the nested site (CMS 12), the hosts sites, the approval sequence, the language settings and the orphans)"
 restart
 if $OPTICLI serve --logs --tail 400 | jq -r '.data.lines[]' | grep -A3 '\[edge-cases\] setup failed'; then
   exit 1

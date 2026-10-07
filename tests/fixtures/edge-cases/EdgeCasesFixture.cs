@@ -2,7 +2,8 @@
 // plan (edge-cases.plan.json) needs, and at startup sets up what a plan can't create: a visitor group, a second site
 // whose start page is under the first site's, three sites for the site host tests, an approval sequence and language
 // settings. Each is made once, and only once the plan's content exists, so setup.sh restarts the site after applying
-// the plan. The sites are made by EdgeSitesFixture.cs on CMS 12 and by Cms13Fixture.cs (as applications) on CMS 13.
+// the plan. The sites are made by EdgeSitesFixture.cs on CMS 12; on CMS 13, Cms13Fixture.cs makes the three hosts sites as
+// applications (with start pages of their own below the root) and no nested site, which CMS 13 can't have.
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using EPiServer.Approvals;
@@ -105,7 +106,7 @@ public partial class EdgeCasesSetup : IInitializableModule
     {
     }
 
-    /// <summary>The nested site and the three hosts sites, as sites (CMS 12) or applications (CMS 13).</summary>
+    /// <summary>The nested site and the three hosts sites as site definitions (CMS 12); the hosts sites as applications (CMS 13).</summary>
     static partial void EnsureSites(IServiceProvider locate, IContentRepository content);
 
     private static ContentReference Find(IContentRepository content, Guid guid) =>

@@ -1,5 +1,6 @@
 // Copied into a CMS 12 edge-case site by setup.sh, beside EdgeCasesFixture.cs: the nested site and the three sites the
-// site host tests change, as site definitions. On CMS 13, Cms13Fixture.cs makes them as applications instead.
+// site host tests change, as site definitions. On CMS 13, Cms13Fixture.cs makes the three hosts sites as applications
+// instead, and no nested site.
 using System.Globalization;
 using EPiServer.ServiceLocation;
 using EPiServer.Web;

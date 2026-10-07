@@ -19,7 +19,8 @@ internal static class EdgeFixture
 
     /// <summary>
     /// Two sites whose hosts the site host tests change and restore: <see cref="HostsSiteA"/> has a primary host, a
-    /// Swedish primary host on a production-like name and an Edit host; <see cref="HostsSiteB"/> one primary host.
+    /// Swedish primary host on a production-like name and an Edit host; <see cref="HostsSiteB"/> one primary host. On
+    /// CMS 13 they are applications with these display names (Cms13Fixture.cs), with start pages below the root.
     /// </summary>
     public const string HostsSiteA = "Edge hosts A";
 
