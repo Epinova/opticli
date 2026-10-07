@@ -35,7 +35,8 @@ public sealed class CmsDatabase : IAsyncDisposable
             r.GetBooleanOrNull("ItemTypeID") == true,
             r.GetBooleanOrNull("Applications") == true,
             r.GetBooleanOrNull("Variations") == true,
-            r.GetBooleanOrNull("Blueprints") == true), cancellationToken)).Single();
+            r.GetBooleanOrNull("Blueprints") == true,
+            r.GetBooleanOrNull("Compositions") == true), cancellationToken)).Single();
 
     public static async Task<CmsDatabase> OpenAsync(VerifiedConnectionString connectionString, CancellationToken cancellationToken)
     {

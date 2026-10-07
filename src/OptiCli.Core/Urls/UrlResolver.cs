@@ -48,7 +48,7 @@ public sealed class UrlResolver(CmsDatabase db, CmsModel model)
                     TypeId: r.GetInt32("fkContentTypeID")),
                 cancellationToken, new SqlParameter("@parent", current));
             var candidates = children
-                .Where(c => !pagesOnly || model.Kind(c.TypeId) == ContentKind.Page)
+                .Where(c => !pagesOnly || model.Kind(c.TypeId).IsPage())
                 .Select(c => c.Segment)
                 .ToList();
 

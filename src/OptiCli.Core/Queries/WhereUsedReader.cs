@@ -1,5 +1,6 @@
 using Microsoft.Data.SqlClient;
 using OptiCli.Core.Content;
+using OptiCli.Core.Cms;
 using OptiCli.Core.Data;
 using OptiCli.Core.Properties;
 
@@ -220,7 +221,7 @@ public sealed class PageUsageReader(ContentSession session)
                     var owner = int.TryParse(usage.Ref, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var id)
                         ? session.Identities.Header(id)
                         : null;
-                    if (owner is not null && session.Model.Kind(owner.TypeId) == Cms.ContentKind.Block)
+                    if (owner is not null && session.Model.Kind(owner.TypeId).IsBlock())
                     {
                         if (visited.Add(owner.Id))
                         {

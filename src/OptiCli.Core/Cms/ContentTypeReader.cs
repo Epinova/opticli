@@ -7,25 +7,46 @@ namespace OptiCli.Core.Cms;
 
 public static class ContentTypeReader
 {
-    private const string TypesSql = """
-        SELECT ct.pkID, ct.ContentTypeGUID, ct.Name, ct.DisplayName, ct.Description, ct.ContentType, ct.Base,
-               ct.ModelType, NULL AS Instances
-        FROM tblContentType ct
-        ORDER BY ct.Name
-        """;
+    /// <summary>
+    /// Every content type; with <paramref name="countInstances"/> also how many content items use each (a scan of
+    /// <c>tblContent</c>: only for the commands that show the counts, not for every model load). CMS 13 also gives the
+    /// Visual Builder facts (<see cref="CmsSchema.Compositions"/>); a blueprint (<c>tblContent.Blueprint</c>) isn't counted as
+    /// an instance there.
+    /// </summary>
+    private static string TypesSql(CmsSchema schema, bool countInstances)
+    {
+        var composition = schema.Compositions ? ", ct.Version AS SyncedVersion, ct.Source, CONVERT(bit, ISNULL(ct.IsContract, 0)) AS IsContract, ct.CompositionBehavior" : "";
+        if (!countInstances)
+        {
+            return $"""
+                SELECT ct.pkID, ct.ContentTypeGUID, ct.Name, ct.DisplayName, ct.Description, ct.ContentType, ct.Base,
+                       ct.ModelType, NULL AS Instances{composition}
+                FROM tblContentType ct
+                ORDER BY ct.Name
+                """;
+        }
+        var blueprints = schema.Blueprints;
+        return $"""
+            SELECT ct.pkID, ct.ContentTypeGUID, ct.Name, ct.DisplayName, ct.Description, ct.ContentType, ct.Base,
+                   ct.ModelType, ISNULL(n.Instances, 0) AS Instances{composition}{(blueprints ? ", ISNULL(n.Blueprints, 0) AS Blueprints" : "")}
+            FROM tblContentType ct
+            LEFT JOIN (
+                SELECT fkContentTypeID, {(blueprints ? "SUM(CASE WHEN ISNULL(Blueprint, 0) = 0 THEN 1 ELSE 0 END) AS Instances, SUM(CASE WHEN Blueprint = 1 THEN 1 ELSE 0 END) AS Blueprints" : "COUNT(*) AS Instances")}
+                FROM tblContent
+                WHERE Deleted = 0
+                GROUP BY fkContentTypeID
+            ) n ON n.fkContentTypeID = ct.pkID
+            ORDER BY ct.Name
+            """;
+    }
 
-    // A scan of tblContent: only for the commands that show the counts, not for every model load.
-    private const string TypesWithInstancesSql = """
-        SELECT ct.pkID, ct.ContentTypeGUID, ct.Name, ct.DisplayName, ct.Description, ct.ContentType, ct.Base,
-               ct.ModelType, ISNULL(n.Instances, 0) AS Instances
-        FROM tblContentType ct
-        LEFT JOIN (
-            SELECT fkContentTypeID, COUNT(*) AS Instances
-            FROM tblContent
-            WHERE Deleted = 0
-            GROUP BY fkContentTypeID
-        ) n ON n.fkContentTypeID = ct.pkID
-        ORDER BY ct.Name
+    /// <summary>CMS 13: which contract (interface) each content type implements, by the types' ids.</summary>
+    private const string ContractsSql = """
+        SELECT t.pkID AS TypeId, c.Name AS Contract
+        FROM tblContentTypeContract tc
+        JOIN tblContentType t ON t.ContentTypeGUID = tc.ContentTypeID
+        JOIN tblContentType c ON c.ContentTypeGUID = tc.ContractID
+        ORDER BY c.Name
         """;
 
     internal static string PropertiesSql(CmsSchema schema) => $"""
@@ -43,17 +64,38 @@ public static class ContentTypeReader
     private const int CultureSpecificFlag = 4;
 
     /// <param name="countInstances">Also count each type's content (<see cref="ContentTypeInfo.Instances"/>).</param>
-    public static Task<IReadOnlyList<ContentTypeInfo>> ListAsync(CmsDatabase db, CancellationToken cancellationToken, bool countInstances = false) =>
-        db.QueryAsync(countInstances ? TypesWithInstancesSql : TypesSql, r => new ContentTypeInfo(
-            r.GetInt32("pkID"),
-            r.GetGuid("ContentTypeGUID"),
-            r.GetString("Name"),
-            r.GetStringOrNull("DisplayName"),
-            r.GetStringOrNull("Description"),
-            ContentKinds.From(r.GetInt32("ContentType"), r.GetStringOrNull("Base")),
-            r.GetStringOrNull("Base"),
-            r.GetStringOrNull("ModelType"),
-            r.GetInt32OrNull("Instances")), cancellationToken);
+    public static async Task<IReadOnlyList<ContentTypeInfo>> ListAsync(CmsDatabase db, CancellationToken cancellationToken, bool countInstances = false)
+    {
+        var schema = await db.SchemaAsync(cancellationToken);
+        var types = await db.QueryAsync(TypesSql(schema, countInstances), r =>
+        {
+            var behaviors = schema.Compositions ? ContentKinds.Behaviors(r.GetStringOrNull("CompositionBehavior")) : [];
+            var contract = schema.Compositions && r.GetBooleanOrNull("IsContract") == true;
+            return new ContentTypeInfo(
+                r.GetInt32("pkID"),
+                r.GetGuid("ContentTypeGUID"),
+                r.GetString("Name"),
+                r.GetStringOrNull("DisplayName"),
+                r.GetStringOrNull("Description"),
+                ContentKinds.From(r.GetInt32("ContentType"), r.GetStringOrNull("Base"), behaviors, contract),
+                r.GetStringOrNull("Base"),
+                r.GetStringOrNull("ModelType"),
+                r.GetInt32OrNull("Instances"))
+            {
+                SyncedVersion = schema.Compositions ? r.GetStringOrNull("SyncedVersion") : null,
+                Source = schema.Compositions && r.GetStringOrNull("Source") is { Length: > 0 } source ? source : null,
+                CompositionBehaviors = behaviors,
+                Blueprints = countInstances && schema.Blueprints && r.GetInt32OrNull("Blueprints") is > 0 and var blueprints ? blueprints : null,
+            };
+        }, cancellationToken);
+        if (!schema.Compositions)
+        {
+            return types;
+        }
+        var contracts = (await db.QueryAsync(ContractsSql, r => (TypeId: r.GetInt32("TypeId"), Contract: r.GetString("Contract")), cancellationToken))
+            .ToLookup(c => c.TypeId, c => c.Contract);
+        return types.Select(t => contracts[t.Id].Any() ? t with { Contracts = contracts[t.Id].ToList() } : t).ToList();
+    }
 
     /// <summary>
     /// For each property that isn't in its type's code (<c>ExistsOnModel = 0</c>): how many content items and versions hold

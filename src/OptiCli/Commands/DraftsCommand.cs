@@ -14,7 +14,7 @@ internal static class DraftsCommand
     {
         var since = new Option<string?>("--since") { Description = "Only drafts saved on or after this UTC date (yyyy-MM-dd or yyyy-MM-ddTHH:mm:ss).", HelpName = "date" };
         var by = new Option<string?>("--by") { Description = "Only drafts saved by a user whose name contains this.", HelpName = "user" };
-        var kind = new Option<string?>("--kind") { Description = "Only content of this kind.", HelpName = "page|block|media|folder|other" };
+        var kind = new Option<string?>("--kind") { Description = "Only content of this kind: page, block, media, folder or other; on CMS 13 also experience, section or element.", HelpName = "kind" };
         kind.AcceptOnlyFromAmong(Enum.GetNames<ContentKind>().Select(n => n.ToLowerInvariant()).ToArray());
         var type = new Option<string?>("--type") { Description = "Only content of this type (name or GUID).", HelpName = "type" };
         var content = new ContentOptions();

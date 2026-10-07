@@ -14,7 +14,11 @@ namespace OptiCli.Core.Data;
 /// <param name="Applications">Sites are applications (<c>tblApplication</c>, <c>tblApplicationHost</c>); <c>tblSiteDefinition</c> is then empty or stale.</param>
 /// <param name="Variations">Versions can belong to a content variation (<c>tblWorkContent.fkVariationID</c>).</param>
 /// <param name="Blueprints">Content can be a blueprint (<c>tblContent.Blueprint</c>).</param>
-public sealed record CmsSchema(int? Version, bool BlockTypeOnPropertyDefinition, bool Applications, bool Variations, bool Blueprints)
+/// <param name="Compositions">
+/// Content types have composition behaviours and can be contracts (<c>tblContentType.CompositionBehavior</c>,
+/// <c>IsContract</c>, <c>Source</c>, <c>tblContentTypeContract</c>): CMS 13's Visual Builder.
+/// </param>
+public sealed record CmsSchema(int? Version, bool BlockTypeOnPropertyDefinition, bool Applications, bool Variations, bool Blueprints, bool Compositions = false)
 {
     /// <summary>The first CMS 13 schema version (CMS 13.0.0); CMS 12 ends at 8023.</summary>
     public const int FirstCms13Version = 21000;
@@ -23,7 +27,7 @@ public sealed record CmsSchema(int? Version, bool BlockTypeOnPropertyDefinition,
     public static readonly CmsSchema Cms12 = new(null, false, false, false, false);
 
     /// <summary>A CMS 13 schema, for tests.</summary>
-    public static readonly CmsSchema Cms13 = new(FirstCms13Version, true, true, true, true);
+    public static readonly CmsSchema Cms13 = new(FirstCms13Version, true, true, true, true, true);
 
     internal const string Sql = """
         DECLARE @v int;
@@ -32,7 +36,9 @@ public sealed record CmsSchema(int? Version, bool BlockTypeOnPropertyDefinition,
                CONVERT(bit, CASE WHEN COL_LENGTH(N'dbo.tblPropertyDefinition', N'ItemTypeID') IS NULL THEN 0 ELSE 1 END) AS ItemTypeID,
                CONVERT(bit, CASE WHEN OBJECT_ID(N'dbo.tblApplication', N'U') IS NULL OR OBJECT_ID(N'dbo.tblApplicationHost', N'U') IS NULL THEN 0 ELSE 1 END) AS Applications,
                CONVERT(bit, CASE WHEN COL_LENGTH(N'dbo.tblWorkContent', N'fkVariationID') IS NULL THEN 0 ELSE 1 END) AS Variations,
-               CONVERT(bit, CASE WHEN COL_LENGTH(N'dbo.tblContent', N'Blueprint') IS NULL THEN 0 ELSE 1 END) AS Blueprints
+               CONVERT(bit, CASE WHEN COL_LENGTH(N'dbo.tblContent', N'Blueprint') IS NULL THEN 0 ELSE 1 END) AS Blueprints,
+               CONVERT(bit, CASE WHEN COL_LENGTH(N'dbo.tblContentType', N'CompositionBehavior') IS NULL OR COL_LENGTH(N'dbo.tblContentType', N'IsContract') IS NULL
+                                   OR COL_LENGTH(N'dbo.tblContentType', N'Source') IS NULL OR OBJECT_ID(N'dbo.tblContentTypeContract', N'U') IS NULL THEN 0 ELSE 1 END) AS Compositions
         """;
 
     /// <summary>The CMS major the schema belongs to (12 or 13), from the version, else from what the tables look like.</summary>

@@ -1,5 +1,6 @@
 using System.CommandLine;
 using OptiCli.Cli;
+using OptiCli.Core.Cms;
 using OptiCli.Core.Content;
 
 namespace OptiCli.Commands;
@@ -42,7 +43,9 @@ internal static class UrlCommand
 
             var kind = session.Model.Kind(header.TypeId);
             var note = languages.All(l => l.Path is null)
-                ? header.Deleted ? "The item is in the recycle bin." : $"A {kind.ToString().ToLowerInvariant()} has no URL of its own; only pages and media do."
+                ? header.Deleted ? "The item is in the recycle bin."
+                    : header.Blueprint ? "A blueprint is a template new content is made from (CMS 13's Visual Builder), not content visitors see: it has no URL."
+                    : $"{(kind is ContentKind.Experience or ContentKind.Element ? "An" : "A")} {kind.Name()} has no URL of its own; only pages{(session.Model.Schema.Compositions ? ", experiences" : "")} and media do."
                 : null;
             return new CommandResult(new Urls(ContentIdentity.RefFor(header.Id), header.Guid, session.Model.TypeName(header.TypeId), languages, note));
         });

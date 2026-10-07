@@ -23,7 +23,10 @@ public static class AllowedInQuery
     private static readonly Dictionary<ContentKind, string[]> KindBases = new()
     {
         [ContentKind.Page] = ["PageData"],
+        [ContentKind.Experience] = ["ExperienceData", "PageData"],
         [ContentKind.Block] = ["BlockData"],
+        [ContentKind.Section] = ["SectionData", "BlockData"],
+        [ContentKind.Element] = ["BlockData"],
         [ContentKind.Media] = ["MediaData", "IContentMedia"],
         [ContentKind.Folder] = ["ContentFolder"],
     };

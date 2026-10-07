@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using OptiCli.Core.Cms;
 using OptiCli.Core.Data;
 using OptiCli.Core.Errors;
 using OptiCli.Core.Properties;
@@ -74,7 +75,7 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
         // Page settings come from the version shown, or the branch's primary version. Sorting isn't culture-specific:
         // a version of another branch may hold a stale copy.
         var kind = Model.Kind(header.TypeId);
-        var isPage = kind == Cms.ContentKind.Page;
+        var isPage = kind.IsPage();
         var facts = shownVersion ?? (isPage && row?.VersionId is { } primary ? await VersionReader.ByIdAsync(db, Model, primary, cancellationToken) : null);
         var sortingVersion = facts?.LanguageId == header.MasterLanguageId ? facts : null;
         var shortcut = isPage ? await ShortcutAsync(facts, branchLanguage, cancellationToken) : null;
@@ -82,7 +83,7 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
         {
             notes.Add($"This page fetches data from {shortcut.To?.Ref ?? "another page"}: the site shows that page's values for the properties left empty here. These are the page's own values, which set changes.");
         }
-        var category = kind is Cms.ContentKind.Page or Cms.ContentKind.Block or Cms.ContentKind.Media
+        var category = kind.IsPage() || kind.IsBlock() || kind == Cms.ContentKind.Media
             ? await PropertyRowReader.BuiltInCategoriesAsync(db, contentId, branch, shownVersion?.Id, cancellationToken)
             : [];
         if (category.Count == 0 && shownVersion?.Variation is not null && row is { Status: VersionStatus.Published, VersionId: { } publishedVersion })
@@ -113,7 +114,7 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
             identity.Language,
             identity.Status!,
             identity.Url,
-            Model.Kind(header.TypeId).ToString().ToLowerInvariant(),
+            kind.Name(),
             ContentIdentity.RefFor(contentId, shownVersion?.Id ?? row?.VersionId),
             shownVersion?.Variation,
             Model.Language(header.MasterLanguageId)?.DisplayCode,

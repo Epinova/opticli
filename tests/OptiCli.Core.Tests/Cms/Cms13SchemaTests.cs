@@ -68,12 +68,27 @@ public class Cms13SchemaTests
     }
 
     [Theory]
-    [InlineData(2, "Experience", ContentKind.Page)]
-    [InlineData(2, "Section", ContentKind.Block)]
-    [InlineData(2, null, ContentKind.Other)]
-    [InlineData(1, "Block", ContentKind.Block)]
-    public void Visual_builder_types_have_the_kind_of_what_they_are(int contentType, string? typeBase, ContentKind kind) =>
-        Assert.Equal(kind, ContentKinds.From(contentType, typeBase));
+    [InlineData(2, "Experience", null, false, ContentKind.Experience)]
+    [InlineData(2, "Section", "SectionEnabled", false, ContentKind.Section)]
+    [InlineData(2, null, null, true, ContentKind.Contract)]
+    [InlineData(2, null, null, false, ContentKind.Other)]
+    [InlineData(1, "Block", null, false, ContentKind.Block)]
+    [InlineData(1, "Block", "ElementEnabled", false, ContentKind.Element)]
+    [InlineData(1, "Block", "SectionEnabled, ElementEnabled", false, ContentKind.Element)]
+    [InlineData(1, "Block", "SectionEnabled", false, ContentKind.Block)]
+    [InlineData(1, null, "ElementEnabled", false, ContentKind.Element)]
+    public void Visual_builder_types_have_the_kind_of_what_they_are(int contentType, string? typeBase, string? behaviors, bool contract, ContentKind kind) =>
+        Assert.Equal(kind, ContentKinds.From(contentType, typeBase, ContentKinds.Behaviors(behaviors), contract));
+
+    [Fact]
+    public void Experiences_count_as_pages_and_sections_and_elements_as_blocks()
+    {
+        Assert.True(ContentKind.Experience.IsPage());
+        Assert.True(ContentKind.Section.IsBlock());
+        Assert.True(ContentKind.Element.IsBlock());
+        Assert.False(ContentKind.Contract.IsPage() || ContentKind.Contract.IsBlock());
+        Assert.Equal(["Page", "Block", "Media", "Folder", "Other"], Enum.GetNames<ContentKind>().Take(5));
+    }
 
     private static SiteReader.ApplicationRow Application(int id, string name, string display, bool isDefault = false, string? entry = "6", int? assets = 3) =>
         new(id, name, display, ApplicationTypes.InProcessWebsite, entry, assets, isDefault, "Start", "en");

@@ -298,7 +298,7 @@ public sealed class WriteExecutor(
             throw new UsageException("Give exactly one of --for <ref> (the content's \"For this page\" folder) or --parent <folder>.");
         }
         var type = session.Model.RequireType(op.Type);
-        if (type.Kind != ContentKind.Block)
+        if (!type.Kind.IsBlock())
         {
             throw new UsageException($"{type.Name} is a {type.Kind.ToString().ToLowerInvariant()} type, not a block type.", "Use `opticli create` for pages and folders.");
         }
@@ -499,7 +499,7 @@ public sealed class WriteExecutor(
             WHERE f.ContentOwnerID = @owner AND f.Deleted = 0 AND a.Deleted = 0
             """, r => r.GetInt32(0), cancellationToken, new SqlParameter("@owner", owner.Guid));
         var headers = await ContentHeaderReader.ByIdsAsync(session.Db, ids, cancellationToken);
-        return headers.Values.Where(h => session.Model.Kind(h.TypeId) == ContentKind.Block).OrderBy(h => h.Id).ToList();
+        return headers.Values.Where(h => session.Model.Kind(h.TypeId).IsBlock()).OrderBy(h => h.Id).ToList();
     }
 
     /// <summary>
@@ -882,7 +882,7 @@ public sealed class WriteExecutor(
         var warnings = new List<string>();
         if (content.Status == "published")
         {
-            warnings.Add(RestoredLiveWarning(WriteOutput.Id(content.Id), session.Model.Kind(header.TypeId) == Cms.ContentKind.Page, result.Parent, dryRun));
+            warnings.Add(RestoredLiveWarning(WriteOutput.Id(content.Id), session.Model.Kind(header.TypeId).IsPage(), result.Parent, dryRun));
         }
         if (op.To is not null && result.StoredParent is { } stored && stored != result.Parent)
         {

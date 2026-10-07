@@ -144,7 +144,7 @@ public sealed class SiteMap(IReadOnlyList<SiteInfo> sites, IReadOnlyList<Languag
     /// </remarks>
     public ContentUrl? Compose(IReadOnlyList<int> pathIncludingSelf, Func<int, string?> segmentOf, LanguageBranch? language, ContentKind kind)
     {
-        if (kind == ContentKind.Page)
+        if (kind.IsPage())
         {
             if (Nearest(pathIncludingSelf) is not (var site, var at) || Segments(pathIncludingSelf, at, segmentOf) is not { } segments)
             {

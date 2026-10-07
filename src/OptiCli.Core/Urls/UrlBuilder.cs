@@ -47,7 +47,7 @@ public sealed class UrlBuilder(CmsDatabase db, CmsModel model)
             }
 
             var targets = list
-                .Where(h => model.Kind(h.TypeId) == ContentKind.Page)
+                .Where(h => model.Kind(h.TypeId).IsPage())
                 .SelectMany(h => h.Languages.Values)
                 .Select(row => row.Link?.Guid)
                 .OfType<Guid>()
@@ -72,9 +72,9 @@ public sealed class UrlBuilder(CmsDatabase db, CmsModel model)
             return null;
         }
         var kind = model.Kind(item.TypeId);
-        var effective = kind == ContentKind.Page ? language ?? model.Language(item.MasterLanguageId) : null;
+        var effective = kind.IsPage() ? language ?? model.Language(item.MasterLanguageId) : null;
 
-        if (kind == ContentKind.Page && item.LanguageRow(effective?.Id)?.Link is { } link && hops < MaxLinkHops
+        if (kind.IsPage() && item.LanguageRow(effective?.Id)?.Link is { } link && hops < MaxLinkHops
             && _ids.TryGetValue(link.Guid, out var targetId) && _headers.TryGetValue(targetId, out var target))
         {
             var url = UrlOf(target, effective, hops + 1);
@@ -89,5 +89,5 @@ public sealed class UrlBuilder(CmsDatabase db, CmsModel model)
     private string? SegmentOf(int id, LanguageBranch? language) =>
         _headers.TryGetValue(id, out var header) ? header.RoutingRow(language?.Id)?.UrlSegment : null;
 
-    private bool IsRoutable(ContentHeader item) => model.Kind(item.TypeId) is ContentKind.Page or ContentKind.Media or ContentKind.Folder;
+    private bool IsRoutable(ContentHeader item) => model.Kind(item.TypeId) is var kind && (kind.IsPage() || kind is ContentKind.Media or ContentKind.Folder);
 }

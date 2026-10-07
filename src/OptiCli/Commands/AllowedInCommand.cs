@@ -11,7 +11,7 @@ internal static class AllowedInCommand
     public static Command Create(GlobalOptions options)
     {
         var name = new Argument<string>("type") { Description = "The content type that should fit (name, class name or GUID), e.g. a block type." };
-        var kind = new Option<string?>("--kind") { Description = "Only properties of content types of this kind (e.g. page).", HelpName = "page|block|media|folder|other" };
+        var kind = new Option<string?>("--kind") { Description = "Only properties of content types of this kind: page, block, media, folder or other; on CMS 13 also experience, section, element or contract.", HelpName = "kind" };
         kind.AcceptOnlyFromAmong(Enum.GetNames<ContentKind>().Select(n => n.ToLowerInvariant()).ToArray());
         var explicitOnly = new Option<bool>("--explicit") { Description = "Only properties whose [AllowedTypes] names the type or one of its base classes (leave out unrestricted ones)." };
         var list = new ListOptions(options);
