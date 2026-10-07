@@ -32,7 +32,8 @@ jobs:
         run: dotnet build opticli.slnx -c Release
 
       # LocalDB (the CMS templates' connection string) exists only on Windows. windows-latest has it as a Visual Studio
-      # component; install it if it's missing, start the default instance, and make LocalDbTests fail rather than skip.
+      # component; only if it's missing, Microsoft's MSI is installed (pinned SHA-256). Start the default instance, and make
+      # LocalDbTests fail rather than skip.
       - name: Start SQL Server Express LocalDB
         if: runner.os == 'Windows'
         shell: pwsh

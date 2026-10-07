@@ -237,6 +237,8 @@ content it shows. `--at` and `--display` only apply to `add`; `--display` is che
     is stored as a permanent link, like the editor stores it.
   - Category property: category names (`CategoryName` in admin mode, or the display name) or ids, as an array or
     comma-separated: `Topics=News,Events` or `{"Topics":["News","Events"]}`. `Topics=` clears it.
+- PageType property (e.g. a page list's type filter, which `get` shows as the type's name): the page type's name, id or
+  GUID, `PageTypeFilter=ArticlePage`. Another kind of type is a `validation` error.
 - A value may also be given as `get` shows it, `{"type": ..., "value": ...}` (references, links and local blocks as
   `get` shows them too): the CLI unwraps it. A value `get` cut short (`truncated`) is refused: read it with `--full`.
 - Property names are checked against the content type before anything is sent; a typo fails with a suggestion.

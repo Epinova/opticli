@@ -216,7 +216,16 @@ internal static class ServeCommand
 
         if (!foreground)
         {
-            var started = await SiteLauncher.StartBackgroundAsync(store, request, startLock, cancellationToken);
+            AgentStatus started;
+            try
+            {
+                started = await SiteLauncher.StartBackgroundAsync(store, request, startLock, cancellationToken);
+            }
+            finally
+            {
+                // The site listens on its ports now (or didn't start): the claims have done their job.
+                PortClaims.ForUser.ReleaseAll();
+            }
             if (request.HttpsPort is null && started.Url is { } url && await RedirectsToHttpsAsync(url, cancellationToken))
             {
                 warnings.Add($"The site redirects {url} to HTTPS, so it can't be browsed there (opticli itself is unaffected). `opticli serve --stop`, then `opticli serve --https` adds an HTTPS address.");
@@ -240,6 +249,7 @@ internal static class ServeCommand
         await SiteLauncher.RunForegroundAsync(store, request, startLock, Console.IsOutputRedirected ? Console.Error : Console.Out,
             ready =>
             {
+                PortClaims.ForUser.ReleaseAll();
                 Console.Error.WriteLine($"[opticli] agent ready at {ready.Url}{(ready.BrowseUrl is { } browse ? $", browse the site at {browse}" : "")} (pid {ready.Pid}, database '{ready.Database?.Name}'); Ctrl+C stops the site.");
                 if (DriftWarning(store, started: true) is { } drift)
                 {
@@ -247,6 +257,7 @@ internal static class ServeCommand
                 }
             },
             cancellationToken);
+        PortClaims.ForUser.ReleaseAll();
         return new CommandResult(new { stopped = true });
     }
 

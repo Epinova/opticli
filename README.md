@@ -1331,8 +1331,9 @@ tests/fixtures/mcp/serve.sh path/to/AlloyMcp --port 5181 --stop
 ```
 
 [CI](.github/workflows/ci.yml) runs the unit tests on Linux, Windows and macOS for every push and pull request. On
-Windows it installs and starts SQL Server Express LocalDB, and `LocalDbTests` must pass there (`OPTICLI_REQUIRE_LOCALDB`
-turns its skip into a failure).
+Windows it starts SQL Server Express LocalDB (the image's; it installs Microsoft's MSI, checked against a pinned SHA-256,
+only when the image lacks it), and `LocalDbTests` must pass there (`OPTICLI_REQUIRE_LOCALDB` turns its skip into a
+failure).
 Issues and pull requests are welcome. Please run the unit tests before sending a change. When a change touches
 reads, also run the integration test against a site you have.
 

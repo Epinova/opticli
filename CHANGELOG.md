@@ -65,6 +65,10 @@ again to update the skill.
 
 ### Fixed
 
+- A PageType property (a page list's type filter) takes the page type's name, as `get` shows it, as well as its id or
+  GUID; another kind of content type is a `validation` error instead of an internal cast error.
+- Two `serve`s started at the same moment (different sites, or separate state) could pick the same free port, and one
+  site then failed to start. A starting `serve` now holds a lock on the port it picked until its site listens.
 - `get` showed `startPublish: null` for content whose current version is scheduled; it shows the scheduled time.
 
 ### Development
@@ -77,7 +81,8 @@ again to update the skill.
   mapper.
 - `OptiCli.Agent.Tests` runs on both builds (net8.0 for CMS 12, net10.0 for CMS 13). CI and the release workflow build
   and pack both agents, `check-package.sh` checks that each is there and built for its .NET, and the Windows CI job
-  installs SQL Server Express LocalDB and requires `LocalDbTests` to pass (`OPTICLI_REQUIRE_LOCALDB`).
+  starts SQL Server Express LocalDB (installing Microsoft's MSI, hash-checked, only when the image lacks it) and requires
+  `LocalDbTests` to pass (`OPTICLI_REQUIRE_LOCALDB`).
 
 ## 0.14.0 (6 October 2026)
 

@@ -503,6 +503,29 @@ internal sealed class PropertyWriter(
             : "~/" + path;
     }
 
+    /// <summary>
+    /// A page type for a PageType property (e.g. a page list's type filter), by name, id or GUID. Only a page type: the
+    /// property's model gets it as a <see cref="PageType"/>, which another content type can't be cast to.
+    /// </summary>
+    private int PageTypeId(string what, JsonElement value)
+    {
+        var text = (value.ValueKind == JsonValueKind.Number ? value.GetRawText() : value.GetString() ?? "").Trim();
+        var types = call.Service<IContentTypeRepository>();
+        var type = int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? types.Load(id)
+            : Guid.TryParse(text, out var guid) ? types.Load(guid)
+            : types.Load(text);
+        if (type is null)
+        {
+            var names = types.List().OfType<PageType>().Select(t => t.Name).Order(StringComparer.OrdinalIgnoreCase).ToList();
+            var suggestion = Suggestions.DidYouMean(text, names);
+            throw AgentException.Usage($"No content type '{text}' for {what}, which takes a page type.",
+                $"{(suggestion is null ? "" : suggestion + " ")}Page types: {string.Join(", ", names)}.");
+        }
+        return type is PageType
+            ? type.ID
+            : throw AgentException.Invalid([new ValidationIssue(what, $"{type.Name} isn't a page type; {what} takes a page type (by name or id).")]);
+    }
+
     /// <summary>Above this, a hint doesn't list every selectable category: a site can have hundreds.</summary>
     private const int MaxListedCategories = 30;
 
@@ -602,6 +625,10 @@ internal sealed class PropertyWriter(
                 return;
             case JsonValueKind.Number when !call.MayReferenceUnchecked && property is PropertyContentReference:
                 property.ParseToSelf(locator.ResolveContent(value.GetRawText(), $"reference for {property.Name}").ToString());
+                return;
+            case JsonValueKind.String or JsonValueKind.Number when property is PropertyPageType:
+                // By name (as get shows it), id or GUID; ParseToSelf takes an id only, of any content type.
+                property.Value = PageTypeId(property.Name, value);
                 return;
             case JsonValueKind.String:
                 property.ParseToSelf(value.GetString());

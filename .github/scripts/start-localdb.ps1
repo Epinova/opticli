@@ -1,7 +1,13 @@
 # Makes sure SQL Server Express LocalDB is installed and its default instance (MSSQLLocalDB) runs, for LocalDbTests on the
-# Windows CI job. GitHub's windows-latest image has LocalDB as a Visual Studio component; when it isn't there, it is
-# installed with Chocolatey (which the image has). Fails the step when LocalDB still isn't usable.
+# Windows CI job. GitHub's windows-latest image has LocalDB as a Visual Studio component, which is used when it is there.
+# Only when it isn't, Microsoft's own SqlLocalDB.msi (SQL Server 2022 LocalDB, 16.0.1000.6) is downloaded from
+# download.microsoft.com, checked against a pinned SHA-256, and installed. Fails the step when anything doesn't match or
+# LocalDB still isn't usable.
 $ErrorActionPreference = 'Stop'
+
+# The MSI and its SHA-256, as Chocolatey's sqllocaldb 16.0.1000.6 package pins them (its moderation verifies the download).
+$msiUrl = 'https://download.microsoft.com/download/3/8/d/38de7036-2433-4207-8eae-06e247e17b25/SqlLocalDB.msi'
+$msiSha256 = '224D483992EF60368DAC70CEA174DCFAF43A3CA06ADA331C67DC6119A26490F6'
 
 function Find-SqlLocalDb {
   $onPath = Get-Command SqlLocalDB.exe -ErrorAction SilentlyContinue
@@ -12,11 +18,27 @@ function Find-SqlLocalDb {
     Select-Object -First 1 -ExpandProperty FullName
 }
 
+function Install-SqlLocalDb {
+  $msi = Join-Path ([System.IO.Path]::GetTempPath()) 'SqlLocalDB.msi'
+  Write-Host "LocalDB not found; downloading $msiUrl"
+  Invoke-WebRequest -Uri $msiUrl -OutFile $msi -UseBasicParsing
+  $actual = (Get-FileHash -Path $msi -Algorithm SHA256).Hash
+  if ($actual -ne $msiSha256) {
+    Remove-Item $msi -Force
+    throw "SqlLocalDB.msi has SHA-256 $actual, expected ${msiSha256}: not installing it. Microsoft may have replaced the file; check it and update the pinned hash."
+  }
+  $log = Join-Path ([System.IO.Path]::GetTempPath()) 'SqlLocalDB-install.log'
+  $install = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @('/i', "`"$msi`"", '/qn', '/norestart', '/l*v', "`"$log`"", 'IACCEPTSQLLOCALDBLICENSETERMS=YES')
+  # 3010 and 1641: installed, a restart is wanted (LocalDB runs without one).
+  if ($install.ExitCode -notin 0, 3010, 1641) {
+    Get-Content $log -Tail 40 -ErrorAction SilentlyContinue
+    throw "msiexec /i SqlLocalDB.msi failed with exit code $($install.ExitCode)."
+  }
+}
+
 $sqlLocalDb = Find-SqlLocalDb
 if (-not $sqlLocalDb) {
-  Write-Host 'LocalDB not found; installing it with Chocolatey.'
-  choco install sqllocaldb -y --no-progress
-  if ($LASTEXITCODE -ne 0) { throw "choco install sqllocaldb failed ($LASTEXITCODE)." }
+  Install-SqlLocalDb
   $sqlLocalDb = Find-SqlLocalDb
   if (-not $sqlLocalDb) { throw 'SqlLocalDB.exe still not found after installing LocalDB.' }
 }

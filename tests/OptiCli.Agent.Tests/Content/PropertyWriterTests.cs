@@ -37,6 +37,70 @@ public class PropertyWriterTests
         return (new PropertyWriter(call, new ContentLocator(call), blocks, null!, null!, null!), call);
     }
 
+    private static readonly ContentType[] PageTypeChoices =
+    [
+        new PageType { ID = 19, GUID = Guid.Parse("9ccc8a41-5c8c-4be0-8e73-520ff3de8267"), Name = "StandardPage" },
+        new PageType { ID = 20, Name = "ArticlePage" },
+        new ContentType { ID = 30, Name = "TeaserBlock" },
+    ];
+
+    /// <summary>A developer's writer whose site has <see cref="PageTypeChoices"/>, and a block with a PageType property.</summary>
+    private static (PropertyWriter Writer, LinksBlock Block) PageTypeWriter()
+    {
+        var types = Recorder<IContentTypeRepository>.Create();
+        types.Recorder.Answer = (method, args) => (method.Name, args) switch
+        {
+            ("Load", [int id]) => PageTypeChoices.FirstOrDefault(t => t.ID == id),
+            ("Load", [Guid guid]) => PageTypeChoices.FirstOrDefault(t => t.GUID == guid),
+            ("Load", [string name]) => PageTypeChoices.FirstOrDefault(t => t.Name.Equals(name, StringComparison.OrdinalIgnoreCase)),
+            ("List", []) => PageTypeChoices,
+            _ => null,
+        };
+        var services = new ServiceCollection()
+            .AddSingleton(types.Proxy)
+            .AddSingleton(Recorder<IContentRepository>.Create().Proxy)
+            .AddSingleton(Recorder<IContentVersionRepository>.Create().Proxy)
+            .AddSingleton(Recorder<ILanguageBranchRepository>.Create().Proxy)
+            .AddSingleton(Recorder<ITabDefinitionRepository>.Create().Proxy)
+            .AddSingleton<IPrincipalAccessor>(new CmsCallTests.PrincipalAccessor(new GenericPrincipal(new GenericIdentity("developer"), [])))
+            .BuildServiceProvider();
+        var call = new CmsCall(services, CancellationToken.None, CmsCaller.Developer);
+        var block = Block();
+        block.Property.Add("Filter", new PropertyPageType { PropertyDefinitionID = 4 });
+        return (new PropertyWriter(call, new ContentLocator(call), null!, null!, null!, null!), block);
+    }
+
+    [Theory]
+    [InlineData("\"StandardPage\"")]
+    [InlineData("\"standardpage\"")]
+    [InlineData("19")]
+    [InlineData("\"19\"")]
+    [InlineData("\"9ccc8a41-5c8c-4be0-8e73-520ff3de8267\"")]
+    public void A_PageType_property_takes_the_page_type_by_name_as_get_shows_it_or_by_id_or_GUID(string json)
+    {
+        var (writer, block) = PageTypeWriter();
+
+        writer.Apply(block, new Dictionary<string, JsonElement> { ["Filter"] = JsonDocument.Parse(json).RootElement });
+
+        Assert.Equal(19, block.Property["Filter"].Value);
+    }
+
+    [Fact]
+    public void A_PageType_property_refuses_another_kind_of_type_as_a_validation_error_and_names_an_unknown_one()
+    {
+        var (writer, block) = PageTypeWriter();
+
+        var notAPage = Assert.Throws<AgentException>(() => writer.Apply(block, new Dictionary<string, JsonElement> { ["Filter"] = JsonDocument.Parse("\"TeaserBlock\"").RootElement }));
+        Assert.Equal(AgentErrorCodes.Validation, notAPage.Code);
+        Assert.Contains("TeaserBlock isn't a page type", Assert.Single(notAPage.Validation!).Message);
+        Assert.Equal(AgentErrorCodes.Validation, Assert.Throws<AgentException>(() => writer.Apply(block, new Dictionary<string, JsonElement> { ["Filter"] = JsonDocument.Parse("30").RootElement })).Code);
+
+        var unknown = Assert.Throws<AgentException>(() => writer.Apply(block, new Dictionary<string, JsonElement> { ["Filter"] = JsonDocument.Parse("\"StandardPag\"").RootElement }));
+        Assert.Equal(AgentErrorCodes.Usage, unknown.Code);
+        Assert.Contains("StandardPage", unknown.Hint);
+        Assert.DoesNotContain("TeaserBlock", unknown.Hint);
+    }
+
     private static LinksBlock Block()
     {
         var block = new LinksBlock();
