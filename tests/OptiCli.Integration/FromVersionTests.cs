@@ -26,15 +26,9 @@ public sealed class FromVersionTests
         var live = Assert.IsType<WriteOutput>(created.Output).Version!;
         try
         {
-            // The agent saves only as opticli; the draft becomes someone else's before the agent lists the versions again
-            // (the CMS caches the list until the next save).
+            // The agent saves only as opticli; the edge-case fixture then saves the draft again as someone else.
             var draft = Assert.IsType<WriteOutput>((await writes.RunAsync(new SetOperation(page, new JsonObject { ["MetaTitle"] = "Their draft" }), dryRun: false, cancellationToken)).Output).Version!;
-            if (!site.SeesSavedByChangedInSql)
-            {
-                return;
-            }
-            await site.Session.Db.QueryAsync("UPDATE tblWorkContent SET ChangedByName = 'someone-else@example.com' WHERE pkID = @version; SELECT @@ROWCOUNT",
-                r => r.GetInt32(0), cancellationToken, new SqlParameter("@version", VersionId(draft)));
+            Assert.True(await site.HandOverAsync(draft, cancellationToken), "The edge-case site's EdgeCasesFixture.cs has no /opticli-fixture/hand-over (run setup.sh again).");
 
             // Based on the latest version, a publish would put their draft live.
             var change = new SetOperation(page, new JsonObject { ["MetaDescription"] = "Our change" }) { From = FromVersion.Published };
@@ -45,7 +39,7 @@ public sealed class FromVersionTests
             Assert.Equal(live, dryOutput.BaseVersion);
             Assert.Null(dryOutput.PendingDraft);
             Assert.Equal(["MetaDescription"], dryOutput.Changes.Select(c => c.Property));
-            Assert.Equal((draft, "someone-else@example.com", true), (dryOutput.LeftOut?[0].Version, dryOutput.LeftOut?[0].SavedBy, dryOutput.LeftOut?[0].Primary));
+            Assert.Equal((draft, SiteUnderTest.SomeoneElse, true), (dryOutput.LeftOut?[0].Version, dryOutput.LeftOut?[0].SavedBy, dryOutput.LeftOut?[0].Primary));
             Assert.Contains(dry.Warnings, w => w.StartsWith($"Based on {live} (the published version), this would leave out the newer version {draft}", StringComparison.Ordinal));
 
             // The concurrency check stays: --base-version names a version that isn't the latest any more.
@@ -79,8 +73,7 @@ public sealed class FromVersionTests
 
             // Another draft of theirs, on top of what is live now.
             var second = Assert.IsType<WriteOutput>((await writes.RunAsync(new SetOperation(page, new JsonObject { ["MetaTitle"] = "Their second draft" }), dryRun: false, cancellationToken)).Output).Version!;
-            await site.Session.Db.QueryAsync("UPDATE tblWorkContent SET ChangedByName = 'someone-else@example.com' WHERE pkID = @version; SELECT @@ROWCOUNT",
-                r => r.GetInt32(0), cancellationToken, new SqlParameter("@version", VersionId(second)));
+            Assert.True(await site.HandOverAsync(second, cancellationToken));
 
             // In a plan, a later set builds on the change from the published version, and the publish is dry-run on it too;
             // without "from" the publish would put their draft live.

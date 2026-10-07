@@ -4,16 +4,27 @@
 // settings. Each is made once, and only once the plan's content exists, so setup.sh restarts the site after applying
 // the plan. The sites are made by Cms12Fixture.cs on CMS 12; on CMS 13, Cms13Fixture.cs makes the three hosts sites as
 // applications (with start pages of their own below the root) and no nested site, which CMS 13 can't have.
+// POST /opticli-fixture/hand-over (loopback only) saves a version again as another user, for the tests of someone else's
+// draft (opticli's agent only saves as itself).
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
+using System.Net;
+using System.Security.Principal;
 using EPiServer.Approvals;
 using EPiServer.Approvals.ContentApprovals;
+using EPiServer.Data.Entity;
+using EPiServer.DataAccess;
 using EPiServer.Framework;
 using EPiServer.Framework.DataAnnotations;
 using EPiServer.Framework.Initialization;
 using EPiServer.Personalization.VisitorGroups;
+using EPiServer.Security;
 using EPiServer.ServiceLocation;
 using EPiServer.Web;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace OptiCliEdgeCases;
 
@@ -170,5 +181,67 @@ public partial class EdgeCasesSetup : IInitializableModule
         settings.Save(new ContentLanguageSetting(root, "en", null, [], true));
         settings.Save(new ContentLanguageSetting(root, "sv", null, ["en"], true));
         Console.Error.WriteLine($"[edge-cases] created language settings on {root}");
+    }
+}
+
+/// <summary>
+/// <c>POST /opticli-fixture/hand-over?version=&lt;id_version&gt;&amp;user=&lt;name&gt;</c> from the machine itself: saves that
+/// version again, unchanged and as the same version, as <c>user</c>, so it becomes that user's draft the way an editor's
+/// save makes it (the CMS records the user and clears its cached version list). The tests of someone else's draft use
+/// it; opticli's agent only saves as itself.
+/// </summary>
+[InitializableModule]
+public class OptiCliHandOverFixture : IConfigurableModule
+{
+    public const string Path = "/opticli-fixture/hand-over";
+
+    public void ConfigureContainer(ServiceConfigurationContext context) =>
+        context.Services.AddTransient<IStartupFilter, Endpoint>();
+
+    public void Initialize(InitializationEngine context)
+    {
+    }
+
+    public void Uninitialize(InitializationEngine context)
+    {
+    }
+
+    private sealed class Endpoint : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            app.Use(async (context, nextMiddleware) =>
+            {
+                if (!context.Request.Path.Equals(Path, StringComparison.OrdinalIgnoreCase))
+                {
+                    await nextMiddleware();
+                    return;
+                }
+                if (!HttpMethods.IsPost(context.Request.Method) || context.Connection.RemoteIpAddress is not { } address || !IPAddress.IsLoopback(address)
+                    || !ContentReference.TryParse(context.Request.Query["version"], out var version) || version.WorkID <= 0
+                    || context.Request.Query["user"].ToString() is not { Length: > 0 } user)
+                {
+                    context.Response.StatusCode = StatusCodes.Status404NotFound;
+                    return;
+                }
+                var repository = context.RequestServices.GetRequiredService<IContentRepository>();
+                var accessor = context.RequestServices.GetRequiredService<IPrincipalAccessor>();
+                var principal = accessor.Principal;
+                accessor.Principal = new GenericPrincipal(new GenericIdentity(user), ["WebEditors"]);
+                try
+                {
+                    var content = (IContent)((IReadOnly)repository.Get<IContent>(version)).CreateWritableClone();
+                    // The CMS doesn't save an unchanged version's data; ChangedBy is what changes (to the saving user).
+                    ((IChangeTrackable)content).ChangedBy = user;
+                    repository.Save(content, SaveAction.CheckOut | SaveAction.ForceCurrentVersion, AccessLevel.NoAccess);
+                }
+                finally
+                {
+                    accessor.Principal = principal;
+                }
+                context.Response.StatusCode = StatusCodes.Status204NoContent;
+            });
+            next(app);
+        };
     }
 }

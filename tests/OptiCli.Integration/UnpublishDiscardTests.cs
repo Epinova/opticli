@@ -62,19 +62,13 @@ public sealed class UnpublishDiscardTests
             await writes.RunAsync(new PublishOperation(page), dryRun: false, cancellationToken);
             await Assert.ThrowsAsync<RefusedException>(() => writes.RunAsync(new DiscardOperation(page), dryRun: true, cancellationToken));
 
-            // The agent saves only as opticli; the draft becomes someone else's before the agent lists the versions again
-            // (the CMS caches the list until the next save).
+            // The agent saves only as opticli; the edge-case fixture then saves the draft again as someone else.
             var draft = Assert.IsType<WriteOutput>((await writes.RunAsync(new SetOperation(page, Name: "someone else's"), dryRun: false, cancellationToken)).Output);
-            if (!site.SeesSavedByChangedInSql)
-            {
-                return;
-            }
-            await site.Session.Db.QueryAsync("UPDATE tblWorkContent SET ChangedByName = 'someone-else@example.com' WHERE pkID = @version; SELECT @@ROWCOUNT",
-                r => r.GetInt32(0), cancellationToken, new SqlParameter("@version", int.Parse(draft.Version!.Split('_')[1], System.Globalization.CultureInfo.InvariantCulture)));
+            Assert.True(await site.HandOverAsync(draft.Version!, cancellationToken), "The edge-case site's EdgeCasesFixture.cs has no /opticli-fixture/hand-over (run setup.sh again).");
 
             var dry = await writes.RunAsync(new DiscardOperation(page), dryRun: true, cancellationToken);
             var output = Assert.IsType<WriteOutput>(dry.Output);
-            Assert.Equal((draft.Version, "someone-else@example.com"), (output.PendingDraft?.Version, output.PendingDraft?.SavedBy));
+            Assert.Equal((draft.Version, SiteUnderTest.SomeoneElse), (output.PendingDraft?.Version, output.PendingDraft?.SavedBy));
             Assert.Contains(output.Changes, c => c.Property == "Name");
             Assert.Contains(dry.Warnings, w => w.Contains("can't be undone", StringComparison.Ordinal));
             var stopped = await Assert.ThrowsAsync<ConflictException>(() => writes.RunAsync(new DiscardOperation(page), dryRun: false, cancellationToken));

@@ -134,22 +134,21 @@ public sealed class WriteRoundTripTests
             var draft = Assert.IsType<WriteOutput>((await writes.RunAsync(new SetOperation(media, stop), dryRun: false, cancellationToken)).Output);
             var rename = new SetOperation(media, Name: "renamed", Publish: true);
 
-            // opticli's own draft goes live without asking (checked from the database, which leaves the CMS's version
-            // list uncached for the change below).
+            // opticli's own draft goes live without asking.
             Assert.Null(Assert.IsType<WriteOutput>((await writes.RunAsync(new PublishOperation(media), dryRun: true, cancellationToken)).Output).PendingDraft);
 
-            // The agent saves only as opticli, so the draft becomes another user's in the database. The CMS caches
-            // version lists until the next save, so this has to come before the agent lists them again.
-            if (!site.SeesSavedByChangedInSql)
+            // The agent saves only as opticli, so the draft becomes another user's: saved again as them by the edge-case
+            // fixture, or changed in SQL on a CMS 12 site without it.
+            if (!await site.HandOverAsync(draft.Version!, cancellationToken))
             {
+                // A CMS 13 site without the edge-case fixture (its version list stays cached after the agent's save, so a
+                // change in SQL wouldn't reach the agent): the rest is about someone else's draft.
                 return;
             }
-            await site.Session.Db.QueryAsync("UPDATE tblWorkContent SET ChangedByName = 'someone-else@example.com' WHERE pkID = @version; SELECT @@ROWCOUNT",
-                r => r.GetInt32(0), cancellationToken, new Microsoft.Data.SqlClient.SqlParameter("@version", int.Parse(draft.Version!.Split('_')[1], System.Globalization.CultureInfo.InvariantCulture)));
 
             var dry = await writes.RunAsync(rename, dryRun: true, cancellationToken);
             var pending = Assert.IsType<WriteOutput>(dry.Output).PendingDraft;
-            Assert.Equal((draft.Version, "someone-else@example.com"), (pending?.Version, pending?.SavedBy));
+            Assert.Equal((draft.Version, SiteUnderTest.SomeoneElse), (pending?.Version, pending?.SavedBy));
             Assert.Contains(pending!.Changes, c => c.Property == "StopPublish");
             Assert.Contains(dry.Warnings, w => w.StartsWith("pendingDraft:", StringComparison.Ordinal));
             var dryPublish = Assert.IsType<WriteOutput>((await writes.RunAsync(new PublishOperation(media), dryRun: true, cancellationToken)).Output).PendingDraft;

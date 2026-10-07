@@ -30,12 +30,42 @@ internal sealed class SiteUnderTest : IAsyncDisposable
     /// <summary>Where `opticli serve` runs the site (http on loopback), to request pages as a visitor; null if unknown.</summary>
     public Uri? SiteUrl { get; }
 
+    /// <summary>The user <see cref="HandOverAsync"/> makes a draft's: not opticli, whose drafts the agent counts as its own.</summary>
+    public const string SomeoneElse = "someone-else@example.com";
+
     /// <summary>
-    /// Whether a version's "saved by" changed in SQL reaches the agent, which the tests use to make "someone else's"
-    /// draft. On CMS 13 it doesn't: the CMS keeps the content's version list cached after the agent's own save (the
-    /// cache is only cleared by the CMS's own changes), so those tests stop where they would change it.
+    /// Makes a version <see cref="SomeoneElse"/>'s draft, as if that editor had saved it (the agent only saves as opticli):
+    /// through the edge-case fixture's <c>POST /opticli-fixture/hand-over</c>, which saves it again as that user, so the
+    /// CMS records them and clears its cached version list. On a site without the fixture, CMS 12 gets the change in SQL
+    /// (its version list isn't cached after the agent's save); CMS 13 keeps the list cached after the agent's own save
+    /// until the CMS changes the content again, so a change in SQL wouldn't reach the agent there.
     /// </summary>
-    public bool SeesSavedByChangedInSql => Session.Model.Schema.Major < 13;
+    /// <returns>False on a CMS 13 site without the fixture: the test then stops where it needs the other user's draft.</returns>
+    public async Task<bool> HandOverAsync(string versionRef, CancellationToken cancellationToken)
+    {
+        if (SiteUrl is { } url)
+        {
+            using var http = new HttpClient { BaseAddress = url };
+            using var response = await http.PostAsync($"opticli-fixture/hand-over?version={Uri.EscapeDataString(versionRef)}&user={Uri.EscapeDataString(SomeoneElse)}", null, cancellationToken);
+            if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            {
+                return true;
+            }
+            if (response.StatusCode != System.Net.HttpStatusCode.NotFound)
+            {
+                throw new InvalidOperationException($"POST /opticli-fixture/hand-over answered {(int)response.StatusCode}: {await response.Content.ReadAsStringAsync(cancellationToken)}");
+            }
+        }
+        if (Session.Model.Schema.Major >= 13)
+        {
+            return false;
+        }
+        var changed = await Session.Db.QueryAsync("UPDATE tblWorkContent SET ChangedByName = @user WHERE pkID = @version; SELECT @@ROWCOUNT",
+            r => r.GetInt32(0), cancellationToken,
+            new Microsoft.Data.SqlClient.SqlParameter("@user", SomeoneElse),
+            new Microsoft.Data.SqlClient.SqlParameter("@version", int.Parse(versionRef.Split('_')[1], System.Globalization.CultureInfo.InvariantCulture)));
+        return changed.Single() == 1;
+    }
 
     public static async Task<SiteUnderTest> ConnectAsync(CancellationToken cancellationToken)
     {
