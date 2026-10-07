@@ -84,7 +84,8 @@ build
 out=$($OPTICLI serve)
 expect '.ok and (.data.drift.differences == 0 or .data.drift.ahead == "database")' "$out"
 out=$($OPTICLI drift)
-expect '(.data.contentTypes | own) == [] and all(.data.contentTypes[]; .ahead == "database" or (.name == "EdgeAdminPage" and .ahead == "unknown")) and .data.differences == (.data.contentTypes | length)' "$out"
+# A type of unknown origin (CMS 13) is listed as informational and isn't counted as a difference.
+expect '(.data.contentTypes | own) == [] and all(.data.contentTypes[]; .ahead == "database" or (.name == "EdgeAdminPage" and .ahead == "unknown")) and .data.differences == ([.data.contentTypes[] | select(.informational | not)] | length) and all(.data.contentTypes[]; (.informational == true) == (.ahead == "unknown"))' "$out"
 $OPTICLI serve --stop >/dev/null
 
 echo "== 2. local ahead: a new property and a new type"
