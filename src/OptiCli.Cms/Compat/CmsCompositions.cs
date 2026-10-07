@@ -17,7 +17,7 @@ namespace OptiCli.Cms.Compat;
 internal static class CmsCompositions
 {
     /// <summary>The CMS 13 kind of content that is part of Visual Builder (<c>experience</c>, <c>section</c>, <c>element</c>); null otherwise.</summary>
-    public static string? Kind(IContent content, ContentType? type)
+    public static string? Kind(IContentData content, ContentType? type)
     {
 #if CMS13
         return content switch
