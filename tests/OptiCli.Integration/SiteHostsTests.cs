@@ -16,7 +16,7 @@ namespace OptiCli.Integration;
 /// </summary>
 /// <remarks>
 /// Where CMS 13 differs, the tests say so: hosts are listed by name (so they are found by name, not position), a new host
-/// without a scheme gets https rather than no setting (<see cref="NewHostHttps"/>), change lines name the https setting
+/// without a scheme gets http (a loopback name) rather than no setting (<see cref="NewHostHttps"/>), change lines name the https setting
 /// CMS 13 hosts always have, and an application's URL follows its hosts (no SiteUrl to keep or protect).
 /// </remarks>
 public sealed class SiteHostsTests
@@ -27,13 +27,16 @@ public sealed class SiteHostsTests
     private static bool Cms13(SiteUnderTest site) => site.Session.Model.Schema.Major >= 13;
 
     /// <summary>
-    /// The https setting a new host gets without a scheme: none on CMS 12 (its links use SiteUrl's scheme), https on CMS 13
-    /// (the scheme of the hosts sites' URLs, which has no unset).
+    /// The https setting a new localhost host gets without a scheme: none on CMS 12 (its links use SiteUrl's scheme); http
+    /// on CMS 13, which has no unset and gives loopback names what `opticli serve` listens with.
     /// </summary>
-    private static bool? NewHostHttps(SiteUnderTest site) => Cms13(site) ? true : null;
+    private static bool? NewHostHttps(SiteUnderTest site) => Cms13(site) ? false : null;
 
-    /// <summary>How a change line describes a host's settings: CMS 13 hosts always have an https setting (https here).</summary>
-    private static string Described(SiteUnderTest site, string settings) => Cms13(site) ? $"{settings}, https" : settings;
+    /// <summary>The URL of a site whose primary host for every language is <paramref name="host"/>, new without a scheme.</summary>
+    private static string NewHostUrl(SiteUnderTest site, string host) => $"{(Cms13(site) ? "http" : "https")}://{host}/";
+
+    /// <summary>How a change line describes a host's settings: CMS 13 hosts always have an https setting.</summary>
+    private static string Described(SiteUnderTest site, string settings, bool https = true) => Cms13(site) ? $"{settings}, {(https ? "https" : "http")}" : settings;
 
     [SiteFact]
     public async Task Primary_on_two_sites_points_them_at_localhost_and_a_second_run_changes_nothing()
@@ -53,7 +56,7 @@ public sealed class SiteHostsTests
             Assert.True(first.Saved);
             Assert.Equal([SiteHostStatus.Changed, SiteHostStatus.Changed], first.Sites.Select(s => s.Status));
             var viewA = first.Sites[0];
-            Assert.Equal((a.Id, $"https://{HostA}/"), (viewA.Id, viewA.Url));
+            Assert.Equal((a.Id, NewHostUrl(site, HostA)), (viewA.Id, viewA.Url));
             // CMS 13: named by the application's name, as `opticli sites` prints it; no GUID.
             Assert.Equal((a.Guid, a.Application), (viewA.Guid, viewA.Application));
             Assert.Equal(new HostInfo(HostA, HostType.Primary, null, NewHostHttps(site)), viewA.Hosts.Single(h => h.Name == HostA));
@@ -156,13 +159,13 @@ public sealed class SiteHostsTests
         try
         {
             var added = await RunAsync(site, original, [Add(a, "localhost:5873")], dryRun: false, cancellationToken);
-            Assert.Equal([$"added localhost:5873 ({Described(site, "undefined")})"], Assert.Single(added.Sites).Changes);
+            Assert.Equal([$"added localhost:5873 ({Described(site, "undefined", https: false)})"], Assert.Single(added.Sites).Changes);
             Assert.Contains((await SiteAsync(site, a, cancellationToken)).Hosts, h => h.Name == "localhost:5873");
 
             await Assert.ThrowsAsync<ConflictException>(() => RunAsync(site, original, [Add(a, "localhost:5873")], dryRun: false, cancellationToken));
 
             var removed = await RunAsync(site, original, [Remove(a, "localhost:5873")], dryRun: false, cancellationToken);
-            Assert.Equal([$"removed localhost:5873 ({Described(site, "undefined")})"], Assert.Single(removed.Sites).Changes);
+            Assert.Equal([$"removed localhost:5873 ({Described(site, "undefined", https: false)})"], Assert.Single(removed.Sites).Changes);
             await AssertUnchangedAsync(site, original, cancellationToken);
 
             await Assert.ThrowsAsync<NotFoundException>(() => RunAsync(site, original, [Remove(a, "localhost:5873")], dryRun: false, cancellationToken));
@@ -299,7 +302,7 @@ public sealed class SiteHostsTests
             Assert.Equal(SiteHostStatus.Changed, first.Sites[0].Status);
             Assert.DoesNotContain(first.Warnings, w => w.Contains("URLs still use", StringComparison.Ordinal));
             var now = await SiteAsync(site, c, cancellationToken);
-            Assert.Equal("https://localhost:5873/", now.Url);
+            Assert.Equal(NewHostUrl(site, "localhost:5873"), now.Url);
             Assert.Equal(new HostInfo("localhost:5873", HostType.Primary, "en", NewHostHttps(site)), now.Hosts.Single(h => h.Name == "localhost:5873"));
             Assert.Equal(new HostInfo("hosts-c.localhost", HostType.Undefined, "en", true), now.Hosts.Single(h => h.Name == "hosts-c.localhost"));
             var model = await CmsModel.LoadAsync(site.Session.Db, cancellationToken);
@@ -431,7 +434,7 @@ public sealed class SiteHostsTests
     }
 
     [SiteFact]
-    public async Task On_cms_13_the_star_host_moves_the_default_application_and_the_site_answers_unknown_hosts_with_it()
+    public async Task On_cms_13_adding_the_star_host_moves_the_default_application_in_one_step_and_the_site_answers_unknown_hosts_with_it()
     {
         var cancellationToken = CancellationToken.None;
         await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
@@ -441,8 +444,9 @@ public sealed class SiteHostsTests
         }
         if (!Cms13(site))
         {
-            // On CMS 12 * is a host like any other (the unit tests cover moving it); taking it off the Alloy site and putting
-            // it back would change the order of that site's hosts, which the other tests compare.
+            // On CMS 12 * is a host like any other, removed from its site before another can have it (the unit tests cover
+            // that); taking it off the Alloy site and putting it back would change the order of that site's hosts, which
+            // the other tests compare.
             return;
         }
         var sites = await SiteReader.ListAsync(site.Session.Db, cancellationToken);
@@ -451,15 +455,19 @@ public sealed class SiteHostsTests
         const string unknown = "nobody-has-this.localhost:5899";
         try
         {
-            // Not while another is the default application.
-            var taken = await Assert.ThrowsAsync<ContentValidationException>(() => RunAsync(site, original, [Add(b, "*")], dryRun: false, cancellationToken));
-            Assert.Contains($"{alloy.Name} is the default application (*) already", taken.Message);
-
             Assert.DoesNotContain(Encoded(b.StartPageName), await RequestAsync(site, unknown, cancellationToken));
-            var moved = await SiteHostsRunner.RunAsync(site.Agent, sites, [Remove(alloy, "*"), Add(b, "*")], dryRun: false, sharedDatabase: false, cancellationToken);
+            var dry = await SiteHostsRunner.RunAsync(site.Agent, sites, [Add(b, "*")], dryRun: true, sharedDatabase: false, cancellationToken);
+            Assert.Equal([(b.Name, true), (alloy.Name, false)], dry.Sites.Select(v => (v.Site, v.IsDefault!.Value)));
+            Assert.Equal([alloy.Key], (await SiteReader.ListAsync(site.Session.Db, cancellationToken)).Where(s => s.IsDefault == true).Select(s => s.Key));
 
-            Assert.Equal([(alloy.Name, false), (b.Name, true)], moved.Sites.Select(v => (v.Site, v.IsDefault!.Value)));
+            // One change: B takes the default, and the answer names the application that had it.
+            var moved = await SiteHostsRunner.RunAsync(site.Agent, sites, [Add(b, "*")], dryRun: false, sharedDatabase: false, cancellationToken);
+
+            Assert.Equal([(b.Name, true), (alloy.Name, false)], moved.Sites.Select(v => (v.Site, v.IsDefault!.Value)));
+            Assert.Equal([$"no longer the default application (*): {b.Name} is now"], moved.Sites[1].Changes);
+            Assert.Equal([$"made it the default application (*), which answers host names no application has, instead of {alloy.Name}"], moved.Sites[0].Changes);
             Assert.All(moved.Sites, v => Assert.DoesNotContain(v.Hosts, h => h.Name == "*"));
+            Assert.Equal(alloy.Hosts, moved.Sites[1].Hosts);
             var now = await SiteReader.ListAsync(site.Session.Db, cancellationToken);
             Assert.Equal([b.Key], now.Where(s => s.IsDefault == true).Select(s => s.Key));
             // A host no application has now reaches B's start page.
@@ -470,10 +478,42 @@ public sealed class SiteHostsTests
             var now = await SiteReader.ListAsync(site.Session.Db, cancellationToken);
             if (now.Single(s => s.Key == alloy.Key).IsDefault != true)
             {
+                // Back the CMS 12 way: removed from B first, then added to the Alloy application.
                 await SiteHostsRunner.RunAsync(site.Agent, now, [Remove(b, "*"), Add(alloy, "*")], dryRun: false, sharedDatabase: false, cancellationToken);
             }
             Assert.Equal([alloy.Key], (await SiteReader.ListAsync(site.Session.Db, cancellationToken)).Where(s => s.IsDefault == true).Select(s => s.Key));
             await AssertUnchangedAsync(site, original, cancellationToken);
+        }
+    }
+
+    [SiteFact]
+    public async Task A_new_host_without_a_scheme_is_http_on_a_loopback_name_and_takes_the_sites_scheme_elsewhere_on_cms_13()
+    {
+        var cancellationToken = CancellationToken.None;
+        await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
+        if (await HostsSitesAsync(site, cancellationToken) is not { } original)
+        {
+            return;
+        }
+        var a = original.A;
+        try
+        {
+            // Site A's URL is https. On CMS 12 neither gets a setting: their links use SiteUrl's scheme.
+            var added = await RunAsync(site, original, [Add(a, "localhost:5875"), Add(a, "shop.hosts-a.example")], dryRun: false, cancellationToken);
+            var hosts = (await SiteAsync(site, a, cancellationToken)).Hosts;
+
+            Assert.Equal(Cms13(site) ? false : null, hosts.Single(h => h.Name == "localhost:5875").Https);
+            Assert.Equal(Cms13(site) ? true : null, hosts.Single(h => h.Name == "shop.hosts-a.example").Https);
+            Assert.Equal(added.Sites[0].Hosts, hosts);
+            if (Cms13(site))
+            {
+                // The CMS answers on the new loopback host, over the http `serve` listens with.
+                Assert.Contains(Encoded(a.StartPageName), await RequestAsync(site, "localhost:5875", cancellationToken));
+            }
+        }
+        finally
+        {
+            await RestoreAsync(site, original, cancellationToken);
         }
     }
 
