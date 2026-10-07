@@ -231,6 +231,36 @@ public class SiteHostsOperationTests
     }
 
     [Fact]
+    public async Task When_the_new_default_is_saved_first_the_one_that_lost_it_is_saved_without_it()
+    {
+        var repository = new Applications(Site("siteA", "Site A", "site-a.example", isDefault: true), Site("siteB", "Site B", "site-b.example"));
+
+        // B removes a host, so it is saved before A, whose copy was made while A was still the default.
+        var (result, _) = await Run(repository, Add("Site B", "localhost:5002"), Remove("Site B", "site-b.example"), Add("Site B", "*"), Add("Site A", "localhost:5001"));
+
+        Assert.Equal(["siteB", "siteA", "siteA"], repository.SavedNames);
+        Assert.Equal([("siteB", true)], repository.MadeDefault);
+        Assert.Equal((false, true), (repository.Routable("siteA").IsDefault, repository.Routable("siteB").IsDefault));
+        Assert.Equal(["localhost:5001", "site-a.example"], repository.Routable("siteA").Hosts.Select(h => h.Authority).Order());
+        Assert.Equal([("Site B", true), ("Site A", false)], result!.Sites.Select(s => (s.Name, s.IsDefault!.Value)));
+    }
+
+    [Fact]
+    public async Task When_the_one_that_loses_the_default_is_saved_first_it_keeps_it_until_the_new_default_takes_it()
+    {
+        var repository = new Applications(Site("siteA", "Site A", "site-a.example", isDefault: true), Site("siteB", "Site B", "site-b.example"));
+
+        // A removes a host, so it is saved first, still the default; B's MakeDefaultAsync then takes it.
+        var (result, _) = await Run(repository, Add("Site A", "localhost:5001"), Remove("Site A", "site-a.example"), Add("Site B", "*"));
+
+        Assert.Equal(["siteA", "siteB", "siteA"], repository.SavedNames);
+        Assert.Equal([("siteB", true)], repository.MadeDefault);
+        Assert.Equal((false, true), (repository.Routable("siteA").IsDefault, repository.Routable("siteB").IsDefault));
+        Assert.Equal(["localhost:5001"], repository.Routable("siteA").Hosts.Select(h => h.Authority));
+        Assert.Equal([false, true], result!.Sites.OrderBy(s => s.Name).Select(s => s.IsDefault!.Value));
+    }
+
+    [Fact]
     public async Task An_application_the_cms_refuses_after_another_was_saved_names_every_error_and_what_was_saved()
     {
         // As the CMS throws it (ValidationServiceExtensions.ThrowException): the first error as the message, errors by

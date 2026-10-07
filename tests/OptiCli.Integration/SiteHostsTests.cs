@@ -487,6 +487,64 @@ public sealed class SiteHostsTests
     }
 
     [SiteFact]
+    public async Task On_cms_13_a_batch_that_moves_the_default_leaves_one_default_whichever_application_is_saved_first()
+    {
+        var cancellationToken = CancellationToken.None;
+        await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
+        if (await HostsSitesAsync(site, cancellationToken) is not { } original)
+        {
+            return;
+        }
+        if (!Cms13(site))
+        {
+            // CMS 12 has no default application to move in one step: see the test above.
+            return;
+        }
+        var sites = await SiteReader.ListAsync(site.Session.Db, cancellationToken);
+        var alloy = sites.Single(s => s.IsDefault == true);
+        var c = original.C;
+        var alt = c.Hosts.Single(h => h.Name == "alt.hosts-c.localhost");
+        const string added = "localhost:5893";
+        try
+        {
+            // As a request to the agent can hold it (the CLI sends one change at a time): C loses a host, so it is saved
+            // before the Alloy application, which loses the default to C and gains a host in the same batch.
+            var moved = await SiteHostsRunner.RunAsync(site.Agent, sites, [Remove(c, alt.Name), Add(c, "*"), Add(alloy, added)], dryRun: false, sharedDatabase: false, cancellationToken);
+
+            var now = await SiteReader.ListAsync(site.Session.Db, cancellationToken);
+            Assert.Equal([c.Key], now.Where(s => s.IsDefault == true).Select(s => s.Key));
+            Assert.Contains(now.Single(s => s.Key == alloy.Key).Hosts, h => h.Name == added);
+            Assert.DoesNotContain(now.Single(s => s.Key == c.Key).Hosts, h => h.Name == alt.Name);
+            Assert.Equal([(c.Name, true), (alloy.Name, false)], moved.Sites.Select(v => (v.Site, v.IsDefault!.Value)));
+        }
+        finally
+        {
+            var now = await SiteReader.ListAsync(site.Session.Db, cancellationToken);
+            var back = new List<SiteHostChange>();
+            if (now.Single(s => s.Key == alloy.Key).IsDefault != true)
+            {
+                back.Add(Add(alloy, "*"));
+            }
+            if (now.Single(s => s.Key == alloy.Key).Hosts.Any(h => h.Name == added))
+            {
+                back.Add(Remove(alloy, added));
+            }
+            if (now.Single(s => s.Key == c.Key).Hosts.All(h => h.Name != alt.Name))
+            {
+                back.Add(Add(c, alt.Name, alt));
+            }
+            if (back.Count > 0)
+            {
+                await SiteHostsRunner.RunAsync(site.Agent, now, back, dryRun: false, sharedDatabase: false, cancellationToken);
+            }
+            var after = await SiteReader.ListAsync(site.Session.Db, cancellationToken);
+            Assert.Equal([alloy.Key], after.Where(s => s.IsDefault == true).Select(s => s.Key));
+            Assert.Equal(alloy.Hosts, after.Single(s => s.Key == alloy.Key).Hosts);
+            await AssertUnchangedAsync(site, original, cancellationToken);
+        }
+    }
+
+    [SiteFact]
     public async Task A_new_host_without_a_scheme_is_http_on_a_loopback_name_and_takes_the_sites_scheme_elsewhere_on_cms_13()
     {
         var cancellationToken = CancellationToken.None;

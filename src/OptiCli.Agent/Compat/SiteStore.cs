@@ -81,8 +81,23 @@ internal sealed class SiteStore(IServiceProvider services)
     {
         var application = (Application)prepared.Copy;
         var routable = (IRoutableApplication)application;
-        // An application whose default another one takes in the batch keeps it here: that one's MakeDefaultAsync moves it.
-        var makeDefault = prepared.Site.After.Hosts.Any(SiteHostPlanner.IsDefaultApplication) || prepared.Site.DefaultMovesTo is not null;
+        if (prepared.Site.DefaultMovesTo is not null && routable.IsDefault
+            && _repository.Get(application.Name) is IRoutableApplication { IsDefault: false } and Application current)
+        {
+            // The application that takes the default was saved first and has it already, but this copy was made before
+            // that and still has it: saving the copy would make two defaults. Its hosts go on what the CMS has now instead.
+            var fresh = current.CreateWritableClone();
+            var freshRoutable = (IRoutableApplication)fresh;
+            freshRoutable.Hosts.Clear();
+            foreach (var host in routable.Hosts)
+            {
+                freshRoutable.Hosts.Add(host);
+            }
+            (application, routable) = (fresh, freshRoutable);
+        }
+        // An application whose default another one takes in the batch keeps it here while it still has it: that one's
+        // MakeDefaultAsync, later in the batch, moves it.
+        var makeDefault = prepared.Site.After.Hosts.Any(SiteHostPlanner.IsDefaultApplication) || (prepared.Site.DefaultMovesTo is not null && routable.IsDefault);
         try
         {
             if (makeDefault != routable.IsDefault)
