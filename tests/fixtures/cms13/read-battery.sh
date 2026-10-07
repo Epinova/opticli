@@ -125,8 +125,40 @@ if [[ -n "$vb" ]]; then
   for version in $(jq -r '.data[]?.ref // empty' "$out/vb-versions.json"); do
     run "vb-get-$version" get "$version"
   done
-  blueprint="$(o tree 1 --depth 2 | jq -r '[.. | objects | select(.name? == "Blueprints") | .children[]?.ref][0] // empty')"
+  # Phase 5: compositions, variations, blueprints, contracts and display templates.
+  vb_second="$(id_of /en/visual-builder-second/)"
+  if [[ -n "$vb_second" ]]; then
+    run vb-get-second get "$vb_second"
+    run vb-get-second-sv get "$vb_second" --lang sv
+    run vb-where-used-card where-used --type VbCardElement
+    run vb-type-card type VbCardElement
+    run vb-type-banner type VbBanner
+    run vb-allowed-in-banner allowed-in VbBanner
+  fi
+  run vb-get-variation get "$vb" --variation vbFixtureVariation
+  run vb-get-variation-latest get "$vb" --variation vbFixtureDraft --version latest
+  run vb-get-fields get "$vb" --fields composition
+  run vb-drafts drafts --type VbExperience
+  run vb-find-draft find --type VbExperience --status draft
+  run vb-find-blueprints find --type VbExperience --blueprints
+  run vb-search-element search "Another inline element"
+  run vb-where-used-type where-used --type VbTextElement
+  run vb-allowed-in allowed-in VbTextElement
+  run vb-types-element types --kind element
+  run vb-type-contract type IVbHeading
+  run vb-display-templates display-templates
+  run vb-display-templates-type display-templates --type VbSection
+  run vb-tree-root tree 1 --depth 1
+  folder="$(o tree 1 --depth 1 | jq -r '[.data.root.children[]? | select(.blueprints != null) | .ref][0] // empty')"
+  if [[ -n "$folder" ]]; then
+    run vb-children-blueprints children "$folder"
+    run vb-children-blueprints-all children "$folder" --blueprints
+  fi
+  blueprint="$(o tree 1 --depth 2 --blueprints | jq -r '[.. | objects | select(.blueprint? == true) | .ref][0] // empty')"
   [[ -n "$blueprint" ]] && run vb-get-blueprint get "$blueprint"
+  for blueprint_ref in $(o find --type VbSection --blueprints | jq -r '.data[]?.ref // empty'); do
+    run "vb-get-section-blueprint-$blueprint_ref" get "$blueprint_ref"
+  done
 fi
 
 failed="$(awk -F'\t' '$2 != "ok"' "$out/summary.tsv")"
