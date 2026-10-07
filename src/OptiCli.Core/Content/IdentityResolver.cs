@@ -1,3 +1,4 @@
+using OptiCli.Core.Cms;
 using OptiCli.Core.Data;
 using OptiCli.Core.Urls;
 
@@ -87,6 +88,7 @@ public sealed class IdentityResolver(CmsDatabase db, CmsModel model)
             VersionStatuses.Name(status ?? row?.Status ?? VersionStatus.NotCreated),
             Urls.UrlOf(header, shown is { IsInvariant: false } ? shown : null)?.Path)
         {
+            Kind = Model.Kind(header.TypeId) is var kind && kind.IsComposition() ? kind.Name() : null,
             Deleted = header.Deleted ? true : null,
             Blueprint = header.Blueprint ? true : null,
         };

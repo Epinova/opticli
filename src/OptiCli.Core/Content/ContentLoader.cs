@@ -46,7 +46,12 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
         else
         {
             (branch, languageRule) = ChooseBranch(header, language, notes);
-            if (version.Kind == VersionKind.Latest)
+            if (version.Variation is { } key)
+            {
+                shownVersion = await VersionReader.VariationAsync(db, Model, contentId, branch, key, version.Kind == VersionKind.Latest, cancellationToken)
+                    ?? throw await NoVariationAsync(contentId, branch, key, version.Kind == VersionKind.Latest, cancellationToken);
+            }
+            else if (version.Kind == VersionKind.Latest)
             {
                 shownVersion = await VersionReader.LatestAsync(db, Model, contentId, branch, cancellationToken);
             }
@@ -146,6 +151,22 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
             Blueprint = header.Blueprint ? true : null,
             Composition = composition,
         };
+    }
+
+    /// <summary>Why <c>--variation</c> found no version: no such variation, or none of it in the branch (published).</summary>
+    private async Task<NotFoundException> NoVariationAsync(int contentId, int branch, string key, bool latest, CancellationToken cancellationToken)
+    {
+        var keys = await VersionReader.VariationKeysAsync(db, Model, contentId, cancellationToken);
+        if (!keys.Contains(key, StringComparer.OrdinalIgnoreCase))
+        {
+            return new NotFoundException(
+                $"Content {contentId} has no content variation '{key}'.",
+                keys.Count == 0 ? "It has no variations; `opticli versions <ref>` lists its versions." : $"Its variations: {string.Join(", ", keys)}.");
+        }
+        var code = Model.Language(branch)?.Code;
+        return latest
+            ? new NotFoundException($"The variation '{key}' of content {contentId} has no version in '{code}'.", $"`opticli versions {contentId}` lists the versions and their languages; --lang picks another.")
+            : new NotFoundException($"The variation '{key}' of content {contentId} has no published version in '{code}'.", "--version latest shows its newest version; `opticli versions <ref>` lists them.");
     }
 
     /// <summary>Decoded primary properties of several items (for <c>--expand</c>), keyed by GUID; references stay identity-only.</summary>

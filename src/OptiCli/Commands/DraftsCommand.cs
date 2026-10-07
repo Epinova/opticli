@@ -20,12 +20,15 @@ internal static class DraftsCommand
         var content = new ContentOptions();
         content.Lang.Description = "Only drafts in this language (code). Default: all languages.";
         var list = new ListOptions(options);
+        var blueprints = BlueprintsOption.Create();
         var command = new Command("drafts", """
             List unpublished changes across the site, newest first.
             One row per content item and language whose branch was never published or has versions newer than the published
             one: status and version are the newest draft's (checkedOut = being edited, checkedIn = ready to publish, also
             awaitingApproval, delayedPublish, rejected), saved (UTC) and changedBy say when and by whom, and drafts counts
             the unpublished versions newer than the published one (thousands usually mean an import or integration job).
+            CMS 13: a content variation with an unpublished version newer than its own published one gets a row of its own,
+            with variation (`opticli get <version>` shows it); Visual Builder blueprints are left out unless --blueprints.
             Example: opticli drafts --since 2024-01-01 --kind page --by editor
             """);
         command.Options.Add(since);
@@ -34,6 +37,7 @@ internal static class DraftsCommand
         command.Options.Add(type);
         content.AddTo(command, withRef: false, withSite: false);
         list.AddTo(command);
+        command.Options.Add(blueprints);
 
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
         {
@@ -58,7 +62,7 @@ internal static class DraftsCommand
                 types = types.Where(t => t.Kind == parsed);
             }
             var typeIds = context.Parse.GetValue(type) is null && context.Parse.GetValue(kind) is null ? null : types.Select(t => t.Id).ToList();
-            var drafts = await new DraftReader(session).ListAsync(
+            var drafts = await new DraftReader(session, context.Parse.GetValue(blueprints)).ListAsync(
                 from, context.Parse.GetValue(by), session.Language(context.Parse.GetValue(content.Lang)), typeIds, offset, limit, cancellationToken);
             return CommandResult.From(Paging.FromWindow(drafts, offset, limit));
         });

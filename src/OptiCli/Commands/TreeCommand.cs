@@ -15,15 +15,19 @@ internal static class TreeCommand
         var content = new ContentOptions();
         var depth = new Option<int>("--depth") { Description = "Levels below the root to include.", DefaultValueFactory = _ => 2, HelpName = "n" };
         var limit = new Option<int?>("--limit") { Description = $"Children listed per node (default {Paging.DefaultLimit}); the rest are counted in 'more'.", HelpName = "n" };
+        var blueprints = BlueprintsOption.Create();
         var command = new Command("tree", $"""
             Show the subtree under a content item (default: 2 levels down).
             Each node: ref, type, name, status, languages, URL and child count; children in the order the CMS lists them.
             At most {TreeReader.MaxNodes} nodes are loaded (capped: true when cut). 1 is the root of all content.
+            CMS 13: Visual Builder content has a kind (experience, section, element); blueprints are left out unless
+            --blueprints, and counted on their parent (blueprints: N).
             Example: opticli tree 1 --depth 1
             """);
         content.AddTo(command);
         command.Options.Add(depth);
         command.Options.Add(limit);
+        command.Options.Add(blueprints);
 
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
         {
@@ -37,7 +41,7 @@ internal static class TreeCommand
             await using var session = await context.OpenContentAsync(cancellationToken);
             var located = await content.LocateAsync(context, session, cancellationToken);
             var language = content.Language(context, session, located);
-            var (root, capped) = await new TreeReader(session).TreeAsync(located.Id, levels, perNode, language, cancellationToken);
+            var (root, capped) = await new TreeReader(session, context.Parse.GetValue(blueprints)).TreeAsync(located.Id, levels, perNode, language, cancellationToken);
             return new CommandResult(new TreeResult(root, capped ? true : null), Text: Render(root, capped));
         });
         return command;
@@ -54,10 +58,12 @@ internal static class TreeCommand
                 .Append("  [").Append(node.Ref).Append(' ').Append(node.Type).Append(' ').Append(node.Status)
                 .Append(node.Languages.Count > 0 ? " " + string.Join(",", node.Languages) : "")
                 .Append(node.Deleted == true ? " deleted" : "")
+                .Append(node.Kind is { } kind ? " " + kind : "")
                 .Append(node.Blueprint == true ? " blueprint" : "")
                 .Append(']')
                 .Append(node.Url is null ? "" : "  " + node.Url)
                 .Append(node.Children is null && node.ChildCount > 0 ? $"  ({node.ChildCount} children)" : "")
+                .Append(node.Blueprints is { } left ? $"  ({left} blueprint{(left == 1 ? "" : "s")}: --blueprints)" : "")
                 .AppendLine();
             foreach (var child in node.Children ?? [])
             {

@@ -10,14 +10,76 @@ namespace OptiCli.Core.Queries;
 /// <param name="PublishAt">For a scheduled version (<c>delayedPublish</c>): when the CMS publishes it, UTC.</param>
 public sealed record DraftInfo(
     string Ref, Guid Guid, string Type, string? Name, string? Language, string Status, string? Url,
-    string Version, DateTime? Saved, string? ChangedBy, int Drafts, DateTime? PublishAt = null);
+    string Version, DateTime? Saved, string? ChangedBy, int Drafts, DateTime? PublishAt = null)
+{
+    /// <summary>
+    /// CMS 13: the content variation the draft belongs to; its row is that variation's, apart from the content's own, and
+    /// <see cref="Drafts"/> counts its unpublished versions newer than its own published one. Null for the content's own.
+    /// </summary>
+    public string? Variation { get; init; }
+
+    /// <summary>CMS 13: true for a Visual Builder blueprint (listed with <c>--blueprints</c> only).</summary>
+    public bool? Blueprint { get; init; }
+}
 
 /// <summary>
 /// <c>drafts</c>: branches with changes nobody has published: never published, or with versions newer
-/// than the published one. One row per content item and language, newest change first.
+/// than the published one. One row per content item and language, newest change first; on CMS 13 also one per content
+/// variation with an unpublished version newer than its own published one (<see cref="DraftInfo.Variation"/>).
 /// </summary>
-public sealed class DraftReader(ContentSession session)
+/// <param name="includeBlueprints">CMS 13: Visual Builder blueprints' drafts too; left out by default.</param>
+public sealed class DraftReader(ContentSession session, bool includeBlueprints = false)
 {
+    /// <summary>
+    /// CMS 13: the content's own drafts as on CMS 12, and each content variation's: its newest unpublished version newer
+    /// than the variation's own published one (any, when it was never published). <c>Since</c> is the version id drafts
+    /// must be newer than.
+    /// </summary>
+    private static string VariationsSql(string filter) => $"""
+        WITH newest AS (
+            SELECT cl.fkContentID, cl.fkLanguageBranchID, CAST(NULL AS int) AS VariationID,
+                   CASE WHEN cl.Status <> {(int)VersionStatus.Published} THEN 0 ELSE ISNULL(cl.Version, 0) END AS Since,
+                   d.pkID, d.Status, d.Name, d.Saved, d.ChangedByName, d.DelayPublishUntil
+            FROM tblContentLanguage cl
+            JOIN tblContent c ON c.pkID = cl.fkContentID AND c.Deleted = 0{filter}
+            CROSS APPLY (
+                SELECT TOP 1 wc.pkID, wc.Status, wc.Name, wc.Saved, wc.ChangedByName, wc.DelayPublishUntil
+                FROM tblWorkContent wc
+                WHERE wc.fkContentID = cl.fkContentID AND wc.fkLanguageBranchID = cl.fkLanguageBranchID
+                  AND wc.Status IN ({VersionStatuses.UnpublishedSql})
+                  AND (cl.Status <> {(int)VersionStatus.Published} OR wc.pkID > ISNULL(cl.Version, 0)) AND wc.fkVariationID IS NULL
+                ORDER BY wc.pkID DESC) d
+            WHERE (@lang IS NULL OR cl.fkLanguageBranchID = @lang)
+            UNION ALL
+            SELECT v.fkContentID, v.fkLanguageBranchID, v.fkVariationID, ISNULL(p.Published, 0) AS Since,
+                   d.pkID, d.Status, d.Name, d.Saved, d.ChangedByName, d.DelayPublishUntil
+            FROM (SELECT DISTINCT fkContentID, fkLanguageBranchID, fkVariationID FROM tblWorkContent WHERE fkVariationID IS NOT NULL) v
+            JOIN tblContent c ON c.pkID = v.fkContentID AND c.Deleted = 0{filter}
+            OUTER APPLY (
+                SELECT MAX(pw.pkID) AS Published FROM tblWorkContent pw
+                WHERE pw.fkContentID = v.fkContentID AND pw.fkLanguageBranchID = v.fkLanguageBranchID AND pw.fkVariationID = v.fkVariationID
+                  AND pw.Status = {(int)VersionStatus.Published}) p
+            CROSS APPLY (
+                SELECT TOP 1 wc.pkID, wc.Status, wc.Name, wc.Saved, wc.ChangedByName, wc.DelayPublishUntil
+                FROM tblWorkContent wc
+                WHERE wc.fkContentID = v.fkContentID AND wc.fkLanguageBranchID = v.fkLanguageBranchID AND wc.fkVariationID = v.fkVariationID
+                  AND wc.Status IN ({VersionStatuses.UnpublishedSql}) AND wc.pkID > ISNULL(p.Published, 0)
+                ORDER BY wc.pkID DESC) d
+            WHERE (@lang IS NULL OR v.fkLanguageBranchID = @lang)
+        )
+        SELECT n.pkID, n.fkContentID, n.fkLanguageBranchID, n.Status, n.Name, n.Saved, n.ChangedByName, n.DelayPublishUntil, var.[Key] AS Variation,
+               (SELECT COUNT(*) FROM tblWorkContent w
+                WHERE w.fkContentID = n.fkContentID AND w.fkLanguageBranchID = n.fkLanguageBranchID
+                  AND w.Status IN ({VersionStatuses.UnpublishedSql}) AND w.pkID > n.Since
+                  AND ((n.VariationID IS NULL AND w.fkVariationID IS NULL) OR w.fkVariationID = n.VariationID)) AS Drafts
+        FROM newest n
+        LEFT JOIN tblContentVariation var ON var.pkID = n.VariationID
+        WHERE (@since IS NULL OR n.Saved >= @since) AND (@by IS NULL OR n.ChangedByName LIKE @by ESCAPE '\')
+        ORDER BY n.Saved DESC, n.pkID DESC
+        OFFSET @offset ROWS FETCH NEXT @take ROWS ONLY
+        OPTION (RECOMPILE)
+        """;
+
     // Newest draft per branch via CROSS APPLY TOP 1 (index seeks per branch) rather than a window over
     // every unpublished version: sites with import jobs can have millions of never-published versions.
     // The count per branch is only computed for the rows of the page returned. RECOMPILE lets the
@@ -62,7 +124,12 @@ public sealed class DraftReader(ContentSession session)
             return [];
         }
         var typeFilter = typeIds is null ? "" : $" AND c.fkContentTypeID IN ({string.Join(",", SqlLists.Ints(typeIds))})";
-        var rows = await session.Db.QueryAsync(Sql(typeFilter, session.Model.Schema), r => (
+        var schema = session.Model.Schema;
+        if (schema.Blueprints && !includeBlueprints)
+        {
+            typeFilter += " AND ISNULL(c.Blueprint, 0) = 0";
+        }
+        var rows = await session.Db.QueryAsync(schema.Variations ? VariationsSql(typeFilter) : Sql(typeFilter, schema), r => (
                 Version: r.GetInt32("pkID"),
                 ContentId: r.GetInt32("fkContentID"),
                 LanguageId: r.GetInt32("fkLanguageBranchID"),
@@ -71,7 +138,8 @@ public sealed class DraftReader(ContentSession session)
                 Saved: r.GetDateTimeOrNull("Saved"),
                 ChangedBy: r.GetStringOrNull("ChangedByName"),
                 Drafts: r.GetInt32("Drafts"),
-                PublishAt: r.GetDateTimeOrNull("DelayPublishUntil")),
+                PublishAt: r.GetDateTimeOrNull("DelayPublishUntil"),
+                Variation: schema.Variations ? r.GetStringOrNull("Variation") : null),
             cancellationToken,
             new SqlParameter("@lang", System.Data.SqlDbType.Int) { Value = (object?)language?.Id ?? DBNull.Value },
             new SqlParameter("@since", System.Data.SqlDbType.DateTime) { Value = (object?)since ?? DBNull.Value },
@@ -86,7 +154,11 @@ public sealed class DraftReader(ContentSession session)
             var identity = session.Identities.Describe(header, session.Model.Language(r.LanguageId), status: r.Status, name: r.Name);
             return new DraftInfo(identity.Ref!, identity.Guid, identity.Type!, identity.Name, identity.Language, identity.Status!, identity.Url,
                 ContentIdentity.RefFor(r.ContentId, r.Version), r.Saved, r.ChangedBy, r.Drafts,
-                r.Status == VersionStatus.DelayedPublish ? r.PublishAt : null);
+                r.Status == VersionStatus.DelayedPublish ? r.PublishAt : null)
+            {
+                Variation = r.Variation,
+                Blueprint = identity.Blueprint,
+            };
         }).ToList();
     }
 }

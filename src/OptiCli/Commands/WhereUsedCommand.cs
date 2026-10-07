@@ -28,6 +28,9 @@ internal static class WhereUsedCommand
             each usage gives the owner (ref, type, name, language, status, url, saved, changedBy), the property path, the
             kind and which source found it, and for rich text only some visitor groups see, their visitorGroups. Owners that
             are blocks: add --pages to follow them up to the pages. --type lists every instance of a type with its usages.
+            CMS 13: inside a Visual Builder composition a usage names its section and element (as `get` lists them) and the
+            property in it; a shared block placed in a composition has kind composition. --type of a block type adds a row
+            (inline: true) with every inline block of it in the branches' current versions, sections and elements included.
             Example: opticli where-used 123 --pages
             """);
         content.AddTo(command, withLang: false);
@@ -50,11 +53,23 @@ internal static class WhereUsedCommand
                 {
                     throw new Core.Errors.UsageException("--pages works on one item, not with --type.");
                 }
-                var found = await new TypeUsageReader(session).FindAsync(session.Model.RequireType(typeName).Id, cancellationToken);
+                var usageReader = new TypeUsageReader(session);
+                var contentType = session.Model.RequireType(typeName);
+                var found = await usageReader.FindAsync(contentType.Id, cancellationToken);
                 var used = found.Count(i => i.Count > 0);
+                var summary = $"{found.Count} instance(s), {used} used, {found.Count - used} unused.";
+                // CMS 13: inline blocks of the type (Visual Builder sections and elements, mostly) after the instances.
+                if (await usageReader.InlineAsync(contentType.Id, cancellationToken) is { Count: > 0 } inline)
+                {
+                    var page = list.Apply(context.Parse, found.Cast<object>().Append(inline).ToList());
+                    return CommandResult.From(page) with
+                    {
+                        Warnings = [$"{summary} {inline.Count} inline use(s) in {inline.Usages.Select(u => u.Ref).Distinct().Count()} content item(s), in the row with inline: true."],
+                    };
+                }
                 return CommandResult.From(list.Apply(context.Parse, found)) with
                 {
-                    Warnings = [$"{found.Count} instance(s), {used} used, {found.Count - used} unused."],
+                    Warnings = [summary],
                 };
             }
             var located = await content.LocateAsync(context, session, cancellationToken);

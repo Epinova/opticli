@@ -8,7 +8,7 @@ namespace OptiCli.Core.Queries;
 
 /// <summary>One place that references the target.</summary>
 /// <param name="Property">Where in the owner: <c>MainArea</c>, <c>Hero.Link</c>, <c>MainArea[2].Text</c> (inline block).</param>
-/// <param name="Kind">contentArea, contentReference, contentReferenceList, richTextLink, richTextBlock, link, linkCollection, url, text or softlink.</param>
+/// <param name="Kind">contentArea, contentReference, contentReferenceList, richTextLink, richTextBlock, link, linkCollection, url, text or softlink; CMS 13: composition (a shared block placed in a Visual Builder composition).</param>
 /// <param name="Sources"><c>softlink</c> (the CMS's own link index) and/or <c>property</c> (a scan of stored values).</param>
 /// <param name="Saved">When the owner's branch was last saved (its primary version), so owners can be sorted by recency.</param>
 public sealed record Usage(
@@ -17,6 +17,15 @@ public sealed record Usage(
 {
     /// <summary>CMS 13: true when the owner is a Visual Builder blueprint, not content visitors see.</summary>
     public bool? Blueprint { get; init; }
+
+    /// <summary>
+    /// CMS 13: the owner's composition section the reference is in (<see cref="Property"/> is then the property of the
+    /// <see cref="Element"/> or section, or <c>composition</c> for a shared block placed there), as <c>get</c> lists it.
+    /// </summary>
+    public CompositionNodeRef? Section { get; init; }
+
+    /// <summary>CMS 13: the owner's composition element the reference is in, or the shared block's placement.</summary>
+    public CompositionNodeRef? Element { get; init; }
 
     /// <summary>
     /// For a reference in rich text that is only inside personalized sections: the visitor groups that see it (ids, and
@@ -106,8 +115,14 @@ public sealed class WhereUsedReader(ContentSession session, PropertyReferenceInd
 
         await session.Identities.LoadAsync(found.Select(f => f.OwnerId), [], cancellationToken);
         var texts = await RichTextAsync(found.Where(f => f.Kind is "richTextLink" or "richTextBlock").ToList(), cancellationToken);
+        // CMS 13: a reference inside a Visual Builder composition is placed by its section and element.
+        var compositions = new CompositionPaths(session);
+        await compositions.PrepareAsync(found.Select(f => (f.OwnerId, f.LanguageId)), cancellationToken);
+        var places = found.Distinct().ToDictionary(f => f, f => compositions.Describe(f.OwnerId, f.LanguageId, f.DefinitionId, f.Scope, target.Guid));
         return found
-            .GroupBy(f => (f.OwnerId, f.LanguageId, Path: PropertyPaths.Describe(session.Model, f.DefinitionId, f.Scope)))
+            .GroupBy(f => (f.OwnerId, f.LanguageId, Path: places[f] is { } place
+                ? $"{place.Section?.Key}/{place.Element?.Key}/{place.Property}"
+                : PropertyPaths.Describe(session.Model, f.DefinitionId, f.Scope)))
             .Select(group =>
             {
                 var first = group.OrderBy(f => f.Source == "property" ? 0 : 1).First();
@@ -119,15 +134,18 @@ public sealed class WhereUsedReader(ContentSession session, PropertyReferenceInd
                 var visitorGroups = texts.GetValueOrDefault((first.OwnerId, first.LanguageId, first.DefinitionId, first.Scope ?? "")) is { } text
                     ? PersonalizedText.GroupsAround(text, guidD) ?? PersonalizedText.GroupsAround(text, guidN)
                     : null;
+                var place = places[first];
                 return new Usage(
                     identity.Ref!, identity.Guid, identity.Type ?? "", identity.Name, identity.Language, identity.Status ?? "", identity.Url, identity.Deleted,
-                    first.DefinitionId == 0 ? "(unknown)" : group.Key.Path,
-                    first.Kind,
+                    first.DefinitionId == 0 ? "(unknown)" : place?.Property ?? group.Key.Path,
+                    place?.Property == Compositions.Field ? Compositions.Field : first.Kind,
                     group.Select(f => f.Source).Distinct().Order().ToList(),
                     branch?.Saved,
                     string.IsNullOrEmpty(branch?.ChangedBy) ? null : branch.ChangedBy)
                 {
                     Blueprint = identity.Blueprint,
+                    Section = place?.Section,
+                    Element = place?.Element,
                     VisitorGroups = visitorGroups,
                     VisitorGroupNames = visitorGroups?.Select(session.Model.VisitorGroupName).ToList(),
                 };

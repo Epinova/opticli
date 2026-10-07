@@ -13,9 +13,19 @@ public enum SearchScope
     All,
 }
 
-/// <param name="Property">The matching property (<c>Block.Property</c> inside local blocks), or <c>name</c>.</param>
+/// <param name="Property">
+/// The matching property (<c>Block.Property</c> inside local blocks), or <c>name</c>. CMS 13: inside a Visual Builder
+/// composition, the property of the <see cref="Element"/> (or <see cref="Section"/>) it is in.
+/// </param>
 /// <param name="Snippet">Text around the first occurrence, tags stripped.</param>
-public sealed record SearchMatch(string Property, string Snippet);
+public sealed record SearchMatch(string Property, string Snippet)
+{
+    /// <summary>CMS 13: the composition's section the text is in, as <c>get</c> lists it.</summary>
+    public CompositionNodeRef? Section { get; init; }
+
+    /// <summary>CMS 13: the composition's element the text is in.</summary>
+    public CompositionNodeRef? Element { get; init; }
+}
 
 public sealed record SearchHit(
     string Ref, Guid Guid, string Type, string? Name, string? Language, string Status, string? Url, bool? Deleted,
@@ -23,13 +33,17 @@ public sealed record SearchHit(
 {
     /// <summary>CMS 13: true for a Visual Builder blueprint.</summary>
     public bool? Blueprint { get; init; }
+
+    /// <summary>CMS 13: experience, section or element for Visual Builder content; left out otherwise.</summary>
+    public string? Kind { get; init; }
 }
 
 /// <summary>
 /// <c>search</c>: content names and text properties containing a string, in every language. Reads only
 /// content tables (<c>tblContentLanguage</c>, <c>tblContentProperty</c>), never form submissions or user data.
 /// </summary>
-public sealed partial class SearchReader(ContentSession session)
+/// <param name="includeBlueprints">CMS 13: search Visual Builder blueprints too; left out by default.</param>
+public sealed partial class SearchReader(ContentSession session, bool includeBlueprints = false)
 {
     /// <summary>Rows fetched per source; enough for any sensible page, small enough to stay fast.</summary>
     public const int MaxRows = 2000;
@@ -39,7 +53,7 @@ public sealed partial class SearchReader(ContentSession session)
     private const string NamesSql = """
         SELECT TOP (@cap) cl.fkContentID, cl.fkLanguageBranchID, cl.Name
         FROM tblContentLanguage cl
-        JOIN tblContent c ON c.pkID = cl.fkContentID AND c.Deleted = 0
+        JOIN tblContent c ON c.pkID = cl.fkContentID AND c.Deleted = 0/*blueprints*/
         WHERE cl.Name LIKE @pattern ESCAPE '\' AND (@lang IS NULL OR cl.fkLanguageBranchID = @lang)
         ORDER BY cl.fkContentID
         """;
@@ -53,7 +67,7 @@ public sealed partial class SearchReader(ContentSession session)
         SELECT TOP (@cap) p.fkContentID, ISNULL(@lang, p.fkLanguageBranchID) AS fkLanguageBranchID, p.fkPropertyDefinitionID, p.ScopeName,
                SUBSTRING(x.v, CASE WHEN y.pos > @radius THEN y.pos - @radius ELSE 1 END, 2 * @radius + LEN(@text) + 200) AS Snippet
         FROM tblContentProperty p
-        JOIN tblContent c ON c.pkID = p.fkContentID AND c.Deleted = 0
+        JOIN tblContent c ON c.pkID = p.fkContentID AND c.Deleted = 0/*blueprints*/
         JOIN tblPropertyDefinition pd ON pd.pkID = p.fkPropertyDefinitionID
         JOIN tblPropertyDefinitionType t ON t.pkID = pd.fkPropertyDefinitionTypeID
         CROSS APPLY (SELECT COALESCE(p.String, p.LongString) AS v) x
@@ -64,6 +78,9 @@ public sealed partial class SearchReader(ContentSession session)
                AND EXISTS (SELECT 1 FROM tblContentLanguage cl WHERE cl.fkContentID = c.pkID AND cl.fkLanguageBranchID = @lang)))
         ORDER BY p.fkContentID
         """;
+
+    /// <summary>Leaves CMS 13's blueprints out of both sources; nothing on CMS 12, whose SQL is as it was.</summary>
+    private string BlueprintFilter => session.Model.Schema.Blueprints && !includeBlueprints ? " AND ISNULL(c.Blueprint, 0) = 0" : "";
 
     /// <returns>Hits grouped per content item and language, and whether a source hit <see cref="MaxRows"/>.</returns>
     public async Task<(IReadOnlyList<SearchHit> Hits, bool Capped)> SearchAsync(string text, SearchScope scope, LanguageBranch? language, CancellationToken cancellationToken)
@@ -82,7 +99,7 @@ public sealed partial class SearchReader(ContentSession session)
 
         if (scope is SearchScope.Names or SearchScope.All)
         {
-            var rows = await session.Db.QueryAsync(NamesSql,
+            var rows = await session.Db.QueryAsync(NamesSql.Replace("/*blueprints*/", BlueprintFilter, StringComparison.Ordinal),
                 r => (r.GetInt32("fkContentID"), r.GetInt32("fkLanguageBranchID"), new SearchMatch("name", r.GetStringOrNull("Name") ?? "")),
                 cancellationToken, Parameters().Where(p => p.ParameterName is "@cap" or "@pattern" or "@lang").ToArray());
             capped |= rows.Count >= MaxRows;
@@ -91,7 +108,7 @@ public sealed partial class SearchReader(ContentSession session)
 
         if (scope is SearchScope.Strings or SearchScope.All)
         {
-            var rows = await session.Db.QueryAsync(StringsSql, r => (
+            var rows = await session.Db.QueryAsync(StringsSql.Replace("/*blueprints*/", BlueprintFilter, StringComparison.Ordinal), r => (
                     ContentId: r.GetInt32("fkContentID"),
                     LanguageId: r.GetInt32("fkLanguageBranchID"),
                     Definition: r.GetInt32("fkPropertyDefinitionID"),
@@ -99,7 +116,14 @@ public sealed partial class SearchReader(ContentSession session)
                     Snippet: r.GetStringOrNull("Snippet") ?? ""),
                 cancellationToken, Parameters().Where(p => p.ParameterName != "@pattern").ToArray());
             capped |= rows.Count >= MaxRows;
-            matches.AddRange(rows.Select(r => (r.ContentId, r.LanguageId, new SearchMatch(PropertyPaths.Describe(session.Model, r.Definition, r.Scope), Snippet(r.Snippet, text)))));
+            // CMS 13: text inside a Visual Builder composition is placed by its section and element.
+            await session.Identities.LoadAsync(rows.Select(r => r.ContentId), [], cancellationToken);
+            var compositions = new CompositionPaths(session);
+            await compositions.PrepareAsync(rows.Select(r => (r.ContentId, r.LanguageId)), cancellationToken);
+            matches.AddRange(rows.Select(r => (r.ContentId, r.LanguageId,
+                compositions.Describe(r.ContentId, r.LanguageId, r.Definition, r.Scope) is { } place
+                    ? new SearchMatch(place.Property, Snippet(r.Snippet, text)) { Section = place.Section, Element = place.Element }
+                    : new SearchMatch(PropertyPaths.Describe(session.Model, r.Definition, r.Scope), Snippet(r.Snippet, text)))));
         }
 
         await session.Identities.LoadAsync(matches.Select(m => m.ContentId), [], cancellationToken);
@@ -110,9 +134,10 @@ public sealed partial class SearchReader(ContentSession session)
                 var header = session.Identities.Header(group.Key.ContentId)!;
                 var identity = session.Identities.Describe(header, session.Model.Language(group.Key.LanguageId));
                 return new SearchHit(identity.Ref!, identity.Guid, identity.Type!, identity.Name, identity.Language, identity.Status!, identity.Url,
-                    identity.Deleted, group.Select(m => m.Match).DistinctBy(m => m.Property).ToList())
+                    identity.Deleted, group.Select(m => m.Match).DistinctBy(m => (m.Property, m.Section?.Key, m.Element?.Key)).ToList())
                 {
                     Blueprint = identity.Blueprint,
+                    Kind = identity.Kind,
                 };
             })
             .OrderBy(h => h.Matches.Any(m => m.Property == "name") ? 0 : 1)

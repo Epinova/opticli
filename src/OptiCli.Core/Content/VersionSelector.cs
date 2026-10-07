@@ -18,6 +18,12 @@ public enum VersionKind
 /// <summary><c>--version published|latest|&lt;id&gt;</c>.</summary>
 public sealed record VersionSelector(VersionKind Kind, int? Id = null)
 {
+    /// <summary>
+    /// CMS 13: a content variation's version instead of the content's own (<c>--variation</c>): its published one, or with
+    /// <see cref="VersionKind.Latest"/> its newest.
+    /// </summary>
+    public string? Variation { get; init; }
+
     public static readonly VersionSelector Published = new(VersionKind.Published);
 
     /// <exception cref="UsageException">Not one of the accepted forms.</exception>

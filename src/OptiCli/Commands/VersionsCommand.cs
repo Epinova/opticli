@@ -15,7 +15,9 @@ internal static class VersionsCommand
         var command = new Command("versions", """
             List a content item's versions, newest first, in all languages unless --lang.
             Each version: version ref (pass it to get), language, status, name, saved (UTC), saved by, publish date;
-            primary: true marks each branch's primary (published) version.
+            primary: true marks each branch's primary (published) version. CMS 13: a content variation's versions are listed too,
+            each with variation (its key) and never primary: they store only what the variation changes, over the published
+            version (`opticli get <version ref>` or `get <ref> --variation <key>` shows it merged, as the CMS loads it).
             Example: opticli versions 123 --lang en --limit 10
             """);
         content.AddTo(command);

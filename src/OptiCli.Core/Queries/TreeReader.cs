@@ -24,11 +24,28 @@ public sealed record TreeNode(
     int? SortIndex = null,
     IReadOnlyList<TreeNode>? Children = null,
     int? More = null,
-    bool? Blueprint = null);
+    bool? Blueprint = null)
+{
+    /// <summary>CMS 13: experience, section or element for Visual Builder content; left out otherwise.</summary>
+    public string? Kind { get; init; }
+
+    /// <summary>
+    /// CMS 13: how many of its children are blueprints, which <c>tree</c> and <c>children</c> leave out (and
+    /// <see cref="ChildCount"/> doesn't count) unless asked for with <c>--blueprints</c>.
+    /// </summary>
+    public int? Blueprints { get; init; }
+}
 
 /// <summary><c>tree</c>, <c>children</c> and <c>ancestors</c>, all from <c>tblTree</c>.</summary>
-public sealed class TreeReader(ContentSession session)
+/// <param name="includeBlueprints">
+/// CMS 13: list Visual Builder blueprints too (<c>--blueprints</c>). They are templates for new content, not content, so
+/// by default they are left out and only counted on their parent (<see cref="TreeNode.Blueprints"/>).
+/// </param>
+public sealed class TreeReader(ContentSession session, bool includeBlueprints = false)
 {
+    /// <summary>Blueprints are left out: CMS 13 without <c>--blueprints</c>; CMS 12 has none (its SQL is unchanged).</summary>
+    private bool LeaveOutBlueprints => session.Model.Schema.Blueprints && !includeBlueprints;
+
     /// <summary>Hard cap on nodes one <c>tree</c> call loads, so a deep tree of a big site stays fast.</summary>
     public const int MaxNodes = 5000;
 
@@ -36,6 +53,13 @@ public sealed class TreeReader(ContentSession session)
         SELECT TOP (@cap) fkChildID, NestingLevel FROM tblTree
         WHERE fkParentID = @root AND NestingLevel <= @depth
         ORDER BY NestingLevel, fkChildID
+        """;
+
+    private const string DescendantsWithoutBlueprintsSql = """
+        SELECT TOP (@cap) t.fkChildID, t.NestingLevel FROM tblTree t
+        JOIN tblContent c ON c.pkID = t.fkChildID
+        WHERE t.fkParentID = @root AND t.NestingLevel <= @depth AND ISNULL(c.Blueprint, 0) = 0
+        ORDER BY t.NestingLevel, t.fkChildID
         """;
 
     // The branch ContentHeader.LanguageRow picks: the language asked for, else the master branch, else the lowest id.
@@ -52,15 +76,24 @@ public sealed class TreeReader(ContentSession session)
         """;
 
     private const string ChildCountsSql = """
-        SELECT fkParentID, COUNT(*) AS Children FROM tblTree
+        SELECT fkParentID, COUNT(*) AS Children, 0 AS Blueprints FROM tblTree
         WHERE NestingLevel = 1 AND fkParentID IN ({0})
         GROUP BY fkParentID
+        """;
+
+    private const string ChildCountsWithoutBlueprintsSql = """
+        SELECT t.fkParentID, SUM(CASE WHEN ISNULL(c.Blueprint, 0) = 0 THEN 1 ELSE 0 END) AS Children,
+               SUM(CASE WHEN c.Blueprint = 1 THEN 1 ELSE 0 END) AS Blueprints
+        FROM tblTree t
+        JOIN tblContent c ON c.pkID = t.fkChildID
+        WHERE t.NestingLevel = 1 AND t.fkParentID IN ({0})
+        GROUP BY t.fkParentID
         """;
 
     /// <returns>The root with nested children, and whether <see cref="MaxNodes"/> cut the tree short.</returns>
     public async Task<(TreeNode Root, bool Capped)> TreeAsync(int rootId, int depth, int perNode, LanguageBranch? language, CancellationToken cancellationToken)
     {
-        var descendants = await session.Db.QueryAsync(DescendantsSql, r => (Id: r.GetInt32("fkChildID"), Level: (int)r.GetInt16(r.GetOrdinal("NestingLevel"))),
+        var descendants = await session.Db.QueryAsync(LeaveOutBlueprints ? DescendantsWithoutBlueprintsSql : DescendantsSql, r => (Id: r.GetInt32("fkChildID"), Level: (int)r.GetInt16(r.GetOrdinal("NestingLevel"))),
             cancellationToken, new SqlParameter("@root", rootId), new SqlParameter("@depth", depth), new SqlParameter("@cap", MaxNodes + 1));
         var capped = descendants.Count > MaxNodes;
         var ids = descendants.Take(MaxNodes).Select(d => d.Id).Append(rootId).ToList();
@@ -96,7 +129,7 @@ public sealed class TreeReader(ContentSession session)
     public async Task<IReadOnlyList<int>> ChildIdsAsync(int parentId, LanguageBranch? language, CancellationToken cancellationToken)
     {
         var parent = await session.HeaderAsync(parentId, cancellationToken);
-        var keys = await session.Db.QueryAsync(ChildKeysSql, r => new ChildOrder.Key(
+        var keys = await session.Db.QueryAsync(LeaveOutBlueprints ? ChildKeysSql + "  AND ISNULL(c.Blueprint, 0) = 0" : ChildKeysSql, r => new ChildOrder.Key(
                 r.GetInt32("pkID"), r.GetInt32("PeerOrder"), r.GetStringOrNull("Name"),
                 r.GetDateTimeOrNull("Created"), r.GetDateTimeOrNull("Saved"), r.GetDateTimeOrNull("StartPublish")),
             cancellationToken,
@@ -104,6 +137,13 @@ public sealed class TreeReader(ContentSession session)
             new SqlParameter("@lang", System.Data.SqlDbType.Int) { Value = (object?)language?.Id ?? DBNull.Value });
         return ChildOrder.Sort(keys, k => k, parent.ChildOrderRule).Select(k => k.Id).ToList();
     }
+
+    /// <summary>CMS 13: how many of the item's children are blueprints that were left out (0 when they are listed).</summary>
+    public async Task<int> BlueprintsLeftOutAsync(int parentId, CancellationToken cancellationToken) =>
+        LeaveOutBlueprints
+            ? (await session.Db.QueryAsync("SELECT COUNT(*) FROM tblContent WHERE fkParentID = @id AND Blueprint = 1", r => r.GetInt32(0), cancellationToken,
+                new SqlParameter("@id", parentId))).Single()
+            : 0;
 
     /// <summary>The headers of <paramref name="ids"/>, in that order.</summary>
     public async Task<IReadOnlyList<ContentHeader>> HeadersAsync(IReadOnlyList<int> ids, CancellationToken cancellationToken)
@@ -127,7 +167,7 @@ public sealed class TreeReader(ContentSession session)
             ? header.PeerOrder
             : null;
 
-    private TreeNode Node(ContentHeader header, LanguageBranch? language, int childCount, int? sortIndex = null)
+    private TreeNode Node(ContentHeader header, LanguageBranch? language, (int Children, int Blueprints) childCount, int? sortIndex = null)
     {
         var identity = session.Identities.Describe(header, language);
         return new TreeNode(
@@ -139,24 +179,26 @@ public sealed class TreeReader(ContentSession session)
             identity.Status!,
             identity.Url,
             header.Languages.Keys.Select(id => session.Model.Language(id)?.DisplayCode).OfType<string>().Order().ToList(),
-            childCount,
+            childCount.Children,
             identity.Deleted,
             sortIndex)
         {
             Blueprint = identity.Blueprint,
+            Kind = identity.Kind,
+            Blueprints = childCount.Blueprints > 0 ? childCount.Blueprints : null,
         };
     }
 
-    private async Task<Dictionary<int, int>> ChildCountsAsync(IEnumerable<int> ids, CancellationToken cancellationToken)
+    private async Task<Dictionary<int, (int Children, int Blueprints)>> ChildCountsAsync(IEnumerable<int> ids, CancellationToken cancellationToken)
     {
-        var counts = new Dictionary<int, int>();
+        var counts = new Dictionary<int, (int, int)>();
         foreach (var list in SqlLists.Ints(ids))
         {
-            var rows = await session.Db.QueryAsync(string.Format(CultureInfo.InvariantCulture, ChildCountsSql, list),
-                r => (Id: r.GetInt32("fkParentID"), Count: r.GetInt32("Children")), cancellationToken);
-            foreach (var (id, count) in rows)
+            var rows = await session.Db.QueryAsync(string.Format(CultureInfo.InvariantCulture, LeaveOutBlueprints ? ChildCountsWithoutBlueprintsSql : ChildCountsSql, list),
+                r => (Id: r.GetInt32("fkParentID"), Count: r.GetInt32("Children"), Blueprints: r.GetInt32("Blueprints")), cancellationToken);
+            foreach (var (id, count, blueprints) in rows)
             {
-                counts[id] = count;
+                counts[id] = (count, blueprints);
             }
         }
         return counts;

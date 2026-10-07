@@ -35,6 +35,7 @@ internal static class FindCommand
         var content = new ContentOptions();
         content.Lang.Description = "Match and show items in this branch (code); items without it are skipped. Default: each item's master language.";
         var list = new ListOptions(options);
+        var blueprints = BlueprintsOption.Create();
 
         var command = new Command("find", """
             List content items of one type, optionally filtered on property values, location and status.
@@ -42,7 +43,9 @@ internal static class FindCommand
             master language; with --lang only items that have that branch. A ContentArea or reference filter takes a ref:
             --where MainArea=456 finds the items whose MainArea contains content 456. --status scheduled lists items with a version
             the CMS's "Publish delayed content versions" job publishes later (publishAt, UTC); --status expired items whose
-            published version has stopped publishing (expiredAt, UTC), which visitors no longer see.
+            published version has stopped publishing (expiredAt, UTC), which visitors no longer see. CMS 13: a content variation's
+            unpublished or scheduled version counts for draft and scheduled too (`opticli drafts` says which variation), and
+            Visual Builder blueprints are left out unless --blueprints.
             Example: opticli find --type ArticlePage --where Heading~news --under /en/ --status published
             Example: opticli find --type ArticlePage --status scheduled
             """);
@@ -52,6 +55,7 @@ internal static class FindCommand
         command.Options.Add(status);
         content.AddTo(command, withRef: false);
         list.AddTo(command);
+        command.Options.Add(blueprints);
 
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
         {
@@ -63,7 +67,7 @@ internal static class FindCommand
             var language = session.Language(context.Parse.GetValue(content.Lang));
             var (offset, limit) = list.Window(context.Parse);
 
-            var found = await new FindQuery(session).RunAsync(
+            var found = await new FindQuery(session, context.Parse.GetValue(blueprints)).RunAsync(
                 contentType, clauses, underId, Enum.Parse<FindStatus>(context.Parse.GetValue(status)!, ignoreCase: true), language, offset, limit, cancellationToken);
             var page = Paging.FromWindow(found, offset, limit);
             await session.Identities.LoadAsync(page.Items.Select(f => f.Id), [], cancellationToken);

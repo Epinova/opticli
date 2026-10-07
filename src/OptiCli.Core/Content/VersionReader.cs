@@ -88,6 +88,22 @@ public static class VersionReader
             r => Map(r, model), cancellationToken, new SqlParameter("@id", contentId), new SqlParameter("@lang", languageId))).FirstOrDefault();
 
     /// <summary>
+    /// CMS 13: a content variation's version in the branch: its published one, or with <paramref name="latest"/> its newest.
+    /// The key is matched as the CMS does (<c>LoweredKey</c>). Null when there is none (or on a schema without variations).
+    /// </summary>
+    public static async Task<VersionInfo?> VariationAsync(CmsDatabase db, CmsModel model, int contentId, int languageId, string key, bool latest, CancellationToken cancellationToken) =>
+        !model.Schema.Variations ? null : (await db.QueryAsync(
+            $"{Select(model, "TOP 1 ")} WHERE wc.fkContentID = @id AND wc.fkLanguageBranchID = @lang AND v.LoweredKey = LOWER(@key){(latest ? "" : $" AND wc.Status = {(int)VersionStatus.Published}")} ORDER BY wc.pkID DESC",
+            r => Map(r, model), cancellationToken, new SqlParameter("@id", contentId), new SqlParameter("@lang", languageId), new SqlParameter("@key", key))).FirstOrDefault();
+
+    /// <summary>CMS 13: the keys of the content variations the content has versions of, in any language.</summary>
+    public static async Task<IReadOnlyList<string>> VariationKeysAsync(CmsDatabase db, CmsModel model, int contentId, CancellationToken cancellationToken) =>
+        !model.Schema.Variations ? [] : await db.QueryAsync("""
+            SELECT DISTINCT v.[Key] FROM tblWorkContent wc JOIN tblContentVariation v ON v.pkID = wc.fkVariationID
+            WHERE wc.fkContentID = @id ORDER BY v.[Key]
+            """, r => r.GetString(0), cancellationToken, new SqlParameter("@id", contentId));
+
+    /// <summary>
     /// The versions of the branch after its published version (any version, when it was never published) up to
     /// <paramref name="upTo"/>, saved by someone other than <paramref name="except"/>, newest first: what the site agent
     /// asks to confirm before publishing <paramref name="upTo"/>, if it carries their changes.
