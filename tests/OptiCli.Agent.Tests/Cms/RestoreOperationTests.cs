@@ -21,7 +21,12 @@ public class RestoreOperationTests
     static RestoreOperationTests()
     {
         // Set by the CMS when it starts; without a site the getter would ask its system definition.
+        // A PageReference on CMS 12, where the property has that type; CMS 13 made it a ContentReference.
+#if CMS13
+        ContentReference.WasteBasket = new ContentReference(Bin);
+#else
         ContentReference.WasteBasket = new PageReference(Bin);
+#endif
     }
 
     private readonly Dictionary<int, CmsCallTests.Unsecured> _content = [];

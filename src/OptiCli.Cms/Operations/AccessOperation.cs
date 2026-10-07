@@ -22,7 +22,7 @@ internal static class AccessOperation
         {
             throw AgentException.Usage($"{link} is content from a content provider; its access rights are the provider's.");
         }
-        if (ProtectedContent.Contains(ProtectedContent.Links(call.Service<ISiteDefinitionRepository>()), link))
+        if (ProtectedContent.Contains(ProtectedContent.Links(call), link))
         {
             throw AgentException.Refused(
                 $"Content {link.ID} is the root, the recycle bin, the global block folder, a start page or an asset root; opticli won't change its access rights.",

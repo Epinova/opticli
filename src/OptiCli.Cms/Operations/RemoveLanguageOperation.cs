@@ -27,7 +27,7 @@ internal static class RemoveLanguageOperation
             throw AgentException.Refused($"'{culture.Name}' is the master language of {link.ID}; its other branches depend on it.",
                 "Delete the content instead (it goes to the recycle bin), or remove the other branches.");
         }
-        if (call.Service<EPiServer.Web.ISiteDefinitionRepository>().List().Any(site => site.StartPage.CompareToIgnoreWorkID(link)))
+        if (Compat.CmsSites.StartPages(call).Any(start => start.CompareToIgnoreWorkID(link)))
         {
             throw AgentException.Refused($"Content {link.ID} is a site's start page; removing its '{culture.Name}' branch takes that language off the site.",
                 "Do it in the CMS edit UI if that is intended.");

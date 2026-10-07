@@ -17,7 +17,7 @@ internal static class UnpublishOperation
     {
         var flow = new WriteFlow(call);
         var link = flow.Locator.ResolveContent(reference);
-        if (ProtectedContent.Contains(ProtectedContent.Links(call.Service<ISiteDefinitionRepository>()), link))
+        if (ProtectedContent.Contains(ProtectedContent.Links(call), link))
         {
             throw AgentException.Refused($"Content {link.ID} is a site root, start page or asset root; opticli won't take it offline.");
         }

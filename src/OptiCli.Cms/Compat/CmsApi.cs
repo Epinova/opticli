@@ -1,5 +1,6 @@
 using EPiServer;
 using EPiServer.Core;
+using EPiServer.DataAbstraction;
 using EPiServer.DataAccess;
 using EPiServer.Security;
 using EPiServer.Validation;
@@ -80,4 +81,32 @@ internal static class CmsApi
         item.RenderSettings[key] = value;
 #endif
     }
+
+    /// <summary>
+    /// Whether <paramref name="type"/> is a block type. CMS 12 loads block types as <see cref="BlockType"/>; CMS 13 loads
+    /// every non-page type as a plain <see cref="ContentType"/> and says it with <see cref="ContentType.Base"/> (or the
+    /// model: a Visual Builder section type has the base <c>Section</c>, and is a block too).
+    /// </summary>
+    public static bool IsBlockType(ContentType type) =>
+#if CMS13
+        type.Base == ContentTypeBase.Block || (type.ModelType is { } model && typeof(BlockData).IsAssignableFrom(model));
+#else
+        type is BlockType;
+#endif
+
+    /// <summary>Whether the property is indexed for search (CMS 13 replaced the flag with <c>IndexingType</c>).</summary>
+    public static bool IsSearchable(PropertyDefinition definition) =>
+#if CMS13
+        definition.IndexingType == IndexingType.Searchable;
+#else
+        definition.Searchable;
+#endif
+
+    /// <summary>The value a page's <c>PageShortcutLink</c> takes for <paramref name="target"/>: a page reference on CMS 12, a content reference on CMS 13.</summary>
+    public static ContentReference ShortcutLink(PageData target) =>
+#if CMS13
+        target.ContentLink.ToReferenceWithoutVersion();
+#else
+        target.PageLink.ToPageReference().ToReferenceWithoutVersion();
+#endif
 }

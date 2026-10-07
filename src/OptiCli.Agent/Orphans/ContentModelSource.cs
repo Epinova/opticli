@@ -109,7 +109,7 @@ internal sealed class ContentModelSource(IServiceProvider services) : IContentMo
 
     public IReadOnlyList<SiteType> Types()
     {
-        var models = services.GetRequiredService<ContentTypeModelRepository>();
+        var hasModel = Compat.AgentBuild.HasPropertyModel(services);
         var available = services.GetService<IAvailableSettingsRepository>();
         var all = _types.List().ToList();
         var blockNames = all.ToDictionary(t => t.GUID, t => t.Name);
@@ -122,7 +122,7 @@ internal sealed class ContentModelSource(IServiceProvider services) : IContentMo
                 t.Description,
                 string.IsNullOrWhiteSpace(t.ModelTypeString) ? null : t.ModelTypeString,
                 t.ModelType is not null,
-                t.PropertyDefinitions.Select(p => Property(t, p, models, blockNames)).ToList(),
+                t.PropertyDefinitions.Select(p => Property(t, p, hasModel, blockNames)).ToList(),
                 AllowedChildren(available, t)))
             .ToList();
     }
@@ -192,15 +192,15 @@ internal sealed class ContentModelSource(IServiceProvider services) : IContentMo
 
     private static Cms.AgentException AgentExceptionFor(string name) => Cms.AgentException.Conflict($"'{name}' was removed meanwhile.");
 
-    private static SiteProperty Property(ContentType type, PropertyDefinition property, ContentTypeModelRepository models, IReadOnlyDictionary<Guid, string> blockNames)
+    private static SiteProperty Property(ContentType type, PropertyDefinition property, Func<int, PropertyDefinition, bool> hasModel, IReadOnlyDictionary<Guid, string> blockNames)
     {
-        var block = (property.Type as BlockPropertyDefinitionType)?.BlockType?.GUID;
+        var block = Compat.AgentBuild.BlockTypeGuid(property);
         return new SiteProperty(
             property.ID,
             type.ID,
             property.Name,
             property.ExistsOnModel,
-            models.GetPropertyModel(type.ID, property) is not null,
+            hasModel(type.ID, property),
             block,
             new RemovedPropertyDefinition(
                 property.ID,
@@ -210,7 +210,7 @@ internal sealed class ContentModelSource(IServiceProvider services) : IContentMo
                 block is { } guid ? blockNames.GetValueOrDefault(guid) ?? guid.ToString() : null,
                 property.LanguageSpecific,
                 property.Required,
-                property.Searchable,
+                Cms.Compat.CmsApi.IsSearchable(property),
                 property.DisplayEditUI,
                 property.EditCaption,
                 property.HelpText,

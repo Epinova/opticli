@@ -65,7 +65,7 @@ internal sealed class ContentTypeDescriber(IContentTypeRepository types, Content
     private static string KindOf(ContentType type) => type switch
     {
         PageType => "page",
-        BlockType => "block",
+        _ when Compat.CmsApi.IsBlockType(type) => "block",
         _ when type.ModelType is { } model && typeof(MediaData).IsAssignableFrom(model) => "media",
         _ when type.ModelType is { } model && typeof(ContentFolder).IsAssignableFrom(model) => "folder",
         _ => "other",
@@ -100,7 +100,7 @@ internal sealed class ContentTypeDescriber(IContentTypeRepository types, Content
             PropertyType = ShortTypeName(definition.Type?.DefinitionType) ?? definition.Type?.Name ?? "unknown",
             Required = definition.Required || attributes.OfType<RequiredAttribute>().Any(),
             CultureSpecific = definition.LanguageSpecific,
-            Searchable = definition.Searchable,
+            Searchable = Compat.CmsApi.IsSearchable(definition),
             Visible = definition.DisplayEditUI && scaffold?.Scaffold != false,
             DefinedInCode = definition.ExistsOnModel,
             DisplayName = NullIfEmpty(display?.GetName() ?? definition.EditCaption),

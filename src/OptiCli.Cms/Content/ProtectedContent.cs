@@ -1,5 +1,4 @@
 using EPiServer.Core;
-using EPiServer.Web;
 
 namespace OptiCli.Cms.Content;
 
@@ -9,16 +8,13 @@ namespace OptiCli.Cms.Content;
 /// </summary>
 internal static class ProtectedContent
 {
-    public static IReadOnlyList<ContentReference> Links(ISiteDefinitionRepository sites)
+    public static IReadOnlyList<ContentReference> Links(CmsCall call)
     {
         var links = new List<ContentReference>
         {
             ContentReference.RootPage, ContentReference.WasteBasket, ContentReference.GlobalBlockFolder,
         };
-        foreach (var site in sites.List())
-        {
-            links.AddRange([site.StartPage, site.SiteAssetsRoot, site.GlobalAssetsRoot, site.ContentAssetsRoot]);
-        }
+        links.AddRange(Compat.CmsSites.Roots(call).OfType<ContentReference>());
         links.RemoveAll(ContentReference.IsNullOrEmpty);
         return links;
     }

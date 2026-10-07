@@ -15,7 +15,7 @@ namespace OptiCli.Agent.Drift;
 /// </summary>
 /// <remarks>
 /// <para>The register is transient, so this gets one of its own and fills it with the models the startup scan registered in
-/// <see cref="ContentTypeModelRepository"/>. The analysis sets each model's state and matched content type, as a sync
+/// the CMS's content type model repository. The analysis sets each model's state and matched content type, as a sync
 /// with commit would have; nothing at runtime depends on those being unset.</para>
 /// <para>The analysis matches each model to its content type and property definitions (by GUID, class, name, and the old
 /// names migration steps give). Its in-sync verdict isn't used: the content type repository fills the settings the
@@ -29,7 +29,7 @@ internal static partial class ContentModelScan
 
     public static (List<DriftItem> ContentTypes, List<DriftItem> Properties) Compare(IServiceProvider services)
     {
-        var models = services.GetRequiredService<ContentTypeModelRepository>().List().ToList();
+        var models = Compat.AgentBuild.ContentTypeModels(services).ToList();
         var register = services.GetRequiredService<ContentTypeModelRegister>();
         register.RunSynchronously = true;
         foreach (var model in models)

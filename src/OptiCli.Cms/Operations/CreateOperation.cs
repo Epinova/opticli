@@ -134,7 +134,7 @@ internal static class CreateOperation
     internal static PlacementKind Kind(ContentType type) => type switch
     {
         PageType => PlacementKind.Page,
-        BlockType => PlacementKind.Block,
+        _ when Compat.CmsApi.IsBlockType(type) => PlacementKind.Block,
         { ModelType: { } model } when typeof(MediaData).IsAssignableFrom(model) => PlacementKind.Media,
         { ModelType: { } model } when typeof(ContentFolder).IsAssignableFrom(model) => PlacementKind.Folder,
         _ => PlacementKind.Other,

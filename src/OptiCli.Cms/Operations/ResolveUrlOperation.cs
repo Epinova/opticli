@@ -56,7 +56,7 @@ internal static partial class ResolveUrlOperation
             return Load(call, locator.Resolve(reference));
         }
 
-        var arguments = new RouteArguments { ContextMode = ContextMode.Default, MatchWildcardHost = true };
+        var arguments = Compat.CmsSites.FallbackRouting();
         if (Uri.TryCreate(text, UriKind.Absolute, out var absolute) && absolute.Scheme is "http" or "https")
         {
             return urls.Route(new UrlBuilder(absolute), arguments)?.Content;
@@ -67,9 +67,8 @@ internal static partial class ResolveUrlOperation
         }
         // A path: on this request's site first, then on each site's own URL, so a dedicated MCP host still finds them.
         return urls.Route(new UrlBuilder(text), arguments)?.Content
-            ?? call.Service<ISiteDefinitionRepository>().List()
-                .Where(site => site.SiteUrl is not null)
-                .Select(site => urls.Route(new UrlBuilder(new Uri(site.SiteUrl, text)), arguments)?.Content)
+            ?? Compat.CmsSites.Urls(call)
+                .Select(site => urls.Route(new UrlBuilder(new Uri(site, text)), arguments)?.Content)
                 .FirstOrDefault(found => found is not null);
     }
 

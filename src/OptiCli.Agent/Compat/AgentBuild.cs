@@ -1,12 +1,12 @@
+using EPiServer.Core;
 using EPiServer.DataAbstraction;
 using EPiServer.DataAbstraction.RuntimeModel;
-#if CMS13
-using Microsoft.Extensions.DependencyInjection;
-#else
+#if !CMS13
 using EPiServer.DataAbstraction.RuntimeModel.Internal;
-using Microsoft.Extensions.DependencyInjection;
 #endif
+using Microsoft.Extensions.DependencyInjection;
 using OptiCli.Cms;
+using ContentTypeModel = EPiServer.DataAbstraction.RuntimeModel.ContentTypeModel;
 
 namespace OptiCli.Agent.Compat;
 
@@ -50,6 +50,40 @@ internal static class AgentBuild
         return synchronizer.ResolveType;
 #endif
     }
+
+    /// <summary>
+    /// The content type models the CMS scanned from the site's code: <c>ContentTypeModelRepository</c> on CMS 12, the
+    /// <c>IContentTypeModelRepository</c> that replaced it on CMS 13.
+    /// </summary>
+    public static IEnumerable<ContentTypeModel> ContentTypeModels(IServiceProvider services) =>
+#if CMS13
+        services.GetRequiredService<IContentTypeModelRepository>().List();
+#else
+        services.GetRequiredService<ContentTypeModelRepository>().List();
+#endif
+
+    /// <summary>Whether a property definition of a content type has a model in the site's code (the same repositories).</summary>
+    public static Func<int, PropertyDefinition, bool> HasPropertyModel(IServiceProvider services)
+    {
+#if CMS13
+        var models = services.GetRequiredService<IContentTypeModelRepository>();
+#else
+        var models = services.GetRequiredService<ContentTypeModelRepository>();
+#endif
+        return (contentTypeId, property) => models.GetPropertyModel(contentTypeId, property) is not null;
+    }
+
+    /// <summary>
+    /// The GUID of the block type a block property holds; null for other properties. CMS 12 has a property type per block
+    /// type (<c>BlockPropertyDefinitionType</c>); CMS 13 one generic <c>Block</c> type, with the block type on the
+    /// definition (<c>ItemTypeReference</c>).
+    /// </summary>
+    public static Guid? BlockTypeGuid(PropertyDefinition property) =>
+#if CMS13
+        property.Type?.DataType == PropertyDataType.Block ? property.ItemTypeReference?.GUID : null;
+#else
+        (property.Type as BlockPropertyDefinitionType)?.BlockType?.GUID;
+#endif
 
     /// <summary>
     /// Deletes a property definition. CMS 13 made <c>IPropertyDefinitionRepository.Delete</c> an error (properties go with

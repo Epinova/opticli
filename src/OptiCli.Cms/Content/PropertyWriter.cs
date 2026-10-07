@@ -435,7 +435,7 @@ internal sealed class PropertyWriter(
         {
             var target = locator.LoadAnyLanguage(locator.ResolveContent(shortcut.To, "shortcut target"));
             link.Value = target is PageData targetPage
-                ? targetPage.PageLink.ToPageReference().ToReferenceWithoutVersion()
+                ? Compat.CmsApi.ShortcutLink(targetPage)
                 : throw AgentException.Usage($"A shortcut must point at a page; {shortcut.To} is {target.GetOriginalType().Name}.");
         }
         else if (type == PageShortcutType.External)
@@ -590,11 +590,12 @@ internal sealed class PropertyWriter(
             case JsonValueKind.Object when property.Value is IContentData block:
                 Apply(block, value.Deserialize<Dictionary<string, JsonElement>>(AgentJson.Options));
                 return;
-            case JsonValueKind.String when property is PropertyContentReference or PropertyPageReference:
+            // PropertyPageReference (a page reference, obsolete on CMS 13) is a PropertyContentReference too.
+            case JsonValueKind.String when property is PropertyContentReference:
                 // Accept GUIDs too, which ParseToSelf doesn't.
                 property.ParseToSelf(locator.ResolveContent(value.GetString(), $"reference for {property.Name}").ToString());
                 return;
-            case JsonValueKind.Number when !call.MayReferenceUnchecked && property is PropertyContentReference or PropertyPageReference:
+            case JsonValueKind.Number when !call.MayReferenceUnchecked && property is PropertyContentReference:
                 property.ParseToSelf(locator.ResolveContent(value.GetRawText(), $"reference for {property.Name}").ToString());
                 return;
             case JsonValueKind.String:

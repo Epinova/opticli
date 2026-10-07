@@ -78,7 +78,7 @@ internal static class MoveOperation
     /// </summary>
     internal static IContent Movable(WriteFlow flow, ContentReference link)
     {
-        var protectedLinks = ProtectedContent.Links(flow.Call.Service<ISiteDefinitionRepository>());
+        var protectedLinks = ProtectedContent.Links(flow.Call);
         if (ProtectedContent.Contains(protectedLinks, link))
         {
             throw AgentException.Refused($"Content {link.ID} is a site root, start page, asset root or the recycle bin; opticli won't move or delete it.");
