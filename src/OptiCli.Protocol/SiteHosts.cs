@@ -47,7 +47,7 @@ public sealed record SiteHostChange
     /// <summary>One of <see cref="SiteHostActions"/>.</summary>
     public required string Action { get; init; }
 
-    /// <summary>For <see cref="SiteHostActions.Add"/>: one of <see cref="HostTypes"/>; default undefined.</summary>
+    /// <summary>For <see cref="SiteHostActions.Add"/>: one of <see cref="HostTypes"/> (preview and media on CMS 13 only); default undefined.</summary>
     public string? Type { get; init; }
 
     /// <summary>The language the host is for (an enabled language branch); null for every language, as most hosts are.</summary>
@@ -55,8 +55,8 @@ public sealed record SiteHostChange
 
     /// <summary>
     /// One of <see cref="HostHttps"/>: whether the CMS generates <c>https://</c> links to the host. Null leaves an existing
-    /// host's setting as it is, and gives a new host <see cref="HostHttps.Unset"/> (CMS 13, which has no unset: the scheme
-    /// of the site's URL).
+    /// host's setting as it is, and gives a new host <see cref="HostHttps.Unset"/> (CMS 13, which has no unset: http for
+    /// localhost, <c>*.localhost</c> and loopback addresses, else the scheme of the site's URL).
     /// </summary>
     public string? Https { get; init; }
 
@@ -76,7 +76,10 @@ public static class SiteHostActions
     /// </summary>
     public const string Primary = "primary";
 
-    /// <summary>Add a host the site doesn't have yet (<c>conflict</c> when it has), of <see cref="SiteHostChange.Type"/>.</summary>
+    /// <summary>
+    /// Add a host the site doesn't have yet (<c>conflict</c> when it has), of <see cref="SiteHostChange.Type"/>. On CMS 13,
+    /// adding <c>*</c> makes the application the default one, taking that from the one that was in the same save.
+    /// </summary>
     public const string Add = "add";
 
     /// <summary>Remove one host; never the site's last one.</summary>
@@ -143,19 +146,22 @@ public static class HostTypes
     /// </summary>
     private static readonly string[] ByValue = [Undefined, Primary, RedirectPermanent, RedirectTemporary, Edit, Preview, Media];
 
-    /// <summary>The types a host can be given (CMS 12's): <see cref="Parse"/> takes these.</summary>
-    private static readonly string[] Settable = [Undefined, Primary, RedirectPermanent, RedirectTemporary, Edit];
+    /// <summary>The types a host can be given: <see cref="Parse"/> takes these (<see cref="Cms13Only"/> on CMS 13 only).</summary>
+    private static readonly string[] Settable = [Undefined, Primary, RedirectPermanent, RedirectTemporary, Edit, Preview, Media];
 
-    public const string Syntax = "undefined, primary, edit, redirect-permanent or redirect-temporary";
+    /// <summary>The types only CMS 13 has (<c>ApplicationHostType</c>); the agent refuses them on CMS 12.</summary>
+    public static readonly IReadOnlyList<string> Cms13Only = [Preview, Media];
+
+    public const string Syntax = "undefined, primary, edit, redirect-permanent or redirect-temporary, and on CMS 13 preview or media";
+
+    /// <summary>The types a CMS 12 host can be given, for its refusal of <see cref="Cms13Only"/>.</summary>
+    public const string Cms12Syntax = "undefined, primary, edit, redirect-permanent or redirect-temporary";
 
     public static string FromValue(int value) => value >= 0 && value < ByValue.Length ? ByValue[value] : $"type{value}";
 
     public static int ToValue(string type) => Array.IndexOf(ByValue, type);
 
-    /// <summary>
-    /// The type <paramref name="text"/> names, case-insensitively and with or without dashes; null when none, or one a
-    /// host can't be given here (<see cref="Preview"/>, <see cref="Media"/>).
-    /// </summary>
+    /// <summary>The type <paramref name="text"/> names, case-insensitively and with or without dashes; null when none.</summary>
     public static string? Parse(string text)
     {
         var compact = text.Replace("-", "", StringComparison.Ordinal).Trim();

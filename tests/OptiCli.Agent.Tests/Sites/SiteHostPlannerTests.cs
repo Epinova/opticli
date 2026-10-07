@@ -1,5 +1,6 @@
 using OptiCli.Agent.Sites;
 using OptiCli.Cms;
+using OptiCli.Core.Text;
 using OptiCli.Protocol;
 
 namespace OptiCli.Agent.Tests.Sites;
@@ -605,19 +606,19 @@ public class SiteHostPlannerTests
     }
 
     [Fact]
-    public void A_primary_pair_on_an_application_gives_the_new_host_https_and_its_url_follows_the_hosts()
+    public void A_primary_pair_on_an_application_gives_a_loopback_host_http_and_its_url_follows_the_hosts()
     {
         var plan = PlanApplications(Applications(), Primary("Site A", "localhost:5001"));
         var a = plan.Sites.Single();
 
-        // By name, as the CMS lists them; the * (default application) stays.
+        // By name, as the CMS lists them; the * (default application) stays. http: what `opticli serve` listens with.
         Assert.Equal(
-            [Host("*"), Host("localhost:5001", HostTypes.Primary, https: true), Host("site-a.example", https: true), Host("site-a.se", HostTypes.Primary, "sv", true)],
+            [Host("*"), Host("localhost:5001", HostTypes.Primary, https: false), Host("site-a.example", https: true), Host("site-a.se", HostTypes.Primary, "sv", true)],
             a.After.Hosts);
         // The first primary host by name: localhost:5001, before site-a.se.
-        Assert.Equal("https://localhost:5001/", a.After.SiteUrl);
+        Assert.Equal("http://localhost:5001/", a.After.SiteUrl);
         Assert.Equal(
-            ["added localhost:5001 (primary, https)", "site-a.example: primary, https → undefined, https", "URL: https://site-a.example/ → https://localhost:5001/"],
+            ["added localhost:5001 (primary, http)", "site-a.example: primary, https → undefined, https", "URL: https://site-a.example/ → http://localhost:5001/"],
             a.Changes);
         Assert.Contains(plan.Warnings, w => w.StartsWith("Site A's sv URLs still use site-a.se", StringComparison.Ordinal));
 
@@ -626,10 +627,42 @@ public class SiteHostPlannerTests
         Assert.Empty(again.Sites.Single().Changes);
     }
 
-    [Fact]
-    public void A_new_host_on_an_application_gets_the_scheme_of_its_url_unless_one_is_given()
+    [Theory]
+    [InlineData("localhost:5005", false)]
+    [InlineData("site-a.localhost", false)]
+    [InlineData("127.0.0.1:5005", false)]
+    [InlineData("shop.site-a.example", true)]
+    [InlineData("site-a.test", true)]
+    public void A_new_host_on_an_application_gets_http_on_a_loopback_name_else_the_scheme_of_its_url(string host, bool https)
     {
-        // Site B's URL is http: a language's primary host (which the URL doesn't follow) and an added host are http too.
+        var a = PlanApplications(Applications(), Add("Site A", host)).Sites.Single().After;
+        var b = PlanApplications(Applications(), Add("Site B", host.Replace("site-a", "site-b", StringComparison.Ordinal))).Sites.Single().After;
+
+        Assert.Equal(https, a.Hosts.Single(h => h.Name == host).Https);
+        // Site B's URL is http: so are its new hosts, loopback or not.
+        Assert.False(b.Hosts.Single(h => h.Name == host.Replace("site-a", "site-b", StringComparison.Ordinal)).Https);
+        // A scheme, or --https, decides.
+        Assert.True(PlanApplications(Applications(), Add("Site B", $"https://{host}/")).Sites.Single().After.Hosts.Single(h => h.Name == HostNames.Literal(host)).Https);
+        Assert.False(PlanApplications(Applications(), Add("Site A", host, https: HostHttps.False)).Sites.Single().After.Hosts.Single(h => h.Name == host).Https);
+    }
+
+    [Fact]
+    public void The_scheme_of_new_hosts_on_an_application_doesnt_depend_on_the_order_of_the_pairs()
+    {
+        // Site B's URL is http; the first pair moves it to www.site-b.com, whose scheme the second must not take.
+        SiteHostChange[] pairs = [Primary("Site B", "www.site-b.com", https: HostHttps.True), Primary("Site B", "sv.site-b.com", "sv")];
+
+        var first = PlanApplications(Applications(), pairs).Sites.Single().After;
+        var reversed = PlanApplications(Applications(), [pairs[1], pairs[0]]).Sites.Single().After;
+
+        Assert.Equal(first.Hosts, reversed.Hosts);
+        Assert.Equal(first.SiteUrl, reversed.SiteUrl);
+        Assert.False(first.Hosts.Single(h => h.Name == "sv.site-b.com").Https);
+    }
+
+    [Fact]
+    public void A_language_pair_on_an_application_keeps_the_scheme_of_its_url_for_a_production_name()
+    {
         var b = PlanApplications(Applications(), Primary("Site B", "localhost:5004", "nb"), Add("Site B", "localhost:5005"), Add("Site B", "https://localhost:5006/")).Sites.Single().After;
 
         Assert.Equal(Host("localhost:5004", HostTypes.Primary, "nb", false), b.Hosts.Single(h => h.Name == "localhost:5004"));
@@ -665,6 +698,27 @@ public class SiteHostPlannerTests
     }
 
     [Fact]
+    public void Adding_the_star_host_to_an_application_moves_the_default_to_it_in_one_step()
+    {
+        var plan = PlanApplications(Applications(), Add("Site B", "*"));
+
+        // The one that loses it is in the plan too, after the one that takes it, and has nothing else to save.
+        Assert.Equal(["Site B", "Site A"], plan.Sites.Select(s => s.After.Name));
+        Assert.Equal(["made it the default application (*), which answers host names no application has, instead of Site A"], plan.Sites[0].Changes);
+        var a = plan.Sites[1];
+        Assert.Equal(["no longer the default application (*): Site B is now"], a.Changes);
+        Assert.Equal(("siteB", true, "https://site-a.example/"), (a.DefaultMovesTo, a.OnlyLosesDefault, a.After.SiteUrl));
+        Assert.DoesNotContain(a.After.Hosts, h => h.Name == "*");
+        Assert.Null(plan.Sites[0].DefaultMovesTo);
+
+        // With a change of its own, it has more to save.
+        Assert.False(PlanApplications(Applications(), Add("Site B", "*"), Add("Site A", "localhost:5001")).Sites.Single(s => s.After.Name == "Site A").OnlyLosesDefault);
+        // Removing it first still works, and CMS 12 still asks for that.
+        Assert.Null(PlanApplications(Applications(), Remove("Site A", "*"), Add("Site B", "*")).Sites[0].DefaultMovesTo);
+        Assert.Contains("Site A has the * host already", Messages(Fails(Production(), Add("Site B", "*"))));
+    }
+
+    [Fact]
     public void The_star_host_of_an_application_is_its_being_the_default_one()
     {
         var moved = PlanApplications(Applications(), Remove("Site A", "*"), Add("Site B", "*"));
@@ -674,18 +728,45 @@ public class SiteHostPlannerTests
         Assert.True(moved.Sites[0].RemovesHosts);
         Assert.Contains(moved.Warnings, w => w.StartsWith("Site A is no longer the default application", StringComparison.Ordinal));
 
-        // Only one at a time, a * with settings is refused, and the default application keeps a host of its own.
-        Assert.Contains("Site A is the default application (*) already", Messages(FailsApplications(Applications(), Add("Site B", "*"))));
-        var again = FailsApplications(Applications(), Add("Site A", "*"));
-        Assert.Equal((AgentErrorCodes.Conflict, "Site A is the default application (*) already."), (again.Code, again.Message));
+        // One at a time in a batch, a * with settings is refused, and the default application keeps a host of its own.
+        var c = new SiteState("siteC", "Site C", "https://site-c.example/", [Host("site-c.example", HostTypes.Primary, "nb", true)]);
+        Assert.Contains("an earlier change already makes Site B the default application", Messages(FailsApplications([.. Applications(), c], Add("Site B", "*"), Add("Site C", "*"))));
         var noDefault = Applications().Select(s => s with { Hosts = s.Hosts.Where(h => h.Name != "*").ToList() }).ToList();
         Assert.Contains("on CMS 13, * stands for the default application", Messages(FailsApplications(noDefault, Add("Site B", "*", HostTypes.Primary))));
         Assert.Contains("on CMS 13, * stands for the default application", Messages(FailsApplications(noDefault, Add("Site B", "*", language: "nb"))));
         Assert.Contains("on CMS 13, * stands for the default application", Messages(FailsApplications(noDefault, Add("Site B", "*", https: HostHttps.True))));
+        var again = FailsApplications(Applications(), Add("Site A", "*"));
+        Assert.Equal((AgentErrorCodes.Conflict, "Site A is the default application (*) already."), (again.Code, again.Message));
         var last = FailsApplications([new("siteC", "Site C", "https://site-c.example/", [Host("site-c.example", HostTypes.Primary, https: true), Host("*")])], Remove("Site C", "site-c.example"));
         Assert.Equal(AgentErrorCodes.Refused, last.Code);
         // Without a host for every language it is still allowed (CMS 13 links with any of the application's hosts).
-        var c = new SiteState("siteC", "Site C", "https://site-c.example/", [Host("site-c.example", HostTypes.Primary, "nb", true)]);
         Assert.True(PlanApplications([c], Add("Site C", "*")).Sites.Single().Changed);
+    }
+
+    [Theory]
+    [InlineData("preview")]
+    [InlineData("media")]
+    public void Preview_and_media_hosts_are_cms_13_only(string type)
+    {
+        var cms12 = Fails(Production(), Add("Site A", "media.localhost", type));
+
+        Assert.Equal(AgentErrorCodes.Usage, cms12.Code);
+        Assert.Equal($"{type} hosts are CMS 13 only; this site runs CMS 12.", cms12.Message);
+        Assert.Contains("redirect-temporary", cms12.Hint);
+    }
+
+    [Fact]
+    public void A_media_host_is_one_per_application_for_every_language_and_a_preview_host_needs_a_headless_one()
+    {
+        var media = PlanApplications(Applications(), Add("Site A", "media.localhost", HostTypes.Media)).Sites.Single();
+        Assert.Equal(["added media.localhost (media, http)"], media.Changes);
+
+        Assert.Contains("a media host is for every language", Messages(FailsApplications(Applications(), Add("Site A", "media.localhost", HostTypes.Media, "nb"))));
+        Assert.Contains("Site A would have 2 media hosts", Messages(FailsApplications(Applications(), Add("Site A", "media.localhost", HostTypes.Media), Add("Site A", "cdn.localhost", HostTypes.Media))));
+        Assert.Contains("renders itself (an in-process application)", Messages(FailsApplications(Applications(), Add("Site A", "preview.localhost", HostTypes.Preview))));
+
+        var headless = new SiteState("front", "Front end", "https://www.front.example/", [Host("www.front.example", HostTypes.Primary, https: true)]) { Headless = true };
+        Assert.True(PlanApplications([headless], Add("Front end", "preview.localhost", HostTypes.Preview)).Sites.Single().Changed);
+        Assert.Contains("only primary, preview and media hosts", Messages(FailsApplications([headless], Add("Front end", "localhost:5001"))));
     }
 }

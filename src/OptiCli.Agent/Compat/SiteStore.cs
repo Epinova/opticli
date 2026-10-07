@@ -46,6 +46,9 @@ internal sealed class SiteStore(IServiceProvider services)
 
     public IReadOnlyList<SiteState> List() => _repository.List().Where(a => a is IRoutableApplication).Select(ToState).ToList();
 
+    /// <summary>The application as the repository has it now; null when it is gone.</summary>
+    public SiteState? Get(string key) => _repository.Get(key) is IRoutableApplication and Application application ? ToState(application) : null;
+
     /// <exception cref="AgentException"><c>not_found</c>: the application was deleted meanwhile.</exception>
     /// <exception cref="SiteRefusedException">The CMS refused a host's name or language.</exception>
     public PreparedSite Prepare(PlannedSite site)
@@ -78,13 +81,14 @@ internal sealed class SiteStore(IServiceProvider services)
     {
         var application = (Application)prepared.Copy;
         var routable = (IRoutableApplication)application;
-        var makeDefault = prepared.Site.After.Hosts.Any(SiteHostPlanner.IsDefaultApplication);
+        // An application whose default another one takes in the batch keeps it here: that one's MakeDefaultAsync moves it.
+        var makeDefault = prepared.Site.After.Hosts.Any(SiteHostPlanner.IsDefaultApplication) || prepared.Site.DefaultMovesTo is not null;
         try
         {
             if (makeDefault != routable.IsDefault)
             {
                 // IsDefault has no public setter: this saves the copy (hosts and all) with it, and, when it makes this one
-                // the default, the one that was (the planner only allows that when there is none).
+                // the default, then the one that was without it, so there is always a default application.
                 await _repository.MakeDefaultAsync(routable, makeDefault, cancellationToken);
             }
             else
@@ -94,15 +98,44 @@ internal sealed class SiteStore(IServiceProvider services)
         }
         catch (ValidationException ex)
         {
-            // The exception's message is the first error; each property's error is in Data.
-            var messages = new[] { ex.Message }.Concat(ex.Data.Values.OfType<ValidationError>().Select(e => e.ErrorMessage)).Distinct().ToList();
-            throw new SiteRefusedException(string.Join(" ", messages), ex);
+            throw new SiteRefusedException(string.Join(" ", Errors(ex, application)), ex);
         }
         catch (ArgumentException ex)
         {
             throw new SiteRefusedException(ex.Message, ex);
         }
         return ToState(_repository.Get(application.Name) ?? application);
+    }
+
+    /// <summary>
+    /// Every error the CMS's validation found. The exception's message is the first; <c>Data</c> holds errors by property
+    /// name, one each (a list where the CMS keeps several), and none without a property name. So the application is
+    /// validated again, as the save did, for the rest.
+    /// </summary>
+    private IEnumerable<string> Errors(ValidationException exception, Application application)
+    {
+        var messages = new List<string> { exception.Message };
+        foreach (var value in exception.Data.Values)
+        {
+            messages.AddRange(value switch
+            {
+                ValidationError error => [error.ErrorMessage],
+                IEnumerable<ValidationError> errors => errors.Select(e => e.ErrorMessage),
+                _ => [],
+            });
+        }
+        try
+        {
+            if (services.GetService<IValidationService>() is { } validation)
+            {
+                messages.AddRange(validation.Validate(application).Select(e => e.ErrorMessage));
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // A validator that fails on its own: the errors the exception carries are what there is.
+        }
+        return messages.Where(m => !string.IsNullOrWhiteSpace(m)).Distinct();
     }
 
     internal static SiteState ToState(Application application)
@@ -121,7 +154,10 @@ internal sealed class SiteStore(IServiceProvider services)
             application.Name,
             string.IsNullOrWhiteSpace(application.DisplayName) ? application.Name : application.DisplayName,
             routable.Url?.ToString(),
-            hosts);
+            hosts)
+        {
+            Headless = application is Website,
+        };
     }
 
     private static string TypeName(ApplicationHostType type) => type switch
@@ -149,6 +185,9 @@ internal sealed class SiteStore(IServiceProvider services)
     private readonly ISiteDefinitionRepository _repository = services.GetRequiredService<ISiteDefinitionRepository>();
 
     public IReadOnlyList<SiteState> List() => _repository.List().Select(ToState).ToList();
+
+    /// <summary>The site as the repository has it now; null when it is gone.</summary>
+    public SiteState? Get(string key) => Guid.TryParse(key, out var id) && _repository.Get(id) is { } site ? ToState(site) : null;
 
     /// <exception cref="AgentException"><c>not_found</c>: the site was deleted meanwhile.</exception>
     /// <exception cref="SiteRefusedException">The CMS refused a host's name or language, or the SiteUrl.</exception>

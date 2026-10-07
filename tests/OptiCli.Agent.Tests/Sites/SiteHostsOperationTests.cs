@@ -179,18 +179,19 @@ public class SiteHostsOperationTests
         Assert.True(result!.Saved);
         Assert.Equal(["siteA", "Site_0B1C2D3E"], repository.SavedNames);
         var a = repository.Routable("siteA");
+        // localhost gets http, what `opticli serve` listens with.
         Assert.Equal(
-            [("localhost:5001", ApplicationHostType.Primary, UrlScheme.Https), ("site-a.example", ApplicationHostType.Default, UrlScheme.Https)],
+            [("localhost:5001", ApplicationHostType.Primary, UrlScheme.Http), ("site-a.example", ApplicationHostType.Default, UrlScheme.Https)],
             a.Hosts.Select(h => (h.Authority, h.Type, h.PreferredUrlScheme)).OrderBy(h => h.Authority));
         Assert.True(a.IsDefault);
-        // A new host without a scheme gets the scheme of the application's URL: http, after the pair.
-        Assert.Equal(UrlScheme.Http, repository.Routable("Site_0B1C2D3E").Hosts.Single(h => h.Authority == "www.site-b.example").PreferredUrlScheme);
+        // Another host without a scheme gets the scheme of the application's URL before the change: https.
+        Assert.Equal(UrlScheme.Https, repository.Routable("Site_0B1C2D3E").Hosts.Single(h => h.Authority == "www.site-b.example").PreferredUrlScheme);
 
         var viewA = result.Sites[0];
         Assert.Equal((null, "siteA", true, "Site A"), (viewA.Id, viewA.Application, viewA.IsDefault, viewA.Name));
-        Assert.Equal("https://localhost:5001/", viewA.SiteUrl);
+        Assert.Equal("http://localhost:5001/", viewA.SiteUrl);
         Assert.DoesNotContain(viewA.Hosts, h => h.Name == "*");
-        Assert.Contains("URL: https://site-a.example/ → https://localhost:5001/", viewA.Changes);
+        Assert.Contains("URL: https://site-a.example/ → http://localhost:5001/", viewA.Changes);
         Assert.DoesNotContain(viewA.Changes, c => c.StartsWith("SiteUrl", StringComparison.Ordinal));
         Assert.Equal((false, "http://localhost:5002/"), (result.Sites[1].IsDefault, result.Sites[1].SiteUrl));
         Assert.Contains(result.Warnings!, w => w.Contains("restart the site", StringComparison.Ordinal) && w.Contains("cached applications", StringComparison.Ordinal));
@@ -215,18 +216,53 @@ public class SiteHostsOperationTests
     }
 
     [Fact]
+    public async Task Adding_the_star_host_moves_the_default_in_one_save_and_names_the_application_that_lost_it()
+    {
+        var repository = new Applications(Site("siteA", "Site A", "site-a.example", isDefault: true), Site("siteB", "Site B", "site-b.example"));
+
+        var (result, _) = await Run(repository, Add("Site B", "*"));
+
+        // One call: B's MakeDefaultAsync, which saves A without it (as the CMS's does); nothing saves A before that.
+        Assert.Equal([("siteB", true)], repository.MadeDefault);
+        Assert.Equal(["siteB", "siteA"], repository.SavedNames);
+        Assert.Equal([("Site B", true), ("Site A", false)], result!.Sites.Select(s => (s.Name, s.IsDefault!.Value)));
+        Assert.Equal(["no longer the default application (*): Site B is now"], result.Sites[1].Changes);
+        Assert.Equal(SiteHostStatus.Changed, result.Sites[1].Status);
+    }
+
+    [Fact]
     public async Task An_application_the_cms_refuses_after_another_was_saved_names_every_error_and_what_was_saved()
     {
-        var refusal = new ValidationException(new ValidationResult("Only one primary host is allowed per locale", ["Hosts"]), null, null);
+        // As the CMS throws it (ValidationServiceExtensions.ThrowException): the first error as the message, errors by
+        // property name in Data (one each, or a list), and none of those without a property name; its validation has all.
+        var refusal = new ValidationException(new ValidationResult("Only one primary host is allowed per locale", ["Hosts", "Hosts", "Hosts[0].Authority", ""]), null, null);
+        refusal.Data["Hosts"] = new List<ValidationError>
+        {
+            new() { ErrorMessage = "Only one primary host is allowed per locale", PropertyName = "Hosts" },
+            new() { ErrorMessage = "Only one Edit host is allowed", PropertyName = "Hosts" },
+        };
         refusal.Data["Hosts[0].Authority"] = new ValidationError { ErrorMessage = "Invalid host name 'x'", PropertyName = "Hosts[0].Authority" };
+        var validation = new Validation(new ValidationError { ErrorMessage = "Application type 'X' is not supported." }, new ValidationError { ErrorMessage = "Only one Edit host is allowed", PropertyName = "Hosts" });
         var repository = new Applications(Site("siteA", "Site A", "site-a.example"), Site("siteB", "Site B", "site-b.example")) { Refuse = ("siteB", refusal) };
 
-        var (_, error) = await Run(repository, Primary("Site A", "localhost:5001"), Primary("Site B", "localhost:5002"));
+        var (_, error) = await Run(services => services.AddSingleton<IApplicationRepository>(repository).AddSingleton<IValidationService>(validation), [Primary("Site A", "localhost:5001"), Primary("Site B", "localhost:5002")]);
 
         Assert.Equal(AgentErrorCodes.Validation, error!.Code);
-        Assert.Contains("Site B: the CMS refused the site's hosts: Only one primary host is allowed per locale Invalid host name 'x'", error.Message);
+        Assert.Contains("Site B: the CMS refused the site's hosts: Only one primary host is allowed per locale Only one Edit host is allowed Invalid host name 'x' Application type 'X' is not supported.", error.Message);
         Assert.EndsWith("Already saved: Site A; not saved: Site B.", error.Message);
         Assert.Equal(["siteA"], repository.SavedNames);
+    }
+
+    [Fact]
+    public async Task Without_the_cms_validation_the_errors_in_the_exception_are_all_there_is()
+    {
+        var refusal = new ValidationException(new ValidationResult("Only one primary host is allowed per locale", ["Hosts"]), null, null);
+        refusal.Data["Hosts"] = new List<ValidationError> { new() { ErrorMessage = "Only one primary host is allowed per locale" }, new() { ErrorMessage = "Only one Edit host is allowed" } };
+        var repository = new Applications(Site("siteA", "Site A", "site-a.example")) { Refuse = ("siteA", refusal) };
+
+        var (_, error) = await Run(services => services.AddSingleton<IApplicationRepository>(repository).AddSingleton<IValidationService>(new Validation(failing: true)), [Primary("Site A", "localhost:5001")]);
+
+        Assert.Contains("the CMS refused the site's hosts: Only one primary host is allowed per locale Only one Edit host is allowed", error!.Message);
     }
 
     [Fact]
@@ -252,8 +288,8 @@ public class SiteHostsOperationTests
         Assert.False(result!.Saved);
         var site = Assert.Single(result.Sites);
         Assert.Equal(["a.localhost", "localhost:5001", "site-a.example"], site.Hosts.Select(h => h.Name));
-        Assert.Equal(new SiteHost("a.localhost", HostTypes.Undefined, null, true), site.Hosts[0]);
-        Assert.Equal("https://localhost:5001/", site.SiteUrl);
+        Assert.Equal(new SiteHost("a.localhost", HostTypes.Undefined, null, false), site.Hosts[0]);
+        Assert.Equal("http://localhost:5001/", site.SiteUrl);
     }
 
     /// <summary>The repository's contract as the operation uses it: List, Get, SaveAsync, MakeDefaultAsync.</summary>
@@ -297,15 +333,32 @@ public class SiteHostsOperationTests
 
         public Task DeleteAsync(string name, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
+        /// <summary>As the CMS's: saves the application with it, then the one that was the default without it.</summary>
         public async Task MakeDefaultAsync(IRoutableApplication application, bool enable, CancellationToken cancellationToken = default)
         {
             var saved = (Application)application;
             MadeDefault.Add((saved.Name, enable));
+            var current = enable ? _applications.FirstOrDefault(a => a.Name != saved.Name && ((IRoutableApplication)a).IsDefault) : null;
             SetDefault(saved, enable);
             await SaveAsync(saved, cancellationToken);
+            if (current?.CreateWritableClone() is { } previous)
+            {
+                SetDefault(previous, false);
+                await SaveAsync(previous, cancellationToken);
+            }
         }
 
         public Task EnableAssetsAsync(IResourceableApplication application, bool enable, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    /// <summary>The CMS's validation service, run again for the errors a <see cref="ValidationException"/> leaves out.</summary>
+    private sealed class Validation(params ValidationError[] errors) : IValidationService
+    {
+        public Validation(bool failing) : this() => Failing = failing;
+
+        private bool Failing { get; }
+
+        public IEnumerable<ValidationError> Validate(object instance) => Failing ? throw new InvalidOperationException("A validator broke.") : errors;
     }
 #endif
 

@@ -165,6 +165,17 @@ public static class HostNames
     }
 
     /// <summary>
+    /// Whether <paramref name="name"/> reaches this machine only: <c>localhost</c>, <c>*.localhost</c> or a loopback
+    /// address (<c>127.*</c>), where <c>opticli serve</c> listens with http. Narrower than <see cref="IsLocal"/>, which
+    /// also takes <c>*.test</c> (a name for a local web server, which may well serve https).
+    /// </summary>
+    public static bool IsLoopback(string name)
+    {
+        var host = HostPart(name).ToLowerInvariant();
+        return host is "localhost" || host.EndsWith(".localhost", StringComparison.Ordinal) || host.StartsWith("127.", StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The site URL for a primary host: <c>https://</c> unless the host's flag says http, the host, and the path of the
     /// <paramref name="current"/> site URL (the site's application path; <c>/</c> without one). Printed as
     /// <see cref="Uri"/> prints it, which is how the CMS stores and returns it.

@@ -45,7 +45,8 @@ internal static class SiteHostsOperation
             // Everything that can fail before a save is done for every site first: loading it and setting its hosts (the
             // CMS parses each name). A host moved from one site to another in the same batch must be gone from the first
             // before the CMS sees it on the second, so sites that lose hosts are saved first.
-            var pending = plan.Sites.Where(s => s.Changed).OrderBy(s => s.RemovesHosts ? 0 : 1).Select(s => Prepare(store, s)).ToList();
+            // An application that only loses the default to another one (CMS 13) isn't saved itself: that one's save moves it.
+            var pending = plan.Sites.Where(s => s.Changed && !s.OnlyLosesDefault).OrderBy(s => s.RemovesHosts ? 0 : 1).Select(s => Prepare(store, s)).ToList();
             foreach (var prepared in pending)
             {
                 var site = prepared.Site;
@@ -65,6 +66,11 @@ internal static class SiteHostsOperation
             if (saved.Count > 0)
             {
                 warnings.Add(RestartWarning);
+            }
+            // As the CMS has them after the save that took their default away.
+            foreach (var site in plan.Sites.Where(s => s.DefaultMovesTo is not null && saved.ContainsKey(s.DefaultMovesTo)))
+            {
+                saved[site.After.Key] = store.Get(site.After.Key) ?? site.After;
             }
         }
 

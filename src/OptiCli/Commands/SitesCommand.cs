@@ -84,8 +84,9 @@ internal static class SitesCommand
             After a save, a site process other than the one `serve` runs keeps the old hosts until it restarts.
             meta.warnings names languages whose URLs still use a production host.
             On CMS 13 the sites are applications: an application has no SiteUrl (its URL is its first primary host by name,
-            else its first default one, and follows the change), and a new host without a scheme gets https where SiteUrl
-            would have followed it, else the scheme of the site's URL (CMS 13 hosts are http or https, never unset).
+            else its first default one, and follows the change), and a new host without a scheme or --https gets http when
+            it is localhost, *.localhost or a loopback address (what `serve` listens with), else the scheme of the site's
+            URL (CMS 13 hosts are http or https, never unset).
             Example: opticli sites primary "Site A=localhost:5001" "Site B=localhost:5002" --dry-run
             Example: opticli sites primary --from-config
             Example: opticli sites primary --forget "Old site"
@@ -228,7 +229,7 @@ internal static class SitesCommand
         var name = HostArgument();
         var type = new Option<string>("--type")
         {
-            Description = $"The host's type: {HostTypes.Syntax}. primary and edit make the site's previous one undefined.",
+            Description = $"The host's type: {HostTypes.Syntax} (one of each per application, for every language). primary and edit make the site's previous one undefined.",
             HelpName = "type",
             DefaultValueFactory = _ => "undefined",
         };
@@ -239,8 +240,10 @@ internal static class SitesCommand
             Add a host name to a site. Fails with a conflict (exit 5) if the site has it already, and with validation if
             another site has it. Against a shared database only --type undefined is allowed: it makes the site reachable
             locally without changing the URLs the deployed site generates.
-            On CMS 13, * makes the application the default one (it answers host names no application has; undefined there
-            is the default host type), and a host without a scheme or --https gets the scheme of the site's URL.
+            On CMS 13, * makes the application the default one (it answers host names no application has), taking that
+            from the one that was in the same save, which the result lists too; undefined there is the default host type;
+            and a host without a scheme or --https gets http on localhost, *.localhost or a loopback address, else the
+            scheme of the site's URL.
             Example: opticli sites host add "Site A" localhost:5001 --dry-run
             """);
         command.Arguments.Add(site);
@@ -343,7 +346,7 @@ internal static class SitesCommand
 
     private static Option<string?> HttpsOption(string what) => new("--https")
     {
-        Description = $"{what}: true, false, or unset (links use the site URL's scheme). Default: an existing host keeps its setting, a new one gets the pair's scheme, else unset.",
+        Description = $"{what}: true, false, or unset (links use the site URL's scheme). Default: an existing host keeps its setting, a new one gets the pair's scheme, else unset. CMS 13 has no unset: there a new host without a scheme gets http on localhost, *.localhost or a loopback address, else the scheme of the site's URL.",
         HelpName = "true|false|unset",
     };
 

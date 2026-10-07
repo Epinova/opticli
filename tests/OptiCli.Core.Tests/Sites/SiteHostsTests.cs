@@ -339,9 +339,13 @@ public class SiteHostsTests : IDisposable
     [Theory]
     [InlineData("preview")]
     [InlineData("media")]
-    public void Preview_and_media_hosts_cant_be_added_with_a_type_yet(string type)
+    public void Preview_and_media_hosts_can_be_given_as_a_type_and_are_cms_13_only(string type)
     {
-        Assert.Null(HostTypes.Parse(type));
+        // The CLI takes them; the CMS 12 agent refuses them.
+        Assert.Equal(type, HostTypes.Parse(type.ToUpperInvariant()));
+        Assert.Contains(type, HostTypes.Cms13Only);
+        Assert.Contains($"on CMS 13 preview or media", HostTypes.Syntax);
+        Assert.DoesNotContain(type, HostTypes.Cms12Syntax);
         Assert.Equal(HostTypes.RedirectPermanent, HostTypes.Parse("redirect-permanent"));
     }
 

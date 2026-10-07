@@ -26,6 +26,12 @@ internal sealed record SiteState(string Key, string Name, string? SiteUrl, IRead
 
     /// <summary>The site definition's GUID (CMS 12); null for an application (CMS 13), which <see cref="Key"/> names.</summary>
     public Guid? Id { get; init; }
+
+    /// <summary>
+    /// A CMS 13 headless application (<c>Website</c>), which takes only primary, preview and media hosts; an in-process
+    /// one (<c>InProcessWebsite</c>, which renders itself) takes any but preview.
+    /// </summary>
+    public bool Headless { get; init; }
 }
 
 /// <param name="Changes">What changed, one line each; empty when the site ends as it began.</param>
@@ -35,6 +41,17 @@ internal sealed record PlannedSite(SiteState Before, SiteState After, IReadOnlyL
     public bool Applications { get; init; }
 
     public bool Changed => !SiteHostPlanner.Same(Before, After, Applications);
+
+    /// <summary>
+    /// CMS 13: the application that was the default one, when another one in the batch becomes it (by adding <c>*</c>).
+    /// Its default goes in that one's save (<c>MakeDefaultAsync</c> takes it from the one that was), so there is no
+    /// moment without a default application.
+    /// </summary>
+    public string? DefaultMovesTo { get; init; }
+
+    /// <summary>All that changes is that another application takes the default: nothing of this one's to save.</summary>
+    public bool OnlyLosesDefault => DefaultMovesTo is not null
+        && SiteHostPlanner.Same(Before with { Hosts = Before.Hosts.Where(h => !SiteHostPlanner.IsDefaultApplication(h)).ToList() }, After, Applications);
 
     /// <summary>The site loses a host: saved before the others, so a host moved within one batch is free when it is added.</summary>
     public bool RemovesHosts => Before.Hosts.Any(h => !After.Hosts.Any(a => HostNames.Same(a.Name, h.Name)));
@@ -51,7 +68,9 @@ internal sealed record SiteHostPlan(IReadOnlyList<PlannedSite> Sites, IReadOnlyL
 /// <remarks>
 /// On CMS 13 (<c>applications</c>) the sites are applications, and the rules differ where the model does: no SiteUrl (the
 /// application's URL follows its hosts), no <c>*</c> host (the default application instead, which <see cref="SiteState.Hosts"/>
-/// shows as <c>*</c>), and no unset https (a new host gets the scheme the CMS 12 rules would give its links).
+/// shows as <c>*</c>, and which adding <c>*</c> moves in one step), no unset https (a new host given without a scheme gets
+/// http on loopback names, where <c>opticli serve</c> listens, else the scheme of the site's URL), and two more host types
+/// (preview, media).
 /// </remarks>
 internal static class SiteHostPlanner
 {
@@ -134,7 +153,11 @@ internal static class SiteHostPlanner
                     MakePrimary(site, existing, name, language ?? Unqualified(site, [literal, name], languages, warnings), language is null, https, change, label, work, issues, warnings, ref sameLanguageTwice);
                     break;
                 case SiteHostActions.Add:
-                    Add(site, existing, name, HostTypes.Parse(change.Type ?? HostTypes.Undefined)!, language, https, flagGiven, label, work, issues, warnings);
+                    if (Add(site, existing, name, HostTypes.Parse(change.Type ?? HostTypes.Undefined)!, language, https, flagGiven, label, work, issues, warnings) is { } previousDefault
+                        && !touched.Contains(previousDefault))
+                    {
+                        touched.Add(previousDefault);
+                    }
                     break;
                 default:
                     Remove(site, existing, name, label, issues, warnings);
@@ -217,6 +240,10 @@ internal static class SiteHostPlanner
             throw AgentException.Usage(
                 change.Action == SiteHostActions.Add ? $"'{type}' is not a host type." : $"type only applies to {SiteHostActions.Add}.",
                 $"Host types: {HostTypes.Syntax}.");
+        }
+        if (!applications && change.Type is { } cms13Type && HostTypes.Parse(cms13Type) is { } parsed && HostTypes.Cms13Only.Contains(parsed))
+        {
+            throw AgentException.Usage($"{parsed} hosts are CMS 13 only; this site runs CMS 12.", $"Host types on CMS 12: {HostTypes.Cms12Syntax}.");
         }
         if (change.Https is { } https && !HostHttps.TryParse(https, out _))
         {
@@ -318,7 +345,7 @@ internal static class SiteHostPlanner
         var followsSiteUrl = (replacedSiteUrlHost || (unqualified && !besideNeutral)) && !change.KeepSiteUrl;
 
         var final = existing is null
-            ? new SiteHost(name, HostTypes.Primary, language, https.Value ?? site.NewHostHttps(followsSiteUrl))
+            ? new SiteHost(name, HostTypes.Primary, language, https.Value ?? site.NewHostHttps(name))
             : existing with { Type = HostTypes.Primary, Language = language, Https = https.Given ? https.Value : existing.Https };
         if (existing is null)
         {
@@ -360,7 +387,8 @@ internal static class SiteHostPlanner
     }
 
     /// <param name="httpsGiven">The change gave an https setting (not just a scheme the host's port implies).</param>
-    private static void Add(WorkingSite site, SiteHost? existing, string name, string type, string? language, (bool Given, bool? Value) https, bool httpsGiven, string label, IReadOnlyList<WorkingSite> work, List<ValidationIssue> issues, List<string> warnings)
+    /// <returns>CMS 13: the application that loses the default to this one (<c>*</c>); otherwise null.</returns>
+    private static WorkingSite? Add(WorkingSite site, SiteHost? existing, string name, string type, string? language, (bool Given, bool? Value) https, bool httpsGiven, string label, IReadOnlyList<WorkingSite> work, List<ValidationIssue> issues, List<string> warnings)
     {
         if (existing is not null && site.Applications && existing.Name == HostNames.Wildcard)
         {
@@ -372,31 +400,46 @@ internal static class SiteHostPlanner
                 $"{site.Name} already has the host {existing.Name} ({DescribeHost(existing)}).",
                 $"To make it the primary host: `opticli sites primary \"{site.Name}={existing.Name}\"`. To change it otherwise, remove it and add it again.");
         }
-        if (Owner(name, site, work) is { } owner)
-        {
-            issues.Add(Issue(label, OwnedElsewhere(name, owner)));
-            return;
-        }
         if (name == HostNames.Wildcard && site.Applications && (type != HostTypes.Undefined || language is not null || httpsGiven))
         {
             issues.Add(Issue(label, "on CMS 13, * stands for the default application, which answers host names no application has: it takes no type, language or https."));
-            return;
+            return null;
+        }
+        // CMS 13 moves the default in one save; CMS 12's * must be removed from its site first, as the CMS would refuse two.
+        WorkingSite? previousDefault = null;
+        if (name == HostNames.Wildcard && site.Applications && Owner(name, site, work) is { } current)
+        {
+            if (current.Before.Hosts.All(h => !IsDefaultApplication(h)))
+            {
+                issues.Add(Issue(label, $"an earlier change already makes {current.Name} the default application; there is one at a time."));
+                return null;
+            }
+            current.Hosts.Remove(current.Find(HostNames.Wildcard)!);
+            current.Changes.Add($"no longer the default application (*): {site.Name} is now");
+            current.DefaultMovesTo = site.Before.Key;
+            current.LastChange = label;
+            previousDefault = current;
+        }
+        else if (Owner(name, site, work) is { } owner)
+        {
+            issues.Add(Issue(label, OwnedElsewhere(name, owner)));
+            return null;
         }
         if (name == HostNames.Wildcard && type is HostTypes.Primary or HostTypes.Edit)
         {
             issues.Add(Issue(label, $"the * host answers host names no site has; it can't be the {type} host."));
-            return;
+            return null;
         }
-        if (type == HostTypes.Edit && language is not null)
+        if (type is HostTypes.Edit or HostTypes.Preview or HostTypes.Media && language is not null)
         {
-            issues.Add(Issue(label, "an Edit host is for every language; leave out the language."));
-            return;
+            issues.Add(Issue(label, $"{(type == HostTypes.Edit ? "an Edit" : $"a {type}")} host is for every language; leave out the language."));
+            return null;
         }
 
-        var host = new SiteHost(name, type, language, https.Value ?? (name == HostNames.Wildcard ? null : site.NewHostHttps(followsSiteUrl: false)));
+        var host = new SiteHost(name, type, language, https.Value ?? (name == HostNames.Wildcard ? null : site.NewHostHttps(name)));
         site.Hosts.Add(host);
         site.Changes.Add(site.Applications && name == HostNames.Wildcard
-            ? "made it the default application (*), which answers host names no application has"
+            ? $"made it the default application (*), which answers host names no application has{(previousDefault is null ? "" : $", instead of {previousDefault.Name}")}"
             : $"added {name} ({DescribeHost(host)})");
         if (type == HostTypes.Primary)
         {
@@ -417,6 +460,7 @@ internal static class SiteHostPlanner
                 site.Replace(previous, previous with { Type = HostTypes.Undefined });
             }
         }
+        return previousDefault;
     }
 
     private static void Remove(WorkingSite site, SiteHost? found, string name, string label, List<ValidationIssue> issues, List<string> warnings)
@@ -487,6 +531,27 @@ internal static class SiteHostPlanner
         if (edits > 1)
         {
             yield return Issue(label, $"{site.Name} would have {edits} Edit hosts; a site has one at most.");
+        }
+        // CMS 13's preview and media hosts (ApplicationValidator's rules).
+        foreach (var type in HostTypes.Cms13Only)
+        {
+            var count = site.Hosts.Count(h => h.Type == type);
+            if (count > 1)
+            {
+                yield return Issue(label, $"{site.Name} would have {count} {type} hosts; an application has one at most.");
+            }
+            foreach (var host in site.Hosts.Where(h => h.Type == type && h.Language is not null))
+            {
+                yield return Issue(label, $"{site.Name}'s {type} host {host.Name} has the language {host.Language}; a {type} host is for every language.");
+            }
+        }
+        if (site.Applications && !site.Before.Headless && site.Hosts.FirstOrDefault(h => h.Type == HostTypes.Preview) is { } preview)
+        {
+            yield return Issue(label, $"{site.Name} renders itself (an in-process application), which the CMS gives no preview host ({preview.Name}); only a headless application has one.");
+        }
+        if (site.Applications && site.Before.Headless && site.Hosts.FirstOrDefault(h => h.Name != HostNames.Wildcard && h.Type is not (HostTypes.Primary or HostTypes.Preview or HostTypes.Media)) is { } other)
+        {
+            yield return Issue(label, $"{site.Name} is a headless application, which the CMS gives only primary, preview and media hosts; {other.Name} would be {HostTypes.Display(other.Type)}.");
         }
         if (edits == 1 && site.Hosts.Count == 1)
         {
@@ -584,14 +649,18 @@ internal static class SiteHostPlanner
             Changes.Add($"{existing.Name}: {DescribeHost(existing)} → {DescribeHost(updated)}");
         }
 
+        /// <summary>CMS 13: the key of the application that takes the default from this one in the batch.</summary>
+        public string? DefaultMovesTo { get; set; }
+
         /// <summary>
         /// The https setting of a new host the change gave none: unset on CMS 12, where its links use the scheme of the
-        /// site's URL. CMS 13 has no unset, so the host gets the scheme those links would have: https for a primary host
-        /// SiteUrl follows (as <see cref="HostNames.SiteUrl"/> makes it), else the site's URL's (https when it has none).
+        /// site's URL. CMS 13 has no unset: http for a loopback name (<see cref="HostNames.IsLoopback"/>), which is what
+        /// <c>opticli serve</c> listens with, else the scheme of the site's URL as it was before the batch (https when it
+        /// has none), so the pairs' order doesn't matter.
         /// </summary>
-        public bool? NewHostHttps(bool followsSiteUrl) =>
+        public bool? NewHostHttps(string name) =>
             !Applications ? null
-            : followsSiteUrl || SiteUrl is null || SiteUrl.StartsWith("https:", StringComparison.OrdinalIgnoreCase);
+            : !HostNames.IsLoopback(name) && (Before.SiteUrl is null || Before.SiteUrl.StartsWith("https:", StringComparison.OrdinalIgnoreCase));
 
         /// <summary>
         /// <c>DefaultSiteDefinitionRepository.Save</c>'s <c>EnsureHostsContainsSiteUrl</c>: SiteUrl's host (its
@@ -611,17 +680,14 @@ internal static class SiteHostPlanner
         }
 
         /// <summary>
-        /// Points SiteUrl at a host. On CMS 13 only the scheme new hosts get (<see cref="NewHostHttps"/>) follows it: the
-        /// application's URL is made from its hosts (<see cref="ToPlanned"/>).
+        /// Points SiteUrl at a host. Not on CMS 13, where nothing follows it: the application's URL is made from its hosts
+        /// (<see cref="ToPlanned"/>).
         /// </summary>
         public void SetSiteUrl(string url)
         {
-            if (!string.Equals(SiteUrl, url, StringComparison.OrdinalIgnoreCase))
+            if (!Applications && !string.Equals(SiteUrl, url, StringComparison.OrdinalIgnoreCase))
             {
-                if (!Applications)
-                {
-                    Changes.Add($"SiteUrl: {SiteUrl ?? "(none)"} → {url}");
-                }
+                Changes.Add($"SiteUrl: {SiteUrl ?? "(none)"} → {url}");
                 SiteUrl = url;
             }
         }
@@ -636,14 +702,18 @@ internal static class SiteHostPlanner
             // The CMS lists an application's hosts by name and makes its URL from them; the same hosts keep the URL the
             // CMS gave (whatever its sort order makes of names that differ only in punctuation).
             var hosts = ByName(Hosts).ToList();
-            var url = ByName(Before.Hosts).SequenceEqual(hosts) ? Before.SiteUrl : ApplicationUrl(hosts);
+            var url = ByName(Before.Hosts.Where(h => !IsDefaultApplication(h))).SequenceEqual(hosts.Where(h => !IsDefaultApplication(h))) ? Before.SiteUrl : ApplicationUrl(hosts);
             var planned = Before with { SiteUrl = url, Hosts = hosts };
             var changes = Changes.ToList();
             if (!string.Equals(Before.SiteUrl, url, StringComparison.OrdinalIgnoreCase))
             {
                 changes.Add($"URL: {Before.SiteUrl ?? "(none)"} → {url ?? "(none)"}");
             }
-            return new PlannedSite(Before, planned, SiteHostPlanner.Same(Before, planned, applications: true) ? [] : changes) { Applications = true };
+            return new PlannedSite(Before, planned, SiteHostPlanner.Same(Before, planned, applications: true) ? [] : changes)
+            {
+                Applications = true,
+                DefaultMovesTo = DefaultMovesTo,
+            };
         }
     }
 }
