@@ -33,6 +33,9 @@ public sealed partial class UsersTests
             var added = await Add(site, name, password, dryRun: false, cancellationToken);
             Assert.Equal((true, $"{name}@{LocalUsers.EmailDomain}", LocalUsers.DefaultRole), (added.Created, added.Email, Assert.Single(added.Roles)));
             Assert.True(await SignInAsync(name, password, cancellationToken));
+            // Signed in, the user opens edit mode: CMS 13 moved it to /Optimizely/CMS/ (a fresh CMS 13 database's content
+            // grants administrators nothing, but edit mode itself is for WebAdmins).
+            Assert.Equal(HttpStatusCode.OK, await SignInAsync(name, password, cancellationToken, open: site.Session.Model.Schema.Major >= 13 ? "Optimizely/CMS/" : "EPiServer/CMS/"));
             Assert.False(await SignInAsync(name, password + "x", cancellationToken));
 
             var again = await Assert.ThrowsAsync<ConflictException>(() => Add(site, name, PasswordFiles.Generate(), dryRun: false, cancellationToken));
@@ -83,7 +86,12 @@ public sealed partial class UsersTests
 
     /// <summary>Fills in the CMS's login page (<c>/util/login</c>) as a browser would.</summary>
     /// <returns>True when the site signed the user in (a redirect with the Identity cookie).</returns>
-    private static async Task<bool> SignInAsync(string user, string password, CancellationToken cancellationToken)
+    private static async Task<bool> SignInAsync(string user, string password, CancellationToken cancellationToken) =>
+        await SignInAsync(user, password, cancellationToken, open: null) is HttpStatusCode.Found;
+
+    /// <summary>Signs in as <see cref="SignInAsync(string, string, CancellationToken)"/> does, then requests <paramref name="open"/> with the cookie.</summary>
+    /// <returns>The status of <paramref name="open"/> (<c>Found</c> for the sign-in itself when it is null); null when the sign-in failed.</returns>
+    private static async Task<HttpStatusCode?> SignInAsync(string user, string password, CancellationToken cancellationToken, string? open)
     {
         var environment = OptiCliEnvironment.FromProcess();
         var state = StateStore.For(environment, SiteSettings.ProjectDirectory!).Read() ?? throw new InvalidOperationException("opticli serve isn't running.");
@@ -98,8 +106,17 @@ public sealed partial class UsersTests
         fields["Password"] = password;
         var action = FormAction().Match(page) is { Success: true } form ? WebUtility.HtmlDecode(form.Groups[1].Value) : "util/login";
         using var response = await http.PostAsync(action, new FormUrlEncodedContent(fields), cancellationToken);
-        return response.StatusCode is HttpStatusCode.Redirect or HttpStatusCode.Found or HttpStatusCode.SeeOther
-            && cookies.GetCookies(state.BaseUrl).Any(c => c.Name.StartsWith(".AspNetCore.Identity.Application", StringComparison.Ordinal));
+        if (response.StatusCode is not (HttpStatusCode.Redirect or HttpStatusCode.Found or HttpStatusCode.SeeOther)
+            || !cookies.GetCookies(state.BaseUrl).Any(c => c.Name.StartsWith(".AspNetCore.Identity.Application", StringComparison.Ordinal)))
+        {
+            return null;
+        }
+        if (open is null)
+        {
+            return HttpStatusCode.Found;
+        }
+        using var opened = await http.GetAsync(open, cancellationToken);
+        return opened.StatusCode;
     }
 
     private static string? Attribute(string input, string name) =>
