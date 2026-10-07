@@ -143,17 +143,12 @@ public class ConnectionSafetyTests
     }
 
     [Fact]
-    public void Network_library_off_windows_is_refused_not_thrown()
+    public void Network_library_is_refused_not_thrown()
     {
-        // SqlClient knows the keyword but supports it only on Windows; elsewhere it threw NotSupportedException (internal).
+        // SqlClient 7 knows the keyword but supports it on no OS (Windows included); it threw NotSupportedException (internal).
         const string connectionString = "Server=localhost,1433;Database=Cms;Network Library=DBMSSOCN";
         var verdict = ConnectionSafety.Check(connectionString);
 
-        if (OperatingSystem.IsWindows())
-        {
-            Assert.True(verdict.IsLocal, verdict.Reason);
-            return;
-        }
         Assert.False(verdict.IsValid);
         Assert.Contains("Network Library", verdict.Reason, StringComparison.Ordinal);
         Assert.Throws<RefusedException>(() => ConnectionSafety.Verify(connectionString));

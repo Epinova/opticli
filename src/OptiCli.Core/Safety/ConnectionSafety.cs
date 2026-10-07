@@ -36,7 +36,7 @@ public static class ConnectionSafety
         }
         catch (Exception ex) when (ex is ArgumentException or FormatException or KeyNotFoundException or InvalidOperationException or NotSupportedException)
         {
-            // NotSupportedException: keywords SqlClient knows but doesn't support on this OS, e.g. Network Library off Windows.
+            // NotSupportedException: keywords SqlClient knows but doesn't support here, e.g. Network Library (on any OS).
             return new SafetyVerdict(false, null, null, $"Not a valid SQL Server connection string: {ex.Message}", IsValid: false);
         }
 
