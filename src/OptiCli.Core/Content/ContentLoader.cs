@@ -74,6 +74,7 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
             ? Compositions.Extract(Model, header.TypeId, kind, tree, properties)
             : null;
 
+        notes.AddRange(await BindingNotesAsync(contentId, shownVersion?.Id ?? row?.VersionId, cancellationToken));
         if (shownVersion is null && row is not null && row.Status != VersionStatus.Published)
         {
             notes.Add($"Not published in '{branchLanguage?.Code}'; showing its primary draft (status {VersionStatuses.Name(row.Status)}).");
@@ -151,6 +152,41 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
             Blueprint = header.Blueprint ? true : null,
             Composition = composition,
         };
+    }
+
+    /// <summary>
+    /// CMS 13: the version's content bindings (<c>tblContentBinding</c>): the CMS fills the bound properties from other
+    /// (often external) content when it loads it, so what is stored here isn't what it shows. Said in a note rather than
+    /// guessed at; none on CMS 12.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> BindingNotesAsync(int contentId, int? versionId, CancellationToken cancellationToken)
+    {
+        if (!Model.Schema.Compositions || versionId is null)
+        {
+            return [];
+        }
+        var bindings = await db.QueryAsync("""
+            IF OBJECT_ID(N'dbo.tblContentBinding', N'U') IS NULL
+                SELECT CAST(NULL AS nvarchar(450)) AS ScopeName, CAST(NULL AS nvarchar(450)) AS BindingKey, CAST(NULL AS uniqueidentifier) AS ReferencedContentId,
+                       CAST(NULL AS nvarchar(450)) AS ExternalIdentifier WHERE 1 = 0
+            ELSE
+                EXEC sp_executesql N'SELECT b.ScopeName, d.[Key] AS BindingKey, b.ReferencedContentId, b.ExternalIdentifier
+                    FROM dbo.tblContentBinding b LEFT JOIN dbo.tblContentBindingDefinition d ON d.pkID = b.fkBindingId
+                    WHERE b.fkContentId = @id AND b.fkWorkId = @version', N'@id int, @version int', @id, @version
+            """, r => (Scope: r.GetStringOrNull("ScopeName"), Key: r.GetStringOrNull("BindingKey"), Referenced: r.GetGuidOrNull("ReferencedContentId"), External: r.GetStringOrNull("ExternalIdentifier")),
+            cancellationToken, new Microsoft.Data.SqlClient.SqlParameter("@id", contentId), new Microsoft.Data.SqlClient.SqlParameter("@version", versionId.Value));
+        if (bindings.Count == 0)
+        {
+            return [];
+        }
+        await identities.LoadAsync([], bindings.Select(b => b.Referenced).OfType<Guid>(), cancellationToken);
+        return bindings.Select(b =>
+        {
+            var source = b.Referenced is { } guid && identities.ByGuid(guid, null) is { Missing: not true, Ref: { } reference }
+                ? $"content {reference}"
+                : $"external content {b.External ?? b.Referenced?.ToString() ?? "(unknown)"}";
+            return $"Content binding{(b.Key is { } key ? $" '{key}'" : "")}: {(string.IsNullOrEmpty(b.Scope) ? "this content" : $"the block at {b.Scope}")} is bound to {source}. The CMS fills its bound properties from there when it loads it; the values shown here are the ones stored on it.";
+        }).ToList();
     }
 
     /// <summary>Why <c>--variation</c> found no version: no such variation, or none of it in the branch (published).</summary>
