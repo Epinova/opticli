@@ -29,7 +29,13 @@ internal static partial class ContentModelScan
 
     public static (List<DriftItem> ContentTypes, List<DriftItem> Properties) Compare(IServiceProvider services)
     {
-        var models = Compat.AgentBuild.ContentTypeModels(services).ToList();
+        // CMS 13 also registers a model per base type (PageData, BlockData, ..., ExperienceData, ContentFolder), for the
+        // system properties those give their content types: they aren't content types of their own.
+        var bases = services.GetServices<IContentTypeBaseProvider>()
+            .SelectMany(p => p.ContentTypeBases.Select(p.Resolve))
+            .OfType<Type>()
+            .ToHashSet();
+        var models = Compat.AgentBuild.ContentTypeModels(services).Where(m => m.ModelType is null || !bases.Contains(m.ModelType)).ToList();
         var register = services.GetRequiredService<ContentTypeModelRegister>();
         register.RunSynchronously = true;
         foreach (var model in models)
@@ -46,16 +52,17 @@ internal static partial class ContentModelScan
 
         var renames = services.GetRequiredService<MigrationStepRepository>().Changes.ToList();
         var resolve = Compat.AgentBuild.PropertyTypeResolver(services);
-        var matches = models.Select(m => Match(m, renames, resolve)).ToList();
+        var types = services.GetRequiredService<IContentTypeRepository>();
+        var matches = models.Select(m => Match(m, renames, resolve, types)).ToList();
         var matched = models.Where(m => m.State != SynchronizationStatus.New && m.ExistingContentType is not null).Select(m => m.ExistingContentType.ID).ToHashSet();
-        var onlyInDatabase = services.GetRequiredService<IContentTypeRepository>().List()
-            .Where(t => !string.IsNullOrEmpty(t.ModelTypeString) && !SystemTypes.Contains(t.Name) && !matched.Contains(t.ID)
+        var onlyInDatabase = types.List()
+            .Where(t => Compat.AgentBuild.FromCode(t) && !SystemTypes.Contains(t.Name) && !matched.Contains(t.ID)
                 && !renames.Any(c => string.Equals(c.OldName, t.Name, StringComparison.Ordinal)))
             .Select(t => t.Name);
         return ContentModelComparison.Items(matches, onlyInDatabase);
     }
 
-    private static TypeMatch Match(ContentTypeModel model, IReadOnlyList<ContentTypeChange> renames, Func<PropertyDefinitionModel, PropertyDefinitionType?> resolve)
+    private static TypeMatch Match(ContentTypeModel model, IReadOnlyList<ContentTypeChange> renames, Func<PropertyDefinitionModel, PropertyDefinitionType?> resolve, IContentTypeRepository types)
     {
         var code = Settings(model);
         if (model.State == SynchronizationStatus.New || model.ExistingContentType is not { } existing)
@@ -65,29 +72,33 @@ internal static partial class ContentModelScan
         var stored = Settings(existing);
         if (model.State == SynchronizationStatus.EarlierVersion)
         {
-            return new TypeMatch(code, stored, [], [], NewerVersion: AssemblyVersion(existing.ModelTypeString) ?? "?");
+            return new TypeMatch(code, stored, [], [], NewerVersion: Compat.AgentBuild.SyncedVersion(existing) ?? "?");
         }
         var change = renames.FirstOrDefault(c => string.Equals(c.Name, model.Name, StringComparison.OrdinalIgnoreCase));
         var renamedFrom = change?.OldName is { Length: > 0 } old && string.Equals(old, existing.Name, StringComparison.Ordinal)
             && !string.Equals(old, model.Name, StringComparison.Ordinal) ? old : null;
-        var properties = model.PropertyDefinitionModels.Select(p => Match(p, change, resolve)).ToList();
-        var onlyInDatabase = existing.PropertyDefinitions
-            .Where(d => d.ExistsOnModel && !model.PropertyDefinitionModels.Any(p => p.State != SynchronizationStatus.New && p.ExistingPropertyDefinition?.ID == d.ID))
+        var properties = model.PropertyDefinitionModels.Select(p => Match(p, change, resolve, types)).ToList();
+        // The definitions the database has. CMS 13's analysis changes the content type it matched as the commit would: it
+        // adds the model's new properties (no id yet) and drops the ones the code lacks (or marks them gone), so the
+        // stored type is read again.
+        var definitions = (types.Load(existing.ID) ?? existing).PropertyDefinitions;
+        var onlyInDatabase = definitions
+            .Where(d => d.ID > 0 && d.ExistsOnModel && !model.PropertyDefinitionModels.Any(p => p.State != SynchronizationStatus.New && p.ExistingPropertyDefinition?.ID == d.ID))
             .Select(d => d.Name)
             .ToList();
         return new TypeMatch(code, stored, properties, onlyInDatabase, renamedFrom);
     }
 
-    private static PropertyMatch Match(PropertyDefinitionModel model, ContentTypeChange? change, Func<PropertyDefinitionModel, PropertyDefinitionType?> resolve)
+    private static PropertyMatch Match(PropertyDefinitionModel model, ContentTypeChange? change, Func<PropertyDefinitionModel, PropertyDefinitionType?> resolve, IContentTypeRepository types)
     {
-        var code = Settings(model, resolve);
+        var code = Settings(model, resolve, types);
         if (model.State == SynchronizationStatus.New || model.ExistingPropertyDefinition is not { } existing)
         {
             return new PropertyMatch(code, null);
         }
         var renamedFrom = change?.PropertyChanges.FirstOrDefault(p => string.Equals(p.Name, model.Name, StringComparison.OrdinalIgnoreCase))?.OldName is { Length: > 0 } old
             && string.Equals(old, existing.Name, StringComparison.OrdinalIgnoreCase) && !string.Equals(old, model.Name, StringComparison.OrdinalIgnoreCase) ? old : null;
-        return new PropertyMatch(code, Settings(existing), renamedFrom);
+        return new PropertyMatch(code, Settings(existing, types), renamedFrom);
     }
 
     private static TypeSettings Settings(ContentTypeModel model) => new(
@@ -98,14 +109,22 @@ internal static partial class ContentModelScan
 
     private static TypeSettings Settings(ContentType type) => new(type.Name, WithoutVersion(type.ModelTypeString), BaseName(type.Base), type.GUID);
 
-    private static PropertySettings Settings(PropertyDefinitionModel model, Func<PropertyDefinitionModel, PropertyDefinitionType?> resolve)
+    /// <remarks>
+    /// A CMS 13 block property's type is the one generic <c>Block</c> type, whatever its block type: there the block type's
+    /// name stands for the type, and is what is compared (CMS 12 has a property type per block type, told apart by id).
+    /// </remarks>
+    private static PropertySettings Settings(PropertyDefinitionModel model, Func<PropertyDefinitionModel, PropertyDefinitionType?> resolve, IContentTypeRepository types)
     {
         var type = ResolveType(model, resolve);
-        return new PropertySettings(model.Name, TypeName(type), type?.ID, model.CultureSpecific ?? false);
+        return Compat.AgentBuild.ModelBlockType(model, type, types) is { } block
+            ? new PropertySettings(model.Name, block, null, model.CultureSpecific ?? false)
+            : new PropertySettings(model.Name, TypeName(type), type?.ID, model.CultureSpecific ?? false);
     }
 
-    private static PropertySettings Settings(PropertyDefinition definition) =>
-        new(definition.Name, TypeName(definition.Type), definition.Type?.ID, definition.LanguageSpecific, CultureSpecificByAdmin(definition));
+    private static PropertySettings Settings(PropertyDefinition definition, IContentTypeRepository types) =>
+        Compat.AgentBuild.StoredBlockType(definition, types) is { } block
+            ? new(definition.Name, block, null, definition.LanguageSpecific, CultureSpecificByAdmin(definition))
+            : new(definition.Name, TypeName(definition.Type), definition.Type?.ID, definition.LanguageSpecific, CultureSpecificByAdmin(definition));
 
     /// <summary>
     /// Culture-specific set in admin mode, which wins over the code. The CMS records who set it in an internal property

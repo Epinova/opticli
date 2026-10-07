@@ -86,32 +86,35 @@ public class AgentHostingStartupTests
         Assert.Contains("[opticli] The CMS would connect with 'EPiServerDB', which is not the pinned connection string.", ex.Failures);
     }
 
-#if CMS13
-    [Fact]
-    public void A_shared_database_is_refused_on_cms_13_for_now()
-    {
-        // The CLI refuses first; this is the backstop for a site started with an older `opticli env`'s variables.
-        var ex = Assert.Throws<InvalidOperationException>(() => Stderr(() => Build(Settings(pinned: Remote, approvedRemote: RemoteApproval)).Dispose()));
-
-        Assert.StartsWith("[opticli] Refusing to start: this opticli doesn't run CMS 13 sites against a shared database yet", ex.Message, StringComparison.Ordinal);
-    }
-#else
     [Fact]
     public void A_shared_database_turns_off_what_would_change_it_for_others()
     {
         string? stderr = null;
-        using var host = Build(Settings(pinned: Remote, approvedRemote: RemoteApproval), log: s => stderr = s);
+        using var host = Build(Settings(pinned: Remote, approvedRemote: RemoteApproval), log: s => stderr = s, after: builder => builder.ConfigureServices(services =>
+            services.Configure<DataAccessOptions>(options => SetCompatibilityLevelUpdate(options))));
 
         var data = host.Services.GetRequiredService<IOptions<DataAccessOptions>>().Value;
         Assert.False(data.UpdateDatabaseSchema);
         Assert.False(data.CreateDatabaseSchema);
+#if CMS13
+        // A site's own setting to raise the compatibility level on start (CMS 13) is turned off too.
+        Assert.False(data.UpdateDatabaseCompatibilityLevel);
+#endif
         Assert.Equal(Remote, DatabasePin.Resolve(data)?.ConnectionString);
         Assert.False(host.Services.GetRequiredService<IOptions<SchedulerOptions>>().Value.Enabled);
         Assert.False(host.Services.GetRequiredService<IOptions<ContentModelOptions>>().Value.EnableModelSyncCommit);
         Assert.False(host.Services.GetRequiredService<IOptions<DynamicDataStoreOptions>>().Value.AutoRemapStores);
         Assert.Contains("Shared database: scheduler, automatic schema updates, content type sync and store remapping are off", stderr, StringComparison.Ordinal);
     }
+
+    private static void SetCompatibilityLevelUpdate(DataAccessOptions options)
+    {
+#if CMS13
+        options.UpdateDatabaseCompatibilityLevel = true;
+#else
+        _ = options;
 #endif
+    }
 
     [Fact]
     public void The_scheduler_is_off_for_every_run_unless_serve_asks_to_leave_it()
@@ -130,7 +133,6 @@ public class AgentHostingStartupTests
         Assert.False(siteOff.Services.GetRequiredService<IOptions<SchedulerOptions>>().Value.Enabled);
     }
 
-#if !CMS13
     [Fact]
     public void A_shared_database_keeps_the_scheduler_off_even_when_serve_asks_to_leave_it()
     {
@@ -138,7 +140,6 @@ public class AgentHostingStartupTests
 
         Assert.False(host.Services.GetRequiredService<IOptions<SchedulerOptions>>().Value.Enabled);
     }
-#endif
 
     [Fact]
     public void A_local_database_keeps_the_sites_own_settings()
@@ -166,15 +167,21 @@ public class AgentHostingStartupTests
     }
 
     [Fact]
-    public void Store_changes_are_turned_off_on_every_cms_12_version()
+    public void Store_changes_are_turned_off_on_every_cms_version()
     {
         // SeamlessUpgradeStores only exists in later CMS 12 versions; on 12.0 there is nothing more to turn off.
         var options = new DynamicDataStoreOptions();
+#if CMS13
+        options.SeamlessUpgradeStores = true;
+#endif
 
         AgentHostingStartup.TurnOffStoreChanges(options);
 
         Assert.False(options.AutoRemapStores);
         Assert.True(options.AutoResolveTypes);
+#if CMS13
+        Assert.False(options.SeamlessUpgradeStores);
+#endif
     }
 
     /// <param name="site">The site's own configuration (appsettings, user secrets, Key Vault), added before the web host.</param>

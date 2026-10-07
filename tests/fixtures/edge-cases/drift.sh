@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Runs the shared-database drift scenario against a copy of the edge-case site: a copy of its database reached by a
-# host name (so opticli treats it as remote), and code changes in the copy of the site. The edge-case site and its
-# database are not changed.
+# Runs the shared-database drift scenario against a copy of the edge-case site (CMS 12's or CMS 13's): a copy of its
+# database reached by a host name (so opticli treats it as remote), and code changes in the copy of the site. The
+# edge-case site and its database are not changed.
 #
 #   drift.sh <edge-site-dir> <target-dir> [<source-db> [<target-db>]]
 #
@@ -60,8 +60,11 @@ $OPTICLI db use "$($OPTICLI db list | jq -r --arg db "$TARGET_DB" '.data.choices
 LOCAL=$(jq -r '.ConnectionStrings.EPiServerDB' "$TARGET"/appsettings.Development.json | sed "s/Server=$HOST,1433;/Server=localhost,1433;/")
 
 build() { dotnet build 2>&1 | grep -q " 0 Error(s)" || { dotnet build; exit 1; }; }
+# The edge-case site's OrphansFixture.cs keeps content types whose class no build has (`opticli types --orphaned`):
+# drift lists them as the database's (ahead "database") on every run. `own` leaves them out of a list of differences.
+ORPHANS='["EdgeRemovedBlock", "EdgeRemovedEmptyPage", "EdgeRemovedPage", "EdgeTrashedPage"]'
 expect() { # <jq filter that must be true> <json>
-  if ! jq -e "$1" >/dev/null <<<"$2"; then
+  if ! jq -e --argjson orphans "$ORPHANS" 'def own: map(select(.name as $n | $orphans | index($n) | not)); '"$1" >/dev/null <<<"$2"; then
     echo "unexpected (wanted $1):" >&2
     jq . <<<"$2" >&2
     exit 1
@@ -70,11 +73,17 @@ expect() { # <jq filter that must be true> <json>
 edit() { python3 - "$@"; }
 article=Models/Pages/ArticlePage.cs
 standard=Models/Pages/StandardPage.cs
+# The site's namespace: Alloy on CMS 12, the CMS 13 template's project name (Alloy13).
+project=$(find . -maxdepth 1 -name '*.csproj' | head -n 1)
+namespace=$(sed -n 's:.*<RootNamespace>\(.*\)</RootNamespace>.*:\1:p' "$project" | head -n 1)
+namespace=${namespace:-$(basename "$project" .csproj)}
 
-echo "== 1. nothing differs"
+echo "== 1. nothing differs (apart from the fixture's orphaned types)"
 build
 out=$($OPTICLI serve)
-expect '.ok and .data.drift.differences == 0' "$out"
+expect '.ok and (.data.drift.differences == 0 or .data.drift.ahead == "database")' "$out"
+out=$($OPTICLI drift)
+expect '(.data.contentTypes | own) == [] and all(.data.contentTypes[]; .ahead == "database") and .data.differences == (.data.contentTypes | length)' "$out"
 $OPTICLI serve --stop >/dev/null
 
 echo "== 2. local ahead: a new property and a new type"
@@ -85,8 +94,8 @@ s = "using System.ComponentModel.DataAnnotations;\n" + s.replace("public class A
     "public class ArticlePage : StandardPage\n{\n    [Display(GroupName = SystemTabNames.Content, Order = 305)]\n    public virtual string Subtitle { get; set; }\n", 1)
 open(p, "w").write(s)
 PY
-cat > Models/Pages/DriftPage.cs <<'CS'
-namespace Alloy.Models.Pages;
+cat > Models/Pages/DriftPage.cs <<CS
+namespace $namespace.Models.Pages;
 
 [SiteContentType(GUID = "7d1f3c2a-9b8e-4f6d-a5c4-0e1b2c3d4e5f")]
 public class DriftPage : StandardPage
@@ -95,10 +104,16 @@ public class DriftPage : StandardPage
 CS
 build
 out=$($OPTICLI serve)
-expect '.ok and .data.drift.ahead == "local"' "$out"
+expect '.ok and .data.drift.differences > 0' "$out"
 out=$($OPTICLI drift)
-expect '[.data.contentTypes[].name] == ["DriftPage"] and [.data.properties[].name] == ["ArticlePage.Subtitle"]' "$out"
+expect '[.data.contentTypes | own | .[].name] == ["DriftPage"] and [.data.properties[].name] == ["ArticlePage.Subtitle"] and all((.data.contentTypes | own)[], .data.properties[]; .ahead == "local")' "$out"
 fingerprint=$(jq -r '.data.fingerprint' <<<"$out")
+# Shared mode didn't commit the local models: the database still has neither.
+added=$(sqlcmd -d "$TARGET_DB" -b -h -1 -W -Q "SET NOCOUNT ON; SELECT (SELECT COUNT(*) FROM tblContentType WHERE Name = N'DriftPage') + (SELECT COUNT(*) FROM tblPropertyDefinition WHERE Name = N'Subtitle')")
+if [ "$added" != 0 ]; then
+  echo "unexpected: the site added DriftPage or ArticlePage.Subtitle to the shared database" >&2
+  exit 1
+fi
 ref=$($OPTICLI find --type ArticlePage --limit 1 | jq -r '.data[0].ref')
 out=$($OPTICLI set "$ref" MetaTitle="opticli drift test" --dry-run)
 expect '.ok and any(.meta.warnings[]; startswith("drift: "))' "$out"
@@ -124,19 +139,19 @@ build
 out=$($OPTICLI serve)
 expect '.ok and .data.drift.ahead == "database"' "$out"
 out=$($OPTICLI drift)
-expect '[.data.contentTypes[] | select(.ahead == "database") | .name] == ["DriftPage"] and [.data.properties[].name] == ["ArticlePage.Subtitle"]' "$out"
+expect '[.data.contentTypes | own | .[] | select(.ahead == "database") | .name] == ["DriftPage"] and [.data.properties[].name] == ["ArticlePage.Subtitle"]' "$out"
 out=$($OPTICLI set "$ref" MetaTitle="opticli drift test" || true)
 expect '.error.code == "drift" and .error.details.ahead == "database"' "$out"
 $OPTICLI serve --stop >/dev/null
 
 echo "== 4. an EF Core migration the database lacks"
 mkdir -p Drift
-cat > Drift/DriftDbContext.cs <<'CS'
+cat > Drift/DriftDbContext.cs <<CS
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
-namespace Alloy.Drift;
+namespace $namespace.Drift;
 
 // For opticli's drift scenario: nothing registers or migrates it.
 public class DriftDbContext(DbContextOptions<DriftDbContext> options) : DbContext(options);

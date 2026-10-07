@@ -34,10 +34,10 @@ namespace OptiCli.Agent.Hosting;
 /// it later, e.g. configuration sources a minimal-hosting site adds after the builder is created).
 /// <para>
 /// Against a remote database (shared mode) the site must not change it for others just by starting: the scheduler
-/// (jobs would run alongside the deployed site's), automatic schema updates (a newer CMS package in the local build),
-/// the commit phase of content type sync (the local branch's models) and the remapping of Dynamic Data Store types
-/// whose properties changed are turned off. What the local code would have changed is reported as drift instead
-/// (<see cref="DriftCheck"/>).
+/// (jobs would run alongside the deployed site's), automatic schema updates (a newer CMS package in the local build; on
+/// CMS 13 also the compatibility level), the commit phase of content type sync (the local branch's models) and the
+/// remapping of Dynamic Data Store types whose properties changed are turned off, on CMS 12 and 13 alike. What the local
+/// code would have changed is reported as drift instead (<see cref="DriftCheck"/>).
 /// </para>
 /// <para>
 /// The scheduler is off against a local database too, unless the CLI asks to leave it (<c>serve --scheduler</c>,
@@ -74,11 +74,6 @@ public sealed class AgentHostingStartup : IHostingStartup
             DatabasePin.EnsureAllowed(settings, settings.ConnectionName, effective);
             DatabasePin.WarnAboutOtherRemoteStrings(settings, context.Configuration, settings.ConnectionName);
 
-            if (settings.SharedDatabase && Compat.AgentBuild.CmsMajor >= 13)
-            {
-                // The CLI refuses this before starting; this is for a site started with an older `opticli env`'s variables.
-                throw new InvalidOperationException("[opticli] Refusing to start: this opticli doesn't run CMS 13 sites against a shared database yet (it can't check what the site would change there). Use a local copy of the database.");
-            }
             services.AddSingleton(settings);
             if (settings.PinnedConnection is not null)
             {
@@ -86,11 +81,7 @@ public sealed class AgentHostingStartup : IHostingStartup
             }
             if (settings.SharedDatabase)
             {
-                services.PostConfigure<DataAccessOptions>(options =>
-                {
-                    options.UpdateDatabaseSchema = false;
-                    options.CreateDatabaseSchema = false;
-                });
+                services.PostConfigure<DataAccessOptions>(TurnOffSchemaChanges);
                 services.PostConfigure<SchedulerOptions>(options => options.Enabled = false);
                 services.PostConfigure<ContentModelOptions>(options => options.EnableModelSyncCommit = false);
                 services.PostConfigure<DynamicDataStoreOptions>(TurnOffStoreChanges);
@@ -105,6 +96,17 @@ public sealed class AgentHostingStartup : IHostingStartup
             services.AddSingleton<DriftCheck>();
             services.AddTransient<IStartupFilter, AgentStartupFilter>();
         });
+    }
+
+    /// <summary>
+    /// No schema created or updated, and on CMS 13 no raised compatibility level either (<c>UpdateDatabaseCompatibilityLevel</c>,
+    /// off by default, which a site may turn on): a database that needs either stops the site instead.
+    /// </summary>
+    internal static void TurnOffSchemaChanges(DataAccessOptions options)
+    {
+        options.UpdateDatabaseSchema = false;
+        options.CreateDatabaseSchema = false;
+        Compat.AgentBuild.TurnOffCompatibilityLevelUpdate(options);
     }
 
     /// <summary>

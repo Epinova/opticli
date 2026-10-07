@@ -24,6 +24,19 @@ internal static class AgentBuild
 #endif
 
     /// <summary>
+    /// Keeps CMS 13 from raising the database's compatibility level on start (<c>DataAccessOptions.UpdateDatabaseCompatibilityLevel</c>,
+    /// new in CMS 13): shared mode changes nothing in the database's schema. CMS 12 has no such setting.
+    /// </summary>
+    public static void TurnOffCompatibilityLevelUpdate(EPiServer.Data.DataAccessOptions options)
+    {
+#if CMS13
+        options.UpdateDatabaseCompatibilityLevel = false;
+#else
+        _ = options;
+#endif
+    }
+
+    /// <summary>
     /// Whether the content type came from code (the CMS's model sync made it), whether or not that code is still there.
     /// CMS 12 records the class of every such type (<c>ModelTypeString</c>). CMS 13 records none for a model with a GUID,
     /// only the version of its assembly (<c>Version</c>, which the sync sets and admin mode doesn't); a type of an external
@@ -95,6 +108,29 @@ internal static class AgentBuild
 #else
         (property.Type as BlockPropertyDefinitionType)?.BlockType?.GUID;
 #endif
+
+    /// <summary>
+    /// The block type a block property of the site's model holds, by name, where the property's type doesn't tell block
+    /// types apart: CMS 13's one generic <c>Block</c> type (the block type is the model's item type). Null for other
+    /// properties, and on CMS 12, whose block properties have a property type per block type.
+    /// </summary>
+    public static string? ModelBlockType(PropertyDefinitionModel model, PropertyDefinitionType? type, IContentTypeRepository types)
+    {
+#if CMS13
+        // The class, or a list's item class (as the CMS's internal ItemType has it).
+        var item = model.Type is { IsGenericType: true } list && list.GetGenericArguments() is [var argument] && typeof(IEnumerable<>).MakeGenericType(argument).IsAssignableFrom(list)
+            ? argument
+            : model.Type;
+        return type?.DataType == PropertyDataType.Block && item is not null ? types.Load(item)?.Name ?? item.Name : null;
+#else
+        _ = (model, type, types);
+        return null;
+#endif
+    }
+
+    /// <summary>The block type a stored block property holds, by name, where <see cref="ModelBlockType"/> gives one: CMS 13.</summary>
+    public static string? StoredBlockType(PropertyDefinition property, IContentTypeRepository types) =>
+        CmsMajor >= 13 && BlockTypeGuid(property) is { } guid ? types.Load(guid)?.Name ?? guid.ToString() : null;
 
     /// <summary>
     /// Deletes a property definition, and its values with it. CMS 12: <c>IPropertyDefinitionRepository.Delete</c>. CMS 13
