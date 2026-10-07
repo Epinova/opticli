@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>opticli</title>
-<meta name="description" content="opticli is a command-line tool for reading and changing the content of an Optimizely CMS 12 site, built for developers and their coding agents.">
+<meta name="description" content="opticli is a command-line tool for reading and changing the content of an Optimizely CMS 12 or CMS 13 site, built for developers and their coding agents.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap">
@@ -151,7 +151,7 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
 <div class="wrap">
   <div class="intro">
     <h1><span class="prompt">❯</span>opticli</h1>
-    <p class="lead">A command-line tool for the content in your Optimizely CMS 12 site. Look up pages and blocks, trace them
+    <p class="lead">A command-line tool for the content in your Optimizely CMS 12 or CMS 13 site. Look up pages and blocks, trace them
       to the code that renders them, and change them through the CMS API, from your terminal or through your coding agent.</p>
     <div class="actions"><a class="btn" href="https://github.com/epinova/opticli">View on GitHub</a><a href="#get-started">Get started</a><a href="#editors">For editors</a><a href="#safety">Safety</a><a href="#changelog">Changelog</a></div>
   </div>
@@ -181,6 +181,16 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
       <li><h3>Change content through the CMS API</h3>
         <p>Writes go through <code>IContentRepository</code> inside your running site, so validation, versioning, events and caches all work. Changes are saved as drafts unless you publish, and every write command takes <code>--dry-run</code>.</p>
         <code class="eg">opticli set 123 Heading="New title" --dry-run</code></li>
+      <li><h3>CMS 12 and CMS 13</h3>
+        <p>The same commands on both, for fresh CMS 13 installs and databases upgraded from CMS 12. Reads follow the
+          database's schema, and <code>serve</code> picks the site agent built for your site's CMS version. On CMS 13,
+          sites are applications, and the template's LocalDB connection string works as it is on Windows.</p>
+        <code class="eg">opticli doctor</code></li>
+      <li><h3>Visual Builder pages</h3>
+        <p><code>get</code> shows an experience as its sections, rows, columns and elements, with display templates and
+          settings. <code>composition</code> adds, moves, changes and removes them, or writes back the JSON
+          <code>get</code> printed. Content variations and blueprints work too.</p>
+        <code class="eg">opticli composition 123 add element --in Left --type TextElement Heading=Hi</code></li>
       <li><h3>Deletes that check first, and come back</h3>
         <p><code>delete</code> only moves content to the recycle bin, and stops while other pages or blocks still reference
           it, listing where. <code>trash</code> shows what's in the bin and where it came from, and <code>restore</code>
@@ -281,7 +291,7 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
     <div class="head">
       <h2><a class="anchor" href="#get-started">Get started</a></h2>
       <p>You need the .NET 8 SDK or newer. Install opticli from <a href="https://www.nuget.org/packages/OptiCli">nuget.org</a>
-        as a global tool, then run it from anywhere inside a CMS 12 site's repository.</p>
+        as a global tool, then run it from anywhere inside a CMS 12 or CMS 13 site's repository.</p>
     </div>
     <pre class="cmd"><span class="c"># install, or update to the latest version</span>
 dotnet tool install -g OptiCli
@@ -324,6 +334,32 @@ https://your-site.example/episerver/opticli/mcp</pre>
         <code>opticli skill install</code> again to update the skill.</p>
     </div>
     <ol class="changelog">
+      <li><div class="v"><b>0.15.0</b><span>7 October 2026</span></div>
+        <ul>
+          <li><b>Optimizely CMS 13:</b> one opticli reads and writes CMS 12 and CMS 13 sites, fresh CMS 13 installs and
+            databases upgraded from CMS 12 alike. The package carries a site agent for each (.NET 8 for CMS 12, .NET 10
+            for CMS 13), and <code>serve</code> picks the right one. A CMS 13 build against a CMS 12 database is refused,
+            since starting it would upgrade the database for good. Every existing command works on CMS 13, shared databases
+            and drift included.</li>
+          <li><b>Sites are applications on CMS 13:</b> <code>sites</code>, <code>sites primary</code> and
+            <code>sites host</code> work on them, <code>*</code> moves the default application in one save, local hosts get
+            http, and <code>--type preview|media</code> adds CMS 13's new host types. <code>jobs</code> shows the names
+            admin mode shows.</li>
+          <li><b>Visual Builder:</b> <code>get</code> shows an experience's <code>composition</code> (sections, rows,
+            columns, elements, display templates and settings), <code>search</code> and <code>where-used</code> name the
+            element a match is in, and <code>display-templates</code> lists the templates. <code>composition &lt;ref&gt;
+            add|move|set|remove</code> edits one node, and <code>set 123 composition=@file.json</code> writes back what
+            <code>get</code> printed. <code>get --variation</code> and <code>--variation</code> on writes for content
+            variations, <code>create --blueprint</code> for blueprints.</li>
+          <li><b>LocalDB:</b> the CMS templates' <code>|DataDirectory|</code> connection string works on Windows; on Linux
+            and macOS it gets a clear error.</li>
+          <li><b>Changed:</b> <code>--values</code> also takes a value as <code>get</code> shows it, so
+            <code>get</code>'s output can be edited and written back.</li>
+          <li><b>Fixed:</b> a page list's type filter takes the page type's name; two <code>serve</code>s started at once
+            no longer pick the same port; <code>get</code> shows a scheduled version's publish time. The MCP module is
+            unchanged and still CMS 12 only. Details in the
+            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
+        </ul></li>
       <li><div class="v"><b>0.14.0</b><span>6 October 2026</span></div>
         <ul>
           <li><b>Remove what removed code left behind:</b> <code>types remove</code>, <code>types remove-property</code> and
