@@ -75,6 +75,18 @@ public static class ContentKinds
     /// <summary>One of CMS 13's Visual Builder kinds that content can have: experience, section or element.</summary>
     public static bool IsComposition(this ContentKind kind) => kind is ContentKind.Experience or ContentKind.Section or ContentKind.Element;
 
+    /// <summary>
+    /// Whether <paramref name="kind"/> is what a <c>--kind</c> filter of <paramref name="wanted"/> asks for: <c>page</c> also
+    /// matches experiences and <c>block</c> sections and elements (what they are in the CMS's classes); every other kind,
+    /// <c>experience</c>, <c>section</c>, <c>element</c> and <c>contract</c> included, matches only itself.
+    /// </summary>
+    public static bool Matches(this ContentKind kind, ContentKind wanted) => wanted switch
+    {
+        ContentKind.Page => kind.IsPage(),
+        ContentKind.Block => kind.IsBlock(),
+        _ => kind == wanted,
+    };
+
     /// <summary>The kind as the output names it (<c>page</c>, <c>experience</c>, ...).</summary>
     public static string Name(this ContentKind kind) => kind.ToString().ToLowerInvariant();
 }

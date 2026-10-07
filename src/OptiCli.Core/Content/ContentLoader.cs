@@ -69,10 +69,7 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
         var fields = ValidateFields(header, options.Fields);
         var (properties, tree) = await DecodeAsync(header, branch, rows, options with { Fields = fields }, branchLanguage, cancellationToken);
         var kind = Model.Kind(header.TypeId);
-        // The composition replaces the properties it is stored in, unless --fields leaves them out.
-        var composition = options.Composition && Compositions.LayoutProperty(Model, header.TypeId) is { } layout && (fields is null || fields.Contains(layout.Name))
-            ? Compositions.Extract(Model, header.TypeId, kind, tree, properties)
-            : null;
+        var composition = Composition(header.TypeId, kind, options, tree, properties);
 
         notes.AddRange(await BindingNotesAsync(contentId, shownVersion?.Id ?? row?.VersionId, cancellationToken));
         if (shownVersion is null && row is not null && row.Status != VersionStatus.Published)
@@ -155,6 +152,30 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
     }
 
     /// <summary>
+    /// CMS 13: the composition of a Visual Builder experience or section, which replaces the properties it is stored in
+    /// (<c>Layout</c>, <c>UnstructuredData</c>). Those are shown as stored only when <c>--fields</c> names them; the
+    /// composition when <c>--fields</c> is not given or names <c>composition</c>. Null for other content.
+    /// </summary>
+    internal JsonObject? Composition(int typeId, Cms.ContentKind kind, DecodeOptions options, IReadOnlyDictionary<int, PropertyNode> tree, JsonObject properties)
+    {
+        if (!options.Composition || Compositions.LayoutProperty(Model, typeId) is null)
+        {
+            return null;
+        }
+        var storage = Compositions.StorageProperties(Model, typeId);
+        var named = options.Fields is { } requested ? new HashSet<string>(storage.Where(requested.Contains), StringComparer.OrdinalIgnoreCase) : [];
+        if (options.Fields is null || options.Fields.Contains(Compositions.Field))
+        {
+            return Compositions.Extract(Model, typeId, kind, tree, properties, named);
+        }
+        foreach (var name in storage.Where(n => !named.Contains(n)))
+        {
+            properties.Remove(name);
+        }
+        return null;
+    }
+
+    /// <summary>
     /// CMS 13: the version's content bindings (<c>tblContentBinding</c>): the CMS fills the bound properties from other
     /// (often external) content when it loads it, so what is stored here isn't what it shows. Said in a note rather than
     /// guessed at; none on CMS 12.
@@ -206,13 +227,21 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
     }
 
     /// <summary>Decoded primary properties of several items (for <c>--expand</c>), keyed by GUID; references stay identity-only.</summary>
-    public async Task<IReadOnlyDictionary<Guid, JsonObject>> ExpandAsync(IReadOnlyCollection<int> contentIds, LanguageBranch? language, CancellationToken cancellationToken)
+    public async Task<IReadOnlyDictionary<Guid, JsonObject>> ExpandAsync(IReadOnlyCollection<int> contentIds, LanguageBranch? language, CancellationToken cancellationToken) =>
+        (await ExpandWithCompositionsAsync(contentIds, language, cancellationToken)).Properties;
+
+    /// <summary>
+    /// <see cref="ExpandAsync"/>, and on CMS 13 the compositions of the experiences and sections among them (which then
+    /// leave out the properties those are stored in, as <c>get</c> does).
+    /// </summary>
+    private async Task<(IReadOnlyDictionary<Guid, JsonObject> Properties, IReadOnlyDictionary<Guid, JsonObject> Compositions)> ExpandWithCompositionsAsync(
+        IReadOnlyCollection<int> contentIds, LanguageBranch? language, CancellationToken cancellationToken)
     {
         await identities.LoadAsync(contentIds, [], cancellationToken);
         var headers = contentIds.Select(identities.Header).OfType<ContentHeader>().ToList();
         if (headers.Count == 0)
         {
-            return new Dictionary<Guid, JsonObject>();
+            return (new Dictionary<Guid, JsonObject>(), new Dictionary<Guid, JsonObject>());
         }
 
         var languageIds = headers.Select(h => h.MasterLanguageId).Append(language?.Id ?? 0).Where(id => id > 0);
@@ -233,7 +262,18 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
         await identities.LoadAsync(collector.Ids, collector.Guids, cancellationToken);
 
         var lookup = new ResolvedReferences(identities, language);
-        return trees.ToDictionary(t => t.Header.Guid, t => Decoder(lookup, plain, t.Header).Decode(t.Header.TypeId, t.Tree));
+        var properties = new Dictionary<Guid, JsonObject>();
+        var compositions = new Dictionary<Guid, JsonObject>();
+        foreach (var (header, _, tree) in trees)
+        {
+            var decoded = Decoder(lookup, plain, header).Decode(header.TypeId, tree);
+            if (Compositions.IsLayouted(Model, header.TypeId) && Compositions.Extract(Model, header.TypeId, Model.Kind(header.TypeId), tree, decoded) is { } composition)
+            {
+                compositions[header.Guid] = composition;
+            }
+            properties[header.Guid] = decoded;
+        }
+        return (properties, compositions);
     }
 
     /// <summary>The page's shortcut, with the page it points at described; null for a normal page.</summary>
@@ -335,6 +375,7 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
         await identities.LoadAsync(collector.Ids, collector.Guids, cancellationToken);
 
         IReadOnlyDictionary<Guid, JsonObject>? expanded = null;
+        IReadOnlyDictionary<Guid, JsonObject>? compositions = null;
         if (options.Expand)
         {
             var targets = collector.Ids
@@ -342,10 +383,10 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
                 .Where(id => id != header.Id && identities.Header(id) is not null)
                 .Distinct()
                 .ToList();
-            expanded = await ExpandAsync(targets, language, cancellationToken);
+            (expanded, compositions) = await ExpandWithCompositionsAsync(targets, language, cancellationToken);
         }
 
-        return (Decoder(new ResolvedReferences(identities, language, expanded), options, header).Decode(header.TypeId, tree), tree);
+        return (Decoder(new ResolvedReferences(identities, language, expanded, compositions), options, header).Decode(header.TypeId, tree), tree);
     }
 
     private PropertyDecoder Decoder(IReferenceLookup lookup, DecodeOptions options, ContentHeader header) =>
@@ -363,13 +404,9 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
         var names = Model.PropertiesOf(header.TypeId).Select(p => p.Name).ToList();
         // CMS 13: "composition" stands for the properties a Visual Builder composition is stored in.
         var storage = Compositions.StorageProperties(Model, header.TypeId);
-        if (storage.Count > 0 && fields.Contains(Compositions.Field))
+        if (storage.Count > 0 && (fields.Contains(Compositions.Field) || storage.Any(fields.Contains)))
         {
-            fields = new HashSet<string>(fields.Concat(storage), StringComparer.OrdinalIgnoreCase);
-        }
-        else if (storage.Count > 0 && storage.Any(fields.Contains))
-        {
-            // The layout and its items only make sense together.
+            // The composition is built from both; a stored one named alone is shown as it is (Composition).
             fields = new HashSet<string>(fields.Concat(storage), StringComparer.OrdinalIgnoreCase);
         }
         foreach (var field in fields)

@@ -11,7 +11,7 @@ internal static class AllowedInCommand
     public static Command Create(GlobalOptions options)
     {
         var name = new Argument<string>("type") { Description = "The content type that should fit (name, class name or GUID), e.g. a block type." };
-        var kind = new Option<string?>("--kind") { Description = "Only properties of content types of this kind: page, block, media, folder or other; on CMS 13 also experience, section, element or contract.", HelpName = "kind" };
+        var kind = new Option<string?>("--kind") { Description = "Only properties of content types of this kind: page, block, media, folder or other; on CMS 13 also experience, section, element or contract (page includes experiences, block sections and elements).", HelpName = "kind" };
         kind.AcceptOnlyFromAmong(Enum.GetNames<ContentKind>().Select(n => n.ToLowerInvariant()).ToArray());
         var explicitOnly = new Option<bool>("--explicit") { Description = "Only properties whose [AllowedTypes] names the type or one of its base classes (leave out unrestricted ones)." };
         var list = new ListOptions(options);
@@ -41,7 +41,7 @@ internal static class AllowedInCommand
             if (context.Parse.GetValue(kind) is { } wanted)
             {
                 var parsed = Enum.Parse<ContentKind>(wanted, ignoreCase: true);
-                rows = rows.Where(r => r.Kind == parsed);
+                rows = rows.Where(r => r.Kind.Matches(parsed));
             }
             return CommandResult.From(list.Apply(context.Parse, rows.ToList()));
         });

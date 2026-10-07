@@ -14,7 +14,7 @@ internal static class DraftsCommand
     {
         var since = new Option<string?>("--since") { Description = "Only drafts saved on or after this UTC date (yyyy-MM-dd or yyyy-MM-ddTHH:mm:ss).", HelpName = "date" };
         var by = new Option<string?>("--by") { Description = "Only drafts saved by a user whose name contains this.", HelpName = "user" };
-        var kind = new Option<string?>("--kind") { Description = "Only content of this kind: page, block, media, folder or other; on CMS 13 also experience, section or element.", HelpName = "kind" };
+        var kind = new Option<string?>("--kind") { Description = "Only content of this kind: page, block, media, folder or other; on CMS 13 also experience, section or element (page includes experiences, block sections and elements).", HelpName = "kind" };
         kind.AcceptOnlyFromAmong(Enum.GetNames<ContentKind>().Select(n => n.ToLowerInvariant()).ToArray());
         var type = new Option<string?>("--type") { Description = "Only content of this type (name or GUID).", HelpName = "type" };
         var content = new ContentOptions();
@@ -59,7 +59,7 @@ internal static class DraftsCommand
             if (context.Parse.GetValue(kind) is { } wanted)
             {
                 var parsed = Enum.Parse<ContentKind>(wanted, ignoreCase: true);
-                types = types.Where(t => t.Kind == parsed);
+                types = types.Where(t => t.Kind.Matches(parsed));
             }
             var typeIds = context.Parse.GetValue(type) is null && context.Parse.GetValue(kind) is null ? null : types.Select(t => t.Id).ToList();
             var drafts = await new DraftReader(session, context.Parse.GetValue(blueprints)).ListAsync(

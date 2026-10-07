@@ -38,6 +38,12 @@ public sealed record ContentTypeInfo(
     /// <summary>CMS 13, when counted: the type's Visual Builder blueprints, which <see cref="Instances"/> leaves out; null for none.</summary>
     public int? Blueprints { get; init; }
 
+    /// <summary>
+    /// CMS 13, when counted: inline blocks of the type in each branch's primary version (Visual Builder sections and elements,
+    /// mostly), which <see cref="Instances"/> leaves out as they aren't content of their own; null for none.
+    /// </summary>
+    public int? InlineUses { get; init; }
+
     /// <summary>The simple class name from <see cref="ModelType"/> (namespace, assembly and nesting stripped).</summary>
     public string? ClassName => ModelTypeNames.ClassName(ModelType);
 

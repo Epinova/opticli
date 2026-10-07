@@ -30,7 +30,11 @@ public enum FindStatus
 
 /// <param name="PublishAt">For <see cref="FindStatus.Scheduled"/>: when the first scheduled version is published, UTC.</param>
 /// <param name="ExpiredAt">For <see cref="FindStatus.Expired"/>: when the published version stopped publishing, UTC.</param>
-public sealed record FoundItem(int Id, DateTime? PublishAt = null, DateTime? ExpiredAt = null);
+/// <param name="VariationDrafts">
+/// For <see cref="FindStatus.Draft"/> on CMS 13: the content variations (keys) with an unpublished version newer than their
+/// own published one, which make the item match too; null when none has.
+/// </param>
+public sealed record FoundItem(int Id, DateTime? PublishAt = null, DateTime? ExpiredAt = null, IReadOnlyList<string>? VariationDrafts = null);
 
 /// <summary>
 /// <c>find</c>: content of one type, filtered in SQL. <c>--where</c> compares the primary (published, or
@@ -61,15 +65,23 @@ public sealed class FindQuery(ContentSession session, bool includeBlueprints = f
         // A content variation's versions (CMS 13) count for draft and scheduled too: a variation's unpublished version
         // newer than its own published one, or one scheduled for publishing.
         var schema = session.Model.Schema;
-        var variationDraft = schema.Variations ? $"""
-             OR EXISTS (
-                      SELECT 1 FROM tblWorkContent wc
+        var variationDraftRows = $"""
+            FROM tblWorkContent wc
                       WHERE wc.fkContentID = c.pkID AND wc.fkLanguageBranchID = cl.fkLanguageBranchID AND wc.fkVariationID IS NOT NULL
                         AND wc.Status IN ({VersionStatuses.UnpublishedSql})
                         AND wc.pkID > ISNULL((SELECT MAX(p.pkID) FROM tblWorkContent p
                                               WHERE p.fkContentID = wc.fkContentID AND p.fkLanguageBranchID = wc.fkLanguageBranchID
-                                                AND p.fkVariationID = wc.fkVariationID AND p.Status = {(int)VersionStatus.Published}), 0))
+                                                AND p.fkVariationID = wc.fkVariationID AND p.Status = {(int)VersionStatus.Published}), 0)
+            """;
+        var variationDraft = schema.Variations ? $"""
+             OR EXISTS (
+                      SELECT 1 {variationDraftRows})
             """ : "";
+        // Which variations those are, so a row can say why it matched.
+        var variationKeys = schema.Variations && status == FindStatus.Draft ? $"""
+            (SELECT STRING_AGG(v.[Key], NCHAR(31)) WITHIN GROUP (ORDER BY v.[Key]) FROM tblContentVariation v
+             WHERE v.pkID IN (SELECT wc.fkVariationID {variationDraftRows}))
+            """ : "NULL";
         var defaultOnly = schema.DefaultVariationOnly("wc");
         // A branch's first scheduled version: when the CMS's job publishes it.
         var scheduled = $"""
@@ -77,7 +89,8 @@ public sealed class FindQuery(ContentSession session, bool includeBlueprints = f
              WHERE wc.fkContentID = c.pkID AND wc.fkLanguageBranchID = cl.fkLanguageBranchID AND wc.Status = {(int)VersionStatus.DelayedPublish})
             """;
         var sql = new StringBuilder($"""
-            SELECT c.pkID, {(status == FindStatus.Scheduled ? scheduled : "NULL")} AS PublishAt, {(status == FindStatus.Expired ? "cl.StopPublish" : "NULL")} AS ExpiredAt
+            SELECT c.pkID, {(status == FindStatus.Scheduled ? scheduled : "NULL")} AS PublishAt, {(status == FindStatus.Expired ? "cl.StopPublish" : "NULL")} AS ExpiredAt,
+                   {variationKeys} AS VariationDrafts
             FROM tblContent c
             JOIN tblContentLanguage cl ON cl.fkContentID = c.pkID AND cl.fkLanguageBranchID = {(language is null ? "c.fkMasterLanguageBranchID" : "@lang")}
             WHERE c.fkContentTypeID = @type AND c.Deleted = 0{(schema.Blueprints && !includeBlueprints ? " AND ISNULL(c.Blueprint, 0) = 0" : "")}
@@ -121,7 +134,9 @@ public sealed class FindQuery(ContentSession session, bool includeBlueprints = f
         }
         sql.Append("\nORDER BY c.pkID\nOFFSET @offset ROWS FETCH NEXT @take ROWS ONLY");
 
-        return await session.Db.QueryAsync(sql.ToString(), r => new FoundItem(r.GetInt32("pkID"), r.GetDateTimeOrNull("PublishAt"), r.GetDateTimeOrNull("ExpiredAt")),
+        return await session.Db.QueryAsync(sql.ToString(), r => new FoundItem(
+                r.GetInt32("pkID"), r.GetDateTimeOrNull("PublishAt"), r.GetDateTimeOrNull("ExpiredAt"),
+                r.GetStringOrNull("VariationDrafts") is { Length: > 0 } keys ? keys.Split('\u001f') : null),
             cancellationToken, parameters.ToArray());
     }
 

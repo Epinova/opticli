@@ -22,6 +22,9 @@ internal static class TypesCommand
         /// <summary>CMS 13: the type's Visual Builder blueprints, which <see cref="Instances"/> doesn't count.</summary>
         public int? Blueprints { get; init; }
 
+        /// <summary>CMS 13: its inline blocks in content's primary versions (sections and elements), which <see cref="Instances"/> doesn't count.</summary>
+        public int? InlineUses { get; init; }
+
         /// <summary>CMS 13: <c>SectionEnabled</c> (it can stand in an experience's outline), <c>ElementEnabled</c> (in a section's columns).</summary>
         public IReadOnlyList<string>? CompositionBehaviors { get; init; }
 
@@ -34,7 +37,7 @@ internal static class TypesCommand
 
     public static Command Create(GlobalOptions options)
     {
-        var kind = new Option<string?>("--kind") { Description = "Only types of this kind: page, block, media, folder or other; on CMS 13 also experience, section, element or contract.", HelpName = "kind" };
+        var kind = new Option<string?>("--kind") { Description = "Only types of this kind: page, block, media, folder or other; on CMS 13 also experience, section, element or contract (page includes experiences, block sections and elements).", HelpName = "kind" };
         kind.AcceptOnlyFromAmong(Enum.GetNames<ContentKind>().Select(n => n.ToLowerInvariant()).ToArray());
         var unused = new Option<bool>("--unused") { Description = "Only types with no (non-deleted) content items." };
         var orphaned = new Option<bool>("--orphaned")
@@ -50,8 +53,9 @@ internal static class TypesCommand
             Kinds: page, block, media (incl. images and video), folder, other (settings, system types); on CMS 13 also
             Visual Builder's experience (a page made of sections), section, element (a block type sections can hold) and
             contract (an interface other types implement; contracts lists them on each type), with compositionBehaviors and
-            blueprints (how many Visual Builder blueprints of the type there are; instances doesn't count them).
-            --unused: types no content uses. --orphaned: types defined in code (the CMS has a class on record) whose class is
+            blueprints (how many Visual Builder blueprints of the type there are; instances doesn't count them) and inlineUses
+            (its inline blocks in content's published or primary versions, sections and elements mostly).
+            --unused: types no content uses (on CMS 13 also not inline; contracts are never listed). --orphaned: types defined in code (the CMS has a class on record) whose class is
             gone, with modelType; the CMS keeps such a type while content uses it. With `opticli serve` running the site says
             which classes it can't load; without it the site's sources are scanned (by GUID, then name) for the types of its
             own assemblies only (a warning says so).
@@ -77,11 +81,12 @@ internal static class TypesCommand
             if (context.Parse.GetValue(kind) is { } wanted)
             {
                 var parsed = Enum.Parse<ContentKind>(wanted, ignoreCase: true);
-                types = types.Where(t => t.Kind == parsed);
+                types = types.Where(t => t.Kind.Matches(parsed));
             }
             if (context.Parse.GetValue(unused))
             {
-                types = types.Where(t => t.Instances == 0);
+                // CMS 13: a type used only inline (an element in a composition) is used; a contract never has content of its own.
+                types = types.Where(t => t.Instances == 0 && t.InlineUses is null && t.Kind != ContentKind.Contract);
             }
             var warnings = new List<string>();
             var askedSite = false;
@@ -106,6 +111,7 @@ internal static class TypesCommand
                 ModelType = showModel ? t.ModelType : null,
                 OriginUnknown = showModel ? t.OriginUnknown : null,
                 Blueprints = t.Blueprints,
+                InlineUses = t.InlineUses,
                 CompositionBehaviors = t.CompositionBehaviors.Count > 0 ? t.CompositionBehaviors : null,
                 Contracts = t.Contracts.Count > 0 ? t.Contracts : null,
                 Source = t.Source,

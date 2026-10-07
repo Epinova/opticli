@@ -6,7 +6,11 @@ namespace OptiCli.Core.Queries;
 
 /// <summary>One instance of a type and where it is used.</summary>
 /// <param name="Count">How many usages it has (0: unused).</param>
-public sealed record InstanceUsage(string Ref, Guid Guid, string? Name, string? Language, string? Status, int Count, IReadOnlyList<Usage> Usages);
+public sealed record InstanceUsage(string Ref, Guid Guid, string? Name, string? Language, string? Status, int Count, IReadOnlyList<Usage> Usages)
+{
+    /// <summary>CMS 13: true for a Visual Builder blueprint of the type, a template for new content rather than an instance.</summary>
+    public bool? Blueprint { get; init; }
+}
 
 /// <summary>
 /// CMS 13, <c>where-used --type</c> of a block type: its inline blocks, which aren't content of their own: every place a
@@ -110,8 +114,9 @@ public sealed class TypeUsageReader(ContentSession session)
             }
             var usages = await reader.FindAsync(header, cancellationToken);
             var identity = session.Identities.Describe(header, null);
-            result.Add(new InstanceUsage(identity.Ref!, header.Guid, identity.Name, identity.Language, identity.Status, usages.Count, usages));
+            result.Add(new InstanceUsage(identity.Ref!, header.Guid, identity.Name, identity.Language, identity.Status, usages.Count, usages) { Blueprint = identity.Blueprint });
         }
-        return result.OrderByDescending(r => r.Count).ThenBy(r => int.Parse(r.Ref, System.Globalization.CultureInfo.InvariantCulture)).ToList();
+        // Blueprints after the instances.
+        return result.OrderBy(r => r.Blueprint == true ? 1 : 0).ThenByDescending(r => r.Count).ThenBy(r => int.Parse(r.Ref, System.Globalization.CultureInfo.InvariantCulture)).ToList();
     }
 }

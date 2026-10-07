@@ -46,7 +46,7 @@ public static partial class ScheduledJobSources
                 }
                 // The class the attribute is on: the first one after it, with nothing but attributes and modifiers between.
                 var type = index.Classes
-                    .Where(c => c.File == file && c.BodyStart > close)
+                    .Where(c => c.File == file && !c.IsInterface && c.BodyStart > close)
                     .OrderBy(c => c.BodyStart)
                     .FirstOrDefault();
                 if (type is null || text[close..type.BodyStart].IndexOfAny([';', '{', '}']) >= 0)

@@ -12,6 +12,9 @@ public interface IReferenceLookup
 
     /// <summary>The target's own properties when <c>--expand</c> is on; null otherwise.</summary>
     JsonObject? Expanded(Guid guid);
+
+    /// <summary>CMS 13, with <c>--expand</c>: the target's Visual Builder composition, when it is an experience or a section.</summary>
+    JsonObject? ExpandedComposition(Guid guid) => null;
 }
 
 /// <summary>
@@ -40,7 +43,8 @@ public sealed class ReferenceCollector : IReferenceLookup
 }
 
 /// <summary>Second pass: identities from a loaded <see cref="IdentityResolver"/>, in the item's language.</summary>
-public sealed class ResolvedReferences(IdentityResolver identities, LanguageBranch? language, IReadOnlyDictionary<Guid, JsonObject>? expanded = null)
+public sealed class ResolvedReferences(
+    IdentityResolver identities, LanguageBranch? language, IReadOnlyDictionary<Guid, JsonObject>? expanded = null, IReadOnlyDictionary<Guid, JsonObject>? compositions = null)
     : IReferenceLookup
 {
     public ContentIdentity Content(int id) => identities.ById(id, language);
@@ -48,4 +52,6 @@ public sealed class ResolvedReferences(IdentityResolver identities, LanguageBran
     public ContentIdentity Content(Guid guid) => identities.ByGuid(guid, language);
 
     public JsonObject? Expanded(Guid guid) => expanded?.GetValueOrDefault(guid);
+
+    public JsonObject? ExpandedComposition(Guid guid) => compositions?.GetValueOrDefault(guid);
 }

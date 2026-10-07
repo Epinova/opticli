@@ -34,7 +34,15 @@ public static class DriftAhead
 /// <param name="Name">What differs: <c>ArticlePage</c>, <c>ArticlePage.Heading</c>, a migration id, a store name, <c>CMS</c>.</param>
 /// <param name="Ahead"><see cref="DriftAhead.Local"/>, <see cref="DriftAhead.Database"/> or <see cref="DriftAhead.Unknown"/>.</param>
 /// <param name="Difference">How, e.g. "only in the code", "type: XhtmlString in the code, String in the database".</param>
-public sealed record DriftItem(string Name, string Ahead, string Difference);
+public sealed record DriftItem(string Name, string Ahead, string Difference)
+{
+    /// <summary>
+    /// Listed, but not a difference that stops writes: it counts toward neither <see cref="DriftReport.Differences"/> nor the
+    /// fingerprint (CMS 13 content types of unknown origin, which admin mode makes too).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Informational { get; init; }
+}
 
 /// <summary>
 /// What the CLI found before the site started (<c>serve</c>), handed to the site agent in the file
@@ -69,7 +77,8 @@ public sealed record DriftReport
     /// <summary>One of <see cref="DriftAhead"/>; null when nothing differs.</summary>
     public string? Ahead { get; init; }
 
-    public int Differences => ContentTypes.Count + Properties.Count + Migrations.Count + Stores.Count + Schema.Count;
+    /// <summary>The differences that stop writes (every item but the <see cref="DriftItem.Informational"/> ones).</summary>
+    public int Differences => Sections().Count(s => !s.Item.Informational);
 
     public IReadOnlyList<DriftItem> ContentTypes { get; init; } = [];
 
@@ -106,9 +115,10 @@ public sealed record DriftReport
             Schema = Sorted(schema),
             Notes = notes.Distinct(StringComparer.Ordinal).ToList(),
         };
-        return report.Differences == 0
+        var blocking = report.Sections().Where(s => !s.Item.Informational).ToList();
+        return blocking.Count == 0
             ? report
-            : report with { Fingerprint = FingerprintOf(report.Sections()), Ahead = AheadOf(report.Sections().Select(s => s.Item)) };
+            : report with { Fingerprint = FingerprintOf(blocking), Ahead = AheadOf(blocking.Select(s => s.Item)) };
     }
 
     /// <summary>Every item with the name of its list, in a fixed order.</summary>
@@ -151,7 +161,7 @@ public sealed record DriftReport
         {
             return "nothing differs";
         }
-        var items = Sections().ToList();
+        var items = Sections().Where(s => !s.Item.Informational).ToList();
         var shown = items.Take(max).Select(i => $"{Label(i.Section)} {i.Item.Name} ({i.Item.Difference})");
         var more = items.Count > max ? $"; and {items.Count - max} more" : "";
         return string.Create(CultureInfo.InvariantCulture,

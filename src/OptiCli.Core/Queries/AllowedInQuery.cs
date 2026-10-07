@@ -162,7 +162,7 @@ public static class AllowedInQuery
             {
                 if (names.Add(baseName))
                 {
-                    foreach (var declaration in index.Classes.Where(c => c.Name == baseName))
+                    foreach (var declaration in index.Classes.Where(c => c.Name == baseName && !c.IsInterface))
                     {
                         pending.Enqueue(declaration);
                     }

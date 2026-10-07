@@ -37,6 +37,9 @@ internal sealed record SiteType(
     /// </summary>
     public bool OriginUnknown { get; init; }
 
+    /// <summary>CMS 13: the external content source the type belongs to; such a type is neither code's nor admin mode's.</summary>
+    public string? ExternalSource { get; init; }
+
     /// <summary>Made from code, not in admin mode: a class on record, or <see cref="SyncedFromCode"/>.</summary>
     public bool FromCode => ModelType is not null || SyncedFromCode;
 }
@@ -145,6 +148,7 @@ internal sealed class ContentModelSource(IServiceProvider services) : IContentMo
             {
                 SyncedFromCode = Compat.AgentBuild.FromCode(t),
                 OriginUnknown = Compat.AgentBuild.OriginUnknown(t, inBuild),
+                ExternalSource = Compat.AgentBuild.ExternalSource(t),
             })
             .ToList();
     }

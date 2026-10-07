@@ -57,8 +57,20 @@ public static class Compositions
     /// layout isn't readable JSON.
     /// </summary>
     /// <param name="kind">The content's kind: a section's empty composition is a grid, anything else's an outline.</param>
-    public static JsonObject? Extract(CmsModel model, int typeId, ContentKind kind, IReadOnlyDictionary<int, PropertyNode> nodes, JsonObject decoded) =>
-        Build(model, typeId, kind == ContentKind.Section ? "grid" : "outline", nodes, decoded, root: true);
+    /// <param name="keep">Storage properties to leave in <paramref name="decoded"/> all the same (named with <c>--fields</c>).</param>
+    public static JsonObject? Extract(CmsModel model, int typeId, ContentKind kind, IReadOnlyDictionary<int, PropertyNode> nodes, JsonObject decoded, IReadOnlySet<string>? keep = null)
+    {
+        var kept = keep is null ? [] : decoded.Where(p => keep.Contains(p.Key)).Select(p => (p.Key, Value: p.Value?.DeepClone())).ToList();
+        var composition = Build(model, typeId, kind == ContentKind.Section ? "grid" : "outline", nodes, decoded, root: true);
+        if (composition is not null)
+        {
+            foreach (var (name, value) in kept)
+            {
+                decoded[name] = value;
+            }
+        }
+        return composition;
+    }
 
     private static JsonObject? Build(CmsModel model, int? typeId, string emptyLayout, IReadOnlyDictionary<int, PropertyNode> nodes, JsonObject decoded, bool root)
     {
@@ -144,10 +156,8 @@ public static class Compositions
         public JsonArray Unplaced()
         {
             var result = new JsonArray();
-            if (Area(ItemsProperty) is null)
-            {
-                // Nothing to look at unless the items property is there.
-            }
+            // Loads the items property, which is looked at even when no node binds to it.
+            _ = Area(ItemsProperty);
             foreach (var (name, (definition, fragments, items)) in _areas)
             {
                 for (var i = 0; i < fragments.Count; i++)
@@ -324,7 +334,7 @@ public static class Compositions
         }
         if (single is not null)
         {
-            entry[single] = new JsonArray(children.Select(c => (JsonNode?)c.Entry).ToArray());
+            entry[single] = new JsonArray(children.Select(c => (JsonNode?)(single == "sections" && c.Type == "component" ? Component(c.Entry) : c.Entry)).ToArray());
             return;
         }
         entry["nodes"] = new JsonArray(children.Select(c =>
@@ -337,6 +347,26 @@ public static class Compositions
             }
             return (JsonNode?)node;
         }).ToArray());
+    }
+
+    /// <summary>
+    /// A section-enabled block in an outline, which the CMS reads as a component node (no rows of its own): said with
+    /// <c>"nodeType": "component"</c>, right after its key, so it can't pass for a section without rows.
+    /// </summary>
+    private static JsonObject Component(JsonObject entry)
+    {
+        var marked = new JsonObject();
+        foreach (var (name, value) in entry.ToList())
+        {
+            entry.Remove(name);
+            marked[name] = value;
+            if (name == "key")
+            {
+                marked["nodeType"] = "component";
+            }
+        }
+        marked.TryAdd("nodeType", "component");
+        return marked;
     }
 
     private static string? Plural(string type) => type switch

@@ -157,7 +157,7 @@ public static partial class ContentTypeSources
         var self = parts[0];
         foreach (var name in parts.SelectMany(p => p.BaseTypes).Distinct())
         {
-            var matches = index.Classes.Where(c => c.Name == name && !(c.Name == self.Name && c.Namespace == self.Namespace)).ToList();
+            var matches = index.Classes.Where(c => !c.IsInterface && c.Name == name && !(c.Name == self.Name && c.Namespace == self.Namespace)).ToList();
             if (matches.Count > 0)
             {
                 return PartsOf(index, matches.FirstOrDefault(c => c.Namespace == self.Namespace) ?? matches[0]);

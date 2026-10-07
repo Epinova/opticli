@@ -14,6 +14,16 @@ internal static class FindCommand
             new(identity.Ref, identity.Guid, identity.Type, identity.Name, identity.Language, identity.Status, identity.Url, publishAt, expiredAt);
     }
 
+    /// <summary>
+    /// An item of <c>--status draft</c> (CMS 13) that a content variation's draft makes match: its identity, with the
+    /// variations (keys) that have one.
+    /// </summary>
+    private sealed record VariationDraftItem(string? Ref, Guid Guid, string? Type, string? Name, string? Language, string? Status, string? Url, string? Kind, bool? Blueprint, IReadOnlyList<string> VariationDrafts)
+    {
+        public static VariationDraftItem From(Core.Content.ContentIdentity identity, IReadOnlyList<string> variations) =>
+            new(identity.Ref, identity.Guid, identity.Type, identity.Name, identity.Language, identity.Status, identity.Url, identity.Kind, identity.Blueprint, variations);
+    }
+
     public static Command Create(GlobalOptions options)
     {
         var type = new Option<string>("--type") { Description = "Content type name or GUID.", Required = true, HelpName = "type" };
@@ -44,7 +54,7 @@ internal static class FindCommand
             --where MainArea=456 finds the items whose MainArea contains content 456. --status scheduled lists items with a version
             the CMS's "Publish delayed content versions" job publishes later (publishAt, UTC); --status expired items whose
             published version has stopped publishing (expiredAt, UTC), which visitors no longer see. CMS 13: a content variation's
-            unpublished or scheduled version counts for draft and scheduled too (`opticli drafts` says which variation), and
+            unpublished or scheduled version counts for draft and scheduled too (a draft row's variationDrafts names the variations), and
             Visual Builder blueprints are left out unless --blueprints.
             Example: opticli find --type ArticlePage --where Heading~news --under /en/ --status published
             Example: opticli find --type ArticlePage --status scheduled
@@ -71,9 +81,12 @@ internal static class FindCommand
                 contentType, clauses, underId, Enum.Parse<FindStatus>(context.Parse.GetValue(status)!, ignoreCase: true), language, offset, limit, cancellationToken);
             var page = Paging.FromWindow(found, offset, limit);
             await session.Identities.LoadAsync(page.Items.Select(f => f.Id), [], cancellationToken);
-            var items = page.Items.Select(f => (object)(f.PublishAt is null && f.ExpiredAt is null
-                ? session.Identities.Describe(session.Identities.Header(f.Id)!, language)
-                : TimedItem.From(session.Identities.Describe(session.Identities.Header(f.Id)!, language), f.PublishAt, f.ExpiredAt))).ToList();
+            var items = page.Items.Select(f => (object)(f switch
+            {
+                { VariationDrafts: { } variations } => VariationDraftItem.From(session.Identities.Describe(session.Identities.Header(f.Id)!, language), variations),
+                { PublishAt: null, ExpiredAt: null } => session.Identities.Describe(session.Identities.Header(f.Id)!, language),
+                _ => TimedItem.From(session.Identities.Describe(session.Identities.Header(f.Id)!, language), f.PublishAt, f.ExpiredAt),
+            })).ToList();
             return new CommandResult(items, page.Next);
         });
         return command;

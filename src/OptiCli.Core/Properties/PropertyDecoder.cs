@@ -359,6 +359,10 @@ public sealed class PropertyDecoder(
         if (options.Expand && target.Missing != true && lookup.Expanded(target.Guid) is { } properties)
         {
             node["properties"] = properties.DeepClone();
+            if (lookup.ExpandedComposition(target.Guid) is { } composition)
+            {
+                node[Compositions.Field] = composition.DeepClone();
+            }
         }
         return node;
     }

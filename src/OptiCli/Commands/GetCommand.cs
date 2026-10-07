@@ -2,6 +2,7 @@ using System.CommandLine;
 using OptiCli.Cli;
 using OptiCli.Core.Content;
 using OptiCli.Core.Errors;
+using OptiCli.Core.Output;
 using OptiCli.Core.Properties;
 
 namespace OptiCli.Commands;
@@ -35,7 +36,8 @@ internal static class GetCommand
             CMS 13: a version of a content variation shows variation (versions lists them; --variation <key> picks one); a Visual
             Builder experience (or section) shows its composition instead of the Layout and UnstructuredData
             properties it is stored in: sections → rows → columns → elements, each with its key, name, type, displayTemplate and
-            displaySettings, an inline one with its properties, a shared one as content {ref, ...}; --fields composition picks it.
+            displaySettings, an inline one with its properties, a shared one as content {ref, ...}; --fields composition picks it,
+            and --fields Layout (or UnstructuredData) shows that stored property as it is. `opticli composition` changes it.
             Example: opticli get /en/about/ --fields Heading,MainArea
             """);
         content.AddTo(command);
@@ -81,7 +83,9 @@ internal static class GetCommand
                 Composition: true);
 
             var loader = new ContentLoader(session.Db, session.Identities);
-            return new CommandResult(await loader.GetAsync(located.Id, selector, content.Language(context, session, located), decode, cancellationToken));
+            var document = await loader.GetAsync(located.Id, selector, content.Language(context, session, located), decode, cancellationToken);
+            // A composition reads as the tree it is, not as a table.
+            return new CommandResult(document, Text: document.Composition is null ? null : CompositionText.Document(JsonOutput.ToNode(document)));
         });
         return command;
     }

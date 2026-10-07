@@ -26,16 +26,31 @@ public static class ContentTypeReader
                 """;
         }
         var blueprints = schema.Blueprints;
+        // CMS 13: inline blocks of the type (Visual Builder sections and elements, mostly) in each branch's primary version,
+        // from the CMS's index of them, as `where-used --type` counts them. Not on CMS 12, whose output stays as it was.
+        var inline = schema.Compositions ? $"""
+
+            LEFT JOIN (
+                SELECT u.fkContentTypeID, COUNT(*) AS InlineUses
+                FROM tblInlineBlockUsage u
+                JOIN tblWorkContent w ON w.pkID = u.fkWorkContentID
+                JOIN tblContent c ON c.pkID = u.fkContentID AND c.Deleted = 0
+                JOIN tblContentLanguage cl ON cl.fkContentID = w.fkContentID AND cl.fkLanguageBranchID = w.fkLanguageBranchID
+                {ContentHeaderReader.CommonDraftApply(schema)}
+                WHERE w.pkID = CASE WHEN cl.Status = {(int)VersionStatus.Published} THEN cl.Version ELSE cd.CommonDraftId END
+                GROUP BY u.fkContentTypeID
+            ) iu ON iu.fkContentTypeID = ct.pkID
+            """ : "";
         return $"""
             SELECT ct.pkID, ct.ContentTypeGUID, ct.Name, ct.DisplayName, ct.Description, ct.ContentType, ct.Base,
-                   ct.ModelType, ISNULL(n.Instances, 0) AS Instances{composition}{(blueprints ? ", ISNULL(n.Blueprints, 0) AS Blueprints" : "")}
+                   ct.ModelType, ISNULL(n.Instances, 0) AS Instances{composition}{(blueprints ? ", ISNULL(n.Blueprints, 0) AS Blueprints" : "")}{(schema.Compositions ? ", ISNULL(iu.InlineUses, 0) AS InlineUses" : "")}
             FROM tblContentType ct
             LEFT JOIN (
                 SELECT fkContentTypeID, {(blueprints ? "SUM(CASE WHEN ISNULL(Blueprint, 0) = 0 THEN 1 ELSE 0 END) AS Instances, SUM(CASE WHEN Blueprint = 1 THEN 1 ELSE 0 END) AS Blueprints" : "COUNT(*) AS Instances")}
                 FROM tblContent
                 WHERE Deleted = 0
                 GROUP BY fkContentTypeID
-            ) n ON n.fkContentTypeID = ct.pkID
+            ) n ON n.fkContentTypeID = ct.pkID{inline}
             ORDER BY ct.Name
             """;
     }
@@ -86,6 +101,7 @@ public static class ContentTypeReader
                 Source = schema.Compositions && r.GetStringOrNull("Source") is { Length: > 0 } source ? source : null,
                 CompositionBehaviors = behaviors,
                 Blueprints = countInstances && schema.Blueprints && r.GetInt32OrNull("Blueprints") is > 0 and var blueprints ? blueprints : null,
+                InlineUses = countInstances && schema.Compositions && r.GetInt32OrNull("InlineUses") is > 0 and var uses ? uses : null,
             };
         }, cancellationToken);
         if (!schema.Compositions)

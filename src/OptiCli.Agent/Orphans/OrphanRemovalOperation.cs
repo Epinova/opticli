@@ -221,6 +221,10 @@ internal static class OrphanRemovalOperation
         {
             return $"{type.Name} is one of the CMS's own types.";
         }
+        if (type.ExternalSource is { } source)
+        {
+            return ExternalRefusal(type, source);
+        }
         if (type.OriginUnknown && !includeUnknownOrigin)
         {
             return OrphanRemoval.UnknownOriginRefusal(type.Name);
@@ -236,9 +240,17 @@ internal static class OrphanRemovalOperation
         return null;
     }
 
+    /// <summary>CMS 13: a type of an external content source belongs to that source, not to the site's code or admin mode.</summary>
+    private static string ExternalRefusal(SiteType type, string source) =>
+        $"{type.Name} belongs to the external content source '{source}', so it isn't left over from removed code; the source manages its types (remove the source, or change it, if they should go).";
+
     /// <summary>Why a property isn't an orphan of removed code; null when it is one.</summary>
     internal static string? PropertyRefusal(SiteType type, SiteProperty property, bool includeUnknownOrigin = false)
     {
+        if (type.ExternalSource is { } source)
+        {
+            return ExternalRefusal(type, source);
+        }
         if (type.OriginUnknown && !includeUnknownOrigin)
         {
             return OrphanRemoval.UnknownOriginRefusal(type.Name);

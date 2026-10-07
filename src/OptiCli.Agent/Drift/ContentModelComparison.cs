@@ -98,7 +98,8 @@ internal static class ContentModelComparison
             properties.AddRange(match.PropertiesOnlyInDatabase.Select(p => new DriftItem($"{name}.{p}", DriftAhead.Database, OnlyInDatabase)));
         }
         types.AddRange(typesOnlyInDatabase.Select(t => new DriftItem(t, DriftAhead.Database, OnlyInDatabase)));
-        types.AddRange((typesOfUnknownOrigin ?? []).Select(t => new DriftItem(t, DriftAhead.Unknown, $"{OnlyInDatabase}, {OrphanRemoval.UnknownOrigin}")));
+        // Listed only: admin mode makes types that look the same, so they don't stop writes (Olav's decision).
+        types.AddRange((typesOfUnknownOrigin ?? []).Select(t => new DriftItem(t, DriftAhead.Unknown, $"{OnlyInDatabase}, {OrphanRemoval.UnknownOrigin}; listed only, it doesn't stop writes") { Informational = true }));
         return (types, properties);
     }
 

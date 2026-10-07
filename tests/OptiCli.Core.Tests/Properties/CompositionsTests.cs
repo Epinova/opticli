@@ -122,8 +122,31 @@ public class CompositionsTests
             {"key":"r1","name":"Two columns","displayTemplate":"vbRow","displaySettings":{"gap":"wide"},"columns":[
             {"key":"c1","name":"Left","elements":[{"key":"k-intro","name":"Intro","type":"VbTextElement","inline":true,"displayTemplate":"vbElement","displaySettings":{"color":"accent"},"properties":{"Body":{"type":"XhtmlString","value":"<p>Rich text</p>"},"Heading":{"type":"LongString","value":"Welcome"}}}]},
             {"key":"c2","name":"Right","elements":[{"key":"k-shared","name":"Shared","type":"VbTextElement","content":{"ref":"103","guid":"7a1c2e3d-5b6f-4a70-9c81-0d2e3f4a5b02","type":"VbTextElement","name":"VB shared element","language":"en","status":"published"}}]}]}]},
-            {"key":"k-banner","name":"Banner","type":"VbBanner","inline":true,"displayTemplate":"vbBanner","displaySettings":{"tone":"loud"},"properties":{"Title":{"type":"LongString","value":"A banner"}}}]}
+            {"key":"k-banner","nodeType":"component","name":"Banner","type":"VbBanner","inline":true,"displayTemplate":"vbBanner","displaySettings":{"tone":"loud"},"properties":{"Title":{"type":"LongString","value":"A banner"}}}]}
             """.ReplaceLineEndings(""), composition!.ToJsonString(new System.Text.Json.JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
+    }
+
+    [Fact]
+    public void Storage_properties_named_with_fields_stay_as_they_are_beside_the_composition()
+    {
+        var tree = PropertyTree.Build(Fixture());
+        var properties = new PropertyDecoder(Model, new Lookup(), new DecodeOptions(), English, _ => "en").Decode(Experience, tree);
+
+        var composition = Compositions.Extract(Model, Experience, ContentKind.Experience, tree, properties, new HashSet<string>(["layout"], StringComparer.OrdinalIgnoreCase));
+
+        Assert.NotNull(composition);
+        Assert.Equal(["Layout", "Summary"], properties.Select(p => p.Key).Order());
+        Assert.Equal("outline", properties["Layout"]!["value"]!["type"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void A_section_enabled_block_in_an_outline_says_it_is_a_component_and_a_section_doesnt()
+    {
+        var (composition, _) = Get(Fixture());
+
+        var sections = composition!["sections"]!.AsArray();
+        Assert.Null(sections[0]!["nodeType"]);
+        Assert.Equal("component", sections[1]!["nodeType"]!.GetValue<string>());
     }
 
     [Fact]

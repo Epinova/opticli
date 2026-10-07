@@ -13,5 +13,11 @@ public sealed record ClassDeclaration(
     int BodyStart,
     int BodyEnd)
 {
+    /// <summary>
+    /// An interface rather than a class: on CMS 13 a content type can be one (a Visual Builder contract). Found as content
+    /// types' classes, but never walked as a base class.
+    /// </summary>
+    public bool IsInterface { get; init; }
+
     public bool Contains(int index) => index > BodyStart && index < BodyEnd;
 }

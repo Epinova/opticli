@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 namespace OptiCli.Core.SourceScan;
 
 /// <summary>
-/// Class declarations and string constants across a source tree, found with regexes. Built once per
+/// Class (and interface) declarations and string constants across a source tree, found with regexes. Built once per
 /// command; a site with ~1000 C# files indexes in well under a second.
 /// </summary>
 public sealed partial class CSharpSourceIndex
@@ -100,7 +100,10 @@ public sealed partial class CSharpSourceIndex
                 BaseTypes(header),
                 guid,
                 open,
-                close));
+                close)
+            {
+                IsInterface = match.Groups["kind"].Value == "interface",
+            });
             previousEnd = match.Index + match.Length;
         }
         return result;
@@ -147,7 +150,7 @@ public sealed partial class CSharpSourceIndex
         return [];
     }
 
-    [GeneratedRegex(@"^[ \t]*(?:(?:public|internal|private|protected|sealed|abstract|static|partial|file|unsafe|new)\s+)*(?:class|record(?:\s+class)?)\s+(?<name>[A-Za-z_]\w*)", RegexOptions.Multiline)]
+    [GeneratedRegex(@"^[ \t]*(?:(?:public|internal|private|protected|sealed|abstract|static|partial|file|unsafe|new)\s+)*(?<kind>class|record(?:\s+class)?|interface)\s+(?<name>[A-Za-z_]\w*)", RegexOptions.Multiline)]
     private static partial Regex ClassPattern();
 
     [GeneratedRegex(@"^\s*namespace\s+(?<ns>[\w.]+)", RegexOptions.Multiline)]

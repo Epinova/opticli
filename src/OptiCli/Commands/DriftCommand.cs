@@ -52,6 +52,13 @@ internal static class DriftCommand
         if (report.Fingerprint is null)
         {
             text.WriteLine(report.Checked ? "Nothing differs between this build and the database." : "Not compared.");
+            if (report.Sections().Any())
+            {
+                // Informational items only (CMS 13 types of unknown origin): listed, but they don't stop writes.
+                text.WriteLine("Listed, but they don't stop writes:");
+                text.WriteLine();
+                TextRenderer.Render(JsonOutput.ToNode(Rows(report)), text);
+            }
         }
         else
         {

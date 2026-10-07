@@ -49,6 +49,14 @@ internal static class AgentBuild
         !string.IsNullOrEmpty(type.ModelTypeString);
 #endif
 
+    /// <summary>CMS 13: the external content source the type belongs to (<c>Source</c>); null for the site's own types, and always on CMS 12.</summary>
+    public static string? ExternalSource(ContentType type) =>
+#if CMS13
+        string.IsNullOrEmpty(type.Source) ? null : type.Source;
+#else
+        null;
+#endif
+
     /// <summary>
     /// CMS 13: a type with neither a class nor a model-sync version on record, of no external content source, and whose
     /// GUID and name no model of the running site has (<paramref name="inBuild"/>). Admin mode makes such types, and so does

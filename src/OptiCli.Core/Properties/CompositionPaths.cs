@@ -75,6 +75,8 @@ public sealed class CompositionPaths(ContentSession session)
             }
         }
         _loaded.UnionWith(wanted);
+        // The shared blocks placed there, so a placement names their type.
+        await session.Identities.LoadAsync([], _markup.Values.SelectMany(f => f).Select(f => f.ContentGuid).OfType<Guid>(), cancellationToken);
     }
 
     /// <summary>

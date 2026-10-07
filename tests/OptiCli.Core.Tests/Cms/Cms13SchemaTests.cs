@@ -90,6 +90,20 @@ public class Cms13SchemaTests
         Assert.Equal(["Page", "Block", "Media", "Folder", "Other"], Enum.GetNames<ContentKind>().Take(5));
     }
 
+    [Theory]
+    [InlineData(ContentKind.Page, ContentKind.Page, true)]
+    [InlineData(ContentKind.Experience, ContentKind.Page, true)]
+    [InlineData(ContentKind.Section, ContentKind.Block, true)]
+    [InlineData(ContentKind.Element, ContentKind.Block, true)]
+    [InlineData(ContentKind.Page, ContentKind.Experience, false)]
+    [InlineData(ContentKind.Block, ContentKind.Element, false)]
+    [InlineData(ContentKind.Section, ContentKind.Element, false)]
+    [InlineData(ContentKind.Contract, ContentKind.Block, false)]
+    [InlineData(ContentKind.Contract, ContentKind.Contract, true)]
+    [InlineData(ContentKind.Media, ContentKind.Page, false)]
+    public void Kind_page_takes_experiences_and_block_sections_and_elements_the_rest_only_themselves(ContentKind kind, ContentKind wanted, bool matches) =>
+        Assert.Equal(matches, kind.Matches(wanted));
+
     private static SiteReader.ApplicationRow Application(int id, string name, string display, bool isDefault = false, string? entry = "6", int? assets = 3) =>
         new(id, name, display, ApplicationTypes.InProcessWebsite, entry, assets, isDefault, "Start", "en");
 

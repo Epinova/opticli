@@ -195,7 +195,9 @@ public sealed class VisualBuilderTests
         Assert.Equal("experience", hits.Single(h => h.Ref == experience).Kind);
 
         var usages = await new WhereUsedReader(site.Session).FindAsync(await site.Session.HeaderAsync(fixture.Shared, cancellationToken), cancellationToken);
-        var placements = usages.Where(u => u.Blueprint != true).ToList();
+        // The fixture's own placements: other content (the write tests', in the recycle bin) may place it too.
+        var fixtureRefs = new[] { fixture.Experience, fixture.Second }.Select(i => i.ToString(System.Globalization.CultureInfo.InvariantCulture)).ToList();
+        var placements = usages.Where(u => u.Blueprint != true && fixtureRefs.Contains(u.Ref)).ToList();
         Assert.Equal(["Shared", "Shared again"], placements.Select(u => u.Element?.Name).Order());
         Assert.All(placements, u => Assert.Equal(("composition", "composition"), (u.Property, u.Kind)));
         // An element's own reference: the link element's Target is the start page.
@@ -204,7 +206,7 @@ public sealed class VisualBuilderTests
         Assert.Contains(toStart, u => u is { Property: "Target", Element.Name: "Link", Section.Name: "Body" } && u.Ref == experience);
 
         var cards = await new TypeUsageReader(site.Session).InlineAsync(site.Session.Model.RequireType("VbCardElement").Id, cancellationToken);
-        var card = Assert.Single(cards!.Usages);
+        var card = Assert.Single(cards!.Usages, u => fixtureRefs.Contains(u.Ref));
         Assert.Equal(("inline", "Cards", "Card"), (card.Kind, card.Section?.Name, card.Element?.Name));
     }
 

@@ -171,6 +171,23 @@ public class OrphanRemovalOperationTests : IDisposable
     }
 
     [Fact]
+    public void A_type_of_an_external_content_source_is_refused_as_the_sources_also_with_the_unknown_origin_flag()
+    {
+        // CMS 13: an external content source's types have no class or version either, but belong to the source.
+        var external = Type("ProductEntry", modelType: null, properties: Property("Sku")) with { ExternalSource = "catalog" };
+        var model = new Model(external);
+
+        foreach (var request in new[] { Remove("ProductEntry") with { DryRun = true }, Remove("ProductEntry") with { DryRun = true, IncludeUnknownOrigin = true } })
+        {
+            var refused = Assert.Throws<AgentException>(() => Run(model, request));
+            Assert.Contains("external content source 'catalog'", refused.Message);
+            Assert.DoesNotContain("admin mode", refused.Message);
+        }
+        Assert.Contains("external content source 'catalog'", OrphanRemovalOperation.PropertyRefusal(external, external.Properties[0], includeUnknownOrigin: true));
+        Assert.Empty(model.Removed);
+    }
+
+    [Fact]
     public void A_type_of_unknown_origin_is_refused_with_what_the_flag_does_and_removed_with_it()
     {
         // CMS 13: no class and no model-sync version on record, and no class of the site has its GUID. An import that

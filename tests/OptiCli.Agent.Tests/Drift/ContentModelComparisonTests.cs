@@ -50,9 +50,30 @@ public class ContentModelComparisonTests
         Assert.Equal(
             [
                 new DriftItem("EventPage", DriftAhead.Database, ContentModelComparison.OnlyInDatabase),
-                new DriftItem("AdminOrImportedPage", DriftAhead.Unknown, $"{ContentModelComparison.OnlyInDatabase}, {OrphanRemoval.UnknownOrigin}"),
+                new DriftItem("AdminOrImportedPage", DriftAhead.Unknown, $"{ContentModelComparison.OnlyInDatabase}, {OrphanRemoval.UnknownOrigin}; listed only, it doesn't stop writes") { Informational = true },
             ],
             types);
+    }
+
+    [Fact]
+    public void Types_of_unknown_origin_are_listed_but_neither_count_nor_change_the_fingerprint()
+    {
+        var (types, _) = ContentModelComparison.Items([], ["EventPage"], ["AdminOrImportedPage"]);
+        var (alone, _) = ContentModelComparison.Items([], [], ["AdminOrImportedPage"]);
+
+        var report = DriftReport.Create(types, [], [], [], [], []);
+        var without = DriftReport.Create(types.Where(t => !t.Informational), [], [], [], [], []);
+        var onlyUnknown = DriftReport.Create(alone, [], [], [], [], []);
+
+        Assert.Equal(1, report.Differences);
+        Assert.Equal(2, report.ContentTypes.Count);
+        Assert.Equal(without.Fingerprint, report.Fingerprint);
+        Assert.Equal(DriftAhead.Database, report.Ahead);
+        Assert.Null(onlyUnknown.Fingerprint);
+        Assert.Null(onlyUnknown.Ahead);
+        Assert.Equal(0, onlyUnknown.Differences);
+        Assert.Single(onlyUnknown.ContentTypes);
+        Assert.Null(DriftGate.Require(onlyUnknown, accepted: null));
     }
 
     [Fact]

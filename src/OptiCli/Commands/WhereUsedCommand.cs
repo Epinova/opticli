@@ -56,8 +56,10 @@ internal static class WhereUsedCommand
                 var usageReader = new TypeUsageReader(session);
                 var contentType = session.Model.RequireType(typeName);
                 var found = await usageReader.FindAsync(contentType.Id, cancellationToken);
-                var used = found.Count(i => i.Count > 0);
-                var summary = $"{found.Count} instance(s), {used} used, {found.Count - used} unused.";
+                var instances = found.Where(i => i.Blueprint != true).ToList();
+                var used = instances.Count(i => i.Count > 0);
+                var blueprintCount = found.Count - instances.Count;
+                var summary = $"{instances.Count} instance(s), {used} used, {instances.Count - used} unused{(blueprintCount > 0 ? $"; and {blueprintCount} blueprint(s) (blueprint: true), not counted" : "")}.";
                 // CMS 13: inline blocks of the type (Visual Builder sections and elements, mostly) after the instances.
                 if (await usageReader.InlineAsync(contentType.Id, cancellationToken) is { Count: > 0 } inline)
                 {
