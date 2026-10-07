@@ -53,6 +53,13 @@ public sealed record ContentDocument(
 {
     /// <summary>CMS 13: true for a Visual Builder blueprint, a template for new content rather than content itself.</summary>
     public bool? Blueprint { get; init; }
+
+    /// <summary>
+    /// CMS 13: a Visual Builder experience's (or section's) composition: sections → rows → columns → elements, each with
+    /// its type, display template and settings, and an inline element's properties (<see cref="Properties.Compositions"/>).
+    /// It replaces the properties it is stored in (<c>Layout</c>, <c>UnstructuredData</c>) in <see cref="Properties"/>.
+    /// </summary>
+    public JsonObject? Composition { get; init; }
 }
 
 /// <summary>A page's shortcut, in the shape <c>set Shortcut</c> takes (with <see cref="To"/> as an identity).</summary>

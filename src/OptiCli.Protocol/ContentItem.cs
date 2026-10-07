@@ -55,8 +55,46 @@ public sealed record ContentItem
     /// </summary>
     public string? Url { get; init; }
 
-    /// <summary>Every property that is not CMS metadata, keyed by name.</summary>
+    /// <summary>
+    /// Every property that is not CMS metadata, keyed by name; on CMS 13 without the properties a Visual Builder
+    /// composition is stored in (<c>Layout</c>, <c>UnstructuredData</c>), which <see cref="Composition"/> shows.
+    /// </summary>
     public required IReadOnlyDictionary<string, ContentItemProperty> Properties { get; init; }
+
+    /// <summary>
+    /// CMS 13: an experience's or a section's composition as the CMS's <c>ICompositionMapper</c> reads it (unpublished
+    /// shared blocks included); null for other content and on CMS 12.
+    /// </summary>
+    public ContentItemCompositionNode? Composition { get; init; }
+}
+
+/// <summary>One node of a Visual Builder composition, as the CMS's <c>CompositionNode</c> has it.</summary>
+/// <param name="NodeType"><c>experience</c>, <c>section</c>, <c>row</c>, <c>column</c> or <c>component</c>.</param>
+public sealed record ContentItemCompositionNode(string NodeType)
+{
+    /// <summary>The binding key of a section or component, a row's or column's id, the content's GUID at the root.</summary>
+    public string? Key { get; init; }
+
+    public string? Name { get; init; }
+
+    /// <summary>The content type of the block (or, at the root, of the content).</summary>
+    public string? Type { get; init; }
+
+    /// <summary><c>outline</c>, <c>grid</c>, ...</summary>
+    public string? LayoutType { get; init; }
+
+    public string? DisplayTemplate { get; init; }
+
+    /// <summary>Only when there are any.</summary>
+    public IReadOnlyDictionary<string, string>? DisplaySettings { get; init; }
+
+    /// <summary>A shared block (content of its own) used by reference: its ref.</summary>
+    public string? Ref { get; init; }
+
+    /// <summary>An inline block's properties (a section's without its own composition's), in the <see cref="ContentItemProperty"/> shape.</summary>
+    public IReadOnlyDictionary<string, ContentItemProperty>? Properties { get; init; }
+
+    public IReadOnlyList<ContentItemCompositionNode>? Nodes { get; init; }
 }
 
 /// <summary>

@@ -17,7 +17,7 @@ internal sealed record ItemResult(SampleItem Item, string Label, IReadOnlyList<M
 /// <summary>Loads one item both ways, the CLI's DB path and the CMS through the agent, and lists every difference.</summary>
 internal sealed class ItemComparer(SiteUnderTest site)
 {
-    private static readonly DecodeOptions Everything = new(Full: true, AllProperties: true);
+    private static readonly DecodeOptions Everything = new(Full: true, AllProperties: true, Composition: true);
 
     private readonly ContentLoader _loader = new(site.Session.Db, site.Session.Identities);
 
@@ -58,6 +58,7 @@ internal sealed class ItemComparer(SiteUnderTest site)
             var context = new Context(label, db.Type, db.Kind);
             CompareIdentity(context, db, agent, language, mismatches);
             CompareProperties(context, Canonical.FromDb(db.Properties), Canonical.FromAgent(agent.Properties), mismatches);
+            CompareComposition(context, Canonical.CompositionFromDb(db.Composition), Canonical.CompositionFromAgent(agent.Composition), mismatches);
             var facts = Facts(item, db, agent);
             return new ItemResult(item, label, mismatches.Select(m => m with { Facts = facts }).ToList(), dbTime);
         }
@@ -169,6 +170,28 @@ internal sealed class ItemComparer(SiteUnderTest site)
             {
                 mismatches.Add(Make(MismatchKind.Value, leftType, path));
             }
+        }
+    }
+
+    /// <summary>CMS 13: the Visual Builder composition, node by node (<c>get</c>'s <c>composition</c> against the CMS's mapper).</summary>
+    private static void CompareComposition(Context context, JsonNode? db, JsonNode? agent, List<Mismatch> mismatches)
+    {
+        if (db is null && agent is null)
+        {
+            return;
+        }
+        Mismatch Make(MismatchKind kind, string path) => new(context.Label, context.Type, context.Kind, kind, "composition", "Composition", path, Canonical.Text(db), Canonical.Text(agent));
+        if (db is null)
+        {
+            mismatches.Add(Make(MismatchKind.AgentOnly, ""));
+        }
+        else if (agent is null)
+        {
+            mismatches.Add(Make(MismatchKind.DbOnly, ""));
+        }
+        else if (FirstDifference(db, agent, "") is { } path)
+        {
+            mismatches.Add(Make(MismatchKind.Value, path));
         }
     }
 

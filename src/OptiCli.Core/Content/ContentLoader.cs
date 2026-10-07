@@ -62,7 +62,12 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
                 : $"Version {shownVersion.Id} belongs to the content variation '{variation}': it stores only the properties it changes; the others are the branch's primary values, as it isn't published.");
         }
         var fields = ValidateFields(header, options.Fields);
-        var properties = await DecodeAsync(header, branch, rows, options with { Fields = fields }, branchLanguage, cancellationToken);
+        var (properties, tree) = await DecodeAsync(header, branch, rows, options with { Fields = fields }, branchLanguage, cancellationToken);
+        var kind = Model.Kind(header.TypeId);
+        // The composition replaces the properties it is stored in, unless --fields leaves them out.
+        var composition = options.Composition && Compositions.LayoutProperty(Model, header.TypeId) is { } layout && (fields is null || fields.Contains(layout.Name))
+            ? Compositions.Extract(Model, header.TypeId, kind, tree, properties)
+            : null;
 
         if (shownVersion is null && row is not null && row.Status != VersionStatus.Published)
         {
@@ -74,7 +79,6 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
             : null;
         // Page settings come from the version shown, or the branch's primary version. Sorting isn't culture-specific:
         // a version of another branch may hold a stale copy.
-        var kind = Model.Kind(header.TypeId);
         var isPage = kind.IsPage();
         var facts = shownVersion ?? (isPage && row?.VersionId is { } primary ? await VersionReader.ByIdAsync(db, Model, primary, cancellationToken) : null);
         var sortingVersion = facts?.LanguageId == header.MasterLanguageId ? facts : null;
@@ -140,6 +144,7 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
             properties)
         {
             Blueprint = header.Blueprint ? true : null,
+            Composition = composition,
         };
     }
 
@@ -263,7 +268,7 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
         return Effective(rows, branch, header.MasterLanguageId);
     }
 
-    private async Task<JsonObject> DecodeAsync(
+    private async Task<(JsonObject Properties, Dictionary<int, PropertyNode> Tree)> DecodeAsync(
         ContentHeader header, int branch, IEnumerable<PropertyRow> rows, DecodeOptions options, LanguageBranch? language, CancellationToken cancellationToken)
     {
         var tree = PropertyTree.Build(rows);
@@ -283,7 +288,7 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
             expanded = await ExpandAsync(targets, language, cancellationToken);
         }
 
-        return Decoder(new ResolvedReferences(identities, language, expanded), options, header).Decode(header.TypeId, tree);
+        return (Decoder(new ResolvedReferences(identities, language, expanded), options, header).Decode(header.TypeId, tree), tree);
     }
 
     private PropertyDecoder Decoder(IReferenceLookup lookup, DecodeOptions options, ContentHeader header) =>
@@ -299,9 +304,20 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
             return null;
         }
         var names = Model.PropertiesOf(header.TypeId).Select(p => p.Name).ToList();
+        // CMS 13: "composition" stands for the properties a Visual Builder composition is stored in.
+        var storage = Compositions.StorageProperties(Model, header.TypeId);
+        if (storage.Count > 0 && fields.Contains(Compositions.Field))
+        {
+            fields = new HashSet<string>(fields.Concat(storage), StringComparer.OrdinalIgnoreCase);
+        }
+        else if (storage.Count > 0 && storage.Any(fields.Contains))
+        {
+            // The layout and its items only make sense together.
+            fields = new HashSet<string>(fields.Concat(storage), StringComparer.OrdinalIgnoreCase);
+        }
         foreach (var field in fields)
         {
-            if (!names.Contains(field, StringComparer.OrdinalIgnoreCase) && !IdentityFields.Contains(field))
+            if (!names.Contains(field, StringComparer.OrdinalIgnoreCase) && !IdentityFields.Contains(field) && !(storage.Count > 0 && field.Equals(Compositions.Field, StringComparison.OrdinalIgnoreCase)))
             {
                 throw new UsageException(
                     $"{Model.TypeName(header.TypeId)} has no property '{field}'.",

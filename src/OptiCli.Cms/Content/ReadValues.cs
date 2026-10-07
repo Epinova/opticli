@@ -40,7 +40,8 @@ internal sealed class ReadValues(IContentTypeRepository types, Func<IContentData
         var result = new Dictionary<string, ContentItemProperty>(StringComparer.Ordinal);
         foreach (var property in data.Property)
         {
-            if (property.IsMetaData || shown?.Invoke(data, property) == false)
+            // CMS 13: a Visual Builder composition's storage is shown as the composition (ContentItem.Composition).
+            if (property.IsMetaData || shown?.Invoke(data, property) == false || CmsCompositions.IsStorage(data, property))
             {
                 continue;
             }

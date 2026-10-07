@@ -56,6 +56,9 @@ internal sealed class CmsCall(IServiceProvider services, CancellationToken abort
 
     public T Service<T>() where T : notnull => services.GetRequiredService<T>();
 
+    /// <summary>The request's services, for adapters that resolve several (<see cref="Compat.CmsCompositions"/>).</summary>
+    public IServiceProvider Services => services;
+
     public T? OptionalService<T>() where T : class => services.GetService<T>();
 
     private IContentRepository Repository => Service<IContentRepository>();

@@ -6,11 +6,16 @@
 // - Two display templates (one for sections, one for elements) and display settings on the composition's nodes.
 // - IVbHeading, a contract both element types implement.
 // - A blueprint made from the experience, and a content variation of it.
+// - A second experience (also in Swedish) whose outline holds a section-enabled block (VbBanner) and a section whose styled
+//   row holds VbCardElement (an image, links, a date, a flag, a number and rich text with a link) and the same shared
+//   element as the first one; a draft variation of the first experience that changes its composition; and a blueprint
+//   of a single section.
 // GET on the same path reports what the CMS's API returns for that content (IContentLoader, the composition mapper,
 // versions, blueprints, display templates), as JSON. Everything is made once; posting again only fills in what's missing.
 // The experience is allowed under Alloy's start page, so the site project must be the one setup.sh makes (Alloy13), and
 // on a new database the fixture is added only after Alloy's content import, which resets the start page type's settings.
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using EPiServer.Applications;
@@ -18,6 +23,7 @@ using EPiServer.DataAccess;
 using EPiServer.Framework;
 using EPiServer.Framework.Initialization;
 using EPiServer.Security;
+using EPiServer.SpecializedProperties;
 using EPiServer.ServiceLocation;
 using EPiServer.VisualBuilder;
 using EPiServer.VisualBuilder.Compositions;
@@ -77,6 +83,45 @@ public class VbLinkElement : BlockData, IVbHeading
     public virtual Url Link { get; set; }
 }
 
+[ContentType(GUID = "5C1D7A40-2B3E-4F60-8A71-9D0E1F2A3B06", DisplayName = "VB card element", Description = "opticli CMS 13 fixture",
+    CompositionBehaviors = [CompositionBehavior.ElementEnabledKey])]
+public class VbCardElement : BlockData, IVbHeading
+{
+    [CultureSpecific]
+    [Display(Order = 10)]
+    public virtual string Heading { get; set; }
+
+    [UIHint(EPiServer.Web.UIHint.Image)]
+    [Display(Order = 20)]
+    public virtual ContentReference Image { get; set; }
+
+    [Display(Order = 30)]
+    public virtual LinkItemCollection Links { get; set; }
+
+    [Display(Order = 40)]
+    public virtual DateTime? Published { get; set; }
+
+    [Display(Order = 50)]
+    public virtual bool Featured { get; set; }
+
+    [Display(Order = 60)]
+    public virtual int Priority { get; set; }
+
+    [CultureSpecific]
+    [Display(Order = 70)]
+    public virtual XhtmlString Teaser { get; set; }
+}
+
+/// <summary>A block that stands in an experience's outline as a whole section (no rows or columns).</summary>
+[ContentType(GUID = "5C1D7A40-2B3E-4F60-8A71-9D0E1F2A3B07", DisplayName = "VB banner", Description = "opticli CMS 13 fixture",
+    CompositionBehaviors = [CompositionBehavior.SectionEnabledKey])]
+public class VbBanner : BlockData
+{
+    [CultureSpecific]
+    [Display(Order = 10)]
+    public virtual string Title { get; set; }
+}
+
 /// <summary>Renders an experience as plain text from the CMS's composition, so a request shows the site can render it.</summary>
 public class VbExperienceController(ICompositionMapper compositions) : PageController<VbExperience>
 {
@@ -120,6 +165,17 @@ public class VisualBuilderFixture : IConfigurableModule
     public const string BlueprintName = "VB fixture blueprint";
 
     public const string VariationKey = "vbFixtureVariation";
+
+    public static readonly Guid SecondExperience = Guid.Parse("7a1c2e3d-5b6f-4a70-9c81-0d2e3f4a5b03");
+
+    public const string SecondExperienceName = "Visual Builder second";
+
+    public const string RowTemplate = "vbRow";
+
+    /// <summary>A variation saved as a draft, which changes the composition.</summary>
+    public const string DraftVariationKey = "vbFixtureDraft";
+
+    public const string SectionBlueprintName = "VB section blueprint";
 
     /// <summary>The endpoint runs as an anonymous visitor, who can't read the blueprints.</summary>
     private static readonly ListBlueprintOptions AllBlueprints = new() { RequiredAccess = AccessLevel.NoAccess };
@@ -166,7 +222,105 @@ public class VisualBuilderFixture : IConfigurableModule
             var saved = content.Save(variation, SaveAction.Publish, AccessLevel.NoAccess);
             done.Add($"published variation '{VariationKey}' as {saved}");
         }
+
+        if (!content.TryGet<VbExperience>(SecondExperience, out var second))
+        {
+            second = CreateSecondExperience(services, content, start);
+            done.Add($"created experience {second.ContentLink}");
+        }
+        if (!content.GetLanguageBranches<VbExperience>(second.ContentLink.ToReferenceWithoutVersion()).Any(b => b.Language.Name == "sv"))
+        {
+            var swedish = content.CreateLanguageBranch<VbExperience>(second.ContentLink.ToReferenceWithoutVersion(), CultureInfo.GetCultureInfo("sv"));
+            swedish.Name = "Visual Builder andra";
+            swedish.Summary = "En andra upplevelse";
+            var composition = new Composition();
+            composition.AddSection(services.GetRequiredService<IBlockPropertyFactory>().Create<VbSection>(), "Svensk").AddRow("Rad").AddColumn("Kolumn")
+                .AddComponent(services.GetRequiredService<IBlockPropertyFactory>().Create<VbTextElement>(e =>
+                {
+                    e.Heading = "Hej";
+                    e.Body = new XhtmlString("<p>Svensk text i ett element.</p>");
+                }), "Svensk text");
+            services.GetRequiredService<ICompositionMapper>().Populate(swedish, composition);
+            done.Add($"published the Swedish branch of {content.Save(swedish, SaveAction.Publish, AccessLevel.NoAccess)}");
+        }
+
+        if (!versions.List(new VersionFilter { ContentLink = experience.ContentLink.ToReferenceWithoutVersion(), Variations = [DraftVariationKey] }, 0, 10, out _).Any())
+        {
+            // A draft of a second variation that changes the composition: it stores every composition row, the published
+            // version's other values stand.
+            var variation = (VbExperience)content.Get<VbExperience>(experience.ContentLink.ToReferenceWithoutVersion()).CreateWritableClone();
+            variation.Variation = DraftVariationKey;
+            var composition = new Composition();
+            composition.AddSection(services.GetRequiredService<IBlockPropertyFactory>().Create<VbSection>(), "Hero").AddRow("Hero row").AddColumn("Hero column")
+                .AddComponent(services.GetRequiredService<IBlockPropertyFactory>().Create<VbTextElement>(e =>
+                {
+                    e.Heading = "Welcome, variation";
+                    e.Body = new XhtmlString("<p>The draft variation's own intro.</p>");
+                }), "Intro");
+            services.GetRequiredService<ICompositionMapper>().Populate(variation, composition);
+            done.Add($"saved a draft of variation '{DraftVariationKey}' as {content.Save(variation, SaveAction.Save, AccessLevel.NoAccess)}");
+        }
+
+        if (!(await blueprints.ListAsync(AllBlueprints)).Any(b => b.DisplayName == SectionBlueprintName))
+        {
+            var section = services.GetRequiredService<IBlockPropertyFactory>().Create<VbSection>();
+            var node = new SectionNode { Name = SectionBlueprintName, NodeType = "section", LayoutType = "grid", SectionData = section, Key = Guid.NewGuid().ToString() };
+            node.AddRow("Blueprint row").AddColumn("Blueprint column").AddComponent(services.GetRequiredService<IBlockPropertyFactory>().Create<VbTextElement>(e =>
+            {
+                e.Heading = "From a blueprint";
+                e.Body = new XhtmlString("<p>A section made to be copied.</p>");
+            }), "Blueprint text");
+            services.GetRequiredService<ICompositionMapper>().PopulateSection(section, node);
+            var blueprint = await blueprints.CreateAsync(section, new CreateBlueprintOptions { Name = SectionBlueprintName, RequiredAccess = AccessLevel.NoAccess });
+            done.Add($"created section blueprint {blueprint.ID} ({blueprint.Content?.ContentLink})");
+        }
         return done;
+    }
+
+    private static VbExperience CreateSecondExperience(IServiceProvider services, IContentRepository content, ContentReference start)
+    {
+        var blocks = services.GetRequiredService<IBlockPropertyFactory>();
+        var mapper = services.GetRequiredService<ICompositionMapper>();
+        var loader = services.GetRequiredService<IContentLoader>();
+        var types = services.GetRequiredService<IContentTypeRepository>();
+        var image = services.GetRequiredService<IContentModelUsage>().ListContentOfContentType(types.Load("ImageFile"))
+            .Select(u => u.ContentLink.ToReferenceWithoutVersion())
+            .Distinct()
+            // A global asset: one in another item's own assets folder can't be used elsewhere.
+            .FirstOrDefault(link => loader.TryGet<IContent>(link, out var item) && !item.IsDeleted
+                && loader.GetAncestors(link).Any(a => a.ContentLink.CompareToIgnoreWorkID(ContentReference.GlobalBlockFolder)));
+        var shared = content.Get<VbTextElement>(SharedElement);
+
+        var page = content.GetDefault<VbExperience>(start, CultureInfo.GetCultureInfo("en"));
+        page.Name = SecondExperienceName;
+        page.ContentGuid = SecondExperience;
+        page.Summary = "A second experience: a banner, cards and the shared element";
+
+        var composition = new Composition();
+        var banner = blocks.Create<VbBanner>(b => b.Title = "A banner as a whole section");
+        composition.Nodes.Add(new ComponentNode { Name = "Banner", NodeType = "component", LayoutType = "section", Key = Guid.NewGuid().ToString(), Component = banner });
+        var cards = composition.AddSection(blocks.Create<VbSection>(), "Cards");
+        var row = cards.AddRow("Card row").WithStyles(RowTemplate, new Dictionary<string, string> { ["gap"] = "wide" });
+        var startPage = loader.Get<IContent>(start);
+        row.AddColumn("First").AddComponent(blocks.Create<VbCardElement>(c =>
+        {
+            c.Heading = "Card with everything";
+            c.Image = image;
+            c.Links = new LinkItemCollection
+            {
+                new LinkItem { Text = "Start", Href = $"~/link/{startPage.ContentGuid:N}.aspx" },
+                new LinkItem { Text = "Elsewhere", Href = "https://example.com/elsewhere", Target = "_blank" },
+            };
+            c.Published = new DateTime(2026, 5, 1, 8, 30, 0, DateTimeKind.Utc);
+            c.Featured = true;
+            c.Priority = 3;
+            c.Teaser = new XhtmlString($"<p>Card text with a <a href=\"~/link/{startPage.ContentGuid:N}.aspx\">link to the start page</a>.</p>");
+        }), "Card").WithStyles(ElementTemplate, new Dictionary<string, string> { ["color"] = "plain" });
+        row.AddColumn("Second").AddComponent(shared, "Shared again");
+
+        mapper.Populate(page, composition);
+        var link = content.Save(page, SaveAction.Publish, AccessLevel.NoAccess);
+        return content.Get<VbExperience>(link.ToReferenceWithoutVersion());
     }
 
     private static void EnsureTemplates(IDisplayTemplateRepository templates, List<string> done)
@@ -189,6 +343,24 @@ public class VisualBuilderFixture : IConfigurableModule
                 ],
             });
             done.Add($"created display template {SectionTemplate}");
+        }
+        if (templates.Load(RowTemplate) is null)
+        {
+            templates.Save(new DisplayTemplate
+            {
+                Key = RowTemplate,
+                Name = "VB row look",
+                NodeType = "row",
+                Settings =
+                [
+                    new DisplaySetting
+                    {
+                        Key = "gap", Name = "Gap", Editor = DisplaySettingEditor.Select,
+                        Choices = [new DisplaySettingChoice { Key = "narrow", Name = "Narrow" }, new DisplaySettingChoice { Key = "wide", Name = "Wide", SortOrder = 1 }],
+                    },
+                ],
+            });
+            done.Add($"created display template {RowTemplate}");
         }
         if (templates.Load(ElementTemplate) is null)
         {
@@ -281,7 +453,7 @@ public class VisualBuilderFixture : IConfigurableModule
             .Select(b => new { b.ID, b.DisplayName, content = b.Content?.ContentLink.ToString(), type = b.Content is null ? null : types.Load(b.Content.ContentTypeID)?.Name });
         var templates = services.GetRequiredService<IDisplayTemplateRepository>().List()
             .Select(t => new { t.ID, t.Key, t.Name, t.NodeType, t.BaseType, t.ContentTypeID, t.IsDefault, settings = t.Settings.Select(s => new { s.Key, s.Editor, choices = s.Choices.Select(c => c.Key) }) });
-        var fixtureTypes = new[] { typeof(IVbHeading), typeof(VbExperience), typeof(VbSection), typeof(VbTextElement), typeof(VbLinkElement) }
+        var fixtureTypes = new[] { typeof(IVbHeading), typeof(VbExperience), typeof(VbSection), typeof(VbTextElement), typeof(VbLinkElement), typeof(VbCardElement), typeof(VbBanner) }
             .Select(t => types.Load(t))
             .Select(t => new { t.ID, t.Name, t.GUID, t.Base, t.IsContract, compositionBehaviors = t.CompositionBehaviors.Select(b => b.ToString()), contracts = t.Contracts?.Select(c => new { c.GUID, c.Name }), properties = t.PropertyDefinitions.Select(p => new { p.Name, p.ID, type = p.Type.Name, dataType = p.Type.DataType.ToString(), typeName = p.Type.TypeName, kind = p.Kind.ToString(), itemType = p.ItemTypeReference is { } item ? new { item.GUID, item.Name } : null, p.IsSystemProperty }) });
         return new

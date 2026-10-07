@@ -38,7 +38,7 @@ internal static class ReadOperation
         var content = call.RequireRead(versionLink is null ? Load(loader, link, language) : LoadVersion(loader, versions, versionLink));
 
         // An editor gets the properties the CMS edit UI shows them, as editable.
-        return new ContentReader(call.Service<IContentTypeRepository>(), versions, call.Service<IUrlResolver>(), call.Properties.Shown).Describe(content);
+        return new ContentReader(call.Service<IContentTypeRepository>(), versions, call.Service<IUrlResolver>(), call.Properties.Shown, call.Services).Describe(content);
     }
 
     /// <summary>Null for the primary version; otherwise the version to load.</summary>

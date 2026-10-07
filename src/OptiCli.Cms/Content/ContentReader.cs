@@ -10,10 +10,12 @@ namespace OptiCli.Cms.Content;
 
 /// <summary>Describes a loaded content version as <see cref="ContentItem"/>.</summary>
 /// <param name="shown">Which properties to describe (see <see cref="ReadValues"/>); every one when null.</param>
-internal sealed class ContentReader(IContentTypeRepository types, IContentVersionRepository versions, IUrlResolver urls, Func<IContentData, PropertyData, bool>? shown = null)
+/// <param name="services">For CMS 13's composition mapper; no composition without it.</param>
+internal sealed class ContentReader(IContentTypeRepository types, IContentVersionRepository versions, IUrlResolver urls, Func<IContentData, PropertyData, bool>? shown = null, IServiceProvider? services = null)
 {
     public ContentItem Describe(IContent content)
     {
+        var values = new ReadValues(types, shown);
         var localizable = content as ILocalizable;
         var versionable = content as IVersionable;
         var tracked = content as IChangeTrackable;
@@ -28,7 +30,7 @@ internal sealed class ContentReader(IContentTypeRepository types, IContentVersio
             Guid = content.ContentGuid,
             Name = content.Name,
             Type = types.Load(content.ContentTypeID)?.Name,
-            Kind = Kind(content),
+            Kind = Compat.CmsCompositions.Kind(content, types.Load(content.ContentTypeID)) ?? Kind(content),
             Language = Code(language),
             MasterLanguage = Code(localizable?.MasterLanguage),
             Languages = localizable?.ExistingLanguages.Select(Code).OfType<string>().Order(StringComparer.Ordinal).ToList(),
@@ -40,7 +42,8 @@ internal sealed class ContentReader(IContentTypeRepository types, IContentVersio
             Saved = tracked?.Saved,
             ChangedBy = tracked?.ChangedBy,
             Url = Url(link, language),
-            Properties = new ReadValues(types, shown).Properties(content),
+            Properties = values.Properties(content),
+            Composition = services is null ? null : Compat.CmsCompositions.Read(services, content, values.Properties),
         };
     }
 

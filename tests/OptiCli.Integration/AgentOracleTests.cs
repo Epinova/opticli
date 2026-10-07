@@ -7,7 +7,8 @@ namespace OptiCli.Integration;
 
 /// <summary>
 /// The agent oracle: the DB read path must show what the CMS itself loads. Samples content across kinds,
-/// types and languages (plus recent drafts), reads each item both ways and diffs property by property.
+/// types and languages (plus recent drafts, and on CMS 13 all Visual Builder content, blueprints and content variations),
+/// reads each item both ways and diffs property by property, and compositions node by node.
 /// </summary>
 public sealed class AgentOracleTests(ITestOutputHelper output)
 {
@@ -21,6 +22,7 @@ public sealed class AgentOracleTests(ITestOutputHelper output)
         var sample = planned
             .Concat(await ContentSampler.BranchesAsync(site.Session, SiteSettings.Sample, SiteSettings.Seed, cancellationToken))
             .Concat(await ContentSampler.RecentDraftsAsync(site.Session, SiteSettings.Drafts, cancellationToken))
+            .Concat(await ContentSampler.VisualBuilderAsync(site.Session, SiteSettings.Sample, cancellationToken))
             .Distinct()
             .ToList();
 

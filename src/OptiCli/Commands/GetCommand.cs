@@ -27,6 +27,9 @@ internal static class GetCommand
             says which ("culture"). ContentArea items, references and rich-text links resolve to {ref, guid, type, name, language,
             status, url}; local and inline blocks are nested objects. Empty properties are omitted (--all-properties shows them);
             strings over {{TextValues.MaxLength}} characters are cut (truncated: true, length: N) unless --full or --fields.
+            CMS 13: a Visual Builder experience (or section) shows its composition instead of the Layout and UnstructuredData
+            properties it is stored in: sections → rows → columns → elements, each with its key, name, type, displayTemplate and
+            displaySettings, an inline one with its properties, a shared one as content {ref, ...}; --fields composition picks it.
             Example: opticli get /en/about/ --fields Heading,MainArea
             """);
         content.AddTo(command);
@@ -55,7 +58,8 @@ internal static class GetCommand
                 context.Parse.GetValue(full),
                 context.Parse.GetValue(all),
                 fieldNames is { Length: > 0 } ? new HashSet<string>(fieldNames, StringComparer.OrdinalIgnoreCase) : null,
-                context.Parse.GetValue(expand));
+                context.Parse.GetValue(expand),
+                Composition: true);
 
             var loader = new ContentLoader(session.Db, session.Identities);
             return new CommandResult(await loader.GetAsync(located.Id, selector, content.Language(context, session, located), decode, cancellationToken));

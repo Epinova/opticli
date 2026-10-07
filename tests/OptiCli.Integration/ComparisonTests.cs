@@ -55,6 +55,47 @@ public class ComparisonTests
     }
 
     [Fact]
+    public void A_db_composition_and_the_cms_mappers_are_equal_when_canonical()
+    {
+        var db = JsonNode.Parse("""
+            {"layout":"outline","culture":"en","sections":[
+              {"key":"k1","name":"Hero","type":"VbSection","inline":true,"displayTemplate":"vbSection","displaySettings":{"background":"dark"},"rows":[
+                {"key":"r1","name":"Row","columns":[{"key":"c1","name":"Column","elements":[
+                  {"key":"k2","name":"Intro","type":"VbTextElement","inline":true,"properties":{"Heading":{"type":"LongString","value":"Hi"}}},
+                  {"key":"k3","name":"Shared","type":"VbTextElement","content":{"ref":"103","type":"VbTextElement","name":"Shared element"}},
+                  {"key":"k9","name":"Gone","missing":true}]}]}]},
+              {"key":"k4","name":"Banner","type":"VbBanner","inline":true,"displayTemplate":"vbBanner","properties":{"Title":{"type":"LongString","value":"Big"}}}],
+             "unplaced":[{"key":"k8","name":"Loose","type":"VbTextElement","inline":true}]}
+            """)!.AsObject();
+        static Dictionary<string, ContentItemProperty> Text(string name, string value) => new() { [name] = new("LongString", JsonSerializer.SerializeToElement(value)) };
+        var cms = new ContentItemCompositionNode("experience")
+        {
+            Key = "guid", Name = "Experience", Type = "VbExperience", LayoutType = "outline",
+            Nodes =
+            [
+                new("section")
+                {
+                    Key = "k1", Name = "Hero", Type = "VbSection", LayoutType = "grid", DisplayTemplate = "vbSection",
+                    DisplaySettings = new Dictionary<string, string> { ["background"] = "dark" }, Properties = new Dictionary<string, ContentItemProperty>(),
+                    Nodes =
+                    [
+                        new("row")
+                        {
+                            Key = "r1", Name = "Row", LayoutType = "grid",
+                            Nodes = [new("column") { Key = "c1", Name = "Column", Nodes = [
+                                new("component") { Key = "k2", Name = "Intro", Type = "VbTextElement", LayoutType = "section", Properties = Text("Heading", "Hi") },
+                                new("component") { Key = "k3", Name = "Shared", Type = "VbTextElement", Ref = "103" }] }],
+                        },
+                    ],
+                },
+                new("component") { Key = "k4", Name = "Banner", Type = "VbBanner", DisplayTemplate = "vbBanner", Properties = Text("Title", "Big") },
+            ],
+        };
+
+        Assert.Equal(Canonical.Text(Canonical.CompositionFromDb(db)), Canonical.Text(Canonical.CompositionFromAgent(cms)));
+    }
+
+    [Fact]
     public void A_date_without_a_zone_is_not_taken_for_utc()
     {
         Assert.Equal("2024-05-01T08:30:00", Canonical.Date(JsonValue.Create("2024-05-01T08:30:00"))!.GetValue<string>());

@@ -129,6 +129,80 @@ internal static class Canonical
     private static Dictionary<string, ContentItemProperty> Nested(JsonElement element) =>
         element.Deserialize<Dictionary<string, ContentItemProperty>>(AgentJson.Options) ?? [];
 
+    // ---- Visual Builder compositions (CMS 13) ----
+
+    /// <summary>
+    /// The DB side's composition (<c>get</c>'s <c>composition</c>) as a tree of <c>{nodeType, key, name, type,
+    /// displayTemplate, displaySettings, ref, properties, nodes}</c>, as the CMS's mapper has it. Nodes whose binding found
+    /// nothing (<c>missing</c>) and items no node binds (<c>unplaced</c>) are left out: the mapper drops them. The root's key,
+    /// name and type are the content's own, compared as identity fields.
+    /// </summary>
+    public static JsonNode? CompositionFromDb(JsonObject? composition) => composition is null ? null : Prune(new JsonObject
+    {
+        ["displayTemplate"] = composition["displayTemplate"]?.DeepClone(),
+        ["displaySettings"] = composition["displaySettings"]?.DeepClone(),
+        ["nodes"] = CompositionChildren(composition),
+    });
+
+    private static JsonArray CompositionChildren(JsonObject entry)
+    {
+        var nodes = new JsonArray();
+        foreach (var (list, type) in new[] { ("sections", (string?)null), ("rows", "row"), ("columns", "column"), ("elements", "component"), ("nodes", null) })
+        {
+            foreach (var child in entry[list] as JsonArray ?? [])
+            {
+                if (child is not JsonObject node || node["missing"] is not null)
+                {
+                    continue;
+                }
+                // A bound node with a grid of its own is a section, any other bound node a component (as the mapper reads it).
+                var nodeType = type ?? node["nodeType"]?.GetValue<string>()
+                    ?? (node.ContainsKey("rows") || node.ContainsKey("columns") || node.ContainsKey("elements") || node.ContainsKey("nodes") ? "section" : "component");
+                if (list == "nodes" && nodeType is "section" or "component")
+                {
+                    nodeType = node.ContainsKey("rows") || node.ContainsKey("columns") || node.ContainsKey("elements") || node.ContainsKey("nodes") ? "section" : "component";
+                }
+                nodes.Add(Prune(new JsonObject
+                {
+                    ["nodeType"] = nodeType,
+                    ["key"] = node["key"]?.DeepClone(),
+                    ["name"] = node["name"]?.DeepClone(),
+                    ["type"] = node["type"]?.DeepClone(),
+                    ["displayTemplate"] = node["displayTemplate"]?.DeepClone(),
+                    ["displaySettings"] = node["displaySettings"]?.DeepClone(),
+                    ["ref"] = node["content"] is JsonObject content ? RefOf(content) : null,
+                    ["properties"] = node["properties"] is JsonObject properties ? FromDb(properties) : null,
+                    ["nodes"] = CompositionChildren(node),
+                }) ?? new JsonObject());
+            }
+        }
+        return nodes;
+    }
+
+    /// <summary>The CMS's composition (<see cref="ContentItem.Composition"/>) in the shape of <see cref="CompositionFromDb"/>.</summary>
+    public static JsonNode? CompositionFromAgent(ContentItemCompositionNode? root) => root is null ? null : Prune(new JsonObject
+    {
+        ["displayTemplate"] = root.DisplayTemplate,
+        ["displaySettings"] = Settings(root.DisplaySettings),
+        ["nodes"] = new JsonArray((root.Nodes ?? []).Select(CompositionNodeFromAgent).ToArray()),
+    });
+
+    private static JsonNode? CompositionNodeFromAgent(ContentItemCompositionNode node) => Prune(new JsonObject
+    {
+        ["nodeType"] = node.NodeType,
+        ["key"] = node.Key,
+        ["name"] = node.Name,
+        ["type"] = node.Type,
+        ["displayTemplate"] = node.DisplayTemplate,
+        ["displaySettings"] = Settings(node.DisplaySettings),
+        ["ref"] = node.Ref,
+        ["properties"] = node.Properties is { } properties ? FromAgent(properties) : null,
+        ["nodes"] = new JsonArray((node.Nodes ?? []).Select(CompositionNodeFromAgent).ToArray()),
+    }) ?? new JsonObject();
+
+    private static JsonObject? Settings(IReadOnlyDictionary<string, string>? settings) =>
+        settings is { Count: > 0 } ? new JsonObject(settings.Select(s => KeyValuePair.Create(s.Key, (JsonNode?)s.Value))) : null;
+
     // ---- Shared ----
 
     /// <summary>

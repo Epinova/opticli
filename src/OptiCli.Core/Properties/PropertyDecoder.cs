@@ -10,7 +10,11 @@ namespace OptiCli.Core.Properties;
 /// <param name="AllProperties">Include properties without a value, as <c>value: null</c>.</param>
 /// <param name="Fields">Only these top-level properties, untruncated (<c>--fields</c>); null for all.</param>
 /// <param name="Expand">Inline the properties of referenced content (<c>--expand</c>), one level deep.</param>
-public sealed record DecodeOptions(bool Full = false, bool AllProperties = false, IReadOnlySet<string>? Fields = null, bool Expand = false);
+/// <param name="Composition">
+/// CMS 13: show a Visual Builder experience's or section's composition (<see cref="Compositions"/>) instead of the
+/// properties it is stored in (<c>get</c>).
+/// </param>
+public sealed record DecodeOptions(bool Full = false, bool AllProperties = false, IReadOnlySet<string>? Fields = null, bool Expand = false, bool Composition = false);
 
 /// <summary>
 /// Turns a <see cref="PropertyTree"/> into the output shape: an object keyed by property name, each
