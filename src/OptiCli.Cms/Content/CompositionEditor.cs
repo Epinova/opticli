@@ -101,13 +101,15 @@ internal sealed class CompositionEditor(DraftNode root, ICompositionBlocks block
         }
         var existing = All(root).Where(n => n.Key is not null && n != root).ToDictionary(n => n.Key!, StringComparer.OrdinalIgnoreCase);
         var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var styleBefore = Style(root);
         root.DisplayTemplate = Empty(value.DisplayTemplate);
         root.DisplaySettings = Settings(value.DisplaySettings);
-        if (root.DisplayTemplate is not null || root.DisplaySettings.Count > 0)
+        // Like a node's: only a style the request changes is checked, not one carried over.
+        if ((root.DisplayTemplate is not null || root.DisplaySettings.Count > 0) && styleBefore != Style(root))
         {
             blocks.CheckStyle(root, where);
         }
-        var children = (value.Nodes ?? []).Select((child, i) => Rebuild(child, root, existing, used, $"{where}.nodes[{i.ToString(CultureInfo.InvariantCulture)}]")).ToList();
+        var children = (value.Nodes ?? []).Select((child, i) => Rebuild(child, root, existing, used, Child(where, root, i))).ToList();
         root.Children.Clear();
         root.Children.AddRange(children);
     }
@@ -118,7 +120,8 @@ internal sealed class CompositionEditor(DraftNode root, ICompositionBlocks block
         for (var i = 0; i < (operations?.Count ?? 0); i++)
         {
             var op = operations![i];
-            var where = $"compositionOps[{i.ToString(CultureInfo.InvariantCulture)}] ({op.Op})";
+            // In the command's terms ("composition move"); a request with several edits also says which one.
+            var where = operations.Count == 1 ? $"composition {op.Op}" : $"composition {op.Op} (edit {(i + 1).ToString(CultureInfo.InvariantCulture)} of {operations.Count.ToString(CultureInfo.InvariantCulture)})";
             switch (op.Op)
             {
                 case CompositionOps.Add:
@@ -134,7 +137,7 @@ internal sealed class CompositionEditor(DraftNode root, ICompositionBlocks block
                     Set(op, where);
                     break;
                 default:
-                    throw AgentException.Usage($"compositionOps[{i.ToString(CultureInfo.InvariantCulture)}]: unknown op '{op.Op}'.",
+                    throw AgentException.Usage($"composition: unknown edit '{op.Op}'.",
                         $"Use {CompositionOps.Add}, {CompositionOps.Remove}, {CompositionOps.Move} or {CompositionOps.Set}.");
             }
         }
@@ -301,7 +304,7 @@ internal sealed class CompositionEditor(DraftNode root, ICompositionBlocks block
         }
         for (var i = 0; i < children.Count; i++)
         {
-            node.Children.Add(Build(children[i], node, used, $"{where}.nodes[{i.ToString(CultureInfo.InvariantCulture)}]"));
+            node.Children.Add(Build(children[i], node, used, Child(where, node, i)));
         }
         return node;
     }
@@ -363,11 +366,10 @@ internal sealed class CompositionEditor(DraftNode root, ICompositionBlocks block
             throw AgentException.Usage($"{where}: {A(Shown(node.NodeType))} has no block: give type, ref and properties on the elements (or sections) in it.");
         }
         node.Name = value.Name ?? node.Name;
-        var styleBefore = (node.DisplayTemplate, Settings: string.Join(";", node.DisplaySettings.OrderBy(s => s.Key, StringComparer.OrdinalIgnoreCase).Select(s => $"{s.Key}={s.Value}")));
+        var styleBefore = Style(node);
         node.DisplayTemplate = Empty(value.DisplayTemplate);
         node.DisplaySettings = Settings(value.DisplaySettings);
-        if ((node.DisplayTemplate is not null || node.DisplaySettings.Count > 0)
-            && styleBefore != (node.DisplayTemplate, string.Join(";", node.DisplaySettings.OrderBy(s => s.Key, StringComparer.OrdinalIgnoreCase).Select(s => $"{s.Key}={s.Value}"))))
+        if ((node.DisplayTemplate is not null || node.DisplaySettings.Count > 0) && styleBefore != Style(node))
         {
             blocks.CheckStyle(node, where);
         }
@@ -376,7 +378,7 @@ internal sealed class CompositionEditor(DraftNode root, ICompositionBlocks block
         {
             throw AgentException.Usage($"{where}: {node.Describe()} can't hold other nodes{(node.Block is { Shared: true } ? " (a shared section's rows are the shared block's own)" : "")}.");
         }
-        var rebuilt = children.Select((child, i) => Rebuild(child, node, existing, used, $"{where}.nodes[{i.ToString(CultureInfo.InvariantCulture)}]")).ToList();
+        var rebuilt = children.Select((child, i) => Rebuild(child, node, existing, used, Child(where, node, i))).ToList();
         Place(node, parent, where);
         node.Children.Clear();
         node.Children.AddRange(rebuilt);
@@ -420,7 +422,7 @@ internal sealed class CompositionEditor(DraftNode root, ICompositionBlocks block
         {
             return expected;
         }
-        throw AgentException.Usage($"{where}: {A(given)} can't go in {parent.Describe()}: {Shown(parent.NodeType)}s hold {Shown(expected)}s.",
+        throw AgentException.Usage($"{where}: {A(Shown(normal))} can't go in {parent.Describe()}: {Shown(parent.NodeType)}s hold {Shown(expected)}s.",
             "An experience holds sections, a section rows, a row columns, a column elements.");
     }
 
@@ -557,8 +559,26 @@ internal sealed class CompositionEditor(DraftNode root, ICompositionBlocks block
 
     private static string Shown(string nodeType) => nodeType == DraftNode.Component ? "element" : nodeType;
 
+    /// <summary>
+    /// Where a child is, named after the list <c>get</c> shows it in (<c>sections</c>, <c>rows</c>, <c>columns</c>,
+    /// <c>elements</c>), so an error points at the input as it was written.
+    /// </summary>
+    private static string Child(string where, DraftNode parent, int index) =>
+        $"{where}.{parent.NodeType switch
+        {
+            DraftNode.Experience => "sections",
+            DraftNode.Section => "rows",
+            DraftNode.Row => "columns",
+            DraftNode.Column => "elements",
+            _ => "nodes",
+        }}[{index.ToString(CultureInfo.InvariantCulture)}]";
+
     /// <summary>"a section", "an element".</summary>
     private static string A(string noun) => (noun.Length > 0 && "aeiouAEIOU".Contains(noun[0]) ? "an " : "a ") + noun;
+
+    /// <summary>A node's display template and settings, to see whether a request changed them.</summary>
+    private static (string? Template, string Settings) Style(DraftNode node) =>
+        (node.DisplayTemplate, string.Join(";", node.DisplaySettings.OrderBy(s => s.Key, StringComparer.OrdinalIgnoreCase).Select(s => $"{s.Key}={s.Value}")));
 
     private static string? Empty(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
 

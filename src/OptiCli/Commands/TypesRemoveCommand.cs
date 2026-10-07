@@ -60,7 +60,8 @@ internal static class TypesRemoveCommand
         write.DryRun.Description = "Run every check through the site and show what would be removed, with how many values, without removing it.";
         var command = new Command("remove-property", $"""
             Remove properties that aren't in their type's code any more (existsOnModel: false in `opticli type`), through the
-            site (needs `opticli serve`), with IPropertyDefinitionRepository.Delete, as admin mode's Delete does. The CMS deletes
+            site (needs `opticli serve`), as admin mode's Delete does (CMS 12: IPropertyDefinitionRepository.Delete; CMS 13:
+            the type saved without it with IContentTypeRepository.Save). The CMS deletes
             the property's values with it, in every version and language, values inside a block property and its category
             selections included: a property with values needs --allow-destructive (refused, exit 3, otherwise). A property
             added in admin mode to a type with a class looks the same as one removed from the code: check before removing it.

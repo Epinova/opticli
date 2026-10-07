@@ -50,8 +50,8 @@ internal partial class Program
 
             Refs: {{{ContentRefParser.Syntax}}}
             Reads query the database directly and need nothing running.
-            Writes (set, create, area, block, upload, translate, publish, unpublish, discard, move, delete, restore, access,
-              apply, sites primary, sites host, jobs run|stop|set, users add|remove, types remove|remove-property|prune) go
+            Writes (set, create, area, composition, block, upload, translate, publish, unpublish, discard, move, delete, restore,
+              access, apply, sites primary, sites host, jobs run|stop|set, users add|remove, types remove|remove-property|prune) go
               through the CMS inside the running site: `opticli serve` first, `opticli serve --stop` when done. They save
               drafts unless --publish, delete only moves to the recycle bin, and every write takes --dry-run.
             Output: compact JSON {"ok": true, "data": ..., "meta": {"source", "version", "next", "warnings", "database"}} when

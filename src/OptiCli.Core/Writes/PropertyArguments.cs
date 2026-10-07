@@ -16,7 +16,8 @@ namespace OptiCli.Core.Writes;
 /// <item><c>MainBody=@body.html</c>: the file's contents; <c>@@text</c> is the literal <c>@text</c>.</item>
 /// <item><c>Teaser.Heading=Hi</c>: a property of the local block <c>Teaser</c> (nested object).</item>
 /// <item>The JSON object (<c>--values</c>) is merged on top, recursively for nested objects, for arrays
-/// (ContentArea items, links, lists) and other structured values.</item>
+/// (ContentArea items, links, lists) and other structured values. A value in <c>get</c>'s <c>{type, value}</c> shape is
+/// unwrapped (<see cref="GetShape"/>).</item>
 /// </list>
 /// </remarks>
 public static partial class PropertyArguments
@@ -35,7 +36,8 @@ public static partial class PropertyArguments
         }
         if (!string.IsNullOrWhiteSpace(json))
         {
-            Merge(result, ParseObject(json));
+            // get's {type, value} shape is taken too, so a value read with get can be written back as it is.
+            Merge(result, GetShape.UnwrapAll(ParseObject(json)));
         }
         return result;
     }

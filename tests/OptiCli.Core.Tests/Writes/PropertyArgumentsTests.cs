@@ -106,6 +106,42 @@ public class PropertyArgumentsTests : IDisposable
         Assert.Equal("L", (string?)result["Facts"]!["Label"]);
     }
 
+    [Fact]
+    public void Values_in_gets_shape_are_unwrapped_as_set_takes_them()
+    {
+        var result = Parse("""
+            {
+              "MetaTitle": {"type": "LongString", "value": "Title", "culture": "en"},
+              "ContactsPageLink": {"type": "ContentReference", "value": {"ref": "22", "guid": "588b2a04-0b50-483c-983c-51a40a53da65", "type": "ContainerPage", "name": "Contacts", "status": "published", "url": "/en/contacts/"}, "culture": "en"},
+              "Links": {"type": "LinkCollection", "value": [{"text": "About", "href": "~/link/61104228962d4dd2925cb5b12e2373ee.aspx", "content": {"ref": "11", "name": "About us"}}]},
+              "MainArea": {"type": "ContentArea", "value": [{"ref": "37", "guid": "3843b6e6-c614-415a-a4ff-ce39b32af13b", "type": "JumbotronBlock", "name": "J"}, {"ref": "38", "displayOption": "narrow"}]},
+              "Logo": {"type": "Block", "blockType": "SiteLogotypeBlock", "value": {"Title": {"type": "LongString", "value": "Alloy"}, "Url": {"type": "Url", "value": "~/link/310b49a7f3b2488ab21b895fe69baa09.aspx", "target": {"ref": "35"}}}},
+              "Plain": "as set takes it"
+            }
+            """);
+
+        Assert.Equal("Title", (string?)result["MetaTitle"]);
+        Assert.Equal("22", (string?)result["ContactsPageLink"]);
+        Assert.Equal("""[{"text":"About","href":"~/link/61104228962d4dd2925cb5b12e2373ee.aspx"}]""", result["Links"]!.ToJsonString());
+        // A ContentArea's items are what set takes already: kept whole.
+        Assert.Equal("JumbotronBlock", (string?)result["MainArea"]![0]!["type"]);
+        Assert.Equal("narrow", (string?)result["MainArea"]![1]!["displayOption"]);
+        Assert.Equal("""{"Title":"Alloy","Url":"~/link/310b49a7f3b2488ab21b895fe69baa09.aspx"}""", result["Logo"]!.ToJsonString());
+        Assert.Equal("as set takes it", (string?)result["Plain"]);
+    }
+
+    [Fact]
+    public void A_value_get_cut_short_is_refused_and_an_object_that_only_looks_wrapped_is_kept()
+    {
+        var refused = Assert.Throws<UsageException>(() => Parse("""{"MainBody": {"type": "XhtmlString", "value": "<p>cut", "truncated": true, "length": 9000}}"""));
+        Assert.Contains("MainBody was cut short by get", refused.Message);
+
+        // A local block with properties of these names, given as set takes it: not get's shape (other keys, or no string type).
+        var result = Parse("""{"Hero": {"type": "x", "value": "y", "Heading": "z"}, "Facts": {"type": 1, "value": "v"}}""");
+        Assert.Equal("z", (string?)result["Hero"]!["Heading"]);
+        Assert.Equal(1, (int?)result["Facts"]!["type"]);
+    }
+
     [Theory]
     [InlineData("not json")]
     [InlineData("[1, 2]")]

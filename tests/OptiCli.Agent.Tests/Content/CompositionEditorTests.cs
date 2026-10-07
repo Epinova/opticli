@@ -152,7 +152,7 @@ public class CompositionEditorTests
     }
 
     [Theory]
-    [InlineData("row", "Text", "a component can't go in")]
+    [InlineData("row", "Text", "composition add: an element can't go in")]
     [InlineData("Left", "Section", "can't be placed in a column")]
     [InlineData("Left", "Banner", "only element types")]
     [InlineData(null, "Text", "can't stand in an experience's outline")]
@@ -371,12 +371,29 @@ public class CompositionEditorTests
     }
 
     [Fact]
+    public void A_whole_composition_checks_the_root_style_only_when_it_changes()
+    {
+        var (editor, blocks, root) = Experience();
+        root.DisplayTemplate = "page";
+        root.DisplaySettings["tone"] = "dark";
+        var keepAll = new CompositionNodeValue { Key = "promo" };
+
+        editor.Replace(new CompositionNodeValue { DisplayTemplate = "page", DisplaySettings = new Dictionary<string, string?> { ["tone"] = "dark" }, Nodes = [keepAll] });
+        Assert.Empty(blocks.StylesChecked);
+
+        editor.Replace(new CompositionNodeValue { DisplayTemplate = "page", DisplaySettings = new Dictionary<string, string?> { ["tone"] = "light" }, Nodes = [keepAll] });
+        Assert.Equal([":page"], blocks.StylesChecked);
+    }
+
+    [Fact]
     public void A_whole_composition_refuses_unknown_and_repeated_keys_and_a_changed_type()
     {
         var (editor, _, _) = Experience();
 
         Assert.Contains("no node of the composition has the key", Assert.Throws<AgentException>(() => editor.Replace(new CompositionNodeValue { Nodes = [new CompositionNodeValue { Key = "gone" }] })).Message);
         Assert.Contains("given twice", Assert.Throws<AgentException>(() => editor.Replace(new CompositionNodeValue { Nodes = [new CompositionNodeValue { Key = "promo" }, new CompositionNodeValue { Key = "promo" }] })).Message);
+        // Located as the input (get's shape) names it, not as the protocol does.
+        Assert.StartsWith("composition.sections[1]: ", Assert.Throws<AgentException>(() => editor.Replace(new CompositionNodeValue { Nodes = [new CompositionNodeValue { Key = "promo" }, new CompositionNodeValue { Key = "promo" }] })).Message);
         Assert.Contains("is a Text, not a Teaser", Assert.Throws<AgentException>(() => editor.Replace(new CompositionNodeValue
         {
             Nodes = [new CompositionNodeValue { Key = "hero", Nodes = [new CompositionNodeValue { Key = "row", Nodes = [new CompositionNodeValue { Key = "left", Nodes = [new CompositionNodeValue { Key = "intro", Type = "Teaser" }] }] }] }],
@@ -409,7 +426,7 @@ public class CompositionEditorTests
 
         var refused = Assert.Throws<AgentException>(() => editor.Apply([new CompositionOperation { Op = "rename" }]));
 
-        Assert.Contains("unknown op 'rename'", refused.Message);
+        Assert.Contains("unknown edit 'rename'", refused.Message);
         Assert.Contains("add, remove, move or set", refused.Hint);
     }
 }

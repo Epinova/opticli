@@ -46,8 +46,10 @@ internal static class ServeCommand
         var command = new Command("serve", """
             Start, inspect or stop the local site with the opticli agent injected; write commands need it running.
             Runs the site's build output (its code is not changed) in Development on http://127.0.0.1:<port>, pinned to the
-            database opticli reads; the agent refuses to start against anything else (exit 3). Starts in the background and
-            returns once the agent answers (30-60 s is normal); state (pid, port, a fresh token) is kept in a user-only file.
+            database opticli reads; the agent refuses to start against anything else (exit 3). The agent build (CMS 12 or 13)
+            follows the site's CMS version; a CMS 13 build against a CMS 12 database is refused (it would upgrade it). Starts
+            in the background and returns once the agent answers (30-60 s is normal); state (pid, port, a fresh token) is kept
+            in a user-only file.
             Warns when source files are newer than the build output (--build rebuilds first). A site that redirects to HTTPS
             can't be browsed on that address: --https adds https://localhost:<port> (browseUrl), while opticli keeps using HTTP.
             Against a shared (remote) development database it turns off what would change that database at startup, refuses

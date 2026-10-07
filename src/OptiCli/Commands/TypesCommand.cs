@@ -55,10 +55,13 @@ internal static class TypesCommand
             contract (an interface other types implement; contracts lists them on each type), with compositionBehaviors and
             blueprints (how many Visual Builder blueprints of the type there are; instances doesn't count them) and inlineUses
             (its inline blocks in content's published or primary versions, sections and elements mostly).
-            --unused: types no content uses (on CMS 13 also not inline; contracts are never listed). --orphaned: types defined in code (the CMS has a class on record) whose class is
-            gone, with modelType; the CMS keeps such a type while content uses it. With `opticli serve` running the site says
-            which classes it can't load; without it the site's sources are scanned (by GUID, then name) for the types of its
-            own assemblies only (a warning says so).
+            --unused: types no content uses (on CMS 13 also not inline; contracts are never listed).
+            --orphaned: types defined in code (the CMS has a class on record; on CMS 13 a class or a model-sync version) whose
+            class is gone, with modelType; the CMS keeps such a type while content uses it. On CMS 13 also types of unknown
+            origin (originUnknown: no class or version on record and no class in the build with their GUID: made in admin mode,
+            or code types a content import overwrote before their class was removed). With `opticli serve` running the site
+            says which classes it can't load; without it the site's sources are scanned (by GUID, then name) for the types of
+            its own assemblies only (a warning says so), on CMS 13 together with the GUIDs of the build output's classes.
             `types remove`, `types remove-property` and `types prune` remove such orphans through the site (needs `opticli serve`).
             Example: opticli types --kind block --sort instances --limit 10
             Example: opticli types --orphaned

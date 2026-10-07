@@ -40,9 +40,8 @@ internal static class CompositionCommand
         var values = new Option<string?>("--values") { Description = """add, set: the block's property values as a JSON object, merged over the Prop=value arguments, as for `opticli set`.""", HelpName = "json" };
         var write = new WriteOptions();
         var command = new Command("composition", """
-            CMS 13: change a Visual Builder experience's (or section's) composition on a new version, a draft unless --publish.
-            Needs `opticli serve`. Read it first with `opticli get <ref> --fields composition`: sections → rows → columns →
-            elements, each with its key. A node is named by its key, or by its name when only one node has it.
+            CMS 13: change a Visual Builder composition (experience or section) on a new version, a draft unless --publish. Needs `opticli serve`.
+            Read it first with `opticli get <ref> --fields composition`: sections → rows → columns → elements, each with its key. A node is named by its key, or by its name when only one node has it.
               add <section|row|column|element>: a new node in --in (an experience's sections by default) at --at, with --type
                 (an inline block, and its Prop=value properties) or --ref (a shared block) or, for a section, --blueprint; or the
                 whole node, children included, as --node JSON. Sections hold rows, rows columns, columns elements.

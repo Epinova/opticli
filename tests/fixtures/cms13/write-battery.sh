@@ -26,7 +26,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 opticli="${OPTICLI:-dotnet $here/../../../src/OptiCli/bin/Debug/net8.0/opticli.dll}"
 
 mkdir -p "$out"
-rm -f "$out"/*.json "$out"/*.html "$out/summary.tsv"
+rm -f "${out:?}"/*.json "${out:?}"/*.html "${out:?}"/*.stderr "${out:?}/summary.tsv"
 cd "$site" || exit 1
 
 o() { $opticli "$@" --json 2>/dev/null; }
@@ -38,7 +38,7 @@ step() {
   local label="$1" check="$2" what="$3"
   shift 4
   $opticli "$@" --json >"$out/$label.json" 2>"$out/$label.stderr"
-  [[ -s "$out/$label.stderr" ]] || rm -f "$out/$label.stderr"
+  [[ -s "$out/$label.stderr" ]] || rm -f "${out:?}/$label.stderr"
   if jq -e "$check" "$out/$label.json" >/dev/null 2>&1; then
     printf '%s\tpass\t%s\n' "$label" "$what" >>"$out/summary.tsv"
   else

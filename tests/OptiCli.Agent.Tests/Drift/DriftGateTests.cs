@@ -68,6 +68,18 @@ public class DriftGateTests
     }
 
     [Fact]
+    public void A_report_with_only_informational_items_has_no_fingerprint_and_writes_go_ahead()
+    {
+        // CMS 13: a type of unknown origin (made in admin mode, or a code type an import overwrote) is listed, not drift.
+        var (types, _) = ContentModelComparison.Items([], [], ["AdminOrImportedPage"]);
+        var listedOnly = DriftReport.Create(types, [], [], [], [], []);
+
+        Assert.True(Assert.Single(listedOnly.ContentTypes).Informational);
+        Assert.Null(listedOnly.Fingerprint);
+        DriftGate.Check(Request(listedOnly), dryRun: false);
+    }
+
+    [Fact]
     public void A_local_database_is_never_compared()
     {
         var computed = false;

@@ -21,7 +21,10 @@ internal static class DriftCommand
             Data Store types and the CMS schema version. Each difference says which side is ahead: local (this branch has
             changes that aren't deployed there) or database (that environment runs newer code than this checkout).
             While anything differs, writes stop until the user confirms with --accept-drift <fingerprint>; the fingerprint
-            changes when the differences do. Against a local database nothing is compared: the sync commits there.
+            changes when the differences do. On CMS 13, types of unknown origin (no class or version on record: made in admin
+            mode, or imported) are listed with informational: true and don't stop writes. New job classes the site registers at
+            startup aren't drift (the deployed site registers them too). Against a local database nothing is compared: the
+            sync commits there.
             Example: opticli drift
             """);
 

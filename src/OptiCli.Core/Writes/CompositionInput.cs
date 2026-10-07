@@ -39,15 +39,6 @@ public static class CompositionInput
         "layout", "culture", "displayTemplate", "displaySettings", "sections", "rows", "nodes", "unplaced",
     };
 
-    /// <summary>What <c>get</c> puts around a property's value.</summary>
-    private static readonly HashSet<string> Decoration = new(StringComparer.Ordinal) { "type", "value", "culture", "links", "truncated", "length", "blockType" };
-
-    /// <summary>What <c>get</c> shows of referenced content.</summary>
-    private static readonly HashSet<string> Identity = new(StringComparer.Ordinal)
-    {
-        "ref", "guid", "type", "name", "language", "status", "url", "kind", "missing", "deleted", "blueprint", "provider",
-    };
-
     /// <summary>
     /// Takes <see cref="Field"/> out of a property map of content of <paramref name="typeId"/>, when the type has a
     /// composition (and no property of that name). A string value is read as JSON (<c>composition=@file.json</c>).
@@ -171,7 +162,7 @@ public static class CompositionInput
             DisplayTemplate = Text(node["displayTemplate"], $"{where}.displayTemplate"),
             DisplaySettings = Settings(node["displaySettings"], $"{where}.displaySettings"),
             Properties = node["properties"] is null ? null
-                : node["properties"] is JsonObject properties ? Values(model, typeId, properties, $"{where}.properties")
+                : node["properties"] is JsonObject properties ? Values(model, typeId, properties, $"{where}.properties", keyed: allowKey && node["key"] is not null)
                 : throw new UsageException($"{where}.properties must be an object of property names to values."),
             Nodes = await ChildrenAsync(model, node, where, resolve),
         };
@@ -216,7 +207,8 @@ public static class CompositionInput
     /// An inline block's property values as <c>set</c> takes them: <c>get</c>'s <c>{type, value}</c> unwrapped, a reference
     /// as its ref, a link without the content <c>get</c> adds. Names are checked against the block type when it is known.
     /// </summary>
-    private static IReadOnlyDictionary<string, JsonElement>? Values(CmsModel model, int? typeId, JsonObject? properties, string where)
+    /// <param name="keyed">The node has a key, so it keeps its block (the type it is checked against may not be the block's).</param>
+    private static IReadOnlyDictionary<string, JsonElement>? Values(CmsModel model, int? typeId, JsonObject? properties, string where, bool keyed = false)
     {
         if (properties is null)
         {
@@ -225,51 +217,28 @@ public static class CompositionInput
         var plain = new JsonObject();
         foreach (var (name, value) in properties)
         {
-            if (value is JsonObject wrapped && wrapped.ContainsKey("value") && wrapped["type"] is JsonValue && wrapped.All(p => Decoration.Contains(p.Key)))
-            {
-                if (wrapped["truncated"] is JsonValue truncated && truncated.TryGetValue<bool>(out var cut) && cut)
-                {
-                    throw new UsageException($"{where}.{name} was cut short by get (truncated), so writing it back would lose the rest.",
-                        "Read it with `opticli get <ref> --full`, or leave it out to keep it as it is.");
-                }
-                plain[name] = Plain(wrapped["value"]);
-            }
-            else
-            {
-                plain[name] = Plain(value);
-            }
+            plain[name] = GetShape.IsWrapped(value) ? GetShape.Unwrap((JsonObject)value!, $"{where}.{name}") : GetShape.Plain(value);
         }
         if (typeId is { } id)
         {
-            PropertyNameCheck.Check(model, id, plain);
+            try
+            {
+                PropertyNameCheck.Check(model, id, plain);
+            }
+            catch (UsageException ex)
+            {
+                // Say which node, and that a keyed node's type can't change (its block stays).
+                var node = where.EndsWith(".properties", StringComparison.Ordinal) ? where[..^".properties".Length] : where;
+                var type = model.TypeName(id);
+                throw new UsageException($"{node}: {ex.Message}", keyed
+                    ? $"This node has a key, so it keeps its block: if that isn't {A(type)}, leave key out to put a new {type} there, or leave type out. {ex.Hint}"
+                    : ex.Hint);
+            }
         }
         return PropertyArguments.ToRequest(plain);
     }
 
-    /// <summary>A value as <c>get</c> shows it, as <c>set</c> takes it: references by their ref, links without the content added for reading.</summary>
-    private static JsonNode? Plain(JsonNode? value)
-    {
-        switch (value)
-        {
-            case JsonObject reference when reference["ref"] is JsonValue refValue && reference.All(p => Identity.Contains(p.Key)):
-                return refValue.DeepClone();
-            case JsonObject link when link["href"] is not null && link.ContainsKey("content"):
-                var copy = (JsonObject)link.DeepClone();
-                copy.Remove("content");
-                return copy;
-            case JsonObject obj:
-                var result = new JsonObject();
-                foreach (var (key, item) in obj)
-                {
-                    result[key] = Plain(item);
-                }
-                return result;
-            case JsonArray array:
-                return new JsonArray(array.Select(Plain).ToArray());
-            default:
-                return value?.DeepClone();
-        }
-    }
+    private static string A(string noun) => (noun.Length > 0 && "aeiouAEIOU".Contains(noun[0]) ? "an " : "a ") + noun;
 
     private static void Unknown(JsonObject node, HashSet<string> allowed, string where)
     {

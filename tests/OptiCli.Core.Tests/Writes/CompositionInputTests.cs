@@ -130,6 +130,21 @@ public class CompositionInputTests
     }
 
     [Fact]
+    public async Task An_unknown_property_names_the_node_and_on_a_keyed_node_that_it_keeps_its_block()
+    {
+        var unkeyed = await Assert.ThrowsAsync<UsageException>(() => CompositionInput.RootAsync(Model, Json("""
+            {"sections":[{"type":"VbSection","rows":[{"columns":[{"elements":[{"type":"VbTextElement","properties":{"Headline":"x"}}]}]}]}]}
+            """), Resolve));
+        Assert.StartsWith("composition.sections[0].rows[0].columns[0].elements[0]: 'Headline' is not a property of VbTextElement", unkeyed.Message);
+        Assert.DoesNotContain("keeps its block", unkeyed.Hint);
+
+        var keyed = await Assert.ThrowsAsync<UsageException>(() => CompositionInput.RootAsync(Model, Json("""
+            {"sections":[{"type":"VbSection","rows":[{"columns":[{"elements":[{"key":"5faf72ec-0000-0000-0000-000000000001","type":"VbTextElement","properties":{"Link":"https://example.com/"}}]}]}]}]}
+            """), Resolve));
+        Assert.Contains("keeps its block", keyed.Hint);
+    }
+
+    [Fact]
     public void Split_takes_the_composition_out_of_the_values_of_an_experience_also_as_JSON_text()
     {
         var properties = Json("""{"Summary":"S","composition":"{\"sections\":[]}"}""");

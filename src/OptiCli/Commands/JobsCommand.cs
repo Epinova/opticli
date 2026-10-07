@@ -28,6 +28,8 @@ internal static class JobsCommand
             List the site's scheduled jobs: schedule, next and last run, how the last run ended, and whether one runs now.
             Read from the database (tblScheduledItem); nothing needs to run. overdue: enabled with a next run that has passed,
             so the scheduler starts it as soon as it runs. running is "stale" when the process that ran it stopped pinging.
+            On CMS 13 the database only has the class name: name is the readable one admin mode shows (built in for the CMS's
+            own jobs, the site's from [ScheduledJob(DisplayName = ...)] in its code), else the class name.
             class is the job's C# class, source its file in the site's code (null for a job from a package); a job in the code
             that the database doesn't have yet is listed with registered: false (the site registers jobs when it starts), and
             one of the site's own assemblies whose class is gone with inCode: false (the CMS leaves a removed job's row).

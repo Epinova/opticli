@@ -26,7 +26,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 opticli="${OPTICLI:-dotnet $here/../../../src/OptiCli/bin/Debug/net8.0/opticli.dll}"
 
 mkdir -p "$out"
-rm -f "$out"/*.json "$out/summary.tsv"
+rm -f "${out:?}"/*.json "${out:?}"/*.stderr "${out:?}/summary.tsv"
 cd "$site" || exit 1
 
 o() { $opticli "$@" --json 2>/dev/null; }
@@ -47,7 +47,7 @@ run() {
   shift
   local file="$out/$label.json"
   $opticli "$@" --json >"$file" 2>"$out/$label.stderr"
-  [[ -s "$out/$label.stderr" ]] || rm -f "$out/$label.stderr"
+  [[ -s "$out/$label.stderr" ]] || rm -f "${out:?}/$label.stderr"
   local ok code
   ok="$(jq -r 'if .ok then "ok" else "failed" end' "$file" 2>/dev/null || echo "invalid")"
   code="$(jq -r '.error.code // ""' "$file" 2>/dev/null)"

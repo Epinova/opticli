@@ -27,7 +27,7 @@ internal sealed class WriteOptions
 
     public Option<string?> Values { get; } = new("--values")
     {
-        Description = """Property values as a JSON object, merged over the Prop=value arguments; for ContentAreas ([{"ref":"123"}]), links, lists and local blocks.""",
+        Description = """Property values as a JSON object, merged over the Prop=value arguments; for ContentAreas ([{"ref":"123"}]), links, lists and local blocks. A value may also be given as get shows it ({"type": ..., "value": ...}).""",
         HelpName = "json",
     };
 

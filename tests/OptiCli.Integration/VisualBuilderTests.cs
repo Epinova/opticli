@@ -174,8 +174,10 @@ public sealed class VisualBuilderTests
 
         var (hits, _) = await new SearchReader(site.Session).SearchAsync("A section made to be copied", SearchScope.Strings, null, cancellationToken);
         var (allHits, _) = await new SearchReader(site.Session, includeBlueprints: true).SearchAsync("A section made to be copied", SearchScope.Strings, null, cancellationToken);
-        Assert.Empty(hits);
-        Assert.True(Assert.Single(allHits).Blueprint);
+        // Content made from the section blueprint (other tests' copies) has the same text: only blueprints are compared.
+        var blueprintRefs = blueprints.Select(b => b.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)).ToHashSet();
+        Assert.DoesNotContain(hits, h => blueprintRefs.Contains(h.Ref) || h.Blueprint == true);
+        Assert.True(Assert.Single(allHits, h => blueprintRefs.Contains(h.Ref)).Blueprint);
     }
 
     [SiteFact]
