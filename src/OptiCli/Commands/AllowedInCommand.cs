@@ -21,6 +21,9 @@ internal static class AllowedInCommand
             or reference list without the attribute); properties that restrict the type are left out. Rules an editor
             descriptor or metadata extender applies at runtime are not visible: a uiHint on the row points at one.
             Placed instances (what is actually there): opticli find --type <OwnerType> --where <Property>=<ref>.
+            CMS 13: allowed composition (property composition) is a Visual Builder experience's outline for a SectionEnabled
+            type, or a section's columns for an ElementEnabled one (matchedBy); the ContentArea a composition is stored in
+            (UnstructuredData) isn't listed. `opticli where-used --type <type>` shows where its inline blocks are.
             Example: opticli allowed-in TeaserBlock --kind page --explicit
             """);
         command.Arguments.Add(name);

@@ -83,6 +83,7 @@ internal partial class Program
         root.Subcommands.Add(SearchCommand.Create(options));
         root.Subcommands.Add(WhereUsedCommand.Create(options));
         root.Subcommands.Add(AllowedInCommand.Create(options));
+        root.Subcommands.Add(DisplayTemplatesCommand.Create(options));
         root.Subcommands.Add(VersionsCommand.Create(options));
         root.Subcommands.Add(HistoryCommand.Create(options));
         root.Subcommands.Add(DraftsCommand.Create(options));

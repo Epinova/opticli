@@ -1,12 +1,16 @@
 using OptiCli.Core.Cms;
 using OptiCli.Core.Content;
+using OptiCli.Core.Properties;
 using OptiCli.Core.SourceScan;
 
 namespace OptiCli.Core.Queries;
 
 /// <summary>One property that can hold the target type.</summary>
 /// <param name="Allowed"><c>explicit</c>: its <c>[AllowedTypes]</c> names the type or one of its bases (<paramref name="MatchedBy"/>);
-/// <c>any</c>: a ContentArea or reference list with no <c>[AllowedTypes]</c> (or only restrictions that don't name the type).</param>
+/// <c>any</c>: a ContentArea or reference list with no <c>[AllowedTypes]</c> (or only restrictions that don't name the type);
+/// CMS 13 <c>composition</c>: a Visual Builder experience's outline (the type is <c>SectionEnabled</c>) or a section's columns
+/// (<c>ElementEnabled</c>), the composition behaviour being <paramref name="MatchedBy"/>; <paramref name="Property"/> is then
+/// <c>composition</c>.</param>
 /// <param name="UiHint">A <c>[UIHint]</c> on the property: an editor descriptor for it may change the allowed types at runtime.</param>
 /// <param name="Source">Where the property is declared (<c>path:line</c>, relative to the source root).</param>
 public sealed record AllowedIn(
@@ -49,7 +53,9 @@ public static class AllowedInQuery
         var result = new List<AllowedIn>();
         foreach (var owner in model.Types)
         {
-            var properties = model.PropertiesOf(owner.Id).Where(IsReference).ToList();
+            // CMS 13: a composition's items are placed by composition behaviour (below), not by the ContentArea they are stored in.
+            var storage = Compositions.StorageProperties(model, owner.Id);
+            var properties = model.PropertiesOf(owner.Id).Where(IsReference).Where(p => !storage.Contains(p.Name, StringComparer.Ordinal)).ToList();
             if (properties.Count == 0)
             {
                 continue;
@@ -80,8 +86,9 @@ public static class AllowedInQuery
                     source is null ? null : $"{Path.GetRelativePath(sourceRoot, source.File)}:{source.Line}"));
             }
         }
+        result.AddRange(CompositionRows(model, target));
         return result
-            .OrderBy(a => a.Allowed == "explicit" ? 0 : 1)
+            .OrderBy(a => a.Allowed == "explicit" ? 0 : a.Allowed == "composition" ? 1 : 2)
             .ThenBy(a => a.Type, StringComparer.Ordinal)
             .ThenBy(a => a.Property, StringComparer.Ordinal)
             .ToList();
@@ -107,6 +114,25 @@ public static class AllowedInQuery
         }
         var names = TargetNames(index, target);
         return !declaration.Restricted.Any(names.Contains) && (declaration.Allowed.Count == 0 || declaration.Allowed.Any(names.Contains));
+    }
+
+    /// <summary>
+    /// CMS 13: where a Visual Builder composition takes the type, as the CMS validates a composition: a <c>SectionEnabled</c>
+    /// type in every experience's outline, an <c>ElementEnabled</c> one in every section's columns.
+    /// </summary>
+    private static IEnumerable<AllowedIn> CompositionRows(CmsModel model, ContentTypeInfo target)
+    {
+        foreach (var (behavior, ownerKind) in new[] { (ContentKinds.SectionEnabled, ContentKind.Experience), (ContentKinds.ElementEnabled, ContentKind.Section) })
+        {
+            if (!target.CompositionBehaviors.Contains(behavior, StringComparer.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            foreach (var owner in model.Types.Where(t => t.Kind == ownerKind && Compositions.IsLayouted(model, t.Id)).OrderBy(t => t.Name, StringComparer.Ordinal))
+            {
+                yield return new AllowedIn(owner.Name, owner.Kind, Compositions.Field, "Composition", "composition", behavior, null, null, null);
+            }
+        }
     }
 
     private static bool IsList(PropertyDefinition property) => property.TypeName is "ContentArea" or "ContentReferenceList";

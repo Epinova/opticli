@@ -18,6 +18,18 @@ internal static class TypesCommand
 
         /// <summary>With --orphaned, CMS 13: no class or model-sync version on record (made in admin mode, or a code type a content import overwrote).</summary>
         public bool? OriginUnknown { get; init; }
+
+        /// <summary>CMS 13: the type's Visual Builder blueprints, which <see cref="Instances"/> doesn't count.</summary>
+        public int? Blueprints { get; init; }
+
+        /// <summary>CMS 13: <c>SectionEnabled</c> (it can stand in an experience's outline), <c>ElementEnabled</c> (in a section's columns).</summary>
+        public IReadOnlyList<string>? CompositionBehaviors { get; init; }
+
+        /// <summary>CMS 13: the contracts (kind contract) the type implements.</summary>
+        public IReadOnlyList<string>? Contracts { get; init; }
+
+        /// <summary>CMS 13: the external content source the type belongs to; its content isn't in this database.</summary>
+        public string? Source { get; init; }
     }
 
     public static Command Create(GlobalOptions options)
@@ -37,7 +49,8 @@ internal static class TypesCommand
             List content types with how many (non-deleted) content items use each, by name (--sort instances: most used first).
             Kinds: page, block, media (incl. images and video), folder, other (settings, system types); on CMS 13 also
             Visual Builder's experience (a page made of sections), section, element (a block type sections can hold) and
-            contract (an interface other types implement; contracts lists them on each type).
+            contract (an interface other types implement; contracts lists them on each type), with compositionBehaviors and
+            blueprints (how many Visual Builder blueprints of the type there are; instances doesn't count them).
             --unused: types no content uses. --orphaned: types defined in code (the CMS has a class on record) whose class is
             gone, with modelType; the CMS keeps such a type while content uses it. With `opticli serve` running the site says
             which classes it can't load; without it the site's sources are scanned (by GUID, then name) for the types of its
@@ -92,6 +105,10 @@ internal static class TypesCommand
             {
                 ModelType = showModel ? t.ModelType : null,
                 OriginUnknown = showModel ? t.OriginUnknown : null,
+                Blueprints = t.Blueprints,
+                CompositionBehaviors = t.CompositionBehaviors.Count > 0 ? t.CompositionBehaviors : null,
+                Contracts = t.Contracts.Count > 0 ? t.Contracts : null,
+                Source = t.Source,
             }).ToList();
             var page = list.Apply(context.Parse, summaries);
             return new CommandResult(page.Items, page.Next, Warnings: warnings.Count > 0 ? warnings : null,

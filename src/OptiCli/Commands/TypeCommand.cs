@@ -25,7 +25,26 @@ internal static class TypeCommand
         string? SourceRoot,
         IReadOnlyList<ClassFile>? Classes,
         IReadOnlyList<ViewFile>? Views,
-        string? SourceNote);
+        string? SourceNote)
+    {
+        /// <summary>CMS 13: <c>SectionEnabled</c> (it can stand in an experience's outline), <c>ElementEnabled</c> (in a section's columns).</summary>
+        public IReadOnlyList<string>? CompositionBehaviors { get; init; }
+
+        /// <summary>CMS 13: the contracts (interfaces) it implements.</summary>
+        public IReadOnlyList<string>? Contracts { get; init; }
+
+        /// <summary>CMS 13, for a contract: the types that implement it.</summary>
+        public IReadOnlyList<string>? ImplementedBy { get; init; }
+
+        /// <summary>CMS 13: its Visual Builder blueprints, which <see cref="Instances"/> doesn't count.</summary>
+        public int? Blueprints { get; init; }
+
+        /// <summary>CMS 13: the display templates its content can use in a composition (<c>opticli display-templates</c> has their settings).</summary>
+        public IReadOnlyList<string>? DisplayTemplates { get; init; }
+
+        /// <summary>CMS 13: the external content source the type belongs to; its content isn't in this database.</summary>
+        public string? Source { get; init; }
+    }
 
     /// <param name="Source">Where the property is declared in code (<c>path:line</c>, relative to sourceRoot).</param>
     /// <param name="DeclaredIn">The base class declaring it, when that is not the type's own class.</param>
@@ -72,6 +91,9 @@ internal static class TypeCommand
             Views are matched by name and @model, so teaser/partial views appear next to the page template; a controller
             (ContentController/PageController<T>) or view component is not listed: search the code for the class name.
             Reverse question (which properties accept a type): opticli allowed-in <type>.
+            CMS 13: compositionBehaviors, contracts (the interfaces it implements; for a contract, implementedBy), blueprints
+            and the displayTemplates its content can use in a Visual Builder composition. An experience's or section's Layout
+            and UnstructuredData properties hold its composition, which `opticli get` shows as such.
             A property in the database but not in code has existsOnModel: false and values (how many content items and versions
             hold a value): the CMS keeps a property removed from code while it has values. One added in admin mode looks the
             same. `opticli types --orphaned` lists whole types whose class is gone; `opticli types remove-property` removes such
@@ -92,6 +114,22 @@ internal static class TypeCommand
             var details = project is null
                 ? Describe(type, properties, orphanValues, null, $"C# sources not scanned: {projectError?.Message}")
                 : Describe(type, properties, orphanValues, project, null);
+            if ((await db.SchemaAsync(cancellationToken)).Compositions)
+            {
+                var model = await Core.Content.CmsModel.LoadAsync(db, cancellationToken);
+                var nodeType = Core.Queries.DisplayTemplateInfo.NodeTypeOf(type);
+                var templates = nodeType is null ? [] : (await Core.Queries.DisplayTemplateReader.ListAsync(db, model, cancellationToken)).Where(t => t.AppliesTo(type, nodeType)).Select(t => t.Key).ToList();
+                var implementedBy = types.Where(t => t.Contracts.Contains(type.Name, StringComparer.Ordinal)).Select(t => t.Name).ToList();
+                details = details with
+                {
+                    CompositionBehaviors = type.CompositionBehaviors.Count > 0 ? type.CompositionBehaviors : null,
+                    Contracts = type.Contracts.Count > 0 ? type.Contracts : null,
+                    ImplementedBy = type.Kind == ContentKind.Contract ? implementedBy : null,
+                    Blueprints = type.Blueprints,
+                    DisplayTemplates = templates.Count > 0 ? templates : null,
+                    Source = type.Source,
+                };
+            }
             var notInCode = details.Properties.Where(p => p.ExistsOnModel == false).Select(p => p.Name).ToList();
             return new CommandResult(details, Warnings: notInCode.Count == 0 ? null :
             [
