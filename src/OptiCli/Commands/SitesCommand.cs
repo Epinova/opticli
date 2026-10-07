@@ -229,7 +229,7 @@ internal static class SitesCommand
         var name = HostArgument();
         var type = new Option<string>("--type")
         {
-            Description = $"The host's type: {HostTypes.Syntax} (one of each per application, for every language). primary and edit make the site's previous one undefined.",
+            Description = $"The host's type: {HostTypes.Cms12Syntax}, and on CMS 13 preview or media (one of each per application, for every language). primary and edit make the site's previous one undefined.",
             HelpName = "type",
             DefaultValueFactory = _ => "undefined",
         };
@@ -317,6 +317,7 @@ internal static class SitesCommand
         var sites = session.Model.Sites.All;
         var shared = !session.Db.ConnectionString.IsLocal;
         SiteHostsRunner.RequireAllowed(changes, sites, shared);
+        SiteHostsRunner.RequireHostTypes(changes, session.Model.Schema.Major);
         if (!dryRun)
         {
             await context.Writes(session).RequireDriftAcceptedAsync(cancellationToken);

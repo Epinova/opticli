@@ -323,6 +323,21 @@ public class SiteHostsTests : IDisposable
     }
 
     [Theory]
+    [InlineData(HostTypes.Preview)]
+    [InlineData(HostTypes.Media)]
+    public void CMS_13s_host_types_are_refused_on_cms_12_before_the_agent_is_asked(string type)
+    {
+        SiteHostChange[] changes = [new() { Site = Sites[0].Key, Host = "media.localhost", Action = SiteHostActions.Add, Type = type.ToUpperInvariant() }];
+
+        var refused = Assert.Throws<UsageException>(() => SiteHostsRunner.RequireHostTypes(changes, cmsMajor: 12));
+
+        Assert.Equal($"{type} hosts are CMS 13 only; this site runs CMS 12.", refused.Message);
+        Assert.Equal($"Host types on CMS 12: {HostTypes.Cms12Syntax}.", refused.Hint);
+        SiteHostsRunner.RequireHostTypes(changes, cmsMajor: 13);
+        SiteHostsRunner.RequireHostTypes([new() { Site = Sites[0].Key, Host = "localhost:5001", Action = SiteHostActions.Add, Type = HostTypes.Edit }], cmsMajor: 12);
+    }
+
+    [Theory]
     [InlineData(HostType.Undefined, HostTypes.Undefined)]
     [InlineData(HostType.Edit, HostTypes.Edit)]
     [InlineData(HostType.Preview, HostTypes.Preview)]
