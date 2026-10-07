@@ -138,6 +138,15 @@ public sealed record SetOperation(
     /// </summary>
     public IReadOnlyList<AreaEdit>? AreaEdits { get; init; }
 
+    /// <summary>Dry run only, as <see cref="AreaEdits"/>: composition edits applied after the properties.</summary>
+    public IReadOnlyList<CompositionEdit>? CompositionEdits { get; init; }
+
+    /// <summary>
+    /// CMS 13: change this content variation (its key) instead of the content itself (<c>--variation</c>, a plan's
+    /// <c>variation</c>): a new version of the variation, which is made from the published version if it has none yet.
+    /// </summary>
+    public string? Variation { get; init; }
+
     public override IEnumerable<string?> Refs => [Ref];
 
     public override WriteOperation MapRefs(Func<string, string> map) => this with { Ref = map(Ref), Properties = MapValues(Properties, map) };
@@ -163,6 +172,12 @@ public sealed record CreateOperation(
     /// step whose real parent is created by an earlier step (<see cref="PlanSimulation"/>).
     /// </summary>
     public string? PlannedParentType { get; init; }
+
+    /// <summary>
+    /// CMS 13: make the content from this Visual Builder blueprint (a ref, GUID or name; <c>--blueprint</c>, a plan's
+    /// <c>blueprint</c>): its type, values and composition. <see cref="Type"/> may be empty; it is the blueprint's.
+    /// </summary>
+    public string? Blueprint { get; init; }
 
     public override IEnumerable<string?> Refs => [Parent];
 
@@ -202,6 +217,49 @@ public sealed record AreaEdit(
     public override IEnumerable<string?> Refs => [Ref, Item];
 
     public override WriteOperation MapRefs(Func<string, string> map) => this with { Ref = map(Ref), Item = Map(Item, map) };
+
+    // A step scheduled for later stays scheduled.
+    public override WriteOperation WithPublish() => PublishAt is null ? this with { Publish = true } : this;
+
+    public override bool Publishes => Publish || PublishAt is not null;
+}
+
+/// <summary>CMS 13: <c>composition &lt;ref&gt; add|remove|move|set</c>, one edit of a Visual Builder composition.</summary>
+/// <param name="Action"><c>add</c>, <c>remove</c>, <c>move</c> or <c>set</c>.</param>
+/// <param name="Node">remove, move, set: the node, by key or (unique) name; <c>root</c> for the composition itself (set).</param>
+/// <param name="NodeType">add: <c>section</c>, <c>row</c>, <c>column</c> or <c>element</c>; null: what the parent takes.</param>
+/// <param name="Parent">add, move: the node to put it in, by key or name; null: the composition itself (add), where it is (move).</param>
+/// <param name="At">add, move: zero-based position among the parent's children; default: the end.</param>
+/// <param name="Value">
+/// add: the node, in the composition's JSON shape (<see cref="CompositionInput"/>: type or ref or blueprint, name,
+/// displayTemplate, displaySettings, properties, children); set: what changes (name, displayTemplate, displaySettings with
+/// null removing a setting, properties).
+/// </param>
+public sealed record CompositionEdit(
+    string Ref,
+    string Action,
+    string? Node = null,
+    string? NodeType = null,
+    string? Parent = null,
+    int? At = null,
+    JsonObject? Value = null,
+    string? Lang = null,
+    bool Publish = false,
+    int? BaseVersion = null,
+    bool Force = false) : WriteOperation
+{
+    public override string Kind => "composition";
+
+    /// <summary>As <see cref="SetOperation.From"/>.</summary>
+    public FromVersion? From { get; init; }
+
+    /// <summary>As <see cref="SetOperation.Variation"/>.</summary>
+    public string? Variation { get; init; }
+
+    public override IEnumerable<string?> Refs => [Ref];
+
+    // A shared block placed by the edit may be content the plan creates.
+    public override WriteOperation MapRefs(Func<string, string> map) => this with { Ref = map(Ref), Value = MapValues(Value, map) };
 
     // A step scheduled for later stays scheduled.
     public override WriteOperation WithPublish() => PublishAt is null ? this with { Publish = true } : this;

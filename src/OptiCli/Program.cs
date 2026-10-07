@@ -100,6 +100,7 @@ internal partial class Program
         root.Subcommands.Add(SetCommand.Create(options));
         root.Subcommands.Add(CreateCommand.Create(options));
         root.Subcommands.Add(AreaCommand.Create(options));
+        root.Subcommands.Add(CompositionCommand.Create(options));
         root.Subcommands.Add(BlockCommand.Create(options));
         root.Subcommands.Add(UploadCommand.Create(options));
         root.Subcommands.Add(TranslateCommand.Create(options));

@@ -26,9 +26,10 @@ public sealed partial class WritePlan
     /// <summary>Allowed fields per op; required ones end with <c>*</c>.</summary>
     public static readonly IReadOnlyDictionary<string, string[]> Fields = new Dictionary<string, string[]>
     {
-        ["set"] = ["ref*", "properties", "name", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force"],
-        ["create"] = ["parent*", "type*", "name*", "properties", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "id", "guid"],
+        ["set"] = ["ref*", "properties", "name", "lang", "variation", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force"],
+        ["create"] = ["parent*", "type", "blueprint", "name*", "properties", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "id", "guid"],
         ["area"] = ["ref*", "property*", "action*", "item", "index", "at", "to", "display", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force"],
+        ["composition"] = ["ref*", "action*", "node", "nodeType", "in", "at", "value", "lang", "variation", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force"],
         ["block"] = ["type*", "name*", "for", "parent", "properties", "lang", "publish", "includeDraft", "requestApproval", "id", "guid"],
         ["upload"] = ["file*", "for", "parent", "replace", "name", "type", "properties", "publish", "includeDraft", "requestApproval", "id", "guid"],
         ["translate"] = ["ref*", "lang*", "name", "properties", "publish", "includeDraft", "requestApproval", "withBlocks", "remove", "confirm"],
@@ -303,8 +304,18 @@ public sealed partial class WritePlan
             "set" => new SetOperation(reader.Ref("ref"), reader.Object("properties"), reader.String("name"), reader.String("lang"), reader.Bool("publish"), reader.Int("baseVersion"), reader.Bool("force"))
             {
                 From = reader.From("from"),
+                Variation = reader.String("variation"),
             },
-            "create" => new CreateOperation(reader.Ref("parent"), reader.String("type") ?? "", reader.String("name") ?? "", reader.Object("properties"), reader.String("lang"), reader.Bool("publish")),
+            "create" => new CreateOperation(reader.Ref("parent"), reader.String("type") ?? "", reader.String("name") ?? "", reader.Object("properties"), reader.String("lang"), reader.Bool("publish"))
+            {
+                Blueprint = reader.OptionalRef("blueprint"),
+            },
+            "composition" => new CompositionEdit(reader.Ref("ref"), reader.String("action") ?? "", reader.String("node"), reader.String("nodeType"), reader.String("in"), reader.Int("at"),
+                reader.Object("value"), reader.String("lang"), reader.Bool("publish"), reader.Int("baseVersion"), reader.Bool("force"))
+            {
+                From = reader.From("from"),
+                Variation = reader.String("variation"),
+            },
             "area" => new AreaEdit(reader.Ref("ref"), reader.String("property") ?? "", reader.String("action") ?? "", reader.OptionalRef("item"), reader.Int("index"), reader.Int("at"), reader.Int("to"), reader.String("display"), reader.String("lang"), reader.Bool("publish"), reader.Int("baseVersion"), reader.Bool("force"))
             {
                 From = reader.From("from"),
@@ -334,10 +345,19 @@ public sealed partial class WritePlan
         {
             problems.Add($"{reader.Where}: \"action\" must be add, remove or move.");
         }
+        if (operation is CompositionEdit edit && CompositionEdits.Problem(edit) is { } compositionProblem && step["action"] is not null)
+        {
+            problems.Add($"{reader.Where}: {compositionProblem}");
+        }
+        if (operation is CreateOperation { Type.Length: 0, Blueprint: null } && step["type"] is null)
+        {
+            problems.Add($"{reader.Where}: \"type\" is required (or \"blueprint\", whose type it then is).");
+        }
         var (based, from) = operation switch
         {
             SetOperation set => (set.Ref, set.From),
-            AreaEdit edit => (edit.Ref, edit.From),
+            AreaEdit areaEdit => (areaEdit.Ref, areaEdit.From),
+            CompositionEdit compositionEdit => (compositionEdit.Ref, compositionEdit.From),
             _ => ("", null),
         };
         if (from is not null && based.StartsWith('$'))

@@ -26,6 +26,12 @@ public sealed record WriteOutput(
     IReadOnlyList<PropertyChange> Changes,
     IReadOnlyList<ValidationIssue>? Validation)
 {
+    /// <summary>
+    /// CMS 13: what the write changed in a Visual Builder composition, node by node (<see cref="CompositionChanges"/>); the
+    /// composition isn't listed in <see cref="Changes"/>. Null when it didn't change one.
+    /// </summary>
+    public IReadOnlyList<CompositionChange>? Composition { get; init; }
+
     /// <summary>For an upload: the file sent, and where the site stored it (none for a dry run).</summary>
     public UploadInfo? Upload { get; init; }
 
@@ -75,6 +81,7 @@ public sealed record WriteOutput(
     public static WriteOutput From(WriteResult result, string? type = null, string? name = null, string? parent = null)
     {
         var content = result.Content;
+        var (changes, composition) = CompositionChanges.Split(result.Changes);
         return new WriteOutput(
             content is null ? null : Id(content.Id),
             content?.Version is { } version ? VersionRef(content.Id, version) : null,
@@ -89,9 +96,10 @@ public sealed record WriteOutput(
             result.DryRun,
             result.Valid,
             content is not null && result.BaseVersion is { } baseVersion ? VersionRef(content.Id, baseVersion) : null,
-            result.Changes,
+            changes,
             result.Validation)
         {
+            Composition = composition,
             PendingDraft = result.PendingDraft,
             PreviouslyPublished = content is not null && result.PreviouslyPublished is { } previous ? VersionRef(content.Id, previous) : null,
             SiteError = result.SiteError,

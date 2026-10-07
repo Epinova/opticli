@@ -10,7 +10,8 @@ internal static class CreateCommand
     public static Command Create(GlobalOptions options)
     {
         var parent = new Argument<string>("parent-ref") { Description = $"Where to create it. {ContentRefParser.Syntax}" };
-        var type = new Option<string>("--type") { Description = "Content type name or GUID (see `opticli types`).", Required = true, HelpName = "type" };
+        var type = new Option<string?>("--type") { Description = "Content type name or GUID (see `opticli types`). Required unless --blueprint.", HelpName = "type" };
+        var blueprint = new Option<string?>("--blueprint") { Description = "CMS 13: make it from this Visual Builder blueprint (ref, GUID or name; `opticli find --type <type> --blueprints`): its type, values and composition.", HelpName = "blueprint" };
         var name = new Option<string>("--name") { Description = "Content name.", Required = true, HelpName = "name" };
         var lang = new Option<string?>("--lang") { Description = "Language of the new content. Default: the parent's master language.", HelpName = "code" };
         var guid = new Option<Guid?>("--guid") { Description = "The new content's GUID (default: a new one). Fails with a conflict if it exists.", HelpName = "guid" };
@@ -20,10 +21,14 @@ internal static class CreateCommand
             Pages go below pages, blocks and folders in asset folders, and the type must be allowed below the parent's type;
             media are made with `opticli upload`. Required properties must be set before it can be published (a draft
             may leave them empty). Prints the new content's ref, version and every property set.
+            CMS 13: a Visual Builder experience takes its composition as composition in --values (as get shows it), or comes
+            from a blueprint (--blueprint), whose values and composition it gets; `opticli composition` changes it afterwards.
             Example: opticli create 123 --type ArticlePage --name "News" Heading="Hello" --dry-run
+            Also:    opticli create 123 --blueprint "Landing blueprint" --name "Spring campaign" --dry-run
             """);
         command.Arguments.Add(parent);
         command.Options.Add(type);
+        command.Options.Add(blueprint);
         command.Options.Add(name);
         command.Options.Add(lang);
         command.Options.Add(guid);
@@ -34,9 +39,14 @@ internal static class CreateCommand
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
-            var operation = new CreateOperation(parse.GetValue(parent)!, parse.GetValue(type)!, parse.GetValue(name)!, write.ParseProperties(context), parse.GetValue(lang), parse.GetValue(write.Publish))
+            if (parse.GetValue(type) is null && parse.GetValue(blueprint) is null)
+            {
+                throw new Core.Errors.UsageException("Give --type (or --blueprint, whose type it then is).", "`opticli types` lists the content types.");
+            }
+            var operation = new CreateOperation(parse.GetValue(parent)!, parse.GetValue(type) ?? "", parse.GetValue(name)!, write.ParseProperties(context), parse.GetValue(lang), parse.GetValue(write.Publish))
             {
                 ContentGuid = parse.GetValue(guid),
+                Blueprint = parse.GetValue(blueprint),
             };
             await using var session = await context.OpenContentAsync(cancellationToken);
             return WriteOptions.Result(await context.Writes(session).RunAsync(write.WithApproval(operation, parse), parse.GetValue(write.DryRun), cancellationToken));

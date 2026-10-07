@@ -78,7 +78,12 @@ public static class PropertyNameCheck
         var match = definitions.FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
         if (match is not null)
         {
-            return match;
+            // CMS 13: the properties an experience's or section's composition is stored in are written as the composition.
+            return !Properties.Compositions.StorageProperties(model, contentTypeId).Contains(match.Name)
+                ? match
+                : throw new UsageException(
+                    $"'{prefix}{match.Name}' is where {model.TypeName(contentTypeId)} stores its Visual Builder composition; it isn't set directly.",
+                    "Change the composition with `opticli composition <ref> add|remove|move|set`, or write it whole as composition in --values (as get shows it).");
         }
         if (topLevel && BuiltIn.Contains(name, StringComparer.OrdinalIgnoreCase))
         {

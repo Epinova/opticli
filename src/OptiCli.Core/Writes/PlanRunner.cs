@@ -162,7 +162,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     }
 
     /// <summary>
-    /// For plans that publish, request approval, translate or base a change on another version (<c>from</c>), the existing
+    /// For plans that publish, request approval, translate, edit a composition or base a change on another version (<c>from</c>), the existing
     /// content (and branch) each step writes, so that a step can be dry-run with what earlier steps change on the same
     /// content (<see cref="PlanSimulation.OnExisting"/>), and the order of publishes checked
     /// (<see cref="PlanSimulation.MasterFirst"/>). Steps whose ref can't be resolved are left out; their own dry run reports why.
@@ -170,7 +170,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     private async Task<Dictionary<int, PlanTarget>> TargetsAsync(IReadOnlyList<PlanStep> resolved, IReadOnlyDictionary<string, int> existing, CancellationToken cancellationToken)
     {
         var targets = new Dictionary<int, PlanTarget>();
-        if (!resolved.Any(s => s.Operation is PublishOperation or TranslateOperation or SetOperation { From: not null } or AreaEdit { From: not null } || MayPublish(s.Operation)))
+        if (!resolved.Any(s => s.Operation is PublishOperation or TranslateOperation or SetOperation { From: not null } or AreaEdit { From: not null } or CompositionEdit || MayPublish(s.Operation)))
         {
             return targets;
         }
@@ -180,6 +180,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             {
                 SetOperation set => (set.Ref, set.Lang),
                 AreaEdit area => (area.Ref, area.Lang),
+                CompositionEdit composition => (composition.Ref, composition.Lang),
                 TranslateOperation translate => (translate.Ref, translate.Lang),
                 PublishOperation publish => (publish.Ref, publish.Lang),
                 // A create step whose GUID exists updates that content (--update-existing).
@@ -453,6 +454,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             {
                 SetOperation set => set.Ref,
                 AreaEdit area => area.Ref,
+                CompositionEdit composition => composition.Ref,
                 DeleteOperation delete => delete.Ref,
                 MoveOperation move => move.Ref,
                 _ => null,
@@ -624,6 +626,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         {
             SetOperation set => set.Ref,
             AreaEdit area => area.Ref,
+            CompositionEdit composition => composition.Ref,
             TranslateOperation translate => translate.Ref,
             PublishOperation publish => publish.Ref,
             _ => ParentOf(op),
@@ -680,12 +683,13 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             UploadOperation upload => upload.Type,
             _ => null,
         };
-        if (typeName is null)
+        // A create from a blueprint (CMS 13) has the blueprint's type, which the site checks.
+        if (string.IsNullOrEmpty(typeName))
         {
             return;
         }
         var type = session.Model.RequireType(typeName);
-        PropertyNameCheck.Check(session.Model, type.Id, properties);
+        PropertyNameCheck.Check(session.Model, type.Id, CompositionInput.Split(session.Model, type.Id, properties).Properties);
         if (area is not null)
         {
             PropertyNameCheck.RequireContentArea(session.Model, type.Id, area);

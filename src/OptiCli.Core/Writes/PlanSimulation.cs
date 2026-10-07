@@ -94,6 +94,11 @@ public static class PlanSimulation
             {
                 Edit(properties, area);
             }
+            else if (later.Operation is CompositionEdit composition && PlanId(composition.Ref) == target && SameLanguage(composition.Lang, language) && composition.Variation is null)
+            {
+                // Not simulated on planned content: the composition it edits isn't there yet. The step itself is deferred.
+                return null;
+            }
         }
 
         var standIns = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -185,12 +190,12 @@ public static class PlanSimulation
                 }
                 return Merged(step, since, target, translate, reference, publish: true, steps, existing,
                     $"Dry-run as {reference}{In(target)} will be after operation(s) {string.Join(", ", since.Select(s => s.Index))}, published (their changes aren't saved yet){Based(restart, from)}.", from);
-            case SetOperation { From: not null } or AreaEdit { From: not null } when translate is not null:
+            case SetOperation { From: not null } or AreaEdit { From: not null } or CompositionEdit { From: not null } when translate is not null:
                 throw new Errors.UsageException(
                     $"Operation {translate.Index} creates the '{target.Language}' branch of {reference}, so it has no version from before the plan for this operation's \"from\" to base the change on.",
                     "Leave \"from\" out: the change is then based on the branch as the plan makes it.");
-            case SetOperation { From: null } or AreaEdit { From: null } when restart is not null && !target.Versioned:
-                var simulation = Merged(step, [.. since, step], target, null, reference, publish: step.Operation is SetOperation { Publish: true } or AreaEdit { Publish: true }, steps, existing,
+            case SetOperation { From: null, Variation: null } or AreaEdit { From: null } or CompositionEdit { From: null, Variation: null } when restart is not null && !target.Versioned:
+                var simulation = Merged(step, [.. since, step], target, null, reference, publish: step.Operation is SetOperation { Publish: true } or AreaEdit { Publish: true } or CompositionEdit { Publish: true }, steps, existing,
                     $"Dry-run as {reference}{In(target)} will be after operation(s) {string.Join(", ", since.Select(s => s.Index))} and this one{Based(restart, from)}.", from);
                 return simulation with { Operation = simulation.Operation with { PublishAt = step.Operation.PublishAt, RequestApproval = step.Operation.RequestApproval } };
             case SetOperation set when translate is not null:
@@ -199,6 +204,14 @@ public static class PlanSimulation
             case AreaEdit area when translate is not null && target.Master is { } master:
                 return new Simulation(area with { Lang = master, Publish = false, BaseVersion = null, Force = true }, null, new Dictionary<string, string>(), [], [],
                     [$"Dry-run on the master branch ('{master}') as a stand-in: operation {translate.Index} creates the '{target.Language}' branch, so this area edit is checked there when the plan runs."]);
+            case CompositionEdit composition when translate is not null && target.Master is { } master:
+                return new Simulation(composition with { Lang = master, Publish = false, BaseVersion = null, Force = true }, null, new Dictionary<string, string>(), [], [],
+                    [$"Dry-run on the master branch ('{master}') as a stand-in: operation {translate.Index} creates the '{target.Language}' branch, so this composition edit is checked there when the plan runs."]);
+            case CompositionEdit { Variation: null } when restart is null && !target.Versioned:
+                // Earlier set, area and composition steps change the content first: this edit is dry-run after theirs.
+                var folded = Merged(step, [.. earlier, step], target, null, reference, publish: step.Operation is CompositionEdit { Publish: true }, steps, existing,
+                    $"Dry-run as {reference}{In(target)} will be after operation(s) {string.Join(", ", earlier.Select(s => s.Index))} and this one.");
+                return folded with { Operation = folded.Operation with { PublishAt = step.Operation.PublishAt, RequestApproval = step.Operation.RequestApproval } };
             default:
                 return null;
         }
@@ -209,6 +222,7 @@ public static class PlanSimulation
     {
         SetOperation set => set.From,
         AreaEdit area => area.From,
+        CompositionEdit composition => composition.From,
         _ => null,
     };
 
@@ -223,9 +237,15 @@ public static class PlanSimulation
         var properties = new JsonObject();
         string? name = null;
         var areas = new List<AreaEdit>();
+        var compositions = new List<CompositionEdit>();
         var notChecked = new List<string>();
         foreach (var write in writes)
         {
+            if (write.Operation is CompositionEdit composition)
+            {
+                compositions.Add(composition);
+                continue;
+            }
             if (write.Operation is AreaEdit area)
             {
                 if (area.Item is { } item && PlanId(item) is not null)
@@ -241,8 +261,12 @@ public static class PlanSimulation
             var (values, newName) = Values(write.Operation);
             if (values is not null)
             {
-                // A whole value replaces what earlier area edits did to it.
+                // A whole value replaces what earlier area edits did to it, a whole composition what earlier composition edits did.
                 areas.RemoveAll(a => values.Any(v => v.Key.Equals(a.Property, StringComparison.OrdinalIgnoreCase)));
+                if (values.Any(v => v.Key.Equals(CompositionInput.Field, StringComparison.OrdinalIgnoreCase)))
+                {
+                    compositions.Clear();
+                }
                 PropertyArguments.Merge(properties, values);
             }
             name = newName ?? name;
@@ -255,14 +279,18 @@ public static class PlanSimulation
         if (translate?.Operation is TranslateOperation creating)
         {
             operation = new TranslateOperation(reference, creating.Lang, name, stripped, publish);
-            // A new branch takes no area edits in its dry run.
+            // A new branch takes no area or composition edits in its dry run.
             notChecked.AddRange(areas.Select(a => a.Property));
+            if (compositions.Count > 0)
+            {
+                notChecked.Add(CompositionInput.Field);
+            }
         }
         else
         {
             // The master branch as the agent picks it, which also suits content without languages.
             var language = string.Equals(target.Language, target.Master, StringComparison.OrdinalIgnoreCase) ? null : target.Language;
-            operation = new SetOperation(reference, stripped, name, language, publish) { AreaEdits = areas, From = from };
+            operation = new SetOperation(reference, stripped, name, language, publish) { AreaEdits = areas, CompositionEdits = compositions.Count > 0 ? compositions : null, From = from };
         }
         return new Simulation(operation with { IncludeDraft = step.Operation.IncludeDraft }, null, new Dictionary<string, string>(), notChecked.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), references, notes);
     }
@@ -272,7 +300,9 @@ public static class PlanSimulation
     {
         TranslateOperation { Remove: true } => false,
         PublishOperation publish => publish.Version is null && !target.Versioned,
-        _ => op is SetOperation or AreaEdit or TranslateOperation or CreateOperation or BlockCreateOperation or UploadOperation,
+        // A content variation's versions are a branch of their own.
+        SetOperation { Variation: not null } or CompositionEdit { Variation: not null } => false,
+        _ => op is SetOperation or AreaEdit or CompositionEdit or TranslateOperation or CreateOperation or BlockCreateOperation or UploadOperation,
     };
 
     private static bool Publishes(WriteOperation op) => op switch
@@ -280,6 +310,7 @@ public static class PlanSimulation
         PublishOperation => true,
         SetOperation set => set.Publish,
         AreaEdit area => area.Publish,
+        CompositionEdit composition => composition.Publish,
         TranslateOperation translate => translate.Publish,
         _ => IsPublishing(op),
     };
@@ -360,6 +391,7 @@ public static class PlanSimulation
             UploadOperation upload => (upload.Id, null),
             SetOperation set => (PlanId(set.Ref), set.Lang),
             AreaEdit area => (PlanId(area.Ref), area.Lang),
+            CompositionEdit composition => (PlanId(composition.Ref), composition.Lang),
             TranslateOperation translate => (PlanId(translate.Ref), translate.Lang),
             PublishOperation publish => (PlanId(publish.Ref), publish.Lang),
             _ => (null, null),

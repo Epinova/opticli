@@ -21,7 +21,7 @@ internal static class ApplyCommand
             Description = "Run a plan again: content that already has a step's GUID is updated (and moved back out of the recycle bin), and steps that are already done change nothing.",
         };
         var write = new WriteOptions();
-        write.Publish.Description = "Publish every set, create, area, block, upload and translate operation (as if each had \"publish\": true).";
+        write.Publish.Description = "Publish every set, create, area, composition, block, upload and translate operation (as if each had \"publish\": true).";
         var command = new Command("apply", $$$"""
             Run several writes from a JSON plan, validating every one before anything is saved. Needs `opticli serve`.
             Each operation gets a dry run first; nothing is written unless all pass. Operations on content the plan creates
@@ -48,6 +48,11 @@ internal static class ApplyCommand
             area: action is add (item = block ref, at, display), remove (index or item) or move (index or item, to).
             set, area: "from": "published" (or a version, 456 or "123_456") bases the change on that version instead of the
             latest, leaving newer drafts out (as --from); later operations on that content and language build on its result.
+            CMS 13 (Visual Builder): "composition" in a create's or set's "properties" is the whole composition, as get shows
+            it ("@path" reads it from a JSON file); create takes "blueprint" instead of "type"; composition: action is add
+            (nodeType, in, at, value: the node as get's composition shows one), remove (node), move (node, in, at) or set
+            (node, value: name, displayTemplate, displaySettings, properties); a node is its key, or its name if unique.
+            "variation" on set and composition changes that content variation.
             Example: opticli apply plan.json --dry-run
               {"operations": [
                 {"op": "create", "id": "page", "parent": "123", "type": "ArticlePage", "name": "News", "properties": {"Heading": "Hi"}},

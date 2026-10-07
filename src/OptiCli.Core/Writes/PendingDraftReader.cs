@@ -26,7 +26,8 @@ internal static class PendingDraftReader
         }
         var published = await VersionReader.PublishedAsync(session.Db, session.Model, version.ContentId, version.LanguageId, cancellationToken);
         var loader = new ContentLoader(session.Db, session.Identities);
-        var options = new DecodeOptions(Full: true);
+        // CMS 13: a composition is compared as one value, as the agent compares it.
+        var options = new DecodeOptions(Full: true, Composition: true);
         Task<ContentDocument> Load(int id) => loader.GetAsync(version.ContentId, new VersionSelector(VersionKind.Specific, id), null, options, cancellationToken);
         var after = await Load(version.Id);
         var before = published is null ? null : await Load(published.Id);
@@ -63,6 +64,10 @@ internal static class PendingDraftReader
         foreach (var (name, property) in after.Properties)
         {
             Compare(name, before?.Properties[name]?["value"], property?["value"]);
+        }
+        if (after.Composition is not null || before?.Composition is not null)
+        {
+            Compare(CompositionInput.Field, before?.Composition, after.Composition);
         }
         foreach (var (name, property) in before?.Properties ?? new JsonObject())
         {

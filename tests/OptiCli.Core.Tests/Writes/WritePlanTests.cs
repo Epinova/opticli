@@ -34,6 +34,45 @@ public class WritePlanTests
     }
 
     [Fact]
+    public void Composition_operations_blueprints_and_variations_are_parsed_with_their_dependencies()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "block", "id": "shared", "type": "TextElement", "name": "Shared", "parent": 3},
+              {"op": "create", "id": "exp", "parent": 6, "blueprint": "Landing blueprint", "name": "Landing"},
+              {"op": "composition", "ref": "$exp", "action": "add", "nodeType": "element", "in": "Left", "at": 0, "value": {"ref": "$shared", "name": "S"}},
+              {"op": "composition", "ref": "$exp", "action": "set", "node": "Hero", "value": {"displayTemplate": "look"}, "variation": "Campaign", "publish": true},
+              {"op": "set", "ref": "$exp", "variation": "Campaign", "properties": {"Summary": "x"}}
+            ]}
+            """);
+
+        var create = Assert.IsType<CreateOperation>(plan.Steps[1].Operation);
+        Assert.Equal(("", "Landing blueprint"), (create.Type, create.Blueprint));
+        var add = Assert.IsType<CompositionEdit>(plan.Steps[2].Operation);
+        Assert.Equal(("add", "element", "Left", 0, (string?)null), (add.Action, add.NodeType, add.Parent, add.At, add.Node));
+        Assert.Equal(new HashSet<string> { "exp", "shared" }, plan.Steps[2].DependsOn);
+        Assert.Equal("""{"ref":"901","name":"S"}""", ((CompositionEdit)WritePlan.Resolve(plan.Steps[2], new Dictionary<string, int> { ["exp"] = 900, ["shared"] = 901 })).Value!.ToJsonString());
+        var set = Assert.IsType<CompositionEdit>(plan.Steps[3].Operation);
+        Assert.Equal(("Hero", "Campaign", true), (set.Node, set.Variation, set.Publish));
+        Assert.Equal("Campaign", Assert.IsType<SetOperation>(plan.Steps[4].Operation).Variation);
+    }
+
+    [Theory]
+    [InlineData("""{"op": "composition", "ref": "1", "action": "rename"}""", "\"action\" must be add, remove, move or set")]
+    [InlineData("""{"op": "composition", "ref": "1", "action": "add", "node": "Hero", "value": {"type": "T"}}""", "add makes a new node")]
+    [InlineData("""{"op": "composition", "ref": "1", "action": "add", "nodeType": "cell", "value": {"type": "T"}}""", "must be section, row, column or element")]
+    [InlineData("""{"op": "composition", "ref": "1", "action": "remove"}""", "remove needs the node")]
+    [InlineData("""{"op": "composition", "ref": "1", "action": "move", "node": "Hero"}""", "move needs where to")]
+    [InlineData("""{"op": "composition", "ref": "1", "action": "set", "node": "Hero", "in": "root", "value": {"name": "x"}}""", "set changes a node where it is")]
+    [InlineData("""{"op": "create", "parent": "1", "name": "x"}""", "\"type\" is required (or \"blueprint\"")]
+    public void Composition_operations_with_fields_their_action_doesnt_take_are_refused(string step, string message)
+    {
+        var refused = Assert.Throws<UsageException>(() => WritePlan.Parse($$"""{"operations": [{{step}}]}"""));
+
+        Assert.Contains(message, refused.Message);
+    }
+
+    [Fact]
     public void Resolve_substitutes_created_ids_in_refs_and_property_values()
     {
         var plan = WritePlan.Parse(ThreeSteps);

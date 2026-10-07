@@ -82,11 +82,11 @@ public sealed class WriteExecutor(
     {
         if (operation.PublishAt is not null)
         {
-            if (operation is not (SetOperation or AreaEdit or CreateOperation or PublishOperation))
+            if (operation is not (SetOperation or AreaEdit or CompositionEdit or CreateOperation or PublishOperation))
             {
-                throw new UsageException($"{operation.Kind} can't be scheduled; --publish-at works on set, area, create and publish.");
+                throw new UsageException($"{operation.Kind} can't be scheduled; --publish-at works on set, area, composition, create and publish.");
             }
-            if (operation is SetOperation { Publish: true } or AreaEdit { Publish: true } or CreateOperation { Publish: true })
+            if (operation is SetOperation { Publish: true } or AreaEdit { Publish: true } or CompositionEdit { Publish: true } or CreateOperation { Publish: true })
             {
                 throw new UsageException("Give --publish (now) or --publish-at (later), not both.");
             }
@@ -103,6 +103,7 @@ public sealed class WriteExecutor(
         {
             SetOperation set => await SetAsync(set, dryRun, cancellationToken),
             AreaEdit area => await AreaAsync(area, dryRun, cancellationToken),
+            CompositionEdit composition => await CompositionAsync(composition, dryRun, cancellationToken),
             CreateOperation create => await CreateAsync(create, dryRun, cancellationToken),
             BlockCreateOperation block => await BlockAsync(block, dryRun, cancellationToken),
             UploadOperation upload => await UploadAsync(upload, dryRun, cancellationToken),
@@ -140,7 +141,10 @@ public sealed class WriteExecutor(
     {
         var target = await EditableAsync(op.Ref, cancellationToken);
         op.From?.Check(target.Id, target.Version);
-        PropertyNameCheck.Check(session.Model, target.Header.TypeId, op.Properties);
+        // CMS 13: "composition" in the values is an experience's (or section's) whole Visual Builder composition.
+        var (properties, composition) = CompositionInput.Split(session.Model, target.Header.TypeId, op.Properties);
+        PropertyNameCheck.Check(session.Model, target.Header.TypeId, properties);
+        RequireVariations(op.Variation);
         var language = LanguageFor(op.Lang, target);
         var masterFirst = await MasterFirstAsync(target, language, op, dryRun, cancellationToken);
         var areaOps = new List<AreaOperation>();
@@ -148,21 +152,29 @@ public sealed class WriteExecutor(
         {
             areaOps.Add(await AreaOperationAsync(edit, target, cancellationToken));
         }
+        var compositionOps = new List<CompositionOperation>();
+        foreach (var edit in op.CompositionEdits ?? [])
+        {
+            compositionOps.Add(await CompositionOperationAsync(edit, target, cancellationToken));
+        }
         var request = new DraftRequest
         {
             Lang = language?.Code,
             Name = op.Name,
-            Properties = PropertyArguments.ToRequest(op.Properties),
+            Properties = PropertyArguments.ToRequest(properties),
             AreaOps = areaOps.Count > 0 ? areaOps : null,
+            Composition = composition is null ? null : await CompositionInput.RootAsync(session.Model, composition, Resolvers(cancellationToken)),
+            CompositionOps = compositionOps.Count > 0 ? compositionOps : null,
+            Variation = op.Variation?.Trim(),
             Publish = op.Publish,
             IncludeDraft = op.IncludeDraft,
             RequestApproval = op.RequestApproval,
             PublishAt = op.PublishAt?.UtcDateTime,
             DryRun = dryRun,
-            BaseVersion = await BaseVersionAsync(target, language, op.BaseVersion, op.Force, cancellationToken),
+            BaseVersion = await BaseVersionAsync(target, language, op.BaseVersion, op.Force, cancellationToken, op.Variation),
             From = op.From?.Request,
         };
-        if (request.Properties is null && request.Name is null && op.AreaEdits is null)
+        if (request.Properties is null && request.Name is null && request.Composition is null && op.AreaEdits is null && op.CompositionEdits is null)
         {
             throw new UsageException("Nothing to set.", $"Give properties ({PropertyArguments.Syntax}), --values or --name.");
         }
@@ -189,6 +201,64 @@ public sealed class WriteExecutor(
             From = op.From?.Request,
         };
         return WithWarning(await DraftAsync(target, request, op.From, op.Publishes, cancellationToken), masterFirst);
+    }
+
+    private async Task<WriteOutcome> CompositionAsync(CompositionEdit op, bool dryRun, CancellationToken cancellationToken)
+    {
+        var target = await EditableAsync(op.Ref, cancellationToken);
+        op.From?.Check(target.Id, target.Version);
+        RequireVariations(op.Variation);
+        var edit = await CompositionOperationAsync(op, target, cancellationToken);
+        var language = LanguageFor(op.Lang, target);
+        var masterFirst = await MasterFirstAsync(target, language, op, dryRun, cancellationToken);
+        var request = new DraftRequest
+        {
+            Lang = language?.Code,
+            CompositionOps = [edit],
+            Variation = op.Variation?.Trim(),
+            Publish = op.Publish,
+            IncludeDraft = op.IncludeDraft,
+            RequestApproval = op.RequestApproval,
+            PublishAt = op.PublishAt?.UtcDateTime,
+            DryRun = dryRun,
+            BaseVersion = await BaseVersionAsync(target, language, op.BaseVersion, op.Force, cancellationToken, op.Variation),
+            From = op.From?.Request,
+        };
+        return WithWarning(await DraftAsync(target, request, op.From, op.Publishes, cancellationToken), masterFirst);
+    }
+
+    /// <summary>A composition edit as the agent takes it, with its shape, the content's type, block types and property names checked.</summary>
+    private async Task<CompositionOperation> CompositionOperationAsync(CompositionEdit op, Target target, CancellationToken cancellationToken)
+    {
+        if (CompositionEdits.Problem(op) is { } problem)
+        {
+            throw new UsageException($"composition {op.Action}: {problem}", CompositionEdits.Syntax);
+        }
+        if (!Properties.Compositions.IsLayouted(session.Model, target.Header.TypeId))
+        {
+            throw new UsageException($"{target.Id} is a {session.Model.TypeName(target.Header.TypeId)}, which has no Visual Builder composition; only experiences and sections (CMS 13) have one.",
+                "`opticli types --kind experience` lists the experience types.");
+        }
+        var value = op.Action switch
+        {
+            CompositionOps.Add => await CompositionInput.NodeAsync(session.Model, op.Value!, op.NodeType, "the new node", Resolvers(cancellationToken)),
+            CompositionOps.Set => CompositionInput.Change(session.Model, op.Value!, "the change"),
+            _ => null,
+        };
+        return new CompositionOperation { Op = op.Action, Node = op.Node, Parent = op.Parent, At = op.At, Value = value };
+    }
+
+    /// <summary>How a composition's shared blocks and blueprints are named to the agent: by content ref and by GUID.</summary>
+    private CompositionInput.Resolvers Resolvers(CancellationToken cancellationToken) => new(
+        async reference => (await ResolveAsync(reference, "shared block", cancellationToken)).ContentRef,
+        async blueprint => (await BlueprintReader.FindAsync(session, blueprint, cancellationToken)).Guid);
+
+    private void RequireVariations(string? variation)
+    {
+        if (variation is not null && !session.Model.Schema.Variations)
+        {
+            throw new UsageException("Content variations are CMS 13's; this site's database has none.", "Leave out --variation.");
+        }
     }
 
     /// <summary>An area edit as the agent takes it, with its property and item checked.</summary>
@@ -265,20 +335,31 @@ public sealed class WriteExecutor(
     private async Task<WriteOutcome> CreateAsync(CreateOperation op, bool dryRun, CancellationToken cancellationToken)
     {
         var parent = await ResolveAsync(op.Parent, "parent", cancellationToken);
-        var type = session.Model.RequireType(op.Type);
+        // CMS 13: from a blueprint, whose type it is.
+        var blueprint = op.Blueprint is { } named ? await BlueprintReader.FindAsync(session, named, cancellationToken) : null;
+        var type = string.IsNullOrWhiteSpace(op.Type) && blueprint is not null
+            ? session.Model.Type(blueprint.TypeId) ?? throw new NotFoundException($"The blueprint {blueprint.Id} has a content type the database doesn't have.")
+            : session.Model.RequireType(op.Type);
+        if (blueprint is not null && blueprint.TypeId != type.Id)
+        {
+            throw new UsageException($"The blueprint {blueprint.Id} ('{blueprint.Name}') is {session.Model.TypeName(blueprint.TypeId)}, not {type.Name}.", "Leave out --type: content made from a blueprint has its type.");
+        }
         if (type.Kind == ContentKind.Media)
         {
             throw new UsageException($"{type.Name} is a media type; created this way it would be a media item without a file.",
                 "Use `opticli upload <file> --parent <folder>` (or --for <page>); --type picks the media type.");
         }
-        PropertyNameCheck.Check(session.Model, type.Id, op.Properties);
+        var (properties, composition) = CompositionInput.Split(session.Model, type.Id, op.Properties);
+        PropertyNameCheck.Check(session.Model, type.Id, properties);
         var request = new CreateRequest
         {
             Parent = parent.ContentRef,
             Type = type.Name,
             Name = op.Name,
             Lang = session.Language(op.Lang)?.Code,
-            Properties = PropertyArguments.ToRequest(op.Properties),
+            Properties = PropertyArguments.ToRequest(properties),
+            Composition = composition is null ? null : await CompositionInput.RootAsync(session.Model, composition, Resolvers(cancellationToken)),
+            Blueprint = blueprint?.Guid,
             Publish = op.Publish,
             DryRun = dryRun,
             Guid = op.ContentGuid,
@@ -1010,7 +1091,8 @@ public sealed class WriteExecutor(
     /// version, else the latest in the language, read now. The agent answers 409 if a newer one exists. With
     /// <c>--from</c> (whose ref names no version), the change is based on that version and this is only checked.
     /// </summary>
-    private async Task<int?> BaseVersionAsync(Target target, LanguageBranch? language, int? explicitVersion, bool force, CancellationToken cancellationToken)
+    /// <param name="variation">CMS 13: the content variation changed, whose newest version is the latest (none for a variation that has no version yet).</param>
+    private async Task<int?> BaseVersionAsync(Target target, LanguageBranch? language, int? explicitVersion, bool force, CancellationToken cancellationToken, string? variation = null)
     {
         if (force)
         {
@@ -1020,7 +1102,10 @@ public sealed class WriteExecutor(
         {
             return version;
         }
-        var latest = await VersionReader.LatestAsync(session.Db, session.Model, target.Id, (language ?? MasterLanguage(target)).Id, cancellationToken);
+        var branch = (language ?? MasterLanguage(target)).Id;
+        var latest = variation is { } key
+            ? await VersionReader.VariationAsync(session.Db, session.Model, target.Id, branch, key.Trim(), latest: true, cancellationToken)
+            : await VersionReader.LatestAsync(session.Db, session.Model, target.Id, branch, cancellationToken);
         return latest?.Id;
     }
 

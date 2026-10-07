@@ -49,6 +49,7 @@ public static class PlanFiles
             BlockCreateOperation block => block with { Properties = Read(block.Properties) },
             UploadOperation media => media with { Properties = Read(media.Properties) },
             TranslateOperation translate => translate with { Properties = Read(translate.Properties) },
+            CompositionEdit composition => composition with { Value = Read(composition.Value) },
             _ => operation,
         };
         return step with { Operation = operation };
