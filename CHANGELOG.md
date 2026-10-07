@@ -3,6 +3,82 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.15.0 (unreleased)
+
+### New
+
+- **Optimizely CMS 13.** One opticli reads and writes CMS 12 and CMS 13 sites, fresh CMS 13 installs and databases
+  upgraded from CMS 12 alike. Reads choose their SQL from the database's schema. The package carries two site agents,
+  `agent/cms12/` (.NET 8, built against `EPiServer.CMS.Core` 12.0.3) and `agent/cms13/` (.NET 10, 13.0.0), and `serve`
+  and `env` pick the one for the project's CMS major (else the database's); `doctor` shows `cmsMajor` for both. A CMS 13
+  build against a CMS 12 database is refused (exit 3), since starting it would upgrade the database for good, and so
+  is the reverse. Every existing command works on CMS 13, shared databases and drift included. See the README's
+  "CMS 13" section.
+  - **Sites are applications:** `sites` lists CMS 13's applications in the same shape, without `guid` and with
+    `application` (the name that identifies it, which every site argument takes), `applicationType` and `isDefault`.
+    `sites primary` and `sites host add|remove` change applications: `*` makes an application the default (moved from
+    the previous one in one save), an application's URL follows its hosts (no SiteUrl, so no `--keep-site-url` or
+    `--https unset`), a new host without a scheme gets http on loopback names and the site URL's scheme otherwise, and
+    `--type preview|media` adds CMS 13's preview and media hosts (refused on CMS 12).
+  - **Job names:** CMS 13 stores a job's class name. `jobs` shows the name admin mode shows (a built-in table for the
+    CMS's own jobs, `[ScheduledJob(DisplayName = ...)]` in the site's code for its own), and both names work wherever a
+    job is named. Remove Unused Content Variations (new in CMS 13) needs `--allow-destructive`.
+  - **Content types of unknown origin:** CMS 13 records no class for a type whose class has a GUID. A type with neither
+    a class nor a model-sync version on record, and no class in the build with its GUID (made in admin mode, or a code
+    type a content import overwrote), is listed by `types --orphaned` with `originUnknown: true` once its class is gone,
+    and `types remove`, `remove-property` and `prune` remove it only with **`--include-unknown-origin`**. In a shared
+    database's drift such types are listed with `informational: true` and don't stop writes.
+- **Visual Builder (CMS 13).** Kinds `experience`, `section`, `element` and `contract` (`--kind page` includes
+  experiences, `--kind block` sections and elements). **`get`** of an experience or section shows its **`composition`**
+  (sections → rows → columns → elements, each with key, name, type, display template and settings, and an inline
+  block's values or a shared block's identity) instead of the `Layout` and `UnstructuredData` properties it is stored in
+  (`--fields Layout` shows those); `get --text` prints it as a tree. `search` and `where-used` name the section and
+  element a match is in; `where-used --type` counts inline blocks; `types` and `type` show `compositionBehaviors`,
+  `contracts`, `implementedBy`, `blueprints`, `inlineUses` and `displayTemplates`; `allowed-in` lists where a
+  composition takes a type. **`opticli display-templates`** lists display templates and their settings.
+  - **`opticli composition <ref> add|remove|move|set`** changes one node (a section, row, column or element, named by
+    its key or its unique name) on a new version, a draft unless `--publish`, with `--dry-run`: new inline blocks with
+    their values, shared blocks by reference, sections from a section blueprint, names, display templates and settings
+    (checked against the site's), and the whole node as JSON (`--node`). The CMS's structure rules are checked first, in
+    opticli's words.
+  - **`composition`** in `set` and `create` values (`composition=@file.json`) writes a whole composition in `get`'s shape:
+    structure, order, names and styles as given, nodes with a key keep their block and get only the values given, so
+    `get`'s output can be edited and written back. Write results list the changed nodes. Plans have an op `composition`.
+  - **Content variations:** `versions` marks a variation's versions (`variation`), **`get --variation <key>`** shows one,
+    `drafts` and `find --status draft` count a variation's drafts (`variationDrafts`), and **`--variation <key>`** on `set`
+    and `composition` writes one.
+  - **Blueprints** are left out of `tree`, `children`, `find`, `search` and `drafts` unless **`--blueprints`**.
+    **`create --blueprint <ref|name>`** makes content from one (its type, values and composition), and `composition add
+    section --blueprint` adds a section from a section blueprint.
+- **LocalDB:** a connection string with `AttachDbFilename=|DataDirectory|\...` (the CMS templates' default) is resolved
+  to the project's `App_Data` on Windows, as the site does. On Linux and macOS, where LocalDB doesn't exist, it is
+  refused (exit 3) with a hint instead of failing with `internal`.
+
+### Changed
+
+- `--values` (on `set`, `create`, `composition` and the other writes) also takes a value as `get` shows it,
+  `{"type": ..., "value": ...}`, references, links and local blocks included; a value `get` cut short is refused.
+- Validation issues can carry a `code`; CMS 13's unresolved references have `unresolvedReference`. On CMS 13, `apply`
+  refuses up front a plan whose rich text links to content a later step creates (CMS 13 refuses such a save): reorder
+  it, or add the link in a later `set`.
+- `--connection` strings with `Network Library=...` or `np:` are `refused` with a hint instead of `internal`.
+
+### Fixed
+
+- `get` showed `startPublish: null` for content whose current version is scheduled; it shows the scheduled time.
+
+### Development
+
+- `tests/fixtures/cms13/setup.sh` builds a fresh and an upgraded CMS 13 Alloy site with `VisualBuilderFixture.cs` (Visual
+  Builder types, display templates, experiences, blueprints and content variations). `tests/fixtures/edge-cases/setup.sh`
+  also builds the edge-case site from the CMS 13 site, with `Cms13Fixture.cs` in place of `Cms12Fixture.cs`, and
+  `drift.sh` runs on CMS 13 copies. `read-battery.sh`, `write-battery.sh` and `vb-write-battery.sh` run whole command
+  sets against one site. The integration oracle compares compositions node by node with the CMS's own composition
+  mapper.
+- `OptiCli.Agent.Tests` runs on both builds (net8.0 for CMS 12, net10.0 for CMS 13). CI and the release workflow build
+  and pack both agents, `check-package.sh` checks that each is there and built for its .NET, and the Windows CI job
+  installs SQL Server Express LocalDB and requires `LocalDbTests` to pass (`OPTICLI_REQUIRE_LOCALDB`).
+
 ## 0.14.0 (6 October 2026)
 
 ### New

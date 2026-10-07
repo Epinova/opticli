@@ -32,29 +32,30 @@ the one saved with `opticli db use`, else `connection` in the user config (`~/.c
 | Command | Notes |
 |---|---|
 | `doctor` | Always exits 0. `data.healthy`, `data.warnings`; `connection.candidates`, `database`, `agent` (`scheduler`: `on`/`off` in the running site), `scheduler` (`serve`: what `serve` does, `running`, `overdueJobs`), `skills`, `sitesMapping` (each entry of the saved `sites primary` mapping: `key`, `saved`, `primary`, `status`: `matches`, `differs`, `noSite`, `invalid`). |
-| `sites` | Hosts (`name`, `type`: undefined, primary, edit, redirectPermanent, redirectTemporary; `language`, `https`), URL (SiteUrl), start page, master language, assets root. |
+| `sites` | Hosts (`name`, `type`: undefined, primary, edit, redirectPermanent, redirectTemporary, on CMS 13 also preview, media; `language`, `https`), URL (SiteUrl), start page, master language, assets root. CMS 13 lists applications: no `guid`, plus `application` (its name, the key), `applicationType` (`inProcessWebsite`, `website`), `isDefault` (answers unknown hosts, as `*` did). |
 | `languages [--all]` | Enabled branches (all with `--all`), item counts, which sites use each as master. |
-| `types [--kind page\|block\|media\|folder\|other] [--unused] [--orphaned] [--sort name\|instances]` | `instances` = non-deleted items. Sorted by name unless `--sort instances`. `--orphaned`: types defined in code (the CMS has a class on record, `modelType`) whose class is gone; the CMS keeps such a type while content (or a block property) uses it. Through the running site when `serve` runs (every class it can't load, packages' too; `meta.source: agent`); otherwise a source scan of the site's own assemblies' types (by GUID, then name), with a warning that says why the site wasn't asked (not running, an older agent, or its error). `types remove|remove-property|prune` remove them: see [Orphaned content types](#orphaned-content-types). |
-| `type <name\|class\|guid>` | `properties[]` (name, type, blockType, list, cultureSpecific, required, tab, order, displayName, `source` file:line, `declaredIn`, `allowedTypes`/`restrictedTypes` from `[AllowedTypes]`, `uiHint`), `classes[]` (file, line, `baseTypes`), `views[]` (file, `matchedBy`: fileName, partialName, viewComponent, model), `sourceRoot`. `existsOnModel: false` = in the DB but not in code (removed from code, which the CMS keeps while it has values, or added in admin mode), with `values` (`content`: content items holding a value, `versions`: versions holding one; values inside a block property and category selections count, as removing it deletes them) and a warning. Controllers are not listed. |
-| `allowed-in <type> [--kind K] [--explicit]` | ContentArea/reference properties of every type that can hold `<type>`, from `[AllowedTypes]` in code: `allowed` (`explicit` + `matchedBy`, or `any` for a ContentArea/reference list without the attribute), `allowedTypes`, `uiHint`, `source`. Base classes and interfaces declared in the sources count. Editor descriptors (`uiHint`) and metadata extenders can change the rules at runtime; they are not evaluated. |
-| `get <ref>` | `--lang`, `--version published\|latest\|<id>` (default: published, or the latest draft if the branch was never published), `--fields A,B` (whole values; identity fields like `name`, `saved` are always shown, so `--fields name` gives just those), `--full`, `--all-properties`, `--expand` (inline ContentArea items / referenced content one level). `saved`/`changedBy` belong to the version shown. With `--lang`, language settings apply: a replacement language, or (no branch) the first fallback language that has one; `languageRule` (`replacement`, `fallback`, `none`) and `notes` say so. `projects` lists the projects that hold a version of it. |
+| `types [--kind page\|block\|media\|folder\|other] [--unused] [--orphaned] [--sort name\|instances]` | CMS 13 kinds too: `experience`, `section`, `element`, `contract` (`--kind page` includes experiences, `block` sections and elements); CMS 13 fields `compositionBehaviors`, `contracts`, `blueprints` (not in `instances`), `inlineUses` (inline blocks in current versions; `--unused` leaves out types used inline, and contracts). `instances` = non-deleted items. Sorted by name unless `--sort instances`. `--orphaned`: types defined in code (the CMS has a class on record, `modelType`) whose class is gone; the CMS keeps such a type while content (or a block property) uses it. Through the running site when `serve` runs (every class it can't load, packages' too; `meta.source: agent`); otherwise a source scan of the site's own assemblies' types (by GUID, then name; on CMS 13 also the GUIDs of the build output's classes), with a warning that says why the site wasn't asked (not running, an older agent, or its error). CMS 13: a type with no class or model-sync version on record and no class in the build with its GUID has `originUnknown: true` (made in admin mode, or a code type a content import overwrote). `types remove|remove-property|prune` remove them: see [Orphaned content types](#orphaned-content-types). |
+| `type <name\|class\|guid>` | `properties[]` (name, type, blockType, list, cultureSpecific, required, tab, order, displayName, `source` file:line, `declaredIn`, `allowedTypes`/`restrictedTypes` from `[AllowedTypes]`, `uiHint`), `classes[]` (file, line, `baseTypes`), `views[]` (file, `matchedBy`: fileName, partialName, viewComponent, model), `sourceRoot`; CMS 13: `kind`, `compositionBehaviors`, `contracts`, `implementedBy` (a contract's), `blueprints`, `displayTemplates`. `existsOnModel: false` = in the DB but not in code (removed from code, which the CMS keeps while it has values, or added in admin mode), with `values` (`content`: content items holding a value, `versions`: versions holding one; values inside a block property and category selections count, as removing it deletes them) and a warning. Controllers are not listed. |
+| `allowed-in <type> [--kind K] [--explicit]` | ContentArea/reference properties of every type that can hold `<type>`, from `[AllowedTypes]` in code: `allowed` (`explicit` + `matchedBy`, or `any` for a ContentArea/reference list without the attribute), `allowedTypes`, `uiHint`, `source`. Base classes and interfaces declared in the sources count. Editor descriptors (`uiHint`) and metadata extenders can change the rules at runtime; they are not evaluated. CMS 13: `allowed: "composition"` rows (`property: "composition"`) for an experience's outline (SectionEnabled types) and a section's columns (ElementEnabled types). |
+| `get <ref>` | `--lang`, `--version published\|latest\|<id>` (default: published, or the latest draft if the branch was never published), `--fields A,B` (whole values; identity fields like `name`, `saved` are always shown, so `--fields name` gives just those), `--full`, `--all-properties`, `--expand` (inline ContentArea items / referenced content one level). `saved`/`changedBy` belong to the version shown. With `--lang`, language settings apply: a replacement language, or (no branch) the first fallback language that has one; `languageRule` (`replacement`, `fallback`, `none`) and `notes` say so. `projects` lists the projects that hold a version of it. CMS 13: `--variation <key>` shows a content variation (see [Visual Builder](#visual-builder-cms-13)); an experience or section shows `composition`. |
 | `resolve <url>` | `--site`. Result has `site`, `host`, `languageSource`, `matchedBy`. |
 | `url <ref>` | Per language: `path` (site-relative), `url` (absolute), `site`. |
-| `tree <ref> [--depth N] [--limit N]` | Default depth 2, max 5000 nodes (`capped`). `--limit` is children per node; the rest are counted in `more`. |
+| `tree <ref> [--depth N] [--limit N]` | Default depth 2, max 5000 nodes (`capped`). `--limit` is children per node; the rest are counted in `more`. CMS 13: Visual Builder content has `kind`; blueprints are left out (`blueprints: N` on the parent) unless `--blueprints`, as in `children`, `find`, `search` and `drafts`. |
 | `children <ref>` / `ancestors <ref>` | One level down, in the parent's `childSortOrder` / the path from the root. Children show `sortIndex` when the parent sorts by `Index`. |
-| `find --type T [--where ...] [--under <ref>] [--status published\|draft\|scheduled\|expired\|any] [--lang]` | `--where` is repeatable: `Prop=value` exact, `Prop~value` contains, `Block.Prop=...` inside a local block, `Name~...` on the name, `Area=<ref>` for ContentAreas/references containing that content. Deleted items excluded. `--status scheduled`: a version waits for the "Publish delayed content versions" job (`publishAt`, its first); `expired`: published, but the stop-publish date has passed, so visitors don't see it (`expiredAt`). Without `--lang` both look at each item's master language only, as the rest of `find`. |
-| `search <text> [--in names\|strings\|all] [--lang]` | One row per item and language with `matches[]` (`property`, `snippet`). Capped at 2000 values per source (`meta.warnings`). |
-| `where-used --type T` | Every instance of a type (outside the recycle bin): `ref`, `name`, `count`, `usages[]` (as below), the most used first, unused ones last; `meta.warnings` sums it up. |
-| `where-used <ref> [--pages]` | Rows: owner identity + `saved`, `changedBy` + `property` (e.g. `MainArea`, `Hero.Link`, `MainArea[2].Text`), `kind` (`contentArea`, `contentReference`, `contentReferenceList`, `richTextLink`, `richTextBlock`, `link`, `linkCollection`, `url`, `text`, `softlink`), `sources` (`softlink` = CMS link index, `property` = value scan). Deleted owners last, `deleted: true`. The value scan reads each branch's primary values (published, else the latest draft); the link index covers saved versions. `--pages` follows block owners up to the pages (rows get `via`: the blocks in between), newest `saved` first. A reference only inside personalized rich text has `visitorGroups` (and `visitorGroupNames`): only those visitors see it. |
-| `versions <ref> [--lang]` | Newest first: `ref` (`id_version`), `language`, `status`, `name`, `saved`, `changedBy`, `startPublish`, `primary`. |
-| `drafts [--since <date>] [--by <user>] [--kind K] [--type T] [--lang]` | One row per item and language with unpublished changes: `status` and `version` of the newest draft, `saved`, `changedBy`, `drafts` (unpublished versions newer than the published one), `publishAt` for a scheduled one. `--since` is UTC. |
+| `find --type T [--where ...] [--under <ref>] [--status published\|draft\|scheduled\|expired\|any] [--lang]` | `--where` is repeatable: `Prop=value` exact, `Prop~value` contains, `Block.Prop=...` inside a local block, `Name~...` on the name, `Area=<ref>` for ContentAreas/references containing that content. Deleted items excluded. `--status scheduled`: a version waits for the "Publish delayed content versions" job (`publishAt`, its first); `expired`: published, but the stop-publish date has passed, so visitors don't see it (`expiredAt`). Without `--lang` both look at each item's master language only, as the rest of `find`. CMS 13: a content variation's draft or scheduled version counts too (`variationDrafts` names the variations). |
+| `search <text> [--in names\|strings\|all] [--lang]` | One row per item and language with `matches[]` (`property`, `snippet`; CMS 13: `section` and `element` `{key, name, type}` for text in a composition). Capped at 2000 values per source (`meta.warnings`). |
+| `where-used --type T` | Every instance of a type (outside the recycle bin): `ref`, `name`, `count`, `usages[]` (as below), the most used first, unused ones last; `meta.warnings` sums it up. CMS 13: blueprints last with `blueprint: true`, not counted; a row with `inline: true` for the type's inline blocks (sections, elements). |
+| `where-used <ref> [--pages]` | Rows: owner identity + `saved`, `changedBy` + `property` (e.g. `MainArea`, `Hero.Link`, `MainArea[2].Text`), `kind` (`contentArea`, `contentReference`, `contentReferenceList`, `richTextLink`, `richTextBlock`, `link`, `linkCollection`, `url`, `text`, `softlink`), `sources` (`softlink` = CMS link index, `property` = value scan). Deleted owners last, `deleted: true`. The value scan reads each branch's primary values (published, else the latest draft); the link index covers saved versions. `--pages` follows block owners up to the pages (rows get `via`: the blocks in between), newest `saved` first. A reference only inside personalized rich text has `visitorGroups` (and `visitorGroupNames`): only those visitors see it. CMS 13: a usage inside a composition names its `section` and `element`; a shared block placed in one has `property` and `kind` `composition`. |
+| `versions <ref> [--lang]` | Newest first: `ref` (`id_version`), `language`, `status`, `name`, `saved`, `changedBy`, `startPublish`, `primary`. CMS 13: a content variation's versions have `variation` (its key) and never `primary`. |
+| `drafts [--since <date>] [--by <user>] [--kind K] [--type T] [--lang]` | One row per item and language with unpublished changes: `status` and `version` of the newest draft, `saved`, `changedBy`, `drafts` (unpublished versions newer than the published one), `publishAt` for a scheduled one. `--since` is UTC. CMS 13: a content variation with a draft newer than its own published version has a row of its own with `variation`. |
 | `history <ref> [--since <date\|7d>] [--by <user>]` | The CMS's change log (`tblActivityLog`) for one item, newest first: `when`, `by`, `action` (`create`, `publish`, `delayedPublish`, `requestApproval`, `rejected`, `checkIn`, `move`, `delete` = to the recycle bin, `restore` = out of it, `deletePermanently`, `deleteLanguage`, `deleteVersion`, ...), `version`, `language`, `name` (as it was), `from`/`to` (`ref`, `name`) for moves, `previousStatus` for a publish. The only record of moves and deletes; drafts saved aren't in it (`versions`), and the Change Log Auto Truncate job removes old entries. |
 | `categories` | The category tree, depth first: `id`, `name` (what `set Category=...` takes; `get` shows it), `description` (edit mode's name, which `set` takes too), `parent`, `path`, `depth`, `selectable` (only those can be set), `visible`, `items` (content that has it), `guid`. |
 | `visitor-groups` | `id` (what `visitorGroups` in `get` and `set` hold), `name`, `match` (`all`, `any`, `points` with `pointsThreshold`), `securityRole` (usable in access rights), `statistics`. Criteria and notes aren't read. |
 | `projects [<id>]` | Projects (versions of several items published together): `id`, `name`, `status`, `created`, `createdBy`, `publishAt`, `items`. With an id, its items: `ref`, `version`, `type`, `name`, `language`, `status`. Read-only. |
 | `trash [--since <date\|7d>] [--by <user>] [--type T]` | What is directly in the recycle bin (what was deleted), newest first: identity, `deletedBy`, `deleted` (UTC), `descendants` (below it, coming back with it), `originalParent` (`ref`, `name`, `type`, `path`, `url`; `deleted: true` when it is in the recycle bin too, `missing: true` when it is gone): the parent the CMS stored when it was deleted, where `restore` puts it. Null when the CMS has no record of it (`restore --to`). Read from the database, or from the site while `serve` runs (as `restore` reads it; `meta.source: agent`); a warning says why the site wasn't asked when it wasn't. |
+| `display-templates [--type T]` | CMS 13: Visual Builder display templates: `key`, `name`, `nodeType`/`baseType`/`contentType` it is for (absent: any), `isDefault`, `settings[]` (`key`, `name`, `editor` select or checkbox, `choices`). `--type`: the ones content of that type can use. Empty on CMS 12. |
 | `blob <ref>` | Media only: blob URI, file path on disk, `exists`; same for the thumbnail. |
-| `jobs [--all] [--enabled\|--disabled] [--failed]` | Scheduled jobs: `id`, `name`, `enabled`, `schedule` (`every 1 hour`, `manual`), `nextRun`, `overdue` (enabled, next run passed), `lastRun`, `lastStatus` (`succeeded`, `failed`, `cancelled`, `unableToStart`, `aborted`), `lastMessage` (one line), `running` (`true`, `false`, `"stale"`: its process stopped pinging), `stoppable`, `class`, `source` (file:line in the site's code; null for a job from a package), `registered: false` for a job in the code the database lacks (the site registers jobs when it starts). `--all` adds jobs the CMS hides. See [Scheduled jobs](#scheduled-jobs). |
+| `jobs [--all] [--enabled\|--disabled] [--failed]` | Scheduled jobs: `id`, `name` (on CMS 13, whose database has only the class name: the CMS's own jobs' readable names, the site's from `[ScheduledJob(DisplayName = ...)]`, else the class), `enabled`, `schedule` (`every 1 hour`, `manual`), `nextRun`, `overdue` (enabled, next run passed), `lastRun`, `lastStatus` (`succeeded`, `failed`, `cancelled`, `unableToStart`, `aborted`), `lastMessage` (one line), `running` (`true`, `false`, `"stale"`: its process stopped pinging), `stoppable`, `class`, `source` (file:line in the site's code; null for a job from a package), `registered: false` for a job in the code the database lacks (the site registers jobs when it starts). `--all` adds jobs the CMS hides. See [Scheduled jobs](#scheduled-jobs). |
 | `jobs log [<job>] [--failed] [--since <date\|7d>] [--limit N]` | Runs, latest first (20 by default): `job`, `jobId`, `started`, `finished`, `duration`, `durationMs`, `status`, `trigger` (`scheduler`, `user`, `restart`), `server`, `message` (whole; it can be HTML). Without `<job>`: every job's runs. |
 | `access <ref>` | `inherited`, `from` (the item the entries are stored on: itself, or the nearest ancestor with its own), `entries[]` (`name`, `kind`: role, user or visitorGroup, `levels`: `FullAccess` or e.g. `["Read","Edit"]`, `mask`). Read from the database; no `serve` needed. |
 | `sql "<SELECT ...>" [--limit N] [--full] [--include-personal-data]` | One SELECT/WITH statement, run in a rolled-back transaction; returns 100 rows unless `--limit` (`truncated: true` when there were more); `--jsonl` prints rows. Forms submissions and user/membership tables need `--include-personal-data`. In `sys`, only the views that describe this database's schema (`sys.objects`, `tables`, `columns`, `indexes`, `index_columns`, `types`, `schemas`, `foreign_keys`, `sql_modules`, ...) are allowed, and `INFORMATION_SCHEMA` views; `sys.dm_*`, `fn_*`, `sys*` compatibility views and server-wide views are refused. Put a space between a number and a following word (`1 AS x`, not `1AS x`). |
@@ -83,6 +84,33 @@ plus its resolved links and embedded blocks, and `personalized[]` for the sectio
 (`visitorGroups`, `visitorGroupNames`, `group`, their `value` and `links`). `visitorGroupNames` sit beside the ids, which
 are what `set` takes back; a visitor group id that doesn't exist is refused on write.
 
+### Visual Builder (CMS 13)
+
+An experience (`kind: experience`) is a page made of sections; a section holds rows, a row columns, a column elements.
+`get` shows its `composition` instead of the properties it is stored in (`Layout`, `UnstructuredData`; `--fields
+Layout` shows the stored value), and `--text` as a tree:
+
+```json
+"composition": {"layout": "outline", "culture": "en", "displayTemplate": "page", "displaySettings": {"tone": "dark"}, "sections": [
+  {"key": "<guid>", "name": "Hero", "type": "HeroSection", "inline": true, "displayTemplate": "heroLook", "displaySettings": {"background": "dark"}, "rows": [
+    {"key": "<guid>", "name": "Row", "columns": [
+      {"key": "<guid>", "name": "Left", "elements": [
+        {"key": "<guid>", "name": "Intro", "type": "TextElement", "inline": true, "properties": {"Heading": {"type": "LongString", "value": "Hi"}}},
+        {"key": "<guid>", "name": "Shared", "type": "TextElement", "content": {"ref": "103", "name": "Shared text", "status": "published"}}]}]}]},
+  {"key": "<guid>", "nodeType": "component", "name": "Banner", "type": "BannerBlock", "inline": true, "properties": {"Title": {"type": "LongString", "value": "Sale"}}}]}
+```
+
+`inline: true` + `properties` is a block stored in the experience; `content` is a shared block placed by reference
+(its values are its own: change them with `set <its ref>`). A section-enabled block in the outline has `"nodeType":
+"component"` and no rows. `missing: true` marks a node whose block isn't stored, and `unplaced` lists stored blocks no
+node shows (the CMS ignores both). A section (`kind: section`) or a section blueprint has a `grid` composition with
+`rows`.
+- **Content variations:** versions of their own (a key, e.g. a campaign) that store only what they change; the rest
+  is the published version's. `versions` marks them `variation`; `get <ref> --variation <key>` shows its published
+  version (`--version latest`: its newest), or `get <id>_<version>`.
+- **Blueprints** (`blueprint: true`): templates new content is made from, under the "Blueprints" folder. Listings
+  leave them out unless `--blueprints`; `where-used` keeps them.
+
 ## Write commands (need `opticli serve`)
 
 All take `--dry-run`. `set`, `create`, `area`, `block create`, `translate` save a draft unless `--publish`.
@@ -98,6 +126,8 @@ directly: see [Approval sequences](#approval-sequences).
 | `set <ref> Prop=value... [--values json] [--name N] [--from published\|<version>]` | `opticli set 123 Heading="New title" --dry-run` |
 | `create <parent-ref> --type T --name N [Prop=value...]` | `opticli create 45 --type ArticlePage --name "News" Heading=Hi` |
 | `area <ref> <Prop> add <block-ref> [--at N] [--display opt]` | `opticli area 123 MainArea add 789 --at 0` |
+| `composition <ref> add\|remove\|move\|set ...` (CMS 13) | `opticli composition 123 add element --in Left --type TextElement Heading=Hi --dry-run` (see [Compositions](#compositions-cms-13)) |
+| `create <parent-ref> --blueprint B --name N` (CMS 13) | `opticli create 45 --blueprint "Landing blueprint" --name "Spring" --dry-run` |
 | `area <ref> <Prop> remove <position\|ref:id>` | `opticli area 123 MainArea remove ref:789` |
 | `area <ref> <Prop> move <position\|ref:id> <to>` | `opticli area 123 MainArea move 0 2` |
 | `block create --type T --name N (--for <page-ref> \| --parent <folder-ref>)` | `opticli block create --type TeaserBlock --name Teaser --for 123` |
@@ -207,7 +237,38 @@ content it shows. `--at` and `--display` only apply to `add`; `--display` is che
     is stored as a permanent link, like the editor stores it.
   - Category property: category names (`CategoryName` in admin mode, or the display name) or ids, as an array or
     comma-separated: `Topics=News,Events` or `{"Topics":["News","Events"]}`. `Topics=` clears it.
+- A value may also be given as `get` shows it, `{"type": ..., "value": ...}` (references, links and local blocks as
+  `get` shows them too): the CLI unwraps it. A value `get` cut short (`truncated`) is refused: read it with `--full`.
 - Property names are checked against the content type before anything is sent; a typo fails with a suggestion.
+
+### Compositions (CMS 13)
+
+`opticli composition <ref> <action> ...` edits a Visual Builder experience (or section) on a new version, a draft unless
+`--publish`; all of `set`'s write options apply (`--dry-run`, `--lang`, `--from`, `--base-version`, ...). A node is
+its key (as `get` shows it), or its name when only one node has it; `root` (or nothing) is the composition itself.
+- `composition <ref> add section|row|column|element [Prop=value...]`: `--in <node>` (default: the experience's sections), `--at N`,
+  and `--type T` (a new inline block, with its values), `--ref <ref>` (a shared block), or for a section `--blueprint
+  <section blueprint>` (its rows, with new keys); `--name`, `--template <key>`, `--setting k=v` (repeatable). Or the
+  whole node with its children, as `get` shows one: `--node '<json>'`.
+- `composition <ref> set <node> [Prop=value...] [--values json]`: an inline block's values, `--name`, `--template` (`""` clears it and its
+  settings), `--setting k=v` (merged; `k=` removes one). A shared block's values are refused: `set <its ref>`.
+- `composition <ref> move <node> --in <node> --at N`; `composition <ref> remove <node>` (with everything in it).
+- Structure rules (outline: sections and SectionEnabled blocks; section: rows; row: columns; column: ElementEnabled
+  blocks) and display templates and settings (`opticli display-templates`: node type, content type, keys, choices) are
+  checked first, as `usage` errors naming the node. The CMS validates the rest on save (`validation`).
+- The whole composition: `composition` in `set`/`create` values (`--values '{"composition": {...}}'`,
+  `composition=@file.json`, or a plan's `properties`), in `get`'s shape. Structure, order, names and styles are set as
+  given; a node with a key keeps its block (its type can't change) and only the properties given change; a node
+  without a key is new; nodes left out are removed. `get`'s output written back unchanged changes nothing.
+- Output: `composition[]` per changed node: `change` (`added`, `removed`, `moved`, `changed`), `nodeType`, `key`, `name`,
+  `type`, `in`, `at`, `changes[]` (`field`, `before`, `after`). New nodes get new keys, shown here.
+- `--variation <key>` (also on `set`): writes that content variation; one without a version yet starts from the
+  published version. `publish <id>_<version>` publishes a variation's version; the content's own published version
+  stays.
+- `create <parent> --blueprint <ref|GUID|name> --name N`: the blueprint's type (`--type` optional, must match), values
+  and composition, in one language and one version, saved like any `create` (dry run, `--guid`, draft or publish).
+- Not supported: making or changing blueprints and display templates; dry runs of composition edits on content a plan
+  creates (checked when the plan runs, `deferred`).
 
 ### Built-in settings
 
@@ -325,6 +386,13 @@ For a restored copy of a production database, whose sites still have the product
   (`validation`; make another host primary first). Removing `*` warns.
 - Against a shared database `sites primary` and `sites host remove` are refused (exit 3), and `host add` takes only
   `--type undefined`, which makes a site reachable on a local host without changing its URLs for anyone else.
+- CMS 13 (applications): the site is named by its display name, id or application name. No SiteUrl: an application's
+  URL is its first primary host by name, else its first undefined one (`changes` shows `URL: old → new`);
+  `--keep-site-url` and `--https unset` are `usage`. A new host without a scheme or `--https` is http on `localhost`,
+  `*.localhost` and loopback addresses, else the scheme of the site's URL. `host add <site> "*"` makes it the default
+  application, taking that from the previous default in one save (listed too; the output has `isDefault`, never a `*`
+  host). `--type preview|media`: one each per application (preview only on a headless one), refused on CMS 12. No site
+  whose start page is below another's.
 
 ### Scheduled jobs
 
@@ -347,7 +415,8 @@ its name only it has (several matches: `usage`, listing them).
   of an overdue job moves its next run on, as the admin UI does.
 - Jobs that delete for good are refused (exit 3) unless `--allow-destructive`: Automatic Emptying of Trash (the
   recycle bin), Remove Abandoned BLOBs, Trim Content Versions, Remove Unrelated Content Assets, Change Log Auto
-  Truncate (the activity log), Notification Message Truncate, Monitored Tasks Auto Truncate, and Commerce's Remove
+  Truncate (the activity log), Notification Message Truncate, Monitored Tasks Auto Truncate, (CMS 13) Remove Unused
+  Content Variations, and Commerce's Remove
   Expired Carts, Permanently Delete Archived and Remove Expired Lowest Price; so is Archive Function, which moves every
   expired page to its archive page. Pass it only after the user confirmed that job by name: on a restored database
   these are often the only copy. `jobs set` needs it too for a change that lets the scheduler run one of them (enabled
@@ -383,7 +452,10 @@ names or addresses.
 ### Orphaned content types
 
 Through the site (`serve`; without it `unreachable`, exit 4), with the CMS's `IContentTypeRepository.Delete` and
-`IPropertyDefinitionRepository.Delete`. Refused against a shared database (exit 3). Not in `apply`.
+`IPropertyDefinitionRepository.Delete` (CMS 13: the type saved without the property). Refused against a shared database
+(exit 3). Not in `apply`. CMS 13: a type of unknown origin (`originUnknown` in `types --orphaned`: made in admin mode,
+or a code type an import overwrote) is `refused` unless `--include-unknown-origin` (`prune` lists it under `kept`), and
+its record has `originUnknown: true`; ask the user first.
 - `types remove <type>...` (name or GUID): only a type whose class (`modelType`) the running site can't load. `refused`:
   made in admin mode, one of the CMS's own, a class the site loads. `conflict`: content of the type (also in the recycle
   bin), its inline blocks in ContentAreas, page-type values naming it (the CMS would clear them), a property that has it
@@ -471,6 +543,9 @@ compared (`checked: false`).
   `serve` to compare again). Ask the user before confirming.
 - `local` ahead: this branch has changes that aren't deployed there (check out what is deployed, or deploy first).
   `database` ahead: that environment runs newer code than this checkout (pull and build).
+- CMS 13: types of unknown origin are listed with `ahead: unknown`, `informational: true`; they count toward neither
+  `differences` nor the fingerprint, so they don't stop writes. New job classes the site registers at startup aren't
+  drift.
 
 ### Approval sequences
 
@@ -513,6 +588,13 @@ Ops: `set`, `create`, `area`, `block`, `upload`, `translate`, `publish`, `unpubl
   stay inside its folder, also through symlinks, unless `apply --allow-outside`.
 - `{"op": "access", "ref": "$page", "grant": {"Authenticated": "Read"}, "revoke": ["Everyone"], "breakInheritance": true}`
   (also `grantUsers`, `inherit`, `allowUnknownRole`).
+- CMS 13: `"composition"` in a `create`'s or `set`'s `properties` is the whole composition (`"@file.json"` reads it);
+  `create` takes `"blueprint"` instead of `"type"`; `"variation"` on `set` and `composition`.
+  `{"op": "composition", "ref": "$page", "action": "add", "nodeType": "element", "in": "Left", "value": {"type": "TextElement", "properties": {"Heading": "Hi"}}}`
+  (`action`: add with `nodeType`, `in`, `at`, `value` as `get` shows a node; remove and move with `node` (and `in`, `at`);
+  set with `node` and `value`: `name`, `displayTemplate`, `displaySettings`, `properties`).
+- CMS 13 refuses a save whose rich text links to content that doesn't exist yet, so a link to content a later step
+  creates is refused up front: put the linked content first, or add the link in a later `set`.
 
 Every operation is validated before anything is written; on a failure opticli stops and reports what was saved and
 how to undo it, also when it is interrupted (Ctrl+C: `cancelled`, exit 130) or something unexpected fails:
@@ -612,3 +694,6 @@ Plans that run again (a section rebuilt after a database refresh, or repaired af
 | `refused` (exit 3) from `jobs run` or `jobs set`, naming what the job deletes | A job that deletes for good (or moves content across the site). Ask the user, naming the job and what it does; only then `--allow-destructive`. |
 | `conflict` (exit 5) | A newer version exists: `opticli versions <ref> --limit 3`, then re-run. With `details.reason: "pendingDraft"`: someone else's unpublished changes would go live too; show `details.draft` and ask the user before `--include-draft`. |
 | Values look cut off | `truncated: true`: use `get <ref> --fields Prop` or `--full`. |
+| `refused` (exit 3): LocalDB "only runs on Windows" | The site's connection string is the CMS template's LocalDB one, which Linux and macOS can't use (the site can't either). Tell the user: point it at a SQL Server database (e.g. in a container), or pass `--connection`. |
+| `validation` with `code: "unresolvedReference"` (CMS 13) | Rich text or a reference points at content that doesn't exist. Link existing content, or create the target first. |
+| `refused` from `serve`: CMS 13 build, CMS 12 database | Starting it would upgrade the database for good. Tell the user; only they decide to upgrade it (by starting the site themselves). |

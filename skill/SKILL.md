@@ -1,12 +1,12 @@
 ---
 name: opticli
-description: Inspect and change content of an Optimizely CMS 12 (EPiServer) site the user develops locally (against its local or development database) with the opticli CLI instead of hand-written SQL or guessing from code. Use when you need to know what CMS content exists (pages, blocks, media, folders), what a page or block contains (properties, ContentArea items, rich text), which page type or block type something is and which C# class and Razor view render it, where a block or page is used, which content a URL shows, what drafts and versions exist, or when the user asks you to create or edit CMS content (set properties, add a block to a ContentArea, create a page or block, translate, publish) in their development site, or to point the sites of a restored database at localhost (their host names). Also for scheduled jobs: which exist, whether a job (an import, a sync) ran and how it ended, and running or rescheduling one. And for the recycle bin: what was deleted, by whom, and bringing it back; a local login for a restored database; and content types and properties that removed code left in the database.
-opticli-version: 0.14.0
+description: Inspect and change content of an Optimizely CMS 12 or 13 (EPiServer) site the user develops locally (against its local or development database) with the opticli CLI instead of hand-written SQL or guessing from code. Use when you need to know what CMS content exists (pages, blocks, media, folders), what a page or block contains (properties, ContentArea items, rich text, a CMS 13 Visual Builder experience's sections and elements), which page type or block type something is and which C# class and Razor view render it, where a block or page is used, which content a URL shows, what drafts and versions exist, or when the user asks you to create or edit CMS content (set properties, add a block to a ContentArea or an element to a Visual Builder section, create a page or block, translate, publish) in their development site, or to point the sites of a restored database at localhost (their host names). Also for scheduled jobs: which exist, whether a job (an import, a sync) ran and how it ended, and running or rescheduling one. And for the recycle bin: what was deleted, by whom, and bringing it back; a local login for a restored database; and content types and properties that removed code left in the database.
+opticli-version: 0.15.0
 ---
 
 # opticli: Optimizely CMS content from the command line
 
-opticli reads an Optimizely CMS 12 site's database directly (fixed, read-only queries) and writes through the
+opticli reads an Optimizely CMS 12 or 13 site's database directly (fixed, read-only queries) and writes through the
 CMS itself inside the site running on this machine. Run it from anywhere in the site's repository; it finds the CMS
 project and its **development database** on its own: a local one automatically, a remote one (e.g. in Azure) only
 after the user has chosen it (see "Which database" below).
@@ -16,7 +16,7 @@ The database says what *does* exist (content items, their values, where blocks a
 opticli for the second kind of question, and to find the code: `opticli type <Name>` gives the class file, views and
 per-property `allowedTypes`; `opticli allowed-in <Type>` answers "where may this block go" across all types.
 
-This file was written for opticli 0.14.0 (`opticli --version`). Longer material (every command and option, value
+This file was written for opticli 0.15.0 (`opticli --version`). Longer material (every command and option, value
 syntax, plan files, output fields, troubleshooting) is in [reference.md](reference.md): read it when you write, or
 when a command below doesn't cover your question.
 
@@ -50,12 +50,14 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
 | Is opticli set up, which DB, is the site running? | `opticli doctor` |
 | Which sites, hosts and start pages exist? | `opticli sites` |
 | Point a restored database's sites at localhost (only when asked) | `opticli sites primary "Site A=localhost:5001" --dry-run` (needs `serve`) |
-| Which page/block types exist, how many items each? | `opticli types --kind block --sort instances` (`page`, `media`, `folder`) |
+| Which page/block types exist, how many items each? | `opticli types --kind block --sort instances` (`page`, `media`, `folder`; CMS 13 also `experience`, `section`, `element`, `contract`) |
 | A type's properties, C# class file and views | `opticli type ArticlePage` |
 | Types or properties left behind by removed code | `opticli types --orphaned`; `opticli type <Name>` (`existsOnModel: false`, `values`) |
 | Remove them (only when asked) | `opticli types prune --dry-run`; `opticli types remove <Type>`, `opticli types remove-property <Type> <Prop>` (needs `serve`) |
 | Which ContentAreas/references accept a type | `opticli allowed-in TeaserBlock --kind page` |
 | Everything in one item, decoded | `opticli get 123` (`--fields Heading,MainArea`, `--lang en`) |
+| A Visual Builder page's sections and elements (CMS 13) | `opticli get 123 --fields composition` (`--text` for a tree) |
+| The styles a Visual Builder node may use (CMS 13) | `opticli display-templates --type <ElementType>` |
 | Which content a URL shows | `opticli resolve https://www.example.com/en/news/` |
 | An item's URL(s) | `opticli url 123` |
 | What's below an item | `opticli tree 123 --depth 1` / `opticli children 123` |
@@ -95,6 +97,35 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
   `checkedIn` = ready to publish; a `drafts` count in the thousands means an import or integration job saves versions.
 - **Just the metadata of an item** (`saved`, `changedBy`, `status`): `opticli get <ref> --fields name`. Without
   `--version`, `get` shows the published version, or the latest draft when the branch was never published.
+
+## Visual Builder (CMS 13)
+
+An experience (`kind: experience`) is a page made of **sections → rows → columns → elements**. `get` shows it as
+`composition` (instead of the `Layout`/`UnstructuredData` properties it is stored in): every node has a `key`, `name`,
+`type` and styles (`displayTemplate`, `displaySettings`); an inline section or element has `properties`, a shared block
+placed by reference has `content: {ref, ...}` (its values are its own: `set <its ref>`). Always read it first:
+`opticli get <ref> --fields composition`. `search` and `where-used` name the section and element a match is in.
+
+- **Edit one node** (needs `serve`; a draft unless `--publish`; dry-run first). A node is its key, or its name when
+  only one node has it. `opticli types --kind section` / `--kind element` list the types that fit,
+  `opticli display-templates` the templates and settings (an unknown one is an error).
+
+  ```sh
+  opticli composition <ref> add section --type <SectionType> --name Hero --dry-run
+  opticli composition <ref> add row --in Hero              # then: add column --in <row key>
+  opticli composition <ref> add element --in <column> --type TextElement Heading=Hi   # or --ref <shared block>
+  opticli composition <ref> set <node> Heading="New" --template <key> --setting color=accent
+  opticli composition <ref> move <node> --in <column> --at 0
+  opticli composition <ref> remove <node>
+  ```
+- **Rewrite it whole:** save `get`'s `composition` to a file, edit it, `opticli set <ref> composition=@file.json --dry-run`.
+  Nodes with a key keep their block (only the properties you give change); nodes without one are new; nodes you
+  leave out are removed. A new page: `opticli create <parent> --type <ExperienceType> --name N composition=@file.json`.
+- **Blueprints** are templates, not content: listings leave them out unless `--blueprints`. Make a page from one with
+  `opticli create <parent> --blueprint "<name>" --name N`, a section with `composition <ref> add section --blueprint "<name>"`.
+- **Content variations** (`variation` in `versions`): a version line of its own that stores only what it changes over
+  the published version. Read with `get <ref> --variation <key>`; write with `--variation <key>` on `set` or
+  `composition` only when the user asked for that variation.
 
 ## Which database
 
@@ -155,6 +186,8 @@ order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a cod
 ## Rules
 
 - Never pass `--publish` and never run `publish` unless the user explicitly asked for the change to go live.
+- On a CMS 13 site, `serve` refuses a CMS 13 build against a CMS 12 database (it would upgrade the database for good):
+  tell the user; never work around it.
 - A publish puts the whole version live, including changes someone else saved since the published version. When
   there are any, it fails with `conflict` (exit 5) and `error.details.reason: "pendingDraft"` (a `--dry-run` reports
   `pendingDraft` with a warning). Show the user `details.draft` (`savedBy`, `saved`, `changes`) and **ask whether those changes

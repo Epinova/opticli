@@ -10,7 +10,7 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>opticli</ToolCommandName>
     <PackageId>OptiCli</PackageId>
-    <Description>Read and write local Optimizely CMS 12 sites from the command line.</Description>
+    <Description>Read and write local Optimizely CMS 12 and 13 sites from the command line, Visual Builder included.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageTags>optimizely;episerver;cms;cli;dotnet-tool</PackageTags>
     <PackageLicenseExpression>MPL-2.0</PackageLicenseExpression>

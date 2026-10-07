@@ -1,13 +1,14 @@
 # opticli
 
-A command-line tool for reading and changing the content of an **Optimizely CMS 12** site you develop on your own
-machine. It is built for AI coding agents (Claude Code and similar) as much as for people. It answers the questions
+A command-line tool for reading and changing the content of an **Optimizely CMS 12 or 13** site you develop on your
+own machine. It is built for AI coding agents (Claude Code and similar) as much as for people. It answers the questions
 you would otherwise answer with hand-written SQL or by clicking through the edit UI: what content exists, what a page
 contains, which C# class and view render it, where a block is used, what is unpublished. It can also make changes
-(set properties, add blocks to a ContentArea, create, translate, publish), as drafts by default.
+(set properties, add blocks to a ContentArea, build a Visual Builder page, create, translate, publish), as drafts by
+default.
 
 For editors, the separate `OptiCli.Mcp` package adds an MCP server to the site itself, so they can work on its content
-with Claude: see [MCP server for editors](#mcp-server-for-editors-preview).
+with Claude (CMS 12 only): see [MCP server for editors](#mcp-server-for-editors-preview).
 
 opticli is an independent open-source project. It is not affiliated with or endorsed by Optimizely.
 
@@ -32,14 +33,16 @@ In this README, "site agent" means that injected assembly. "Coding agent" means 
 ## Requirements
 
 - The **.NET 8 SDK** or newer to install opticli. It runs on the newest .NET runtime installed.
-- An **Optimizely CMS 12** site (`EPiServer.CMS.AspNetCore` 12.x) whose repository you have checked out.
-- Its database on **SQL Server**: a local instance, LocalDB, a container, or a remote development database such as
-  Azure SQL. For Microsoft Entra ID authentication (`Authentication=Active Directory Default`), sign in with
+- An **Optimizely CMS 12 or 13** site (`EPiServer.CMS.AspNetCore` or `EPiServer.CMS` 12.x or 13.x) whose repository
+  you have checked out. What differs on CMS 13 is under [CMS 13](#cms-13).
+- Its database on **SQL Server**: a local instance, LocalDB (Windows), a container, or a remote development database
+  such as Azure SQL. For Microsoft Entra ID authentication (`Authentication=Active Directory Default`), sign in with
   `az login` first.
 - For writes only:
   - The site must build and start locally in the `Development` environment, with whatever it needs to start (its
     own secrets and services).
-  - The site must run on **.NET 8 or newer**, since the site agent is built for .NET 8. Reads work for any CMS 12 site.
+  - A CMS 12 site must run on **.NET 8 or newer**, since its site agent is built for .NET 8 (CMS 13 needs .NET 10, and
+    has a site agent built for it). Reads work for any CMS 12 or 13 site.
 
 opticli is developed on Linux. Paths and process handling for Windows and macOS are covered, but get less testing.
 
@@ -68,7 +71,7 @@ To run from source without installing: `dotnet run --project src/OptiCli -- <com
 ## Quick start
 
 Run opticli from anywhere inside the site's repository. It walks up to the solution and picks the web project that
-references `EPiServer.CMS.AspNetCore`. It then finds that project's development database, as described under
+references `EPiServer.CMS.AspNetCore` (or `EPiServer.CMS`). It then finds that project's development database, as described under
 [Which database](#which-database).
 
 ```sh
@@ -94,7 +97,7 @@ When stdout is redirected, every command prints a single JSON line:
 
 ```json
 {"ok":true,"data":{"ref":"123","type":"ArticlePage","name":"News","status":"published","url":"/en/news/",
- "properties":{"Heading":{"type":"String","value":"Hello"}}},"meta":{"source":"db","version":"0.14.0"}}
+ "properties":{"Heading":{"type":"String","value":"Hello"}}},"meta":{"source":"db","version":"0.15.0"}}
 ```
 
 ## Using opticli with coding agents
@@ -161,6 +164,13 @@ opticli db forget             # back to the default
 opticli get 123 --db e02d9b   # another database, for one run (a remote one is flagged in meta.warnings)
 ```
 
+**LocalDB.** The CMS templates (`epi-alloy-mvc`, `epi-cms-empty`, CMS 12 and 13 alike) connect to SQL Server Express
+LocalDB with `AttachDbFilename=|DataDirectory|\<Name>.mdf`, and the site points `DataDirectory` at its `App_Data`
+folder. On Windows opticli resolves `|DataDirectory|` to the project's `App_Data` the same way; the site started by
+`serve` keeps its own value. LocalDB counts as local. Linux and macOS have no LocalDB, so neither the site nor opticli
+can use that string there: opticli refuses it (`refused`, exit 3) with a hint to point the connection string at a SQL
+Server database by name, e.g. SQL Server in a container (`doctor` shows which file it comes from).
+
 When the database in use is remote, every response carries `meta.database` (`server`, `name`, `local`,
 `development`). A remote database that isn't the development one also adds a warning.
 
@@ -220,7 +230,8 @@ what the local build expects, which is what matters before a write:
 Each difference says which side is ahead. `local`: your branch has changes that aren't deployed there (check out what
 is deployed, or deploy first). `database`: the environment runs newer code than your checkout (pull and build).
 `unknown`: they differ, and the database doesn't say which side changed. Required, display names, sort order, tabs
-and `[AllowedTypes]` aren't stored for a model: the running code decides them, so they never show as drift.
+and `[AllowedTypes]` aren't stored for a model: the running code decides them, so they never show as drift. On CMS 13,
+content types of unknown origin (see [CMS 13](#cms-13)) are listed with `informational: true` and don't stop writes.
 
 `opticli drift` lists the differences and `doctor` shows them. Once `serve` has reported drift, a short warning comes
 with every command that uses the database, and with `serve --status`. A site you start yourself with `opticli env`
@@ -230,7 +241,8 @@ handlers and validators), not only its models. Reads keep working, since they do
 
 What opticli can't turn off is the site's own startup code. Against a shared database, a local build still:
 - runs `Database.Migrate()` if the site calls it at startup (the reason for the migration check);
-- registers its scheduled jobs (new jobs get rows, changed ones are updated), even with the scheduler off;
+- registers its scheduled jobs (new jobs get rows, changed ones are updated), even with the scheduler off. That isn't
+  reported as drift: the deployed site registers the same jobs once the code is deployed;
 - creates the content root folders that add-ons register at startup (`IContentRootService`), and Dynamic Data Store
   stores when they are first used, if they don't exist yet;
 - runs initialization modules and other startup code that writes, such as a site that creates its own content.
@@ -250,11 +262,11 @@ add-ons need first.
 |---|---|
 | `doctor` | project, connection string candidates, database, schema version, site agent, drift (against a shared database), sites whose primary host differs from the saved `sites primary` mapping, installed skill |
 | `db list`, `db use`, `db forget` | the development database (see [Which database](#which-database)) |
-| `sites`, `languages` | site definitions and hosts; language branches |
-| `types [--kind] [--unused] [--orphaned] [--sort]` | content types with instance counts; `--orphaned`: types whose class is gone from the code, which the CMS keeps while content uses them (the running site checks every class, `meta.source: agent`; otherwise the site's sources are scanned for its own types, with a warning saying why); see [Orphaned content types](#orphaned-content-types-and-properties) for removing them |
+| `sites`, `languages` | site definitions (CMS 13: applications) and hosts; language branches |
+| `types [--kind] [--unused] [--orphaned] [--sort]` | content types with instance counts and kinds (page, block, media, folder, other; on CMS 13 also experience, section, element, contract); `--orphaned`: types whose class is gone from the code, which the CMS keeps while content uses them (the running site checks every class, `meta.source: agent`; otherwise the site's sources are scanned for its own types, with a warning saying why); see [Orphaned content types](#orphaned-content-types-and-properties) for removing them |
 | `type <name>` | properties (type, culture-specific, required, tab, order, source line, `[AllowedTypes]`; one that isn't in the code with how many values it has stored), C# class file, views |
 | `allowed-in <type>` | which ContentArea/reference properties accept a type, from `[AllowedTypes]` in code |
-| `get <ref> [--lang] [--version] [--fields] [--expand]` | one item, typed and decoded (ContentAreas, local blocks, rich-text links) |
+| `get <ref> [--lang] [--version] [--fields] [--expand] [--variation]` | one item, typed and decoded (ContentAreas, local blocks, rich-text links; on CMS 13 a Visual Builder composition, and `--variation` for a content variation) |
 | `tree`, `children`, `ancestors` | the content tree |
 | `find --type T [--where Prop=value] [--under] [--status]` | items of a type, filtered; `--status scheduled` (a version waits to be published: `publishAt`) and `expired` (published, stop-publish date passed: `expiredAt`), in the master language unless `--lang` |
 | `search <text> [--in names\|strings\|all]` | names and text properties containing a string |
@@ -266,6 +278,7 @@ add-ons need first.
 | `projects [<id>]` | projects, and the versions in one |
 | `trash [--since] [--by] [--type]` | what is in the recycle bin: who deleted it and when, what came along (`descendants`), and `originalParent`, where `restore` puts it back (asked of the site while `serve` runs, `meta.source: agent`; otherwise read from the database, with a warning saying why) |
 | `jobs [--failed]`, `jobs log [<job>] [--failed] [--since]` | scheduled jobs: schedule, next and last run, how it ended, overdue, running; their runs with status and message (see [Scheduled jobs](#scheduled-jobs)) |
+| `display-templates [--type T]` | CMS 13: Visual Builder display templates and their settings, the styles a composition's nodes can use |
 | `blob <ref>` | where a media file lives on disk |
 | `drift` | what differs between the build and a shared database (needs `serve`; see [Shared databases](#shared-databases)) |
 | `access <ref>` | who may read and edit an item: its access rights, and the ancestor they are inherited from |
@@ -275,7 +288,8 @@ A `<ref>` is a content id (`123`), a version (`123_456`), a content GUID, or a U
 `https://host/en/about/`). Content from a content provider, such as images from a DAM, shows up as `63__provider`. You
 can pass that form back in property values, ContentArea items and links. The id before `__` is local to one database;
 the GUID is the same in every environment. `--lang <code>` picks the language branch. The default is the master
-language, or the language the URL selects.
+language, or the language the URL selects. On CMS 13, Visual Builder blueprints are left out of `tree`, `children`,
+`find`, `search` and `drafts` unless `--blueprints`.
 
 ### Writing (needs `opticli serve`)
 
@@ -299,6 +313,9 @@ These commands write:
   `--inherit` changes one item's access rights. Children that inherit follow; nothing is applied to descendants.
   Access rights aren't versioned, so the output shows them before and after. The root, the recycle bin, start pages
   and asset roots are refused, and so is a change that leaves no role with Administer.
+- `composition` (CMS 13) adds, moves, changes and removes the sections, rows, columns and elements of a Visual Builder
+  experience; `set` and `create` also take a whole composition, `create --blueprint` makes content from a blueprint,
+  and `--variation` writes a content variation. See [Visual Builder](#visual-builder).
 - `sites primary` and `sites host add|remove` change site definitions' host names; see
   [Site hosts after a database restore](#site-hosts-after-a-database-restore).
 - `jobs run`, `jobs stop` and `jobs set` run, stop and reschedule scheduled jobs; see [Scheduled jobs](#scheduled-jobs).
@@ -314,7 +331,7 @@ These commands write:
   halfway (a failure, Ctrl+C) still reports what it saved, with undo hints and `details.partial: true`.
 
 Every write command takes `--dry-run`. Structured values use `--values`, e.g.
-`--values '{"MainArea":[{"ref":"456"}]}'`. `set` and `area` check that nobody saved a newer version in the meantime
+`--values '{"MainArea":[{"ref":"456"}]}'`; a value may also be given as `get` shows it (`{"type": ..., "value": ...}`). `set` and `area` check that nobody saved a newer version in the meantime
 (exit 5 on a conflict). `--base-version <id>` pins the version the change is based on, and `--force` skips the check.
 `--from published` (or `--from <version>`) bases the change on that version instead of the latest, and the check
 stays: newer drafts are left out and stay as they are, and the output lists them (`leftOut`).
@@ -395,6 +412,8 @@ to run `--from-config`.
 `--lang`, `--https`); a host the site has is a `conflict`. `sites host remove <site> <host>` removes one, but never the
 site's last host or SiteUrl's host. Both take `--dry-run`.
 
+On CMS 13 the sites are applications, and a few of these rules differ: see [Sites are applications](#sites-are-applications).
+
 Saving through the site clears its site definition cache, so the site `serve` runs uses the new hosts at once. Another
 process running the site against the same database (your IDE's) keeps the old ones until it restarts, unless remote
 events are set up. Site definitions aren't versioned: the output lists every change and the hosts after it.
@@ -417,7 +436,7 @@ opticli jobs set "Content import" --every 1h --next now --dry-run
 ```
 
 Reading (`jobs`, `jobs log`) comes from the database (`tblScheduledItem`, `tblScheduledItemLog`) and needs nothing
-running. A job in the site's code (a `[ScheduledPlugIn]` class) has its file and line as `source`, and one the database
+running. A job in the site's code (a `[ScheduledPlugIn]` or, on CMS 13, `[ScheduledJob]` class) has its file and line as `source`, and one the database
 doesn't have yet is listed with `registered: false`: the site registers jobs when it starts. `running: "stale"` means
 the job is marked as running but the process that ran it stopped pinging. A run's `finished` is when the CMS logged
 it, and `started` that less its duration.
@@ -469,7 +488,8 @@ next starts, but only if nothing uses it. A type with content (also in the recyc
 still has, stays; so does a property with stored values, marked `existsOnModel: false`. Old databases collect years of
 them, and admin mode removes them one at a time. `types --orphaned` and `type <name>` show them; these commands remove
 them through the site (`opticli serve`), with the CMS's own `IContentTypeRepository.Delete` and
-`IPropertyDefinitionRepository.Delete`, as admin mode's Delete does:
+`IPropertyDefinitionRepository.Delete` (on CMS 13 the type saved without the property), as admin mode's Delete does. On
+CMS 13, types of unknown origin go only with `--include-unknown-origin` (see [Content types on CMS 13](#content-types-on-cms-13)):
 
 ```sh
 opticli types prune --dry-run                          # what would go and what stays (kept), with why
@@ -501,6 +521,139 @@ site against the same database (your IDE's) keeps its cached content types until
 Without `serve` these commands are `unreachable` (exit 4): only the running site can tell which classes it loads, and
 there is no database fallback for removing. Against a shared database they are refused (exit 3), with no override: the
 deployed site uses the same content model. `apply` has no such steps, and the MCP module no such tools.
+
+## CMS 13
+
+The same opticli reads and writes CMS 13 sites (`EPiServer.CMS` 13.x on .NET 10), both fresh installs and databases
+upgraded from CMS 12. Reads choose their SQL from the database's schema. `serve` and `env` inject the site agent built
+for the site's CMS major (`agent/cms12/`, `agent/cms13/`), taken from the project's packages, else from the database's
+schema version; `doctor` shows both as `cmsMajor`. A CMS 13 build against a CMS 12 database is refused (exit 3): the
+CMS would upgrade the database at startup, and CMS 12 can't use it afterwards. To upgrade it on purpose, start the site
+once yourself. The reverse is refused too.
+
+### Sites are applications
+
+CMS 13 keeps its sites as applications. The old site definition tables are empty on a fresh install and stale after
+an upgrade, and opticli doesn't read them there. `sites` lists the applications in the same shape, without `guid`,
+plus `application` (the name that identifies it: e.g. `alloy13`, or `Site_<old GUID>` after an upgrade),
+`applicationType` (`inProcessWebsite`, or `website` for a headless front end) and `isDefault`. Commands take a site by
+its name, id or application name.
+
+- The default application answers host names that no application has, as the `*` host did. `sites host add <site> "*"`
+  makes an application the default and takes it from the previous one in the same save (the result lists both).
+  `resolve` of a host nobody has shows `host: null`.
+- An application has no SiteUrl: its URL is its first primary host (by name), else its first undefined one, and
+  follows its hosts. `--keep-site-url` and `--https unset` are `usage` errors.
+- A host is http or https. A new host without a scheme or `--https` gets http on `localhost`, `*.localhost` and
+  loopback addresses (what `serve` listens on), else the scheme of the site's URL. The upgrade makes every host that
+  had no https setting https, so an upgraded site's absolute URLs are https.
+- `--type preview` and `--type media` add CMS 13's preview and media hosts (one of each per application, for every
+  language; preview hosts only on a headless application). CMS 12 refuses them.
+- A request's host matches only with its port. CMS 13 refuses an application whose start page is below another's, so
+  there are no nested sites.
+
+### Scheduled jobs on CMS 13
+
+The database has only the job's class name (`PageArchiveJob`). `jobs` shows the name admin mode shows: for the CMS's
+own jobs from a table built into opticli (the names CMS 12 stored), for the site's own from
+`[ScheduledJob(DisplayName = ...)]` in its code, else the class name. Either name works wherever a job is named.
+
+### Content types on CMS 13
+
+- Kinds: besides page, block, media, folder and other, `experience`, `section`, `element` and `contract` (an
+  interface other types implement). `--kind page` includes experiences and `--kind block` sections and elements; the
+  others match only themselves. `types` adds `compositionBehaviors`, `contracts`, `blueprints` and `inlineUses` (inline
+  blocks of the type in content's current versions); `type` adds `implementedBy` for a contract and the
+  `displayTemplates` the type's content can use.
+- CMS 13 records no class for a type whose class has a GUID, only the version of the class's assembly when the model
+  sync made or changed it. A type with neither, and with no class in the build that has its GUID, is of **unknown
+  origin**: made in admin mode, or a code type a content import overwrote (the Alloy template's own import does that to
+  all its types). Once such a type's class is gone, `types --orphaned` lists it with `originUnknown: true`, and `types
+  remove`, `remove-property` and `prune` remove it only with `--include-unknown-origin`. Without `serve`, `types
+  --orphaned` also reads the GUIDs of the classes in the site's build output, so build it first.
+- Against a shared database, types of unknown origin are listed as drift with `informational: true` and don't stop
+  writes.
+
+### Visual Builder
+
+An experience is a page made of sections. A section holds rows, a row columns, and a column elements (blocks with the
+ElementEnabled composition behaviour). Sections and elements are mostly inline: stored in the experience, with no
+content of their own. An element can also be a shared block, placed by reference. opticli reads compositions from the
+database, and writes them through the CMS's own composition API, which keeps each node's key.
+
+```sh
+opticli get 104 --fields composition          # sections → rows → columns → elements: keys, names, types, styles, values
+opticli get 104 --text                        # the same as a tree
+opticli display-templates --type TextElement  # the styles (display templates and settings) a node of the type can use
+opticli where-used 103                        # names the experience, section and element a shared block is in
+```
+
+`get` of an experience (or a section) shows `composition` instead of the two properties it is stored in, `Layout` and
+`UnstructuredData` (`--fields Layout` shows the stored value). Each node has `key`, `name` and `type`, styles as
+`displayTemplate` and `displaySettings`, and an inline block's `properties` or a shared block's `content`. A
+section-enabled block in the outline is listed in `sections` with `"nodeType": "component"`. `search` and `where-used`
+name the section and element a match is in, `where-used --type` adds a row (`inline: true`) for the type's inline
+blocks, and `allowed-in` lists where a composition takes a type (`property: "composition"`).
+
+```json
+{"ref": "104", "type": "LandingExperience", "kind": "experience", "version": "104_105",
+ "properties": {"Summary": {"type": "LongString", "value": "Spring campaign"}},
+ "composition": {"layout": "outline", "culture": "en", "sections": [
+   {"key": "1b1ef8e9-…", "name": "Body", "type": "TwoColumnSection", "inline": true, "displayTemplate": "wide", "rows": [
+     {"key": "2715f4d1-…", "name": "Row", "columns": [
+       {"key": "f7c9491b-…", "name": "Left", "elements": [
+         {"key": "5faf72ec-…", "name": "Intro", "type": "TextElement", "inline": true,
+          "properties": {"Heading": {"type": "LongString", "value": "Hello"}}},
+         {"key": "7a05f524-…", "name": "Shared", "type": "TextElement",
+          "content": {"ref": "103", "type": "TextElement", "kind": "element", "name": "Shared text", "status": "published"}}]}]}]}]}}
+```
+
+Writes need `serve`, save a draft unless `--publish`, and take `--dry-run`:
+
+```sh
+opticli composition 104 add section --type TwoColumnSection --name Hero --template wide --setting background=dark
+opticli composition 104 add row --in Hero
+opticli composition 104 add column --in <row key> --name Left
+opticli composition 104 add element --in Left --type TextElement Heading="Hi" Body=@intro.html
+opticli composition 104 add element --in Left --ref 103          # a shared block, by reference
+opticli composition 104 set Hero --setting background=light      # --setting key= removes one, --template "" clears
+opticli composition 104 move <element key> --in Right --at 0
+opticli composition 104 remove Hero
+opticli set 104 composition=@composition.json --dry-run          # the whole composition, as get shows it
+opticli create 6 --type LandingExperience --name Spring composition=@composition.json
+```
+
+- A node is named by its key, or by its name when only one node has it; `root` is the composition itself.
+- The CMS's rules are checked first and explained in opticli's words: an outline holds sections and section-enabled
+  blocks, a section rows, a row columns, a column element-enabled blocks. Display templates and settings are checked
+  against the site's (`display-templates`), as errors where the CMS only warns.
+- A whole composition (`set`, `create`, a plan) sets structure, order, names and styles as given. A node with a key
+  keeps its block, and only the properties given change, as with `set`; a node without a key is new, and nodes left
+  out are removed. So `get`'s output can be edited and written back; a value `get` cut short is refused (`--full`).
+- Write results list what changed per node (`composition`: `added`, `removed`, `moved`, `changed`). Plans have an op
+  `composition` with the command's fields (`opticli apply --help`).
+
+**Content variations** are versions of their own, e.g. for a campaign, that store only what they change over the
+published version. `versions` marks them with `variation`, `get --variation <key>` shows one as the CMS loads it
+(`--version latest`: its newest), and `drafts` and `find --status draft` count a variation's drafts (`variation`,
+`variationDrafts`). `set` and `composition` with `--variation <key>` save a version of that variation, made from the
+published version when it has none yet; `publish <id>_<version>` publishes it.
+
+**Blueprints** are templates new content is made from. `create <parent> --blueprint <ref|name> --name <name>` makes
+content with the blueprint's type, values and composition (one language, one version; dry runs, `--guid` and plans
+work), and `composition <ref> add section --blueprint <name>` adds a section from a section blueprint, with new keys.
+opticli doesn't make or change blueprints or display templates.
+
+### Also different on CMS 13
+
+- A fresh CMS 13 database gives administrators no access rights on content. opticli writes all the same, but the edit
+  UI shows such content read-only until a role has access (admin mode).
+- A site has visitor groups only if it registers them (`services.AddVisitorGroupsMvc()`); without that, a ContentArea
+  item with `visitorGroups` is refused ("No visitor group has the id ...").
+- The CMS refuses a save whose rich text or references point at content that doesn't exist (a `validation` issue with
+  `code: "unresolvedReference"`). So `apply` refuses up front a plan whose rich text links to content a later step
+  creates: reorder it, or add the link in a later `set`.
+- The edit UI is at `/Optimizely/CMS/`.
 
 ## serve and env
 
@@ -575,8 +728,8 @@ for the CMS the project builds against (else the one its database's schema belon
    that turns it on in a `PostConfigure` of its own wins, and `serve --status` then says `scheduler: on`;
 4. maps `/_opticli/v1/*` ahead of the site's own middleware.
 
-The site agent is compiled against `EPiServer.CMS.Core` 12.0 and binds to the site's own, newer CMS assemblies at
-runtime. It ships no copies of them.
+The site agent is compiled against `EPiServer.CMS.Core` 12.0 (.NET 8) and 13.0 (.NET 10), one build each, and binds to
+the site's own, newer CMS assemblies at runtime. It ships no copies of them.
 
 ## Output and exit codes
 
@@ -628,6 +781,8 @@ opticli keeps the file's permissions when it rewrites it, and creates it readabl
 ## Supported versions
 
 - Optimizely CMS 12 (`EPiServer.CMS.AspNetCore` 12.x): reads on any runtime; writes on a site running .NET 8 or newer.
+- Optimizely CMS 13 (`EPiServer.CMS` 13.x, .NET 10), fresh installs and databases upgraded from CMS 12: reads and writes,
+  Visual Builder included (see [CMS 13](#cms-13)). The MCP module is CMS 12 only.
 - SQL Server on the local machine (including LocalDB and containers), or a remote SQL Server / Azure SQL
   development database.
 - Not supported:
@@ -1000,19 +1155,23 @@ dotnet test opticli.slnx
 ```
 
 The EPiServer packages come from Optimizely's public NuGet feed, which [nuget.config](nuget.config) already lists.
+Building needs the .NET 8 and .NET 10 SDKs: the site agent, `OptiCli.Cms` and `OptiCli.Agent.Tests` build twice, for
+CMS 12 (net8.0, `EPiServer.CMS.Core` 12.0.3) and CMS 13 (net10.0, 13.0.0, with `CMS13` defined), and CMS-specific code
+stays in their `Compat/` adapter files.
 
 | Project | What it is |
 |---|---|
 | `src/OptiCli` | the `opticli` command line: commands, options, help text |
 | `src/OptiCli.Core` | everything the CLI does: discovery, connection resolution and safety, SQL readers, decoders, output, `serve` |
-| `src/OptiCli.Agent` | the site agent, loaded into the site process; referenced by nothing, copied into the tool package |
+| `src/OptiCli.Agent` | the site agent, loaded into the site process; built for CMS 12 and CMS 13, both copied into the tool package (`agent/cms12/`, `agent/cms13/`) |
 | `src/OptiCli.Cms` | the content operations (read, create, draft, publish, ...) the site agent and the MCP module run, for a developer or a signed-in editor; source-linked into both |
 | `src/OptiCli.Mcp` | the MCP server for editors, the `OptiCli.Mcp` package: OAuth authorization server, tools, connections page |
 | `src/OptiCli.Protocol` | request and response types shared by the CLI, the site agent and the MCP module (source-linked) |
 | `skill/` | the coding-agent skill, embedded in `opticli.dll` |
-| `tests/` | unit tests for Core, the site agent and the MCP module; `OptiCli.Integration` and `OptiCli.Mcp.Integration`, tests against a real site |
+| `tests/` | unit tests for Core, the site agent (on both CMS majors) and the MCP module; `OptiCli.Integration` and `OptiCli.Mcp.Integration`, tests against a real site |
 
-The unit tests use generic fixtures and need no database. The integration test is an oracle. It samples content
+The unit tests use generic fixtures and need no database or site, also for CMS 13 (one, `LocalDbTests`, needs LocalDB
+and skips itself elsewhere). The integration test is an oracle. It samples content
 across types, kinds and languages from a real site, reads each item both from the database and through the CMS
 (via the site agent), and compares them property by property. It is skipped unless a site is configured:
 
@@ -1044,7 +1203,8 @@ an approval sequence, language fallback settings, a media type for PDF files, th
 tests change (and put back), and a scheduled job of its own. `tests/fixtures/edge-cases/` builds them from an Alloy
 site (`dotnet new epi-alloy-mvc`) without changing it. `setup.sh` copies the site and its database, adds
 `EdgeCasesFixture.cs` (the extra content types, plus a startup module for what a plan can't create) and
-`JobsFixture.cs`, `UsersFixture.cs` and `OrphansFixture.cs`, and applies `edge-cases.plan.json`. `JobsFixture.cs` has "opticli test job", a manual, stoppable job
+`JobsFixture.cs`, `UsersFixture.cs`, `OrphansFixture.cs` and `Cms12Fixture.cs` (on CMS 13 `Cms13Fixture.cs`: the
+CMS-specific parts, such as the hosts sites), and applies `edge-cases.plan.json`. `JobsFixture.cs` has "opticli test job", a manual, stoppable job
 that writes a status message a second for 3 steps (the number in `App_Data/opticli-job-steps`, if it exists) and fails
 when `App_Data/opticli-job-fail` exists; the `jobs` tests run it. `OrphansFixture.cs` leaves what removed code leaves behind: the page types `EdgeRemovedPage` (whose class doesn't
 exist, used by one page), `EdgeTrashedPage` (its only page is in the recycle bin) and `EdgeRemovedEmptyPage` (used by
@@ -1068,16 +1228,47 @@ dotnet test tests/OptiCli.Integration
 ```
 
 The integration tests run one at a time, since the write tests make and remove scratch content on the same site.
+Tests of someone else's draft have the fixture save a version again as another user (`POST /opticli-fixture/hand-over`,
+loopback only), through the CMS.
 
 `drift.sh` in the same folder runs the shared-database scenario on copies of the edge-case site and its database. It
 reaches the copy through a host name instead of a loopback name (`<hostname>.localhost` resolves to the loopback
 address, but counts as remote), so `serve` runs in shared mode. It then changes the copy's code and checks each step:
 nothing differs, local ahead, the database ahead, and an EF Core migration that `serve` refuses. Against that copy,
-`DriftTests` checks that writes stop on drift until its fingerprint confirms it.
+`DriftTests` checks that writes stop on drift until its fingerprint confirms it. It runs on CMS 12 and CMS 13 copies
+alike.
 
 ```sh
 SQLCMDPASSWORD=... tests/fixtures/edge-cases/drift.sh path/to/AlloyEdge path/to/AlloyDrift
 ```
+
+#### The CMS 13 test sites
+
+`tests/fixtures/cms13/setup.sh` builds two CMS 13 Alloy sites: a fresh one (`dotnet new epi-alloy-mvc`, EPiServer.Templates
+2.0.1, on an empty database the CMS fills at its first start; `/demo/Alloy13`, `alloy13` by default) and an upgraded one
+(the same code on a copy of a CMS 12 Alloy site's database and media, which CMS 13 upgrades at its first start;
+`/demo/Alloy13Up`, `alloy13-upgraded`). The CMS 12 site and database it copies are only read. Both get
+`VisualBuilderFixture.cs`: an experience type, section types, element types, a contract, display templates, and content
+made through the CMS's API: two experiences (one with a Swedish branch), a shared element, blueprints, and a published
+and a draft content variation. Run it again to update the fixture; `FRESH=1` makes everything again, and the comment at
+the top of the script lists the settings (`CMS_VERSION`, the folders, databases and ports).
+
+The CMS 13 edge-case site is `tests/fixtures/edge-cases/setup.sh` run from the fresh CMS 13 site, and has the Visual
+Builder fixture too. The integration tests run on all of them (`VisualBuilderTests` and `VisualBuilderWriteTests` where
+the fixture is, the rest everywhere):
+
+```sh
+SQLCMDPASSWORD=... FRESH=1 tests/fixtures/cms13/setup.sh
+SQLCMDPASSWORD=... FRESH=1 tests/fixtures/edge-cases/setup.sh /demo/Alloy13 /demo/AlloyEdge13 alloy13 alloy-edge13
+(cd /demo/AlloyEdge13 && opticli serve)
+OPTICLI_IT_PROJECT=/demo/AlloyEdge13 OPTICLI_IT_PLAN=tests/fixtures/edge-cases/edge-cases.plan.json dotnet test tests/OptiCli.Integration
+```
+
+Scripts in `tests/fixtures/cms13/` run whole command sets against one site and save each output, with a `summary.tsv`:
+`read-battery.sh <site> <out>` every read command (`compare-battery.py <a> <b>` compares two runs, e.g. an upgraded
+CMS 13 site with the CMS 12 site it came from, or a CMS 12 site before and after a change), `write-battery.sh` the
+content writes, and `vb-write-battery.sh` Visual Builder writes. The write batteries start and stop `serve` themselves,
+check that the site renders what they wrote, and leave their content in the recycle bin.
 
 #### The MCP test site
 
@@ -1136,7 +1327,9 @@ OPTICLI_MCP_IT_NO_PUBLISH_URL=http://127.0.0.1:5181 OPTICLI_MCP_IT_URL=... OPTIC
 tests/fixtures/mcp/serve.sh path/to/AlloyMcp --port 5181 --stop
 ```
 
-[CI](.github/workflows/ci.yml) runs the unit tests on Linux, Windows and macOS for every push and pull request.
+[CI](.github/workflows/ci.yml) runs the unit tests on Linux, Windows and macOS for every push and pull request. On
+Windows it installs and starts SQL Server Express LocalDB, and `LocalDbTests` must pass there (`OPTICLI_REQUIRE_LOCALDB`
+turns its skip into a failure).
 Issues and pull requests are welcome. Please run the unit tests before sending a change. When a change touches
 reads, also run the integration test against a site you have.
 
@@ -1146,11 +1339,11 @@ Set the new version as `<Version>` in [Directory.Build.props](Directory.Build.pr
 [skill/SKILL.md](skill/SKILL.md), and add the release to [CHANGELOG.md](CHANGELOG.md). Commit, then push a matching tag:
 
 ```sh
-git tag v0.14.0 && git push origin v0.14.0
+git tag v0.15.0 && git push origin v0.15.0
 ```
 
 The [release workflow](.github/workflows/release.yml) checks that the tag matches both versions and is on `main`,
-runs the unit tests, checks that the CLI package holds the site agent and starts, and publishes it to nuget.org together
+runs the unit tests, checks that the CLI package holds both site agent builds and starts, and publishes it to nuget.org together
 with `OptiCli.Mcp` at the same version plus a `-preview` suffix (set in its project file while it is a preview).
 
 ## Licence
