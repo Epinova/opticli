@@ -47,7 +47,7 @@ public static class AgentSelection
         var choice = project is { } fromProject ? new AgentChoice(fromProject, "project")
             : stored is { } fromDatabase ? new AgentChoice(fromDatabase, "database")
             : throw new UsageException(
-                $"Can't tell which CMS major the site runs: the project's {CsprojFile.CmsPackage} version is unknown, and "
+                $"Can't tell which CMS major the site runs: the project's CMS version is unknown (not restored?), and "
                 + (databaseError is null ? $"{named} has no CMS schema yet." : $"{named} couldn't be read ({databaseError})."),
                 "Restore the project (dotnet restore, or `opticli serve --build`), then start again; `opticli doctor` shows what it found.");
         if (!SupportedMajors.Contains(choice.CmsMajor))
