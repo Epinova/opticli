@@ -680,7 +680,9 @@ agent injected, and returns once the site agent answers.
 - Each start writes a new log. `--logs` reads the latest from its end, and `data.previous` lists the two before it.
 - A state file opticli can't read is treated as stale: `--status` and `--stop` remove it, `doctor` reports it.
 - Two `serve` runs for the same project don't start two sites: the second waits for the first and reports its site.
-  `serve`s for different sites started at the same moment don't pick the same free port either.
+  `serve`s for different sites started at the same moment don't pick the same free port either (best effort: they
+  share their claims through `$XDG_RUNTIME_DIR`, else `~/.local/state/opticli/ports`, so `serve`s run with different
+  values of those don't see each other's).
 - Ctrl+C while `serve` waits for the site stops the site again.
 - A site that configures `Kestrel:Endpoints` ignores `ASPNETCORE_URLS`. `serve` and `env` then add opticli's address
   as one more endpoint (`Kestrel__Endpoints__OptiCli__Url`) and warn. If the site sets its addresses in code, a

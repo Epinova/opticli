@@ -513,7 +513,7 @@ internal sealed class PropertyWriter(
         var types = call.Service<IContentTypeRepository>();
         var type = int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? types.Load(id)
             : Guid.TryParse(text, out var guid) ? types.Load(guid)
-            : types.Load(text);
+            : types.Load(text) ?? ByNameIgnoringCase(types, text, what);
         if (type is null)
         {
             var names = types.List().OfType<PageType>().Select(t => t.Name).Order(StringComparer.OrdinalIgnoreCase).ToList();
@@ -524,6 +524,20 @@ internal sealed class PropertyWriter(
         return type is PageType
             ? type.ID
             : throw AgentException.Invalid([new ValidationIssue(what, $"{type.Name} isn't a page type; {what} takes a page type (by name or id).")]);
+    }
+
+    /// <summary>
+    /// A content type whose name differs from <paramref name="name"/> only in case. CMS 12's lookup by name is
+    /// case-sensitive and CMS 13's isn't: this makes both take <c>articlepage</c>.
+    /// </summary>
+    /// <exception cref="AgentException"><c>usage</c> when several types match.</exception>
+    private static ContentType? ByNameIgnoringCase(IContentTypeRepository types, string name, string what)
+    {
+        var matches = types.List().Where(t => string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase)).ToList();
+        return matches.Count <= 1
+            ? matches.SingleOrDefault()
+            : throw AgentException.Usage($"'{name}' for {what} matches {matches.Count} content types: {string.Join(", ", matches.Select(t => t.Name))}.",
+                "Give the name in its exact case, or the type's id.");
     }
 
     /// <summary>Above this, a hint doesn't list every selectable category: a site can have hundreds.</summary>
@@ -626,8 +640,9 @@ internal sealed class PropertyWriter(
             case JsonValueKind.Number when !call.MayReferenceUnchecked && property is PropertyContentReference:
                 property.ParseToSelf(locator.ResolveContent(value.GetRawText(), $"reference for {property.Name}").ToString());
                 return;
-            case JsonValueKind.String or JsonValueKind.Number when property is PropertyPageType:
-                // By name (as get shows it), id or GUID; ParseToSelf takes an id only, of any content type.
+            case JsonValueKind.String or JsonValueKind.Number when property is PropertyPageType && !(value.ValueKind == JsonValueKind.String && value.GetString() is "" or null):
+                // By name (as get shows it), id or GUID; ParseToSelf takes an id only, of any content type. "" still
+                // clears it through ParseToSelf below, as it always did.
                 property.Value = PageTypeId(property.Name, value);
                 return;
             case JsonValueKind.String:

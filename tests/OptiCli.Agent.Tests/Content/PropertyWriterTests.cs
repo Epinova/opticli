@@ -42,6 +42,8 @@ public class PropertyWriterTests
         new PageType { ID = 19, GUID = Guid.Parse("9ccc8a41-5c8c-4be0-8e73-520ff3de8267"), Name = "StandardPage" },
         new PageType { ID = 20, Name = "ArticlePage" },
         new ContentType { ID = 30, Name = "TeaserBlock" },
+        new PageType { ID = 40, Name = "NewsPage" },
+        new PageType { ID = 41, Name = "Newspage" },
     ];
 
     /// <summary>A developer's writer whose site has <see cref="PageTypeChoices"/>, and a block with a PageType property.</summary>
@@ -52,7 +54,8 @@ public class PropertyWriterTests
         {
             ("Load", [int id]) => PageTypeChoices.FirstOrDefault(t => t.ID == id),
             ("Load", [Guid guid]) => PageTypeChoices.FirstOrDefault(t => t.GUID == guid),
-            ("Load", [string name]) => PageTypeChoices.FirstOrDefault(t => t.Name.Equals(name, StringComparison.OrdinalIgnoreCase)),
+            // As CMS 12 does: by exact name (CMS 13 ignores case; the writer must take either).
+            ("Load", [string name]) => PageTypeChoices.FirstOrDefault(t => t.Name == name),
             ("List", []) => PageTypeChoices,
             _ => null,
         };
@@ -83,6 +86,33 @@ public class PropertyWriterTests
         writer.Apply(block, new Dictionary<string, JsonElement> { ["Filter"] = JsonDocument.Parse(json).RootElement });
 
         Assert.Equal(19, block.Property["Filter"].Value);
+    }
+
+    [Fact]
+    public void A_PageType_property_is_cleared_by_an_empty_string_as_before()
+    {
+        var (writer, block) = PageTypeWriter();
+        writer.Apply(block, new Dictionary<string, JsonElement> { ["Filter"] = JsonDocument.Parse("\"StandardPage\"").RootElement });
+
+        writer.Apply(block, new Dictionary<string, JsonElement> { ["Filter"] = JsonDocument.Parse("\"\"").RootElement });
+
+        Assert.Null(block.Property["Filter"].Value);
+    }
+
+    [Fact]
+    public void A_PageType_name_in_another_case_is_found_unless_several_types_match_it()
+    {
+        var (writer, block) = PageTypeWriter();
+
+        writer.Apply(block, new Dictionary<string, JsonElement> { ["Filter"] = JsonDocument.Parse("\"articlepage\"").RootElement });
+        Assert.Equal(20, block.Property["Filter"].Value);
+
+        // The exact name wins; two case-insensitive matches are ambiguous.
+        writer.Apply(block, new Dictionary<string, JsonElement> { ["Filter"] = JsonDocument.Parse("\"Newspage\"").RootElement });
+        Assert.Equal(41, block.Property["Filter"].Value);
+        var ambiguous = Assert.Throws<AgentException>(() => writer.Apply(block, new Dictionary<string, JsonElement> { ["Filter"] = JsonDocument.Parse("\"newspage\"").RootElement }));
+        Assert.Equal(AgentErrorCodes.Usage, ambiguous.Code);
+        Assert.Contains("NewsPage, Newspage", ambiguous.Message);
     }
 
     [Fact]
