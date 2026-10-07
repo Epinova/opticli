@@ -88,7 +88,7 @@ internal static class AgentMiddleware
         [AgentEndpoint.Restore] = Write(r => r.ReadBodyAsync<RestoreRequest>(), b => b.DryRun, (r, b) => Ok(RestoreOperation.Run(r.Call, r.Argument, b))),
         [AgentEndpoint.Access] = Write(r => r.ReadBodyAsync<AccessRequest>(), b => b.DryRun, async (r, b) => Ok(await AccessOperation.RunAsync(r.Call, r.Argument, b))),
         // Not a content operation: site definitions are the developer's only, so this one isn't in OptiCli.Cms.
-        [AgentEndpoint.SiteHosts] = Write(r => r.ReadBodyAsync<SiteHostsRequest>(), b => b.DryRun, (r, b) => Ok(SiteHostsOperation.Run(r, b))),
+        [AgentEndpoint.SiteHosts] = Write(r => r.ReadBodyAsync<SiteHostsRequest>(), b => b.DryRun, async (r, b) => Ok(await SiteHostsOperation.RunAsync(r, b))),
         // Scheduled jobs are the developer's only too. A job writes whatever its code writes, so a run is a write.
         [AgentEndpoint.JobRun] = Write(r => r.ReadBodyAsync<JobRunRequest>(), b => b.DryRun, (r, b) => Ok(JobsOperation.Run(r, b))),
         [AgentEndpoint.JobStop] = Write(r => r.ReadBodyAsync<JobStopRequest>(), b => b.DryRun, (r, b) => Ok(JobsOperation.Stop(r, b))),

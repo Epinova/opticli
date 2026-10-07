@@ -1,6 +1,7 @@
 using OptiCli.Core.Cms;
 using OptiCli.Core.Configuration;
 using OptiCli.Core.Errors;
+using OptiCli.Core.Output;
 using OptiCli.Core.Sites;
 using OptiCli.Core.Text;
 using OptiCli.Protocol;
@@ -342,5 +343,30 @@ public class SiteHostsTests : IDisposable
     {
         Assert.Null(HostTypes.Parse(type));
         Assert.Equal(HostTypes.RedirectPermanent, HostTypes.Parse("redirect-permanent"));
+    }
+
+    [Fact]
+    public void The_agents_answer_keeps_cms_12s_shape_and_names_a_cms_13_application_by_its_name()
+    {
+        var hosts = new[] { new SiteHost("localhost:5001", HostTypes.Primary, null, true) };
+        var application = new SiteInfo(7, null, "Alloy", "https://localhost:5001/", "5", "Start", "en", "3", [], "Site_CB857AE6", "inProcessWebsite", true);
+        var result = new SiteHostsResult
+        {
+            Sites =
+            [
+                new SiteHostsSite(Sites[0].Guid, "Site A", SiteHostStatus.Changed, ["x"], hosts, "https://localhost:5001/"),
+                new SiteHostsSite(null, "Alloy", SiteHostStatus.Changed, ["y"], hosts, "https://localhost:5001/") { Application = "site_cb857ae6", IsDefault = true },
+            ],
+        };
+
+        var views = SiteHostsRunner.Views(result, [.. Sites, application]);
+
+        var cms12 = JsonOutput.ToNode(views[0])!.AsObject();
+        Assert.Equal(Sites[0].Id, views[0].Id);
+        Assert.Equal(["site", "id", "guid", "status", "changes", "url", "hosts"], cms12.Select(p => p.Key));
+        var cms13 = JsonOutput.ToNode(views[1])!.AsObject();
+        Assert.Equal(7, views[1].Id);
+        Assert.Equal(["site", "id", "status", "changes", "url", "hosts", "application", "isDefault"], cms13.Select(p => p.Key));
+        Assert.Equal(new HostInfo("localhost:5001", HostType.Primary, null, true), views[1].Hosts.Single());
     }
 }

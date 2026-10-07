@@ -22,7 +22,7 @@ internal static class SitesCommand
     {
         var list = new ListOptions(options);
         var command = new Command("sites", """
-            List site definitions: name, URL, start page, master language and host names.
+            List site definitions (CMS 13: applications): name, URL, start page, master language and host names.
             `sites primary` and `sites host add|remove` change the hosts through the site (needs `opticli serve`), for a
             restored copy of a production database whose sites still have the production host names.
             Example: opticli sites
@@ -44,7 +44,7 @@ internal static class SitesCommand
     {
         var pairs = new Argument<string[]>("pairs")
         {
-            Description = $"Site and host: {PrimaryPairs.Syntax}. The site is a name, id or GUID as `opticli sites` lists them; @lang makes the host primary for that language only.",
+            Description = $"Site and host: {PrimaryPairs.Syntax}. The site is a name, id or GUID (CMS 13: application name) as `opticli sites` lists them; @lang makes the host primary for that language only.",
             Arity = ArgumentArity.ZeroOrMore,
         };
         var https = HttpsOption("Override the scheme in the pairs");
@@ -54,7 +54,7 @@ internal static class SitesCommand
         };
         var keepSiteUrl = new Option<bool>("--keep-site-url")
         {
-            Description = "Leave the site's URL (SiteUrl) as it is. Default: a pair without @lang points it at the new primary host (https:// unless --https false).",
+            Description = "Leave the site's URL (SiteUrl) as it is. Default: a pair without @lang points it at the new primary host (https:// unless --https false). Not on CMS 13, where an application's URL follows its hosts.",
         };
         var fromConfig = new Option<bool>("--from-config")
         {
@@ -83,6 +83,9 @@ internal static class SitesCommand
             Safe to run again: a site already like that is `unchanged`. Refused against a shared database (exit 3).
             After a save, a site process other than the one `serve` runs keeps the old hosts until it restarts.
             meta.warnings names languages whose URLs still use a production host.
+            On CMS 13 the sites are applications: an application has no SiteUrl (its URL is its first primary host by name,
+            else its first default one, and follows the change), and a new host without a scheme gets https where SiteUrl
+            would have followed it, else the scheme of the site's URL (CMS 13 hosts are http or https, never unset).
             Example: opticli sites primary "Site A=localhost:5001" "Site B=localhost:5002" --dry-run
             Example: opticli sites primary --from-config
             Example: opticli sites primary --forget "Old site"
@@ -236,6 +239,8 @@ internal static class SitesCommand
             Add a host name to a site. Fails with a conflict (exit 5) if the site has it already, and with validation if
             another site has it. Against a shared database only --type undefined is allowed: it makes the site reachable
             locally without changing the URLs the deployed site generates.
+            On CMS 13, * makes the application the default one (it answers host names no application has; undefined there
+            is the default host type), and a host without a scheme or --https gets the scheme of the site's URL.
             Example: opticli sites host add "Site A" localhost:5001 --dry-run
             """);
         command.Arguments.Add(site);
@@ -281,6 +286,8 @@ internal static class SitesCommand
             Remove one host name from a site. The site's last host is refused (exit 3), and so is the host of the site's URL
             (SiteUrl), which the CMS would add back: make another host primary first. Removing * warns that the site then
             only answers on its own hosts. Refused against a shared database (exit 3).
+            On CMS 13, removing * makes the application no longer the default one, and an application's URL just moves
+            to another of its hosts.
             Example: opticli sites host remove "Site A" localhost:5001 --dry-run
             """);
         command.Arguments.Add(site);
@@ -330,7 +337,7 @@ internal static class SitesCommand
         return writer.ToString();
     }
 
-    private static Argument<string> SiteArgument() => new("site") { Description = "The site: its name, id or GUID, as `opticli sites` lists them." };
+    private static Argument<string> SiteArgument() => new("site") { Description = "The site: its name, id or GUID (CMS 13: its application name), as `opticli sites` lists them." };
 
     private static Argument<string> HostArgument() => new("host") { Description = $"The host: {HostNames.Syntax}." };
 

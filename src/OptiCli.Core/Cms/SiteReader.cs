@@ -43,10 +43,12 @@ public static class SiteReader
         ORDER BY a.pkID
         """;
 
+    // In the order the CMS loads them (netApplicationList: by Authority), which decides an application's URL (its first
+    // primary host, else its first default one): saving an application rewrites its hosts, so their ids have no order.
     private const string ApplicationHostsSql = """
         SELECT h.fkApplicationID, h.Authority, h.Type, RTRIM(h.Locale) AS Locale, CONVERT(bit, h.UseSecureConnection) AS UseSecureConnection
         FROM tblApplicationHost h
-        ORDER BY h.fkApplicationID, h.pkID
+        ORDER BY h.fkApplicationID, h.Authority, h.pkID
         """;
 
     public static async Task<IReadOnlyList<SiteInfo>> ListAsync(CmsDatabase db, CancellationToken cancellationToken)

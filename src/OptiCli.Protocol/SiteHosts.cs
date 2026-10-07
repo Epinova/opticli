@@ -1,8 +1,8 @@
 namespace OptiCli.Protocol;
 
 /// <summary>
-/// Body of <see cref="AgentRoutes.SiteHosts"/>: change the host names of site definitions, typically to point a restored
-/// copy of a production database at the ports the site listens on locally.
+/// Body of <see cref="AgentRoutes.SiteHosts"/>: change the host names of site definitions (CMS 13: applications),
+/// typically to point a restored copy of a production database at the ports the site listens on locally.
 /// </summary>
 /// <remarks>
 /// <para>The changes are one batch: they are applied in order to a copy of every site, the result is validated as the CMS
@@ -35,10 +35,13 @@ public sealed record SiteHostsRequest
 /// <summary>One change to one site's hosts.</summary>
 public sealed record SiteHostChange
 {
-    /// <summary>The site's GUID, or its name (case-insensitive).</summary>
+    /// <summary>The site's GUID (CMS 12), its application's name (CMS 13), or its name (case-insensitive).</summary>
     public required string Site { get; init; }
 
-    /// <summary><c>name[:port]</c>, or <c>*</c>; a URL with nothing after the host is read as its host.</summary>
+    /// <summary>
+    /// <c>name[:port]</c>, or <c>*</c> (on CMS 13: the default application); a URL with nothing after the host is read as
+    /// its host.
+    /// </summary>
     public required string Host { get; init; }
 
     /// <summary>One of <see cref="SiteHostActions"/>.</summary>
@@ -52,14 +55,15 @@ public sealed record SiteHostChange
 
     /// <summary>
     /// One of <see cref="HostHttps"/>: whether the CMS generates <c>https://</c> links to the host. Null leaves an existing
-    /// host's setting as it is, and gives a new host <see cref="HostHttps.Unset"/>.
+    /// host's setting as it is, and gives a new host <see cref="HostHttps.Unset"/> (CMS 13, which has no unset: the scheme
+    /// of the site's URL).
     /// </summary>
     public string? Https { get; init; }
 
     /// <summary>For <see cref="SiteHostActions.Primary"/>: leave the site's Edit host as it is instead of making it undefined.</summary>
     public bool KeepEdit { get; init; }
 
-    /// <summary>For <see cref="SiteHostActions.Primary"/> without a language: leave the site's URL (SiteUrl) as it is.</summary>
+    /// <summary>For <see cref="SiteHostActions.Primary"/> without a language: leave the site's URL (SiteUrl) as it is. Not on CMS 13.</summary>
     public bool KeepSiteUrl { get; init; }
 }
 
@@ -88,7 +92,7 @@ public static class HostHttps
 
     public const string False = "false";
 
-    /// <summary>No setting: links to the host use the scheme of the site's URL.</summary>
+    /// <summary>No setting: links to the host use the scheme of the site's URL. CMS 12 only.</summary>
     public const string Unset = "unset";
 
     public static readonly IReadOnlyList<string> All = [True, False, Unset];
@@ -229,12 +233,20 @@ public sealed record SiteHostsResult
     public IReadOnlyList<string>? Warnings { get; init; }
 }
 
-/// <param name="Id">The site's GUID (<c>SiteDefinition.Id</c>).</param>
+/// <param name="Id">The site's GUID (<c>SiteDefinition.Id</c>); null for a CMS 13 application, which has none (<see cref="Application"/>).</param>
+/// <param name="Name">The site's name (CMS 13: the application's display name, else its name).</param>
 /// <param name="Status">One of <see cref="SiteHostStatus"/>.</param>
-/// <param name="Changes">One line per change: added, made primary, demoted, removed, SiteUrl old → new. Empty when unchanged.</param>
-/// <param name="Hosts">The site's hosts after the change (for a dry run: what they would be).</param>
-/// <param name="SiteUrl">The site's URL after the change.</param>
-public sealed record SiteHostsSite(Guid Id, string Name, string Status, IReadOnlyList<string> Changes, IReadOnlyList<SiteHost> Hosts, string? SiteUrl);
+/// <param name="Changes">One line per change: added, made primary, demoted, removed, SiteUrl (CMS 13: URL) old → new. Empty when unchanged.</param>
+/// <param name="Hosts">The site's hosts after the change (for a dry run: what they would be); never <c>*</c> on CMS 13 (<see cref="IsDefault"/>).</param>
+/// <param name="SiteUrl">The site's URL after the change (CMS 13: the application's, which follows its hosts).</param>
+public sealed record SiteHostsSite(Guid? Id, string Name, string Status, IReadOnlyList<string> Changes, IReadOnlyList<SiteHost> Hosts, string? SiteUrl)
+{
+    /// <summary>CMS 13: the application's name, which identifies it; null on CMS 12.</summary>
+    public string? Application { get; init; }
+
+    /// <summary>CMS 13: whether it is the default application (what the <c>*</c> host is on CMS 12); null on CMS 12.</summary>
+    public bool? IsDefault { get; init; }
+}
 
 /// <param name="Type">One of <see cref="HostTypes"/>.</param>
 /// <param name="Language">The language code, null for every language.</param>

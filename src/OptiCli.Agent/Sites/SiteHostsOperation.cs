@@ -1,6 +1,5 @@
-using System.Globalization;
 using EPiServer.DataAbstraction;
-using EPiServer.Web;
+using OptiCli.Agent.Compat;
 using OptiCli.Agent.Hosting;
 using OptiCli.Agent.Http;
 using OptiCli.Cms;
@@ -10,8 +9,9 @@ namespace OptiCli.Agent.Sites;
 
 /// <summary>
 /// <c>POST /v1/sites/hosts</c>: plans the changes with <see cref="SiteHostPlanner"/>, then saves every changed site through
-/// <see cref="ISiteDefinitionRepository"/>, which clears the site definition cache and raises the change events (to other
-/// servers too, where remote events are set up). That is why this goes through the site rather than SQL.
+/// the CMS (<see cref="SiteStore"/>: site definitions on CMS 12, applications on CMS 13), which clears its cache and raises
+/// the change events (to other servers too, where remote events are set up). That is why this goes through the site
+/// rather than SQL.
 /// </summary>
 /// <remarks>
 /// Here and not in <c>OptiCli.Cms</c>, which the MCP module compiles in: site definitions are for the developer only, and
@@ -20,45 +20,46 @@ namespace OptiCli.Agent.Sites;
 /// </remarks>
 internal static class SiteHostsOperation
 {
-    public const string RestartWarning =
-        "Saved through the site that `opticli serve` runs, which uses the new hosts now. Another process running this site against the same database (your IDE's, say) keeps its cached site definitions until it restarts, unless remote events are set up: restart the site there.";
+    public static string RestartWarning =>
+        $"Saved through the site that `opticli serve` runs, which uses the new hosts now. Another process running this site against the same database (your IDE's, say) keeps its cached {SiteStore.What} until it restarts, unless remote events are set up: restart the site there.";
 
-    public static SiteHostsResult Run(AgentRequest request, SiteHostsRequest body)
+    public static async Task<SiteHostsResult> RunAsync(AgentRequest request, SiteHostsRequest body)
     {
-        // CMS 13 keeps sites as applications; its site definition shim lists them but refuses to save them.
-        Compat.AgentBuild.RequireCms12("Changing site hosts (sites primary, sites host)", "Change the application's hosts in the CMS's admin mode (Applications) for now.");
-        var repository = request.Service<ISiteDefinitionRepository>();
+        var store = new SiteStore(request.Context.RequestServices);
+        var applications = SiteStore.Applications;
         var languages = request.Service<ILanguageBranchRepository>().ListEnabled()
             .Select(l => l.LanguageID?.Trim() ?? "")
             .Where(code => code.Length > 0)
             .ToList();
         var plan = SiteHostPlanner.Plan(
-            repository.List().Select(ToState).ToList(),
+            store.List(),
             body.Changes ?? throw AgentException.Usage("changes is missing."),
             languages,
-            request.Service<AgentSettings>().SharedDatabase);
+            request.Service<AgentSettings>().SharedDatabase,
+            applications);
 
         var warnings = plan.Warnings.ToList();
-        var saved = new Dictionary<Guid, SiteState>();
+        var saved = new Dictionary<string, SiteState>(StringComparer.OrdinalIgnoreCase);
         if (!body.DryRun)
         {
             // Everything that can fail before a save is done for every site first: loading it and setting its hosts (the
             // CMS parses each name). A host moved from one site to another in the same batch must be gone from the first
             // before the CMS sees it on the second, so sites that lose hosts are saved first.
-            var pending = plan.Sites.Where(s => s.Changed).OrderBy(s => s.RemovesHosts ? 0 : 1).Select(s => (Site: s, Definition: Prepare(repository, s))).ToList();
-            foreach (var (site, definition) in pending)
+            var pending = plan.Sites.Where(s => s.Changed).OrderBy(s => s.RemovesHosts ? 0 : 1).Select(s => Prepare(store, s)).ToList();
+            foreach (var prepared in pending)
             {
+                var site = prepared.Site;
                 try
                 {
                     if (request.Call.Aborted.IsCancellationRequested)
                     {
                         throw new AgentException(AgentErrorCodes.Internal, "The caller stopped waiting, so nothing more was saved.", "the CLI timed out or was interrupted");
                     }
-                    saved[site.After.Id] = Save(repository, site, definition);
+                    saved[site.After.Key] = await Save(store, prepared);
                 }
                 catch (Exception ex) when (saved.Count > 0)
                 {
-                    throw Partial(ex, saved.Values, pending.Select(p => p.Site.After).Where(s => !saved.ContainsKey(s.Id)));
+                    throw Partial(ex, saved.Values, pending.Select(p => p.Site.After).Where(s => !saved.ContainsKey(s.Key)));
                 }
             }
             if (saved.Count > 0)
@@ -71,8 +72,14 @@ internal static class SiteHostsOperation
         {
             Sites = plan.Sites.Select(s =>
             {
-                var state = saved.GetValueOrDefault(s.After.Id) ?? s.After;
-                return new SiteHostsSite(state.Id, state.Name, s.Changed ? SiteHostStatus.Changed : SiteHostStatus.Unchanged, s.Changes, state.Hosts, state.SiteUrl);
+                var state = saved.GetValueOrDefault(s.After.Key) ?? s.After;
+                return applications
+                    ? new SiteHostsSite(null, state.Name, Status(s), s.Changes, state.Hosts.Where(h => !SiteHostPlanner.IsDefaultApplication(h)).ToList(), state.SiteUrl)
+                    {
+                        Application = state.Key,
+                        IsDefault = state.Hosts.Any(SiteHostPlanner.IsDefaultApplication),
+                    }
+                    : new SiteHostsSite(state.Id, state.Name, Status(s), s.Changes, state.Hosts, state.SiteUrl);
             }).ToList(),
             DryRun = body.DryRun,
             Saved = saved.Count > 0,
@@ -80,37 +87,32 @@ internal static class SiteHostsOperation
         };
     }
 
-    /// <summary>A writable copy of the site with the planned hosts and SiteUrl, not saved yet.</summary>
-    private static SiteDefinition Prepare(ISiteDefinitionRepository repository, PlannedSite site)
+    private static string Status(PlannedSite site) => site.Changed ? SiteHostStatus.Changed : SiteHostStatus.Unchanged;
+
+    /// <summary>A writable copy of the site with the planned hosts (and SiteUrl, CMS 12), not saved yet.</summary>
+    private static PreparedSite Prepare(SiteStore store, PlannedSite site)
     {
-        var definition = (repository.Get(site.After.Id) ?? throw AgentException.NotFound($"The site {site.After.Name} was deleted meanwhile; nothing was saved.")).CreateWritableClone();
         try
         {
-            definition.Hosts = site.After.Hosts.Select(ToDefinition).ToList();
-            if (site.After.SiteUrl is { } url)
-            {
-                definition.SiteUrl = new Uri(url);
-            }
+            return store.Prepare(site);
         }
-        catch (Exception ex) when (ex is ArgumentException or UriFormatException)
+        catch (SiteRefusedException ex)
         {
             throw Refused(site, ex);
         }
-        return definition;
     }
 
-    /// <returns>The site as the repository has it after the save.</returns>
-    private static SiteState Save(ISiteDefinitionRepository repository, PlannedSite site, SiteDefinition definition)
+    /// <returns>The site as the CMS has it after the save.</returns>
+    private static async Task<SiteState> Save(SiteStore store, PreparedSite prepared)
     {
         try
         {
-            repository.Save(definition);
+            return await store.SaveAsync(prepared, CancellationToken.None);
         }
-        catch (ArgumentException ex)
+        catch (SiteRefusedException ex)
         {
-            throw Refused(site, ex);
+            throw Refused(prepared.Site, ex);
         }
-        return ToState(repository.Get(site.After.Id) ?? definition);
     }
 
     private static AgentException Refused(PlannedSite site, Exception ex) => AgentException.Invalid(
@@ -140,22 +142,4 @@ internal static class SiteHostsOperation
             Reason = agent?.Reason,
         };
     }
-
-    internal static SiteState ToState(SiteDefinition site) => new(
-        site.Id,
-        site.Name,
-        site.SiteUrl?.ToString(),
-        site.Hosts.Select(h => new SiteHost(
-            h.Name,
-            HostTypes.FromValue((int)h.Type),
-            h.Language is { Name.Length: > 0 } language ? language.Name : null,
-            h.UseSecureConnection)).ToList());
-
-    private static HostDefinition ToDefinition(SiteHost host) => new()
-    {
-        Name = host.Name,
-        Type = (HostDefinitionType)HostTypes.ToValue(host.Type),
-        Language = host.Language is null ? null : CultureInfo.GetCultureInfo(host.Language),
-        UseSecureConnection = host.Https,
-    };
 }

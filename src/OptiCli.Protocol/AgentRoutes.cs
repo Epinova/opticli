@@ -69,8 +69,8 @@ public static class AgentRoutes
 
     /// <summary>
     /// <c>POST /v1/sites/hosts</c>. Body: <see cref="SiteHostsRequest"/>. Response: <see cref="SiteHostsResult"/>. Saves
-    /// through <c>ISiteDefinitionRepository</c>, which clears the site definition cache and raises its change events, so
-    /// the running site uses the new hosts at once. Listing sites stays a database read (<c>opticli sites</c>).
+    /// through <c>ISiteDefinitionRepository</c> (CMS 13: <c>IApplicationRepository</c>), which clears the CMS's cache and
+    /// raises its change events, so the running site uses the new hosts at once. Listing sites stays a database read (<c>opticli sites</c>).
     /// Errors: <c>not_found</c> (site, with close matches; a host to remove), <c>conflict</c> (adding a host the site has),
     /// <c>validation</c> 422 naming the offending change (a host another site has, two primary hosts for a language, a
     /// language that isn't enabled, a bad host name, ...), <c>refused</c> (the site's last host; in shared mode, anything
