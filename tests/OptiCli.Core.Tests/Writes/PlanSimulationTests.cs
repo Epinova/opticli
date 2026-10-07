@@ -387,10 +387,12 @@ public class PlanSimulationOnExistingTests
         var none = new Dictionary<string, int>();
         var root = plan.Steps[0].Operation.ContentGuid!.Value;
         var other = Guid.Parse("0b8e1f6c-1111-4222-8333-944455556666");
-        var issue = (Guid guid) => new Protocol.ValidationIssue("MainBody", $"Property 'MainBody' has an unresolved reference to content with ID {guid}.");
+        var issue = (Guid guid) => new Protocol.ValidationIssue("MainBody", $"Property 'MainBody' has an unresolved reference to content with ID {guid}.") { Code = Protocol.ValidationIssueCodes.UnresolvedReference };
 
         Assert.True(PlanSimulation.OnlyLinksPlannedContent(issue(root), plan.Steps, none));
         Assert.False(PlanSimulation.OnlyLinksPlannedContent(issue(other), plan.Steps, none));
+        // Known by the validator that reported it (the code), not by its words.
+        Assert.False(PlanSimulation.OnlyLinksPlannedContent(issue(root) with { Code = null }, plan.Steps, none));
         Assert.False(PlanSimulation.OnlyLinksPlannedContent(new Protocol.ValidationIssue("MainBody", $"Something else about {root}."), plan.Steps, none));
         // Content that exists already (--update-existing) is linked for real: the CMS's check stands.
         Assert.False(PlanSimulation.OnlyLinksPlannedContent(issue(root), plan.Steps, new Dictionary<string, int> { ["root"] = 7 }));

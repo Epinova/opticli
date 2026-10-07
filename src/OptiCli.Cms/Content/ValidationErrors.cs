@@ -76,5 +76,13 @@ internal static class ValidationErrors
             ValidationErrorSeverity.Error => "error",
             ValidationErrorSeverity.Warning => "warning",
             _ => "info",
-        });
+        })
+    {
+        Code = error.Source?.GetType().FullName == ReferencingContentValidator ? ValidationIssueCodes.UnresolvedReference : null,
+    };
+
+    /// <summary>
+    /// CMS 13's validator of references to content that doesn't exist; internal, so known by name. CMS 12 has none.
+    /// </summary>
+    private const string ReferencingContentValidator = "EPiServer.Validation.Internal.ReferencingContentValidator";
 }

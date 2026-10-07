@@ -139,4 +139,18 @@ public static class AgentErrorCodes
 
 /// <param name="Property">Property name the rule is about, null for content-level rules.</param>
 /// <param name="Severity">The CMS's severity: <c>error</c> blocks the save; <c>warning</c> and <c>info</c> are reported only.</param>
-public sealed record ValidationIssue(string? Property, string Message, string Severity = "error");
+public sealed record ValidationIssue(string? Property, string Message, string Severity = "error")
+{
+    /// <summary>What kind of issue it is, where the CLI acts on that (<see cref="ValidationIssueCodes"/>); omitted otherwise.</summary>
+    public string? Code { get; init; }
+}
+
+/// <summary>The kinds of <see cref="ValidationIssue"/> the agent names, from the CMS validator that reported them.</summary>
+public static class ValidationIssueCodes
+{
+    /// <summary>
+    /// CMS 13's check that a reference (a ContentReference, or a link in rich text or a link item) points at content that
+    /// exists (<c>ReferencingContentValidator</c>); the message names the reference's ID or GUID.
+    /// </summary>
+    public const string UnresolvedReference = "unresolvedReference";
+}

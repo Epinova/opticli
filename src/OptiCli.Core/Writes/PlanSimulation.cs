@@ -472,14 +472,15 @@ public static class PlanSimulation
     private static Guid StandInGuid(string id) => StableGuids.Create(StandInNamespace, id);
 
     /// <summary>
-    /// Whether a dry run's validation error is CMS 13's refusal of a link to content that doesn't exist yet
-    /// (<c>Property 'MainBody' has an unresolved reference to content with ID &lt;guid&gt;.</c>) for a link this simulation
-    /// pointed at planned content: its GUID (fixed by the plan, or a stand-in). The plan creates that content before
-    /// the step runs. CMS 12 doesn't check links.
+    /// Whether a dry run's validation error is CMS 13's refusal of a link to content that doesn't exist yet (the agent
+    /// marks it <see cref="Protocol.ValidationIssueCodes.UnresolvedReference"/>, from the CMS validator that reported it;
+    /// <c>Property 'MainBody' has an unresolved reference to content with ID &lt;guid&gt;.</c>) for a link this simulation
+    /// pointed at planned content: its GUID (fixed by the plan, or a stand-in), which the message names. The plan creates
+    /// that content before the step runs. CMS 12 doesn't check links.
     /// </summary>
     public static bool OnlyLinksPlannedContent(Protocol.ValidationIssue issue, IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing)
     {
-        if (!issue.Message.Contains("unresolved reference", StringComparison.OrdinalIgnoreCase))
+        if (issue.Code != Protocol.ValidationIssueCodes.UnresolvedReference)
         {
             return false;
         }
