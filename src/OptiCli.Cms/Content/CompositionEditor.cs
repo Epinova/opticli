@@ -192,7 +192,7 @@ internal sealed class CompositionEditor(DraftNode root, ICompositionBlocks block
         }
         if (value.NodeType is { } nodeType && Normalise(nodeType) != node.NodeType)
         {
-            throw AgentException.Usage($"{where}: {node.Describe()} is a {Shown(node.NodeType)}, not a {nodeType}.");
+            throw AgentException.Usage($"{where}: {node.Describe()} is {A(Shown(node.NodeType))}, not {A(nodeType)}.");
         }
         if (value.Name is not null)
         {
@@ -244,7 +244,7 @@ internal sealed class CompositionEditor(DraftNode root, ICompositionBlocks block
         {
             if (value.Type is not null || value.Ref is not null || value.Blueprint is not null || value.Properties is not null)
             {
-                throw AgentException.Usage($"{where}: a {nodeType} has no block: give type, ref, blueprint and properties on the elements (or sections) in it.");
+                throw AgentException.Usage($"{where}: {A(nodeType)} has no block: give type, ref, blueprint and properties on the elements (or sections) in it.");
             }
         }
         else
@@ -328,7 +328,7 @@ internal sealed class CompositionEditor(DraftNode root, ICompositionBlocks block
         if (value.NodeType is { } nodeType && Normalise(nodeType) is var normal && normal != node.NodeType
             && !(normal is DraftNode.Section or DraftNode.Component && node.NodeType is DraftNode.Section or DraftNode.Component))
         {
-            throw AgentException.Usage($"{where}: {node.Describe()} is a {Shown(node.NodeType)}, not a {nodeType}.");
+            throw AgentException.Usage($"{where}: {node.Describe()} is {A(Shown(node.NodeType))}, not {A(nodeType)}.");
         }
         if (value.Blueprint is not null)
         {
@@ -338,7 +338,7 @@ internal sealed class CompositionEditor(DraftNode root, ICompositionBlocks block
         {
             if (value.Type is { } type && !type.Equals(block.Type, StringComparison.OrdinalIgnoreCase))
             {
-                throw AgentException.Usage($"{where}: {node.Describe()} is a {block.Type}, not a {type}; a node keeps its block.",
+                throw AgentException.Usage($"{where}: {node.Describe()} is {A(block.Type)}, not {A(type)}; a node keeps its block.",
                     "Leave key out to put a new block of another type there.");
             }
             if (value.Ref is { } reference)
@@ -360,7 +360,7 @@ internal sealed class CompositionEditor(DraftNode root, ICompositionBlocks block
         }
         else if (value.Type is not null || value.Ref is not null || value.Properties is not null)
         {
-            throw AgentException.Usage($"{where}: a {Shown(node.NodeType)} has no block: give type, ref and properties on the elements (or sections) in it.");
+            throw AgentException.Usage($"{where}: {A(Shown(node.NodeType))} has no block: give type, ref and properties on the elements (or sections) in it.");
         }
         node.Name = value.Name ?? node.Name;
         var styleBefore = (node.DisplayTemplate, Settings: string.Join(";", node.DisplaySettings.OrderBy(s => s.Key, StringComparer.OrdinalIgnoreCase).Select(s => $"{s.Key}={s.Value}")));
@@ -420,7 +420,7 @@ internal sealed class CompositionEditor(DraftNode root, ICompositionBlocks block
         {
             return expected;
         }
-        throw AgentException.Usage($"{where}: a {given} can't go in {parent.Describe()}: {Shown(parent.NodeType)}s hold {Shown(expected)}s.",
+        throw AgentException.Usage($"{where}: {A(given)} can't go in {parent.Describe()}: {Shown(parent.NodeType)}s hold {Shown(expected)}s.",
             "An experience holds sections, a section rows, a row columns, a column elements.");
     }
 
@@ -556,6 +556,9 @@ internal sealed class CompositionEditor(DraftNode root, ICompositionBlocks block
     };
 
     private static string Shown(string nodeType) => nodeType == DraftNode.Component ? "element" : nodeType;
+
+    /// <summary>"a section", "an element".</summary>
+    private static string A(string noun) => (noun.Length > 0 && "aeiouAEIOU".Contains(noun[0]) ? "an " : "a ") + noun;
 
     private static string? Empty(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
 

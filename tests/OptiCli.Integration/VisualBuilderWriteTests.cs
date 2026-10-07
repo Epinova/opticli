@@ -186,6 +186,9 @@ public sealed class VisualBuilderWriteTests
             // A content variation: its own versions; the content itself and what visitors see stay as they are.
             var variation = Assert.IsType<WriteOutput>((await writes.RunAsync(new SetOperation(id, new JsonObject { ["Summary"] = "In the variation" }) { Variation = "vbWriteTest" }, dryRun: false, cancellationToken)).Output);
             Assert.True(variation.Saved);
+            // Its only version can be discarded: the content keeps its own (compared with its published version).
+            var discard = Assert.IsType<WriteOutput>((await writes.RunAsync(new DiscardOperation(variation.Version!), dryRun: true, cancellationToken)).Output);
+            Assert.Equal(document.Version, discard.BaseVersion);
             await writes.RunAsync(Edit(id, "set", node: "Hello", value: """{"properties": {"Heading": "Hello in the variation"}}""") with { Variation = "vbWriteTest", Publish = true }, false, cancellationToken);
             var own = await GetAsync(created.CreatedId!.Value, VersionSelector.Published, cancellationToken);
             Assert.Equal("Made by the write test", Text(own.Properties["Summary"]!["value"]));

@@ -415,7 +415,7 @@ internal static class CmsCompositionWrites
                 return;
             }
             var fitting = _templates.List().Where(t => Fits(t, nodeType, contentType)).Select(t => t.Key).OrderBy(k => k, StringComparer.Ordinal).ToList();
-            var choices = fitting.Count == 0 ? $"The site has no display template for a {Shown(nodeType)}{(contentType is null ? "" : $" of type {contentType.Name}")}." : $"Templates for it: {string.Join(", ", fitting)}.";
+            var choices = fitting.Count == 0 ? $"The site has no display template for {Article(Shown(nodeType))}{(contentType is null ? "" : $" of type {contentType.Name}")}." : $"Templates for it: {string.Join(", ", fitting)}.";
             var template = _templates.Load(key) ?? throw AgentException.Usage($"{what}: the site has no display template '{key}'.", $"{choices} `opticli display-templates` lists them.");
             if (!Fits(template, nodeType, contentType))
             {
@@ -466,6 +466,8 @@ internal static class CmsCompositionWrites
         }
 
         private static string Shown(string nodeType) => nodeType == DraftNode.Component ? "element" : nodeType;
+
+        private static string Article(string noun) => ("aeiou".Contains(noun[0]) ? "an " : "a ") + noun;
     }
 #endif
 }

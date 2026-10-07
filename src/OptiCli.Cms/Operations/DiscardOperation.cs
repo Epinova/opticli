@@ -38,7 +38,10 @@ internal static class DiscardOperation
         // themselves; checked first, so the refusal names the content and nothing is compared or loaded for nothing.
         call.RequireAccess(version, AccessLevel.Delete);
         var versionLanguage = version is ILocalizable { Language: { } own } ? own : null;
-        var branch = flow.Locator.Versions(link, versionLanguage, Compat.CmsApi.Variation(version));
+        // CMS 13: a content variation's version is discarded among that variation's versions; the content keeps its own.
+        var variation = Compat.CmsApi.Variation(version);
+        var branch = flow.Locator.Versions(link, versionLanguage, variation);
+        var contentVersions = variation is null ? branch : flow.Locator.Versions(link, versionLanguage);
         var stamp = branch.First(v => v.ContentLink.WorkID == version.ContentLink.WorkID);
         var what = $"Version {version.ContentLink} of {link.ID} ('{version.Name}')";
 
@@ -54,7 +57,7 @@ internal static class DiscardOperation
                 Approvals.RequireNotInReview([stamp], what, versionLanguage?.Name);
                 break;
         }
-        if (branch.Count == 1)
+        if (branch.Count == 1 && variation is null)
         {
             throw AgentException.Refused($"{what} is the only version{(versionLanguage is null ? "" : $" of the '{versionLanguage.Name}' branch")}; discarding it would delete the content.",
                 "Move the content to the recycle bin instead (delete).");
@@ -67,8 +70,11 @@ internal static class DiscardOperation
         }
 
         // What is lost: the version's values compared with what stays, the published version or else the one before it.
+        // (A variation's only version leaves the content's own: its published version, else its latest.)
         var kept = ContentLocator.PublishedVersion(branch)
-            ?? branch.Where(v => v.ContentLink.WorkID != stamp.ContentLink.WorkID).Select(v => v.ContentLink.WorkID).First();
+            ?? branch.Where(v => v.ContentLink.WorkID != stamp.ContentLink.WorkID).Select(v => (int?)v.ContentLink.WorkID).FirstOrDefault()
+            ?? ContentLocator.PublishedVersion(contentVersions)
+            ?? contentVersions.First().ContentLink.WorkID;
         var changes = call.Properties.Shown(version,
             PropertyValues.Diff(PropertyValues.Snapshot(flow.Repository.Get<IContent>(new ContentReference(link.ID, kept))), PropertyValues.Snapshot(version)));
         var pending = PendingDrafts.SavedBy(stamp.SavedBy, call.UserName)
