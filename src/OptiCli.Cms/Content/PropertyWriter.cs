@@ -112,6 +112,11 @@ internal sealed class PropertyWriter(
             throw AgentException.Usage($"'{name}' is not a property of {content.GetOriginalType().Name}.",
                 $"Properties: {string.Join(", ", known)}.");
         }
+        if (CmsCompositions.IsStorage(content, property))
+        {
+            throw AgentException.Usage($"'{property.Name}' is where {content.GetOriginalType().Name} stores its Visual Builder composition; it isn't set directly.",
+                call.ForCaller("Change the composition with compositionOps or composition (opticli composition, or composition in --values).", "Change the composition instead."));
+        }
         if (property.IsMetaData && !WritableMetadata.Contains(property.Name))
         {
             throw AgentException.Usage($"'{property.Name}' is built-in metadata and can't be set through opticli.",

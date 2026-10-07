@@ -123,8 +123,16 @@ internal sealed class ContentLocator(CmsCall call)
 
     private static LoaderOptions AnyLanguage() => new() { LanguageLoaderOption.FallbackWithMaster() };
 
-    /// <summary>Every version in <paramref name="language"/> (all of them for content that isn't localizable), newest first.</summary>
-    public IReadOnlyList<ContentVersion> Versions(ContentReference link, CultureInfo? language)
+    /// <summary>
+    /// The versions in <paramref name="language"/> (all languages for content that isn't localizable) of the content itself,
+    /// or with <paramref name="variation"/> of that content variation (CMS 13), newest first. A variation's versions are a
+    /// branch of their own: the content's latest or published version is never one of them.
+    /// </summary>
+    public IReadOnlyList<ContentVersion> Versions(ContentReference link, CultureInfo? language, string? variation = null) =>
+        AllVersions(link, language).Where(v => string.Equals(Compat.CmsApi.Variation(v), variation, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    /// <summary>Every version in <paramref name="language"/>, content variations' too, newest first.</summary>
+    public IReadOnlyList<ContentVersion> AllVersions(ContentReference link, CultureInfo? language)
     {
         var all = _versions.List(link.ToReferenceWithoutVersion());
         var inLanguage = language is null

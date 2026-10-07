@@ -102,6 +102,37 @@ internal static class CmsApi
         definition.Searchable;
 #endif
 
+    /// <summary>The content variation (its key) a version belongs to; null for the content's own versions, and always on CMS 12.</summary>
+    public static string? Variation(ContentVersion version) =>
+#if CMS13
+        string.IsNullOrEmpty(version.Variation) ? null : version.Variation;
+#else
+        null;
+#endif
+
+    /// <summary>The content variation (its key) loaded content is a version of; null for the content's own, and always on CMS 12.</summary>
+    public static string? Variation(IContent content) =>
+#if CMS13
+        content is IVersionable { Variation: { Length: > 0 } key } ? key : null;
+#else
+        null;
+#endif
+
+    /// <summary>Makes a writable copy a version of the content variation <paramref name="key"/> (CMS 13; refused on CMS 12).</summary>
+    public static void SetVariation(IContent writable, string key)
+    {
+#if CMS13
+        if (writable is not IVersionable versionable)
+        {
+            throw AgentException.Usage($"Content {writable.ContentLink.ID} has no versions, so it has no variations.");
+        }
+        versionable.Variation = key;
+#else
+        _ = (writable, key);
+        throw AgentException.Usage("Content variations are CMS 13's; this site runs CMS 12.");
+#endif
+    }
+
     /// <summary>The value a page's <c>PageShortcutLink</c> takes for <paramref name="target"/>: a page reference on CMS 12, a content reference on CMS 13.</summary>
     public static ContentReference ShortcutLink(PageData target) =>
 #if CMS13

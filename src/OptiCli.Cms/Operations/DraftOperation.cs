@@ -20,24 +20,36 @@ internal static class DraftOperation
         var flow = new WriteFlow(call);
         var link = flow.Locator.Resolve(reference);
         var language = flow.Locator.ContentLanguage(flow.Locator.LoadAnyLanguage(link), body.Lang);
+        // CMS 13: the content variation asked for, or the one the ref's version belongs to. Its versions are a branch of
+        // their own; a variation without any yet is made from the content's published (else latest) version.
+        var variation = body.Variation is { } key ? VariationKey(key) : link.WorkID > 0 ? Compat.CmsApi.Variation(flow.Locator.Version(link, link.WorkID)) : null;
 
         // Optimistic concurrency: the caller must have seen the latest version.
-        var branch = flow.Locator.Versions(link, language);
-        var latest = ContentLocator.Latest(branch, link, language);
-        if (body.BaseVersion is { } expected && expected != latest.ContentLink.WorkID)
+        var branch = flow.Locator.Versions(link, language, variation);
+        var own = variation is null ? branch : flow.Locator.Versions(link, language);
+        var startsVariation = variation is not null && branch.Count == 0;
+        var latest = startsVariation
+            ? own.FirstOrDefault(v => v.Status == VersionStatus.Published) ?? ContentLocator.Latest(own, link, language)
+            : ContentLocator.Latest(branch, link, language);
+        if (body.BaseVersion is { } expected && !startsVariation && expected != latest.ContentLink.WorkID)
         {
             throw new AgentException(
                 AgentErrorCodes.Conflict,
-                $"Version {expected} is not the latest version of {link.ID}{In(language)}; {latest.ContentLink} is ({JsonNamingPolicy.CamelCase.ConvertName(latest.Status.ToString())}, saved {latest.Saved.ToUniversalTime():u} by {latest.SavedBy}).",
+                $"Version {expected} is not the latest version of {link.ID}{In(language)}{Of(variation)}; {latest.ContentLink} is ({JsonNamingPolicy.CamelCase.ConvertName(latest.Status.ToString())}, saved {latest.Saved.ToUniversalTime():u} by {latest.SavedBy}).",
                 $"Re-read {latest.ContentLink}, reapply the change and retry with baseVersion {latest.ContentLink.WorkID}.")
             {
                 CurrentVersion = latest.ContentLink.WorkID,
             };
         }
 
-        var baseLink = BaseLink(flow.Locator, link, body.From, branch, latest, language);
+        var baseLink = BaseLink(flow.Locator, link, body.From, startsVariation ? own : branch, latest, language);
         var current = flow.Locator.Version(link, baseLink.WorkID);
         call.RequireRead(current);
+        if (Compat.CmsApi.Variation(current) is { } belongs && !belongs.Equals(variation, StringComparison.OrdinalIgnoreCase))
+        {
+            throw AgentException.Usage($"Version {baseLink} belongs to the content variation '{belongs}'{(variation is null ? "" : $", not to '{variation}'")}.",
+                $"Give variation {belongs} to change it, or a version of {(variation is null ? "the content itself" : $"'{variation}'")}.");
+        }
         if (language is not null && current is ILocalizable { Language: { } versionLanguage } && !versionLanguage.Name.Equals(language.Name, StringComparison.OrdinalIgnoreCase))
         {
             throw AgentException.Usage($"Version {baseLink} is in '{versionLanguage.Name}', not '{language.Name}'.",
@@ -57,12 +69,17 @@ internal static class DraftOperation
 
         var before = PropertyValues.Snapshot(current);
         var writable = (IContent)((IReadOnly)current).CreateWritableClone();
+        if (variation is not null)
+        {
+            Compat.CmsApi.SetVariation(writable, variation);
+        }
         if (body.Name is { } name)
         {
             writable.Name = name;
         }
         flow.Writer.Apply(writable, body.Properties);
         flow.Areas.Apply(writable, body.AreaOps);
+        Compat.CmsCompositionWrites.Apply(flow, writable, body.Composition, body.CompositionOps);
         WriteFlow.ScheduleAt(writable, action, body.PublishAt);
         var cleared = WriteFlow.ClearExpiredStopPublish(writable, action, body.Properties);
 
@@ -112,7 +129,7 @@ internal static class DraftOperation
             throw AgentException.Usage($"from '{from}' is neither '{DraftRequest.FromPublished}' nor a version id.");
         }
         // Any language: a version of another branch is reported as such once loaded.
-        return locator.Versions(link, null).Any(v => v.ContentLink.WorkID == version)
+        return locator.AllVersions(link, null).Any(v => v.ContentLink.WorkID == version)
             ? new ContentReference(link.ID, version)
             : throw AgentException.NotFound($"Content {link.ID} has no version {version}.", $"`opticli versions {link.ID}` lists them.");
     }
@@ -129,4 +146,16 @@ internal static class DraftOperation
         .ToList();
 
     private static string In(CultureInfo? language) => language is null ? "" : $" in '{language.Name}'";
+
+    private static string Of(string? variation) => variation is null ? "" : $" in the content variation '{variation}'";
+
+    /// <summary>A content variation's key as the CMS takes it: a letter, then letters, digits and underscores.</summary>
+    private static string VariationKey(string key)
+    {
+        var trimmed = key.Trim();
+        return System.Text.RegularExpressions.Regex.IsMatch(trimmed, "^[A-Za-z][_0-9A-Za-z]*$")
+            ? trimmed
+            : throw AgentException.Usage($"'{key}' is not a content variation key: the CMS takes a letter, then letters, digits and underscores.",
+                "`opticli versions <ref>` lists the content's variations.");
+    }
 }

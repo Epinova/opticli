@@ -33,9 +33,10 @@ internal static class RemoveLanguageOperation
                 "Do it in the CMS edit UI if that is intended.");
         }
 
-        var branch = flow.Locator.Versions(link, culture);
+        // Its variations' versions go with it.
+        var branch = flow.Locator.AllVersions(link, culture);
         var result = new RemoveLanguageResult(ContentSummaries.Describe(master, flow.Types), culture.Name, branch.Count,
-            ContentLocator.PublishedVersion(branch) is not null, Removed: !body.DryRun, body.DryRun);
+            ContentLocator.PublishedVersion([.. branch.Where(v => Compat.CmsApi.Variation(v) is null)]) is not null, Removed: !body.DryRun, body.DryRun);
         if (!body.DryRun)
         {
             flow.ThrowIfAborted();

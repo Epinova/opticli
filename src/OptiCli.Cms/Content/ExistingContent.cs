@@ -43,7 +43,8 @@ internal static class ExistingContent
         bool requestApproval,
         bool includeDraft,
         bool dryRun,
-        DateTime? publishAt = null)
+        DateTime? publishAt = null,
+        CompositionNodeValue? composition = null)
     {
         var link = existing.ContentLink.ToReferenceWithoutVersion();
         var existingType = flow.Types.Load(existing.ContentTypeID)?.Name ?? existing.ContentTypeID.ToString(CultureInfo.InvariantCulture);
@@ -96,6 +97,7 @@ internal static class ExistingContent
         var writable = (IContent)((IReadOnly)current).CreateWritableClone();
         writable.Name = name;
         flow.Writer.Apply(writable, properties);
+        Compat.CmsCompositionWrites.Apply(flow, writable, composition, null);
         if (deleted)
         {
             // Validated where it will be once restored, not in the recycle bin.

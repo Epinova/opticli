@@ -31,7 +31,14 @@ internal static class CreateOperation
 
         if (body.Guid is { } guid && ExistingContent.Find(flow, guid) is { } existing)
         {
-            return ExistingContent.Update(flow, existing, body.UpdateExisting, type, parent, body.Lang is null ? null : culture, body.Name, body.Properties, body.Publish, body.RequestApproval, body.IncludeDraft, body.DryRun, body.PublishAt);
+            return ExistingContent.Update(flow, existing, body.UpdateExisting, type, parent, body.Lang is null ? null : culture, body.Name, body.Properties, body.Publish, body.RequestApproval, body.IncludeDraft, body.DryRun, body.PublishAt, body.Composition);
+        }
+
+        // CMS 13: from a Visual Builder blueprint, which must be of the type asked for.
+        var blueprint = body.Blueprint is { } blueprintId ? Compat.CmsCompositionWrites.Blueprint(flow, blueprintId, culture) : null;
+        if (blueprint is not null && blueprint.ContentTypeID != type.ID)
+        {
+            throw AgentException.Usage($"The blueprint '{blueprint.Name}' is {flow.Types.Load(blueprint.ContentTypeID)?.Name}, not {type.Name}.", "Leave type to the blueprint's, or pick another blueprint.");
         }
 
         var content = culture is null
@@ -42,8 +49,13 @@ internal static class CreateOperation
             content.ContentGuid = fixedGuid;
         }
         var before = PropertyValues.Snapshot(content);
+        if (blueprint is not null)
+        {
+            Compat.CmsCompositionWrites.CopyBlueprint(flow, blueprint, content);
+        }
         content.Name = body.Name;
         flow.Writer.Apply(content, body.Properties);
+        Compat.CmsCompositionWrites.Apply(flow, content, body.Composition, null);
         // For a plan's dry run under a stand-in parent, that is the nearest existing ancestor, whose sequence is inherited.
         var action = WriteFlow.Publishing(call, parent.ContentLink, body.Publish, body.RequestApproval, body.PublishAt, $"New {type.Name} '{body.Name}'");
         WriteFlow.ScheduleAt(content, action, body.PublishAt);

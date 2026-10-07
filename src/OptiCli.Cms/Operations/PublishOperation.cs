@@ -45,7 +45,8 @@ internal static class PublishOperation
         }
 
         var versionLanguage = version is ILocalizable { Language: { } own } ? own : null;
-        branch ??= flow.Locator.Versions(link, versionLanguage);
+        // A named version of a content variation (CMS 13) is published among that variation's versions.
+        branch ??= flow.Locator.Versions(link, versionLanguage, Compat.CmsApi.Variation(version));
         var what = $"{link.ID} ('{version.Name}')";
         // An editor's requestApproval only asks for review, never publishes (see CmsCall.RequestApprovalMayPublish).
         var publish = !body.RequestApproval || call.RequestApprovalMayPublish;

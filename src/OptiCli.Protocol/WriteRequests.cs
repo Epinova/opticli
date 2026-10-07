@@ -34,6 +34,26 @@ public sealed record DraftRequest
     /// <summary>ContentArea edits, applied in order after <see cref="Properties"/>.</summary>
     public IReadOnlyList<AreaOperation>? AreaOps { get; init; }
 
+    /// <summary>
+    /// CMS 13: the whole Visual Builder composition of an experience (or of a section), replacing its structure: see
+    /// <see cref="CompositionNodeValue"/>. Applied after <see cref="AreaOps"/>, before <see cref="CompositionOps"/>.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CompositionNodeValue? Composition { get; init; }
+
+    /// <summary>CMS 13: Visual Builder composition edits, applied in order after <see cref="Composition"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<CompositionOperation>? CompositionOps { get; init; }
+
+    /// <summary>
+    /// CMS 13: change this content variation (its key) instead of the content itself: a new version of the variation,
+    /// based on its newest version, or, for a variation that has none in the branch yet, on the branch's published version
+    /// (else its latest). <see cref="BaseVersion"/> is checked against the variation's newest version. Pages and experiences
+    /// only. Null: the content itself; a ref naming a variation's version changes that variation.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Variation { get; init; }
+
     /// <summary>Publish the new version instead of leaving it as a draft.</summary>
     public bool Publish { get; init; }
 
@@ -121,6 +141,86 @@ public static class AreaOps
     public const string Move = "move";
 }
 
+/// <summary>
+/// CMS 13: a node of a Visual Builder composition, as a write gives it: the composition itself (the root: an experience's
+/// outline, or a section's grid), a section, row, column or component (an element, or a section-enabled block standing in
+/// an outline). The shape of <c>ContentItemCompositionNode</c>, which a read returns.
+/// </summary>
+/// <remarks>
+/// <para>Structure, as the CMS validates it: an experience's outline holds sections and section-enabled blocks; a section
+/// holds rows; a row holds columns; a column holds element-enabled blocks. A section or component is an inline block (give
+/// <see cref="Type"/>, and <see cref="Properties"/>) or a shared block placed by reference (<see cref="Ref"/>).</para>
+/// <para>In <see cref="DraftRequest.Composition"/> the tree is the whole composition: a node whose <see cref="Key"/> the
+/// composition has keeps its block (the given properties are set on it, the others keep their values), a node without
+/// a key is new; display templates and settings, names and order are as given; nodes left out are removed.</para>
+/// </remarks>
+public sealed record CompositionNodeValue
+{
+    /// <summary><c>section</c>, <c>row</c>, <c>column</c> or <c>component</c>; null on the root, and where the parent decides.</summary>
+    public string? NodeType { get; init; }
+
+    /// <summary>The node's key, as reads show it; null for a new node (the agent makes one).</summary>
+    public string? Key { get; init; }
+
+    public string? Name { get; init; }
+
+    /// <summary>A new inline section's or component's block type (name or GUID).</summary>
+    public string? Type { get; init; }
+
+    /// <summary>A shared block placed by reference (content id or GUID) instead of an inline one.</summary>
+    public string? Ref { get; init; }
+
+    /// <summary>A section blueprint (its content GUID) a new inline section is copied from: its properties and grid, with new keys.</summary>
+    public Guid? Blueprint { get; init; }
+
+    /// <summary>A display template key; in a set, <c>""</c> removes it (and its settings).</summary>
+    public string? DisplayTemplate { get; init; }
+
+    /// <summary>Display settings by key; in a set they are merged, and a null value removes one.</summary>
+    public IReadOnlyDictionary<string, string?>? DisplaySettings { get; init; }
+
+    /// <summary>An inline block's properties, with <see cref="DraftRequest.Properties"/>'s value rules.</summary>
+    public IReadOnlyDictionary<string, JsonElement>? Properties { get; init; }
+
+    public IReadOnlyList<CompositionNodeValue>? Nodes { get; init; }
+}
+
+/// <summary>CMS 13: one edit of a Visual Builder composition. Maps 1:1 to <c>opticli composition &lt;ref&gt; add|remove|move|set</c>.</summary>
+/// <remarks>
+/// <list type="bullet">
+/// <item><c>add</c>: insert <see cref="Value"/> (with its children) under <see cref="Parent"/> at <see cref="At"/> (default: the end).</item>
+/// <item><c>remove</c>: remove <see cref="Node"/> with everything in it.</item>
+/// <item><c>move</c>: move <see cref="Node"/> under <see cref="Parent"/> (default: where it is) to <see cref="At"/> (default: the end).</item>
+/// <item><c>set</c>: change <see cref="Node"/>'s name, display template and settings, and an inline block's properties, from <see cref="Value"/>.</item>
+/// </list>
+/// Nodes are named by key, or by name when only one node has it; <c>root</c> (or no <see cref="Parent"/>) is the composition
+/// itself. Positions are zero-based among the parent's children, after the previous edits.
+/// </remarks>
+public sealed record CompositionOperation
+{
+    /// <summary>One of <see cref="CompositionOps"/>.</summary>
+    public required string Op { get; init; }
+
+    public string? Node { get; init; }
+
+    public string? Parent { get; init; }
+
+    public int? At { get; init; }
+
+    public CompositionNodeValue? Value { get; init; }
+}
+
+public static class CompositionOps
+{
+    public const string Add = "add";
+    public const string Remove = "remove";
+    public const string Move = "move";
+    public const string Set = "set";
+
+    /// <summary>What names the composition itself where a node is expected.</summary>
+    public const string Root = "root";
+}
+
 /// <summary>A ContentArea item as a property value. Give <see cref="Ref"/> or <see cref="Guid"/>.</summary>
 /// <remarks>
 /// <para>In responses, inline blocks (CMS 12.20+, stored inside the area rather than as shared content)
@@ -180,6 +280,19 @@ public sealed record CreateRequest
 
     /// <summary>Same value rules as <see cref="DraftRequest.Properties"/>.</summary>
     public IReadOnlyDictionary<string, JsonElement>? Properties { get; init; }
+
+    /// <summary>CMS 13: the new experience's (or section's) Visual Builder composition, as <see cref="DraftRequest.Composition"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CompositionNodeValue? Composition { get; init; }
+
+    /// <summary>
+    /// CMS 13: make the content from this Visual Builder blueprint (its content GUID), as the edit UI does: a copy of it
+    /// with its type, values and composition (and its other languages), named <see cref="Name"/>, below <see cref="Parent"/>.
+    /// <see cref="Type"/> must be the blueprint's type. <see cref="Properties"/> and <see cref="Composition"/> are applied
+    /// to the copy.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? Blueprint { get; init; }
 
     public bool Publish { get; init; }
 

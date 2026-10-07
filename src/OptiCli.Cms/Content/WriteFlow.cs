@@ -197,9 +197,10 @@ internal sealed class WriteFlow
             siteError = $"{ex.Message} ({ex.GetType().FullName})";
         }
         var result = Repository.Get<IContent>(saved);
-        if (!published && writable is IVersionable && saved.WorkID > 0)
+        if (!published && writable is IVersionable && saved.WorkID > 0 && Compat.CmsApi.Variation(writable) is null)
         {
-            // ForceNewVersion leaves the old primary draft in place, and edit mode would keep opening that one.
+            // ForceNewVersion leaves the old primary draft in place, and edit mode would keep opening that one. (Not for a
+            // content variation's version: the primary draft is the content's own.)
             Versions.SetCommonDraft(saved);
         }
         return new WriteResult

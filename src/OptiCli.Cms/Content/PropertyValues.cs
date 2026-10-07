@@ -19,6 +19,9 @@ internal static class PropertyValues
 {
     public const string DisplayOptionKey = "data-epi-content-display-option";
 
+    /// <summary>CMS 13: the pseudo-property a Visual Builder composition is shown as in snapshots and diffs.</summary>
+    public const string CompositionKey = "composition";
+
     /// <summary>Content name plus every editable property, keyed by name (case-insensitive).</summary>
     public static Dictionary<string, JsonElement?> Snapshot(IContentData content)
     {
@@ -52,10 +55,15 @@ internal static class PropertyValues
         }
         foreach (var property in content.Property)
         {
-            if (!property.IsMetaData || PropertyWriter.WritableMetadata.Contains(property.Name))
+            // CMS 13: an experience's or section's composition is shown as such, not as the properties it is stored in.
+            if ((!property.IsMetaData || PropertyWriter.WritableMetadata.Contains(property.Name)) && !CmsCompositions.IsStorage(content, property))
             {
                 values[property.Name] = ToJson(property is PropertyCategory categories ? Categories(categories.Category) : Format(property.Value));
             }
+        }
+        if (CmsCompositionWrites.Snapshot(content, Snapshot) is { } composition)
+        {
+            values[CompositionKey] = ToJson(composition);
         }
         return values;
     }

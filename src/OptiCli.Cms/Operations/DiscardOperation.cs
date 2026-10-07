@@ -38,7 +38,7 @@ internal static class DiscardOperation
         // themselves; checked first, so the refusal names the content and nothing is compared or loaded for nothing.
         call.RequireAccess(version, AccessLevel.Delete);
         var versionLanguage = version is ILocalizable { Language: { } own } ? own : null;
-        var branch = flow.Locator.Versions(link, versionLanguage);
+        var branch = flow.Locator.Versions(link, versionLanguage, Compat.CmsApi.Variation(version));
         var stamp = branch.First(v => v.ContentLink.WorkID == version.ContentLink.WorkID);
         var what = $"Version {version.ContentLink} of {link.ID} ('{version.Name}')";
 

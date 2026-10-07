@@ -45,7 +45,7 @@ internal static class VersionsOperation
         var cursor = Paging.Cursor(body.Cursor);
         var language = string.IsNullOrWhiteSpace(body.Lang) ? null : locator.ContentLanguage(content, body.Lang.Trim());
 
-        var all = locator.Versions(link, language);
+        var all = locator.AllVersions(link, language);
         var page = all.Skip(cursor).Take(limit).Select(Describe).ToList();
         var next = cursor + page.Count < all.Count ? cursor + page.Count : (int?)null;
         return new VersionList(ContentSummaries.Describe(content, call.Service<IContentTypeRepository>()), page, next);
