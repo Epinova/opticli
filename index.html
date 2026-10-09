@@ -334,6 +334,13 @@ https://your-site.example/episerver/opticli/mcp</pre>
         <code>opticli skill install</code> again to update the skill.</p>
     </div>
     <ol class="changelog">
+      <li><div class="v"><b>0.16.1</b><span>9 October 2026</span></div>
+        <ul>
+          <li><b>Fixed:</b> a shared block given by its ref alone (<code>{"ref": "37"}</code>) in a ContentArea inside an
+            inline block or a Visual Builder element was refused; it is now taken as in the content's own areas.</li>
+          <li><b>Fixed:</b> the MCP module hides a property on a tab the editor lacks access to in inline blocks and block
+            lists' items too, as the edit UI does; it was only applied to the content's own properties.</li>
+        </ul></li>
       <li><div class="v"><b>0.16.0</b><span>9 October 2026</span></div>
         <ul>
           <li><b>Inline blocks in ContentAreas</b> (CMS 12.20+ and CMS 13), which opticli could only read so far:
