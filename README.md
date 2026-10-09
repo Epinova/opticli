@@ -294,8 +294,8 @@ language, or the language the URL selects. On CMS 13, Visual Builder blueprints 
 ### Writing (needs `opticli serve`)
 
 These commands write:
-- `set`, `create`, `area` (add, remove or move ContentArea items), `block create`, `upload` and `translate` save a
-  draft unless `--publish` is given. `upload <file>` adds a PDF, image or other file (up to 50 MB) as media, as the
+- `set`, `create`, `area` (add, remove or move ContentArea items, shared blocks or, on CMS 12.20+, inline blocks
+  stored in the area), `block create`, `upload` and `translate` save a draft unless `--publish` is given. `upload <file>` adds a PDF, image or other file (up to 50 MB) as media, as the
   type the site maps its extension to, and prints where the file was stored. `create` doesn't take media types (that
   would be media without a file).
 - `publish`, `unpublish` (takes a published branch offline, as the edit UI's expiry does), `discard` (deletes one

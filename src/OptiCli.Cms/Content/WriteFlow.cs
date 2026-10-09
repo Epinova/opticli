@@ -146,7 +146,7 @@ internal sealed class WriteFlow
         var diff = PropertyValues.Diff(before, PropertyValues.Snapshot(writable));
         // What is reported: an editor never sees a hidden property's value, also not in a diff.
         var changes = Call.Properties.Shown(writable, diff);
-        var issues = (precheck ?? []).Concat(ValidationErrors.Validate(Call, writable, action)).ToList();
+        var issues = (precheck ?? []).Concat(InlineBlockWarnings()).Concat(ValidationErrors.Validate(Call, writable, action)).ToList();
         var valid = !ValidationErrors.HasErrors(issues);
         var published = Kind(action) == SaveAction.Publish;
 
@@ -216,6 +216,20 @@ internal sealed class WriteFlow
             Validation = issues.Count > 0 ? issues : null,
             SiteError = siteError,
         };
+    }
+
+    /// <summary>
+    /// A warning when the write made new inline blocks in ContentAreas and the site's edit UI doesn't make them itself:
+    /// editors see and edit those, but adding a block there gives them a shared one, which may surprise them.
+    /// </summary>
+    private IEnumerable<ValidationIssue> InlineBlockWarnings()
+    {
+        if (Writer.NewInlineBlocks > 0 && Compat.InlineBlocks.EditUiCreatesThem(Call.Services) == false)
+        {
+            yield return new ValidationIssue(null,
+                "The site's CMS edit UI doesn't make inline blocks in ContentAreas (UIOptions.InlineBlocksInContentAreaEnabled is off): editors see and can edit, move or remove this one there, but a block they add is a shared one.",
+                "warning");
+        }
     }
 
     /// <summary>The highest version id of the content; 0 when it has none.</summary>

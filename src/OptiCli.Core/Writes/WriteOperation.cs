@@ -191,7 +191,10 @@ public sealed record CreateOperation(
 
 /// <summary><c>area &lt;ref&gt; &lt;Prop&gt; add|remove|move</c>.</summary>
 /// <param name="Action"><c>add</c>, <c>remove</c> or <c>move</c>.</param>
-/// <param name="Item">add: the block to add; remove/move: the item, by the content it references (alternative to <paramref name="Index"/>).</param>
+/// <param name="Item">
+/// add: the shared block to add (or <see cref="Type"/> for a new inline block); remove/move: the item, by the content it
+/// references (alternative to <paramref name="Index"/>; an inline block has no content, so only its index names it).
+/// </param>
 /// <param name="Index">remove/move: zero-based position of the item.</param>
 /// <param name="At">add: insert position (default: end).</param>
 /// <param name="To">move: target position.</param>
@@ -214,9 +217,18 @@ public sealed record AreaEdit(
     /// <summary>As <see cref="SetOperation.From"/>.</summary>
     public FromVersion? From { get; init; }
 
+    /// <summary>add: a new inline block of this block type (<c>--type</c>, a plan's <c>type</c>) instead of <see cref="Item"/>.</summary>
+    public string? Type { get; init; }
+
+    /// <summary>add with <see cref="Type"/>: the inline block's values (<c>Prop=value</c>, <c>--values</c>; a plan's <c>values</c>).</summary>
+    public JsonObject? Values { get; init; }
+
+    /// <summary>add with <see cref="Type"/>: the inline block's name in the area (<c>--name</c>, a plan's <c>name</c>).</summary>
+    public string? Name { get; init; }
+
     public override IEnumerable<string?> Refs => [Ref, Item];
 
-    public override WriteOperation MapRefs(Func<string, string> map) => this with { Ref = map(Ref), Item = Map(Item, map) };
+    public override WriteOperation MapRefs(Func<string, string> map) => this with { Ref = map(Ref), Item = Map(Item, map), Values = MapValues(Values, map) };
 
     // A step scheduled for later stays scheduled.
     public override WriteOperation WithPublish() => PublishAt is null ? this with { Publish = true } : this;

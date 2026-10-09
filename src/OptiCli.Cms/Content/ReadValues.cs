@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Reflection;
 using System.Text.Json;
 using EPiServer;
 using EPiServer.Core;
@@ -28,9 +27,6 @@ internal sealed class ReadValues(IContentTypeRepository types, Func<IContentData
 
     /// <summary>What <see cref="Format"/> returns for a value it has no shape for.</summary>
     private static readonly object Unrecognised = new();
-
-    /// <summary><c>ContentAreaItem.InlineBlock</c> exists from CMS 12.20; the agent compiles against 12.0.</summary>
-    private static readonly PropertyInfo? InlineBlockProperty = typeof(ContentAreaItem).GetProperty("InlineBlock");
 
     private readonly Dictionary<Type, IReadOnlyDictionary<string, PropertyDefinition>> _definitions = [];
 
@@ -133,7 +129,7 @@ internal sealed class ReadValues(IContentTypeRepository types, Func<IContentData
 
     private ContentItemAreaEntry AreaEntry(ContentAreaItem item)
     {
-        var inline = InlineBlockProperty?.GetValue(item) as BlockData;
+        var inline = InlineBlocks.Of(item);
         var hasLink = !ContentReference.IsNullOrEmpty(item.ContentLink);
         return new ContentItemAreaEntry(
             hasLink ? item.ContentLink.ToString() : null,
@@ -141,6 +137,7 @@ internal sealed class ReadValues(IContentTypeRepository types, Func<IContentData
         {
             Inline = inline is null ? null : true,
             Type = inline is null ? null : BlockType(inline),
+            Name = inline is null ? null : InlineBlocks.Name(item),
             Properties = inline is null ? null : Properties(inline),
             DisplayOption = PropertyValues.DisplayOption(item),
             Group = string.IsNullOrWhiteSpace(item.ContentGroup) ? null : item.ContentGroup,

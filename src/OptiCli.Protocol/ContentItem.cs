@@ -130,6 +130,9 @@ public sealed record ContentItemAreaEntry(string? Ref, Guid? Guid = null)
     /// <summary>For inline blocks: the block's content type name.</summary>
     public string? Type { get; init; }
 
+    /// <summary>For inline blocks: the name the item has in the area, if it was given one.</summary>
+    public string? Name { get; init; }
+
     /// <summary>For inline blocks: the block's properties, in the <see cref="ContentItemProperty"/> shape.</summary>
     public IReadOnlyDictionary<string, ContentItemProperty>? Properties { get; init; }
 

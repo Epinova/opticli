@@ -13,31 +13,75 @@ internal static class AreaItemRules
     /// For each new item, the index of the current item it takes over (-1 for none): the n-th new item for some content
     /// takes over the n-th current item for that content, in area order. Inserting, removing or reordering other items
     /// doesn't change which item a block's settings stay with; of two items for the same content, the first new one
-    /// takes over the first current one. Items without content (inline blocks) match nothing.
+    /// takes over the first current one. Items are keyed by their content (its ref without version), inline blocks by
+    /// their type (<see cref="InlineKey"/>); a null key matches nothing.
     /// </summary>
-    public static int[] Match(IReadOnlyList<string?> current, IReadOnlyList<string?> wanted)
+    /// <param name="same">
+    /// For inline blocks, which have no identity: whether new item <c>i</c> is current item <c>j</c> as it is (the values
+    /// <c>get</c> shows of it). Such pairs are made first, so writing back an area with an inline block left out, or
+    /// moved, keeps each other block with its own values; the rest pair up as above, in order among those left.
+    /// </param>
+    public static int[] Match(IReadOnlyList<string?> current, IReadOnlyList<string?> wanted, Func<int, int, bool>? same = null)
     {
-        // Where the search for each content's next current item starts.
-        var next = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        var matches = new int[wanted.Count];
+        var matches = Enumerable.Repeat(-1, wanted.Count).ToArray();
+        var taken = new bool[current.Count];
+        bool Pairs(int j, string key) => !taken[j] && string.Equals(current[j], key, StringComparison.OrdinalIgnoreCase);
+        if (same is not null)
+        {
+            for (var i = 0; i < wanted.Count; i++)
+            {
+                if (wanted[i] is not { } key)
+                {
+                    continue;
+                }
+                for (var j = 0; j < current.Count; j++)
+                {
+                    if (Pairs(j, key) && same(i, j))
+                    {
+                        (matches[i], taken[j]) = (j, true);
+                        break;
+                    }
+                }
+            }
+        }
         for (var i = 0; i < wanted.Count; i++)
         {
-            matches[i] = -1;
-            if (wanted[i] is not { } key)
+            if (matches[i] >= 0 || wanted[i] is not { } key)
             {
                 continue;
             }
-            for (var j = next.GetValueOrDefault(key); j < current.Count; j++)
+            for (var j = 0; j < current.Count; j++)
             {
-                if (string.Equals(current[j], key, StringComparison.OrdinalIgnoreCase))
+                if (Pairs(j, key))
                 {
-                    matches[i] = j;
+                    (matches[i], taken[j]) = (j, true);
                     break;
                 }
             }
-            next[key] = matches[i] < 0 ? current.Count : matches[i] + 1;
         }
         return matches;
+    }
+
+    /// <summary>The key of an inline block of the content type <paramref name="typeId"/>, for <see cref="Match"/>.</summary>
+    public static string InlineKey(int typeId) => "inline:" + typeId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// A property name that names one item of a ContentArea (<c>MainArea[2]</c>, zero-based), as <c>where-used</c> and
+    /// <c>find --where</c> show an inline block's place; null for a plain name.
+    /// </summary>
+    /// <exception cref="AgentException"><c>usage</c> for brackets that don't hold a position.</exception>
+    public static (string Property, int Index)? Indexed(string name)
+    {
+        var open = name.IndexOf('[');
+        if (open < 0 && !name.Contains(']'))
+        {
+            return null;
+        }
+        if (open > 0 && name.EndsWith(']') && int.TryParse(name.AsSpan(open + 1, name.Length - open - 2), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var index))
+        {
+            return (name[..open].Trim(), index);
+        }
+        throw AgentException.Usage($"'{name}' is neither a property name nor one item of a ContentArea, like MainArea[2] (zero-based).");
     }
 
     /// <summary>

@@ -248,7 +248,7 @@ public static class PlanSimulation
             }
             if (write.Operation is AreaEdit area)
             {
-                if (area.Item is { } item && PlanId(item) is not null)
+                if ((area.Item is { } item && PlanId(item) is not null) || NamesPlanned(area.Values))
                 {
                     notChecked.Add(area.Property);
                 }
@@ -418,8 +418,8 @@ public static class PlanSimulation
     private static bool SameLanguage(string? step, string? created) => step is null || string.Equals(step, created, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// An area step applied to the ContentArea value as <c>properties</c> gives it (<c>[{"ref": ...}]</c>). An item or
-    /// position that isn't there is left to the real run to report.
+    /// An area step applied to the ContentArea value as <c>properties</c> gives it (<c>[{"ref": ...}]</c>, an inline block
+    /// as <c>{"type": ..., "properties": ...}</c>). An item or position that isn't there is left to the real run to report.
     /// </summary>
     private static void Edit(JsonObject properties, AreaEdit area)
     {
@@ -428,8 +428,16 @@ public static class PlanSimulation
         int Find() => area.Index ?? items.ToList().FindIndex(i => i is JsonObject item && (string?)item["ref"] == area.Item);
         switch (area.Action)
         {
-            case Protocol.AreaOps.Add when area.Item is not null && (area.At ?? items.Count) is var at && at >= 0 && at <= items.Count:
-                var added = new JsonObject { ["ref"] = area.Item };
+            case Protocol.AreaOps.Add when (area.Item is not null || area.Type is not null) && (area.At ?? items.Count) is var at && at >= 0 && at <= items.Count:
+                var added = area.Item is not null ? new JsonObject { ["ref"] = area.Item } : new JsonObject { ["type"] = area.Type };
+                if (area.Item is null && area.Values is not null)
+                {
+                    added["properties"] = area.Values.DeepClone();
+                }
+                if (area.Item is null && area.Name is not null)
+                {
+                    added["name"] = area.Name;
+                }
                 if (area.Display is not null)
                 {
                     added["displayOption"] = area.Display;
@@ -523,6 +531,15 @@ public static class PlanSimulation
     }
 
     private static readonly Guid StandInNamespace = Guid.Parse("8f3c0b9e-2d47-4a51-9e6b-0c5a7d3e1f42");
+
+    /// <summary>Whether a value (an inline block's values, say) names content by a plan id (<c>$page</c>) anywhere in it.</summary>
+    private static bool NamesPlanned(JsonNode? value) => value switch
+    {
+        JsonObject obj => obj.Any(p => NamesPlanned(p.Value)),
+        JsonArray array => array.Any(NamesPlanned),
+        JsonValue leaf => leaf.TryGetValue<string>(out var text) && PlanId(text) is not null,
+        _ => false,
+    };
 
     public static string? PlanId(string? reference) => reference is { Length: > 1 } && reference[0] == '$' ? reference[1..] : null;
 

@@ -90,7 +90,7 @@ internal static class PropertyValues
     internal static JsonElement? ExplicitPersonalization(JsonElement? value)
     {
         if (value is not { ValueKind: JsonValueKind.Array } array
-            || !array.EnumerateArray().Any(item => item.ValueKind == JsonValueKind.Object && (item.TryGetProperty("ref", out _) || item.TryGetProperty("guid", out _)) && !item.TryGetProperty("href", out _)))
+            || !array.EnumerateArray().Any(item => item.ValueKind == JsonValueKind.Object && (item.TryGetProperty("ref", out _) || item.TryGetProperty("guid", out _) || item.TryGetProperty("inline", out _)) && !item.TryGetProperty("href", out _)))
         {
             return value;
         }
@@ -144,16 +144,7 @@ internal static class PropertyValues
     {
         null => null,
         string text => text.Length == 0 ? null : text,
-        ContentArea area => area.Items.Select(item => new AreaItemValue
-        {
-            // Inline blocks (CMS 12.20+) have neither a link nor a GUID; they show up with no ref.
-            Ref = ContentReference.IsNullOrEmpty(item.ContentLink) ? null : item.ContentLink.ToString(),
-            Guid = ContentReference.IsNullOrEmpty(item.ContentLink) && item.ContentGuid != Guid.Empty ? item.ContentGuid : null,
-            DisplayOption = DisplayOption(item),
-            // So a change of personalization shows in the diff.
-            Group = string.IsNullOrWhiteSpace(item.ContentGroup) ? null : item.ContentGroup,
-            VisitorGroups = item.AllowedRoles is { } roles && roles.Any() ? roles.ToList() : null,
-        }).ToList(),
+        ContentArea area => area.Items.Select(AreaItem).ToList(),
         ContentReference reference => ContentReference.IsNullOrEmpty(reference) ? null : reference.ToString(),
         LinkItemCollection links => links.Select(link => new LinkItemValue
         {
@@ -178,6 +169,47 @@ internal static class PropertyValues
         // Custom values (PropertyList<T> items) are compared by their JSON; ToString() would only give the type name.
         _ => value,
     };
+
+    /// <summary>
+    /// A ContentArea item as the writer takes it: a shared block by its ref (or GUID), an inline block (CMS 12.20+) by its
+    /// type, name and values, so a diff shows a change of an inline block's values, and its <c>after</c> can be sent back.
+    /// </summary>
+    private static AreaItemValue AreaItem(ContentAreaItem item)
+    {
+        var inline = InlineBlocks.Of(item);
+        var hasLink = inline is null && !ContentReference.IsNullOrEmpty(item.ContentLink);
+        return new AreaItemValue
+        {
+            Ref = hasLink ? item.ContentLink.ToString() : null,
+            Guid = !hasLink && inline is null && item.ContentGuid != Guid.Empty ? item.ContentGuid : null,
+            Inline = inline is null ? null : true,
+            Type = inline is null ? null : InlineTypeName(inline),
+            Name = inline is null ? null : InlineBlocks.Name(item),
+            Properties = inline is null ? null : Snapshot(inline).Where(p => p.Value is not null).ToDictionary(p => p.Key, p => p.Value!.Value, StringComparer.OrdinalIgnoreCase),
+            DisplayOption = DisplayOption(item),
+            // So a change of personalization shows in the diff.
+            Group = string.IsNullOrWhiteSpace(item.ContentGroup) ? null : item.ContentGroup,
+            VisitorGroups = item.AllowedRoles is { } roles && roles.Any() ? roles.ToList() : null,
+        };
+    }
+
+    /// <summary>An inline block's content type name.</summary>
+    internal static string InlineTypeName(BlockData block)
+    {
+        ContentType? type = null;
+        try
+        {
+            if (ServiceLocator.Current.TryGetExistingInstance(out IContentTypeRepository? types) && types is not null)
+            {
+                type = InlineBlocks.TypeId(block) is var id and > 0 ? types.Load(id) : types.Load(block.GetOriginalType());
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // No service locator (a unit test): the model's class name, which is the type's unless it says otherwise.
+        }
+        return type?.Name ?? block.GetOriginalType().Name;
+    }
 
     public static string? DisplayOption(ContentAreaItem item) =>
         item.RenderSettings is { } settings && settings.TryGetValue(DisplayOptionKey, out var option) ? option?.ToString() : null;

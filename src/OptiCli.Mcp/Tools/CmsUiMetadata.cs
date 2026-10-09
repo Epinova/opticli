@@ -35,8 +35,39 @@ internal sealed class CmsUiMetadata(IServiceProvider services, ILogger<CmsUiMeta
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
+            if (owner is BlockData and not IContent && AsTheEditUiDoes(provider, owner) is { } blocks)
+            {
+                return blocks;
+            }
             logger.LogWarning(e, "The CMS edit UI's metadata for {Type} couldn't be built; an editor's assistant sees what the model's own settings show of it, and may change none of it.",
                 EPiServer.RuntimeModelExtensions.GetOriginalType(owner).FullName);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// A block that isn't content (an inline block in a ContentArea, a block list's item) as the edit UI builds its form's
+    /// metadata: for a new block of its type (its model accessor's <c>GetDefault</c>), as some editor descriptors need
+    /// content to find (a URL's, for one). Null when that fails too.
+    /// </summary>
+    private IReadOnlyDictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>? AsTheEditUiDoes(ExtensibleMetadataProvider provider, IContentData owner)
+    {
+        try
+        {
+            var types = services.GetRequiredService<EPiServer.DataAbstraction.IContentTypeRepository>();
+            var type = OptiCli.Cms.Compat.InlineBlocks.TypeId((BlockData)owner) is var id and > 0 ? types.Load(id) : types.Load(EPiServer.RuntimeModelExtensions.GetOriginalType(owner));
+            if (type is null)
+            {
+                return null;
+            }
+            var model = services.GetRequiredService<EPiServer.IContentRepository>().GetDefault<IContent>(ContentReference.RootPage, type.ID);
+            var all = new Dictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>(ReferenceEqualityComparer.Instance);
+            Walk(provider.GetExtendedMetadataForType(typeof(ContentData), () => model).Properties, owner, all);
+            return all;
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            logger.LogDebug(e, "The CMS edit UI's metadata for a new {Type} couldn't be built either.", EPiServer.RuntimeModelExtensions.GetOriginalType(owner).FullName);
             return null;
         }
     }

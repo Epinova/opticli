@@ -142,8 +142,8 @@ public sealed class WriteExecutor(
         var target = await EditableAsync(op.Ref, cancellationToken);
         op.From?.Check(target.Id, target.Version);
         // CMS 13: "composition" in the values is an experience's (or section's) whole Visual Builder composition.
-        var (properties, composition) = CompositionInput.Split(session.Model, target.Header.TypeId, op.Properties);
-        PropertyNameCheck.Check(session.Model, target.Header.TypeId, properties);
+        var (split, composition) = CompositionInput.Split(session.Model, target.Header.TypeId, op.Properties);
+        var properties = PropertyNameCheck.Prepare(session.Model, target.Header.TypeId, split);
         RequireVariations(op.Variation);
         var language = LanguageFor(op.Lang, target);
         var masterFirst = await MasterFirstAsync(target, language, op, dryRun, cancellationToken);
@@ -267,11 +267,12 @@ public sealed class WriteExecutor(
         var property = PropertyNameCheck.RequireContentArea(session.Model, target.Header.TypeId, op.Property);
         var edit = op.Action switch
         {
+            AreaOps.Add when op.Type is not null => InlineAdd(op, property.Name),
             AreaOps.Add => new AreaOperation
             {
                 Op = AreaOps.Add,
                 Property = property.Name,
-                Ref = (await ResolveAsync(op.Item ?? throw new UsageException("area add needs the block to add."), "block", cancellationToken)).ContentRef,
+                Ref = (await ResolveAsync(op.Item ?? throw new UsageException("area add needs the block to add: its ref, or --type for a new inline block."), "block", cancellationToken)).ContentRef,
                 At = op.At,
                 DisplayOption = op.Display,
                 IfMissing = updateExisting,
@@ -290,7 +291,37 @@ public sealed class WriteExecutor(
         {
             throw new UsageException($"area {op.Action} needs the item: its index or the content it references.");
         }
+        if (edit.Op != AreaOps.Add && (op.Type is not null || op.Values is not null || op.Name is not null))
+        {
+            throw new UsageException($"area {op.Action} takes no type, values or name; those are for adding an inline block.");
+        }
         return edit;
+    }
+
+    /// <summary>
+    /// <c>area add --type</c>: a new inline block with its values (names checked against the type, <c>get</c>'s shape
+    /// unwrapped), as the agent takes it. With <c>--update-existing</c> an inline block of the type with those values
+    /// counts as already there.
+    /// </summary>
+    private AreaOperation InlineAdd(AreaEdit op, string property)
+    {
+        if (op.Item is not null)
+        {
+            throw new UsageException("area add takes a block ref or --type (a new inline block), not both.", "Prop=value arguments after --type are the inline block's values.");
+        }
+        var type = PropertyNameCheck.BlockType(session.Model, op.Type!, "--type");
+        var values = op.Values is null ? null : PropertyNameCheck.InlineValues(session.Model, type, op.Values, "");
+        return new AreaOperation
+        {
+            Op = AreaOps.Add,
+            Property = property,
+            Type = type.Name,
+            Values = PropertyArguments.ToRequest(values),
+            Name = op.Name,
+            At = op.At,
+            DisplayOption = op.Display,
+            IfMissing = updateExisting,
+        };
     }
 
     /// <param name="from">What <c>--from</c> based the change on, for the warning about the newer versions it leaves out.</param>
@@ -349,8 +380,8 @@ public sealed class WriteExecutor(
             throw new UsageException($"{type.Name} is a media type; created this way it would be a media item without a file.",
                 "Use `opticli upload <file> --parent <folder>` (or --for <page>); --type picks the media type.");
         }
-        var (properties, composition) = CompositionInput.Split(session.Model, type.Id, op.Properties);
-        PropertyNameCheck.Check(session.Model, type.Id, properties);
+        var (split, composition) = CompositionInput.Split(session.Model, type.Id, op.Properties);
+        var properties = PropertyNameCheck.Prepare(session.Model, type.Id, split);
         var request = new CreateRequest
         {
             Parent = parent.ContentRef,
@@ -383,7 +414,7 @@ public sealed class WriteExecutor(
         {
             throw new UsageException($"{type.Name} is a {type.Kind.ToString().ToLowerInvariant()} type, not a block type.", "Use `opticli create` for pages and folders.");
         }
-        PropertyNameCheck.Check(session.Model, type.Id, op.Properties);
+        var properties = PropertyNameCheck.Prepare(session.Model, type.Id, op.Properties);
         var request = new CreateRequest
         {
             Parent = op.Parent is null ? null : (await ResolveAsync(op.Parent, "parent", cancellationToken)).ContentRef,
@@ -391,7 +422,7 @@ public sealed class WriteExecutor(
             Type = type.Name,
             Name = op.Name,
             Lang = session.Language(op.Lang)?.Code,
-            Properties = PropertyArguments.ToRequest(op.Properties),
+            Properties = PropertyArguments.ToRequest(properties),
             Publish = op.Publish,
             DryRun = dryRun,
             Guid = op.ContentGuid,
@@ -549,12 +580,12 @@ public sealed class WriteExecutor(
         }
         else
         {
-            PropertyNameCheck.Check(session.Model, target.Header.TypeId, op.Properties);
+            var properties = PropertyNameCheck.Prepare(session.Model, target.Header.TypeId, op.Properties);
             var request = new LanguageBranchRequest
             {
                 Lang = language.Code,
                 Name = op.Name,
-                Properties = PropertyArguments.ToRequest(op.Properties),
+                Properties = PropertyArguments.ToRequest(properties),
                 Publish = op.Publish,
                 RequestApproval = op.RequestApproval,
                 DryRun = dryRun,

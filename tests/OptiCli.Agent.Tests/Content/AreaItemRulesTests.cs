@@ -31,6 +31,48 @@ public class AreaItemRulesTests
         Assert.Equal([-1, 0, 1, -1], AreaItemRules.Match(["123", "123"], ["456", "123", "123", "123"]));
 
     [Fact]
+    public void The_nth_inline_block_of_a_type_takes_over_the_nth_current_one_of_that_type()
+    {
+        var teaser = AreaItemRules.InlineKey(11);
+        var button = AreaItemRules.InlineKey(12);
+
+        Assert.Equal([1, -1, 0, 3], AreaItemRules.Match([button, teaser, "123", teaser], [teaser, "456", button, teaser]));
+        // A ref never pairs with an inline block, whatever the ids.
+        Assert.Equal([-1], AreaItemRules.Match([AreaItemRules.InlineKey(123)], ["123"]));
+    }
+
+    [Fact]
+    public void An_inline_block_given_as_it_is_pairs_with_itself_before_the_rest_pair_in_order()
+    {
+        var teaser = AreaItemRules.InlineKey(11);
+        // Current: A, B, C (all teasers); written back: A and C, B left out. C must keep its own values, not B's.
+        var same = new Dictionary<(int Wanted, int Current), bool> { [(0, 0)] = true, [(1, 2)] = true };
+
+        Assert.Equal([0, 2], AreaItemRules.Match([teaser, teaser, teaser], [teaser, teaser], (i, j) => same.GetValueOrDefault((i, j))));
+        // Without a match, the order decides, among the current ones not taken.
+        Assert.Equal([2, 0], AreaItemRules.Match([teaser, teaser, teaser], [teaser, teaser], (i, j) => i == 0 && j == 2));
+        // A match is only made with an item of the same key.
+        Assert.Equal([-1], AreaItemRules.Match(["123"], [teaser], (_, _) => true));
+    }
+
+    [Theory]
+    [InlineData("MainArea[2]", "MainArea", 2)]
+    [InlineData("MainArea[0]", "MainArea", 0)]
+    public void A_name_with_a_position_names_one_item_of_a_ContentArea(string name, string property, int index) =>
+        Assert.Equal((property, index), AreaItemRules.Indexed(name));
+
+    [Theory]
+    [InlineData("MainArea[x]")]
+    [InlineData("MainArea[-1]")]
+    [InlineData("[2]")]
+    [InlineData("MainArea]")]
+    public void Brackets_without_a_position_are_a_usage_error(string name)
+    {
+        Assert.Null(AreaItemRules.Indexed("MainArea"));
+        Assert.Equal(AgentErrorCodes.Usage, Assert.Throws<AgentException>(() => AreaItemRules.Indexed(name)).Code);
+    }
+
+    [Fact]
     public void Inline_blocks_and_content_providers_match_by_their_ref()
     {
         Assert.Equal([-1, 1], AreaItemRules.Match([null, "63__dam"], [null, "63__DAM"]));

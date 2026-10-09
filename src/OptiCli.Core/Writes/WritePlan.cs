@@ -28,7 +28,7 @@ public sealed partial class WritePlan
     {
         ["set"] = ["ref*", "properties", "name", "lang", "variation", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force"],
         ["create"] = ["parent*", "type", "blueprint", "name*", "properties", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "id", "guid"],
-        ["area"] = ["ref*", "property*", "action*", "item", "index", "at", "to", "display", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force"],
+        ["area"] = ["ref*", "property*", "action*", "item", "type", "values", "name", "index", "at", "to", "display", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force"],
         ["composition"] = ["ref*", "action*", "node", "nodeType", "in", "at", "value", "lang", "variation", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force"],
         ["block"] = ["type*", "name*", "for", "parent", "properties", "lang", "publish", "includeDraft", "requestApproval", "id", "guid"],
         ["upload"] = ["file*", "for", "parent", "replace", "name", "type", "properties", "publish", "includeDraft", "requestApproval", "id", "guid"],
@@ -319,6 +319,9 @@ public sealed partial class WritePlan
             "area" => new AreaEdit(reader.Ref("ref"), reader.String("property") ?? "", reader.String("action") ?? "", reader.OptionalRef("item"), reader.Int("index"), reader.Int("at"), reader.Int("to"), reader.String("display"), reader.String("lang"), reader.Bool("publish"), reader.Int("baseVersion"), reader.Bool("force"))
             {
                 From = reader.From("from"),
+                Type = reader.String("type"),
+                Values = reader.Object("values"),
+                Name = reader.String("name"),
             },
             "block" => new BlockCreateOperation(reader.String("type") ?? "", reader.String("name") ?? "", reader.OptionalRef("for"), reader.OptionalRef("parent"), reader.Object("properties"), reader.String("lang"), reader.Bool("publish")),
             "upload" => new UploadOperation(reader.String("file") ?? "", reader.OptionalRef("for"), reader.OptionalRef("parent"), reader.String("name"), reader.String("type"), reader.Object("properties"), reader.Bool("publish"))
@@ -344,6 +347,21 @@ public sealed partial class WritePlan
         if (operation is AreaEdit area && area.Action is not ("add" or "remove" or "move") && step["action"] is not null)
         {
             problems.Add($"{reader.Where}: \"action\" must be add, remove or move.");
+        }
+        if (operation is AreaEdit inline && (inline.Type is not null || inline.Values is not null || inline.Name is not null))
+        {
+            if (inline.Action != "add")
+            {
+                problems.Add($"{reader.Where}: \"type\", \"values\" and \"name\" are for adding an inline block (\"action\": \"add\"); remove and move name one by \"index\".");
+            }
+            else if (inline.Type is null)
+            {
+                problems.Add($"{reader.Where}: \"values\" and \"name\" are a new inline block's: give its \"type\" too.");
+            }
+            else if (inline.Item is not null)
+            {
+                problems.Add($"{reader.Where}: give \"item\" (a shared block) or \"type\" (a new inline block), not both.");
+            }
         }
         if (operation is CompositionEdit edit && CompositionEdits.Problem(edit) is { } compositionProblem && step["action"] is not null)
         {

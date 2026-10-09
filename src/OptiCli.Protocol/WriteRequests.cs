@@ -12,7 +12,8 @@ namespace OptiCli.Protocol;
 /// reference, <c>"2025-01-31"</c> for a date, HTML for XHTML strings. Numbers and booleans are
 /// parsed from their JSON text. <c>null</c> clears the property. Structured values are JSON:</para>
 /// <list type="bullet">
-/// <item>ContentArea: array of <see cref="AreaItemValue"/>, replacing all items.</item>
+/// <item>ContentArea: array of <see cref="AreaItemValue"/>, replacing all items. <c>"MainArea[2]"</c>: an object of
+/// values for the inline block at that position (zero-based), the others staying as they are.</item>
 /// <item>LinkItemCollection: array of <see cref="LinkItemValue"/>.</item>
 /// <item>LinkItem: one <see cref="LinkItemValue"/>, or a string href/ref that keeps the link's text.</item>
 /// <item>Lists (<c>IList&lt;string&gt;</c>, <c>IList&lt;ContentReference&gt;</c>, ...): array of scalars.</item>
@@ -106,11 +107,13 @@ public sealed record DraftRequest
 /// <summary>One ContentArea edit. Maps 1:1 to <c>opticli area &lt;ref&gt; &lt;Prop&gt; add|remove|move</c>.</summary>
 /// <remarks>
 /// <list type="bullet">
-/// <item><c>add</c>: insert <see cref="Ref"/> at <see cref="At"/> (default: end), optional <see cref="DisplayOption"/>.</item>
+/// <item><c>add</c>: insert <see cref="Ref"/> (a shared block), or a new inline block of <see cref="Type"/> with
+/// <see cref="Values"/>, at <see cref="At"/> (default: end), optional <see cref="DisplayOption"/>.</item>
 /// <item><c>remove</c>: remove the item at <see cref="Index"/>, or the first item referencing <see cref="Ref"/>.</item>
 /// <item><c>move</c>: move the item at <see cref="Index"/> (or the first referencing <see cref="Ref"/>) to position <see cref="At"/>.</item>
 /// </list>
-/// Indexes are zero-based and refer to the area as it is after the previous operations.
+/// Indexes are zero-based and refer to the area as it is after the previous operations. An inline block has no ref, so
+/// remove and move name it by its index.
 /// </remarks>
 public sealed record AreaOperation
 {
@@ -122,6 +125,21 @@ public sealed record AreaOperation
     /// <summary>Content id or GUID of the item to add, remove or move.</summary>
     public string? Ref { get; init; }
 
+    /// <summary>
+    /// add only: a new inline block (CMS 12.20+, stored in the area rather than as content of its own) of this block type
+    /// (name, id or GUID), instead of <see cref="Ref"/>.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Type { get; init; }
+
+    /// <summary>add with <see cref="Type"/>: the inline block's values, with <see cref="DraftRequest.Properties"/>'s value rules.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyDictionary<string, JsonElement>? Values { get; init; }
+
+    /// <summary>add with <see cref="Type"/>: the inline block's name in the area (the edit UI shows it); default: none, which the edit UI shows as the type's name.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Name { get; init; }
+
     /// <summary>Zero-based position of an existing item.</summary>
     public int? Index { get; init; }
 
@@ -130,7 +148,10 @@ public sealed record AreaOperation
 
     public string? DisplayOption { get; init; }
 
-    /// <summary>add only: do nothing when the area already has an item referencing <see cref="Ref"/> (re-runnable plans).</summary>
+    /// <summary>
+    /// add only: do nothing when the area already has an item referencing <see cref="Ref"/> (re-runnable plans); for an
+    /// inline block, an inline block of <see cref="Type"/> that has the given <see cref="Values"/> (and <see cref="Name"/>).
+    /// </summary>
     public bool IfMissing { get; init; }
 }
 
@@ -221,19 +242,39 @@ public static class CompositionOps
     public const string Root = "root";
 }
 
-/// <summary>A ContentArea item as a property value. Give <see cref="Ref"/> or <see cref="Guid"/>.</summary>
+/// <summary>
+/// A ContentArea item as a property value: a shared block (content of its own) by <see cref="Ref"/> or <see cref="Guid"/>,
+/// or an inline block (CMS 12.20+, stored in the area rather than as content of its own) by <see cref="Type"/> and
+/// <see cref="Properties"/>. Not both.
+/// </summary>
 /// <remarks>
-/// <para>In responses, inline blocks (CMS 12.20+, stored inside the area rather than as shared content)
-/// have neither; they can be moved or removed by index but not created through opticli.</para>
 /// <para>Writing a whole area, an item without <see cref="Group"/> or <see cref="VisitorGroups"/> keeps those of the
-/// item it takes over: the n-th item for some content takes over the n-th current item for that content. It also
-/// keeps that item's other render settings. <see cref="DisplayOption"/> is always as given.</para>
+/// item it takes over: the n-th item for some content takes over the n-th current item for that content, the n-th inline
+/// block of a type the n-th current inline block of that type. It also keeps that item's other render settings. An
+/// inline block that takes over one keeps its values: <see cref="Properties"/> are set on a copy of it, the others stay
+/// as they are. <see cref="DisplayOption"/> and an inline block's <see cref="Name"/> are always as given.</para>
 /// </remarks>
 public sealed record AreaItemValue
 {
     public string? Ref { get; init; }
 
     public Guid? Guid { get; init; }
+
+    /// <summary>True for an inline block, as reads show it; it needs <see cref="Type"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Inline { get; init; }
+
+    /// <summary>An inline block's block type (name, id or GUID).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Type { get; init; }
+
+    /// <summary>An inline block's name in the area (the edit UI shows it), always as given, like <see cref="DisplayOption"/>; null for none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Name { get; init; }
+
+    /// <summary>An inline block's values, with <see cref="DraftRequest.Properties"/>'s value rules.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyDictionary<string, JsonElement>? Properties { get; init; }
 
     /// <summary>A display option id the site registers (<c>EPiServer.Web.DisplayOptions</c>); null for none.</summary>
     public string? DisplayOption { get; init; }

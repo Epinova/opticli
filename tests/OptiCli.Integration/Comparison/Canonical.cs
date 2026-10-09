@@ -58,6 +58,7 @@ internal static class Canonical
         {
             result["inline"] = true;
             result["type"] = item["type"]?.DeepClone();
+            result["name"] = item["name"]?.DeepClone();
             result["properties"] = item["properties"] is JsonObject properties ? FromDb(properties) : null;
         }
         else
@@ -120,6 +121,7 @@ internal static class Canonical
         ["ref"] = entry.Ref ?? (entry.Guid is { } guid ? $"guid:{guid}" : null),
         ["inline"] = entry.Inline,
         ["type"] = entry.Type,
+        ["name"] = entry.Name,
         ["properties"] = entry.Properties is { } properties ? FromAgent(properties) : null,
         ["displayOption"] = entry.DisplayOption,
         ["group"] = entry.Group,

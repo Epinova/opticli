@@ -62,6 +62,21 @@ public class PropertyArgumentsTests : IDisposable
         Assert.Equal("Go", (string?)hero["Cta"]!["Text"]);
     }
 
+    [Fact]
+    public void A_position_in_brackets_names_an_inline_block_of_a_ContentArea()
+    {
+        var result = Parse(null, "MainArea[2].Heading=Big", "MainArea[2].Text=Small", "Hero.Area[0].Heading=Deep");
+
+        Assert.Equal("""{"MainArea[2]":{"Heading":"Big","Text":"Small"},"Hero":{"Area[0]":{"Heading":"Deep"}}}""", result.ToJsonString());
+    }
+
+    [Theory]
+    [InlineData("MainArea[x].Heading=y")]
+    [InlineData("MainArea[].Heading=y")]
+    [InlineData("[2].Heading=y")]
+    public void Brackets_without_a_position_are_no_property_name(string assignment) =>
+        Assert.Contains("is not a property name", Assert.Throws<UsageException>(() => Parse(null, assignment)).Message);
+
     [Theory]
     [InlineData("Hero=x", "Hero.Heading=y")]
     [InlineData("Hero.Heading=y", "Hero=x")]

@@ -18,8 +18,9 @@ internal static class SetCommand
             --publish puts the whole new version live: if someone else saved changes after the published version, it asks
             on a terminal and elsewhere fails with a conflict listing them, unless --include-draft. To leave such a draft
             out, base the change on the published version instead of the latest: --from published (or --from <version>).
-            Structured values (ContentArea items, links, lists) go in --values as JSON. Prints ref, the new version,
-            baseVersion, status and every changed property (before/after).
+            Structured values (ContentArea items, links, lists) go in --values as JSON. An inline block in a ContentArea
+            (CMS 12.20+) is changed by its position: 'MainArea[2].Heading=New'; in a whole area it is {"type": "TeaserBlock",
+            "properties": {...}}. Prints ref, the new version, baseVersion, status and every changed property (before/after).
             CMS 13: composition (in --values, or composition=@file.json) is a Visual Builder experience's whole composition, as
             get shows it: nodes with a key keep their block (given properties are set, others kept), nodes without one are new,
             nodes left out are removed. `opticli composition` changes one node at a time.

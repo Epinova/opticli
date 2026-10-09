@@ -106,6 +106,23 @@ public class PlanSimulationTests
     }
 
     [Fact]
+    public void An_inline_block_an_area_step_adds_to_planned_content_is_in_its_dry_run()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "create", "id": "page", "parent": "100", "type": "ArticlePage", "name": "Page"},
+              {"op": "area", "ref": "$page", "property": "MainArea", "action": "add", "item": "200"},
+              {"op": "area", "ref": "$page", "property": "MainArea", "action": "add", "type": "TeaserBlock", "values": {"Text": "Hi"}, "name": "Intro", "at": 0, "display": "wide"},
+              {"op": "publish", "ref": "$page"}
+            ]}
+            """);
+
+        var create = Assert.IsType<CreateOperation>(PlanSimulation.For(plan.Steps[3], plan.Steps, None, updateExisting: false)!.Operation);
+
+        Assert.Equal("""[{"type":"TeaserBlock","properties":{"Text":"Hi"},"name":"Intro","displayOption":"wide"},{"ref":"200"}]""", create.Properties!["MainArea"]!.ToJsonString());
+    }
+
+    [Fact]
     public void Steps_without_a_planned_target_are_not_simulated_as_an_earlier_step_without_an_id()
     {
         var plan = WritePlan.Parse("""

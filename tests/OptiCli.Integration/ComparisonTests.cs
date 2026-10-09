@@ -42,7 +42,7 @@ public class ComparisonTests
                 new ContentItemAreaEntry("789") { DisplayOption = "wide" },
                 new ContentItemAreaEntry(null)
                 {
-                    Inline = true, Type = "TeaserBlock",
+                    Inline = true, Type = "TeaserBlock", Name = "Inline",
                     Properties = new Dictionary<string, ContentItemProperty> { ["Heading"] = new("String", JsonSerializer.SerializeToElement("Hi")) },
                 },
             }, AgentJson.Options)),

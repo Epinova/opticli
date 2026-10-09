@@ -3,6 +3,37 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## Unreleased
+
+### New
+
+- **Inline blocks in ContentAreas (CMS 12.20+ and CMS 13).** Blocks stored in a ContentArea itself, which opticli could
+  only read so far, can now be made and changed:
+  - **`opticli area <ref> <Prop> add --type T Prop=value...`** (with `--values`, `--name`, `--at`, `--display`) adds a
+    new inline block, made as the CMS makes one (the type's default values) and validated by the CMS on save (required
+    properties, the area's `[AllowedTypes]`). In a plan: `area` with `"type"`, `"values"` and `"name"`.
+  - **`opticli set <ref> 'MainArea[2].Heading=New'`** (or `--values '{"MainArea[2]": {...}}'`) changes the values of the
+    inline block at that position, the place `search` and `where-used` show.
+  - In a whole ContentArea (`--values`), an item with `type` is an inline block, `{"type": "TeaserBlock", "properties":
+    {...}, "name": "Intro"}`. Each takes over the current inline block it gives exactly, else the n-th of its type, and
+    keeps the values it leaves out, its render settings and its personalization, so the area `get` shows can be written
+    back as is (unchanged, it changes nothing) or with blocks left out or moved.
+  - `area remove` and `move` take an inline block by its position; `ref:` names shared blocks only.
+  - With `apply --update-existing`, an inline `area add` changes nothing when the area already has an inline block of
+    its type with the step's values.
+  - On a CMS before 12.20 these writes are refused with the version they need. Where the site's CMS 12 edit UI doesn't
+    make inline blocks itself (`UIOptions.InlineBlocksInContentAreaEnabled`, off by default), a write that adds one says
+    so in a warning: editors still see, edit, move and remove it.
+  - The MCP module takes them too (`update_content`: `properties` and `areaOps` with `type` and `values`), with the edit
+    UI's rules for each property and the type's access rights for a new block. `get_content` shows an inline block's
+    `name`.
+
+### Fixed
+
+- The MCP module builds the edit UI's metadata for a block that isn't content (a block list's item, an inline block) the
+  way the edit UI does when the block's own fails (a URL property's editor descriptor needs content to find), instead of
+  refusing every change to it.
+
 ## 0.15.0 (7 October 2026)
 
 ### New

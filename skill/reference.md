@@ -126,9 +126,10 @@ directly: see [Approval sequences](#approval-sequences).
 | `set <ref> Prop=value... [--values json] [--name N] [--from published\|<version>]` | `opticli set 123 Heading="New title" --dry-run` |
 | `create <parent-ref> --type T --name N [Prop=value...]` | `opticli create 45 --type ArticlePage --name "News" Heading=Hi` |
 | `area <ref> <Prop> add <block-ref> [--at N] [--display opt]` | `opticli area 123 MainArea add 789 --at 0` |
+| `area <ref> <Prop> add --type T [Prop=value...] [--values json] [--name N] [--at N] [--display opt]` (inline block, CMS 12.20+) | `opticli area 123 MainArea add --type TeaserBlock Heading=Hi --dry-run` (see [Inline blocks](#inline-blocks-in-contentareas)) |
 | `composition <ref> add\|remove\|move\|set ...` (CMS 13) | `opticli composition 123 add element --in Left --type TextElement Heading=Hi --dry-run` (see [Compositions](#compositions-cms-13)) |
 | `create <parent-ref> --blueprint B --name N` (CMS 13) | `opticli create 45 --blueprint "Landing blueprint" --name "Spring" --dry-run` |
-| `area <ref> <Prop> remove <position\|ref:id>` | `opticli area 123 MainArea remove ref:789` |
+| `area <ref> <Prop> remove <position\|ref:id>` | `opticli area 123 MainArea remove ref:789` (an inline block only by its position) |
 | `area <ref> <Prop> move <position\|ref:id> <to>` | `opticli area 123 MainArea move 0 2` |
 | `block create --type T --name N (--for <page-ref> \| --parent <folder-ref>)` | `opticli block create --type TeaserBlock --name Teaser --for 123` |
 | `upload <file> (--for <ref> \| --parent <folder-ref>) [--name N] [--type T] [Prop=value...]` | `opticli upload report.pdf --parent 456 --name "Annual report" --dry-run` |
@@ -218,6 +219,8 @@ content it shows. `--at` and `--display` only apply to `add`; `--display` is che
   id for a reference, HTML for rich text).
 - `Prop=` clears the property. `Prop=@file.html` reads the value from a file (`@@` for a literal `@`).
 - `Block.Prop=value` sets a property of the local block property `Block`.
+- `MainArea[2].Prop=value` sets a property of the inline block at position 2 (zero-based) of the ContentArea `MainArea`,
+  the place `search` and `where-used` show (`MainArea[2].Text`); `--values '{"MainArea[2]": {"Prop": "value"}}'` too.
 - `--values '<json object>'` is merged on top, for structured values:
   - ContentArea: `{"MainArea":[{"ref":"456"},{"ref":"789","displayOption":"wide"}]}` (replaces the whole area;
     use `area` to add/remove single items). An item may name its content by `"guid"` instead of `"ref"`.
@@ -225,8 +228,10 @@ content it shows. `--at` and `--display` only apply to `add`; `--display` is che
     refused with the list. Personalization: `"group":"g1"` and `"visitorGroups":["<visitor group id>"]`, as `get`
     shows them. An item without them keeps those of the item for the same content it replaces, and that item's other
     render settings: the n-th item for some content keeps the n-th current one's, so inserting, removing or reordering
-    items doesn't move personalization to another item. `"group":""` and `"visitorGroups":[]` remove it. The
-    ContentArea value `get` shows can be sent back as is.
+    items doesn't move personalization to another item. `"group":""` and `"visitorGroups":[]` remove it. An inline
+    block (CMS 12.20+) is `{"type":"TeaserBlock","properties":{"Heading":"Hi"},"name":"Intro"}` (see
+    [Inline blocks](#inline-blocks-in-contentareas)). The ContentArea value `get` shows can be sent back as is, inline
+    blocks included: written back unchanged it changes nothing.
   - Local block: `{"Hero":{"Heading":"Hi","Link":"/en/about/"}}`.
   - Block list (`IList<SomeBlock>`, shown by `get` as `BlockList`): an array of such objects, replacing the whole list:
     `{"Persons":[{"Name":"Kari","Biography":"<p>...</p>","Image":"63__provider"},{"Name":"Per"}]}`.
@@ -299,6 +304,37 @@ property of the same name wins). All are versioned, show in `changes`, and are r
     `external`, `fetchData` (show another page's content) or `inactive`, `to` the page, `url` an external URL,
     `anchor` a fragment for an external link to a page, and `target` the window (`_blank`, `_top`). The object `get`
     shows can be sent back as is (its `url` of a link to a page is the stored permanent link, which `to` replaces).
+
+### Inline blocks in ContentAreas
+
+CMS 12.20 and later (and CMS 13) can store a block in a ContentArea itself instead of as content of its own. `get` shows
+one as `{"inline": true, "type": "TeaserBlock", "name": "Intro", "properties": {...}}` (`name` only when it was given
+one), with no `ref`.
+- Add one: `opticli area 123 MainArea add --type TeaserBlock Heading=Hi Image=456 --name Intro --at 0 --display wide`
+  (`--values` for structured values, as `set`). The block is made as the CMS makes it, with the type's default values;
+  the CMS validates it on save (required properties, the area's `[AllowedTypes]`), as it validates one the edit UI makes.
+- Change its values: `opticli set 123 'MainArea[2].Heading=New'` (zero-based position; quote it for the shell). The
+  rest of the block, the item's name, display option and personalization stay as they are. A position that holds a
+  shared block is refused with its ref: change that block itself.
+- Move or remove one by its position: `area 123 MainArea move 2 0`, `area 123 MainArea remove 2`. `ref:` names only
+  shared blocks.
+- In a whole area (`--values '{"MainArea": [...]}'`), an item with `type` (or `inline: true`) is an inline block, one
+  with `ref` or `guid` a shared one (`get`'s `type` and `name` beside a `ref` are about that content and are left out).
+  An inline block takes over a current one of its type: the current block it gives exactly (all its values, as `get`
+  shows them) first, else the n-th of the type in order. It keeps the values the item leaves out and its render settings
+  and personalization (unless given); `name` and `displayOption` are as given. So an area written back with an inline
+  block left out or moved keeps each other block's values.
+- On a CMS before 12.20 adding or changing one is refused (`usage`) with the version it needs.
+- The CMS 12 edit UI makes new blocks in a ContentArea inline only when the site turns on
+  `UIOptions.InlineBlocksInContentAreaEnabled` (off by default; "Create a new block" then makes a shared block in the
+  page's "For this page" folder instead). Either way it shows the inline blocks an area has, and editors can edit, move
+  and remove them; when the setting is off, a write that adds one has a `warning` in `validation` saying so.
+- In a plan: `{"op": "area", "ref": "$page", "property": "MainArea", "action": "add", "type": "TeaserBlock",
+  "values": {"Heading": "Hi"}, "name": "Intro"}`. An inline block has no identity, so with `apply --update-existing` an
+  `area add` of one changes nothing when the area already has an inline block of the type with the given values (and
+  name); a plain run adds it again.
+- `where-used --type` and `types` count inline blocks on CMS 13 only (`inlineUses`); on CMS 12 `where-used <ref>`,
+  `search` and `get` show them.
 
 ### Uploads
 
@@ -590,6 +626,8 @@ Ops: `set`, `create`, `area`, `block`, `upload`, `translate`, `publish`, `unpubl
   stay inside its folder, also through symlinks, unless `apply --allow-outside`.
 - `{"op": "access", "ref": "$page", "grant": {"Authenticated": "Read"}, "revoke": ["Everyone"], "breakInheritance": true}`
   (also `grantUsers`, `inherit`, `allowUnknownRole`).
+- An inline block in a ContentArea: `{"op": "area", "ref": "$page", "property": "MainArea", "action": "add", "type": "TeaserBlock", "values": {"Heading": "Hi"}}`
+  (`name` too); see [Inline blocks](#inline-blocks-in-contentareas) for `--update-existing`.
 - CMS 13: `"composition"` in a `create`'s or `set`'s `properties` is the whole composition (`"@file.json"` reads it);
   `create` takes `"blueprint"` instead of `"type"`; `"variation"` on `set` and `composition`.
   `{"op": "composition", "ref": "$page", "action": "add", "nodeType": "element", "in": "Left", "value": {"type": "TextElement", "properties": {"Heading": "Hi"}}}`
@@ -638,7 +676,8 @@ Plans that run again (a section rebuilt after a database refresh, or repaired af
 - Without `--update-existing` a step whose GUID exists fails validation with `conflict`, before anything is written.
 - `apply --update-existing`: such a step updates that content (name and properties, as a new draft) instead; content
   in the recycle bin is moved back under the plan's parent first (`restored: true`). A different type, or content that
-  was moved elsewhere, is a `conflict`. `area add` of an item that is already there, `translate` to an existing branch
+  was moved elsewhere, is a `conflict`. `area add` of an item that is already there (for an inline block: one of its
+  type with the step's values), `translate` to an existing branch
   (it becomes a `set` of its name and properties, or a `publish` without them), `publish` of a published version, a
   `publish: true` that changes nothing on published content, and `delete` of deleted content change nothing.
 - Step statuses: `saved`, or `unchanged` when the content was already as the step wants it. `result.existing: true`

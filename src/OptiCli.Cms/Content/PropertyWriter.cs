@@ -95,6 +95,14 @@ internal sealed class PropertyWriter(
         {
             return;
         }
+        foreach (var name in values.Keys)
+        {
+            if (AreaItemRules.Indexed(name) is { } item && values.Keys.FirstOrDefault(k => k.Equals(item.Property, StringComparison.OrdinalIgnoreCase)) is { } whole)
+            {
+                throw AgentException.Usage($"'{name}' changes one item of '{whole}', which is also given whole.",
+                    $"Give the item's values in the whole area (its properties), or leave '{whole}' out.");
+            }
+        }
         foreach (var (name, value) in values)
         {
             Set(content, name, value);
@@ -128,6 +136,11 @@ internal sealed class PropertyWriter(
 
     private void Set(IContentData content, string name, JsonElement value)
     {
+        if (AreaItemRules.Indexed(name) is { } item)
+        {
+            SetInlineItem(content, item.Property, item.Index, value);
+            return;
+        }
         if (name.Equals(NameKey, StringComparison.OrdinalIgnoreCase) && content is IContent named && content.Property.All(p => !p.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
         {
             named.Name = value.ValueKind == JsonValueKind.String ? value.GetString()! : throw AgentException.Usage("Name must be a string.");
@@ -183,11 +196,7 @@ internal sealed class PropertyWriter(
         }
 
         var property = Find(content, name);
-        if (content is ILocalizable { Language: { } language, MasterLanguage: { } master }
-            && !language.Equals(master) && !property.IsLanguageSpecific)
-        {
-            throw AgentException.Usage($"'{property.Name}' is not culture-specific, so it can only be changed on the master language ({master.Name}).");
-        }
+        RequireLanguage(content, property);
 
         // What the value had before, which an editor may write back as it was (see CheckValue).
         var before = Collect(_blockBaselines.TryGetValue(content, out var previous) ? previous.Property[property.Name]?.Value : property.Value);
@@ -200,6 +209,70 @@ internal sealed class PropertyWriter(
             throw AgentException.Usage($"Can't set '{property.Name}' ({property.GetType().Name}): {ex.Message}");
         }
         CheckValue(property, before);
+    }
+
+    private static void RequireLanguage(IContentData content, PropertyData property)
+    {
+        if (content is ILocalizable { Language: { } language, MasterLanguage: { } master }
+            && !language.Equals(master) && !property.IsLanguageSpecific)
+        {
+            throw AgentException.Usage($"'{property.Name}' is not culture-specific, so it can only be changed on the master language ({master.Name}).");
+        }
+    }
+
+    /// <summary>
+    /// <c>MainArea[2]</c>: sets <paramref name="value"/>'s values on the inline block at that position of the ContentArea,
+    /// on a copy of the area; its other values and the item's render settings stay as they are.
+    /// </summary>
+    /// <exception cref="AgentException"><c>usage</c> for no such item, or one that isn't an inline block.</exception>
+    private void SetInlineItem(IContentData content, string name, int index, JsonElement value)
+    {
+        var property = Find(content, name);
+        var path = $"{property.Name}[{index}]";
+        if (property is not PropertyContentArea)
+        {
+            throw AgentException.Usage($"'{path}' names an item of a ContentArea, and '{property.Name}' is a {property.GetType().Name}.",
+                "Positions in brackets are for ContentArea items; set a block list as a whole array.");
+        }
+        RequireLanguage(content, property);
+        if (value.ValueKind != JsonValueKind.Object)
+        {
+            throw AgentException.Usage($"'{path}' takes an object of the inline block's property names to values, e.g. {{\"Heading\": \"...\"}}.",
+                $"To replace or remove the item, write '{property.Name}' whole, or use {call.ForCaller("`opticli area`", "areaOps")}.");
+        }
+        var area = property.Value is ContentArea existing ? (ContentArea)((EPiServer.Data.Entity.IReadOnly)existing).CreateWritableClone() : new ContentArea();
+        var items = area.Items;
+        if (index >= items.Count)
+        {
+            throw AgentException.Usage($"'{property.Name}' has {items.Count} item(s), so there is no {path} (positions are zero-based).");
+        }
+        var item = items[index];
+        if (InlineBlocks.Of(item) is not { } block)
+        {
+            var shown = ContentReference.IsNullOrEmpty(item.ContentLink) ? null : item.ContentLink.ToReferenceWithoutVersion().ToString();
+            throw AgentException.Usage($"{path} is {(shown is null ? "an item without content" : $"the shared block {shown}")}, not an inline block, so it has no values of its own in the area.",
+                shown is null ? null : call.ForCaller($"Change the block itself: opticli set {shown} Prop=value.", $"Change the block itself (content {shown})."));
+        }
+        if (block is EPiServer.Data.Entity.IReadOnly { IsReadOnly: true } readOnly)
+        {
+            block = (BlockData)readOnly.CreateWritableClone();
+            InlineBlocks.Set(item, block, InlineBlocks.TypeId(block));
+        }
+        ApplyTo(block, value.Deserialize<Dictionary<string, JsonElement>>(AgentJson.Options), path);
+        property.Value = area;
+    }
+
+    /// <summary>Sets values on a block in a ContentArea, with errors saying which item it is.</summary>
+    private void ApplyTo(BlockData block, IReadOnlyDictionary<string, JsonElement>? values, string where)
+    {
+        try
+        {
+            Apply(block, values);
+        }
+        catch (AgentException ex) when (ex.Code is AgentErrorCodes.Usage or AgentErrorCodes.NotFound)
+        {
+            throw new AgentException(ex.Code, $"{where}: {ex.Message}", ex.Hint) { Validation = ex.Validation };
+        }
     }
 
     /// <summary>
@@ -601,7 +674,7 @@ internal sealed class PropertyWriter(
                 }
                 return;
             case JsonValueKind.Array when property is PropertyContentArea:
-                property.Value = BuildArea(value.Deserialize<List<AreaItemValue>>(AgentJson.Options)!, property.Value as ContentArea);
+                property.Value = BuildArea(value.Deserialize<List<AreaItemValue>>(AgentJson.Options)!, property.Value as ContentArea, property.Name);
                 return;
             case JsonValueKind.String or JsonValueKind.Number when !call.MayReferenceUnchecked && (property is PropertyContentArea || IsReferenceList(property)):
                 // The stored text form names content without the read check: refs only, as an array.
@@ -741,23 +814,26 @@ internal sealed class PropertyWriter(
 
     /// <summary>
     /// The area of <paramref name="items"/>, replacing <paramref name="current"/>. Each item takes over the current item
-    /// for the same content that <see cref="AreaItemRules.Match"/> pairs it with: its group and visitor groups unless
-    /// the item gives them, and its other render settings. Without that, writing back what <c>get</c> shows would lose
-    /// the area's personalization.
+    /// that <see cref="AreaItemRules.Match"/> pairs it with (the same content, or an inline block of the same type): its
+    /// group and visitor groups unless the item gives them, and its other render settings; an inline block also its
+    /// values, the item's being set on a copy of it. Without that, writing back what <c>get</c> shows would lose the
+    /// area's personalization, and an inline block's values the item leaves out.
     /// </summary>
-    public ContentArea BuildArea(IReadOnlyList<AreaItemValue> items, ContentArea? current)
+    /// <param name="name">The ContentArea property, for messages.</param>
+    public ContentArea BuildArea(IReadOnlyList<AreaItemValue> items, ContentArea? current, string name)
     {
-        var links = items.Select(item => Target(item.Guid?.ToString() ?? item.Ref)).ToList();
+        var wanted = items.Select((item, i) => Wanted(item, $"{name}[{i}]")).ToList();
         var currentItems = current?.Items.ToList() ?? [];
-        var matches = AreaItemRules.Match(
-            currentItems.Select(item => ContentReference.IsNullOrEmpty(item.ContentLink) ? null : item.ContentLink.ToReferenceWithoutVersion().ToString()).ToList(),
-            links.Select(link => link.ToString()).ToList());
+        var matches = AreaItemRules.Match(currentItems.Select(Key).ToList(), wanted.Select(w => w.Key).ToList(),
+            (i, j) => wanted[i].InlineType is not null && Unchanged(currentItems[j], items[i]));
 
         var area = new ContentArea();
         for (var i = 0; i < items.Count; i++)
         {
             var takenOver = matches[i] < 0 ? null : currentItems[matches[i]];
-            var item = NewAreaItem(links[i], items[i].DisplayOption, takenOver);
+            var item = wanted[i].InlineType is { } type
+                ? NewInlineItem(type, items[i].Properties, items[i].Name, items[i].DisplayOption, takenOver, $"{name}[{i}]")
+                : NewAreaItem(wanted[i].Link!, items[i].DisplayOption, takenOver);
             if (items[i].VisitorGroups is { } given)
             {
                 AreaItemRules.RequireVisitorGroups(given, VisitorGroupName);
@@ -776,11 +852,114 @@ internal sealed class PropertyWriter(
         return area;
     }
 
+    /// <summary>
+    /// Whether <paramref name="item"/> gives <paramref name="current"/>'s inline block as it is: every value it has (that
+    /// the caller sees), and those values set on a copy of it change nothing. Its name, display option and personalization
+    /// don't count; they are as given either way.
+    /// </summary>
+    private bool Unchanged(ContentAreaItem current, AreaItemValue item)
+    {
+        if (InlineBlocks.Of(current) is not { } block)
+        {
+            return false;
+        }
+        var before = PropertyValues.Snapshot(block);
+        var given = item.Properties ?? new Dictionary<string, JsonElement>();
+        // What an editor doesn't see, they can't give back.
+        if (before.Any(p => p.Value is not null && !given.Keys.Contains(p.Key, StringComparer.OrdinalIgnoreCase)
+            && (block.Property[p.Key] is not { } property || call.Properties.Shown(block, property))))
+        {
+            return false;
+        }
+        var copy = (BlockData)((EPiServer.Data.Entity.IReadOnly)block).CreateWritableClone();
+        try
+        {
+            Apply(copy, given);
+        }
+        catch (AgentException)
+        {
+            // Values it can't take: the write reports them for the item it pairs with.
+            return false;
+        }
+        var after = PropertyValues.Snapshot(copy);
+        return before.All(p => after.GetValueOrDefault(p.Key)?.GetRawText() == p.Value?.GetRawText());
+    }
+
+    /// <summary>What an item of a whole area shows: content (its link), or a new inline block (its type).</summary>
+    /// <exception cref="AgentException"><c>usage</c> for an item that gives both, or neither.</exception>
+    private (ContentReference? Link, ContentType? InlineType, string? Key) Wanted(AreaItemValue item, string where)
+    {
+        var shared = item.Ref is not null || item.Guid is not null;
+        var inline = item.Type is not null || item.Inline == true || item.Properties is not null || item.Name is not null;
+        if (shared && inline)
+        {
+            throw AgentException.Usage($"{where} gives both a shared block (ref or guid) and an inline block (type, properties, name or inline).",
+                "An item is one or the other: {\"ref\": \"123\"} for a shared block, {\"type\": \"TeaserBlock\", \"properties\": {...}} for an inline one.");
+        }
+        if (inline)
+        {
+            var type = InlineType(item.Type ?? throw AgentException.Usage($"{where} is an inline block without its type.",
+                "Give its block type: {\"type\": \"TeaserBlock\", \"properties\": {...}}."), where);
+            return (null, type, AreaItemRules.InlineKey(type.ID));
+        }
+        if (!shared)
+        {
+            throw AgentException.Usage($"{where} names no block.",
+                "Give {\"ref\": \"123\"} (or guid) for a shared block, or {\"type\": \"TeaserBlock\", \"properties\": {...}} for an inline one.");
+        }
+        var link = Target(item.Guid?.ToString() ?? item.Ref);
+        return (link, null, link.ToString());
+    }
+
+    /// <summary>The key a current item is paired by (<see cref="AreaItemRules.Match"/>): its content, or its inline block's type.</summary>
+    private string? Key(ContentAreaItem item) =>
+        InlineBlocks.Of(item) is { } block ? AreaItemRules.InlineKey(BlockTypeId(block))
+        : ContentReference.IsNullOrEmpty(item.ContentLink) ? null : item.ContentLink.ToReferenceWithoutVersion().ToString();
+
+    private int BlockTypeId(BlockData block) =>
+        InlineBlocks.TypeId(block) is var id and > 0 ? id : call.Service<IContentTypeRepository>().Load(block.GetOriginalType())?.ID ?? 0;
+
+    /// <summary>The block type of a new inline block, by name (any case), id or GUID.</summary>
+    /// <exception cref="AgentException"><c>usage</c> for a type that isn't a block type; <c>not_found</c> for no such type.</exception>
+    private ContentType InlineType(string name, string where)
+    {
+        InlineBlocks.Require();
+        var types = call.Service<IContentTypeRepository>();
+        var type = int.TryParse(name.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var id)
+            ? types.Load(id) ?? throw AgentException.NotFound($"{where}: no content type has the id {id}.")
+            : Operations.TypeOperation.Find(call, types, name);
+        if (!CmsApi.IsBlockType(type) || type.ModelType is { } model && !typeof(BlockData).IsAssignableFrom(model))
+        {
+            throw AgentException.Usage($"{where}: {type.Name} isn't a block type, so it can't be an inline block.",
+                call.ForCaller("`opticli types --kind block` lists the block types; `opticli allowed-in <type>` says which areas take one.", "get_content_type on the content's type lists what its ContentAreas take."));
+        }
+        return type;
+    }
+
     /// <summary>The name of the visitor group with this id; null when there is none (or the site has no personalization).</summary>
     private static string? VisitorGroupName(Guid id) =>
         ServiceLocator.Current.TryGetExistingInstance(out EPiServer.Personalization.VisitorGroups.IVisitorGroupRepository? groups) && groups is not null ? groups.Load(id)?.Name : null;
 
     public ContentAreaItem NewAreaItem(string? reference, string? displayOption) => NewAreaItem(Target(reference), displayOption, null);
+
+    /// <summary>A new item with a new inline block of <paramref name="type"/> (name, id or GUID), with <paramref name="values"/> set.</summary>
+    public ContentAreaItem NewInlineItem(string type, IReadOnlyDictionary<string, JsonElement>? values, string? name, string? displayOption, string where) =>
+        NewInlineItem(InlineType(type, where), values, name, displayOption, null, where);
+
+    /// <summary>
+    /// Whether <paramref name="items"/> has an inline block like the one <paramref name="added"/> shows: of its type, with
+    /// the values of <paramref name="given"/> (as the new block has them) and the name, if one is given.
+    /// </summary>
+    public bool HasInlineLike(IEnumerable<ContentAreaItem> items, ContentAreaItem added, IReadOnlyDictionary<string, JsonElement>? given, string? name)
+    {
+        var block = InlineBlocks.Of(added)!;
+        var wanted = PropertyValues.Snapshot(block);
+        var typeId = BlockTypeId(block);
+        return items.Any(item => InlineBlocks.Of(item) is { } existing && BlockTypeId(existing) == typeId
+            && (name is null || string.Equals(InlineBlocks.Name(item) ?? "", name.Trim(), StringComparison.Ordinal))
+            && PropertyValues.Snapshot(existing) is var has
+            && (given?.Keys ?? []).All(key => has.GetValueOrDefault(key)?.GetRawText() == wanted.GetValueOrDefault(key)?.GetRawText()));
+    }
 
     /// <summary>The content an item shows, without version.</summary>
     private ContentReference Target(string? reference) =>
@@ -791,19 +970,65 @@ internal sealed class PropertyWriter(
     {
         // Link only: on newer CMS versions setting ContentGuid clears ContentLink (they are alternatives).
         var item = new ContentAreaItem { ContentLink = link };
+        Settings(item, displayOption, takenOver);
+        return item;
+    }
+
+    /// <summary>
+    /// An item with an inline block of <paramref name="type"/>: a copy of <paramref name="takenOver"/>'s, else a new one as
+    /// the CMS makes it (with the type's default values), and <paramref name="values"/> set on it.
+    /// </summary>
+    /// <param name="name">The name in the area, as given (like the display option): null or <c>""</c> for none.</param>
+    private ContentAreaItem NewInlineItem(ContentType type, IReadOnlyDictionary<string, JsonElement>? values, string? name, string? displayOption, ContentAreaItem? takenOver, string where)
+    {
+        BlockData block;
+        if (takenOver is not null && InlineBlocks.Of(takenOver) is { } current)
+        {
+            block = (BlockData)((EPiServer.Data.Entity.IReadOnly)current).CreateWritableClone();
+        }
+        else
+        {
+            // An editor gets the types the edit UI offers for a new block of the content (its "For this page" folder's).
+            if (call.Service<IContentTypeRepository>().Load(typeof(ContentAssetFolder)) is { } assets && !call.MayCreate(type, assets))
+            {
+                throw AgentException.Usage($"{where}: you may not create {type.Name} blocks: the content type's access rights, or those of its group of types, don't allow it.");
+            }
+            block = blocks.Create(type);
+            NewInlineBlocks++;
+        }
+        ApplyTo(block, values, where);
+        var item = new ContentAreaItem();
+        InlineBlocks.Set(item, block, type.ID);
+        Settings(item, displayOption, takenOver, inlineName: name ?? "");
+        return item;
+    }
+
+    /// <summary>
+    /// An item's render settings: those of <paramref name="takenOver"/> but the display option (and an inline block's
+    /// name), then the display option (and name) given.
+    /// </summary>
+    /// <param name="inlineName">An inline block's name, as given (empty for none); null for an item that shows content.</param>
+    private void Settings(ContentAreaItem item, string? displayOption, ContentAreaItem? takenOver, string? inlineName = null)
+    {
         foreach (var (key, value) in CmsApi.RenderSettings(takenOver))
         {
-            if (key != PropertyValues.DisplayOptionKey)
+            if (key != PropertyValues.DisplayOptionKey && !(inlineName is not null && key == InlineBlocks.NameKey))
             {
                 CmsApi.SetRenderSetting(item, key, value);
             }
+        }
+        if (!string.IsNullOrWhiteSpace(inlineName))
+        {
+            CmsApi.SetRenderSetting(item, InlineBlocks.NameKey, inlineName.Trim());
         }
         if (DisplayOptionId(displayOption, takenOver is null ? null : PropertyValues.DisplayOption(takenOver)) is { } id)
         {
             CmsApi.SetRenderSetting(item, PropertyValues.DisplayOptionKey, id);
         }
-        return item;
     }
+
+    /// <summary>How many new inline blocks (not copies of current ones) the writes made.</summary>
+    public int NewInlineBlocks { get; private set; }
 
     /// <summary>The registered display option <paramref name="given"/> names; the one stored on the item it replaces passes as is.</summary>
     private string? DisplayOptionId(string? given, string? stored)

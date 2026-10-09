@@ -561,12 +561,13 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     /// <exception cref="ContentValidationException">The code doesn't allow the item there.</exception>
     private async Task<string?> AreaPlacementAsync(AreaEdit add, IReadOnlyList<PlanStep> steps, CancellationToken cancellationToken)
     {
-        if (allowedTypes is null || add.Item is null)
+        if (allowedTypes is null || (add.Item is null && add.Type is null))
         {
             return null;
         }
         var owner = await TypeOfAsync(add.Ref, steps, cancellationToken);
-        var item = await TypeOfAsync(add.Item, steps, cancellationToken);
+        // A new inline block's type is the step's own.
+        var item = add.Type ?? await TypeOfAsync(add.Item!, steps, cancellationToken);
         if (owner is null || item is null)
         {
             return null;

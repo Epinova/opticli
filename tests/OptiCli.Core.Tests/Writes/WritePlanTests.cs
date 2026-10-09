@@ -109,6 +109,30 @@ public class WritePlanTests
     }
 
     [Fact]
+    public void An_area_step_adds_a_new_inline_block_by_its_type_with_values_and_name()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "create", "id": "page", "parent": "1", "type": "ArticlePage", "name": "n"},
+              {"op": "area", "ref": "$page", "property": "MainArea", "action": "add", "type": "TeaserBlock", "values": {"Text": "Hi", "Link": "$page"}, "name": "Intro", "at": 0}
+            ]}
+            """);
+
+        var add = Assert.IsType<AreaEdit>(plan.Steps[1].Operation);
+        Assert.Equal(("TeaserBlock", "Intro", null), (add.Type, add.Name, add.Item));
+        Assert.Equal("""{"Text":"Hi","Link":"$page"}""", add.Values!.ToJsonString());
+        var resolved = Assert.IsType<AreaEdit>(WritePlan.Resolve(plan.Steps[1], new Dictionary<string, int> { ["page"] = 900 }));
+        Assert.Equal("""{"Text":"Hi","Link":"900"}""", resolved.Values!.ToJsonString());
+    }
+
+    [Theory]
+    [InlineData("""{"op": "area", "ref": "1", "property": "MainArea", "action": "add", "item": "2", "type": "TeaserBlock"}""", "give \"item\" (a shared block) or \"type\"")]
+    [InlineData("""{"op": "area", "ref": "1", "property": "MainArea", "action": "add", "values": {"Text": "x"}}""", "give its \"type\" too")]
+    [InlineData("""{"op": "area", "ref": "1", "property": "MainArea", "action": "remove", "index": 0, "type": "TeaserBlock"}""", "are for adding an inline block")]
+    public void An_inline_area_step_with_the_wrong_fields_is_a_plan_problem(string step, string problem) =>
+        Assert.Contains(problem, Assert.Throws<UsageException>(() => WritePlan.Parse($$"""{"operations": [{{step}}]}""")).Message);
+
+    [Fact]
     public void Every_shape_problem_is_reported_at_once()
     {
         const string json = """

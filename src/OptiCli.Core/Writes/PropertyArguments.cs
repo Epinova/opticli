@@ -15,6 +15,8 @@ namespace OptiCli.Core.Writes;
 /// <item><c>Heading=</c>: null, which clears the property.</item>
 /// <item><c>MainBody=@body.html</c>: the file's contents; <c>@@text</c> is the literal <c>@text</c>.</item>
 /// <item><c>Teaser.Heading=Hi</c>: a property of the local block <c>Teaser</c> (nested object).</item>
+/// <item><c>MainArea[2].Heading=Hi</c>: a property of the inline block at position 2 (zero-based) of the ContentArea
+/// <c>MainArea</c> (<c>{"MainArea[2]": {"Heading": "Hi"}}</c>).</item>
 /// <item>The JSON object (<c>--values</c>) is merged on top, recursively for nested objects, for arrays
 /// (ContentArea items, links, lists) and other structured values. A value in <c>get</c>'s <c>{type, value}</c> shape is
 /// unwrapped (<see cref="GetShape"/>).</item>
@@ -23,7 +25,7 @@ namespace OptiCli.Core.Writes;
 public static partial class PropertyArguments
 {
     public const string Syntax =
-        "Prop=value (string, parsed by the site like an import), Prop= (clear), Prop=@file (file contents, @@ for a literal @), Block.Prop=value (local block property)";
+        "Prop=value (string, parsed by the site like an import), Prop= (clear), Prop=@file (file contents, @@ for a literal @), Block.Prop=value (local block property), Area[2].Prop=value (inline block in a ContentArea)";
 
     /// <exception cref="UsageException">An argument is malformed, a file is missing, or names conflict.</exception>
     public static JsonObject Parse(IEnumerable<string> assignments, string? json, string currentDirectory)
@@ -92,7 +94,7 @@ public static partial class PropertyArguments
         var name = assignment[..equals].Trim();
         if (!NamePattern().IsMatch(name))
         {
-            throw new UsageException($"'{name}' is not a property name.", "Names are letters, digits and underscores; use Block.Prop for a local block's property.");
+            throw new UsageException($"'{name}' is not a property name.", "Names are letters, digits and underscores; use Block.Prop for a local block's property, Area[2].Prop for an inline block's in a ContentArea.");
         }
 
         var raw = assignment[(equals + 1)..];
@@ -148,6 +150,6 @@ public static partial class PropertyArguments
     private static string? FindKey(JsonObject obj, string name) =>
         obj.Select(p => p.Key).FirstOrDefault(k => k.Equals(name, StringComparison.OrdinalIgnoreCase));
 
-    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")]
+    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*(\[\d+\])?(\.[A-Za-z_][A-Za-z0-9_]*(\[\d+\])?)*$")]
     private static partial Regex NamePattern();
 }

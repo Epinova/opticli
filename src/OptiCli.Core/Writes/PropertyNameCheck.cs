@@ -1,4 +1,6 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using OptiCli.Core.Cms;
 using OptiCli.Core.Content;
 using OptiCli.Core.Errors;
 using OptiCli.Core.Text;
@@ -25,12 +27,132 @@ public static class PropertyNameCheck
     ];
 
     /// <exception cref="UsageException">A name is not a property of the type (or of the local block it is nested in).</exception>
-    public static void Check(CmsModel model, int contentTypeId, JsonObject? properties)
+    public static void Check(CmsModel model, int contentTypeId, JsonObject? properties) => Prepare(model, contentTypeId, properties);
+
+    /// <summary>
+    /// <see cref="Check"/>, and the values as the agent takes them: ContentArea items as <see cref="AreaItems"/> makes them,
+    /// an inline block's values by position (<c>MainArea[2]</c>) without <c>get</c>'s <c>{type, value}</c>.
+    /// </summary>
+    /// <returns>A copy of <paramref name="properties"/>; null for null.</returns>
+    /// <exception cref="UsageException">As <see cref="Check"/>, and for ContentArea items that aren't one kind of item or the other.</exception>
+    public static JsonObject? Prepare(CmsModel model, int contentTypeId, JsonObject? properties)
     {
-        if (properties is not null)
+        if (properties is null)
         {
-            Check(model, contentTypeId, properties, prefix: "", topLevel: true);
+            return null;
         }
+        var copy = (JsonObject)properties.DeepClone();
+        Check(model, contentTypeId, copy, prefix: "", topLevel: true);
+        return copy;
+    }
+
+    /// <summary>What <c>get</c> shows of a shared block in a ContentArea that <c>set</c> doesn't take (it names the content).</summary>
+    private static readonly string[] SharedItemDecoration =
+        ["type", "name", "language", "status", "url", "kind", "missing", "deleted", "blueprint", "provider", "visitorGroupNames", "renderSettings"];
+
+    /// <summary>The fields of an inline block item <c>set</c> takes; <c>get</c>'s <c>renderSettings</c> and <c>visitorGroupNames</c> are left out.</summary>
+    private static readonly string[] InlineItemFields = ["type", "name", "properties", "displayOption", "group", "visitorGroups"];
+
+    /// <summary>
+    /// A ContentArea's items as the agent takes them, from <c>get</c>'s shape or <c>set</c>'s: a shared block by
+    /// <c>ref</c> (or <c>guid</c>), what <c>get</c> adds about the content left out; an inline block by <c>type</c> (a
+    /// block type), <c>name</c> and <c>properties</c> (names checked, <c>get</c>'s <c>{type, value}</c> unwrapped), also
+    /// as <c>get</c> shows it (<c>inline: true</c>). Display option and personalization as given.
+    /// </summary>
+    /// <exception cref="UsageException">An item that gives both kinds, or neither; an unknown type, or one that isn't a block type.</exception>
+    public static JsonArray AreaItems(CmsModel model, JsonArray items, string where)
+    {
+        var result = new JsonArray();
+        for (var i = 0; i < items.Count; i++)
+        {
+            var itemWhere = $"{where}[{i}]";
+            if (items[i] is not JsonObject item)
+            {
+                throw new UsageException($"'{itemWhere}' must be an object: {{\"ref\": \"123\"}} for a shared block, {{\"type\": \"TeaserBlock\", \"properties\": {{...}}}} for an inline one.");
+            }
+            var shared = item["ref"] is not null || item["guid"] is not null;
+            var flagged = item["inline"] is JsonValue flag && flag.GetValueKind() == JsonValueKind.True;
+            if (shared && (flagged || item["properties"] is not null))
+            {
+                throw new UsageException($"'{itemWhere}' gives both a shared block (ref or guid) and an inline block (inline, properties).",
+                    "An item is one or the other: {\"ref\": \"123\"} for a shared block, {\"type\": \"TeaserBlock\", \"properties\": {...}} for an inline one.");
+            }
+            var copy = (JsonObject)item.DeepClone();
+            if (shared)
+            {
+                foreach (var decoration in SharedItemDecoration)
+                {
+                    copy.Remove(decoration);
+                }
+                result.Add(copy);
+                continue;
+            }
+            if (!flagged && item["type"] is null && item["properties"] is null)
+            {
+                throw new UsageException($"'{itemWhere}' names no block.",
+                    "Give {\"ref\": \"123\"} (or guid) for a shared block, or {\"type\": \"TeaserBlock\", \"properties\": {...}} for an inline one.");
+            }
+            var typeName = item["type"] is JsonValue typeValue && typeValue.TryGetValue<string>(out var text) ? text
+                : item["type"] is JsonValue number && number.GetValueKind() == JsonValueKind.Number ? number.ToJsonString()
+                : throw new UsageException($"'{itemWhere}' is an inline block without its type.", "Give its block type: {\"type\": \"TeaserBlock\", \"properties\": {...}}.");
+            var type = BlockType(model, typeName, itemWhere);
+            var inline = new JsonObject { ["type"] = type.Name };
+            foreach (var field in InlineItemFields.Skip(1))
+            {
+                if (copy[field] is { } value)
+                {
+                    copy.Remove(field);
+                    inline[field] = value;
+                }
+            }
+            if (inline["properties"] is { } properties)
+            {
+                if (properties is not JsonObject values)
+                {
+                    throw new UsageException($"'{itemWhere}.properties' must be an object of {type.Name} property names to values.");
+                }
+                inline["properties"] = InlineValues(model, type, values, $"{itemWhere}.");
+            }
+            result.Add(inline);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// An inline block's values as the agent takes them: <c>get</c>'s <c>{type, value}</c> unwrapped (a reference as its
+    /// ref), names checked against <paramref name="type"/>.
+    /// </summary>
+    /// <param name="prefix">What the names are shown after in messages (<c>MainArea[2].</c>).</param>
+    public static JsonObject InlineValues(CmsModel model, ContentTypeInfo type, JsonObject values, string prefix)
+    {
+        var plain = new JsonObject();
+        foreach (var (name, value) in values)
+        {
+            plain[name] = GetShape.IsWrapped(value) ? GetShape.Unwrap((JsonObject)value!, $"{prefix}{name}") : GetShape.Plain(value);
+        }
+        Check(model, type.Id, plain, prefix, topLevel: false);
+        return plain;
+    }
+
+    /// <summary>A block type by name, class name, GUID or id, for an inline block.</summary>
+    /// <exception cref="UsageException">No such type, or not a block type.</exception>
+    public static ContentTypeInfo BlockType(CmsModel model, string name, string where)
+    {
+        ContentTypeInfo type;
+        try
+        {
+            type = int.TryParse(name.Trim(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var id)
+                ? model.Types.FirstOrDefault(t => t.Id == id) ?? throw new NotFoundException($"No content type has the id {id}.")
+                : model.RequireType(name);
+        }
+        catch (NotFoundException ex)
+        {
+            throw new UsageException($"{where}: {ex.Message}", ex.Hint);
+        }
+        return type.Kind is ContentKind.Block or ContentKind.Section or ContentKind.Element
+            ? type
+            : throw new UsageException($"{where}: {type.Name} is a {type.Kind.ToString().ToLowerInvariant()} type, not a block type, so it can't be an inline block.",
+                "`opticli types --kind block` lists the block types; `opticli allowed-in <type>` says which areas take one.");
     }
 
     /// <summary>The ContentArea property <paramref name="name"/> of the type, with its exact name.</summary>
@@ -47,10 +169,31 @@ public static class PropertyNameCheck
 
     private static void Check(CmsModel model, int contentTypeId, JsonObject properties, string prefix, bool topLevel)
     {
-        foreach (var (name, value) in properties)
+        foreach (var (name, value) in properties.ToList())
         {
+            if (AreaItemPath.Parse(name) is { } position)
+            {
+                var area = Find(model, contentTypeId, position.Property, prefix, topLevel: false)!;
+                if (area.TypeName != "ContentArea")
+                {
+                    throw new UsageException($"'{prefix}{name}' names an item of a ContentArea, and '{area.Name}' is a {area.TypeName} property.",
+                        "Positions in brackets are for a ContentArea's inline blocks; set a block list as a whole array.");
+                }
+                if (value is not JsonObject values)
+                {
+                    throw new UsageException($"'{prefix}{name}' takes the inline block's values: {area.Name}[{position.Index}].Heading=Hi, or an object of its property names to values.",
+                        $"To replace or remove the item, set {area.Name} whole, or use `opticli area`.");
+                }
+                // The names are the inline block's, whose type is in the content: the site checks them.
+                properties[name] = GetShape.UnwrapAll(values, $"{prefix}{name}.");
+                continue;
+            }
             var definition = Find(model, contentTypeId, name, prefix, topLevel);
-            if (value is JsonObject nested && definition?.BlockType is { } blockType)
+            if (value is JsonArray areaItems && definition?.TypeName == "ContentArea")
+            {
+                properties[name] = AreaItems(model, areaItems, $"{prefix}{definition.Name}");
+            }
+            else if (value is JsonObject nested && definition?.BlockType is { } blockType)
             {
                 Check(model, blockType, nested, $"{prefix}{definition.Name}.", topLevel: false);
             }

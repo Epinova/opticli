@@ -112,12 +112,36 @@ internal sealed class EditUiProperties(CmsCall call, bool check)
 
     /// <summary>
     /// A block's or a block list's value as a diff shows it, without the properties the caller doesn't see: those of the
-    /// block itself, or of the list's items as they are now. A list with no items now can't tell, and shows nothing.
+    /// block itself, or of the list's items as they are now. A list with no items now can't tell, and shows nothing. A
+    /// ContentArea's inline blocks likewise, each by an inline block of its type the area has now (or none of their values).
     /// </summary>
     private JsonElement? Shown(PropertyData property, JsonElement? value)
     {
         switch (property.Value)
         {
+            case ContentArea area when value is { ValueKind: JsonValueKind.Array } areaItems:
+                var inline = area.Items.Select(Compat.InlineBlocks.Of).OfType<BlockData>().ToList();
+                if (inline.Count == 0 && !areaItems.EnumerateArray().Any(i => i.ValueKind == JsonValueKind.Object && i.TryGetProperty("properties", out _)))
+                {
+                    return value;
+                }
+                var types = call.Service<IContentTypeRepository>();
+                string? TypeName(BlockData block) => (Compat.InlineBlocks.TypeId(block) is var id and > 0 ? types.Load(id) : types.Load(block.GetOriginalType()))?.Name;
+                return JsonSerializer.SerializeToElement(areaItems.EnumerateArray().Select(item =>
+                {
+                    if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty("properties", out var values) || values.ValueKind != JsonValueKind.Object)
+                    {
+                        return item;
+                    }
+                    var type = item.TryGetProperty("type", out var named) && named.ValueKind == JsonValueKind.String ? named.GetString() : null;
+                    var like = inline.FirstOrDefault(b => string.Equals(TypeName(b), type, StringComparison.OrdinalIgnoreCase));
+                    var shown = item.EnumerateObject().Where(p => p.Name != "properties").ToDictionary(p => p.Name, p => (JsonElement?)p.Value, StringComparer.Ordinal);
+                    if (like is not null)
+                    {
+                        shown["properties"] = Shown(like, values);
+                    }
+                    return JsonSerializer.SerializeToElement(shown);
+                }).ToList());
             case IContentData block when value is { ValueKind: JsonValueKind.Object } json:
                 return Shown(block, json);
             case System.Collections.IEnumerable items and not string when property.PropertyValueType.IsGenericType

@@ -31,13 +31,40 @@ internal sealed class AreaEditor(ContentLocator locator, PropertyWriter writer)
             switch (op.Op)
             {
                 case AreaOps.Add:
-                    if (op.IfMissing && op.Ref is not null && items.Any(item => item.ContentLink is { } present && present.CompareToIgnoreWorkID(locator.ResolveContent(op.Ref, "ContentArea item"))))
+                    var inline = op.Type is not null || op.Values is not null || op.Name is not null;
+                    if (inline && op.Ref is not null)
                     {
-                        continue;
+                        throw AgentException.Usage($"{where}: give ref (a shared block) or type (a new inline block), not both.");
+                    }
+                    if (inline && op.Type is null)
+                    {
+                        throw AgentException.Usage($"{where}: values and name are a new inline block's; give its type too.");
+                    }
+                    if (!inline && op.Ref is null)
+                    {
+                        throw AgentException.Usage($"{where}: give ref (a shared block to add) or type (a new inline block, with its values).");
+                    }
+                    ContentAreaItem added;
+                    if (inline)
+                    {
+                        added = writer.NewInlineItem(op.Type!, op.Values, op.Name, op.DisplayOption, where);
+                        // An inline block has no identity: "already there" is one of its type with the values given.
+                        if (op.IfMissing && writer.HasInlineLike(items, added, op.Values, op.Name))
+                        {
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        if (op.IfMissing && items.Any(item => item.ContentLink is { } present && present.CompareToIgnoreWorkID(locator.ResolveContent(op.Ref, "ContentArea item"))))
+                        {
+                            continue;
+                        }
+                        added = writer.NewAreaItem(op.Ref, op.DisplayOption);
                     }
                     var at = op.At ?? items.Count;
                     CheckPosition(where, at, items.Count);
-                    items.Insert(at, writer.NewAreaItem(op.Ref, op.DisplayOption));
+                    items.Insert(at, added);
                     break;
 
                 case AreaOps.Remove:
@@ -74,11 +101,14 @@ internal sealed class AreaEditor(ContentLocator locator, PropertyWriter writer)
             throw AgentException.Usage($"{where}: give 'index' or 'ref' of the item.");
         }
         var target = locator.ResolveContent(op.Ref, "ContentArea item");
-        var found = items.ToList().FindIndex(item => item.ContentLink is { } link && link.CompareToIgnoreWorkID(target));
-        return found >= 0
-            ? found
-            : throw AgentException.NotFound($"{where}: no item references {op.Ref}.",
-                $"Items: {string.Join(", ", items.Select(item => item.ContentLink?.ToString() ?? "(inline)"))}.");
+        var found = items.ToList().FindIndex(item => Compat.InlineBlocks.Of(item) is null && item.ContentLink is { } link && link.CompareToIgnoreWorkID(target));
+        if (found >= 0)
+        {
+            return found;
+        }
+        var shown = items.Select((item, i) => $"{i}: {(Compat.InlineBlocks.Of(item) is { } inline ? $"inline {PropertyValues.InlineTypeName(inline)}" : ContentReference.IsNullOrEmpty(item.ContentLink) ? "(none)" : item.ContentLink.ToReferenceWithoutVersion().ToString())}");
+        throw AgentException.NotFound($"{where}: no item references {op.Ref}.",
+            $"Items: {string.Join(", ", shown)}. An inline block has no ref: name it by its position.");
     }
 
     private static void CheckPosition(string where, int position, int max)
