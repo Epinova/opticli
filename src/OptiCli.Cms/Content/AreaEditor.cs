@@ -47,12 +47,12 @@ internal sealed class AreaEditor(ContentLocator locator, PropertyWriter writer)
                     ContentAreaItem added;
                     if (inline)
                     {
-                        added = writer.NewInlineItem(op.Type!, op.Values, op.Name, op.DisplayOption, where);
                         // An inline block has no identity: "already there" is one of its type with the values given.
-                        if (op.IfMissing && writer.HasInlineLike(items, added, op.Values, op.Name))
+                        if (writer.NewInlineItem(op.Type!, op.Values, op.Name, op.DisplayOption, where, op.IfMissing ? items : null) is not { } inlineItem)
                         {
                             continue;
                         }
+                        added = inlineItem;
                     }
                     else
                     {
@@ -71,6 +71,18 @@ internal sealed class AreaEditor(ContentLocator locator, PropertyWriter writer)
                     items.RemoveAt(Locate(where, items, op));
                     break;
 
+                case AreaOps.Set:
+                    if (op.Index is not { } position || op.Ref is not null)
+                    {
+                        throw AgentException.Usage($"{where}: give the inline block's 'index' (an inline block has no ref).");
+                    }
+                    if (op.Values is null && op.Name is null)
+                    {
+                        throw AgentException.Usage($"{where}: give values or a name to set.");
+                    }
+                    writer.ChangeInlineItem(area, property.Name, position, op.Values, op.Name);
+                    break;
+
                 case AreaOps.Move:
                     var from = Locate(where, items, op);
                     var to = op.At ?? throw AgentException.Usage($"{where}: 'at' (the target position) is required.");
@@ -81,7 +93,7 @@ internal sealed class AreaEditor(ContentLocator locator, PropertyWriter writer)
                     break;
 
                 default:
-                    throw AgentException.Usage($"areaOps[{i}]: unknown op '{op.Op}'.", $"Use {AreaOps.Add}, {AreaOps.Remove} or {AreaOps.Move}.");
+                    throw AgentException.Usage($"areaOps[{i}]: unknown op '{op.Op}'.", $"Use {AreaOps.Add}, {AreaOps.Remove}, {AreaOps.Move} or {AreaOps.Set}.");
             }
 
             property.Value = area;

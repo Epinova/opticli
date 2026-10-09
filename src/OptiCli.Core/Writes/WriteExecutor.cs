@@ -277,6 +277,14 @@ public sealed class WriteExecutor(
                 DisplayOption = op.Display,
                 IfMissing = updateExisting,
             },
+            AreaOps.Set => new AreaOperation
+            {
+                Op = AreaOps.Set,
+                Property = property.Name,
+                Index = op.Index ?? throw new UsageException("area set needs the inline block's position.", "An inline block has no ref; read the positions with `opticli get <ref> --version latest`."),
+                Values = op.Values is null ? null : PropertyArguments.ToRequest(PropertyNameCheck.UntypedValues(session.Model, op.Values, $"{property.Name}[{op.Index}].")),
+                Name = op.Name,
+            },
             AreaOps.Remove or AreaOps.Move => new AreaOperation
             {
                 Op = op.Action,
@@ -285,15 +293,19 @@ public sealed class WriteExecutor(
                 Ref = op.Item is null ? null : (await ResolveAsync(op.Item, "item", cancellationToken)).ContentRef,
                 At = op.Action == AreaOps.Move ? op.To ?? throw new UsageException("area move needs the target position.") : null,
             },
-            _ => throw new UsageException($"Unknown area action '{op.Action}'.", "Use add, remove or move."),
+            _ => throw new UsageException($"Unknown area action '{op.Action}'.", "Use add, remove, move or set."),
         };
-        if (edit.Op != AreaOps.Add && (edit.Index is null) == (edit.Ref is null))
+        if (edit.Op is AreaOps.Remove or AreaOps.Move && (edit.Index is null) == (edit.Ref is null))
         {
             throw new UsageException($"area {op.Action} needs the item: its index or the content it references.");
         }
-        if (edit.Op != AreaOps.Add && (op.Type is not null || op.Values is not null || op.Name is not null))
+        if (edit.Op is AreaOps.Remove or AreaOps.Move && (op.Type is not null || op.Values is not null || op.Name is not null))
         {
-            throw new UsageException($"area {op.Action} takes no type, values or name; those are for adding an inline block.");
+            throw new UsageException($"area {op.Action} takes no type, values or name; those are for adding or setting an inline block.");
+        }
+        if (edit.Op == AreaOps.Set && (op.Type is not null || op.Item is not null || (op.Values is null && op.Name is null)))
+        {
+            throw new UsageException("area set takes the inline block's position and its values or name (no type or ref).");
         }
         return edit;
     }

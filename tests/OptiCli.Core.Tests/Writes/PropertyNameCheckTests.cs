@@ -89,6 +89,27 @@ public class PropertyNameCheckTests
     }
 
     [Fact]
+    public void A_ContentArea_inside_an_inline_block_by_position_is_taken_as_get_shows_it_too()
+    {
+        // The block at MainArea[0] has an area of its own: as get shows it ({type, value}), or plain under a name that is a
+        // ContentArea wherever it is used.
+        var properties = JsonNode.Parse("""
+            {"MainArea[0]": {
+              "Heading": {"type": "String", "value": "Hi"},
+              "Nested": {"type": "ContentArea", "value": [
+                {"ref": "123", "type": "TeaserBlock", "name": "Shared", "status": "published"},
+                {"inline": true, "type": "TeaserBlock", "properties": {"Text": {"type": "XhtmlString", "value": "x"}}}]},
+              "MainArea": [{"ref": "456", "name": "Shared too"}],
+              "Hero": {"Heading": {"type": "String", "value": "Local"}}}}
+            """)!.AsObject();
+
+        var prepared = PropertyNameCheck.Prepare(Model, ModelFixture.ArticlePage, properties)!;
+
+        Assert.Equal("""{"MainArea[0]":{"Heading":"Hi","Nested":[{"ref":"123"},{"type":"TeaserBlock","properties":{"Text":"x"}}],"MainArea":[{"ref":"456"}],"Hero":{"Heading":"Local"}}}""",
+            prepared.ToJsonString());
+    }
+
+    [Fact]
     public void Built_in_names_are_only_allowed_at_the_top_level()
     {
         Assert.Throws<UsageException>(() => PropertyNameCheck.Check(Model, ModelFixture.ArticlePage,

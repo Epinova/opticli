@@ -10,6 +10,10 @@ public class AreaCommandTests
     [InlineData("--values and --name are a new inline block's: give --type too", "add", "456", "--values", "{}")]
     [InlineData("area add takes a block ref or --type (a new inline block), not both ('456')", "add", "456", "--type", "TeaserBlock", "Heading=Hi")]
     [InlineData("area add takes 1 value(s), got 0.", "add")]
+    [InlineData("area set takes the inline block's position, then its values as Prop=value.", "set")]
+    [InlineData("area set takes the inline block's position, then its values as Prop=value.", "set", "Heading=Hi")]
+    [InlineData("area set takes the inline block's position, then its values as Prop=value.", "set", "2", "3")]
+    [InlineData("--type only applies to add", "set", "2", "--type", "TeaserBlock")]
     public async Task Inline_block_arguments_that_dont_fit_are_a_usage_error(string message, params string[] args)
     {
         var run = await Opticli.RunAsync(["area", "123", "MainArea", .. args, "--json"]);
@@ -27,5 +31,6 @@ public class AreaCommandTests
         Assert.Equal(0, run.ExitCode);
         Assert.Contains("--type <type>", run.Stdout, StringComparison.Ordinal);
         Assert.Contains("opticli set <ref> 'MainArea[2].Heading=New'", run.Stdout, StringComparison.Ordinal);
+        Assert.Contains("opticli area 123 MainArea set 2 Heading=New --name Intro", run.Stdout, StringComparison.Ordinal);
     }
 }

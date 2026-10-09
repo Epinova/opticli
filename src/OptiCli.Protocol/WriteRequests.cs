@@ -111,9 +111,11 @@ public sealed record DraftRequest
 /// <see cref="Values"/>, at <see cref="At"/> (default: end), optional <see cref="DisplayOption"/>.</item>
 /// <item><c>remove</c>: remove the item at <see cref="Index"/>, or the first item referencing <see cref="Ref"/>.</item>
 /// <item><c>move</c>: move the item at <see cref="Index"/> (or the first referencing <see cref="Ref"/>) to position <see cref="At"/>.</item>
+/// <item><c>set</c>: set <see cref="Values"/> (and <see cref="Name"/>) on the inline block at <see cref="Index"/>; its other
+/// values, render settings and personalization stay.</item>
 /// </list>
 /// Indexes are zero-based and refer to the area as it is after the previous operations. An inline block has no ref, so
-/// remove and move name it by its index.
+/// remove, move and set name it by its index.
 /// </remarks>
 public sealed record AreaOperation
 {
@@ -132,11 +134,14 @@ public sealed record AreaOperation
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Type { get; init; }
 
-    /// <summary>add with <see cref="Type"/>: the inline block's values, with <see cref="DraftRequest.Properties"/>'s value rules.</summary>
+    /// <summary>add with <see cref="Type"/>, set: the inline block's values, with <see cref="DraftRequest.Properties"/>'s value rules.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyDictionary<string, JsonElement>? Values { get; init; }
 
-    /// <summary>add with <see cref="Type"/>: the inline block's name in the area (the edit UI shows it); default: none, which the edit UI shows as the type's name.</summary>
+    /// <summary>
+    /// add with <see cref="Type"/>, set: the inline block's name in the area (the edit UI shows it); default for add: none,
+    /// which the edit UI shows as the type's name. In a set, <c>""</c> removes it.
+    /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Name { get; init; }
 
@@ -160,6 +165,7 @@ public static class AreaOps
     public const string Add = "add";
     public const string Remove = "remove";
     public const string Move = "move";
+    public const string Set = "set";
 }
 
 /// <summary>
@@ -249,10 +255,15 @@ public static class CompositionOps
 /// </summary>
 /// <remarks>
 /// <para>Writing a whole area, an item without <see cref="Group"/> or <see cref="VisitorGroups"/> keeps those of the
-/// item it takes over: the n-th item for some content takes over the n-th current item for that content, the n-th inline
-/// block of a type the n-th current inline block of that type. It also keeps that item's other render settings. An
-/// inline block that takes over one keeps its values: <see cref="Properties"/> are set on a copy of it, the others stay
-/// as they are. <see cref="DisplayOption"/> and an inline block's <see cref="Name"/> are always as given.</para>
+/// item it takes over: the n-th item for some content takes over the n-th current item for that content. It also keeps
+/// that item's other render settings. <see cref="DisplayOption"/> and an inline block's <see cref="Name"/> are always as
+/// given.</para>
+/// <para>An inline block is built from what the item gives: a whole area replaces the area. Only an item that is an exact
+/// copy of a current inline block (every value it has, as reads show them) keeps that block, with its values the caller
+/// can't see. Any other inline item is a new block with just the given values (the type's defaults for the rest); it takes
+/// over a current block's render settings and personalization only when that is unambiguous: the only item of its type
+/// that isn't a copy, and the only current block of the type not copied. For an editor, an inline block with values they
+/// can't see or change can't go that way. One block's values change with <c>"MainArea[2]"</c> or an area <c>set</c>.</para>
 /// </remarks>
 public sealed record AreaItemValue
 {

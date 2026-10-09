@@ -134,6 +134,57 @@ public static class PropertyNameCheck
         return plain;
     }
 
+    /// <summary>
+    /// The values of an inline block whose type the CLI doesn't know (the block at a position of the content, which the site
+    /// looks up), as the agent takes them: <c>get</c>'s <c>{type, value}</c> unwrapped, and the ContentAreas among them, as
+    /// <c>get</c> shows them or under a name that is a ContentArea in every type that has it, as <see cref="AreaItems"/>
+    /// makes them; local blocks likewise. The names are left to the site.
+    /// </summary>
+    /// <param name="prefix">What the names are shown after in messages (<c>MainArea[2].</c>).</param>
+    public static JsonObject UntypedValues(CmsModel model, JsonObject values, string prefix)
+    {
+        var result = new JsonObject();
+        foreach (var (name, value) in values)
+        {
+            var where = $"{prefix}{name}";
+            var wrapped = GetShape.IsWrapped(value);
+            var type = wrapped ? (string?)value!["type"] : null;
+            if (AreaItemPath.Parse(name) is not null)
+            {
+                result[name] = value is JsonObject nested ? UntypedValues(model, nested, $"{where}.") : value?.DeepClone();
+            }
+            else if (type == "ContentArea" || (!wrapped && value is JsonArray && IsAreaName(model, name)))
+            {
+                var items = wrapped ? value!["value"] : value;
+                result[name] = items is JsonArray array ? AreaItems(model, array, where) : items?.DeepClone();
+            }
+            else if (type == "Block" && value!["value"] is JsonObject block)
+            {
+                result[name] = UntypedValues(model, block, $"{where}.");
+            }
+            else if (wrapped)
+            {
+                result[name] = GetShape.Unwrap((JsonObject)value!, where);
+            }
+            else if (value is JsonObject local && model.Properties.Values.Any(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase) && p.BlockType is not null && !p.IsList))
+            {
+                result[name] = UntypedValues(model, local, $"{where}.");
+            }
+            else
+            {
+                result[name] = value?.DeepClone();
+            }
+        }
+        return result;
+    }
+
+    /// <summary>Whether every property of this name, in any type, is a ContentArea.</summary>
+    private static bool IsAreaName(CmsModel model, string name)
+    {
+        var definitions = model.Properties.Values.Where(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase)).ToList();
+        return definitions.Count > 0 && definitions.All(p => p.TypeName == "ContentArea");
+    }
+
     /// <summary>A block type by name, class name, GUID or id, for an inline block.</summary>
     /// <exception cref="UsageException">No such type, or not a block type.</exception>
     public static ContentTypeInfo BlockType(CmsModel model, string name, string where)
@@ -185,7 +236,7 @@ public static class PropertyNameCheck
                         $"To replace or remove the item, set {area.Name} whole, or use `opticli area`.");
                 }
                 // The names are the inline block's, whose type is in the content: the site checks them.
-                properties[name] = GetShape.UnwrapAll(values, $"{prefix}{name}.");
+                properties[name] = UntypedValues(model, values, $"{prefix}{name}.");
                 continue;
             }
             var definition = Find(model, contentTypeId, name, prefix, topLevel);

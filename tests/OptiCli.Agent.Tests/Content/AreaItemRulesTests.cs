@@ -31,27 +31,36 @@ public class AreaItemRulesTests
         Assert.Equal([-1, 0, 1, -1], AreaItemRules.Match(["123", "123"], ["456", "123", "123", "123"]));
 
     [Fact]
-    public void The_nth_inline_block_of_a_type_takes_over_the_nth_current_one_of_that_type()
+    public void An_inline_block_that_isnt_a_copy_takes_over_a_current_one_only_when_it_is_the_only_one_of_its_type_on_both_sides()
     {
         var teaser = AreaItemRules.InlineKey(11);
         var button = AreaItemRules.InlineKey(12);
 
-        Assert.Equal([1, -1, 0, 3], AreaItemRules.Match([button, teaser, "123", teaser], [teaser, "456", button, teaser]));
+        // One teaser and one button on each side: unambiguous.
+        Assert.Equal([1, -1, 0], AreaItemRules.Match([button, teaser, "123"], [teaser, "456", button]));
+        // Two teasers on either side: which one was meant can't be told, so neither takes one over.
+        Assert.Equal([-1, -1], AreaItemRules.Match([teaser, teaser], [teaser, teaser]));
+        Assert.Equal([-1], AreaItemRules.Match([teaser, teaser], [teaser]));
+        Assert.Equal([-1, -1], AreaItemRules.Match([teaser], [teaser, teaser]));
         // A ref never pairs with an inline block, whatever the ids.
         Assert.Equal([-1], AreaItemRules.Match([AreaItemRules.InlineKey(123)], ["123"]));
     }
 
     [Fact]
-    public void An_inline_block_given_as_it_is_pairs_with_itself_before_the_rest_pair_in_order()
+    public void An_inline_block_given_as_it_is_pairs_with_itself_first_and_only_an_unambiguous_rest_pairs_after()
     {
         var teaser = AreaItemRules.InlineKey(11);
-        // Current: A, B, C (all teasers); written back: A and C, B left out. C must keep its own values, not B's.
-        var same = new Dictionary<(int Wanted, int Current), bool> { [(0, 0)] = true, [(1, 2)] = true };
+        bool Same(int i, int j, params (int, int)[] pairs) => pairs.Contains((i, j));
 
-        Assert.Equal([0, 2], AreaItemRules.Match([teaser, teaser, teaser], [teaser, teaser], (i, j) => same.GetValueOrDefault((i, j))));
-        // Without a match, the order decides, among the current ones not taken.
-        Assert.Equal([2, 0], AreaItemRules.Match([teaser, teaser, teaser], [teaser, teaser], (i, j) => i == 0 && j == 2));
-        // A match is only made with an item of the same key.
+        // Current: A, B, C; written: A as it is, C edited (B left out). A pairs exactly; C and B are both left over: ambiguous.
+        Assert.Equal([new AreaItemRules.Pairing(0, true), new AreaItemRules.Pairing(-1, false)],
+            AreaItemRules.Pair([teaser, teaser, teaser], [teaser, teaser], (i, j) => Same(i, j, (0, 0))));
+        // Current: A, B; written: B as it is, A edited: A is the only one left on both sides, so it keeps A's settings.
+        Assert.Equal([new AreaItemRules.Pairing(1, true), new AreaItemRules.Pairing(0, false)],
+            AreaItemRules.Pair([teaser, teaser], [teaser, teaser], (i, j) => Same(i, j, (0, 1))));
+        // Exact copies, moved: each pairs with itself.
+        Assert.Equal([2, 0, 1], AreaItemRules.Match([teaser, teaser, teaser], [teaser, teaser, teaser], (i, j) => Same(i, j, (0, 2), (1, 0), (2, 1))));
+        // A copy is only of an item with the same key.
         Assert.Equal([-1], AreaItemRules.Match(["123"], [teaser], (_, _) => true));
     }
 

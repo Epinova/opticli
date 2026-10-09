@@ -54,6 +54,17 @@ public class EdgeLocalBlock : BlockData
     public virtual string Code { get; set; }
 }
 
+/// <summary>A block with a ContentArea of its own, for inline blocks inside an inline block.</summary>
+[ContentType(GUID = "3B0C4A5E-0D1F-4E5A-9C7B-6A1D2E3F4A04", DisplayName = "Edge container block", Description = "opticli edge-case fixture")]
+public class EdgeContainerBlock : BlockData
+{
+    [Display(Order = 10)]
+    public virtual string Heading { get; set; }
+
+    [Display(Order = 20)]
+    public virtual ContentArea Items { get; set; }
+}
+
 /// <summary>Alloy has no media type for PDF files, which the upload tests use.</summary>
 [ContentType(GUID = "3B0C4A5E-0D1F-4E5A-9C7B-6A1D2E3F4A03", DisplayName = "Edge document")]
 [MediaDescriptor(ExtensionString = "pdf")]

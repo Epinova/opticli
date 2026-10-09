@@ -86,7 +86,7 @@ public static class PlanSimulation
             {
                 if (set.Properties is not null)
                 {
-                    PropertyArguments.Merge(properties, set.Properties);
+                    MergeInOrder(properties, set.Properties);
                 }
                 name = set.Name ?? name;
             }
@@ -207,6 +207,12 @@ public static class PlanSimulation
             case CompositionEdit composition when translate is not null && target.Master is { } master:
                 return new Simulation(composition with { Lang = master, Publish = false, BaseVersion = null, Force = true }, null, new Dictionary<string, string>(), [], [],
                     [$"Dry-run on the master branch ('{master}') as a stand-in: operation {translate.Index} creates the '{target.Language}' branch, so this composition edit is checked there when the plan runs."]);
+            case SetOperation { From: null, Variation: null } or AreaEdit { From: null, Index: not null } when restart is null && !target.Versioned && ByPosition(step.Operation):
+                // An inline block named by its position: earlier steps (an area add, say) decide which block that is, so it
+                // is dry-run after theirs, as the plan runs it.
+                var positioned = Merged(step, [.. earlier, step], target, null, reference, publish: step.Operation is SetOperation { Publish: true } or AreaEdit { Publish: true }, steps, existing,
+                    $"Dry-run as {reference}{In(target)} will be after operation(s) {string.Join(", ", earlier.Select(s => s.Index))} and this one, since it names a ContentArea item by its position.");
+                return positioned with { Operation = positioned.Operation with { PublishAt = step.Operation.PublishAt, RequestApproval = step.Operation.RequestApproval } };
             case CompositionEdit { Variation: null } when restart is null && !target.Versioned:
                 // Earlier set, area and composition steps change the content first: this edit is dry-run after theirs.
                 var folded = Merged(step, [.. earlier, step], target, null, reference, publish: step.Operation is CompositionEdit { Publish: true }, steps, existing,
@@ -216,6 +222,14 @@ public static class PlanSimulation
                 return null;
         }
     }
+
+    /// <summary>A step that names a ContentArea item by its position: an area edit by index, a set of <c>MainArea[2]</c>.</summary>
+    private static bool ByPosition(WriteOperation op) => op switch
+    {
+        AreaEdit { Index: not null } => true,
+        SetOperation { Properties: { } values } => values.Any(v => AreaItemPath.Parse(v.Key) is not null),
+        _ => false,
+    };
 
     /// <summary>What a set or area step bases its change on, when it has <c>from</c>.</summary>
     private static FromVersion? FromOf(WriteOperation op) => op switch
@@ -267,7 +281,22 @@ public static class PlanSimulation
                 {
                     compositions.Clear();
                 }
-                PropertyArguments.Merge(properties, values);
+                // An inline block's values by position (MainArea[2]) after area edits of that area: the site applies a
+                // request's values before its area edits, so they go after those edits, as the plan runs them.
+                var remaining = new JsonObject();
+                foreach (var (key, value) in values)
+                {
+                    if (AreaItemPath.Parse(key) is { } position && value is JsonObject itemValues
+                        && areas.Any(a => a.Property.Equals(position.Property, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        areas.Add(new AreaEdit(reference, position.Property, Protocol.AreaOps.Set, Index: position.Index) { Values = (JsonObject)itemValues.DeepClone() });
+                    }
+                    else
+                    {
+                        remaining[key] = value?.DeepClone();
+                    }
+                }
+                MergeInOrder(properties, remaining);
             }
             name = newName ?? name;
         }
@@ -418,6 +447,39 @@ public static class PlanSimulation
     private static bool SameLanguage(string? step, string? created) => step is null || string.Equals(step, created, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
+    /// <paramref name="values"/> merged over <paramref name="properties"/> as a later write changes them: an inline block's
+    /// values by position (<c>MainArea[2]</c>) go into that item of an area the properties already have whole (as the step
+    /// that set it, or area edits, left it); a whole area replaces the values by position given for it before.
+    /// </summary>
+    private static void MergeInOrder(JsonObject properties, JsonObject values)
+    {
+        var plain = new JsonObject();
+        foreach (var (key, value) in values)
+        {
+            if (AreaItemPath.Parse(key) is { } position && value is JsonObject given
+                && properties.FirstOrDefault(p => p.Key.Equals(position.Property, StringComparison.OrdinalIgnoreCase)).Value is JsonArray items)
+            {
+                if (position.Index < items.Count && items[position.Index] is JsonObject item && item["ref"] is null && item["guid"] is null)
+                {
+                    var itemValues = item["properties"] as JsonObject ?? [];
+                    PropertyArguments.Merge(itemValues, given);
+                    item["properties"] = itemValues;
+                    continue;
+                }
+            }
+            else if (AreaItemPath.Parse(key) is null)
+            {
+                foreach (var indexed in properties.Select(p => p.Key).Where(k => AreaItemPath.Parse(k) is { } earlier && earlier.Property.Equals(key, StringComparison.OrdinalIgnoreCase)).ToList())
+                {
+                    properties.Remove(indexed);
+                }
+            }
+            plain[key] = value?.DeepClone();
+        }
+        PropertyArguments.Merge(properties, plain);
+    }
+
+    /// <summary>
     /// An area step applied to the ContentArea value as <c>properties</c> gives it (<c>[{"ref": ...}]</c>, an inline block
     /// as <c>{"type": ..., "properties": ...}</c>). An item or position that isn't there is left to the real run to report.
     /// </summary>
@@ -446,6 +508,18 @@ public static class PlanSimulation
                 break;
             case Protocol.AreaOps.Remove when Find() is var index && index >= 0 && index < items.Count:
                 items.RemoveAt(index);
+                break;
+            case Protocol.AreaOps.Set when area.Index is { } index && index >= 0 && index < items.Count && items[index] is JsonObject inline && inline["ref"] is null && inline["guid"] is null:
+                if (area.Values is not null)
+                {
+                    var itemValues = inline["properties"] as JsonObject ?? [];
+                    PropertyArguments.Merge(itemValues, area.Values);
+                    inline["properties"] = itemValues;
+                }
+                if (area.Name is not null)
+                {
+                    inline["name"] = area.Name.Length == 0 ? null : area.Name;
+                }
                 break;
             case Protocol.AreaOps.Move when Find() is var from && from >= 0 && from < items.Count && area.To is { } to && to >= 0 && to < items.Count:
                 var moved = items[from];

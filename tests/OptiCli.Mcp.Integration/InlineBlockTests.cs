@@ -91,4 +91,38 @@ public sealed class InlineBlockTests(SharedSessions sessions)
             await WritingTests.DeleteAsync(editor, page);
         }
     }
+
+    [McpSiteFact]
+    public async Task An_editor_cant_drop_values_they_cant_change_by_writing_the_area_whole_but_may_change_one_block()
+    {
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var admin = await sessions.ForAsync(TestUsers.Admin);
+        var start = WritingTests.Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        var page = WritingTests.Id((await editor.OkAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = start })).GetProperty("content"));
+        try
+        {
+            // AdminScripts (McpFixture.cs) is locked for all but administrators: an administrator sets it.
+            await admin.OkAsync("update_content", new
+            {
+                reference = page,
+                areaOps = new[] { new { op = "add", property = "MainContentArea", type = "McpFieldsBlock", values = new Dictionary<string, string> { ["Heading"] = "Inline", ["AdminScripts"] = "admin only" } } },
+            });
+
+            // The editor's area, with the block changed: it isn't a copy, so it would be a new block without that value.
+            var area = Writable(Area(await editor.OkAsync("get_content", new { reference = page, version = "latest" })));
+            area[0]!["properties"]!["Heading"] = "Changed whole";
+            var refused = await editor.ErrorAsync("update_content", new { reference = page, properties = new Dictionary<string, JsonNode> { ["MainContentArea"] = area }, dryRun = true });
+            Assert.Equal("usage", refused.GetProperty("code").GetString());
+            Assert.Contains("would lose the inline McpFieldsBlock at position 0", refused.GetProperty("message").GetString());
+
+            // One block's values by position keep the rest of it.
+            await editor.OkAsync("update_content", new { reference = page, areaOps = new[] { new { op = "set", property = "MainContentArea", index = 0, values = new { Heading = "Changed" } } } });
+            var kept = Area(await admin.OkAsync("get_content", new { reference = page, version = "latest" }))[0].GetProperty("properties");
+            Assert.Equal(("Changed", "admin only"), (kept.GetProperty("Heading").GetProperty("value").GetString(), kept.GetProperty("AdminScripts").GetProperty("value").GetString()));
+        }
+        finally
+        {
+            await WritingTests.DeleteAsync(editor, page);
+        }
+    }
 }

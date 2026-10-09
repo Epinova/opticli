@@ -176,7 +176,9 @@ published version instead, leaving newer drafts out. Workflow:
 
 Inline blocks in a ContentArea (CMS 12.20+, stored in the area, no ref of their own): add one with
 `opticli area 123 MainArea add --type TeaserBlock Heading=Hi`, change one with `opticli set 123 'MainArea[2].Heading=New'`
-(its position, as `get`, `search` and `where-used` show it), move or remove it by position.
+or `opticli area 123 MainArea set 2 Heading=New --name Intro` (its position in the version you change: read it with
+`get <ref> --version latest`), move or remove it by position. Change one block that way, not by rewriting the whole
+area: there an inline item that isn't an exact copy of a block is a new block with only the values it gives.
 
 Structured values (ContentArea items, links, lists) go in `--values '{"MainArea":[{"ref":"456"}]}'`; several related
 writes can run as one validated plan with `opticli apply plan.json`. A plan with `"guidNamespace"` can be run again

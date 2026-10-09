@@ -30,7 +30,7 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
 
     internal const string IncludeDraft = "Also put live the unpublished changes someone else saved (the pendingDraft of a refused call): only after asking the user.";
 
-    internal const string Properties = "Property values by name, e.g. {\"Heading\": \"Text\", \"MainBody\": \"<p>XHTML</p>\"}: strings, numbers, booleans, content refs, ContentArea arrays of {ref} (a shared block) or {type, properties} (an inline block, values as plain values); \"MainArea[2]\": {...} sets values of the inline block at that position; null clears. Names and types: get_content_type.";
+    internal const string Properties = "Property values by name, e.g. {\"Heading\": \"Text\", \"MainBody\": \"<p>XHTML</p>\"}: strings, numbers, booleans, content refs, ContentArea arrays of {ref} (a shared block) or {type, properties} (an inline block, values as plain values: a whole area replaces the area, and an inline item keeps a block's other values only as an exact copy of it); \"MainArea[2]\": {...} sets values of the one inline block at that position; null clears. Names and types: get_content_type.";
 
     [McpServerTool(Name = "create_content", Title = "Create content", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
     [Description("Creates a page, block or folder as a draft below parent (or in the \"For this page\" folder of forContent). Check allowed child types with get_content_type first. Returns editUrl: give it to the user to review the draft in the CMS.")]
@@ -64,7 +64,7 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
     public string UpdateContent(
         [Description("Content id or GUID.")] string reference,
         [Description(Properties)] Dictionary<string, JsonElement>? properties = null,
-        [Description("ContentArea edits applied after properties: {op: add|remove|move, property, ref, index, at, displayOption, ifMissing}; add a new inline block with type and values ({Prop: value}) instead of ref. An inline block has no ref: remove and move it by index.")] List<AreaOperation>? areaOps = null,
+        [Description("ContentArea edits applied after properties: {op: add|remove|move|set, property, ref, index, at, displayOption, ifMissing}; add a new inline block with type and values ({Prop: value}) instead of ref; set changes the values (and name) of the inline block at index, the rest of it staying. An inline block has no ref: remove, move and set it by index.")] List<AreaOperation>? areaOps = null,
         [Description("New name.")] string? name = null,
         [Description("Language branch, e.g. en; the master language when left out.")] string? lang = null,
         [Description("The version you read (get_content's version); refused if a newer one was saved since.")] int? baseVersion = null,

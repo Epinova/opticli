@@ -9,61 +9,80 @@ namespace OptiCli.Cms.Content;
 /// </summary>
 internal static class AreaItemRules
 {
+    /// <summary>How a new item pairs with a current one: its index (-1 for none), and whether the new item is an exact copy of it.</summary>
+    public readonly record struct Pairing(int Current, bool Exact);
+
+    /// <summary>The current item each new item takes over (-1 for none); see <see cref="Pair"/>.</summary>
+    public static int[] Match(IReadOnlyList<string?> current, IReadOnlyList<string?> wanted, Func<int, int, bool>? same = null) =>
+        Pair(current, wanted, same).Select(p => p.Current).ToArray();
+
     /// <summary>
-    /// For each new item, the index of the current item it takes over (-1 for none): the n-th new item for some content
-    /// takes over the n-th current item for that content, in area order. Inserting, removing or reordering other items
-    /// doesn't change which item a block's settings stay with; of two items for the same content, the first new one
-    /// takes over the first current one. Items are keyed by their content (its ref without version), inline blocks by
-    /// their type (<see cref="InlineKey"/>); a null key matches nothing.
+    /// For each new item, the current item it takes over. Items are keyed by their content (its ref without version),
+    /// inline blocks by their type (<see cref="InlineKey"/>); a null key matches nothing.
+    /// <list type="bullet">
+    /// <item>Shared blocks: the n-th new item for some content takes over the n-th current item for that content, in area
+    /// order. Inserting, removing or reordering other items doesn't change which item a block's settings stay with.</item>
+    /// <item>Inline blocks, which have no identity: a new item that is an exact copy of a current block (<paramref name="same"/>)
+    /// takes it over (<see cref="Pairing.Exact"/>), first come first served. Of the rest, a new item takes over a current
+    /// block of its type only when that is unambiguous: it is the only new item of its type left, and that the only current
+    /// block of the type left. Anything else pairs with nothing.</item>
+    /// </list>
     /// </summary>
-    /// <param name="same">
-    /// For inline blocks, which have no identity: whether new item <c>i</c> is current item <c>j</c> as it is (the values
-    /// <c>get</c> shows of it). Such pairs are made first, so writing back an area with an inline block left out, or
-    /// moved, keeps each other block with its own values; the rest pair up as above, in order among those left.
-    /// </param>
-    public static int[] Match(IReadOnlyList<string?> current, IReadOnlyList<string?> wanted, Func<int, int, bool>? same = null)
+    /// <param name="same">Whether new item <c>i</c> is an exact copy of current item <c>j</c> (asked for inline keys only).</param>
+    public static Pairing[] Pair(IReadOnlyList<string?> current, IReadOnlyList<string?> wanted, Func<int, int, bool>? same = null)
     {
-        var matches = Enumerable.Repeat(-1, wanted.Count).ToArray();
+        var pairs = Enumerable.Repeat(new Pairing(-1, false), wanted.Count).ToArray();
         var taken = new bool[current.Count];
-        bool Pairs(int j, string key) => !taken[j] && string.Equals(current[j], key, StringComparison.OrdinalIgnoreCase);
-        if (same is not null)
+        bool Free(int j, string key) => !taken[j] && string.Equals(current[j], key, StringComparison.OrdinalIgnoreCase);
+        for (var i = 0; i < wanted.Count && same is not null; i++)
         {
-            for (var i = 0; i < wanted.Count; i++)
-            {
-                if (wanted[i] is not { } key)
-                {
-                    continue;
-                }
-                for (var j = 0; j < current.Count; j++)
-                {
-                    if (Pairs(j, key) && same(i, j))
-                    {
-                        (matches[i], taken[j]) = (j, true);
-                        break;
-                    }
-                }
-            }
-        }
-        for (var i = 0; i < wanted.Count; i++)
-        {
-            if (matches[i] >= 0 || wanted[i] is not { } key)
+            if (wanted[i] is not { } key || !IsInline(key))
             {
                 continue;
             }
             for (var j = 0; j < current.Count; j++)
             {
-                if (Pairs(j, key))
+                if (Free(j, key) && same(i, j))
                 {
-                    (matches[i], taken[j]) = (j, true);
+                    (pairs[i], taken[j]) = (new Pairing(j, true), true);
                     break;
                 }
             }
         }
-        return matches;
+        for (var i = 0; i < wanted.Count; i++)
+        {
+            if (pairs[i].Current >= 0 || wanted[i] is not { } key)
+            {
+                continue;
+            }
+            if (IsInline(key))
+            {
+                var left = Enumerable.Range(0, current.Count).Where(j => Free(j, key)).ToList();
+                var others = Enumerable.Range(0, wanted.Count).Count(k => pairs[k].Current < 0 && string.Equals(wanted[k], key, StringComparison.OrdinalIgnoreCase));
+                if (left.Count == 1 && others == 1)
+                {
+                    (pairs[i], taken[left[0]]) = (new Pairing(left[0], false), true);
+                }
+                continue;
+            }
+            for (var j = 0; j < current.Count; j++)
+            {
+                if (Free(j, key))
+                {
+                    (pairs[i], taken[j]) = (new Pairing(j, false), true);
+                    break;
+                }
+            }
+        }
+        return pairs;
     }
 
+    private const string InlinePrefix = "inline:";
+
+    private static bool IsInline(string key) => key.StartsWith(InlinePrefix, StringComparison.Ordinal);
+
     /// <summary>The key of an inline block of the content type <paramref name="typeId"/>, for <see cref="Match"/>.</summary>
-    public static string InlineKey(int typeId) => "inline:" + typeId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    public static string InlineKey(int typeId) => InlinePrefix + typeId.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>
     /// A property name that names one item of a ContentArea (<c>MainArea[2]</c>, zero-based), as <c>where-used</c> and

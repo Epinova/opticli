@@ -105,6 +105,13 @@ public sealed class InlineBlockWriteTests
             document = await GetAsync(id, cancellationToken: cancellationToken);
             Assert.Equal(["Top", "A changed", "B", "C"], Area(document).Select(i => Value(i, "Heading")));
             Assert.Equal("Intro", Area(document)[1]!["name"]!.GetValue<string>());
+            // Its name (and values) by position, the rest of it staying; "" removes the name.
+            await writes.RunAsync(new AreaEdit(page, "MainContentArea", "set", Index: 1) { Name = "Renamed", Values = new JsonObject { ["Text"] = "First again" } }, dryRun: false, cancellationToken);
+            var renamed = Area(await GetAsync(id, cancellationToken: cancellationToken))[1];
+            Assert.Equal(("Renamed", "A changed", "First again"), (renamed!["name"]!.GetValue<string>(), Value(renamed, "Heading"), Value(renamed, "Text")));
+            await writes.RunAsync(new AreaEdit(page, "MainContentArea", "set", Index: 1) { Name = "" }, dryRun: false, cancellationToken);
+            document = await GetAsync(id, cancellationToken: cancellationToken);
+            Assert.Null(Area(document)[1]!["name"]);
 
             // Written back as get shows it, the area doesn't change; without B, C keeps its own values (not B's link).
             var same = Assert.IsType<WriteOutput>((await writes.RunAsync(new SetOperation(page, AsValues(Area(document))), dryRun: false, cancellationToken)).Output);
@@ -140,6 +147,102 @@ public sealed class InlineBlockWriteTests
                 using var http = new HttpClient { BaseAddress = url };
                 var html = await http.GetStringAsync(path, cancellationToken);
                 Assert.Contains("A changed", html);
+            }
+        }
+        finally
+        {
+            await writes.RunAsync(new DeleteOperation(page, IgnoreReferences: true), dryRun: false, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// The item of an area as <c>get</c> shows it, with one value changed (in <c>get</c>'s shape), and without its
+    /// personalization, so what it keeps is what it takes over.
+    /// </summary>
+    private static JsonNode Changed(JsonNode? item, string property, string value)
+    {
+        var copy = item!.DeepClone().AsObject();
+        copy["properties"]![property] = new JsonObject { ["type"] = "LongString", ["value"] = value };
+        copy.Remove("group");
+        copy.Remove("visitorGroups");
+        copy.Remove("visitorGroupNames");
+        return copy;
+    }
+
+    [SiteFact]
+    public async Task Changed_inline_blocks_in_a_whole_area_are_built_from_what_they_give_and_keep_settings_only_when_unambiguous()
+    {
+        var cancellationToken = CancellationToken.None;
+        await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
+        var start = await FirstAsync(site, "StartPage", cancellationToken);
+        var image = await FirstAsync(site, "ImageFile", cancellationToken);
+        if (start is null || image is null || site.Session.Model.Types.All(t => t.Name != "TeaserBlock")
+            || Version.Parse((await site.Agent.PingAsync(cancellationToken)).CmsVersion.Split('-', '+')[0]) < new Version(12, 20))
+        {
+            return;
+        }
+        var writes = new WriteExecutor(site.Session, _ => Task.FromResult(site.Agent));
+        var id = (await writes.RunAsync(new CreateOperation(Id(start.Value), "StandardPage", $"Inline whole {Guid.NewGuid():N}"[..25]), dryRun: false, cancellationToken)).CreatedId!.Value;
+        var page = Id(id);
+        string Teaser(string heading, string? link = null, string? group = null)
+        {
+            var item = new JsonObject
+            {
+                ["type"] = "TeaserBlock",
+                ["properties"] = new JsonObject { ["Heading"] = heading, ["Text"] = "t", ["Image"] = Id(image.Value) },
+            };
+            if (link is not null)
+            {
+                item["properties"]!["Link"] = link;
+            }
+            if (group is not null)
+            {
+                item["group"] = group;
+            }
+            return item.ToJsonString();
+        }
+        async Task<JsonArray> WriteAreaAsync(string items)
+        {
+            await writes.RunAsync(new SetOperation(page, JsonNode.Parse($$"""{"MainContentArea": [{{items}}]}""")!.AsObject()), dryRun: false, cancellationToken);
+            return Area(await GetAsync(id, cancellationToken: cancellationToken));
+        }
+        try
+        {
+            // Removed and edited: [A, B (a link), C] written back as [A, C changed]. C's item can't be told from B's, so the
+            // changed block is built from what it gives: no link of B's, and neither item's personalization.
+            var area = await WriteAreaAsync($"{Teaser("A")}, {Teaser("B", Id(start.Value), group: "b")}, {Teaser("C")}");
+            area = await WriteAreaAsync($"{area[0]!.ToJsonString()}, {Changed(area[2], "Heading", "C changed").ToJsonString()}");
+            Assert.Equal(["A", "C changed"], area.Select(i => Value(i, "Heading")));
+            Assert.Null(area[1]!["properties"]!["Link"]);
+            Assert.Null(area[1]!["group"]);
+
+            // Moved and edited: [X (personalized), Y] written as [Y as it is, X changed]: X is the only one left on both
+            // sides, so it keeps X's personalization, and its values are what it gives.
+            area = await WriteAreaAsync($"{Teaser("X", Id(start.Value), group: "x")}, {Teaser("Y")}");
+            var x = Changed(area[0], "Heading", "X changed").AsObject();
+            x["properties"]!.AsObject().Remove("Link");
+            area = await WriteAreaAsync($"{area[1]!.ToJsonString()}, {x.ToJsonString()}");
+            Assert.Equal([("Y", null), ("X changed", "x")], area.Select(i => (Value(i, "Heading"), (string?)i!["group"])));
+            Assert.Null(area[1]!["properties"]!["Link"]);
+
+            // Two of the type, both changed: neither takes over a block's settings.
+            area = await WriteAreaAsync($"{Teaser("P", group: "p")}, {Teaser("Q")}");
+            area = await WriteAreaAsync($"{Changed(area[0], "Heading", "P changed").ToJsonString()}, {Changed(area[1], "Heading", "Q changed").ToJsonString()}");
+            Assert.Equal([("P changed", null), ("Q changed", null)], area.Select(i => (Value(i, "Heading"), (string?)i!["group"])));
+
+            // In an inline block's own area (by its position), written as get shows it: the same rule.
+            if (site.Session.Model.Types.Any(t => t.Name == "EdgeContainerBlock"))
+            {
+                area = await WriteAreaAsync("{\"type\": \"EdgeContainerBlock\", \"properties\": {\"Heading\": \"Box\", \"Items\": [" + Teaser("Inner A", Id(start.Value)) + ", " + Teaser("Inner B") + "]}}");
+                var inner = area[0]!["properties"]!["Items"]!.DeepClone().AsObject();
+                var items = inner["value"]!.AsArray();
+                items[1] = Changed(items[1], "Heading", "Inner B changed");
+                items.RemoveAt(0);
+                await writes.RunAsync(new SetOperation(page, new JsonObject { ["MainContentArea[0]"] = new JsonObject { ["Items"] = inner } }), dryRun: false, cancellationToken);
+                var box = Area(await GetAsync(id, cancellationToken: cancellationToken))[0]!;
+                var only = Assert.Single(box["properties"]!["Items"]!["value"]!.AsArray());
+                Assert.Equal(("Box", "Inner B changed"), (Value(box, "Heading"), Value(only, "Heading")));
+                Assert.Null(only!["properties"]!["Link"]);
             }
         }
         finally

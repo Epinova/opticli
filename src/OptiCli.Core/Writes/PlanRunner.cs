@@ -566,8 +566,10 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             return null;
         }
         var owner = await TypeOfAsync(add.Ref, steps, cancellationToken);
-        // A new inline block's type is the step's own.
-        var item = add.Type ?? await TypeOfAsync(add.Item!, steps, cancellationToken);
+        // A new inline block's type is the step's own, by its name as the site has it.
+        var item = add.Type is { } type
+            ? InlineTypeName(type)
+            : await TypeOfAsync(add.Item!, steps, cancellationToken);
         if (owner is null || item is null)
         {
             return null;
@@ -577,6 +579,19 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             throw new ContentValidationException($"Dry run: {problem}", "Pick a ContentArea that allows the type (`opticli allowed-in <type>`), or another block type.");
         }
         return $"{item} is allowed in {owner}.{add.Property} by [AllowedTypes] in the code; the CMS validates the placement when the plan runs.";
+    }
+
+    /// <summary>The name of the block type an inline add names (by name, GUID or id); null for none (the step reports it).</summary>
+    private string? InlineTypeName(string type)
+    {
+        try
+        {
+            return PropertyNameCheck.BlockType(session.Model, type, "type").Name;
+        }
+        catch (UsageException)
+        {
+            return null;
+        }
     }
 
     /// <returns>Why the code doesn't allow <paramref name="item"/> in the property; null when it does or can't tell.</returns>

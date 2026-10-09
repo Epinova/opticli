@@ -194,8 +194,11 @@ public sealed class PropertyDecoder(
                 {
                     ["inline"] = true,
                     ["type"] = typeId is { } t ? model.TypeName(t) : null,
-                    ["name"] = fragment.InlineName,
                 };
+                if (fragment.InlineName is { } inlineName)
+                {
+                    item["name"] = inlineName;
+                }
                 if (stored is not null)
                 {
                     item["properties"] = DecodeProperties(typeId, stored.Properties, topLevel: false, full);

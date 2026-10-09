@@ -12,13 +12,16 @@ again to update the skill.
   - **`opticli area <ref> <Prop> add --type T Prop=value...`** (with `--values`, `--name`, `--at`, `--display`) adds a
     new inline block, made as the CMS makes one (the type's default values) and validated by the CMS on save (required
     properties, the area's `[AllowedTypes]`). In a plan: `area` with `"type"`, `"values"` and `"name"`.
-  - **`opticli set <ref> 'MainArea[2].Heading=New'`** (or `--values '{"MainArea[2]": {...}}'`) changes the values of the
-    inline block at that position, the place `search` and `where-used` show.
+  - **`opticli set <ref> 'MainArea[2].Heading=New'`** (or `--values '{"MainArea[2]": {...}}'`) and **`opticli area <ref>
+    <Prop> set <position> Prop=value --name N`** change one inline block's values (and name), the rest of it staying.
   - In a whole ContentArea (`--values`), an item with `type` is an inline block, `{"type": "TeaserBlock", "properties":
-    {...}, "name": "Intro"}`. Each takes over the current inline block it gives exactly, else the n-th of its type, and
-    keeps the values it leaves out, its render settings and its personalization, so the area `get` shows can be written
-    back as is (unchanged, it changes nothing) or with blocks left out or moved.
-  - `area remove` and `move` take an inline block by its position; `ref:` names shared blocks only.
+    {...}, "name": "Intro"}`. An exact copy of a block the area has (as `get` shows it) keeps that block; any other inline
+    item is a new block with just the values it gives, which keeps the replaced block's render settings and
+    personalization only when which block it replaces is unambiguous. So the area `get` shows can be written back as is
+    (unchanged, it changes nothing), also with blocks left out or moved. For an editor (MCP), a block with values they
+    can't see or change can't be dropped that way.
+  - `area remove`, `move` and `set` take an inline block by its position; `ref:` names shared blocks only. In a plan,
+    `MainArea[n]` after an `area add` is the new block, in the dry run too.
   - With `apply --update-existing`, an inline `area add` changes nothing when the area already has an inline block of
     its type with the step's values.
   - On a CMS before 12.20 these writes are refused with the version they need. Where the site's CMS 12 edit UI doesn't

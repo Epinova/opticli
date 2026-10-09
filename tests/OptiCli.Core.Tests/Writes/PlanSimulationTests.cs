@@ -123,6 +123,24 @@ public class PlanSimulationTests
     }
 
     [Fact]
+    public void Values_by_position_after_an_inline_add_to_planned_content_change_that_new_block()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "create", "id": "page", "parent": "100", "type": "ArticlePage", "name": "Page", "properties": {"MainArea": [{"ref": "200"}]}},
+              {"op": "area", "ref": "$page", "property": "MainArea", "action": "add", "type": "TeaserBlock", "values": {"Text": "A"}, "at": 0},
+              {"op": "set", "ref": "$page", "properties": {"MainArea[0]": {"Text": "Z"}}},
+              {"op": "area", "ref": "$page", "property": "MainArea", "action": "set", "index": 0, "name": "Intro"},
+              {"op": "publish", "ref": "$page"}
+            ]}
+            """);
+
+        var create = Assert.IsType<CreateOperation>(PlanSimulation.For(plan.Steps[4], plan.Steps, None, updateExisting: false)!.Operation);
+
+        Assert.Equal("""{"MainArea":[{"type":"TeaserBlock","properties":{"Text":"Z"},"name":"Intro"},{"ref":"200"}]}""", create.Properties!.ToJsonString());
+    }
+
+    [Fact]
     public void Steps_without_a_planned_target_are_not_simulated_as_an_earlier_step_without_an_id()
     {
         var plan = WritePlan.Parse("""
@@ -188,6 +206,66 @@ public class PlanSimulationOnExistingTests
 
         Assert.Equal("999", Assert.Single(set.AreaEdits!).Item);
         Assert.Equal("""[{"ref":"789"}]""", set.Properties!["mainArea"]!.ToJsonString());
+    }
+
+    [Fact]
+    public void An_inline_blocks_values_by_position_after_an_area_edit_are_set_after_that_edit_as_the_plan_runs_them()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "set", "ref": "123", "properties": {"MainArea[1]": {"Text": "Before the add"}}},
+              {"op": "area", "ref": "123", "property": "MainArea", "action": "add", "type": "TeaserBlock", "values": {"Text": "A"}, "at": 0},
+              {"op": "set", "ref": "123", "properties": {"MainArea[0]": {"Text": "Z"}, "Heading": "H"}},
+              {"op": "publish", "ref": "123"}
+            ]}
+            """);
+        var targets = Enumerable.Range(0, 4).ToDictionary(i => i, _ => Target());
+
+        var set = Assert.IsType<SetOperation>(For(plan, 3, targets)!.Operation);
+
+        // The first value by position is the site's to set before the add, as it runs; the second after it.
+        Assert.Equal("""{"MainArea[1]":{"Text":"Before the add"},"Heading":"H"}""", set.Properties!.ToJsonString());
+        Assert.Equal([("add", null, null), ("set", 0, """{"Text":"Z"}""")], set.AreaEdits!.Select(a => (a.Action, a.Index, a.Action == "set" ? a.Values!.ToJsonString() : null)));
+    }
+
+    [Fact]
+    public void A_step_that_names_an_item_by_its_position_is_dry_run_after_the_earlier_steps_that_decide_which_it_is()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "area", "ref": "123", "property": "MainArea", "action": "add", "type": "TeaserBlock", "values": {"Text": "A"}, "at": 0},
+              {"op": "set", "ref": "123", "properties": {"MainArea[0]": {"Text": "Z"}}},
+              {"op": "area", "ref": "123", "property": "MainArea", "action": "move", "index": 0, "to": 1},
+              {"op": "set", "ref": "123", "properties": {"Heading": "Not by position"}}
+            ]}
+            """);
+        var targets = Enumerable.Range(0, 4).ToDictionary(i => i, _ => Target());
+
+        var set = Assert.IsType<SetOperation>(For(plan, 1, targets)!.Operation);
+        Assert.Equal([("add", null), ("set", 0)], set.AreaEdits!.Select(a => (a.Action, a.Index)));
+        Assert.Null(set.Properties);
+        var move = Assert.IsType<SetOperation>(For(plan, 2, targets)!.Operation);
+        Assert.Equal(["add", "set", "move"], move.AreaEdits!.Select(a => a.Action));
+        // A step that names nothing by position is dry-run on its own, as before.
+        Assert.Null(For(plan, 3, targets));
+    }
+
+    [Fact]
+    public void A_whole_area_after_values_by_position_replaces_them()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "set", "ref": "123", "properties": {"MainArea[0]": {"Text": "Z"}}},
+              {"op": "set", "ref": "123", "properties": {"MainArea": [{"type": "TeaserBlock", "properties": {"Text": "Whole"}}]}},
+              {"op": "set", "ref": "123", "properties": {"MainArea[0]": {"Text": "After"}}},
+              {"op": "publish", "ref": "123"}
+            ]}
+            """);
+        var targets = Enumerable.Range(0, 4).ToDictionary(i => i, _ => Target());
+
+        var set = Assert.IsType<SetOperation>(For(plan, 3, targets)!.Operation);
+
+        Assert.Equal("""{"MainArea":[{"type":"TeaserBlock","properties":{"Text":"After"}}]}""", set.Properties!.ToJsonString());
     }
 
     [Fact]

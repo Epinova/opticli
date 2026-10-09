@@ -344,15 +344,19 @@ public sealed partial class WritePlan
             _ => new DeleteOperation(reader.Ref("ref"), reader.Bool("ignoreReferences")),
         };
 
-        if (operation is AreaEdit area && area.Action is not ("add" or "remove" or "move") && step["action"] is not null)
+        if (operation is AreaEdit area && area.Action is not ("add" or "remove" or "move" or "set") && step["action"] is not null)
         {
-            problems.Add($"{reader.Where}: \"action\" must be add, remove or move.");
+            problems.Add($"{reader.Where}: \"action\" must be add, remove, move or set.");
         }
-        if (operation is AreaEdit inline && (inline.Type is not null || inline.Values is not null || inline.Name is not null))
+        if (operation is AreaEdit { Action: "set" } setting && (setting.Index is null || setting.Item is not null || setting.Type is not null || (setting.Values is null && setting.Name is null)))
+        {
+            problems.Add($"{reader.Where}: \"action\": \"set\" takes the inline block's \"index\" and \"values\" or \"name\" (no \"item\" or \"type\").");
+        }
+        else if (operation is AreaEdit inline && inline.Action != "set" && (inline.Type is not null || inline.Values is not null || inline.Name is not null))
         {
             if (inline.Action != "add")
             {
-                problems.Add($"{reader.Where}: \"type\", \"values\" and \"name\" are for adding an inline block (\"action\": \"add\"); remove and move name one by \"index\".");
+                problems.Add($"{reader.Where}: \"type\", \"values\" and \"name\" are for adding (or setting) an inline block; remove and move name one by \"index\".");
             }
             else if (inline.Type is null)
             {

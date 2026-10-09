@@ -241,10 +241,24 @@ internal sealed class PropertyWriter(
                 $"To replace or remove the item, write '{property.Name}' whole, or use {call.ForCaller("`opticli area`", "areaOps")}.");
         }
         var area = property.Value is ContentArea existing ? (ContentArea)((EPiServer.Data.Entity.IReadOnly)existing).CreateWritableClone() : new ContentArea();
+        ChangeInlineItem(area, property.Name, index, value.Deserialize<Dictionary<string, JsonElement>>(AgentJson.Options), null);
+        property.Value = area;
+    }
+
+    /// <summary>
+    /// Sets <paramref name="values"/> (and the name, when given; <c>""</c> removes it) on the inline block at
+    /// <paramref name="index"/> of <paramref name="area"/>, a writable one; its other values and the item's other render
+    /// settings and personalization stay as they are.
+    /// </summary>
+    /// <exception cref="AgentException"><c>usage</c> for no such item, or one that isn't an inline block.</exception>
+    public void ChangeInlineItem(ContentArea area, string property, int index, IReadOnlyDictionary<string, JsonElement>? values, string? name)
+    {
+        var path = $"{property}[{index}]";
         var items = area.Items;
-        if (index >= items.Count)
+        if (index < 0 || index >= items.Count)
         {
-            throw AgentException.Usage($"'{property.Name}' has {items.Count} item(s), so there is no {path} (positions are zero-based).");
+            throw AgentException.Usage($"'{property}' has {items.Count} item(s), so there is no {path} (positions are zero-based).",
+                call.ForCaller("Read the positions in the version you change: opticli get <ref> --version latest --fields " + property + ".", "Read the positions with get_content (version latest)."));
         }
         var item = items[index];
         if (InlineBlocks.Of(item) is not { } block)
@@ -258,8 +272,18 @@ internal sealed class PropertyWriter(
             block = (BlockData)readOnly.CreateWritableClone();
             InlineBlocks.Set(item, block, InlineBlocks.TypeId(block));
         }
-        ApplyTo(block, value.Deserialize<Dictionary<string, JsonElement>>(AgentJson.Options), path);
-        property.Value = area;
+        ApplyTo(block, values, path);
+        if (name is not null)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                item.RenderSettings?.Remove(InlineBlocks.NameKey);
+            }
+            else
+            {
+                CmsApi.SetRenderSetting(item, InlineBlocks.NameKey, name.Trim());
+            }
+        }
     }
 
     /// <summary>Sets values on a block in a ContentArea, with errors saying which item it is.</summary>
@@ -814,26 +838,41 @@ internal sealed class PropertyWriter(
 
     /// <summary>
     /// The area of <paramref name="items"/>, replacing <paramref name="current"/>. Each item takes over the current item
-    /// that <see cref="AreaItemRules.Match"/> pairs it with (the same content, or an inline block of the same type): its
-    /// group and visitor groups unless the item gives them, and its other render settings; an inline block also its
-    /// values, the item's being set on a copy of it. Without that, writing back what <c>get</c> shows would lose the
-    /// area's personalization, and an inline block's values the item leaves out.
+    /// that <see cref="AreaItemRules.Pair"/> pairs it with: its group and visitor groups unless the item gives them, and its
+    /// other render settings. Without that, writing back what <c>get</c> shows would lose the area's personalization. An
+    /// inline block keeps its values only when the item is an exact copy of it; any other inline item is a new block with
+    /// just the values it gives, as a whole area replaces the area (one block's values change with <c>MainArea[2]</c>).
     /// </summary>
     /// <param name="name">The ContentArea property, for messages.</param>
+    /// <exception cref="AgentException">
+    /// <c>usage</c> for an editor when an inline block the area has now, with values they can't see or change, would be
+    /// replaced or left out: they would be lost unseen.
+    /// </exception>
     public ContentArea BuildArea(IReadOnlyList<AreaItemValue> items, ContentArea? current, string name)
     {
         var wanted = items.Select((item, i) => Wanted(item, $"{name}[{i}]")).ToList();
         var currentItems = current?.Items.ToList() ?? [];
-        var matches = AreaItemRules.Match(currentItems.Select(Key).ToList(), wanted.Select(w => w.Key).ToList(),
+        var pairs = AreaItemRules.Pair(currentItems.Select(Key).ToList(), wanted.Select(w => w.Key).ToList(),
             (i, j) => wanted[i].InlineType is not null && Unchanged(currentItems[j], items[i]));
+        RequireNothingLostUnseen(currentItems, pairs, name);
 
         var area = new ContentArea();
         for (var i = 0; i < items.Count; i++)
         {
-            var takenOver = matches[i] < 0 ? null : currentItems[matches[i]];
-            var item = wanted[i].InlineType is { } type
-                ? NewInlineItem(type, items[i].Properties, items[i].Name, items[i].DisplayOption, takenOver, $"{name}[{i}]")
-                : NewAreaItem(wanted[i].Link!, items[i].DisplayOption, takenOver);
+            var takenOver = pairs[i].Current < 0 ? null : currentItems[pairs[i].Current];
+            ContentAreaItem item;
+            if (wanted[i].InlineType is { } type)
+            {
+                if (!pairs[i].Exact)
+                {
+                    Claim(type, $"{name}[{i}]");
+                }
+                item = InlineItem(type, items[i].Properties, items[i].Name, items[i].DisplayOption, takenOver, keepValues: pairs[i].Exact, $"{name}[{i}]");
+            }
+            else
+            {
+                item = NewAreaItem(wanted[i].Link!, items[i].DisplayOption, takenOver);
+            }
             if (items[i].VisitorGroups is { } given)
             {
                 AreaItemRules.RequireVisitorGroups(given, VisitorGroupName);
@@ -850,6 +889,37 @@ internal sealed class PropertyWriter(
             area.Items.Add(item);
         }
         return area;
+    }
+
+    /// <summary>
+    /// For an editor: no inline block the area has now may go (be left out, or replaced by an item that isn't an exact copy
+    /// of it) while it has values they can't see or change that a new block of its type wouldn't have. The edit UI lets
+    /// them remove such a block on purpose (areaOps remove); a whole area written back mustn't drop them unseen.
+    /// </summary>
+    private void RequireNothingLostUnseen(IReadOnlyList<ContentAreaItem> current, IReadOnlyList<AreaItemRules.Pairing> pairs, string name)
+    {
+        var kept = pairs.Where(p => p.Exact).Select(p => p.Current).ToHashSet();
+        for (var j = 0; j < current.Count; j++)
+        {
+            if (kept.Contains(j) || InlineBlocks.Of(current[j]) is not { } block)
+            {
+                continue;
+            }
+            var unseen = Unseen(block).Where(p => !p.IsNull).ToList();
+            if (unseen.Count == 0)
+            {
+                continue;
+            }
+            var type = call.Service<IContentTypeRepository>().Load(BlockTypeId(block));
+            var defaults = type is null ? new Dictionary<string, JsonElement?>() : PropertyValues.Snapshot(blocks.Create(type));
+            var values = PropertyValues.Snapshot(block);
+            if (unseen.Any(p => values.GetValueOrDefault(p.Name)?.GetRawText() != defaults.GetValueOrDefault(p.Name)?.GetRawText()))
+            {
+                throw AgentException.Usage(
+                    $"{name} would lose the inline {type?.Name ?? "block"} at position {j}, which has values you can't see or change in the CMS edit UI: only an exact copy of it (as get_content shows it) keeps them.",
+                    $"Give that item back as get_content shows it, change one inline block's values with \"{name}[{j}]\": {{...}}, or remove it on purpose with areaOps remove if the user wants it gone. Nothing was saved.");
+            }
+        }
     }
 
     /// <summary>
@@ -942,9 +1012,23 @@ internal sealed class PropertyWriter(
 
     public ContentAreaItem NewAreaItem(string? reference, string? displayOption) => NewAreaItem(Target(reference), displayOption, null);
 
-    /// <summary>A new item with a new inline block of <paramref name="type"/> (name, id or GUID), with <paramref name="values"/> set.</summary>
-    public ContentAreaItem NewInlineItem(string type, IReadOnlyDictionary<string, JsonElement>? values, string? name, string? displayOption, string where) =>
-        NewInlineItem(InlineType(type, where), values, name, displayOption, null, where);
+    /// <summary>
+    /// A new item with a new inline block of <paramref name="type"/> (name, id or GUID), with <paramref name="values"/> set;
+    /// null when <paramref name="unlessIn"/> has one like it already (<see cref="HasInlineLike"/>), which is checked before
+    /// anything a new block needs (the right to create it).
+    /// </summary>
+    public ContentAreaItem? NewInlineItem(string type, IReadOnlyDictionary<string, JsonElement>? values, string? name, string? displayOption, string where,
+        IEnumerable<ContentAreaItem>? unlessIn = null)
+    {
+        var contentType = InlineType(type, where);
+        var item = InlineItem(contentType, values, name, displayOption, null, keepValues: false, where);
+        if (unlessIn is not null && HasInlineLike(unlessIn, item, values, name))
+        {
+            return null;
+        }
+        Claim(contentType, where);
+        return item;
+    }
 
     /// <summary>
     /// Whether <paramref name="items"/> has an inline block like the one <paramref name="added"/> shows: of its type, with
@@ -975,32 +1059,36 @@ internal sealed class PropertyWriter(
     }
 
     /// <summary>
-    /// An item with an inline block of <paramref name="type"/>: a copy of <paramref name="takenOver"/>'s, else a new one as
-    /// the CMS makes it (with the type's default values), and <paramref name="values"/> set on it.
+    /// An item with an inline block of <paramref name="type"/>, with <paramref name="values"/> set on it: a copy of
+    /// <paramref name="takenOver"/>'s block when <paramref name="keepValues"/>, else a new one as the CMS makes it (with
+    /// the type's default values; see <see cref="Claim"/>). It has the render settings of <paramref name="takenOver"/>.
     /// </summary>
     /// <param name="name">The name in the area, as given (like the display option): null or <c>""</c> for none.</param>
-    private ContentAreaItem NewInlineItem(ContentType type, IReadOnlyDictionary<string, JsonElement>? values, string? name, string? displayOption, ContentAreaItem? takenOver, string where)
+    private ContentAreaItem InlineItem(ContentType type, IReadOnlyDictionary<string, JsonElement>? values, string? name, string? displayOption,
+        ContentAreaItem? takenOver, bool keepValues, string where)
     {
-        BlockData block;
-        if (takenOver is not null && InlineBlocks.Of(takenOver) is { } current)
-        {
-            block = (BlockData)((EPiServer.Data.Entity.IReadOnly)current).CreateWritableClone();
-        }
-        else
-        {
-            // An editor gets the types the edit UI offers for a new block of the content (its "For this page" folder's).
-            if (call.Service<IContentTypeRepository>().Load(typeof(ContentAssetFolder)) is { } assets && !call.MayCreate(type, assets))
-            {
-                throw AgentException.Usage($"{where}: you may not create {type.Name} blocks: the content type's access rights, or those of its group of types, don't allow it.");
-            }
-            block = blocks.Create(type);
-            NewInlineBlocks++;
-        }
+        var block = keepValues && takenOver is not null && InlineBlocks.Of(takenOver) is { } current
+            ? (BlockData)((EPiServer.Data.Entity.IReadOnly)current).CreateWritableClone()
+            : blocks.Create(type);
         ApplyTo(block, values, where);
         var item = new ContentAreaItem();
         InlineBlocks.Set(item, block, type.ID);
         Settings(item, displayOption, takenOver, inlineName: name ?? "");
         return item;
+    }
+
+    /// <summary>
+    /// What a new inline block (not a copy of one the area has) takes: for an editor, the right to create a block of its
+    /// type, as the edit UI offers types for a new block of the content (its "For this page" folder's). Counted for the
+    /// edit UI warning (<see cref="NewInlineBlocks"/>).
+    /// </summary>
+    private void Claim(ContentType type, string where)
+    {
+        if (call.Service<IContentTypeRepository>().Load(typeof(ContentAssetFolder)) is { } assets && !call.MayCreate(type, assets))
+        {
+            throw AgentException.Usage($"{where}: you may not create {type.Name} blocks: the content type's access rights, or those of its group of types, don't allow it.");
+        }
+        NewInlineBlocks++;
     }
 
     /// <summary>

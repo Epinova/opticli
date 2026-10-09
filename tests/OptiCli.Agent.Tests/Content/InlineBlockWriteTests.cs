@@ -124,30 +124,88 @@ public class InlineBlockWriteTests
         Assert.Null(InlineBlocks.Name(byId));
     }
 
-    [Fact]
-    public void An_inline_block_written_whole_keeps_the_values_it_leaves_out()
+    private static ContentAreaItem Personalized(ContentAreaItem item)
     {
-        var owner = Owner(Area(Inline("Old", secret: "kept", name: "Intro")));
+        item.ContentGroup = "g";
+        CmsApi.SetRenderSetting(item, "data-id", "anchor");
+        return item;
+    }
 
-        Writer().Apply(owner, Values("""{"Area": [{"type": "ItemBlock", "properties": {"Title": "New"}}]}"""));
+    private static string Written(params string[] titles) =>
+        "{\"Area\": [" + string.Join(", ", titles.Select(t => "{\"type\": \"ItemBlock\", \"properties\": {\"Title\": \"" + t + "\"}}")) + "]}";
 
+    [Fact]
+    public void An_inline_block_written_whole_but_changed_is_built_from_what_it_gives_and_keeps_only_the_items_settings()
+    {
+        var owner = Owner(Area(Personalized(Inline("Old", secret: "dropped", name: "Intro"))));
+
+        Writer().Apply(owner, Values(Written("New")));
+
+        // Not a copy of the block, but the only one of its type on both sides: a new block, with the item's settings.
         var item = Assert.Single(Items(owner));
-        Assert.Equal(("New", "kept"), (Value(item, "Title"), Value(item, "Secret")));
-        // The name is as given, like the display option: none here.
-        Assert.Null(InlineBlocks.Name(item));
+        Assert.Equal(("New", null, null), (Value(item, "Title"), Value(item, "Secret"), InlineBlocks.Name(item)));
+        Assert.Equal(("g", "anchor"), (item.ContentGroup, CmsApi.RenderSettings(item).Single(s => s.Key == "data-id").Value?.ToString()));
     }
 
     [Fact]
-    public void An_area_written_back_without_one_inline_block_keeps_each_other_block_with_its_own_values()
+    public void An_area_written_back_without_one_inline_block_keeps_each_copy_and_builds_the_changed_one_from_what_it_gives()
     {
-        var owner = Owner(Area(Inline("A"), Inline("B", secret: "only B's"), Inline("C")));
+        var owner = Owner(Area(Inline("A"), Personalized(Inline("B", secret: "only B's")), Inline("C")));
 
-        // As get shows A and C (B left out): C pairs with itself, not with B, whose values would otherwise stay.
-        Writer().Apply(owner, Values("""{"Area": [{"type": "ItemBlock", "properties": {"Title": "A"}}, {"type": "ItemBlock", "properties": {"Title": "C"}}]}"""));
+        // A as get shows it, C changed, B left out: C's item can't be told from B's, so it takes over neither.
+        Writer().Apply(owner, Values(Written("A", "C changed")));
 
         var items = Items(owner);
-        Assert.Equal(["A", "C"], items.Select(i => Value(i, "Title")));
+        Assert.Equal(["A", "C changed"], items.Select(i => Value(i, "Title")));
         Assert.All(items, i => Assert.Null(Value(i, "Secret")));
+        Assert.All(items, i => Assert.Null(i.ContentGroup));
+        Assert.All(items, i => Assert.DoesNotContain(CmsApi.RenderSettings(i), s => s.Key == "data-id"));
+    }
+
+    [Fact]
+    public void Inline_blocks_moved_and_one_changed_keep_the_copies_and_the_changed_one_its_values_as_given()
+    {
+        var owner = Owner(Area(Personalized(Inline("A", secret: "A's")), Inline("B", secret: "B's")));
+
+        // B as it is moved first, A changed: B keeps its block, A is the only one left on both sides (settings, not values).
+        Writer().Apply(owner, Values("""{"Area": [{"type": "ItemBlock", "properties": {"Title": "B", "Secret": "B's"}}, {"type": "ItemBlock", "properties": {"Title": "A changed"}}]}"""));
+
+        var items = Items(owner);
+        Assert.Equal([("B", "B's"), ("A changed", null)], items.Select(i => (Value(i, "Title"), Value(i, "Secret"))));
+        Assert.Equal([null, "g"], items.Select(i => i.ContentGroup));
+    }
+
+    [Fact]
+    public void An_inline_block_in_a_nested_area_follows_the_same_rule()
+    {
+        var nested = PropertyWriterTests.ItemBlock.Create();
+        nested.Property["Title"].Value = "Outer";
+        nested.Property.Add("Area", new PropertyContentArea { PropertyDefinitionID = 9, Value = Area(Personalized(Inline("X", secret: "x's")), Inline("Y")) });
+        var item = new ContentAreaItem();
+        InlineBlocks.Set(item, nested, ItemType);
+        var owner = Owner(Area(item));
+
+        // The outer block by position, its area written whole: X left out, Y changed.
+        Writer().Apply(owner, Values("""{"Area[0]": {"Area": [{"type": "ItemBlock", "properties": {"Title": "Y changed"}}]}}"""));
+
+        var inside = ((ContentArea)InlineBlocks.Of(Items(owner)[0])!.Property["Area"].Value).Items.ToList();
+        var only = Assert.Single(inside);
+        Assert.Equal(("Y changed", null), (Value(only, "Title"), Value(only, "Secret")));
+        Assert.Equal("Outer", InlineBlocks.Of(Items(owner)[0])!.Property["Title"].Value);
+    }
+
+    [Fact]
+    public void An_editor_cant_drop_an_inline_blocks_values_they_dont_see_by_writing_the_area_whole()
+    {
+        // Secret isn't shown in the edit UI (ScaffoldColumn(false), DisplayEditUI false).
+        var owner = Owner(Area(Inline("A", secret: "hidden")));
+
+        var refused = Refused(Writer(CmsCaller.Editor), owner, Written("A changed"));
+
+        Assert.Equal(AgentErrorCodes.Usage, refused.Code);
+        Assert.Contains("Area would lose the inline ItemBlock at position 0", refused.Message);
+        Assert.Contains("\"Area[0]\"", refused.Hint);
+        Assert.Equal("hidden", Value(Items(owner)[0], "Secret"));
     }
 
     [Fact]
@@ -179,6 +237,31 @@ public class InlineBlockWriteTests
         Assert.Equal(AgentErrorCodes.Usage, refused.Code);
         Assert.Contains(message, refused.Message);
         Assert.Equal("Old", Value(Items(owner)[1], "Title"));
+    }
+
+    [Fact]
+    public void Area_set_changes_one_inline_blocks_values_and_name_and_keeps_the_rest()
+    {
+        var area = Area(Personalized(Inline("Old", secret: "kept", name: "Intro")));
+
+        Writer().ChangeInlineItem(area, "Area", 0, Values("""{"Title": "New"}"""), "Renamed");
+        var item = area.Items[0];
+        Assert.Equal(("New", "kept", "Renamed", "g"), (Value(item, "Title"), Value(item, "Secret"), InlineBlocks.Name(item), item.ContentGroup));
+
+        Writer().ChangeInlineItem(area, "Area", 0, null, "");
+        Assert.Null(InlineBlocks.Name(area.Items[0]));
+        Assert.Contains("there is no Area[1]", Assert.Throws<AgentException>(() => Writer().ChangeInlineItem(area, "Area", 1, null, "x")).Message);
+    }
+
+    [Fact]
+    public void An_inline_add_thats_already_there_is_found_before_what_a_new_block_needs()
+    {
+        var items = Area(Inline("Same")).Items;
+
+        // For an editor a new block needs the right to create its type (which this test site can't tell); one like it
+        // already there needs nothing.
+        Assert.Null(Writer(CmsCaller.Editor).NewInlineItem("ItemBlock", Values("""{"Title": "Same"}"""), null, null, "add", items));
+        Assert.ThrowsAny<Exception>(() => Writer(CmsCaller.Editor).NewInlineItem("ItemBlock", Values("""{"Title": "Other"}"""), null, null, "add", items));
     }
 
     [Fact]

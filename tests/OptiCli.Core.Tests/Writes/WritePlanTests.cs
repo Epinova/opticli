@@ -128,7 +128,8 @@ public class WritePlanTests
     [Theory]
     [InlineData("""{"op": "area", "ref": "1", "property": "MainArea", "action": "add", "item": "2", "type": "TeaserBlock"}""", "give \"item\" (a shared block) or \"type\"")]
     [InlineData("""{"op": "area", "ref": "1", "property": "MainArea", "action": "add", "values": {"Text": "x"}}""", "give its \"type\" too")]
-    [InlineData("""{"op": "area", "ref": "1", "property": "MainArea", "action": "remove", "index": 0, "type": "TeaserBlock"}""", "are for adding an inline block")]
+    [InlineData("""{"op": "area", "ref": "1", "property": "MainArea", "action": "remove", "index": 0, "type": "TeaserBlock"}""", "are for adding (or setting) an inline block")]
+    [InlineData("""{"op": "area", "ref": "1", "property": "MainArea", "action": "set", "values": {"Text": "x"}}""", "takes the inline block's \"index\"")]
     public void An_inline_area_step_with_the_wrong_fields_is_a_plan_problem(string step, string problem) =>
         Assert.Contains(problem, Assert.Throws<UsageException>(() => WritePlan.Parse($$"""{"operations": [{{step}}]}""")).Message);
 
@@ -157,7 +158,7 @@ public class WritePlanTests
         {
             "'$later' is created by a later operation",
             "unknown field \"colour\"",
-            "\"action\" must be add, remove or move",
+            "\"action\" must be add, remove, move or set",
             "\"op\" must be one of",
             "(publish): \"ref\" is required",
             "\"publish\" must be true or false",
