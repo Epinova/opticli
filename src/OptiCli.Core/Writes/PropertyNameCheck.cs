@@ -125,12 +125,44 @@ public static class PropertyNameCheck
     /// <param name="prefix">What the names are shown after in messages (<c>MainArea[2].</c>).</param>
     public static JsonObject InlineValues(CmsModel model, ContentTypeInfo type, JsonObject values, string prefix)
     {
+        var plain = PlainValues(model, type.Id, values, prefix);
+        Check(model, type.Id, plain, prefix, topLevel: false);
+        return plain;
+    }
+
+    /// <summary>
+    /// A block's values as <c>set</c> takes them, names not checked: <c>get</c>'s <c>{type, value}</c> unwrapped, other
+    /// values as <see cref="GetShape.Plain"/> makes them (a reference as its ref), local blocks and block lists by their own
+    /// type. A ContentArea's items, and an inline block's values by position (<c>MainArea[2]</c>), are kept as given, for
+    /// <see cref="AreaItems"/> and <see cref="UntypedValues"/>: a shared block there stays <c>{"ref": "37"}</c>.
+    /// </summary>
+    /// <param name="typeId">The block type; null when the site looks it up (a ContentArea is then known by its name alone).</param>
+    /// <param name="prefix">What the names are shown after in messages (<c>MainArea[2].</c>).</param>
+    /// <exception cref="UsageException">A value <c>get</c> cut short.</exception>
+    public static JsonObject PlainValues(CmsModel model, int? typeId, JsonObject values, string prefix)
+    {
         var plain = new JsonObject();
         foreach (var (name, value) in values)
         {
-            plain[name] = GetShape.IsWrapped(value) ? GetShape.Unwrap((JsonObject)value!, $"{prefix}{name}") : GetShape.Plain(value);
+            if (GetShape.IsWrapped(value))
+            {
+                plain[name] = GetShape.Unwrap((JsonObject)value!, $"{prefix}{name}");
+                continue;
+            }
+            var position = AreaItemPath.Parse(name) is not null;
+            var definition = typeId is { } id && !position
+                ? model.PropertiesOf(id).FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                : null;
+            var area = definition is null ? typeId is null && IsAreaName(model, name) : definition.TypeName == "ContentArea";
+            plain[name] = position || (area && value is JsonArray) ? value?.DeepClone()
+                : value is JsonObject local && definition is { BlockType: { } blockType, IsList: false }
+                    ? PlainValues(model, blockType, local, $"{prefix}{definition.Name}.")
+                : value is JsonArray list && definition is { BlockType: { } itemType, IsList: true }
+                    ? new JsonArray(list.Select((item, i) => item is JsonObject block
+                        ? PlainValues(model, itemType, block, $"{prefix}{definition.Name}[{i}].")
+                        : item?.DeepClone()).ToArray())
+                : GetShape.Plain(value);
         }
-        Check(model, type.Id, plain, prefix, topLevel: false);
         return plain;
     }
 

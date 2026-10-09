@@ -36,8 +36,11 @@ internal static class ModelFixture
     public const int TeaserText = 201;
     public const int TeaserOptions = 202;
     public const int TeaserStart = 203;
+    public const int TeaserItems = 204;
+    public const int TeaserHero = 205;
     public const int HeroHeading = 301;
     public const int HeroSubHeading = 302;
+    public const int HeroArea = 303;
     public const int FactLabel = 401;
     public const int FactSources = 402;
 
@@ -49,7 +52,11 @@ internal static class ModelFixture
     public static readonly LanguageBranch Sv = new(Swedish, "sv", "Svenska", "se", true);
     public static readonly LanguageBranch None = new(Invariant, "", null, null, false);
 
-    public static CmsModel Create(IReadOnlyList<SiteInfo>? sites = null) => new(
+    /// <param name="blockAreas">
+    /// Also a ContentArea in the teaser block (<c>Items</c>) and in the hero block (<c>Area</c>), and a hero block of the
+    /// teaser's own (<c>Hero</c>): areas inside inline and local blocks.
+    /// </param>
+    public static CmsModel Create(IReadOnlyList<SiteInfo>? sites = null, bool blockAreas = false) => new(
         [
             Type(ArticlePage, "ArticlePage", "Page"),
             Type(TeaserBlock, "TeaserBlock", "Block"),
@@ -81,6 +88,14 @@ internal static class ModelFixture
             new(HeroSubHeading, HeroBlock, "SubHeading", "String", PropertyBaseType.String, null, false, false),
             new(FactLabel, FactBlock, "Label", "String", PropertyBaseType.String, null, false, false),
             new(FactSources, FactBlock, "Sources", "PageReference", PropertyBaseType.PageReference, null, false, true),
+            .. blockAreas
+                ? new PropertyDefinition[]
+                {
+                    new(TeaserItems, TeaserBlock, "Items", "ContentArea", PropertyBaseType.LongString, null, false, false),
+                    new(TeaserHero, TeaserBlock, "Hero", "HeroBlock", PropertyBaseType.Block, HeroBlock, false, false),
+                    new(HeroArea, HeroBlock, "Area", "ContentArea", PropertyBaseType.LongString, null, false, false),
+                }
+                : [],
         ],
         [En, Sv, None],
         sites ?? [Site()],

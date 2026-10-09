@@ -337,6 +337,49 @@ public sealed class InlineBlockWriteTests
     }
 
     [SiteFact]
+    public async Task A_shared_block_by_ref_alone_in_an_inline_blocks_own_area_is_taken_by_create_area_add_and_set()
+    {
+        var cancellationToken = CancellationToken.None;
+        await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
+        var start = await FirstAsync(site, "StartPage", cancellationToken);
+        var shared = await FirstAsync(site, "TeaserBlock", cancellationToken);
+        if (start is null || shared is null || site.Session.Model.Types.All(t => t.Name != "EdgeContainerBlock")
+            || Version.Parse((await site.Agent.PingAsync(cancellationToken)).CmsVersion.Split('-', '+')[0]) < new Version(12, 20))
+        {
+            return;
+        }
+        var writes = new WriteExecutor(site.Session, _ => Task.FromResult(site.Agent));
+        JsonObject Box(string heading) => JsonNode.Parse($$"""{"Heading": "{{heading}}", "Items": [{"ref": "{{shared}}"}]}""")!.AsObject();
+        JsonObject WholeArea(string heading) => new()
+        {
+            ["MainContentArea"] = new JsonArray(new JsonObject { ["type"] = "EdgeContainerBlock", ["properties"] = Box(heading) }),
+        };
+        // The shared block inside each box, by ref.
+        async Task<IEnumerable<(string?, string?)>> BoxesAsync(int id) =>
+            Area(await GetAsync(id, cancellationToken: cancellationToken)).Select(box =>
+                (Value(box, "Heading"), (string?)Assert.Single(box!["properties"]!["Items"]!["value"]!.AsArray())!["ref"]));
+
+        var id = (await writes.RunAsync(new CreateOperation(Id(start.Value), "StandardPage", $"Inline ref {Guid.NewGuid():N}"[..23], WholeArea("Created")), dryRun: false, cancellationToken)).CreatedId!.Value;
+        var page = Id(id);
+        try
+        {
+            Assert.Equal([("Created", Id(shared.Value))], await BoxesAsync(id));
+
+            var add = new AreaEdit(page, "MainContentArea", "add") { Type = "EdgeContainerBlock", Values = Box("Added") };
+            await writes.RunAsync(add, dryRun: true, cancellationToken);
+            await writes.RunAsync(add, dryRun: false, cancellationToken);
+            Assert.Equal([("Created", Id(shared.Value)), ("Added", Id(shared.Value))], await BoxesAsync(id));
+
+            await writes.RunAsync(new SetOperation(page, WholeArea("Set")), dryRun: false, cancellationToken);
+            Assert.Equal([("Set", Id(shared.Value))], await BoxesAsync(id));
+        }
+        finally
+        {
+            await writes.RunAsync(new DeleteOperation(page, IgnoreReferences: true), dryRun: false, cancellationToken);
+        }
+    }
+
+    [SiteFact]
     public async Task An_inline_add_of_a_type_the_area_doesnt_allow_fails_the_cms_validation()
     {
         var cancellationToken = CancellationToken.None;

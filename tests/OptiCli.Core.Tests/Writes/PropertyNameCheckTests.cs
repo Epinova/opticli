@@ -9,6 +9,9 @@ public class PropertyNameCheckTests
 {
     private static readonly OptiCli.Core.Content.CmsModel Model = ModelFixture.Create();
 
+    /// <summary>With ContentAreas inside the teaser and hero blocks.</summary>
+    private static readonly OptiCli.Core.Content.CmsModel AreasModel = ModelFixture.Create(blockAreas: true);
+
     [Fact]
     public void Known_properties_nested_block_properties_and_built_ins_pass()
     {
@@ -107,6 +110,38 @@ public class PropertyNameCheckTests
 
         Assert.Equal("""{"MainArea[0]":{"Heading":"Hi","Nested":[{"ref":"123"},{"type":"TeaserBlock","properties":{"Text":"x"}}],"MainArea":[{"ref":"456"}],"Hero":{"Heading":"Local"}}}""",
             prepared.ToJsonString());
+    }
+
+    [Fact]
+    public void A_shared_block_in_an_inline_blocks_own_ContentArea_keeps_its_ref_object()
+    {
+        // Plain, as set takes it, and as get shows it: the item stays an object either way, not its ref alone.
+        var properties = JsonNode.Parse("""
+            {"MainArea": [{"type": "TeaserBlock", "properties": {
+              "Items": [{"ref": "37"}, {"ref": "38", "type": "TeaserBlock", "name": "Shared", "status": "published"}, {"type": "TeaserBlock", "properties": {"Items": [{"ref": "39"}]}}],
+              "Hero": {"Area": [{"ref": "40"}]}}}]}
+            """)!.AsObject();
+
+        var prepared = PropertyNameCheck.Prepare(AreasModel, ModelFixture.ArticlePage, properties)!;
+
+        Assert.Equal("""[{"type":"TeaserBlock","properties":{"Items":[{"ref":"37"},{"ref":"38"},{"type":"TeaserBlock","properties":{"Items":[{"ref":"39"}]}}],"Hero":{"Area":[{"ref":"40"}]}}}]""",
+            prepared["MainArea"]!.ToJsonString());
+    }
+
+    [Fact]
+    public void Inline_values_keep_area_items_as_objects_and_other_references_as_refs()
+    {
+        var type = AreasModel.RequireType("TeaserBlock");
+
+        var values = PropertyNameCheck.InlineValues(AreasModel, type, JsonNode.Parse("""
+            {"items": [{"ref": "37"}],
+             "Hero": {"Heading": {"type": "String", "value": "Local"}, "Area": [{"ref": "38", "name": "Shared"}]},
+             "Text": {"ref": "6", "name": "Start"}}
+            """)!.AsObject(), "MainArea[0].");
+
+        Assert.Equal("""{"items":[{"ref":"37"}],"Hero":{"Heading":"Local","Area":[{"ref":"38"}]},"Text":"6"}""", values.ToJsonString());
+        Assert.Contains("'MainArea[0].Items[0]' must be an object", Assert.Throws<UsageException>(() =>
+            PropertyNameCheck.InlineValues(AreasModel, type, JsonNode.Parse("""{"Items": ["37"]}""")!.AsObject(), "MainArea[0].")).Message);
     }
 
     [Theory]

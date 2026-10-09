@@ -39,6 +39,7 @@ public class CompositionInputTests
             new(822, TextElement, "Body", "XhtmlString", PropertyBaseType.LongString, null, true, false),
             new(823, TextElement, "Target", "ContentReference", PropertyBaseType.ContentReference, null, false, false),
             new(824, TextElement, "Links", "LinkCollection", PropertyBaseType.LongString, null, false, false),
+            new(825, TextElement, "Cards", "ContentArea", PropertyBaseType.LongString, null, false, false),
             new(841, Page, "Composition", "LongString", PropertyBaseType.LongString, null, true, false),
             new(851, Banner, "Title", "LongString", PropertyBaseType.LongString, null, true, false),
         ],
@@ -111,6 +112,22 @@ public class CompositionInputTests
         Assert.Equal("103", column.Nodes![0].Ref);
         Assert.Equal("\"Plain\"", column.Nodes[1].Properties!["Heading"].GetRawText());
         Assert.Equal(Guid.Parse("b889b8fc-18ef-4e80-8fd9-3945ab98337c"), value.Nodes[1].Blueprint);
+    }
+
+    [Fact]
+    public async Task A_shared_block_in_an_elements_ContentArea_keeps_its_ref_object()
+    {
+        var value = await CompositionInput.RootAsync(Model, Json("""
+            {"sections":[{"type":"VbSection","rows":[{"columns":[{"elements":[{"type":"VbTextElement","properties":{"Cards":[
+              {"ref":"37"},{"ref":"38","type":"VbBanner","name":"Shared","status":"published"},{"inline":true,"type":"vbbanner","properties":{"Title":{"type":"LongString","value":"Inline"}}}]}}]}]}]}]}
+            """), Resolve);
+
+        var element = value.Nodes![0].Nodes![0].Nodes![0].Nodes![0];
+        Assert.Equal("""[{"ref":"37"},{"ref":"38"},{"type":"VbBanner","properties":{"Title":"Inline"}}]""", element.Properties!["Cards"].GetRawText());
+
+        // composition set, whose node type the site looks up: an area known by its name.
+        var change = CompositionInput.Change(Model, Json("""{"properties":{"Cards":[{"ref":"37"}]}}"""), "change");
+        Assert.Equal("""[{"ref":"37"}]""", change.Properties!["Cards"].GetRawText());
     }
 
     [Theory]

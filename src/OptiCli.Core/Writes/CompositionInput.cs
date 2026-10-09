@@ -205,7 +205,8 @@ public static class CompositionInput
 
     /// <summary>
     /// An inline block's property values as <c>set</c> takes them: <c>get</c>'s <c>{type, value}</c> unwrapped, a reference
-    /// as its ref, a link without the content <c>get</c> adds. Names are checked against the block type when it is known.
+    /// as its ref, a link without the content <c>get</c> adds, ContentArea items as <see cref="PropertyNameCheck.AreaItems"/>
+    /// makes them. Names are checked against the block type when it is known.
     /// </summary>
     /// <param name="keyed">The node has a key, so it keeps its block (the type it is checked against may not be the block's).</param>
     private static IReadOnlyDictionary<string, JsonElement>? Values(CmsModel model, int? typeId, JsonObject? properties, string where, bool keyed = false)
@@ -214,16 +215,12 @@ public static class CompositionInput
         {
             return null;
         }
-        var plain = new JsonObject();
-        foreach (var (name, value) in properties)
-        {
-            plain[name] = GetShape.IsWrapped(value) ? GetShape.Unwrap((JsonObject)value!, $"{where}.{name}") : GetShape.Plain(value);
-        }
+        var plain = PropertyNameCheck.PlainValues(model, typeId, properties, $"{where}.");
         if (typeId is { } id)
         {
             try
             {
-                PropertyNameCheck.Check(model, id, plain);
+                plain = PropertyNameCheck.Prepare(model, id, plain)!;
             }
             catch (UsageException ex)
             {

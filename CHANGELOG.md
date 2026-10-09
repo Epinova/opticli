@@ -12,6 +12,9 @@ again to update the skill.
   leave it out, writing it is refused (by position, `areaOps`, in a new block or a nested area's), and a whole area or
   list written back keeps it. It was only applied to content's own properties, so an editor's assistant could read and
   change such a property in an inline block or a list item. A local block's properties stay shown, as in the edit UI.
+- A shared block given by its ref alone (`{"ref": "37"}`) in a ContentArea inside an inline block (`area add --type T
+  --values '{"Items": [{"ref": "37"}]}'`, `create`, a whole area in `--values`) or inside a CMS 13 Visual Builder element
+  was refused with "'Items[0]' must be an object"; it is now taken as in a ContentArea of the content itself.
 
 ## 0.16.0 (9 October 2026)
 
