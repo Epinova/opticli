@@ -32,6 +32,21 @@ internal sealed class PropertyWriter(
     /// </summary>
     private readonly Dictionary<IContentData, IContentData> _blockBaselines = new(ReferenceEqualityComparer.Instance);
 
+    /// <summary>
+    /// The ContentAreas of an inline block rebuilt for a changed item (<see cref="BuildArea"/>), with the area of the block
+    /// it replaces: a whole area given for them pairs its items with that block's items, as it would on the block itself.
+    /// </summary>
+    private readonly Dictionary<PropertyData, ContentArea?> _areaBaselines = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>Above 0 while a copy of a block is tried (<see cref="Unchanged"/>): nothing of it counts or warns.</summary>
+    private int _trial;
+
+    /// <summary>Where the values being set are, for messages: <c>MainArea[0].</c> inside an inline block.</summary>
+    private string _prefix = "";
+
+    /// <summary>What the writes noticed that the caller should know but that doesn't stop them.</summary>
+    public List<ValidationIssue> Warnings { get; } = [];
+
     /// <summary>Built-in metadata an agent may reasonably need to set; all other metadata is refused.</summary>
     public static readonly HashSet<string> WritableMetadata = new(StringComparer.OrdinalIgnoreCase) { "PageURLSegment", "PageVisibleInMenu" };
 
@@ -221,6 +236,86 @@ internal sealed class PropertyWriter(
     }
 
     /// <summary>
+    /// The ContentArea <paramref name="path"/> names, for area edits: a property of the content (<c>MainArea</c>), or of a
+    /// block in it: an inline block by its position (<c>MainArea[0].Area</c>), a local block by name (<c>Hero.Area</c>),
+    /// at any depth. Each property on the way is one the caller may change, and the first one must be culture-specific
+    /// outside the master language, as for <c>set</c>.
+    /// </summary>
+    /// <param name="commit">
+    /// Puts the copies of the areas on the way back (their inline blocks hold the area changed), after the area itself is set.
+    /// </param>
+    /// <exception cref="AgentException"><c>usage</c> for a path that doesn't lead to a ContentArea.</exception>
+    public PropertyData FindArea(IContentData content, string path, out Action commit)
+    {
+        var segments = path.Split('.');
+        var owner = content;
+        var shown = "";
+        var commits = new List<Action>();
+        for (var s = 0; s < segments.Length; s++)
+        {
+            var position = AreaItemRules.Indexed(segments[s]);
+            var property = Find(owner, position?.Property ?? segments[s].Trim());
+            if (s == 0)
+            {
+                RequireLanguage(content, property);
+            }
+            shown = s == 0 ? property.Name : $"{shown}.{property.Name}";
+            if (s == segments.Length - 1)
+            {
+                if (position is not null || property is not PropertyContentArea)
+                {
+                    throw AgentException.Usage($"'{path}' names {(position is not null ? "an item of a ContentArea" : $"a {property.GetType().Name}")}, not a ContentArea.",
+                        "Name the area: MainArea, or one inside a block, e.g. MainArea[0].Area or Hero.Area.");
+                }
+                commit = () =>
+                {
+                    for (var c = commits.Count - 1; c >= 0; c--)
+                    {
+                        commits[c]();
+                    }
+                };
+                return property;
+            }
+            if (position is { } item)
+            {
+                if (property is not PropertyContentArea)
+                {
+                    throw AgentException.Usage($"'{shown}[{item.Index}]' names an item of a ContentArea, and '{shown}' is a {property.GetType().Name}.");
+                }
+                var area = property.Value is ContentArea existing ? (ContentArea)((EPiServer.Data.Entity.IReadOnly)existing).CreateWritableClone() : new ContentArea();
+                if (item.Index >= area.Items.Count)
+                {
+                    throw AgentException.Usage($"'{shown}' has {area.Items.Count} item(s), so there is no {shown}[{item.Index}] (positions are zero-based).");
+                }
+                var target = area.Items[item.Index];
+                if (InlineBlocks.Of(target) is not { } block)
+                {
+                    throw AgentException.Usage($"{shown}[{item.Index}] is a shared block, not an inline block, so it has no areas of its own here.",
+                        "Change the shared block itself.");
+                }
+                if (block is EPiServer.Data.Entity.IReadOnly { IsReadOnly: true } readOnly)
+                {
+                    block = (BlockData)readOnly.CreateWritableClone();
+                    InlineBlocks.Set(target, block, InlineBlocks.TypeId(block));
+                }
+                var holder = property;
+                commits.Add(() => holder.Value = area);
+                owner = block;
+                shown += $"[{item.Index}]";
+            }
+            else if (property.Value is BlockData local and not IContent)
+            {
+                owner = local;
+            }
+            else
+            {
+                throw AgentException.Usage($"'{shown}' is neither a ContentArea item ({shown}[n]) nor a local block, so '{path}' leads nowhere.");
+            }
+        }
+        throw new InvalidOperationException("A path has at least one segment.");
+    }
+
+    /// <summary>
     /// <c>MainArea[2]</c>: sets <paramref name="value"/>'s values on the inline block at that position of the ContentArea,
     /// on a copy of the area; its other values and the item's render settings stay as they are.
     /// </summary>
@@ -240,8 +335,9 @@ internal sealed class PropertyWriter(
             throw AgentException.Usage($"'{path}' takes an object of the inline block's property names to values, e.g. {{\"Heading\": \"...\"}}.",
                 $"To replace or remove the item, write '{property.Name}' whole, or use {call.ForCaller("`opticli area`", "areaOps")}.");
         }
-        var area = property.Value is ContentArea existing ? (ContentArea)((EPiServer.Data.Entity.IReadOnly)existing).CreateWritableClone() : new ContentArea();
-        ChangeInlineItem(area, property.Name, index, value.Deserialize<Dictionary<string, JsonElement>>(AgentJson.Options), null);
+        var stored = property.Value as ContentArea ?? (_areaBaselines.TryGetValue(property, out var baseline) ? baseline : null);
+        var area = stored is not null ? (ContentArea)((EPiServer.Data.Entity.IReadOnly)stored).CreateWritableClone() : new ContentArea();
+        ChangeInlineItem(area, _prefix + property.Name, index, value.Deserialize<Dictionary<string, JsonElement>>(AgentJson.Options), null);
         property.Value = area;
     }
 
@@ -289,13 +385,19 @@ internal sealed class PropertyWriter(
     /// <summary>Sets values on a block in a ContentArea, with errors saying which item it is.</summary>
     private void ApplyTo(BlockData block, IReadOnlyDictionary<string, JsonElement>? values, string where)
     {
+        var outer = _prefix;
+        _prefix = $"{where}.";
         try
         {
             Apply(block, values);
         }
-        catch (AgentException ex) when (ex.Code is AgentErrorCodes.Usage or AgentErrorCodes.NotFound)
+        catch (AgentException ex) when (ex.Code is AgentErrorCodes.Usage or AgentErrorCodes.NotFound && !ex.Message.StartsWith(where, StringComparison.Ordinal))
         {
-            throw new AgentException(ex.Code, $"{where}: {ex.Message}", ex.Hint) { Validation = ex.Validation };
+            throw new AgentException(ex.Code, $"{where}: {ex.Message}", ex.Hint) { Validation = ex.Validation, Reason = ex.Reason };
+        }
+        finally
+        {
+            _prefix = outer;
         }
     }
 
@@ -698,7 +800,8 @@ internal sealed class PropertyWriter(
                 }
                 return;
             case JsonValueKind.Array when property is PropertyContentArea:
-                property.Value = BuildArea(value.Deserialize<List<AreaItemValue>>(AgentJson.Options)!, property.Value as ContentArea, property.Name);
+                var currentArea = _areaBaselines.TryGetValue(property, out var baseline) ? baseline : property.Value as ContentArea;
+                property.Value = BuildArea(value.Deserialize<List<AreaItemValue>>(AgentJson.Options)!, currentArea, property.Name);
                 return;
             case JsonValueKind.String or JsonValueKind.Number when !call.MayReferenceUnchecked && (property is PropertyContentArea || IsReferenceList(property)):
                 // The stored text form names content without the read check: refs only, as an array.
@@ -727,7 +830,16 @@ internal sealed class PropertyWriter(
                 property.Value = NewLink(new LinkItemValue { Href = value.GetString()!, Text = current?.Text, Title = current?.Title, Target = current?.Target });
                 return;
             case JsonValueKind.Object when property.Value is IContentData block:
-                Apply(block, value.Deserialize<Dictionary<string, JsonElement>>(AgentJson.Options));
+                var outer = _prefix;
+                _prefix = $"{outer}{property.Name}.";
+                try
+                {
+                    Apply(block, value.Deserialize<Dictionary<string, JsonElement>>(AgentJson.Options));
+                }
+                finally
+                {
+                    _prefix = outer;
+                }
                 return;
             // PropertyPageReference (a page reference, obsolete on CMS 13) is a PropertyContentReference too.
             case JsonValueKind.String when property is PropertyContentReference:
@@ -841,20 +953,25 @@ internal sealed class PropertyWriter(
     /// that <see cref="AreaItemRules.Pair"/> pairs it with: its group and visitor groups unless the item gives them, and its
     /// other render settings. Without that, writing back what <c>get</c> shows would lose the area's personalization. An
     /// inline block keeps its values only when the item is an exact copy of it; any other inline item is a new block with
-    /// just the values it gives, as a whole area replaces the area (one block's values change with <c>MainArea[2]</c>).
+    /// just the values it gives, as a whole area replaces the area (one block's values change with <c>MainArea[2]</c>). A
+    /// changed item that takes over a block is rebuilt with that block as its reference: a ContentArea given in it (also in
+    /// its local blocks) pairs with that block's area.
     /// </summary>
     /// <param name="name">The ContentArea property, for messages.</param>
     /// <exception cref="AgentException">
-    /// <c>usage</c> for an editor when an inline block the area has now, with values they can't see or change, would be
-    /// replaced or left out: they would be lost unseen.
+    /// <c>usage</c> for an editor when an inline block the area has now (or one inside it) has values they can't see or
+    /// change that would be lost (<see cref="RequireNothingLostUnseen"/>).
     /// </exception>
     public ContentArea BuildArea(IReadOnlyList<AreaItemValue> items, ContentArea? current, string name)
     {
-        var wanted = items.Select((item, i) => Wanted(item, $"{name}[{i}]")).ToList();
+        var path = _prefix + name;
+        var wanted = items.Select((item, i) => Wanted(item, $"{path}[{i}]")).ToList();
         var currentItems = current?.Items.ToList() ?? [];
         var pairs = AreaItemRules.Pair(currentItems.Select(Key).ToList(), wanted.Select(w => w.Key).ToList(),
-            (i, j) => wanted[i].InlineType is not null && Unchanged(currentItems[j], items[i]));
-        RequireNothingLostUnseen(currentItems, pairs, name);
+            (i, j) => wanted[i].InlineType is not null && Unchanged(currentItems[j], items[i]),
+            (i, j) => wanted[i].InlineType is not null && Alike(items[i], currentItems[j]));
+        RequireNothingLostUnseen(currentItems, pairs, items, path);
+        WarnSettingsDropped(currentItems, pairs, wanted.Select(w => w.Key).ToList(), path);
 
         var area = new ContentArea();
         for (var i = 0; i < items.Count; i++)
@@ -863,11 +980,12 @@ internal sealed class PropertyWriter(
             ContentAreaItem item;
             if (wanted[i].InlineType is { } type)
             {
-                if (!pairs[i].Exact)
+                if (takenOver is null)
                 {
-                    Claim(type, $"{name}[{i}]");
+                    // A new block; a changed item that takes over one is that block, changed.
+                    Claim(type, $"{path}[{i}]");
                 }
-                item = InlineItem(type, items[i].Properties, items[i].Name, items[i].DisplayOption, takenOver, keepValues: pairs[i].Exact, $"{name}[{i}]");
+                item = InlineItem(type, items[i].Properties, items[i].Name, items[i].DisplayOption, takenOver, keepValues: pairs[i].Exact, $"{path}[{i}]");
             }
             else
             {
@@ -891,34 +1009,118 @@ internal sealed class PropertyWriter(
         return area;
     }
 
+    /// <summary>Whether an item gives a current inline block's name and display option (as stored, or by the same name).</summary>
+    private static bool Alike(AreaItemValue item, ContentAreaItem current) =>
+        string.Equals((item.Name ?? "").Trim(), InlineBlocks.Name(current) ?? "", StringComparison.Ordinal)
+        && string.Equals(item.DisplayOption ?? "", PropertyValues.DisplayOption(current) ?? "", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
     /// For an editor: no inline block the area has now may go (be left out, or replaced by an item that isn't an exact copy
-    /// of it) while it has values they can't see or change that a new block of its type wouldn't have. The edit UI lets
-    /// them remove such a block on purpose (areaOps remove); a whole area written back mustn't drop them unseen.
+    /// of it) while it, or a local block or inline block inside it at any depth, has values they can't see or change that the
+    /// write wouldn't keep. A changed item that takes over a block keeps what a ContentArea it gives keeps (that write checks
+    /// itself). The edit UI lets them remove such a block on purpose (areaOps remove, also by a nested area's path); a whole
+    /// area written back mustn't drop them unseen.
     /// </summary>
-    private void RequireNothingLostUnseen(IReadOnlyList<ContentAreaItem> current, IReadOnlyList<AreaItemRules.Pairing> pairs, string name)
+    private void RequireNothingLostUnseen(IReadOnlyList<ContentAreaItem> current, IReadOnlyList<AreaItemRules.Pairing> pairs, IReadOnlyList<AreaItemValue> items, string path)
     {
-        var kept = pairs.Where(p => p.Exact).Select(p => p.Current).ToHashSet();
+        if (!call.Properties.Checks)
+        {
+            return;
+        }
         for (var j = 0; j < current.Count; j++)
         {
-            if (kept.Contains(j) || InlineBlocks.Of(current[j]) is not { } block)
+            if (InlineBlocks.Of(current[j]) is not { } block || pairs.Any(p => p.Exact && p.Current == j))
             {
                 continue;
             }
-            var unseen = Unseen(block).Where(p => !p.IsNull).ToList();
-            if (unseen.Count == 0)
+            var by = Enumerable.Range(0, pairs.Count).Where(i => pairs[i].Current == j).Select(i => items[i]).FirstOrDefault();
+            var given = by?.Properties?.Keys.ToList() ?? [];
+            if (LostUnseen(block, Fresh(block), $"{path}[{j}]", path, j, given).FirstOrDefault() is { Value: not null } lost)
             {
+                throw new AgentException(AgentErrorCodes.Usage,
+                    $"{path} would lose {lost.Value}, which you can't see or change in the CMS edit UI: only an exact copy of the block it is in (as get_content shows it) keeps it.",
+                    $"Give that item back as get_content shows it, change one inline block's values by its position (\"{path}[{j}]\": {{...}}, or areaOps set), or, if the user wants that block gone, remove it on purpose with areaOps remove (property \"{lost.Area}\", index {lost.Index}). Nothing was saved.")
+                {
+                    Reason = AgentErrorReasons.UnseenValues,
+                };
+            }
+        }
+    }
+
+    /// <summary>A new block of <paramref name="block"/>'s type, as the CMS makes one: what a value left out becomes.</summary>
+    private BlockData? Fresh(BlockData block) =>
+        call.Service<IContentTypeRepository>().Load(BlockTypeId(block)) is { } type ? blocks.Create(type) : null;
+
+    /// <summary>
+    /// The values of <paramref name="block"/> (at <paramref name="path"/>) the caller can't see or change that would be
+    /// lost, when it becomes <paramref name="fresh"/> (null: nothing of it stays): its own, and those of its local blocks and
+    /// of the inline blocks in its ContentAreas, but those of the areas in <paramref name="given"/> (written whole, which
+    /// checks itself). Each with the area and position of the inline block it is in.
+    /// </summary>
+    private IEnumerable<(string? Value, string Area, int Index)> LostUnseen(IContentData block, IContentData? fresh, string path, string area, int index, IReadOnlyList<string> given)
+    {
+        var values = PropertyValues.Snapshot(block);
+        var defaults = fresh is null ? new Dictionary<string, JsonElement?>() : PropertyValues.Snapshot(fresh);
+        foreach (var property in block.Property.Where(p => !p.IsMetaData).ToList())
+        {
+            var at = $"{path}.{property.Name}";
+            if (call.Properties.Access(block, property) != PropertyAccess.Editable)
+            {
+                if (values.GetValueOrDefault(property.Name)?.GetRawText() != defaults.GetValueOrDefault(property.Name)?.GetRawText())
+                {
+                    yield return (at, area, index);
+                }
                 continue;
             }
-            var type = call.Service<IContentTypeRepository>().Load(BlockTypeId(block));
-            var defaults = type is null ? new Dictionary<string, JsonElement?>() : PropertyValues.Snapshot(blocks.Create(type));
-            var values = PropertyValues.Snapshot(block);
-            if (unseen.Any(p => values.GetValueOrDefault(p.Name)?.GetRawText() != defaults.GetValueOrDefault(p.Name)?.GetRawText()))
+            if (property.Value is ContentArea inner && !given.Any(g => g.Equals(property.Name, StringComparison.OrdinalIgnoreCase)
+                || (AreaItemRules.Indexed(g) is { } item && item.Property.Equals(property.Name, StringComparison.OrdinalIgnoreCase))))
             {
-                throw AgentException.Usage(
-                    $"{name} would lose the inline {type?.Name ?? "block"} at position {j}, which has values you can't see or change in the CMS edit UI: only an exact copy of it (as get_content shows it) keeps them.",
-                    $"Give that item back as get_content shows it, change one inline block's values with \"{name}[{j}]\": {{...}}, or remove it on purpose with areaOps remove if the user wants it gone. Nothing was saved.");
+                for (var k = 0; k < inner.Items.Count; k++)
+                {
+                    if (InlineBlocks.Of(inner.Items[k]) is { } nested)
+                    {
+                        foreach (var lost in LostUnseen(nested, Fresh(nested), $"{at}[{k}]", at, k, []))
+                        {
+                            yield return lost;
+                        }
+                    }
+                }
             }
+            else if (property.Value is BlockData local and not IContent)
+            {
+                foreach (var lost in LostUnseen(local, fresh?.Property[property.Name]?.Value as IContentData, at, area, index, []))
+                {
+                    yield return lost;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// A warning when inline blocks of a type lose their render settings or personalization because which changed item
+    /// replaces which can't be told (several of the type changed, or several left): the positions, so the caller can change
+    /// those blocks by position instead.
+    /// </summary>
+    private void WarnSettingsDropped(IReadOnlyList<ContentAreaItem> current, IReadOnlyList<AreaItemRules.Pairing> pairs, IReadOnlyList<string?> wanted, string path)
+    {
+        if (_trial > 0)
+        {
+            return;
+        }
+        var taken = pairs.Where(p => p.Current >= 0).Select(p => p.Current).ToHashSet();
+        var dropped = Enumerable.Range(0, current.Count)
+            .Where(j => !taken.Contains(j) && InlineBlocks.Of(current[j]) is not null && Key(current[j]) is { } key
+                && Enumerable.Range(0, wanted.Count).Any(i => pairs[i].Current < 0 && string.Equals(wanted[i], key, StringComparison.OrdinalIgnoreCase))
+                && (!string.IsNullOrWhiteSpace(current[j].ContentGroup) || current[j].AllowedRoles?.Any() == true
+                    || CmsApi.RenderSettings(current[j]).Any(s => s.Key != PropertyValues.DisplayOptionKey && s.Key != InlineBlocks.NameKey)))
+            .ToList();
+        if (dropped.Count > 0)
+        {
+            var kept = dropped.SelectMany(j => CmsApi.RenderSettings(current[j]).Select(s => s.Key).Where(k => k != PropertyValues.DisplayOptionKey && k != InlineBlocks.NameKey)
+                .Concat(!string.IsNullOrWhiteSpace(current[j].ContentGroup) || current[j].AllowedRoles?.Any() == true ? ["personalization"] : [])).Distinct();
+            Warnings.Add(new ValidationIssue(path,
+                $"The inline block(s) at position(s) {string.Join(", ", dropped)} of the area as it was lose their {string.Join(", ", kept)}: the changed items of their type can't be told apart, so none takes them over. To keep them, change those blocks by position ({path}[n]) instead of writing the area whole.",
+                "warning"));
         }
     }
 
@@ -942,6 +1144,7 @@ internal sealed class PropertyWriter(
             return false;
         }
         var copy = (BlockData)((EPiServer.Data.Entity.IReadOnly)block).CreateWritableClone();
+        _trial++;
         try
         {
             Apply(copy, given);
@@ -950,6 +1153,10 @@ internal sealed class PropertyWriter(
         {
             // Values it can't take: the write reports them for the item it pairs with.
             return false;
+        }
+        finally
+        {
+            _trial--;
         }
         var after = PropertyValues.Snapshot(copy);
         return before.All(p => after.GetValueOrDefault(p.Key)?.GetRawText() == p.Value?.GetRawText());
@@ -1031,16 +1238,21 @@ internal sealed class PropertyWriter(
     }
 
     /// <summary>
-    /// Whether <paramref name="items"/> has an inline block like the one <paramref name="added"/> shows: of its type, with
-    /// the values of <paramref name="given"/> (as the new block has them) and the name, if one is given.
+    /// Whether <paramref name="items"/> has an inline block like the one <paramref name="added"/> shows: of its type with
+    /// that name, when one is given (its values may have changed since, as a plan's later steps change them); without a
+    /// name, of its type with the values of <paramref name="given"/> (as the new block has them).
     /// </summary>
     public bool HasInlineLike(IEnumerable<ContentAreaItem> items, ContentAreaItem added, IReadOnlyDictionary<string, JsonElement>? given, string? name)
     {
         var block = InlineBlocks.Of(added)!;
-        var wanted = PropertyValues.Snapshot(block);
         var typeId = BlockTypeId(block);
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            return items.Any(item => InlineBlocks.Of(item) is { } named && BlockTypeId(named) == typeId
+                && string.Equals(InlineBlocks.Name(item) ?? "", name.Trim(), StringComparison.Ordinal));
+        }
+        var wanted = PropertyValues.Snapshot(block);
         return items.Any(item => InlineBlocks.Of(item) is { } existing && BlockTypeId(existing) == typeId
-            && (name is null || string.Equals(InlineBlocks.Name(item) ?? "", name.Trim(), StringComparison.Ordinal))
             && PropertyValues.Snapshot(existing) is var has
             && (given?.Keys ?? []).All(key => has.GetValueOrDefault(key)?.GetRawText() == wanted.GetValueOrDefault(key)?.GetRawText()));
     }
@@ -1067,14 +1279,47 @@ internal sealed class PropertyWriter(
     private ContentAreaItem InlineItem(ContentType type, IReadOnlyDictionary<string, JsonElement>? values, string? name, string? displayOption,
         ContentAreaItem? takenOver, bool keepValues, string where)
     {
-        var block = keepValues && takenOver is not null && InlineBlocks.Of(takenOver) is { } current
-            ? (BlockData)((EPiServer.Data.Entity.IReadOnly)current).CreateWritableClone()
-            : blocks.Create(type);
+        var current = takenOver is null ? null : InlineBlocks.Of(takenOver);
+        BlockData block;
+        if (keepValues && current is not null)
+        {
+            block = (BlockData)((EPiServer.Data.Entity.IReadOnly)current).CreateWritableClone();
+        }
+        else
+        {
+            block = blocks.Create(type);
+            // A changed block: what it gives for its areas pairs with the areas of the block it replaces.
+            Baseline(block, current);
+        }
         ApplyTo(block, values, where);
         var item = new ContentAreaItem();
         InlineBlocks.Set(item, block, type.ID);
         Settings(item, displayOption, takenOver, inlineName: name ?? "");
         return item;
+    }
+
+    /// <summary>The ContentAreas of a rebuilt block (and of its local blocks), with those of the block it replaces (<see cref="_areaBaselines"/>).</summary>
+    private void Baseline(IContentData rebuilt, IContentData? replaced)
+    {
+        if (replaced is null)
+        {
+            return;
+        }
+        foreach (var property in rebuilt.Property.Where(p => !p.IsMetaData))
+        {
+            if (replaced.Property[property.Name] is not { } old)
+            {
+                continue;
+            }
+            if (property is PropertyContentArea)
+            {
+                _areaBaselines[property] = old.Value as ContentArea;
+            }
+            else if (property.Value is BlockData local and not IContent && old.Value is IContentData oldLocal)
+            {
+                Baseline(local, oldLocal);
+            }
+        }
     }
 
     /// <summary>
@@ -1084,6 +1329,10 @@ internal sealed class PropertyWriter(
     /// </summary>
     private void Claim(ContentType type, string where)
     {
+        if (_trial > 0)
+        {
+            return;
+        }
         if (call.Service<IContentTypeRepository>().Load(typeof(ContentAssetFolder)) is { } assets && !call.MayCreate(type, assets))
         {
             throw AgentException.Usage($"{where}: you may not create {type.Name} blocks: the content type's access rights, or those of its group of types, don't allow it.");

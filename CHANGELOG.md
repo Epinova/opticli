@@ -16,14 +16,20 @@ again to update the skill.
     <Prop> set <position> Prop=value --name N`** change one inline block's values (and name), the rest of it staying.
   - In a whole ContentArea (`--values`), an item with `type` is an inline block, `{"type": "TeaserBlock", "properties":
     {...}, "name": "Intro"}`. An exact copy of a block the area has (as `get` shows it) keeps that block; any other inline
-    item is a new block with just the values it gives, which keeps the replaced block's render settings and
-    personalization only when which block it replaces is unambiguous. So the area `get` shows can be written back as is
-    (unchanged, it changes nothing), also with blocks left out or moved. For an editor (MCP), a block with values they
-    can't see or change can't be dropped that way.
-  - `area remove`, `move` and `set` take an inline block by its position; `ref:` names shared blocks only. In a plan,
-    `MainArea[n]` after an `area add` is the new block, in the dry run too.
+    item is a new block with just the values it gives. It takes over the block it replaces (its render settings,
+    personalization, and what the areas inside it pair with) only when which block that is is unambiguous; otherwise a
+    warning names the positions whose settings were dropped. So the area `get` shows can be written back as is
+    (unchanged, it changes nothing), also with blocks left out or moved.
+  - For an editor (MCP), a whole area can't drop values they can't see or change, in the block, its local blocks or the
+    blocks inside its areas at any depth; the error names the value's path. Removing a block on purpose works by its
+    area's path.
+  - `area add`, `remove`, `move` and `set` take an area inside an inline or local block by its path
+    (`'MainArea[0].Items'`), in plans and MCP `areaOps` too, and take an inline block by its position; `ref:` names shared
+    blocks only. Area edits of an area that isn't culture-specific are refused outside the master language, as `set` is.
+    In a plan, `MainArea[n]` after an `area add` is the new block, in the dry run too.
   - With `apply --update-existing`, an inline `area add` changes nothing when the area already has an inline block of
-    its type with the step's values.
+    its type with the step's name (whatever its values), or without a name, with the step's values; so a plan that adds
+    a named block and changes it later runs again unchanged.
   - On a CMS before 12.20 these writes are refused with the version they need. Where the site's CMS 12 edit UI doesn't
     make inline blocks itself (`UIOptions.InlineBlocksInContentAreaEnabled`, off by default), a write that adds one says
     so in a warning: editors still see, edit, move and remove it.

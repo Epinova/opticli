@@ -324,26 +324,42 @@ with no `ref`.
   (`MainArea[2].Text`) are of each branch's primary version (published, else the latest draft), which may differ.
 - Move or remove one by its position: `area 123 MainArea move 2 0`, `area 123 MainArea remove 2`. `ref:` names only
   shared blocks.
+- An area inside an inline block (or a local block) is named by its path in every `area` action:
+  `opticli area 123 'MainArea[0].Items' remove 1`, `area 123 Hero.Area add 456` (MCP `areaOps` and plan steps take the
+  same `property`). Each property on the way must be one you may change.
+- Area edits, like `set`, change an area that isn't culture-specific only in the master language: in another branch
+  they are refused (`usage`).
 - A whole area (`--values '{"MainArea": [...]}'`) replaces the area: an item with `type` (or `inline: true`) is an inline
   block, one with `ref` or `guid` a shared one (`get`'s `type` and `name` beside a `ref` are about that content and are
   left out). An inline item that is an exact copy of a block the area has (every value, as `get` shows it) keeps that
-  block. Any other inline item is a new block with only the values it gives (the type's defaults for the rest): nothing
-  carries over from the block it replaces. It keeps that block's personalization and other render settings only when
-  which block it replaces is unambiguous (the only changed item of its type, and the only block of the type not copied);
-  `name` and `displayOption` are always as given. So the area `get` shows, written back unchanged, changes nothing; with a
-  block left out or moved, the others keep theirs; a changed block is what you give. To change part of one block, use
-  `MainArea[2]` or `area set` instead.
+  block; of identical blocks, the one with the item's name and display option first. Any other inline item is a new block
+  with only the values it gives (the type's defaults for the rest): no value carries over from the block it replaces. It
+  takes over that block only when which block it replaces is unambiguous (the only changed item of its type, and the only
+  block of the type not copied): then it keeps the block's personalization and other render settings, and a ContentArea
+  given in it (also in its local blocks) pairs with that block's area, so the blocks there keep theirs too. `name` and
+  `displayOption` are always as given. When changed items can't be told apart, the blocks they replace lose their render
+  settings (anchors like `data-id`) and personalization, and a `warning` in `validation` names their positions. So the
+  area `get` shows, written back unchanged, changes nothing; with a block left out or moved, the others keep theirs; a
+  changed block is what you give. To change part of one block, use `MainArea[2]` or `area set` instead.
+- For an editor (MCP): a whole area can't drop a value they can't see or change in the edit UI, in the block itself, in
+  its local blocks or in the inline blocks of its areas at any depth: `usage` with `reason: "unseenValues"`, naming the
+  value's full path (`MainArea[0].Area[1].Secret`). Only an exact copy keeps such a block. To change part of it, set
+  values by position; to remove a block on purpose, use `areaOps` `remove` with the area's path (`MainArea[0].Area`),
+  as the edit UI lets them.
 - On a CMS before 12.20 adding or changing one is refused (`usage`) with the version it needs.
 - The CMS 12 edit UI makes new blocks in a ContentArea inline only when the site turns on
   `UIOptions.InlineBlocksInContentAreaEnabled` (off by default; "Create a new block" then makes a shared block in the
   page's "For this page" folder instead). Either way it shows the inline blocks an area has, and editors can edit, move
-  and remove them; when the setting is off, a write that adds one has a `warning` in `validation` saying so.
+  and remove them; when the setting is off, a write that adds one has one `warning` in `validation` saying so.
 - In a plan: `{"op": "area", "ref": "$page", "property": "MainArea", "action": "add", "type": "TeaserBlock",
   "values": {"Heading": "Hi"}, "name": "Intro"}`, and `"action": "set"` with `"index"`, `"values"` and `"name"`. Steps run
   in order, so `MainArea[0]` in a later `set` is the block an earlier `area add ... "at": 0` made (the dry run follows
-  that order too). An inline block has no identity, so with `apply --update-existing` an `area add` of one changes nothing
-  when the area already has an inline block of the type with the given values (and name); a plain run adds it again.
-  `area set` changes nothing when the block already has its values.
+  that order too). An inline block has no identity, so with `apply --update-existing` an `area add` of one changes
+  nothing when the area already has one like it: with `"name"`, an inline block of its type with that name, whatever its
+  values (later steps may have changed them); without, one of its type with the step's values. Give an inline add a name
+  when later steps change it, so the plan runs again unchanged. `area set` changes nothing when the block already has its
+  values. A plan's dry run of an `area add` after a whole-area `set` of the same area diffs against the stored area, not
+  the one that `set` writes; the plan's result is as the steps say.
 - `where-used --type` and `types` count inline blocks on CMS 13 only (`inlineUses`); on CMS 12 `where-used <ref>`,
   `search` and `get` show them.
 

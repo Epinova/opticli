@@ -113,12 +113,54 @@ public sealed class InlineBlockTests(SharedSessions sessions)
             area[0]!["properties"]!["Heading"] = "Changed whole";
             var refused = await editor.ErrorAsync("update_content", new { reference = page, properties = new Dictionary<string, JsonNode> { ["MainContentArea"] = area }, dryRun = true });
             Assert.Equal("usage", refused.GetProperty("code").GetString());
-            Assert.Contains("would lose the inline McpFieldsBlock at position 0", refused.GetProperty("message").GetString());
+            Assert.Contains("MainContentArea would lose MainContentArea[0].AdminScripts", refused.GetProperty("message").GetString());
 
             // One block's values by position keep the rest of it.
             await editor.OkAsync("update_content", new { reference = page, areaOps = new[] { new { op = "set", property = "MainContentArea", index = 0, values = new { Heading = "Changed" } } } });
             var kept = Area(await admin.OkAsync("get_content", new { reference = page, version = "latest" }))[0].GetProperty("properties");
             Assert.Equal(("Changed", "admin only"), (kept.GetProperty("Heading").GetProperty("value").GetString(), kept.GetProperty("AdminScripts").GetProperty("value").GetString()));
+        }
+        finally
+        {
+            await WritingTests.DeleteAsync(editor, page);
+        }
+    }
+    [McpSiteFact]
+    public async Task An_editor_cant_drop_values_they_cant_change_inside_an_inline_block_but_may_remove_a_nested_block_on_purpose()
+    {
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var admin = await sessions.ForAsync(TestUsers.Admin);
+        var start = WritingTests.Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        var page = WritingTests.Id((await editor.OkAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = start })).GetProperty("content"));
+        try
+        {
+            // An administrator's block, with values locked for everyone else in its own area's block and in its local block.
+            var outer = JsonNode.Parse("""
+                {"type": "McpFieldsBlock", "properties": {"Heading": "Outer",
+                  "Area": [{"type": "McpFieldsBlock", "properties": {"Heading": "Nested", "AdminScripts": "nested-locked"}}],
+                  "Inner": {"Title": "Inner", "AdminOnly": "inner-locked"}}}
+                """)!;
+            await admin.OkAsync("update_content", new { reference = page, properties = new Dictionary<string, JsonNode> { ["MainContentArea"] = new JsonArray(outer) } });
+
+            // The area as the editor sees it, the outer block's heading changed: its local block would lose its locked value.
+            var area = Writable(Area(await editor.OkAsync("get_content", new { reference = page, version = "latest" })));
+            area[0]!["properties"]!["Heading"] = "Changed whole";
+            var local = await editor.ErrorAsync("update_content", new { reference = page, properties = new Dictionary<string, JsonNode> { ["MainContentArea"] = area.DeepClone() }, dryRun = true });
+            Assert.Equal(("usage", "unseenValues"), (local.GetProperty("code").GetString(), local.GetProperty("reason").GetString()));
+            Assert.Contains("MainContentArea would lose MainContentArea[0].Inner.AdminOnly", local.GetProperty("message").GetString());
+
+            // Without its area too, the nested block's locked value would go as well (it comes first).
+            area[0]!["properties"]!.AsObject().Remove("Area");
+            var nested = await editor.ErrorAsync("update_content", new { reference = page, properties = new Dictionary<string, JsonNode> { ["MainContentArea"] = area }, dryRun = true });
+            Assert.Contains("MainContentArea would lose MainContentArea[0].Area[0].AdminScripts", nested.GetProperty("message").GetString());
+            Assert.Contains("areaOps remove (property \"MainContentArea[0].Area\", index 0)", nested.GetProperty("hint").GetString());
+
+            // Removed on purpose, by the nested area's path: the rest of the outer block stays, its locked values too.
+            await editor.OkAsync("update_content", new { reference = page, areaOps = new[] { new { op = "remove", property = "MainContentArea[0].Area", index = 0 } } });
+            var kept = Area(await admin.OkAsync("get_content", new { reference = page, version = "latest" }))[0].GetProperty("properties");
+            Assert.Equal("Outer", kept.GetProperty("Heading").GetProperty("value").GetString());
+            Assert.False(kept.TryGetProperty("Area", out var left) && left.TryGetProperty("value", out var items) && items.GetArrayLength() > 0);
+            Assert.Equal("inner-locked", kept.GetProperty("Inner").GetProperty("value").GetProperty("AdminOnly").GetProperty("value").GetString());
         }
         finally
         {

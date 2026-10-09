@@ -252,6 +252,91 @@ public sealed class InlineBlockWriteTests
     }
 
     [SiteFact]
+    public async Task Area_edits_in_another_language_than_the_master_are_refused_like_set_and_named_adds_rerun_unchanged()
+    {
+        var cancellationToken = CancellationToken.None;
+        await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
+        var start = await FirstAsync(site, "StartPage", cancellationToken);
+        var image = await FirstAsync(site, "ImageFile", cancellationToken);
+        if (start is null || image is null || site.Session.Model.Types.All(t => t.Name != "TeaserBlock") || site.Session.Language("sv") is null
+            || Version.Parse((await site.Agent.PingAsync(cancellationToken)).CmsVersion.Split('-', '+')[0]) < new Version(12, 20))
+        {
+            return;
+        }
+        var writes = new WriteExecutor(site.Session, _ => Task.FromResult(site.Agent));
+        var rerun = new WriteExecutor(site.Session, _ => Task.FromResult(site.Agent), updateExisting: true);
+        var id = (await writes.RunAsync(new CreateOperation(Id(start.Value), "StandardPage", $"Inline lang {Guid.NewGuid():N}"[..24]), dryRun: false, cancellationToken)).CreatedId!.Value;
+        var page = Id(id);
+        try
+        {
+            // A named add, then a change by position: run again with --update-existing, both find what they want there.
+            var add = AddInline(page, $$"""{"Heading": "Named", "Text": "t", "Image": "{{image}}"}""", name: "Intro", at: 0);
+            var change = new SetOperation(page, JsonNode.Parse("""{"MainContentArea[0]": {"Text": "Z"}}""")!.AsObject());
+            Assert.True(Assert.IsType<WriteOutput>((await rerun.RunAsync(add, dryRun: false, cancellationToken)).Output).Saved);
+            Assert.True(Assert.IsType<WriteOutput>((await rerun.RunAsync(change, dryRun: false, cancellationToken)).Output).Saved);
+            Assert.False(Assert.IsType<WriteOutput>((await rerun.RunAsync(add, dryRun: false, cancellationToken)).Output).Saved);
+            Assert.False(Assert.IsType<WriteOutput>((await rerun.RunAsync(change, dryRun: false, cancellationToken)).Output).Saved);
+            Assert.Equal(["Named"], Area(await GetAsync(id, cancellationToken: cancellationToken)).Select(i => Value(i, "Heading")));
+
+            // Alloy's MainContentArea isn't culture-specific: a Swedish branch can't change it, by area edit or by set.
+            await writes.RunAsync(new TranslateOperation(page, "sv"), dryRun: false, cancellationToken);
+            foreach (var edit in new WriteOperation[]
+            {
+                new AreaEdit(page, "MainContentArea", "set", Index: 0, Lang: "sv") { Values = new JsonObject { ["Heading"] = "SV" } },
+                new AreaEdit(page, "MainContentArea", "remove", Index: 0, Lang: "sv"),
+                AddInline(page, """{"Heading": "SV"}""") with { Lang = "sv" },
+                new SetOperation(page, JsonNode.Parse("""{"MainContentArea[0]": {"Heading": "SV"}}""")!.AsObject(), Lang: "sv"),
+            })
+            {
+                var refused = await Assert.ThrowsAnyAsync<OptiCliException>(() => writes.RunAsync(edit, dryRun: false, cancellationToken));
+                Assert.Contains("'MainContentArea' is not culture-specific, so it can only be changed on the master language", refused.Message);
+            }
+        }
+        finally
+        {
+            await writes.RunAsync(new DeleteOperation(page, IgnoreReferences: true), dryRun: false, cancellationToken);
+        }
+    }
+
+    [SiteFact]
+    public async Task A_changed_block_with_an_area_of_its_own_keeps_what_its_area_pairs_with()
+    {
+        var cancellationToken = CancellationToken.None;
+        await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
+        var start = await FirstAsync(site, "StartPage", cancellationToken);
+        var image = await FirstAsync(site, "ImageFile", cancellationToken);
+        if (start is null || image is null || site.Session.Model.Types.All(t => t.Name != "EdgeContainerBlock")
+            || Version.Parse((await site.Agent.PingAsync(cancellationToken)).CmsVersion.Split('-', '+')[0]) < new Version(12, 20))
+        {
+            return;
+        }
+        var writes = new WriteExecutor(site.Session, _ => Task.FromResult(site.Agent));
+        var id = (await writes.RunAsync(new CreateOperation(Id(start.Value), "StandardPage", $"Inline box {Guid.NewGuid():N}"[..23]), dryRun: false, cancellationToken)).CreatedId!.Value;
+        var page = Id(id);
+        string Teaser(string heading, string group) =>
+            new JsonObject { ["type"] = "TeaserBlock", ["group"] = group, ["properties"] = new JsonObject { ["Heading"] = heading, ["Text"] = "t", ["Image"] = Id(image.Value) } }.ToJsonString();
+        try
+        {
+            await writes.RunAsync(new SetOperation(page, JsonNode.Parse("{\"MainContentArea\": [{\"type\": \"EdgeContainerBlock\", \"properties\": {\"Heading\": \"Box\", \"Items\": [" + Teaser("First", "a") + ", " + Teaser("Second", "b") + "]}}]}")!.AsObject()), dryRun: false, cancellationToken);
+
+            // Written back as get shows it, the box's heading and one of its blocks changed (their own personalization left
+            // out): the box is the only one of its type, so its area pairs with the area it had.
+            var area = Area(await GetAsync(id, cancellationToken: cancellationToken));
+            var box = Changed(area[0], "Heading", "Box changed").AsObject();
+            var items = box["properties"]!["Items"]!["value"]!.AsArray();
+            items[1] = Changed(items[1], "Heading", "Second changed");
+            await writes.RunAsync(new SetOperation(page, new JsonObject { ["MainContentArea"] = new JsonArray(box) }), dryRun: false, cancellationToken);
+
+            var inside = Area(await GetAsync(id, cancellationToken: cancellationToken))[0]!["properties"]!["Items"]!["value"]!.AsArray();
+            Assert.Equal([("First", "a"), ("Second changed", "b")], inside.Select(i => (Value(i, "Heading"), (string?)i!["group"])));
+        }
+        finally
+        {
+            await writes.RunAsync(new DeleteOperation(page, IgnoreReferences: true), dryRun: false, cancellationToken);
+        }
+    }
+
+    [SiteFact]
     public async Task An_inline_add_of_a_type_the_area_doesnt_allow_fails_the_cms_validation()
     {
         var cancellationToken = CancellationToken.None;
@@ -275,7 +360,7 @@ public sealed class InlineBlockWriteTests
     }
 
     [SiteFact]
-    public async Task With_update_existing_an_inline_block_with_the_same_values_counts_as_already_there()
+    public async Task With_update_existing_an_inline_block_with_its_name_or_its_values_counts_as_already_there()
     {
         var cancellationToken = CancellationToken.None;
         await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
@@ -291,15 +376,18 @@ public sealed class InlineBlockWriteTests
         var page = Id((await writes.RunAsync(new CreateOperation(Id(start.Value), "StandardPage", $"Inline rerun {Guid.NewGuid():N}"[..25]), dryRun: false, cancellationToken)).CreatedId!.Value);
         try
         {
-            var add = AddInline(page, $$"""{"Heading": "Once", "Text": "Only once", "Image": "{{image}}"}""", name: "Once");
+            // Without a name, an inline block of its type with its values is "already there"; other values add another.
+            var add = AddInline(page, $$"""{"Heading": "Once", "Text": "Only once", "Image": "{{image}}"}""");
             Assert.True(Assert.IsType<WriteOutput>((await rerun.RunAsync(add, dryRun: false, cancellationToken)).Output).Saved);
-
             Assert.False(Assert.IsType<WriteOutput>((await rerun.RunAsync(add, dryRun: false, cancellationToken)).Output).Saved);
-            // Other values (or a plain run) add another.
             var other = add with { Values = JsonNode.Parse($$"""{"Heading": "Twice", "Text": "Only once", "Image": "{{image}}"}""")!.AsObject() };
             Assert.True(Assert.IsType<WriteOutput>((await rerun.RunAsync(other, dryRun: false, cancellationToken)).Output).Saved);
+            // With a name, one of its type with that name is, whatever its values now; a plain run adds another.
+            var named = other with { Name = "Named", Values = JsonNode.Parse($$"""{"Heading": "Named", "Text": "t", "Image": "{{image}}"}""")!.AsObject() };
+            Assert.True(Assert.IsType<WriteOutput>((await rerun.RunAsync(named, dryRun: false, cancellationToken)).Output).Saved);
+            Assert.False(Assert.IsType<WriteOutput>((await rerun.RunAsync(named with { Values = JsonNode.Parse("""{"Heading": "Changed since"}""")!.AsObject() }, dryRun: false, cancellationToken)).Output).Saved);
             Assert.True(Assert.IsType<WriteOutput>((await writes.RunAsync(add, dryRun: false, cancellationToken)).Output).Saved);
-            Assert.Equal(["Once", "Twice", "Once"], Area(await GetAsync(int.Parse(page, CultureInfo.InvariantCulture), cancellationToken: cancellationToken)).Select(i => Value(i, "Heading")));
+            Assert.Equal(["Once", "Twice", "Named", "Once"], Area(await GetAsync(int.Parse(page, CultureInfo.InvariantCulture), cancellationToken: cancellationToken)).Select(i => Value(i, "Heading")));
         }
         finally
         {

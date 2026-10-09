@@ -59,6 +59,12 @@ public static class AgentErrorReasons
     public const string InReview = "inReview";
 
     /// <summary>
+    /// Usage, for an editor: the write would drop values of a block (an inline block, in a ContentArea or deeper) that they
+    /// can't see or change in the CMS edit UI. The message names where.
+    /// </summary>
+    public const string UnseenValues = "unseenValues";
+
+    /// <summary>
     /// Validation: the CMS refused to publish a language branch other than the master, because the master branch has
     /// never been published. Publish the master branch first.
     /// </summary>

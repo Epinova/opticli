@@ -141,6 +141,23 @@ public class PlanSimulationTests
     }
 
     [Fact]
+    public void An_area_step_on_an_area_inside_an_inline_block_of_planned_content_is_in_its_dry_run()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "create", "id": "page", "parent": "100", "type": "ArticlePage", "name": "Page", "properties": {"MainArea": [{"type": "BoxBlock", "properties": {"Items": [{"ref": "200"}]}}]}},
+              {"op": "area", "ref": "$page", "property": "MainArea[0].Items", "action": "add", "type": "TeaserBlock", "values": {"Text": "A"}, "at": 0},
+              {"op": "area", "ref": "$page", "property": "MainArea[0].Items", "action": "remove", "index": 1},
+              {"op": "publish", "ref": "$page"}
+            ]}
+            """);
+
+        var create = Assert.IsType<CreateOperation>(PlanSimulation.For(plan.Steps[3], plan.Steps, None, updateExisting: false)!.Operation);
+
+        Assert.Equal("""{"MainArea":[{"type":"BoxBlock","properties":{"Items":[{"type":"TeaserBlock","properties":{"Text":"A"}}]}}]}""", create.Properties!.ToJsonString());
+    }
+
+    [Fact]
     public void Steps_without_a_planned_target_are_not_simulated_as_an_earlier_step_without_an_id()
     {
         var plan = WritePlan.Parse("""
@@ -248,6 +265,14 @@ public class PlanSimulationOnExistingTests
         Assert.Equal(["add", "set", "move"], move.AreaEdits!.Select(a => a.Action));
         // A step that names nothing by position is dry-run on its own, as before.
         Assert.Null(For(plan, 3, targets));
+        // An area inside an inline block is named by a position too.
+        var nested = WritePlan.Parse("""
+            {"operations": [
+              {"op": "area", "ref": "123", "property": "MainArea", "action": "add", "type": "TeaserBlock", "at": 0},
+              {"op": "area", "ref": "123", "property": "MainArea[1].Area", "action": "add", "item": "456"}
+            ]}
+            """);
+        Assert.Equal(["add", "add"], Assert.IsType<SetOperation>(For(nested, 1, Enumerable.Range(0, 2).ToDictionary(i => i, _ => Target()))!.Operation).AreaEdits!.Select(a => a.Action));
     }
 
     [Fact]

@@ -64,7 +64,7 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
     public string UpdateContent(
         [Description("Content id or GUID.")] string reference,
         [Description(Properties)] Dictionary<string, JsonElement>? properties = null,
-        [Description("ContentArea edits applied after properties: {op: add|remove|move|set, property, ref, index, at, displayOption, ifMissing}; add a new inline block with type and values ({Prop: value}) instead of ref; set changes the values (and name) of the inline block at index, the rest of it staying. An inline block has no ref: remove, move and set it by index.")] List<AreaOperation>? areaOps = null,
+        [Description("ContentArea edits applied after properties: {op: add|remove|move|set, property, ref, index, at, displayOption, ifMissing}; add a new inline block with type and values ({Prop: value}) instead of ref; set changes the values (and name) of the inline block at index, the rest of it staying. An inline block has no ref: remove, move and set it by index. property may be an area inside an inline block, by its path: \"MainContentArea[0].Area\".")] List<AreaOperation>? areaOps = null,
         [Description("New name.")] string? name = null,
         [Description("Language branch, e.g. en; the master language when left out.")] string? lang = null,
         [Description("The version you read (get_content's version); refused if a newer one was saved since.")] int? baseVersion = null,

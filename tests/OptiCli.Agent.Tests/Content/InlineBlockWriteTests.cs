@@ -23,13 +23,57 @@ public class InlineBlockWriteTests
 {
     private const int ItemType = 7;
 
+    private const int BoxType = 9;
+
     private static readonly ContentType[] Types =
     [
         new ContentType { ID = ItemType, Name = nameof(PropertyWriterTests.ItemBlock), ModelType = typeof(PropertyWriterTests.ItemBlock) },
         new PageType { ID = 8, Name = "StandardPage", ModelType = typeof(PageData) },
+        new ContentType { ID = BoxType, Name = nameof(BoxBlock), ModelType = typeof(BoxBlock) },
     ];
 
-    private static PropertyWriter Writer(CmsCaller caller = CmsCaller.Developer)
+    /// <summary>A block with a hidden value, a ContentArea and a local block of its own: for what is inside an inline block.</summary>
+    public class BoxBlock : BlockData
+    {
+        public virtual string? Title { get; set; }
+
+        [System.ComponentModel.DataAnnotations.ScaffoldColumn(false)]
+        public virtual string? Secret { get; set; }
+
+        public virtual ContentArea? Area { get; set; }
+
+        public virtual PropertyWriterTests.ItemBlock? Inner { get; set; }
+
+        public static BoxBlock Create()
+        {
+            var block = new BoxBlock();
+            block.Property.Add(nameof(Title), new PropertyString { PropertyDefinitionID = 11 });
+            block.Property.Add(nameof(Secret), new PropertyString { PropertyDefinitionID = 12, DisplayEditUI = false });
+            block.Property.Add(nameof(Area), new PropertyContentArea { PropertyDefinitionID = 13 });
+            block.Property.Add(nameof(Inner), new PropertyLocal { PropertyDefinitionID = 14, Value = PropertyWriterTests.ItemBlock.Create() });
+            return block;
+        }
+    }
+
+    /// <summary>A local block property, as the CMS's PropertyBlock is to a writer: its value is the block.</summary>
+    private sealed class PropertyLocal : PropertyData
+    {
+        private object? _value;
+
+        public override object? Value { get => _value; set => _value = value; }
+
+        public override PropertyDataType Type => PropertyDataType.Block;
+
+        public override Type PropertyValueType => typeof(PropertyWriterTests.ItemBlock);
+
+        public override void ParseToSelf(string value) => throw new NotSupportedException();
+
+        protected override void SetDefaultValue() => _value = null;
+    }
+
+    private static PropertyWriter Writer(CmsCaller caller = CmsCaller.Developer) => Writer(out _, caller);
+
+    private static PropertyWriter Writer(out CmsCall made, CmsCaller caller = CmsCaller.Developer)
     {
         var types = Recorder<IContentTypeRepository>.Create();
         types.Recorder.Answer = (method, args) => (method.Name, args) switch
@@ -41,7 +85,8 @@ public class InlineBlockWriteTests
             _ => null,
         };
         var factory = Recorder<EPiServer.Construction.IContentDataFactory<BlockData>>.Create();
-        factory.Recorder.Answer = (method, _) => method.Name == "CreateInstance" ? PropertyWriterTests.ItemBlock.Create() : null;
+        factory.Recorder.Answer = (method, args) => method.Name != "CreateInstance" ? null
+            : args is [ContentType { ID: BoxType }] ? BoxBlock.Create() : PropertyWriterTests.ItemBlock.Create();
         var services = new ServiceCollection()
             .AddSingleton(types.Proxy)
             .AddSingleton(Recorder<IContentRepository>.Create().Proxy)
@@ -51,6 +96,7 @@ public class InlineBlockWriteTests
             .AddSingleton<IPrincipalAccessor>(new CmsCallTests.PrincipalAccessor(new GenericPrincipal(new GenericIdentity("developer"), [])))
             .BuildServiceProvider();
         var call = new CmsCall(services, CancellationToken.None, caller);
+        made = call;
         var blocks = new BlockFactory(factory.Proxy, Recorder<EPiServer.Construction.IContentDataBuilder>.Create().Proxy, types.Proxy);
         return new PropertyWriter(call, new ContentLocator(call), blocks, null!, null!, null!);
     }
@@ -202,10 +248,119 @@ public class InlineBlockWriteTests
 
         var refused = Refused(Writer(CmsCaller.Editor), owner, Written("A changed"));
 
-        Assert.Equal(AgentErrorCodes.Usage, refused.Code);
-        Assert.Contains("Area would lose the inline ItemBlock at position 0", refused.Message);
+        Assert.Equal((AgentErrorCodes.Usage, AgentErrorReasons.UnseenValues), (refused.Code, refused.Reason));
+        Assert.Contains("Area would lose Area[0].Secret", refused.Message);
         Assert.Contains("\"Area[0]\"", refused.Hint);
+        Assert.Contains("areaOps remove (property \"Area\", index 0)", refused.Hint);
         Assert.Equal("hidden", Value(Items(owner)[0], "Secret"));
+    }
+
+    /// <summary>An inline <see cref="BoxBlock"/> holding an inline block in its area, and values in its local block.</summary>
+    private static ContentAreaItem Box(string title, ContentArea? area = null, string? innerSecret = null, string? secret = null)
+    {
+        var box = BoxBlock.Create();
+        box.Property["Title"].Value = title;
+        box.Property["Secret"].Value = secret;
+        box.Property["Area"].Value = area;
+        ((BlockData)box.Property["Inner"].Value!).Property["Secret"].Value = innerSecret;
+        var item = new ContentAreaItem();
+        InlineBlocks.Set(item, box, BoxType);
+        return item;
+    }
+
+    [Theory]
+    [InlineData("nested", "Area would lose Area[0].Area[0].Secret", "areaOps remove (property \"Area[0].Area\", index 0)")]
+    [InlineData("local", "Area would lose Area[0].Inner.Secret", "areaOps remove (property \"Area\", index 0)")]
+    public void An_editor_cant_drop_values_they_dont_see_inside_an_inline_block_either(string where, string message, string hint)
+    {
+        var owner = where == "nested"
+            ? Owner(Area(Box("Box", Area(Inline("N", secret: "nested-secret")))))
+            : Owner(Area(Box("Box", innerSecret: "inner-locked")));
+
+        // The box changed (not a copy), its area and local block left out: what they hold would go.
+        var refused = Refused(Writer(CmsCaller.Editor), owner, """{"Area": [{"type": "BoxBlock", "properties": {"Title": "Box changed"}}]}""");
+
+        Assert.Equal(AgentErrorCodes.Usage, refused.Code);
+        Assert.Contains(message, refused.Message);
+        Assert.Contains(hint, refused.Hint);
+    }
+
+    [Fact]
+    public void A_changed_block_rebuilt_in_its_place_pairs_its_own_area_with_the_area_it_had()
+    {
+        var owner = Owner(Area(Box("Box", Area(Personalized(Inline("X")), Personalized(Inline("Y"))))));
+
+        // The box changed, its area as get shows it with Y changed: the box takes over its block (the only one), and inside
+        // it X pairs with itself, Y with the only one left, so both keep their settings.
+        Writer().Apply(owner, Values("""{"Area": [{"type": "BoxBlock", "properties": {"Title": "Box changed", "Area": [{"type": "ItemBlock", "properties": {"Title": "X"}}, {"type": "ItemBlock", "properties": {"Title": "Y changed"}}]}}]}"""));
+
+        var box = InlineBlocks.Of(Items(owner)[0])!;
+        var inside = ((ContentArea)box.Property["Area"].Value).Items.ToList();
+        Assert.Equal("Box changed", box.Property["Title"].Value);
+        Assert.Equal(["X", "Y changed"], inside.Select(i => Value(i, "Title")));
+        Assert.All(inside, i => Assert.Equal(("g", "anchor"), (i.ContentGroup, CmsApi.RenderSettings(i).Single(s => s.Key == "data-id").Value?.ToString())));
+    }
+
+    [Fact]
+    public void An_area_inside_an_inline_block_is_changed_by_its_path()
+    {
+        var owner = Owner(Area(Box("Box", Area(Inline("X"), Inline("Y")), secret: "kept")));
+
+        new AreaEditor(new ContentLocator(Call(out var writer)), writer).Apply(owner,
+            [new AreaOperation { Op = AreaOps.Remove, Property = "Area[0].Area", Index = 0 }, new AreaOperation { Op = AreaOps.Set, Property = "area[0].area", Index = 0, Values = Values("""{"Title": "Y changed"}""") }]);
+
+        var box = InlineBlocks.Of(Items(owner)[0])!;
+        Assert.Equal(("Box", "kept"), ((string?)box.Property["Title"].Value, (string?)box.Property["Secret"].Value));
+        Assert.Equal(["Y changed"], ((ContentArea)box.Property["Area"].Value).Items.Select(i => Value(i, "Title")));
+        Assert.Contains("isn't a block type", Assert.Throws<AgentException>(() => new AreaEditor(new ContentLocator(Call(out var other)), other).Apply(owner,
+            [new AreaOperation { Op = AreaOps.Add, Property = "Area[0].Area", Type = "StandardPage" }])).Message);
+        Assert.Contains("names an item of a ContentArea, not a ContentArea", Assert.Throws<AgentException>(() => new AreaEditor(new ContentLocator(Call(out var third)), third).Apply(owner,
+            [new AreaOperation { Op = AreaOps.Remove, Property = "Area[0]", Index = 0 }])).Message);
+    }
+
+    private static CmsCall Call(out PropertyWriter writer)
+    {
+        writer = Writer(out var call);
+        return call;
+    }
+
+    [Fact]
+    public void Of_identical_blocks_a_copy_pairs_with_the_one_it_names()
+    {
+        var first = Personalized(Inline("D", name: "n1"));
+        var owner = Owner(Area(first, Inline("D", name: "n2")));
+
+        Writer().Apply(owner, Values("""{"Area": [{"type": "ItemBlock", "name": "n2", "properties": {"Title": "D"}}]}"""));
+
+        var only = Assert.Single(Items(owner));
+        Assert.Equal(("n2", null), (InlineBlocks.Name(only), only.ContentGroup));
+    }
+
+    [Fact]
+    public void A_named_inline_add_is_already_there_when_a_block_of_its_type_has_its_name_whatever_its_values()
+    {
+        var items = Area(Inline("Changed since", name: "Intro")).Items;
+
+        Assert.Null(Writer().NewInlineItem("ItemBlock", Values("""{"Title": "As first added"}"""), "Intro", null, "add", items));
+        Assert.NotNull(Writer().NewInlineItem("ItemBlock", Values("""{"Title": "As first added"}"""), "Other", null, "add", items));
+    }
+
+    [Fact]
+    public void Settings_that_no_changed_item_takes_over_are_named_in_a_warning()
+    {
+        var owner = Owner(Area(Personalized(Inline("A")), Inline("B")));
+        var writer = Writer();
+
+        writer.Apply(owner, Values(Written("A changed", "B changed")));
+
+        var warning = Assert.Single(writer.Warnings);
+        Assert.Equal(("Area", "warning"), (warning.Property, warning.Severity));
+        Assert.Contains("position(s) 0", warning.Message);
+        Assert.Contains("data-id, personalization", warning.Message);
+        // Nothing to warn about when the blocks were copied, or the only one was changed.
+        var quiet = Writer();
+        quiet.Apply(Owner(Area(Personalized(Inline("A")), Inline("B"))), Values(Written("A", "B changed")));
+        Assert.Empty(quiet.Warnings);
     }
 
     [Fact]

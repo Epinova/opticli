@@ -207,7 +207,7 @@ public static class PlanSimulation
             case CompositionEdit composition when translate is not null && target.Master is { } master:
                 return new Simulation(composition with { Lang = master, Publish = false, BaseVersion = null, Force = true }, null, new Dictionary<string, string>(), [], [],
                     [$"Dry-run on the master branch ('{master}') as a stand-in: operation {translate.Index} creates the '{target.Language}' branch, so this composition edit is checked there when the plan runs."]);
-            case SetOperation { From: null, Variation: null } or AreaEdit { From: null, Index: not null } when restart is null && !target.Versioned && ByPosition(step.Operation):
+            case SetOperation { From: null, Variation: null } or AreaEdit { From: null } when restart is null && !target.Versioned && ByPosition(step.Operation):
                 // An inline block named by its position: earlier steps (an area add, say) decide which block that is, so it
                 // is dry-run after theirs, as the plan runs it.
                 var positioned = Merged(step, [.. earlier, step], target, null, reference, publish: step.Operation is SetOperation { Publish: true } or AreaEdit { Publish: true }, steps, existing,
@@ -227,6 +227,7 @@ public static class PlanSimulation
     private static bool ByPosition(WriteOperation op) => op switch
     {
         AreaEdit { Index: not null } => true,
+        AreaEdit nested when nested.Property.Contains('[') => true,
         SetOperation { Properties: { } values } => values.Any(v => AreaItemPath.Parse(v.Key) is not null),
         _ => false,
     };
@@ -483,9 +484,15 @@ public static class PlanSimulation
     /// An area step applied to the ContentArea value as <c>properties</c> gives it (<c>[{"ref": ...}]</c>, an inline block
     /// as <c>{"type": ..., "properties": ...}</c>). An item or position that isn't there is left to the real run to report.
     /// </summary>
-    private static void Edit(JsonObject properties, AreaEdit area)
+    private static void Edit(JsonObject root, AreaEdit area)
     {
-        var key = properties.Select(p => p.Key).FirstOrDefault(k => k.Equals(area.Property, StringComparison.OrdinalIgnoreCase)) ?? area.Property;
+        // A nested area (MainArea[0].Area, Hero.Area): in the values the plan gave its block so far, if any.
+        if (Container(root, area.Property) is not { } found)
+        {
+            return;
+        }
+        var (properties, name) = found;
+        var key = properties.Select(p => p.Key).FirstOrDefault(k => k.Equals(name, StringComparison.OrdinalIgnoreCase)) ?? name;
         var items = properties[key] is JsonArray existing ? existing.DeepClone().AsArray() : [];
         int Find() => area.Index ?? items.ToList().FindIndex(i => i is JsonObject item && (string?)item["ref"] == area.Item);
         switch (area.Action)
@@ -530,6 +537,45 @@ public static class PlanSimulation
                 return;
         }
         properties[key] = items;
+    }
+
+    /// <summary>
+    /// The object that holds the area <paramref name="path"/> names, and its name there: <paramref name="root"/> for a
+    /// property of the content, an inline item's <c>properties</c> for <c>MainArea[0].Area</c>, a local block's values for
+    /// <c>Hero.Area</c>. Null when the values don't have what the path goes through.
+    /// </summary>
+    private static (JsonObject Properties, string Name)? Container(JsonObject root, string path)
+    {
+        var segments = path.Split('.');
+        var current = root;
+        foreach (var segment in segments[..^1])
+        {
+            var position = AreaItemPath.Parse(segment);
+            var key = current.Select(p => p.Key).FirstOrDefault(k => k.Equals(position?.Property ?? segment, StringComparison.OrdinalIgnoreCase));
+            var value = key is null ? null : current[key];
+            if (position is { } item)
+            {
+                if (value is not JsonArray items || item.Index >= items.Count || items[item.Index] is not JsonObject inline || inline["ref"] is not null || inline["guid"] is not null)
+                {
+                    return null;
+                }
+                if (inline["properties"] is not JsonObject values)
+                {
+                    values = [];
+                    inline["properties"] = values;
+                }
+                current = values;
+            }
+            else if (value is JsonObject local)
+            {
+                current = local;
+            }
+            else
+            {
+                return null;
+            }
+        }
+        return (current, segments[^1]);
     }
 
     /// <summary>The content type a planned id is created as; null for an upload whose type follows from the file.</summary>

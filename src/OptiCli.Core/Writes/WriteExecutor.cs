@@ -264,14 +264,14 @@ public sealed class WriteExecutor(
     /// <summary>An area edit as the agent takes it, with its property and item checked.</summary>
     private async Task<AreaOperation> AreaOperationAsync(AreaEdit op, Target target, CancellationToken cancellationToken)
     {
-        var property = PropertyNameCheck.RequireContentArea(session.Model, target.Header.TypeId, op.Property);
+        var area = PropertyNameCheck.AreaPath(session.Model, target.Header.TypeId, op.Property);
         var edit = op.Action switch
         {
-            AreaOps.Add when op.Type is not null => InlineAdd(op, property.Name),
+            AreaOps.Add when op.Type is not null => InlineAdd(op, area),
             AreaOps.Add => new AreaOperation
             {
                 Op = AreaOps.Add,
-                Property = property.Name,
+                Property = area,
                 Ref = (await ResolveAsync(op.Item ?? throw new UsageException("area add needs the block to add: its ref, or --type for a new inline block."), "block", cancellationToken)).ContentRef,
                 At = op.At,
                 DisplayOption = op.Display,
@@ -280,15 +280,15 @@ public sealed class WriteExecutor(
             AreaOps.Set => new AreaOperation
             {
                 Op = AreaOps.Set,
-                Property = property.Name,
+                Property = area,
                 Index = op.Index ?? throw new UsageException("area set needs the inline block's position.", "An inline block has no ref; read the positions with `opticli get <ref> --version latest`."),
-                Values = op.Values is null ? null : PropertyArguments.ToRequest(PropertyNameCheck.UntypedValues(session.Model, op.Values, $"{property.Name}[{op.Index}].")),
+                Values = op.Values is null ? null : PropertyArguments.ToRequest(PropertyNameCheck.UntypedValues(session.Model, op.Values, $"{area}[{op.Index}].")),
                 Name = op.Name,
             },
             AreaOps.Remove or AreaOps.Move => new AreaOperation
             {
                 Op = op.Action,
-                Property = property.Name,
+                Property = area,
                 Index = op.Index,
                 Ref = op.Item is null ? null : (await ResolveAsync(op.Item, "item", cancellationToken)).ContentRef,
                 At = op.Action == AreaOps.Move ? op.To ?? throw new UsageException("area move needs the target position.") : null,

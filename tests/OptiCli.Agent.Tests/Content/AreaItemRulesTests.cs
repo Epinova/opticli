@@ -64,6 +64,17 @@ public class AreaItemRulesTests
         Assert.Equal([-1], AreaItemRules.Match(["123"], [teaser], (_, _) => true));
     }
 
+    [Fact]
+    public void Of_exact_copies_one_with_the_same_name_and_display_option_pairs_first()
+    {
+        var teaser = AreaItemRules.InlineKey(11);
+
+        // Both current blocks are copies of the new item; it names the second one.
+        Assert.Equal([new AreaItemRules.Pairing(1, true)], AreaItemRules.Pair([teaser, teaser], [teaser], (_, _) => true, (_, j) => j == 1));
+        // Without one alike, the first copy.
+        Assert.Equal([new AreaItemRules.Pairing(0, true)], AreaItemRules.Pair([teaser, teaser], [teaser], (_, _) => true, (_, _) => false));
+    }
+
     [Theory]
     [InlineData("MainArea[2]", "MainArea", 2)]
     [InlineData("MainArea[0]", "MainArea", 0)]

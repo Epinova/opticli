@@ -71,6 +71,9 @@ internal sealed class EditUiProperties(CmsCall call, bool check)
 
     private IReadOnlyList<TabDefinition>? _tabs;
 
+    /// <summary>Whether anything is checked: for an editor; never for the developer, who sees and changes everything.</summary>
+    public bool Checks => check;
+
     /// <summary>How the edit UI shows <paramref name="property"/> of <paramref name="owner"/> (content, or a block in it) to the caller.</summary>
     public PropertyAccess Access(IContentData owner, PropertyData property)
     {

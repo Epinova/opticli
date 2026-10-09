@@ -29,23 +29,31 @@ internal static class AreaItemRules
     /// </list>
     /// </summary>
     /// <param name="same">Whether new item <c>i</c> is an exact copy of current item <c>j</c> (asked for inline keys only).</param>
-    public static Pairing[] Pair(IReadOnlyList<string?> current, IReadOnlyList<string?> wanted, Func<int, int, bool>? same = null)
+    /// <param name="alike">
+    /// Of exact copies, whether new item <c>i</c> also has current item <c>j</c>'s name and display option: identical
+    /// blocks pair with the one the item names first, so personalization stays with it.
+    /// </param>
+    public static Pairing[] Pair(IReadOnlyList<string?> current, IReadOnlyList<string?> wanted, Func<int, int, bool>? same = null, Func<int, int, bool>? alike = null)
     {
         var pairs = Enumerable.Repeat(new Pairing(-1, false), wanted.Count).ToArray();
         var taken = new bool[current.Count];
         bool Free(int j, string key) => !taken[j] && string.Equals(current[j], key, StringComparison.OrdinalIgnoreCase);
-        for (var i = 0; i < wanted.Count && same is not null; i++)
+        // Exact copies that are alike first, then any exact copy.
+        foreach (var strict in alike is null ? [false] : new[] { true, false })
         {
-            if (wanted[i] is not { } key || !IsInline(key))
+            for (var i = 0; i < wanted.Count && same is not null; i++)
             {
-                continue;
-            }
-            for (var j = 0; j < current.Count; j++)
-            {
-                if (Free(j, key) && same(i, j))
+                if (pairs[i].Current >= 0 || wanted[i] is not { } key || !IsInline(key))
                 {
-                    (pairs[i], taken[j]) = (new Pairing(j, true), true);
-                    break;
+                    continue;
+                }
+                for (var j = 0; j < current.Count; j++)
+                {
+                    if (Free(j, key) && (!strict || alike!(i, j)) && same(i, j))
+                    {
+                        (pairs[i], taken[j]) = (new Pairing(j, true), true);
+                        break;
+                    }
                 }
             }
         }

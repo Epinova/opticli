@@ -17,16 +17,23 @@ internal sealed class AreaEditor(ContentLocator locator, PropertyWriter writer)
         for (var i = 0; i < operations.Count; i++)
         {
             var op = operations[i];
-            var property = writer.Find(content, op.Property);
-            if (property is not PropertyContentArea)
+            PropertyData property;
+            Action commit;
+            try
             {
-                throw AgentException.Usage($"areaOps[{i}]: '{property.Name}' is a {property.GetType().Name}, not a ContentArea.");
+                property = writer.FindArea(content, op.Property, out commit);
             }
+            catch (AgentException ex) when (ex.Code == AgentErrorCodes.Usage)
+            {
+                throw new AgentException(ex.Code, $"areaOps[{i}]: {ex.Message}", ex.Hint);
+            }
+            // A nested area by its path (MainArea[0].Area), else the property's own name.
+            var name = op.Property.Contains('.') ? op.Property : property.Name;
 
             // Work on a copy and assign it back, so the property registers the change.
             var area = property.Value is ContentArea existing ? (ContentArea)((IReadOnly)existing).CreateWritableClone() : new ContentArea();
             var items = area.Items;
-            var where = $"areaOps[{i}] ({op.Op} on {property.Name})";
+            var where = $"areaOps[{i}] ({op.Op} on {name})";
 
             switch (op.Op)
             {
@@ -80,7 +87,7 @@ internal sealed class AreaEditor(ContentLocator locator, PropertyWriter writer)
                     {
                         throw AgentException.Usage($"{where}: give values or a name to set.");
                     }
-                    writer.ChangeInlineItem(area, property.Name, position, op.Values, op.Name);
+                    writer.ChangeInlineItem(area, name, position, op.Values, op.Name);
                     break;
 
                 case AreaOps.Move:
@@ -97,6 +104,7 @@ internal sealed class AreaEditor(ContentLocator locator, PropertyWriter writer)
             }
 
             property.Value = area;
+            commit();
         }
     }
 

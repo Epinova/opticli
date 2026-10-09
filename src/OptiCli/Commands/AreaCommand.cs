@@ -10,7 +10,7 @@ internal static class AreaCommand
     public static Command Create(GlobalOptions options)
     {
         var content = new ContentOptions();
-        var property = new Argument<string>("property") { Description = "The ContentArea property (see `opticli type <type>`)." };
+        var property = new Argument<string>("property") { Description = "The ContentArea property (see `opticli type <type>`), or a path to one inside a block: 'MainArea[0].Area' (the inline block at position 0), Hero.Area (a local block)." };
         var action = new Argument<string>("action") { Description = "add, remove, move or set." };
         action.AcceptOnlyFromAmong("add", "remove", "move", "set");
         var items = new Argument<string[]>("items")
@@ -31,7 +31,8 @@ internal static class AreaCommand
             item's content (ref:456); an inline block has no ref, so only its position names it. set <position> changes an
             inline block's values (Prop=value, --values) and --name, the rest of it staying as it is (as
             `opticli set <ref> 'MainArea[2].Heading=New'` does). Prints the new version and the area's items before/after.
-            Read the positions in the version you change: `opticli get <ref> --version latest --fields <Prop>`.
+            Read the positions in the version you change: `opticli get <ref> --version latest --fields <Prop>`. An area inside an
+            inline block is named by its path: opticli area 123 'MainArea[0].Area' remove 1.
             --from published edits the published version's area instead of the latest draft's (which is left out).
             Example: opticli area 123 MainArea add 456 --at 0 --display wide --dry-run
             Also:    opticli area 123 MainArea add --type TeaserBlock Heading=Hi --at 0 --dry-run

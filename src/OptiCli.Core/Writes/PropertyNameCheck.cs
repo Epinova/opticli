@@ -218,6 +218,55 @@ public static class PropertyNameCheck
                 Hint("ContentArea properties", model.PropertiesOf(contentTypeId).Where(p => p.TypeName == "ContentArea").Select(p => p.Name), name));
     }
 
+    /// <summary>
+    /// The ContentArea an area edit names, with its exact name: a property of the type, or a path to one inside a block
+    /// (<c>MainArea[0].Area</c>: the inline block at position 0; <c>Hero.Area</c>: a local block). Names are checked as far
+    /// as the type is known: an inline block's type is in the content, so the site checks what follows it.
+    /// </summary>
+    /// <exception cref="UsageException">No such property, not a ContentArea, or a path that doesn't lead to one.</exception>
+    public static string AreaPath(CmsModel model, int contentTypeId, string path)
+    {
+        if (!path.Contains('.') && !path.Contains('['))
+        {
+            return RequireContentArea(model, contentTypeId, path).Name;
+        }
+        var segments = path.Split('.');
+        int? typeId = contentTypeId;
+        var result = new List<string>();
+        for (var i = 0; i < segments.Length; i++)
+        {
+            var segment = segments[i].Trim();
+            var position = AreaItemPath.Parse(segment);
+            if (position is null && segment.Contains('['))
+            {
+                throw new UsageException($"'{segment}' in '{path}' is neither a property name nor an item of a ContentArea, like MainArea[2].");
+            }
+            var name = position?.Property ?? segment;
+            var last = i == segments.Length - 1;
+            if (typeId is { } type)
+            {
+                var definition = Find(model, type, name, "", topLevel: false)!;
+                name = definition.Name;
+                if (last ? position is not null || definition.TypeName != "ContentArea" : position is not null && definition.TypeName != "ContentArea")
+                {
+                    throw new UsageException($"'{path}' doesn't name a ContentArea: '{definition.Name}' is a {definition.TypeName} property{(last && position is not null ? ", and the path ends at an item" : "")}.",
+                        "Name the area: MainArea, or one inside a block, e.g. MainArea[0].Area (the inline block at position 0) or Hero.Area (a local block).");
+                }
+                if (!last && position is null && definition is not { BlockType: not null, IsList: false })
+                {
+                    throw new UsageException($"'{path}' doesn't lead to a ContentArea: '{definition.Name}' is neither a local block nor a ContentArea item.");
+                }
+                typeId = position is null ? definition.BlockType : null;
+            }
+            else if (last && position is not null)
+            {
+                throw new UsageException($"'{path}' ends at an item of a ContentArea, not at a ContentArea.");
+            }
+            result.Add(position is null ? name : $"{name}[{position.Value.Index}]");
+        }
+        return string.Join('.', result);
+    }
+
     private static void Check(CmsModel model, int contentTypeId, JsonObject properties, string prefix, bool topLevel)
     {
         foreach (var (name, value) in properties.ToList())

@@ -109,6 +109,22 @@ public class PropertyNameCheckTests
             prepared.ToJsonString());
     }
 
+    [Theory]
+    [InlineData("mainarea", "MainArea")]
+    [InlineData("mainarea[0].Area", "MainArea[0].Area")]
+    [InlineData("mainarea[0].Area[1].Items", "MainArea[0].Area[1].Items")]
+    public void An_area_edit_names_a_ContentArea_or_a_path_to_one_inside_a_block(string path, string expected) =>
+        Assert.Equal(expected, PropertyNameCheck.AreaPath(Model, ModelFixture.ArticlePage, path));
+
+    [Theory]
+    [InlineData("MainArea[0]", "the path ends at an item")]
+    [InlineData("Heading[0].Area", "'Heading' is a String property")]
+    [InlineData("Heading.Area", "'Heading' is neither a local block nor a ContentArea item")]
+    [InlineData("Hero.Heading", "'Heading' is a String property")]
+    [InlineData("MainArea[x].Area", "is neither a property name nor an item of a ContentArea")]
+    public void An_area_path_that_doesnt_lead_to_a_ContentArea_is_refused(string path, string message) =>
+        Assert.Contains(message, Assert.Throws<UsageException>(() => PropertyNameCheck.AreaPath(Model, ModelFixture.ArticlePage, path)).Message);
+
     [Fact]
     public void Built_in_names_are_only_allowed_at_the_top_level()
     {

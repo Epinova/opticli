@@ -146,7 +146,7 @@ internal sealed class WriteFlow
         var diff = PropertyValues.Diff(before, PropertyValues.Snapshot(writable));
         // What is reported: an editor never sees a hidden property's value, also not in a diff.
         var changes = Call.Properties.Shown(writable, diff);
-        var issues = (precheck ?? []).Concat(InlineBlockWarnings()).Concat(ValidationErrors.Validate(Call, writable, action)).ToList();
+        var issues = (precheck ?? []).Concat(InlineBlockWarnings()).Concat(Writer.Warnings).Concat(ValidationErrors.Validate(Call, writable, action)).ToList();
         var valid = !ValidationErrors.HasErrors(issues);
         var published = Kind(action) == SaveAction.Publish;
 
