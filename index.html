@@ -334,6 +334,18 @@ https://your-site.example/episerver/opticli/mcp</pre>
         <code>opticli skill install</code> again to update the skill.</p>
     </div>
     <ol class="changelog">
+      <li><div class="v"><b>0.16.0</b><span>9 October 2026</span></div>
+        <ul>
+          <li><b>Inline blocks in ContentAreas</b> (CMS 12.20+ and CMS 13), which opticli could only read so far:
+            <code>area 123 MainArea add --type TeaserBlock Heading=Hi</code> adds one, and
+            <code>set 123 'MainArea[2].Heading=New'</code> or <code>area 123 MainArea set 2</code> changes one. The area
+            <code>get</code> printed can be written back as is, also with blocks left out or moved, and <code>area</code>
+            reaches areas inside blocks by their path (<code>'MainArea[0].Items'</code>). Plans and the MCP module take
+            them too, and an editor's write can't drop values they can't see.</li>
+          <li><b>Fixed:</b> the MCP module could refuse every change to a block that isn't content (a block list's item)
+            when its edit UI metadata needed content. Details in the
+            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
+        </ul></li>
       <li><div class="v"><b>0.15.0</b><span>7 October 2026</span></div>
         <ul>
           <li><b>Optimizely CMS 13:</b> one opticli reads and writes CMS 12 and CMS 13 sites, fresh CMS 13 installs and
