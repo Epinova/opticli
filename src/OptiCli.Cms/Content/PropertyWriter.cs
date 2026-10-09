@@ -1093,6 +1093,22 @@ internal sealed class PropertyWriter(
                     yield return lost;
                 }
             }
+            else if (property.Value is System.Collections.IEnumerable list and not string and not ContentArea
+                && property.PropertyValueType is { IsGenericType: true } listType && listType.GetGenericArguments() is [var element]
+                && typeof(BlockData).IsAssignableFrom(element))
+            {
+                // A block list's items: a rebuilt block's list starts from the new block's, given or not, so nothing of
+                // the replaced block's items carries over (BlockList keeps unseen values only from the list it replaces).
+                var k = 0;
+                foreach (var listItem in list.OfType<IContentData>().ToList())
+                {
+                    foreach (var lost in LostUnseen(listItem, blocks.Create(listItem.GetOriginalType()), $"{at}[{k}]", area, index, []))
+                    {
+                        yield return lost;
+                    }
+                    k++;
+                }
+            }
         }
     }
 

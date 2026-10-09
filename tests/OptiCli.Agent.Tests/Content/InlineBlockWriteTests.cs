@@ -25,12 +25,47 @@ public class InlineBlockWriteTests
 
     private const int BoxType = 9;
 
+    private const int ListType = 10;
+
     private static readonly ContentType[] Types =
     [
         new ContentType { ID = ItemType, Name = nameof(PropertyWriterTests.ItemBlock), ModelType = typeof(PropertyWriterTests.ItemBlock) },
         new PageType { ID = 8, Name = "StandardPage", ModelType = typeof(PageData) },
         new ContentType { ID = BoxType, Name = nameof(BoxBlock), ModelType = typeof(BoxBlock) },
+        new ContentType { ID = ListType, Name = nameof(ListBlock), ModelType = typeof(ListBlock) },
     ];
+
+    /// <summary>A block with a block list of its own, whose items have a value the edit UI hides.</summary>
+    public class ListBlock : BlockData
+    {
+        public virtual string? Title { get; set; }
+
+        public virtual IList<PropertyWriterTests.ItemBlock>? Items { get; set; }
+
+        public static ListBlock Create()
+        {
+            var block = new ListBlock();
+            block.Property.Add(nameof(Title), new PropertyString { PropertyDefinitionID = 21 });
+            block.Property.Add(nameof(Items), new PropertyBlockList { PropertyDefinitionID = 22 });
+            return block;
+        }
+    }
+
+    /// <summary>A block list property, as the CMS's is to a writer: its value is the list of blocks.</summary>
+    private sealed class PropertyBlockList : PropertyData
+    {
+        private object? _value;
+
+        public override object? Value { get => _value; set => _value = value; }
+
+        public override PropertyDataType Type => PropertyDataType.LongString;
+
+        public override Type PropertyValueType => typeof(IList<PropertyWriterTests.ItemBlock>);
+
+        public override void ParseToSelf(string value) => throw new NotSupportedException();
+
+        protected override void SetDefaultValue() => _value = null;
+    }
 
     /// <summary>A block with a hidden value, a ContentArea and a local block of its own: for what is inside an inline block.</summary>
     public class BoxBlock : BlockData
@@ -86,7 +121,9 @@ public class InlineBlockWriteTests
         };
         var factory = Recorder<EPiServer.Construction.IContentDataFactory<BlockData>>.Create();
         factory.Recorder.Answer = (method, args) => method.Name != "CreateInstance" ? null
-            : args is [ContentType { ID: BoxType }] ? BoxBlock.Create() : PropertyWriterTests.ItemBlock.Create();
+            : args is [ContentType { ID: BoxType }] ? BoxBlock.Create()
+            : args is [ContentType { ID: ListType }] ? ListBlock.Create()
+            : PropertyWriterTests.ItemBlock.Create();
         var services = new ServiceCollection()
             .AddSingleton(types.Proxy)
             .AddSingleton(Recorder<IContentRepository>.Create().Proxy)
@@ -299,6 +336,29 @@ public class InlineBlockWriteTests
         Assert.Equal("Box changed", box.Property["Title"].Value);
         Assert.Equal(["X", "Y changed"], inside.Select(i => Value(i, "Title")));
         Assert.All(inside, i => Assert.Equal(("g", "anchor"), (i.ContentGroup, CmsApi.RenderSettings(i).Single(s => s.Key == "data-id").Value?.ToString())));
+    }
+
+    [Theory]
+    [InlineData("""{"Title": "Changed"}""")]
+    [InlineData("""{"Title": "Changed", "Items": [{"Title": "li"}]}""")]
+    public void An_editor_cant_drop_values_they_dont_see_in_an_inline_blocks_block_list(string properties)
+    {
+        var list = ListBlock.Create();
+        list.Property["Title"].Value = "List";
+        var listItem = PropertyWriterTests.ItemBlock.Create();
+        listItem.Property["Title"].Value = "li";
+        listItem.Property["Secret"].Value = "list-locked";
+        list.Property["Items"].Value = new List<PropertyWriterTests.ItemBlock> { listItem };
+        var item = new ContentAreaItem();
+        InlineBlocks.Set(item, list, ListType);
+        var owner = Owner(Area(item));
+
+        // The block changed (rebuilt as a new one), its list left out or given again: the item's hidden value would go.
+        var refused = Refused(Writer(CmsCaller.Editor), owner, "{\"Area\": [{\"type\": \"ListBlock\", \"properties\": " + properties + "}]}");
+
+        Assert.Equal((AgentErrorCodes.Usage, AgentErrorReasons.UnseenValues), (refused.Code, refused.Reason));
+        Assert.Contains("Area would lose Area[0].Items[0].Secret", refused.Message);
+        Writer().Apply(owner, Values("{\"Area\": [{\"type\": \"ListBlock\", \"properties\": " + properties + "}]}"));
     }
 
     [Fact]

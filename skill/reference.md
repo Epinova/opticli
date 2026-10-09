@@ -342,7 +342,7 @@ with no `ref`.
   area `get` shows, written back unchanged, changes nothing; with a block left out or moved, the others keep theirs; a
   changed block is what you give. To change part of one block, use `MainArea[2]` or `area set` instead.
 - For an editor (MCP): a whole area can't drop a value they can't see or change in the edit UI, in the block itself, in
-  its local blocks or in the inline blocks of its areas at any depth: `usage` with `reason: "unseenValues"`, naming the
+  its local blocks, the items of its block lists or the inline blocks of its areas at any depth: `usage` with `reason: "unseenValues"`, naming the
   value's full path (`MainArea[0].Area[1].Secret`). Only an exact copy keeps such a block. To change part of it, set
   values by position; to remove a block on purpose, use `areaOps` `remove` with the area's path (`MainArea[0].Area`),
   as the edit UI lets them.

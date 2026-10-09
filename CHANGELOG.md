@@ -20,8 +20,8 @@ again to update the skill.
     personalization, and what the areas inside it pair with) only when which block that is is unambiguous; otherwise a
     warning names the positions whose settings were dropped. So the area `get` shows can be written back as is
     (unchanged, it changes nothing), also with blocks left out or moved.
-  - For an editor (MCP), a whole area can't drop values they can't see or change, in the block, its local blocks or the
-    blocks inside its areas at any depth; the error names the value's path. Removing a block on purpose works by its
+  - For an editor (MCP), a whole area can't drop values they can't see or change, in the block, its local blocks, its
+    block lists' items or the blocks inside its areas at any depth; the error names the value's path. Removing a block on purpose works by its
     area's path.
   - `area add`, `remove`, `move` and `set` take an area inside an inline or local block by its path
     (`'MainArea[0].Items'`), in plans and MCP `areaOps` too, and take an inline block by its position; `ref:` names shared
