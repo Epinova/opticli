@@ -129,7 +129,7 @@ public class InlineBlockWriteTests
             .AddSingleton(Recorder<IContentRepository>.Create().Proxy)
             .AddSingleton(Recorder<IContentVersionRepository>.Create().Proxy)
             .AddSingleton(Recorder<ILanguageBranchRepository>.Create().Proxy)
-            .AddSingleton(Recorder<ITabDefinitionRepository>.Create().Proxy)
+            .AddSingleton(EditUiPropertiesTests.Tabs())
             .AddSingleton<IPrincipalAccessor>(new CmsCallTests.PrincipalAccessor(new GenericPrincipal(new GenericIdentity("developer"), [])))
             .BuildServiceProvider();
         var call = new CmsCall(services, CancellationToken.None, caller);

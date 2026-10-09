@@ -53,7 +53,8 @@ internal interface IEditUiMetadata
 /// </para>
 /// <para>
 /// From the model and the site's settings, a property is hidden when it isn't displayed in edit mode (admin mode's
-/// setting, <c>[ScaffoldColumn(false)]</c>), or is on a tab whose required access the editor lacks on the content; and
+/// setting, <c>[ScaffoldColumn(false)]</c>), or is on a tab whose required access the editor lacks on the content (also
+/// in an inline block or a block list's item, by the content it is in; not in a local block, as the edit UI does); and
 /// read-only with <c>[Editable(false)]</c> or <c>[ReadOnly(true)]</c>. The CMS UI's own metadata
 /// (<see cref="IEditUiMetadata"/>, where the caller has it) adds what editor descriptors and metadata extenders hide or
 /// lock. The edit UI also locks a property that isn't culture-specific outside the master language; opticli refuses
@@ -71,6 +72,12 @@ internal sealed class EditUiProperties(CmsCall call, bool check)
 
     private IReadOnlyList<TabDefinition>? _tabs;
 
+    /// <summary>The blocks that aren't content this call has seen a property hold: in which content, and whether as a local block.</summary>
+    private readonly Dictionary<IContentData, (IContent? Content, bool Local)> _held = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>The content last asked about: what a block no property was seen to hold (one a write just made) is in.</summary>
+    private IContent? _content;
+
     /// <summary>Whether anything is checked: for an editor; never for the developer, who sees and changes everything.</summary>
     public bool Checks => check;
 
@@ -81,6 +88,7 @@ internal sealed class EditUiProperties(CmsCall call, bool check)
         {
             return PropertyAccess.Editable;
         }
+        Hold(owner, property);
         var member = property.IsMetaData ? null : owner.GetOriginalType().GetProperty(property.Name, BindingFlags.Public | BindingFlags.Instance);
         var attributes = member?.GetCustomAttributes(inherit: true).OfType<Attribute>().ToList() ?? [];
         // Built-in metadata the writer allows (PageURLSegment, ...) is on the edit UI's settings, whatever its definition says.
@@ -223,19 +231,79 @@ internal sealed class EditUiProperties(CmsCall call, bool check)
 
     /// <summary>
     /// A tab's required access (admin mode's tabs, <c>[RequiredAccess]</c> on a <c>[GroupDefinitions]</c> constant): the
-    /// edit UI hides the tab's properties from an editor without that access to the content. Only content has tabs; a
-    /// block's properties are shown with the property that holds it.
+    /// edit UI hides the tab's properties from an editor without that access to the content. For a block that isn't
+    /// content it does as its forms do:
+    /// <list type="bullet">
+    /// <item>
+    /// An inline block in a ContentArea, or a block list's item, at any depth: by the editor's access to the content being
+    /// edited. Its form is built for a new block of its type below that content, which gets the content's access rights.
+    /// </item>
+    /// <item>A local block: shown, whatever the tab. Its properties are nested in its owner's form, which no access rights go with.</item>
+    /// </list>
     /// </summary>
+    /// <remarks>
+    /// Two quirks of the edit UI are left out, as they would let an assistant change what the content's access rights
+    /// keep from the editor: the new block is made by the editor, so the content's "Creator" entries apply to them; and a
+    /// block list inside a local or an inline block has its items' form built below the start page. A block a write just
+    /// made (no property was seen to hold it yet) is an inline block or a list item, so the content asked about decides;
+    /// with none, a tab that requires access is hidden.
+    /// </remarks>
     private bool TabShown(IContentData owner, PropertyData property)
     {
-        if (owner is not IContent || owner is not ISecurable securable)
+        _tabs ??= [.. call.Service<ITabDefinitionRepository>().List()];
+        var tab = _tabs.FirstOrDefault(t => t.ID == property.OwnerTab);
+        if (tab is null || tab.RequiredAccess == AccessLevel.NoAccess)
         {
             return true;
         }
-        _tabs ??= [.. call.Service<ITabDefinitionRepository>().List()];
-        var tab = _tabs.FirstOrDefault(t => t.ID == property.OwnerTab);
-        return tab is null || tab.RequiredAccess == AccessLevel.NoAccess
-            || securable.GetSecurityDescriptor().HasAccess(call.Service<IPrincipalAccessor>().Principal, tab.RequiredAccess);
+        if (owner is IContent)
+        {
+            return owner is not ISecurable content || HasAccess(content, tab.RequiredAccess);
+        }
+        var (within, local) = _held.TryGetValue(owner, out var held) ? held : (_content, false);
+        return local || (within is ISecurable securable && HasAccess(securable, tab.RequiredAccess));
+    }
+
+    private bool HasAccess(ISecurable content, AccessLevel level) =>
+        content.GetSecurityDescriptor().HasAccess(call.Service<IPrincipalAccessor>().Principal, level);
+
+    /// <summary>
+    /// Remembers which content the blocks that <paramref name="property"/> of <paramref name="owner"/> holds are in, and
+    /// how: a local block, the inline blocks of a ContentArea, a block list's items. Content asked about becomes the
+    /// content of a block no property was seen to hold.
+    /// </summary>
+    private void Hold(IContentData owner, PropertyData property)
+    {
+        if (owner is IContent content)
+        {
+            _content = content;
+        }
+        // By the value's type first: no other property's value is loaded for this.
+        var type = property.PropertyValueType;
+        var blockList = type.IsGenericType && type.GetGenericArguments() is [var element] && typeof(BlockData).IsAssignableFrom(element);
+        if (!typeof(BlockData).IsAssignableFrom(type) && !typeof(ContentArea).IsAssignableFrom(type) && !blockList)
+        {
+            return;
+        }
+        var within = owner as IContent ?? (_held.TryGetValue(owner, out var held) ? held.Content : _content);
+        switch (property.Value)
+        {
+            case BlockData local and not IContent:
+                _held.TryAdd(local, (within, true));
+                break;
+            case ContentArea area:
+                foreach (var inline in area.Items.Select(Compat.InlineBlocks.Of).OfType<BlockData>())
+                {
+                    _held.TryAdd(inline, (within, false));
+                }
+                break;
+            case System.Collections.IEnumerable items when blockList:
+                foreach (var item in items.OfType<BlockData>().Where(b => b is not IContent))
+                {
+                    _held.TryAdd(item, (within, false));
+                }
+                break;
+        }
     }
 
     /// <summary>The edit UI's metadata for <paramref name="owner"/>; empty without the CMS UI, null when it couldn't be built.</summary>

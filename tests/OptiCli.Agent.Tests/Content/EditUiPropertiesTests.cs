@@ -10,6 +10,7 @@ using EPiServer.SpecializedProperties;
 using Microsoft.Extensions.DependencyInjection;
 using OptiCli.Agent.Tests.Cms;
 using OptiCli.Cms;
+using OptiCli.Cms.Compat;
 using OptiCli.Cms.Content;
 using OptiCli.Protocol;
 
@@ -23,14 +24,22 @@ public class EditUiPropertiesTests
 {
     private const int AdminTab = 42;
 
+    /// <summary>The site's tabs: these, and no others.</summary>
+    internal static ITabDefinitionRepository Tabs(params TabDefinition[] tabs)
+    {
+        var repository = Recorder<ITabDefinitionRepository>.Create();
+        repository.Recorder.Answer = (method, _) => method.Name == nameof(ITabDefinitionRepository.List) ? tabs : null;
+        return repository.Proxy;
+    }
+
     private static IServiceProvider Services(IEditUiMetadata? metadata = null)
     {
-        var tabs = Recorder<ITabDefinitionRepository>.Create();
-        tabs.Recorder.Answer = (method, _) => method.Name == nameof(ITabDefinitionRepository.List)
-            ? new[] { new TabDefinition { ID = AdminTab, Name = "Admin", RequiredAccess = AccessLevel.Administer } }
-            : null;
+        var fields = new ContentType { ID = 7, Name = nameof(FieldsBlock), ModelType = typeof(FieldsBlock) };
+        var types = Recorder<IContentTypeRepository>.Create();
+        types.Recorder.Answer = (method, args) => method.Name == "Load" && args is [7] or [Type] ? fields : null;
         var services = new ServiceCollection()
-            .AddSingleton(tabs.Proxy)
+            .AddSingleton(types.Proxy)
+            .AddSingleton(Tabs(new TabDefinition { ID = AdminTab, Name = "Admin", RequiredAccess = AccessLevel.Administer }))
             .AddSingleton<IPrincipalAccessor>(new CmsCallTests.PrincipalAccessor(new GenericPrincipal(new GenericIdentity("editor@example.com"), [])));
         if (metadata is not null)
         {
@@ -157,6 +166,154 @@ public class EditUiPropertiesTests
         Assert.False(editor.Shown(Definition(), typeof(FieldsBlock).GetProperty(nameof(FieldsBlock.Scaffolded))));
         Assert.False(editor.Shown(Definition(), typeof(FieldsBlock).GetProperty(nameof(FieldsBlock.Locked))));
         Assert.True(Developer().Shown(Definition(displayEditUI: false), null));
+    }
+
+    /// <summary>What an editor without Administer has on content.</summary>
+    private const AccessLevel Editing = AccessLevel.Read | AccessLevel.Create | AccessLevel.Edit | AccessLevel.Publish;
+
+    /// <summary>A <see cref="FieldsBlock"/> with a property on the tab only those with Administer on the content see.</summary>
+    private static FieldsBlock Tabbed()
+    {
+        var block = FieldsBlock.Create();
+        block.Property.Add("AdminTab", new PropertyString { PropertyDefinitionID = 20, OwnerTab = AdminTab });
+        return block;
+    }
+
+    [Theory]
+    [InlineData(Editing)]
+    [InlineData(AccessLevel.FullAccess)]
+    public void A_local_blocks_properties_are_shown_whatever_their_tab_requires_as_the_edit_UI_does(AccessLevel granted)
+    {
+        var page = new CmsCallTests.Secured(new ContentReference(5), granted);
+        var local = Tabbed();
+        var item = Tabbed();
+        var inItem = Tabbed();
+        page.Property.Add("Local", new PropertyBlock<FieldsBlock>(local) { PropertyDefinitionID = 30 });
+        page.Property.Add("Items", new PropertyFieldsList { PropertyDefinitionID = 31, Value = new List<FieldsBlock> { item } });
+        item.Property.Add("Inner", new PropertyBlock<FieldsBlock>(inItem) { PropertyDefinitionID = 32 });
+        var editor = Editor();
+
+        // As get_content reads: each property before what it holds.
+        Assert.Equal(PropertyAccess.Editable, editor.Access(page, page.Property["Local"]));
+        Assert.Equal(PropertyAccess.Editable, editor.Access(local, local.Property["AdminTab"]));
+        Assert.Equal(PropertyAccess.Editable, editor.Access(page, page.Property["Items"]));
+        Assert.Equal(PropertyAccess.Editable, editor.Access(item, item.Property["Inner"]));
+        Assert.Equal(PropertyAccess.Editable, editor.Access(inItem, inItem.Property["AdminTab"]));
+        // Other settings still count.
+        Assert.Equal(PropertyAccess.Hidden, editor.Access(local, local.Property["Scaffolded"]));
+    }
+
+    [Theory]
+    [InlineData(Editing, false)]
+    [InlineData(AccessLevel.FullAccess, true)]
+    public void A_block_lists_items_show_a_tab_by_its_required_access_on_the_content_they_are_in(AccessLevel granted, bool shown)
+    {
+        var expected = shown ? PropertyAccess.Editable : PropertyAccess.Hidden;
+        var page = new CmsCallTests.Secured(new ContentReference(5), granted);
+        var item = Tabbed();
+        var local = Tabbed();
+        var nested = Tabbed();
+        page.Property.Add("Items", new PropertyFieldsList { PropertyDefinitionID = 30, Value = new List<FieldsBlock> { item } });
+        page.Property.Add("Local", new PropertyBlock<FieldsBlock>(local) { PropertyDefinitionID = 31 });
+        local.Property.Add("Items", new PropertyFieldsList { PropertyDefinitionID = 32, Value = new List<FieldsBlock> { nested } });
+        var editor = Editor();
+
+        Assert.Equal(PropertyAccess.Editable, editor.Access(page, page.Property["Items"]));
+        Assert.Equal(expected, editor.Access(item, item.Property["AdminTab"]));
+        Assert.Equal(PropertyAccess.Editable, editor.Access(item, item.Property["Heading"]));
+        // A list in a local block: its items by the content too.
+        Assert.Equal(PropertyAccess.Editable, editor.Access(page, page.Property["Local"]));
+        Assert.Equal(PropertyAccess.Editable, editor.Access(local, local.Property["Items"]));
+        Assert.Equal(expected, editor.Access(nested, nested.Property["AdminTab"]));
+        Assert.Equal(PropertyAccess.Editable, Developer().Access(item, item.Property["AdminTab"]));
+    }
+
+    [Fact]
+    public void A_block_no_property_was_seen_to_hold_shows_a_tab_by_the_content_asked_about_and_without_one_hides_it()
+    {
+        var made = Tabbed();
+        var editor = Editor();
+        Assert.Equal(PropertyAccess.Hidden, editor.Access(made, made.Property["AdminTab"]));
+        Assert.Equal(PropertyAccess.Editable, editor.Access(made, made.Property["Heading"]));
+
+        var page = new CmsCallTests.Secured(new ContentReference(5), Editing);
+        page.Property.Add("Teaser", new PropertyString { PropertyDefinitionID = 1 });
+        editor = Editor();
+        editor.Access(page, page.Property["Teaser"]);
+        Assert.Equal(PropertyAccess.Hidden, editor.Access(made, made.Property["AdminTab"]));
+
+        var admin = new CmsCallTests.Secured(new ContentReference(6), AccessLevel.FullAccess);
+        admin.Property.Add("Teaser", new PropertyString { PropertyDefinitionID = 1 });
+        editor = Editor();
+        editor.Access(admin, admin.Property["Teaser"]);
+        Assert.Equal(PropertyAccess.Editable, editor.Access(made, made.Property["AdminTab"]));
+        Assert.Throws<AgentException>(() => Editor().RequireEditable(made, made.Property["AdminTab"]));
+    }
+
+#if CMS13
+    [Theory]
+    [InlineData(Editing, false)]
+    [InlineData(AccessLevel.FullAccess, true)]
+    public void An_inline_block_shows_a_tab_by_its_required_access_on_the_content_it_is_in_also_nested_and_in_a_diff(AccessLevel granted, bool shown)
+    {
+        var expected = shown ? PropertyAccess.Editable : PropertyAccess.Hidden;
+        var page = new CmsCallTests.Secured(new ContentReference(5), granted);
+        var inline = Tabbed();
+        var local = Tabbed();
+        var nested = Tabbed();
+        var inInline = Tabbed();
+        var inner = Tabbed();
+        page.Property.Add("Area", new PropertyContentArea { PropertyDefinitionID = 30, Value = Area(inline) });
+        page.Property.Add("Local", new PropertyBlock<FieldsBlock>(local) { PropertyDefinitionID = 31 });
+        local.Property.Add("Area", new PropertyContentArea { PropertyDefinitionID = 32, Value = Area(nested) });
+        inline.Property.Add("Area", new PropertyContentArea { PropertyDefinitionID = 33, Value = Area(inInline) });
+        inline.Property.Add("Inner", new PropertyBlock<FieldsBlock>(inner) { PropertyDefinitionID = 34 });
+        var editor = Editor();
+
+        Assert.Equal(PropertyAccess.Editable, editor.Access(page, page.Property["Area"]));
+        Assert.Equal(expected, editor.Access(inline, inline.Property["AdminTab"]));
+        Assert.Equal(PropertyAccess.Editable, editor.Access(inline, inline.Property["Heading"]));
+        // In a local block's area, and in an inline block's: by the content; a local block in an inline block: shown.
+        Assert.Equal(PropertyAccess.Editable, editor.Access(page, page.Property["Local"]));
+        Assert.Equal(PropertyAccess.Editable, editor.Access(local, local.Property["Area"]));
+        Assert.Equal(expected, editor.Access(nested, nested.Property["AdminTab"]));
+        Assert.Equal(PropertyAccess.Editable, editor.Access(inline, inline.Property["Area"]));
+        Assert.Equal(expected, editor.Access(inInline, inInline.Property["AdminTab"]));
+        Assert.Equal(PropertyAccess.Editable, editor.Access(inline, inline.Property["Inner"]));
+        Assert.Equal(PropertyAccess.Editable, editor.Access(inner, inner.Property["AdminTab"]));
+
+        // A diff of the area shows the tab's value only to those who see it.
+        var before = JsonSerializer.SerializeToElement(new[] { new { inline = true, type = nameof(FieldsBlock), properties = new { Heading = "a", AdminTab = "x" } } });
+        var after = JsonSerializer.SerializeToElement(new[] { new { inline = true, type = nameof(FieldsBlock), properties = new { Heading = "b", AdminTab = "y" } } });
+        var diff = Assert.Single(Editor().Shown(page, [new PropertyChange("Area", before, after)]));
+        Assert.Equal(shown, diff.After!.Value.GetRawText().Contains("\"AdminTab\""));
+        Assert.Contains("\"Heading\":\"b\"", diff.After!.Value.GetRawText());
+    }
+
+    private static ContentArea Area(BlockData inline)
+    {
+        var item = new ContentAreaItem();
+        InlineBlocks.Set(item, inline, 7);
+        var area = new ContentArea();
+        area.Items.Add(item);
+        return area;
+    }
+#endif
+
+    /// <summary>A block list of <see cref="FieldsBlock"/>, as the CMS's is to the checks: its value is the list.</summary>
+    private sealed class PropertyFieldsList : PropertyData
+    {
+        private object? _value;
+
+        public override object? Value { get => _value; set => _value = value; }
+
+        public override PropertyDataType Type => PropertyDataType.LongString;
+
+        public override Type PropertyValueType => typeof(IList<FieldsBlock>);
+
+        public override void ParseToSelf(string value) => throw new NotSupportedException();
+
+        protected override void SetDefaultValue() => _value = null;
     }
 
     /// <summary>A block type with every kind of setting that hides or locks a property.</summary>

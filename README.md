@@ -993,13 +993,14 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   - the access rights per language (admin mode, Languages): an editor who may not edit a language gets no draft,
     publish, unpublish or discard in it, and can't add it to content;
   - properties the edit UI hides or locks for the editor: not displayed in edit mode (`[ScaffoldColumn(false)]`),
-    read-only (`[Editable(false)]`), on a tab whose required access they lack, or hidden or locked for them by an editor
-    descriptor or metadata extender. The module asks the CMS UI's own metadata, as the edit UI's form builds it (local
-    blocks nested in their content's), and when that can't be built for an item, the model's settings decide what is
-    shown and nothing of the item may be changed. `get_content` leaves these properties out, and so do diffs, also
-    inside local blocks and block lists; writing them is refused, and a block list rewritten keeps what its items had of
-    them. `get_content_type` leaves out what the type's settings hide or lock; what depends on the content and the
-    editor only `get_content` knows;
+    read-only (`[Editable(false)]`), on a tab whose required access they lack on the content (in an inline block or a
+    block list's item too, by the content it is in; not in a local block, which the edit UI shows whatever its tab), or
+    hidden or locked for them by an editor descriptor or metadata extender. The module asks the CMS UI's own metadata,
+    as the edit UI's form builds it (local blocks nested in their content's), and when that can't be built for an item,
+    the model's settings decide what is shown and nothing of the item may be changed. `get_content` leaves these
+    properties out, and so do diffs, also inside local blocks and block lists; writing them is refused, and a block list
+    rewritten keeps what its items had of them. `get_content_type` leaves out what the type's settings hide or lock;
+    what depends on the content and the editor only `get_content` knows;
   - content references: every one is looked up as the editor, also in rich text (embedded blocks), so an assistant
     can't point to content the edit UI's pickers wouldn't offer, or learn from a dry run that it exists. The CMS's own
     text forms of a ContentArea or a reference list, which skip that, are refused: give an array of refs;
@@ -1308,11 +1309,11 @@ the test site's own database and changes it back). `McpFixture.cs` also adds `Re
 WebAdmins may create; `McpFieldsBlock`, with a property not shown in edit mode, a read-only one, one an editor
 descriptor locks for all but WebAdmins and one on a tab that needs Administer, plus rich text, link, URL, ContentArea
 and reference properties, a local block and a block list (`McpInnerBlock`, with a property locked for all but
-WebAdmins); an "opticli write-back fixture" block with a video's `<iframe>` and an sms: link; the language `de`,
-enabled and editable by administrators only; and a folder "opticli find fixture" in the global assets with one folder
-editors see and one only administrators see. `setup.sh` gives the site high `RateLimits`, as the tests sign in many
-times a minute, and a `RefreshTokenReuseGrace` of 3 seconds, so the reuse test needn't wait a minute. The tests are
-skipped unless the site is configured, and delete the content they create:
+WebAdmins and one on the tab that needs Administer); an "opticli write-back fixture" block with a video's `<iframe>` and
+an sms: link; the language `de`, enabled and editable by administrators only; and a folder "opticli find fixture" in the
+global assets with one folder editors see and one only administrators see. `setup.sh` gives the site high `RateLimits`,
+as the tests sign in many times a minute, and a `RefreshTokenReuseGrace` of 3 seconds, so the reuse test needn't wait a
+minute. The tests are skipped unless the site is configured, and delete the content they create:
 
 ```sh
 SQLCMDPASSWORD=... FRESH=1 tests/fixtures/mcp/setup.sh path/to/AlloyEdge path/to/AlloyMcp

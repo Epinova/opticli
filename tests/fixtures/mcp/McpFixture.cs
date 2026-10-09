@@ -73,7 +73,10 @@ public class McpFieldsBlock : BlockData
     public virtual IList<McpInnerBlock> Items { get; set; }
 }
 
-/// <summary>The local block and block list item of <see cref="McpFieldsBlock"/>, with a property locked for all but WebAdmins.</summary>
+/// <summary>
+/// The local block and block list item of <see cref="McpFieldsBlock"/>, with a property locked for all but WebAdmins and
+/// one on the tab only administrators see.
+/// </summary>
 [ContentType(GUID = "9c2a5d3e-7f4b-4c6d-8e9f-0a1b2c3d4e5f", DisplayName = "MCP inner block", AvailableInEditMode = false)]
 public class McpInnerBlock : BlockData
 {
@@ -81,6 +84,9 @@ public class McpInnerBlock : BlockData
 
     [UIHint(McpAdminOnlyEditorDescriptor.Hint)]
     public virtual string AdminOnly { get; set; }
+
+    [Display(GroupName = McpFixtureTabs.AdminOnly)]
+    public virtual string AdminTab { get; set; }
 }
 
 /// <summary>Locks a property for everyone but WebAdmins, as a site's editor descriptor or metadata extender may.</summary>

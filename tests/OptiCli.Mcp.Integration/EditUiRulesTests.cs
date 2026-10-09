@@ -273,5 +273,48 @@ public sealed class EditUiRulesTests(SharedSessions sessions)
         }
     }
 
+    [McpSiteFact]
+    public async Task A_tab_that_needs_Administer_hides_a_block_lists_items_values_from_an_editor_but_not_a_local_blocks()
+    {
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var admin = await sessions.ForAsync(TestUsers.Admin);
+        var start = WritingTests.Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        // McpInnerBlock.AdminTab is on a tab that needs Administer, which the editor hasn't got on the block. The edit UI
+        // hides it in the block list's items (each item's form is made as a new block below the content) but shows it in
+        // the local block, whose form has no access rights of its own.
+        var block = WritingTests.Id((await editor.OkAsync("create_content", new { type = "McpFieldsBlock", name = ScratchName(), forContent = start, properties = new { Heading = "Tabs" } })).GetProperty("content"));
+        try
+        {
+            await admin.OkAsync("update_content", new
+            {
+                reference = block,
+                properties = new { Inner = new { Title = "Local", AdminTab = "local-tab" }, Items = new[] { new { Title = "Item", AdminTab = "item-tab" } } },
+            });
+
+            var read = await editor.OkAsync("get_content", new { reference = block, version = "latest" });
+            Assert.Contains("local-tab", read.GetProperty("properties").GetProperty("Inner").GetRawText());
+            Assert.DoesNotContain("item-tab", read.GetRawText());
+            Assert.Contains("item-tab", (await admin.OkAsync("get_content", new { reference = block, version = "latest" })).GetRawText());
+
+            await editor.OkAsync("update_content", new { reference = block, properties = new { Inner = new { AdminTab = "x" } }, dryRun = true });
+            Assert.Contains("'AdminTab' is not editable in the CMS edit UI for you",
+                (await editor.ErrorAsync("update_content", new { reference = block, properties = new { Items = new[] { new { Title = "Item", AdminTab = "x" } } }, dryRun = true })).GetProperty("message").GetString());
+            await admin.OkAsync("update_content", new { reference = block, properties = new { Items = new[] { new { Title = "Item", AdminTab = "x" } } }, dryRun = true });
+
+            // The list rewritten keeps the value, and its diff doesn't show it.
+            var diff = await editor.OkAsync("update_content", new { reference = block, properties = new { Items = new[] { new { Title = "Item renamed" } } }, dryRun = true });
+            Assert.Contains("Item renamed", diff.GetProperty("changes").GetRawText());
+            Assert.DoesNotContain("item-tab", diff.GetRawText());
+            await editor.OkAsync("update_content", new { reference = block, properties = new { Items = new[] { new { Title = "Item renamed" } } } });
+            var items = (await admin.OkAsync("get_content", new { reference = block, version = "latest" })).GetProperty("properties").GetProperty("Items").GetRawText();
+            Assert.Contains("Item renamed", items);
+            Assert.Contains("item-tab", items);
+        }
+        finally
+        {
+            await WritingTests.DeleteAsync(editor, block);
+        }
+    }
+
     private static List<string> Names(JsonElement properties) => [.. properties.EnumerateObject().Select(p => p.Name)];
 }

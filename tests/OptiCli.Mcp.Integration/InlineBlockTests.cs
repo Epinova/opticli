@@ -167,4 +167,70 @@ public sealed class InlineBlockTests(SharedSessions sessions)
             await WritingTests.DeleteAsync(editor, page);
         }
     }
+
+    [McpSiteFact]
+    public async Task A_tab_that_needs_Administer_on_the_page_hides_an_inline_blocks_values_from_an_editor_but_not_its_local_blocks()
+    {
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var admin = await sessions.ForAsync(TestUsers.Admin);
+        var start = WritingTests.Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        var page = WritingTests.Id((await editor.OkAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = start })).GetProperty("content"));
+        try
+        {
+            // AdminTab (McpFixture.cs) is on a tab that needs Administer, which the editor hasn't got on the page. The edit UI
+            // hides it in an inline block, in the blocks of its area and in its block list's items, as on a shared block, but
+            // shows it in a local block, whose form has no access rights of its own.
+            var outer = JsonNode.Parse("""
+                {"type": "McpFieldsBlock", "properties": {"Heading": "Outer", "AdminTab": "outer-tab",
+                  "Area": [{"type": "McpFieldsBlock", "properties": {"Heading": "Nested", "AdminTab": "nested-tab"}}],
+                  "Inner": {"Title": "Inner", "AdminTab": "inner-tab"},
+                  "Items": [{"Title": "Item", "AdminTab": "item-tab"}]}}
+                """)!;
+            await admin.OkAsync("update_content", new { reference = page, properties = new Dictionary<string, JsonNode> { ["MainContentArea"] = new JsonArray(outer) } });
+            string[] hidden = ["outer-tab", "nested-tab", "item-tab"];
+
+            var asEditor = (await editor.OkAsync("get_content", new { reference = page, version = "latest" })).GetRawText();
+            Assert.All(hidden, value => Assert.DoesNotContain(value, asEditor));
+            Assert.Contains("inner-tab", asEditor);
+            var asAdmin = (await admin.OkAsync("get_content", new { reference = page, version = "latest" })).GetRawText();
+            Assert.All([.. hidden, "inner-tab"], value => Assert.Contains(value, asAdmin));
+
+            // Not set by position, nor by areaOps, nor in a new block, a nested area's block or a block list's item.
+            var x = new Dictionary<string, string> { ["AdminTab"] = "x" };
+            foreach (var refused in new[]
+            {
+                await editor.ErrorAsync("update_content", new { reference = page, properties = new Dictionary<string, object> { ["MainContentArea[0]"] = x }, dryRun = true }),
+                await editor.ErrorAsync("update_content", new { reference = page, areaOps = new[] { new { op = "set", property = "MainContentArea", index = 0, values = x } }, dryRun = true }),
+                await editor.ErrorAsync("update_content", new { reference = page, areaOps = new[] { new { op = "add", property = "MainContentArea", type = "McpFieldsBlock", values = x } }, dryRun = true }),
+                await editor.ErrorAsync("update_content", new { reference = page, areaOps = new[] { new { op = "set", property = "MainContentArea[0].Area", index = 0, values = x } }, dryRun = true }),
+                await editor.ErrorAsync("update_content", new { reference = page, properties = new Dictionary<string, object> { ["MainContentArea[0]"] = new { Items = new[] { new { Title = "Item", AdminTab = "x" } } } }, dryRun = true }),
+            })
+            {
+                Assert.Equal("usage", refused.GetProperty("code").GetString());
+                Assert.Contains("'AdminTab' is not editable in the CMS edit UI for you", refused.GetProperty("message").GetString());
+            }
+            await admin.OkAsync("update_content", new { reference = page, properties = new Dictionary<string, object> { ["MainContentArea[0]"] = x }, dryRun = true });
+            await admin.OkAsync("update_content", new { reference = page, areaOps = new[] { new { op = "set", property = "MainContentArea[0].Area", index = 0, values = x } }, dryRun = true });
+            await editor.OkAsync("update_content", new { reference = page, properties = new Dictionary<string, object> { ["MainContentArea[0]"] = new { Inner = x } }, dryRun = true });
+
+            // The area written back whole, changed, would lose the value; by position, the rest stays, and no diff shows it.
+            var area = Writable(Area(await editor.OkAsync("get_content", new { reference = page, version = "latest" })));
+            area[0]!["properties"]!["Heading"] = "Changed whole";
+            var whole = await editor.ErrorAsync("update_content", new { reference = page, properties = new Dictionary<string, JsonNode> { ["MainContentArea"] = area }, dryRun = true });
+            Assert.Equal(("usage", "unseenValues"), (whole.GetProperty("code").GetString(), whole.GetProperty("reason").GetString()));
+            Assert.Contains("MainContentArea would lose MainContentArea[0].AdminTab", whole.GetProperty("message").GetString());
+            var changed = new Dictionary<string, object> { ["MainContentArea[0]"] = new { Heading = "Changed", Items = new[] { new { Title = "Item renamed" } } } };
+            var diff = await editor.OkAsync("update_content", new { reference = page, properties = changed, dryRun = true });
+            Assert.Contains("Item renamed", diff.GetProperty("changes").GetRawText());
+            Assert.All(hidden, value => Assert.DoesNotContain(value, diff.GetRawText()));
+            await editor.OkAsync("update_content", new { reference = page, properties = changed });
+            var kept = (await admin.OkAsync("get_content", new { reference = page, version = "latest" })).GetRawText();
+            Assert.Contains("Item renamed", kept);
+            Assert.All([.. hidden, "inner-tab"], value => Assert.Contains(value, kept));
+        }
+        finally
+        {
+            await WritingTests.DeleteAsync(editor, page);
+        }
+    }
 }

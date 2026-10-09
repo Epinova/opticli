@@ -3,6 +3,16 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## Unreleased
+
+### Fixed
+
+- The MCP module hides a property on a tab that requires access the editor lacks on the content (a tab only
+  administrators see, say) in inline blocks and block lists' items too, as the edit UI does: `get_content` and diffs
+  leave it out, writing it is refused (by position, `areaOps`, in a new block or a nested area's), and a whole area or
+  list written back keeps it. It was only applied to content's own properties, so an editor's assistant could read and
+  change such a property in an inline block or a list item. A local block's properties stay shown, as in the edit UI.
+
 ## 0.16.0 (9 October 2026)
 
 ### New

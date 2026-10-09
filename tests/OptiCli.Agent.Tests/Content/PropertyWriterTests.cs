@@ -29,7 +29,7 @@ public class PropertyWriterTests
             .AddSingleton(Recorder<IContentRepository>.Create().Proxy)
             .AddSingleton(Recorder<IContentVersionRepository>.Create().Proxy)
             .AddSingleton(Recorder<ILanguageBranchRepository>.Create().Proxy)
-            .AddSingleton(Recorder<ITabDefinitionRepository>.Create().Proxy)
+            .AddSingleton(EditUiPropertiesTests.Tabs())
             .AddSingleton<IPrincipalAccessor>(new CmsCallTests.PrincipalAccessor(new GenericPrincipal(new GenericIdentity("editor@example.com"), [])))
             .BuildServiceProvider();
         var call = new CmsCall(services, CancellationToken.None, caller);
@@ -64,7 +64,7 @@ public class PropertyWriterTests
             .AddSingleton(Recorder<IContentRepository>.Create().Proxy)
             .AddSingleton(Recorder<IContentVersionRepository>.Create().Proxy)
             .AddSingleton(Recorder<ILanguageBranchRepository>.Create().Proxy)
-            .AddSingleton(Recorder<ITabDefinitionRepository>.Create().Proxy)
+            .AddSingleton(EditUiPropertiesTests.Tabs())
             .AddSingleton<IPrincipalAccessor>(new CmsCallTests.PrincipalAccessor(new GenericPrincipal(new GenericIdentity("developer"), [])))
             .BuildServiceProvider();
         var call = new CmsCall(services, CancellationToken.None, CmsCaller.Developer);
