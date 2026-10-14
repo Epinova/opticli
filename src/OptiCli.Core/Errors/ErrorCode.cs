@@ -10,6 +10,12 @@ public enum ErrorCode
     NotFound,
     Refused,
     Unreachable,
+
+    /// <summary>
+    /// The database server answered but refused the login: no user for the identity in the database, a wrong password,
+    /// or a database that doesn't exist (exit 4, as <see cref="Unreachable"/>).
+    /// </summary>
+    LoginFailed,
     Conflict,
 
     /// <summary>The CMS's validation rejected a write (or a dry run found it would).</summary>
@@ -53,7 +59,7 @@ public static class ExitCodes
         ErrorCode.Usage => Usage,
         ErrorCode.NotFound => NotFound,
         ErrorCode.Refused => Refused,
-        ErrorCode.Unreachable or ErrorCode.Timeout => Unreachable,
+        ErrorCode.Unreachable or ErrorCode.LoginFailed or ErrorCode.Timeout => Unreachable,
         ErrorCode.Conflict or ErrorCode.Validation or ErrorCode.Drift => Conflict,
         ErrorCode.NeedsSelection => NeedsSelection,
         ErrorCode.JobFailed => JobFailed,
@@ -69,6 +75,7 @@ public static class ExitCodes
         ErrorCode.NotFound => "not_found",
         ErrorCode.Refused => "refused",
         ErrorCode.Unreachable => "unreachable",
+        ErrorCode.LoginFailed => "login_failed",
         ErrorCode.Conflict => "conflict",
         ErrorCode.Validation => "validation",
         ErrorCode.NeedsSelection => "needs_selection",

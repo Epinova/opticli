@@ -59,8 +59,8 @@ internal partial class Program
               line. Lists return 50 items: pass meta.next as --cursor for more, or raise --limit.
             Errors: {"ok": false, "error": {"code", "message", "hint"}}; the hint says what to do next.
             Exit codes: 0 ok, 1 usage, 2 not found, 3 refused by a safety rule, 4 database/site unreachable (or a wait timed
-              out), 5 write conflict, validation failure or unconfirmed drift (a shared database that differs from this build:
-              `opticli drift`),
+              out, or the database refused the login: login_failed), 5 write conflict, validation failure or unconfirmed
+              drift (a shared database that differs from this build: `opticli drift`),
               6 the user must choose the development database first (error.details lists the choices),
               7 a job `opticli jobs run` ran didn't succeed.
             Details and an example for each command: opticli <command> --help

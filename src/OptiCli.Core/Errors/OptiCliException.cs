@@ -21,6 +21,7 @@ public abstract class OptiCliException(ErrorCode code, string message, string? h
         ErrorCode.NotFound => new NotFoundException(message, hint) { Details = details },
         ErrorCode.Refused => new RefusedException(message, hint) { Details = details },
         ErrorCode.Unreachable => new UnreachableException(message, hint) { Details = details },
+        ErrorCode.LoginFailed => new LoginFailedException(message, hint) { Details = details },
         ErrorCode.Conflict => new ConflictException(message, hint) { Details = details },
         ErrorCode.Validation => new ContentValidationException(message, hint) { Details = details },
         ErrorCode.NeedsSelection => new NeedsSelectionException(message, hint) { Details = details },
@@ -47,6 +48,10 @@ public sealed class RefusedException(string message, string? hint = null)
 /// <summary>The database or the site's agent could not be reached.</summary>
 public sealed class UnreachableException(string message, string? hint = null, Exception? inner = null)
     : OptiCliException(ErrorCode.Unreachable, message, hint, inner);
+
+/// <summary>The database server was reached but refused the login; <see cref="OptiCliException.Details"/> names the identity when known.</summary>
+public sealed class LoginFailedException(string message, string? hint = null, Exception? inner = null)
+    : OptiCliException(ErrorCode.LoginFailed, message, hint, inner);
 
 /// <summary>A write conflicted with a newer version, or doesn't apply to the content's current state.</summary>
 public sealed class ConflictException(string message, string? hint = null)

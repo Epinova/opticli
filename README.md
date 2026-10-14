@@ -37,7 +37,12 @@ In this README, "site agent" means that injected assembly. "Coding agent" means 
   you have checked out. What differs on CMS 13 is under [CMS 13](#cms-13).
 - Its database on **SQL Server**: a local instance, LocalDB (Windows), a container, or a remote development database
   such as Azure SQL. For Microsoft Entra ID authentication (`Authentication=Active Directory Default`), sign in with
-  `az login` first.
+  `az login` first. The Azure CLI keeps one account per subscription, so signing in with a second account for the
+  same subscription replaces the first. To keep both, give the other one its own Azure CLI folder: `export
+  AZURE_CONFIG_DIR=~/.azure-other` (in that shell; opticli, the site `serve` starts and `az` all follow it), then
+  `az login`. If the site `serve` starts can't sign in while opticli's reads work, its `DefaultAzureCredential` may be
+  trying another credential first: `AZURE_TOKEN_CREDENTIALS=AzureCliCredential` makes it use the Azure CLI's sign-in
+  (Azure.Identity 1.15 or newer in the site; 1.14 takes only `dev`, older versions ignore it). opticli doesn't set it.
 - For writes only:
   - The site must build and start locally in the `Development` environment, with whatever it needs to start (its
     own secrets and services).
@@ -758,6 +763,7 @@ the site's own, newer CMS assemblies at runtime. It ships no copies of them.
 | 2 | `not_found` | project, connection string, content, type or version not found |
 | 3 | `refused` | a safety rule blocked it |
 | 4 | `unreachable` | database or site agent not reachable, or a query failed on the server (a write that timed out may still have been saved) |
+| 4 | `login_failed` | the database server answered but refused the login: the identity has no user in the database (`error.details.identity` names it, also for Microsoft Entra), a wrong password, or a database that doesn't exist |
 | 4 | `timeout` | `jobs run --timeout` ran out: the job goes on running |
 | 5 | `conflict` / `validation` / `drift` | a newer version exists, a publish would include someone else's unpublished changes (`details.reason: "pendingDraft"`), the CMS rejected the values, or a write against a shared database that differs from the build wasn't confirmed (`details` is the drift report) |
 | 6 | `needs_selection` | the user must choose the development database first (`error.details.choices`) |

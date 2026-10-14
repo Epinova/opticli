@@ -149,7 +149,7 @@ placed by reference has `content: {ref, ...}` (its values are its own: `set <its
   not reachable, `5` write conflict, validation failure (`error.details` lists every issue) or `drift` (see Rules),
   `6` the user must choose the development database (see "Which database"), `7` a job `jobs run` ran didn't succeed
   (`error.details.status`, `message`), `130` interrupted (Ctrl+C). `timeout` (exit 4) from `jobs run --timeout`: the
-  job still runs.
+  job still runs. `login_failed` (exit 4): the database server refused the login (see reference.md).
 - `meta.warnings` means the result is valid but you should know something (e.g. a search was capped).
 - Statuses: `published`, `checkedOut` (draft), `checkedIn` (ready to publish), `previouslyPublished`,
   `delayedPublish` (scheduled), `awaitingApproval`, `rejected`. Deleted items (in the recycle bin) say `deleted: true`.

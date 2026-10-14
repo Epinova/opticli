@@ -313,9 +313,12 @@ internal static class ServeCommand
         var resolution = context.ResolveConnection();
         if (!resolution.IsDevelopment)
         {
+            var choose = resolution.Chosen is { IsSelectable: true, Id: { } id }
+                ? $"If it is the development database, the user makes it so with `opticli db use {id}` (ask them; don't choose for them)."
+                : "Only a connection string from the site's configuration can be chosen as the development database (`opticli db list`).";
             throw new RefusedException(
                 $"Not running the site against '{connection.Database}' on remote server '{connection.Server}': it is not this project's development database.",
-                "The site only runs against a local database or the development database the user chose (`opticli db list`). Reads with --db work; writes to other environments are not supported.");
+                $"The site only runs against a local database or the development database the user chose. {choose} Reads with --db work; writes to other environments are not supported.");
         }
         return connection;
     }

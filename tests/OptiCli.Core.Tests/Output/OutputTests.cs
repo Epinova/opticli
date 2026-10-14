@@ -28,6 +28,7 @@ public class OutputTests
     [InlineData(ErrorCode.NotFound, "not_found", 2)]
     [InlineData(ErrorCode.Refused, "refused", 3)]
     [InlineData(ErrorCode.Unreachable, "unreachable", 4)]
+    [InlineData(ErrorCode.LoginFailed, "login_failed", 4)]
     [InlineData(ErrorCode.Conflict, "conflict", 5)]
     [InlineData(ErrorCode.Validation, "validation", 5)]
     [InlineData(ErrorCode.Internal, "internal", 1)]

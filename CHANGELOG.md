@@ -3,6 +3,25 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## Unreleased
+
+### Fixed
+
+- A database server that answers but refuses the login now gives `login_failed` (still exit 4) instead of
+  `unreachable`, whose hint about the network, the firewall and `az login` pointed the wrong way. For Microsoft Entra
+  authentication, where the server says only "Login failed for user '<token-identified principal>'", the message and
+  `error.details.identity` name the identity that signed in (UPN, object id, application id, tenant), and the hint says
+  it has no user in the database and how one is added. A wrong SQL password and a database that doesn't exist
+  ("Cannot open database") are `login_failed` too, each with its own hint.
+- Connection ids (`db list`, `db use`, `--db`) are the same in every checkout of a project, a git worktree say: they
+  were made from the configuration file's full path, so an id from one checkout was "not found" in another. A choice
+  saved with an old id still holds.
+- A site that crashes while `serve` starts it is reported with its first exception, and that exception's innermost
+  inner exception, in the message and in `error.details.firstException`. The last 40 lines of its output, which
+  `details.lines` still has, were mostly stack frames, and the cause was often above them.
+- `serve` refusing a remote database that isn't the development database says how to choose it: `opticli db use <id>`
+  with its id.
+
 ## 0.16.1 (9 October 2026)
 
 ### Fixed

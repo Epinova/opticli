@@ -79,13 +79,19 @@ public sealed class ConnectionCandidate
         Reason = verdict.IsValid ? (IsValid ? null : "The connection string names no server.") : verdict.Reason;
         Status = IsValid ? CandidateStatus.Shadowed : CandidateStatus.Invalid;
         Id = MakeId(source, location, key, profile, Server, Database);
+        LegacyId = MakeLegacyId(source, location, key, profile, Server, Database);
     }
 
     /// <summary>
     /// Short and stable while the candidate's source and target stay the same: a saved choice refers to it, and it
-    /// changes when the server or database at that source does, so a changed configuration is chosen again.
+    /// changes when the server or database at that source does, so a changed configuration is chosen again. The same
+    /// in every checkout of the project (a git worktree): it names a file by its name, not its path.
     /// </summary>
     public string? Id { get; }
+
+    /// <summary>The id up to opticli 0.16, made from the file's full path: a choice saved then still matches.</summary>
+    [JsonIgnore]
+    internal string? LegacyId { get; }
 
     public ConnectionSource Source { get; }
 
@@ -129,7 +135,16 @@ public sealed class ConnectionCandidate
     internal static ConnectionCandidate Unreadable(ConnectionSource source, string location, string reason) =>
         new(source, location, null, null, null) { Status = CandidateStatus.Invalid, Reason = reason };
 
-    private static string? MakeId(ConnectionSource source, string location, string? key, string? profile, string? server, string? database)
+    private static string? MakeId(ConnectionSource source, string location, string? key, string? profile, string? server, string? database) =>
+        // A file is one of the project's own (appsettings, launchSettings), its user secrets or the opticli user config,
+        // so its name tells it apart; the user config's key holds the project's path.
+        Hash(source, source is ConnectionSource.Environment ? location : Path.GetFileName(location),
+            source is ConnectionSource.UserConfig ? null : key, profile, server, database);
+
+    private static string? MakeLegacyId(ConnectionSource source, string location, string? key, string? profile, string? server, string? database) =>
+        Hash(source, location, key, profile, server, database);
+
+    private static string? Hash(ConnectionSource source, string location, string? key, string? profile, string? server, string? database)
     {
         if (server is null || source is ConnectionSource.Flag or ConnectionSource.OptiCliDb)
         {

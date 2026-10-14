@@ -511,6 +511,36 @@ public class ConnectionResolverTests : IDisposable
     }
 
     [Fact]
+    public void Ids_are_the_same_in_another_checkout_of_the_project()
+    {
+        using var worktree = new SiteFixture();
+        WriteAllSources();
+        WriteAllSources(worktree);
+
+        var here = Resolve(new ConnectionRequest()).Selectable.Select(c => c.Id).ToList();
+        var there = ConnectionResolver.Resolve(new ConnectionRequest(), worktree.Project(), worktree.Environment()).Selectable.Select(c => c.Id).ToList();
+
+        Assert.NotEqual(_site.ProjectPath, worktree.ProjectPath);
+        Assert.Equal(here, there);
+    }
+
+    [Fact]
+    public void A_choice_saved_with_a_path_based_id_still_holds()
+    {
+        WriteAllSources();
+        _site.WriteProjectFile("appsettings.Test.json", $$"""{ "ConnectionStrings": { "EPiServerDB": "{{RemoteDb}}" } }""");
+        var candidate = Resolve(new ConnectionRequest()).Candidates.Single(c => c.Database == "Shared");
+        Assert.NotEqual(candidate.Id, candidate.LegacyId);
+        UserConfig.SaveDatabase(_site.Environment().UserConfigFile, _site.ProjectPath,
+            SavedDatabase.From(candidate, SavedDatabase.ViaCommand, DateTimeOffset.UtcNow) with { Id = candidate.LegacyId! });
+
+        var result = Resolve(new ConnectionRequest());
+
+        Assert.Equal(SelectionMode.Saved, result.DevelopmentMode);
+        Assert.Equal("Shared", result.Development!.Database);
+    }
+
+    [Fact]
     public void Saving_a_choice_keeps_the_rest_of_the_user_config()
     {
         WriteAllSources();
@@ -587,15 +617,19 @@ public class ConnectionResolverTests : IDisposable
         Assert.Single(result.Candidates, c => c.Status == CandidateStatus.Chosen);
     }
 
-    private void WriteAllSources()
+    private void WriteAllSources() => WriteAllSources(_site);
+
+    private static void WriteAllSources(SiteFixture site)
     {
-        _site.WriteSecrets($$"""{ "ConnectionStrings:EPiServerDB": "{{SecretsDb}}" }""");
-        WriteLaunchSettings(("Web", "ConnectionStrings:EPiServerDB", ProfileDb));
-        _site.WriteProjectFile("appsettings.Development.json", $$"""{ "ConnectionStrings": { "EPiServerDB": "{{DevDb}}" } }""");
-        _site.WriteProjectFile("appsettings.json", $$"""{ "ConnectionStrings": { "EPiServerDB": "{{BaseDb}}" } }""");
+        site.WriteSecrets($$"""{ "ConnectionStrings:EPiServerDB": "{{SecretsDb}}" }""");
+        WriteLaunchSettings(site, ("Web", "ConnectionStrings:EPiServerDB", ProfileDb));
+        site.WriteProjectFile("appsettings.Development.json", $$"""{ "ConnectionStrings": { "EPiServerDB": "{{DevDb}}" } }""");
+        site.WriteProjectFile("appsettings.json", $$"""{ "ConnectionStrings": { "EPiServerDB": "{{BaseDb}}" } }""");
     }
 
-    private void WriteLaunchSettings(params (string Profile, string Key, string Value)[] profiles)
+    private void WriteLaunchSettings(params (string Profile, string Key, string Value)[] profiles) => WriteLaunchSettings(_site, profiles);
+
+    private static void WriteLaunchSettings(SiteFixture site, params (string Profile, string Key, string Value)[] profiles)
     {
         var body = string.Join(",\n", profiles.Select(p => $$"""
                 "{{p.Profile}}": {
@@ -604,6 +638,6 @@ public class ConnectionResolverTests : IDisposable
                   "environmentVariables": { "ASPNETCORE_ENVIRONMENT": "Development", "{{p.Key}}": "{{p.Value}}" }
                 }
             """));
-        _site.WriteProjectFile("Properties/launchSettings.json", $$"""{ "profiles": { {{body}} } }""", withBom: true);
+        site.WriteProjectFile("Properties/launchSettings.json", $$"""{ "profiles": { {{body}} } }""", withBom: true);
     }
 }

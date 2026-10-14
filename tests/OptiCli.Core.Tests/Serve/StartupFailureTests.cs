@@ -64,6 +64,55 @@ public class StartupFailureTests : IDisposable
     }
 
     [Fact]
+    public void A_crash_names_its_first_exception_and_the_innermost_cause_even_far_above_the_tail()
+    {
+        var store = StoreWithLog(
+            [
+                "info: starting",
+                "crit: Microsoft.AspNetCore.Hosting.Diagnostics[6]",
+                "      Application startup exception",
+                "      EPiServer.Framework.Initialization.InitializationException: Initialize action failed for Initialize on class Site.Startup",
+                "       ---> System.AggregateException: One or more errors occurred.",
+                "       ---> System.IO.DirectoryNotFoundException: Could not find a part of the path '/src/Site/wwwroot/dist/app.json'.",
+                "         at System.IO.FileSystem.Open(String path)",
+                .. Enumerable.Range(1, 80).Select(i => $"         at Frame{i}()"),
+                "Unhandled exception. System.InvalidOperationException: Later and less useful.",
+            ]);
+
+        var error = SiteLauncher.StartupFailure(store, "The site exited during startup (exit code 134).");
+
+        Assert.IsType<UnreachableException>(error);
+        Assert.Equal(
+            "The site exited during startup (exit code 134). Its first exception: EPiServer.Framework.Initialization.InitializationException: "
+            + "Initialize action failed for Initialize on class Site.Startup ---> System.IO.DirectoryNotFoundException: Could not find a part of the path '/src/Site/wwwroot/dist/app.json'.",
+            error.Message);
+        Assert.Contains("--logs", error.Hint);
+        var log = Assert.IsType<StartupLog>(error.Details);
+        Assert.Equal(SiteLauncher.FailureLogLines, log.Lines.Count);
+        Assert.DoesNotContain(log.Lines, l => l.Contains("DirectoryNotFoundException", StringComparison.Ordinal));
+        Assert.StartsWith("EPiServer.Framework.Initialization.InitializationException", log.FirstException);
+    }
+
+    [Fact]
+    public void An_unhandled_exception_on_its_own_is_the_first_one()
+    {
+        var store = StoreWithLog("Unhandled exception. System.IO.FileNotFoundException: Could not find file 'x'.", "   at Program.Main()");
+
+        var error = SiteLauncher.StartupFailure(store, "The site exited during startup (exit code 134).");
+
+        Assert.EndsWith("Its first exception: System.IO.FileNotFoundException: Could not find file 'x'.", error.Message);
+    }
+
+    [Fact]
+    public void A_log_without_an_exception_keeps_the_plain_message()
+    {
+        var error = SiteLauncher.StartupFailure(StoreWithLog("info: starting", "   at Something.ThrowException()", "Exception: no type"), "The site exited during startup (exit code 1).");
+
+        Assert.Equal("The site exited during startup (exit code 1).", error.Message);
+        Assert.Null(Assert.IsType<StartupLog>(error.Details).FirstException);
+    }
+
+    [Fact]
     public void A_timeout_suggests_raising_it()
     {
         Assert.Contains("--timeout", SiteLauncher.StartupFailure(StoreWithLog(), "No answer.", timedOut: true).Hint);

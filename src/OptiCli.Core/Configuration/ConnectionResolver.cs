@@ -127,7 +127,8 @@ public static class ConnectionResolver
     {
         if (saved is not null)
         {
-            if (candidates.FirstOrDefault(c => c.IsSelectable && string.Equals(c.Id, saved.Id, StringComparison.OrdinalIgnoreCase)) is { } match)
+            if ((candidates.FirstOrDefault(c => c.IsSelectable && string.Equals(c.Id, saved.Id, StringComparison.OrdinalIgnoreCase))
+                ?? candidates.FirstOrDefault(c => c.IsSelectable && string.Equals(c.LegacyId, saved.Id, StringComparison.OrdinalIgnoreCase))) is { } match)
             {
                 return new(match, SelectionMode.Saved, null);
             }

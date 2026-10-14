@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using OptiCli.Core.Discovery;
 using OptiCli.Core.Errors;
 using OptiCli.Core.Safety;
@@ -28,7 +29,7 @@ public sealed record LaunchRequest(
     int AgentCmsMajor = 12);
 
 /// <summary>Starts the site with the agent injected, waits until the agent answers and checks it uses the pinned database.</summary>
-public static class SiteLauncher
+public static partial class SiteLauncher
 {
     /// <summary>Log lines included in a startup failure.</summary>
     public const int FailureLogLines = 40;
@@ -315,7 +316,8 @@ public static class SiteLauncher
     internal static OptiCliException StartupFailure(StateStore store, string message, bool timedOut = false, int? port = null)
     {
         var lines = LogTail.Read(store.LogPath, FailureLogLines);
-        var details = new StartupLog(store.LogPath, lines);
+        var first = FirstException(store.LogPath);
+        var details = new StartupLog(store.LogPath, lines, first);
         if (lines.Any(l => l.Contains(RefusalMarker, StringComparison.Ordinal)))
         {
             return new RefusedException($"{message} The opticli agent refused to start the site: {lines.Last(l => l.Contains(RefusalMarker, StringComparison.Ordinal)).Trim()}",
@@ -340,9 +342,57 @@ public static class SiteLauncher
                 "Something in the site sets its own addresses (UseUrls, Listen or ConfigureKestrel in code, or Kestrel settings opticli didn't see). Let it use ASPNETCORE_URLS in Development, or start it yourself with the variables from `opticli env`.")
             { Details = details };
         }
-        return new UnreachableException(message,
-            timedOut ? "Raise --timeout if the site is just slow; details.lines has its latest output." : "details.lines has the site's last output; fix the error and start again.")
-        { Details = details };
+        // The last lines of a crash are mostly stack frames; what went wrong is in the first exception, often further up.
+        return first is not null && !timedOut
+            ? new UnreachableException($"{message} Its first exception: {first}",
+                "Fix the error and start again; details.lines has the site's last output, `opticli serve --logs` all of it.")
+            { Details = details }
+            : new UnreachableException(message,
+                timedOut ? "Raise --timeout if the site is just slow; details.lines has its latest output." : "details.lines has the site's last output; fix the error and start again.")
+            { Details = details };
+    }
+
+    /// <summary>A .NET exception as printed or logged: <c>Namespace.SomeException: message</c>, after an optional prefix.</summary>
+    [GeneratedRegex(@"^\s*(?:Unhandled exception\.\s+|--->\s+)?((?:[A-Za-z_][\w`]*\.)+[A-Za-z_]\w*Exception): (.+)$")]
+    private static partial Regex ExceptionLine();
+
+    private const int ExceptionMessageLength = 400;
+
+    /// <summary>
+    /// The first exception in this run's log, as <c>Type: message</c>, followed by its innermost inner exception (the
+    /// <c>---&gt;</c> lines right after it), which is usually the cause; null when the log has none.
+    /// </summary>
+    internal static string? FirstException(string logPath)
+    {
+        if (!File.Exists(logPath))
+        {
+            return null;
+        }
+        using var stream = new FileStream(logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        string? first = null;
+        string? innermost = null;
+        while (reader.ReadLine() is { } line)
+        {
+            var match = ExceptionLine().Match(line);
+            if (first is null)
+            {
+                first = match.Success ? Format(match) : null;
+                continue;
+            }
+            if (!match.Success || !line.TrimStart().StartsWith("--->", StringComparison.Ordinal))
+            {
+                break;
+            }
+            innermost = Format(match);
+        }
+        return first is null ? null : innermost is null ? first : $"{first} ---> {innermost}";
+
+        static string Format(Match match)
+        {
+            var text = $"{match.Groups[1].Value}: {match.Groups[2].Value.Trim()}";
+            return text.Length > ExceptionMessageLength ? text[..ExceptionMessageLength] + "…" : text;
+        }
     }
 
     /// <summary>The CMS's message from a log line, without the logger's prefix and the exception type.</summary>
@@ -379,4 +429,5 @@ public static class SiteLauncher
 
 public sealed record StopResult(ServeMode Mode, int? Pid, int? Port, bool Stopped, bool Graceful);
 
-public sealed record StartupLog(string Log, IReadOnlyList<string> Lines);
+/// <param name="FirstException">The first exception in the run's log (and its innermost inner one), when it has one.</param>
+public sealed record StartupLog(string Log, IReadOnlyList<string> Lines, string? FirstException = null);

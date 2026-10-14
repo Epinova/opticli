@@ -75,6 +75,7 @@ public sealed class CmsDatabase : IAsyncDisposable
             throw new RefusedException($"Refusing to connect: server '{connection.DataSource}' is not the one that was checked ('{connectionString.Server}').");
         }
 
+        EntraTokenCapture.Prepare(builder.Authentication);
         try
         {
             await connection.OpenAsync(cancellationToken);
@@ -85,6 +86,12 @@ public sealed class CmsDatabase : IAsyncDisposable
             await connection.DisposeAsync();
             throw new RefusedException($"{ConnectionSafety.UnusableHere} {ex.Message}", ConnectionSafety.ProtocolHint);
         }
+        catch (SqlException ex) when (LoginFailure.Matches(ex))
+        {
+            // The server answered: the network is fine, the login (or the database) is what's wrong.
+            await connection.DisposeAsync();
+            throw LoginFailure.Create(ex, connectionString, builder, EntraTokenCapture.LastToken);
+        }
         catch (SqlException ex)
         {
             await connection.DisposeAsync();
@@ -92,7 +99,7 @@ public sealed class CmsDatabase : IAsyncDisposable
                 $"Could not connect to database '{connectionString.Database}' on '{connectionString.Server}': {ex.Message}",
                 connectionString.IsLocal
                     ? "Check that the local SQL Server is running and the database exists; `opticli doctor` shows which connection string was used and where it came from."
-                    : "Check the network, the server's firewall (Azure SQL allows only listed client IPs) and the login; for Microsoft Entra authentication, sign in with `az login` first. `opticli doctor` shows which connection string was used.",
+                    : "Check the network (VPN) and the server's firewall (Azure SQL allows only listed client IPs, or none with public network access denied); for Microsoft Entra authentication, sign in with `az login` first. `opticli doctor` shows which connection string was used.",
                 ex);
         }
 
