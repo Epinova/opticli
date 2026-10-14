@@ -3,7 +3,7 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
-## Unreleased
+## 0.17.0 (14 October 2026)
 
 ### Fixed
 
@@ -21,6 +21,13 @@ again to update the skill.
   `details.lines` still has, were mostly stack frames, and the cause was often above them.
 - `serve` refusing a remote database that isn't the development database says how to choose it: `opticli db use <id>`
   with its id.
+
+### Skill
+
+- Microsoft Entra ID: the README and the skill explain `AZURE_CONFIG_DIR` for keeping a second Azure CLI account for
+  the same subscription (signing in replaces the first), and `AZURE_TOKEN_CREDENTIALS=AzureCliCredential` for a site
+  that `serve` starts whose `DefaultAzureCredential` picks another credential than the Azure CLI. opticli sets
+  neither; the skill tries the second for one run when that failure shows.
 
 ## 0.16.1 (9 October 2026)
 
