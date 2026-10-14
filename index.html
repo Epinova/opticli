@@ -334,6 +334,18 @@ https://your-site.example/episerver/opticli/mcp</pre>
         <code>opticli skill install</code> again to update the skill.</p>
     </div>
     <ol class="changelog">
+      <li><div class="v"><b>0.17.0</b><span>14 October 2026</span></div>
+        <ul>
+          <li><b>Refused logins:</b> a database server that answers but refuses the login is now <code>login_failed</code>
+            (still exit 4) instead of <code>unreachable</code>, whose network and firewall hint pointed the wrong way. For
+            Microsoft Entra ID, where the server only says <code>&lt;token-identified principal&gt;</code>, opticli names the
+            identity that signed in and says it has no user in the database.</li>
+          <li><b>Fixed:</b> connection ids from <code>db list</code> are the same in every checkout of a project, a git
+            worktree say; a choice saved with an old id still holds.</li>
+          <li><b>Fixed:</b> a site that crashes while <code>serve</code> starts it is reported with its first exception and
+            its innermost cause, not just the last lines of stack frames. Refusing a remote database that isn't the
+            development database names <code>opticli db use &lt;id&gt;</code>.</li>
+        </ul></li>
       <li><div class="v"><b>0.16.1</b><span>9 October 2026</span></div>
         <ul>
           <li><b>Fixed:</b> a shared block given by its ref alone (<code>{"ref": "37"}</code>) in a ContentArea inside an
