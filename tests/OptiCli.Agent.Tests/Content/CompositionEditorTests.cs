@@ -474,4 +474,24 @@ public class CompositionEditorTests
         Assert.Contains("unknown edit 'rename'", refused.Message);
         Assert.Contains("add, remove, move or set", refused.Hint);
     }
+
+    [Fact]
+    public void An_empty_composition_is_refused_only_on_an_unpublished_branch_that_isnt_the_master_branch()
+    {
+        // CMS 13.3 deletes the master branch's stored blocks when such a branch is saved with an empty composition.
+        var (editor, _, root) = Experience();
+        editor.Replace(new CompositionNodeValue { Nodes = [] });
+        Assert.Empty(root.Children);
+
+        var refused = Assert.Throws<AgentException>(() => CompositionEditor.RequireNodesOnUnpublishedBranch(root, otherBranch: true, branchPublished: false, "12 ('Page') in 'sv'"));
+        Assert.Equal(AgentErrorCodes.Refused, refused.Code);
+        Assert.Contains("12 ('Page') in 'sv'", refused.Message);
+        Assert.Contains("master branch's stored blocks", refused.Message);
+        Assert.Contains("Nothing was changed", refused.Hint);
+
+        CompositionEditor.RequireNodesOnUnpublishedBranch(root, otherBranch: true, branchPublished: true, "x");
+        CompositionEditor.RequireNodesOnUnpublishedBranch(root, otherBranch: false, branchPublished: false, "x");
+        var (_, _, full) = Experience();
+        CompositionEditor.RequireNodesOnUnpublishedBranch(full, otherBranch: true, branchPublished: false, "x");
+    }
 }

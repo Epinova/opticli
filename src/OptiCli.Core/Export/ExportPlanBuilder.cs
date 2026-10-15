@@ -232,13 +232,22 @@ public static class ExportPlanBuilder
                 Put(name, Escape(plain));
             }
         }
-        // Only a composition the branch stores (get says from which branch, culture): writing an empty one to a branch that
-        // has none deletes the master branch's blocks on CMS 13.3.
+        // Only a composition the branch stores (get says from which branch, culture). Never an empty one on another branch:
+        // the target's branch is unpublished when the plan writes it (translate makes a draft), and saving such a branch with
+        // an empty composition deletes the master branch's stored blocks on CMS 13.3 (the agent refuses it).
         if (document[CompositionField] is JsonObject { } composition && composition["culture"] is not null
             && (isMaster || item.CultureSpecific.Contains(CompositionField)))
         {
             setForward(false);
-            Put(CompositionField, Escape(converter.Composition(composition, CompositionField)));
+            var written = converter.Composition(composition, CompositionField);
+            if (isMaster || HasNodes(written))
+            {
+                Put(CompositionField, Escape(written));
+            }
+            else
+            {
+                converter.Dropped.Add((CompositionField, "an empty composition on a branch other than the master branch, which CMS 13 can't save without deleting the master branch's stored blocks"));
+            }
         }
         foreach (var (name, value) in BuiltIns(item, branch, isMaster, converter))
         {
@@ -250,6 +259,10 @@ public static class ExportPlanBuilder
         providers.UnionWith(converter.ProviderRefs);
         return (now, later);
     }
+
+    /// <summary>Whether a composition (as a plan writes it) has a node: a section or element in an outline, a row in a grid.</summary>
+    private static bool HasNodes(JsonObject composition) =>
+        ((string[])["sections", "rows", "columns", "elements", "nodes"]).Any(list => composition[list] is JsonArray { Count: > 0 });
 
     /// <summary>
     /// The built-in settings as the source has them, under the names <c>set</c> takes: publish dates, a page's URL segment,

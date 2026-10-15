@@ -76,6 +76,7 @@ internal static class CmsCompositionWrites
             editor.Replace(composition);
         }
         editor.Apply(operations);
+        RequireNodesOnUnpublishedBranch(flow, writable, root);
 
         if (writable is ExperienceData target)
         {
@@ -209,6 +210,18 @@ internal static class CmsCompositionWrites
     }
 
 #if CMS13
+    /// <summary>See <see cref="CompositionEditor.RequireNodesOnUnpublishedBranch"/>: existing content's non-master branch only.</summary>
+    private static void RequireNodesOnUnpublishedBranch(WriteFlow flow, IContentData writable, DraftNode root)
+    {
+        if (root.Children.Count > 0 || writable is not IContent { ContentLink: var link } content || ContentReference.IsNullOrEmpty(link)
+            || writable is not ILocalizable { Language: { } language, MasterLanguage: { } master } || language.Equals(master))
+        {
+            return;
+        }
+        var published = ContentLocator.PublishedVersion(flow.Locator.Versions(link.ToReferenceWithoutVersion(), language)) is not null;
+        CompositionEditor.RequireNodesOnUnpublishedBranch(root, otherBranch: true, published, $"{link.ID} ('{content.Name}') in '{language.Name}'");
+    }
+
     private static CompositionNodeValue Value(CompositionNode node, Func<IContentData, IReadOnlyDictionary<string, JsonElement?>> properties, bool isRoot = false)
     {
         var block = node switch

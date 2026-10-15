@@ -242,6 +242,55 @@ public sealed class VisualBuilderWriteTests
     }
 
     [SiteFact]
+    public async Task An_empty_composition_on_an_unpublished_language_branch_is_refused_and_the_master_branch_keeps_its_blocks()
+    {
+        // CMS 13.3: saving a non-master branch that has no published version with an empty composition deletes the master
+        // branch's stored blocks (its UnstructuredData row), so every node of the published composition reads as missing.
+        var cancellationToken = CancellationToken.None;
+        await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
+        if (await FixtureAsync(site, cancellationToken) is not { } fixture)
+        {
+            return;
+        }
+        var writes = new WriteExecutor(site.Session, _ => Task.FromResult(site.Agent));
+        var properties = JsonNode.Parse("""
+            {"Summary": "Empty branch composition test", "composition": {"sections": [{"type": "VbBanner", "name": "Kept", "properties": {"Title": "Kept"}}]}}
+            """)!.AsObject();
+        var created = await writes.RunAsync(new CreateOperation(fixture.Parent, "VbExperience", $"VB empty branch {Guid.NewGuid():N}"[..24], properties) { Publish = true }, dryRun: false, cancellationToken);
+        var id = Id(created.CreatedId!.Value);
+        try
+        {
+            await writes.RunAsync(new TranslateOperation(id, "sv", "VB tom gren"), dryRun: false, cancellationToken);
+            var empty = new JsonObject { ["composition"] = JsonNode.Parse("""{"sections": []}"""), ["Summary"] = "sv" };
+
+            foreach (var publish in new[] { false, true })
+            {
+                var refused = await Assert.ThrowsAnyAsync<OptiCliException>(() => writes.RunAsync(new SetOperation(id, (JsonObject)empty.DeepClone(), Lang: "sv", Publish: publish), dryRun: false, cancellationToken));
+                Assert.Contains("master branch's stored blocks", refused.Message);
+            }
+            // The same through node edits: a node added to the branch, then removed again.
+            await writes.RunAsync(Edit(id, "add", nodeType: "section", value: """{"type": "VbBanner", "name": "Swedish", "properties": {"Title": "Svensk"}}""") with { Lang = "sv" }, false, cancellationToken);
+            Assert.Contains("master branch's stored blocks", (await Assert.ThrowsAnyAsync<OptiCliException>(() =>
+                writes.RunAsync(Edit(id, "remove", node: "Swedish") with { Lang = "sv" }, false, cancellationToken))).Message);
+
+            var master = await GetAsync(created.CreatedId!.Value, VersionSelector.Published, cancellationToken);
+            var kept = Assert.Single(Objects(master.Composition!["sections"]));
+            Assert.Equal("Kept", Text(kept["name"]));
+            Assert.Null(kept["missing"]);
+
+            // Published, the branch may be emptied: the CMS keeps the master branch's blocks then.
+            await writes.RunAsync(new PublishOperation(id) { Lang = "sv" }, dryRun: false, cancellationToken);
+            await writes.RunAsync(new SetOperation(id, (JsonObject)empty.DeepClone(), Lang: "sv", Publish: true), dryRun: false, cancellationToken);
+            master = await GetAsync(created.CreatedId!.Value, VersionSelector.Published, cancellationToken);
+            Assert.Null(Assert.Single(Objects(master.Composition!["sections"]))["missing"]);
+        }
+        finally
+        {
+            await writes.RunAsync(new DeleteOperation(id, IgnoreReferences: true), dryRun: false, cancellationToken);
+        }
+    }
+
+    [SiteFact]
     public async Task On_cms_12_compositions_and_variations_are_refused_before_the_site_is_asked()
     {
         var cancellationToken = CancellationToken.None;

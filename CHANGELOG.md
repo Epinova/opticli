@@ -70,6 +70,10 @@ again to update the skill.
   a word. A reference without a GUID, and a content provider's, still go by their ref.
 - The site agent's refusal of a value in `get`'s `{type, value}` shape in a plan names `get`, not the MCP tool
   `get_content`.
+- CMS 13: a composition left without nodes on a language branch that isn't the master branch and isn't published
+  (`set --lang sv` with `{"composition": {"sections": []}}`, or `composition --lang sv remove` of its last node; a draft
+  save is enough) is `refused` (exit 3). The CMS (13.3) deleted the master branch's stored blocks on such a save, so
+  every node of the published composition read as missing, in opticli and in the CMS.
 
 ### Skill
 

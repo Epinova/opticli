@@ -332,6 +332,8 @@ public class ExportPlanBuilderTests
                 Branch("sv", "Upplevelse", more: $"\"composition\": {Composition(PageA, "sv")}"),
                 // A branch made by a translation, with no composition of its own: none is written.
                 Branch("de", "Erlebnis", more: """ "composition": {"layout": "outline", "sections": []} """),
+                // A branch that stores an empty composition: not written (CMS 13.3 would delete the master branch's blocks), listed.
+                Branch("nb", "Opplevelse", more: """ "composition": {"layout": "outline", "culture": "nb", "sections": []} """),
             ],
             new HashSet<string>(["composition"]), Order: 0);
 
@@ -361,6 +363,11 @@ public class ExportPlanBuilderTests
         var de = operations.OfType<JsonObject>().Where(o => (string?)o["lang"] == "de").ToList();
         Assert.Equal(["translate"], de.Select(o => (string?)o["op"]));
         Assert.Null(de[0]["properties"]?["composition"]);
+        var nb = operations.OfType<JsonObject>().Where(o => (string?)o["lang"] == "nb").ToList();
+        Assert.Equal(["translate"], nb.Select(o => (string?)o["op"]));
+        Assert.True((bool?)nb[0]["publish"]);
+        Assert.Null(nb[0]["properties"]?["composition"]);
+        Assert.Contains(plan.Dropped, d => d.Property == "composition" && d.Language == "nb" && d.Reason.Contains("master branch's stored blocks", StringComparison.Ordinal));
         Parse(operations);
     }
 }

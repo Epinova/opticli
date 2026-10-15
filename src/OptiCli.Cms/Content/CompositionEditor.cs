@@ -91,6 +91,27 @@ internal sealed class CompositionEditor(DraftNode root, ICompositionBlocks block
 
     public DraftNode Root => root;
 
+    /// <summary>
+    /// Refuses a composition left without nodes on a language branch other than the master branch that has no published
+    /// version. CMS 13 (13.3) keeps such a branch's version in the published tables too, and saving it with an empty
+    /// composition deletes the master branch's stored blocks (its <c>UnstructuredData</c> row): every node of the master
+    /// branch's composition then reads as missing, in opticli and in the CMS. A published branch, the master branch, a
+    /// branch the write leaves a node in, and a write that doesn't touch the composition are not affected.
+    /// </summary>
+    /// <param name="otherBranch">The write is to a language branch other than the content's master branch.</param>
+    /// <param name="branchPublished">That branch has a published version.</param>
+    /// <param name="what">The content and branch, for the message.</param>
+    /// <exception cref="AgentException"><c>refused</c>, before anything is saved.</exception>
+    public static void RequireNodesOnUnpublishedBranch(DraftNode root, bool otherBranch, bool branchPublished, string what)
+    {
+        if (otherBranch && !branchPublished && root.Children.Count == 0)
+        {
+            throw AgentException.Refused(
+                $"{what}: an empty composition on a language branch that isn't published and isn't the master branch would delete the master branch's stored blocks (a CMS 13 fault), so it isn't written.",
+                "Leave the composition out (a new branch has none until it is given one), keep at least one node in it, or publish the branch first. Nothing was changed.");
+        }
+    }
+
     /// <summary>Replaces the whole composition with <paramref name="value"/> (see <see cref="CompositionNodeValue"/>).</summary>
     public void Replace(CompositionNodeValue value)
     {
