@@ -78,6 +78,7 @@ public sealed class ConnectionCandidate
         var verdict = ConnectionSafety.Check(connectionString);
         Server = verdict.Server;
         Database = verdict.Database;
+        FailoverPartner = verdict.FailoverPartner;
         IsValid = verdict.IsValid && !string.IsNullOrWhiteSpace(verdict.Server);
         IsLocal = IsValid ? verdict.IsLocal : null;
         Reason = verdict.IsValid ? (IsValid ? null : "The connection string names no server.") : verdict.Reason;
@@ -127,6 +128,18 @@ public sealed class ConnectionCandidate
     /// <summary>Its server and database as roles are kept; null for an empty or invalid string.</summary>
     [JsonIgnore]
     public DatabaseKey? Target => IsValid ? DatabaseKey.Of(Server, Database) : null;
+
+    /// <summary>The server SqlClient switches to when <see cref="Server"/> doesn't answer (<c>Failover Partner</c>); null when none.</summary>
+    [JsonIgnore]
+    internal string? FailoverPartner { get; }
+
+    /// <summary>
+    /// Every server and database the string can reach: <see cref="Target"/>, and the same database on the failover
+    /// partner, so a production database named only as the partner is still production.
+    /// </summary>
+    [JsonIgnore]
+    internal IReadOnlyList<DatabaseKey> Targets =>
+        new[] { Target, IsValid && FailoverPartner is not null ? DatabaseKey.Of(FailoverPartner, Database) : null }.OfType<DatabaseKey>().Distinct().ToList();
 
     public CandidateStatus Status { get; internal set; }
 

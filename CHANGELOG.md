@@ -11,8 +11,8 @@ again to update the skill.
   (asking for the connection string, and its password without showing it, at a terminal; or `--connection`), and
   `--db <name>` reads it for a run. `db role <id|name> <role>` gives any database in `db list` a role, and
   `db remove <name>` removes an entry. `db list` and `doctor` show each database's name and role. A role belongs to
-  the server and database (compared as SqlClient reads them, ignoring case, `tcp:`, the default port and the loopback
-  names), not to the entry: every entry, setting and connection string that points at a production database is
+  the server and database (compared as SqlClient reads them, ignoring case, `tcp:`, the default port, an instance
+  name beside a port and the loopback names; a `Failover Partner` counts too), not to the entry: every entry, setting and connection string that points at a production database is
   production, in every project. A weaker role than a database has needs a terminal, where the user types the
   database's name (`refused`, exit 3, `details.reason: "roleLowered"`, elsewhere), and `db remove` keeps the role.
 - A database with the role `prod` is only read, when a run picks it with `--db`, `--connection`, `--profile` or
@@ -30,8 +30,9 @@ again to update the skill.
 ### Changed
 
 - A `roles` entry in the user config that opticli can't read stops it from using any database until it is fixed, and
-  so does a user config that isn't valid JSON (before, such a file was skipped): without the roles opticli can't tell
-  production from another database.
+  so does a user config that isn't valid JSON or whose root isn't an object (before, such a file was skipped, or
+  failed as `internal`): without the roles opticli can't tell production from another database. An empty file counts
+  as no settings.
 - `--db <name>` with a database name that several connection strings share is no longer ambiguous when they point at
   the same server spelled differently (`localhost` and `127.0.0.1,1433`, say).
 

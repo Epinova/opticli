@@ -31,7 +31,10 @@ public class DatabaseRoleTests : IDisposable
     [InlineData("localhost,1434", "localhost,1434")]
     [InlineData(@"localhost\SQLEXPRESS", @"localhost\sqlexpress")]
     [InlineData(@"localhost\MSSQLSERVER", "localhost")]
-    [InlineData(@"localhost\sqlexpress,1433", @"localhost\sqlexpress,1433")]
+    [InlineData(@"localhost\sqlexpress,1433", "localhost")]
+    [InlineData(@"127.0.0.1\ANY,01433", "localhost")]
+    [InlineData(@"tcp:localhost\sqlexpress, 1434", "localhost,1434")]
+    [InlineData("localhost,01434", "localhost,1434")]
     [InlineData("tcp:sql.example.com,1433", "sql.example.com")]
     [InlineData("SQL.Example.com.", "sql.example.com")]
     [InlineData(@"(localdb)\MSSQLLocalDB", @"(localdb)\mssqllocaldb")]
@@ -39,6 +42,27 @@ public class DatabaseRoleTests : IDisposable
     {
         Assert.Equal(expected, DatabaseKey.NormalizeServer(server));
         Assert.Equal(DatabaseKey.Of(server, "Site"), DatabaseKey.Of(expected, " site "));
+    }
+
+    [Theory]
+    [InlineData("localhost", "localhost,1434")]
+    [InlineData(@"localhost\sqlexpress", "localhost")]
+    [InlineData(@"localhost\sqlexpress", @"localhost\other")]
+    [InlineData("sql.example.com", "sql2.example.com")]
+    public void Different_servers_are_different_keys(string one, string other) =>
+        Assert.NotEqual(DatabaseKey.Of(one, "Site"), DatabaseKey.Of(other, "Site"));
+
+    [Theory]
+    [InlineData("Server=localhost,1999;Failover Partner=localhost;Database=alloy-edge-prod", LocalProd)]
+    [InlineData("Server=other.example.com;Failover Partner=tcp:SQL.example.com,1433;Database=site", Prod)]
+    public void A_production_database_named_as_the_failover_partner_is_production(string connection, string production)
+    {
+        GiveRole(production, DatabaseRole.Prod);
+
+        var result = Resolve(new ConnectionRequest(Explicit: connection));
+
+        Assert.True(result.IsProduction);
+        Assert.True(result.Require().IsProduction);
     }
 
     [Theory]
@@ -208,6 +232,36 @@ public class DatabaseRoleTests : IDisposable
 
         Assert.Null(result.Chosen);
         Assert.Contains("no known role", Assert.IsType<UsageException>(result.Failure).Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" \n")]
+    public void An_empty_user_config_has_no_roles_and_stops_nothing(string content)
+    {
+        _site.WriteProjectFile("appsettings.json", $$"""{ "ConnectionStrings": { "EPiServerDB": "{{LocalDev}}" } }""");
+        _site.WriteUserConfig(content);
+
+        var result = Resolve(new ConnectionRequest());
+
+        Assert.Null(result.Failure);
+        Assert.Equal("alloy-edge-dev", result.Chosen!.Database);
+        Assert.Empty(UserConfig.Roles(_site.Environment().UserConfigFile));
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("\"text\"")]
+    public void A_user_config_that_isnt_an_object_stops_every_database_with_a_usage_error(string content)
+    {
+        _site.WriteProjectFile("appsettings.json", $$"""{ "ConnectionStrings": { "EPiServerDB": "{{LocalDev}}" } }""");
+        _site.WriteUserConfig(content);
+
+        var result = Resolve(new ConnectionRequest());
+
+        Assert.Null(result.Chosen);
+        Assert.Contains("not a JSON object", Assert.IsType<UsageException>(result.Failure).Message, StringComparison.Ordinal);
+        Assert.Throws<UsageException>(() => UserConfig.ForProject(_site.Environment().UserConfigFile, _site.ProjectPath));
     }
 
     [Fact]

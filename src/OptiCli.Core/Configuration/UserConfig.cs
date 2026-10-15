@@ -99,13 +99,8 @@ public static class UserConfig
     /// <exception cref="UsageException">The config file is not valid JSON.</exception>
     public static ProjectSettings? ForProject(string configFile, string projectDirectory)
     {
-        if (!File.Exists(configFile))
-        {
-            return null;
-        }
-
-        using var document = Invalid(configFile, () => JsonConfigFile.Parse(configFile));
-        if (!document.RootElement.TryGetProperty("projects", out var projects) || projects.ValueKind != JsonValueKind.Object)
+        using var document = Read(configFile);
+        if (document is null || !document.RootElement.TryGetProperty("projects", out var projects) || projects.ValueKind != JsonValueKind.Object)
         {
             return null;
         }
@@ -133,13 +128,8 @@ public static class UserConfig
     /// <exception cref="UsageException">The config file is not valid JSON, or a role in it is not one opticli knows.</exception>
     public static IReadOnlyList<RoleEntry> Roles(string configFile)
     {
-        if (!File.Exists(configFile))
-        {
-            return [];
-        }
-
-        using var document = Invalid(configFile, () => JsonConfigFile.Parse(configFile));
-        if (!document.RootElement.TryGetProperty(RolesKey, out var roles) || roles.ValueKind == JsonValueKind.Null)
+        using var document = Read(configFile);
+        if (document is null || !document.RootElement.TryGetProperty(RolesKey, out var roles) || roles.ValueKind == JsonValueKind.Null)
         {
             return [];
         }
@@ -382,7 +372,7 @@ public static class UserConfig
     }
 
     private static JsonObject Load(string configFile) =>
-        File.Exists(configFile)
+        File.Exists(configFile) && !IsEmpty(configFile)
             ? Invalid(configFile, () => JsonNode.Parse(File.ReadAllText(configFile), documentOptions: ReadOptions) as JsonObject ?? throw new JsonException("The root is not a JSON object."))
             : [];
 
@@ -464,6 +454,30 @@ public static class UserConfig
         }
     }
 
+    /// <summary>The file's JSON; null when there is no file, or it is empty (no settings, as no file).</summary>
+    /// <exception cref="UsageException">It is not valid JSON, or its root is not a JSON object.</exception>
+    private static JsonDocument? Read(string configFile)
+    {
+        if (!File.Exists(configFile) || IsEmpty(configFile))
+        {
+            return null;
+        }
+        var document = Invalid(configFile, () => JsonConfigFile.Parse(configFile));
+        if (document.RootElement.ValueKind != JsonValueKind.Object)
+        {
+            document.Dispose();
+            throw Invalid(configFile, "The root is not a JSON object.");
+        }
+        return document;
+    }
+
+    private static bool IsEmpty(string configFile) => string.IsNullOrWhiteSpace(File.ReadAllText(configFile));
+
+    private static UsageException Invalid(string configFile, string problem) =>
+        new($"{configFile} is not valid JSON: {problem}",
+            "Fix the file; opticli uses no database until it can read the roles in it. Don't delete it without asking the user: that "
+            + "also forgets the databases' roles (a production database's among them), the databases added by name and the saved choices.");
+
     private static T Invalid<T>(string configFile, Func<T> parse)
     {
         try
@@ -472,7 +486,7 @@ public static class UserConfig
         }
         catch (JsonException ex)
         {
-            throw new UsageException($"{configFile} is not valid JSON: {ex.Message}", "Fix the file, or delete it (opticli asks for the development database again).");
+            throw Invalid(configFile, ex.Message);
         }
     }
 

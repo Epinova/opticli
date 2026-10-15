@@ -42,20 +42,21 @@ public static class ConnectionSafety
 
         var server = builder.DataSource;
         var database = string.IsNullOrEmpty(builder.InitialCatalog) ? null : builder.InitialCatalog;
+        var partner = string.IsNullOrWhiteSpace(builder.FailoverPartner) ? null : builder.FailoverPartner;
 
         if (!IsLocalDataSource(server))
         {
             var shown = string.IsNullOrWhiteSpace(server) ? "<none>" : server;
-            return new SafetyVerdict(false, server, database, $"Server '{shown}' is not a local SQL Server.");
+            return new SafetyVerdict(false, server, database, $"Server '{shown}' is not a local SQL Server.", FailoverPartner: partner);
         }
 
         // SqlClient silently switches to the failover partner when the primary is down.
         if (!string.IsNullOrEmpty(builder.FailoverPartner) && !IsLocalDataSource(builder.FailoverPartner))
         {
-            return new SafetyVerdict(false, server, database, $"Failover partner '{builder.FailoverPartner}' is not a local SQL Server.");
+            return new SafetyVerdict(false, server, database, $"Failover partner '{builder.FailoverPartner}' is not a local SQL Server.", FailoverPartner: partner);
         }
 
-        return new SafetyVerdict(true, server, database, null);
+        return new SafetyVerdict(true, server, database, null, FailoverPartner: partner);
     }
 
     /// <summary>

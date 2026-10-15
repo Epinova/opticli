@@ -145,10 +145,11 @@ placed by reference has `content: {ref, ...}` (its values are its own: `set <its
   (`--db prod`): every response warns. Writes (`--dry-run` and `apply` too), `serve` and `env` against it are
   `refused` (exit 3, `details.reason: "prodDatabase"`), and so is `db use` of it. **Never try to get around a
   production refusal**: no other `--db`, `--connection`, `OPTICLI_DB`, exported connection string or spelling of the
-  server, no editing the user config, no `sql`. Tell the user that opticli doesn't write to production.
+  server, no editing, deleting or replacing the user config (no `XDG_CONFIG_HOME` or `APPDATA` pointing elsewhere),
+  no `sql`. Tell the user that opticli doesn't write to production.
 - Roles are the user's: don't run `opticli db add` or `opticli db role` unless they asked. A weaker role than a
   database has needs their own terminal (`refused`, `details.reason: "roleLowered"`, elsewhere): tell them, don't
-  look for another way. Don't pass a connection string with a password on the command line; ask the user to run
+  look for another way (never fake a terminal with `script` or the like). Don't pass a connection string with a password on the command line; ask the user to run
   `opticli db add <name> --role <role>` themselves, which asks for it.
 
 ## Reading results and errors

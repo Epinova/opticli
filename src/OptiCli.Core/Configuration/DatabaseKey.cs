@@ -1,3 +1,4 @@
+using System.Globalization;
 using OptiCli.Core.Safety;
 
 namespace OptiCli.Core.Configuration;
@@ -8,7 +9,8 @@ namespace OptiCli.Core.Configuration;
 /// setting that names it, so a second entry for a production database is production too.
 /// </summary>
 /// <remarks>
-/// Case, a protocol prefix (<c>tcp:</c>), the default port 1433, a trailing dot and the loopback names (<c>localhost</c>,
+/// Case, a protocol prefix (<c>tcp:</c>), the default port 1433 (and leading zeros in a port), an instance name beside a
+/// port (SqlClient ignores it), the default instance's name, a trailing dot and the loopback names (<c>localhost</c>,
 /// <c>127.0.0.1</c>, <c>::1</c>, <c>.</c>, <c>(local)</c>) don't make another key. A server reached by another name
 /// (an IP address, an alias, a DNS name that points at it) does: that is the same limit the local check has.
 /// </remarks>
@@ -53,12 +55,22 @@ public sealed record DatabaseKey(string Server, string Database)
         }
 
         value = LoopbackNames.Contains(value) ? "localhost" : value.TrimEnd('.');
+        if (!string.IsNullOrEmpty(port))
+        {
+            // SqlClient connects to the port and ignores an instance name beside it (localhost\any,1433 reaches the default
+            // instance), and reads the port as a number (01433 is 1433).
+            instance = null;
+            if (int.TryParse(port, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number))
+            {
+                port = number.ToString(CultureInfo.InvariantCulture);
+            }
+        }
         if (instance == "mssqlserver")
         {
             // The default instance's name.
             instance = null;
         }
-        if (port == DefaultPort && instance is null)
+        if (port == DefaultPort)
         {
             port = null;
         }

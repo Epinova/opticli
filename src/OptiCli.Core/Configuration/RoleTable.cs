@@ -13,6 +13,13 @@ public sealed class RoleTable(IReadOnlyList<RoleEntry> entries)
     public DatabaseRole? Of(string? server, string? database, bool? isLocal) =>
         Assigned(DatabaseKey.Of(server, database))?.Role ?? (isLocal == true ? DatabaseRole.Local : null);
 
+    /// <summary>
+    /// The strongest role given to a server and database the candidate can reach (its failover partner too), else
+    /// <c>local</c> for a local database; null for a remote one without a role, or an invalid string.
+    /// </summary>
     internal DatabaseRole? Of(ConnectionCandidate candidate) =>
-        candidate.Target is { } key ? Assigned(key)?.Role ?? (candidate.IsLocal == true ? DatabaseRole.Local : null) : null;
+        candidate.Target is null
+            ? null
+            : candidate.Targets.Select(Assigned).OfType<RoleEntry>().Select(e => (DatabaseRole?)e.Role).Max()
+                ?? (candidate.IsLocal == true ? DatabaseRole.Local : null);
 }

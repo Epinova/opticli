@@ -90,10 +90,11 @@ internal static class ServeCommand
                 {
                     statusWarnings.Add(OldAgentSchedulerWarning(current, null));
                 }
-                if (current is { State: AgentState.Running, Database: { } running }
+                if (current is { State: AgentState.Running or AgentState.WrongDatabase, Database: { } running }
                     && context.ResolveConnection().Roles.Of(running.Server, running.Name, running.Local) == DatabaseRole.Prod)
                 {
-                    // Started before its database was given the role; writes to it are refused, but the site runs.
+                    // Started before its database was given the role; writes to it are refused, but the site runs. Also when
+                    // this run reads another database (the development one, say): the site still runs against production.
                     statusWarnings.Add($"The running site uses '{running.Name}' on '{running.Server}', which has the role prod: stop it with `opticli serve --stop`. opticli refuses writes to it.");
                 }
                 return new CommandResult(current, Warnings: statusWarnings.Count > 0 ? statusWarnings : null, Source: WriteExecutor.AgentSource);

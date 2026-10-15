@@ -228,8 +228,10 @@ remote one has none until it is given one, and behaves as remote databases alway
 shared mode and the drift gate, see [Shared databases](#shared-databases)). A role belongs to the **server and
 database**, not to an entry: once a database is `prod`, every entry, setting and connection string that points at it
 is production, in every project. The server is compared as SqlClient reads it, ignoring case, a `tcp:` prefix, the
-default port 1433 and the loopback names (`localhost`, `127.0.0.1`, `.`, `(local)`, `::1` are one server); another
-name for the same server (an IP address, an alias) is another server. Giving a database a weaker role than it has
+default port 1433, leading zeros in a port, an instance name beside a port (SqlClient ignores it), the default
+instance's name `MSSQLSERVER` and the loopback names (`localhost`, `127.0.0.1`, `.`, `(local)`, `::1` are one
+server); another name for the same server (an IP address, an alias) is another server. A connection string whose
+`Failover Partner` is a production database is production too. Giving a database a weaker role than it has
 (`prod` to `test`, say, by `db role` or by a second `db add`) needs a terminal, where you confirm by typing the
 database's name; elsewhere it is `refused` (exit 3, `details.reason: "roleLowered"`), so an agent can't make
 production writable. `db remove` keeps the role. A local database may be given `prod`; the tests use that.
@@ -269,6 +271,8 @@ Things these rules can't see:
 - A production database reached by another name than the one it was given the role under (an IP address, an alias)
   isn't known to be production. Neither is one whose role was edited out of the user config, or a run with another
   user config (`XDG_CONFIG_HOME`, `APPDATA`): the user config is what holds the roles.
+- Lowering a role checks that stdin, stdout and stderr are a terminal; a pseudo-terminal (`script`, `expect`) passes
+  that check.
 
 Don't point opticli at such a connection unless you mean to write to what is behind it.
 

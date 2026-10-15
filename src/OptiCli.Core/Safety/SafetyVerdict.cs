@@ -5,4 +5,5 @@ namespace OptiCli.Core.Safety;
 /// SqlClient would actually use, so they are safe to show (they never include credentials).
 /// </summary>
 /// <param name="IsValid">False when the string could not be parsed at all.</param>
-public sealed record SafetyVerdict(bool IsLocal, string? Server, string? Database, string? Reason, bool IsValid = true);
+/// <param name="FailoverPartner">The server SqlClient switches to when <see cref="Server"/> doesn't answer; null when none is set.</param>
+public sealed record SafetyVerdict(bool IsLocal, string? Server, string? Database, string? Reason, bool IsValid = true, string? FailoverPartner = null);
