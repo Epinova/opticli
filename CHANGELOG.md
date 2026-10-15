@@ -7,6 +7,18 @@ again to update the skill.
 
 ### New
 
+- `opticli export <ref>... [--descendants]` (or `--site <name>`, `--all`) writes content of any database as a plan
+  folder (`plan.json`, `files/` with media, `texts/` with long rich text) that `apply --update-existing` brings into
+  another database with the same GUIDs. It only reads the database, over SQL, so it works on production (`--db prod`).
+  Each item is a create, block or upload step with its values and built-in settings (publish dates, URL segment, menu
+  visibility, simple address, shortcut, sort order and index, category), parents first and content before what refers
+  to it; references go by `$id` to what the plan creates and by GUID to anything else, in blocks, rich text and CMS 13
+  compositions (which keep their node keys) too; a cycle is closed by a later `set`; other languages are `translate`
+  steps; published branches are published. Media files come from `--blobs` (a folder of blob containers, or an Azure
+  container URL with a SAS token) or the local site's blob folder. The result lists what the target must already have
+  (`externalRefs`), what was left out and why (`skipped`, newer `drafts`, `dropped` values) and what an export never
+  writes (`notExported`).
+
 - Environment roles. `opticli db add <name> --role <local|dev|test|prod>` adds another environment's database by name
   (asking for the connection string, and its password without showing it, at a terminal; or `--connection`), and
   `--db <name>` reads it for a run. `db role <id|name> <role>` gives any database in `db list` a role, and

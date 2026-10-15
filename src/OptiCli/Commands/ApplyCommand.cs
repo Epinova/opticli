@@ -32,7 +32,8 @@ internal static class ApplyCommand
             "from" (on that version, with the changes since), and a set on a language branch an earlier translate creates.
             The rest get their names checked ("deferred"). Then they run in order; on a failure
             opticli stops and reports what was saved (refs and versions), what failed, and how to undo each saved operation.
-            Plan: {"operations": [ {"op": "...", ...}, ... ]}. A create, block or upload operation may have an "id"; later
+            Plan: {"operations": [ {"op": "...", ...}, ... ]} ("source", which `opticli export` writes, is accepted and not
+            read). A create, block or upload operation may have an "id"; later
             operations refer to what it created as "$id", in ref fields and as a whole string value in "properties".
             A string value "@path" in "properties" is that file's text (e.g. "MainBody": "@texts/article.html"; "@@" for a
             literal @). These files and an upload's "file" are relative to the plan file (the working directory for stdin)

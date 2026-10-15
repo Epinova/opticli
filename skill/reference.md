@@ -65,7 +65,8 @@ production entry's login can write.
 | `projects [<id>]` | Projects (versions of several items published together): `id`, `name`, `status`, `created`, `createdBy`, `publishAt`, `items`. With an id, its items: `ref`, `version`, `type`, `name`, `language`, `status`. Read-only. |
 | `trash [--since <date\|7d>] [--by <user>] [--type T]` | What is directly in the recycle bin (what was deleted), newest first: identity, `deletedBy`, `deleted` (UTC), `descendants` (below it, coming back with it), `originalParent` (`ref`, `name`, `type`, `path`, `url`; `deleted: true` when it is in the recycle bin too, `missing: true` when it is gone): the parent the CMS stored when it was deleted, where `restore` puts it. Null when the CMS has no record of it (`restore --to`). Read from the database, or from the site while `serve` runs (as `restore` reads it; `meta.source: agent`); a warning says why the site wasn't asked when it wasn't. |
 | `display-templates [--type T]` | CMS 13: Visual Builder display templates: `key`, `name`, `nodeType`/`baseType`/`contentType` it is for (absent: any), `isDefault`, `settings[]` (`key`, `name`, `editor` select or checkbox, `choices`). `--type`: the ones content of that type can use. Empty on CMS 12. |
-| `blob <ref>` | Media only: blob URI, file path on disk, `exists`; same for the thumbnail. |
+| `blob <ref>` | Media only: blob URI, file path on disk (the file blob provider's folder, from appsettings or `EPiServer__Cms__FileBlobProvider__Path` in the environment), `exists`; same for the thumbnail. |
+| `export <ref>... [--descendants] \| --site <name> \| --all` | Content as a plan folder for `apply --update-existing` in another database; only reads, so production too. See [Export](#export). |
 | `jobs [--all] [--enabled\|--disabled] [--failed]` | Scheduled jobs: `id`, `name` (on CMS 13, whose database has only the class name: the CMS's own jobs' readable names, the site's from `[ScheduledJob(DisplayName = ...)]`, else the class), `enabled`, `schedule` (`every 1 hour`, `manual`), `nextRun`, `overdue` (enabled, next run passed), `lastRun`, `lastStatus` (`succeeded`, `failed`, `cancelled`, `unableToStart`, `aborted`), `lastMessage` (one line), `running` (`true`, `false`, `"stale"`: its process stopped pinging), `stoppable`, `class`, `source` (file:line in the site's code; null for a job from a package), `registered: false` for a job in the code the database lacks (the site registers jobs when it starts). `--all` adds jobs the CMS hides. See [Scheduled jobs](#scheduled-jobs). |
 | `jobs log [<job>] [--failed] [--since <date\|7d>] [--limit N]` | Runs, latest first (20 by default): `job`, `jobId`, `started`, `finished`, `duration`, `durationMs`, `status`, `trigger` (`scheduler`, `user`, `restart`), `server`, `message` (whole; it can be HTML). Without `<job>`: every job's runs. |
 | `access <ref>` | `inherited`, `from` (the item the entries are stored on: itself, or the nearest ancestor with its own), `entries[]` (`name`, `kind`: role, user or visitorGroup, `levels`: `FullAccess` or e.g. `["Read","Edit"]`, `mask`). Read from the database; no `serve` needed. |
@@ -653,7 +654,7 @@ step by step. `get` and `access` show it as `approval`: `definedOn`, `inherited`
 
 Ops: `set`, `create`, `area`, `block`, `upload`, `translate`, `publish`, `unpublish`, `discard`, `move`, `delete`,
 `restore`, `access`, with the same fields as the commands (`opticli apply --help` lists them). `"$id"` refers to what an earlier
-`create`, `block` or `upload` with that `id` made.
+`create`, `block` or `upload` with that `id` made. A top-level `"source"` (what `export` writes) is accepted and not read.
 - In rich text (and `@file` HTML), `href="$id"` (or `"$id#anchor"`, `"$id?epslanguage=sv"`) links to planned content,
   and `src="$id"` shows a planned image: it is stored as its permanent link, `~/link/<guid>.aspx`, as the CMS does. A block in the text takes `data-contentguid="$id"` (or
   `data-contentlink="$id"`, its id). A link to content a later step creates (or the same step) needs its GUID up front:
@@ -728,6 +729,63 @@ Plans that run again (a section rebuilt after a database refresh, or repaired af
 - CMS 13: a whole composition (`"composition"` in `properties`) whose nodes have keys the content lacks makes those
   nodes with those keys (a composition copied from another database keeps its keys), so running it again finds them
   and is `unchanged`. A key must be a GUID.
+
+## Export
+
+`opticli export <ref>... [--descendants] [--languages en,sv | --all-languages] [--out <dir>] [--blobs <dir|https URL>]
+[--no-media] [--db <name>]`, or `--site <name>` / `--all` instead of refs. Reads the database only (over SQL), so it
+works on production, and writes a folder:
+- `plan.json`: `{"source": {...}, "operations": [...]}`; `files/<guid>/<name>`: media files; `texts/`: rich text over
+  4000 characters (`"MainBody": "@texts/<guid>.<lang>.MainBody.html"`). `--out` defaults to `export-<database>-<time>`; a
+  folder with an earlier export's `plan.json` is written over, any other non-empty one refused (usage).
+- What: each ref (`--descendants`: and everything below it); `--site`: the start page and everything below it, the site's
+  assets and the global assets (not those folders themselves); `--all`: every site. Blocks and media in a "For this page"
+  folder come with their owner. Never the root, the recycle bin, asset roots, "For this page" folders themselves,
+  content in the recycle bin, blueprints, or content of other kinds than pages, blocks, media and folders (`skipped`).
+- Branches: all, or the master branch plus `--languages`. A published branch's published version; a branch never
+  published: its newest draft, written as a draft. A newer draft than the published version is left out (`drafts`).
+
+The plan, in order:
+1. One step per item, parents first (and a "For this page" folder's owner before its content), then where references
+   allow it content before what refers to it: `{"op": "create"|"block"|"upload", "id": "c<guid without dashes>",
+   "guid": "<source GUID>", "parent": "$id"|"<GUID>"}` (`"for": "$id"|"<GUID>"` instead of `parent` in a "For this
+   page" folder), `type`, `name`, `lang` (master language), `file` (upload), `properties` and `"publish": true` when the
+   branch is published (folders never). `properties` has every property of the type (null clears one the target has)
+   except values that refer to content created by this step or a later one, plus the built-in settings: `StartPublish`,
+   `StopPublish`, pages' `PageURLSegment`, `PageVisibleInMenu`, `SimpleAddress`, `Shortcut`, `ChildSortOrder`,
+   `SortIndex`, and `Category` (names). CMS 13: `composition` with every node's `key`, so a second run finds the nodes.
+2. `{"op": "set", "ref": "$id", "lang": ..., "properties": {...}}` per item with the values held back (a cycle: A refers
+   to B and B to A), publishing the branch when it is published.
+3. `{"op": "translate", "ref": "$id", "lang": "sv", "name": ..., "properties": {...}}` per other branch, with its
+   culture-specific values and `StartPublish`, `StopPublish`, `PageURLSegment`, `SimpleAddress`, `Shortcut`; on CMS 13 a
+   `set` with the branch's `composition` after it (translate takes none). The last step of a published branch publishes it.
+
+Values are plain (never `get`'s `{type, value}`): references to planned content are `"$id"`, to anything else the GUID
+(never an id), also in local and inline blocks, block lists, ContentReferenceLists, a shortcut's `to` and a
+composition's shared blocks (`ref`). ContentArea items: `{"ref": ..., "displayOption", "group", "visitorGroups"}` or an
+inline block `{"type", "name", "properties"}`. Links and Url values keep their permanent links (`~/link/<guid>.aspx`).
+Rich text: links and images to planned content become `href="$id"` / `src="$id"`, blocks are named by
+`data-contentguid` only (`data-contentlink`, an id, is dropped or turned into the GUID). A string value that starts with
+`@` is written `@@`.
+
+`source`: `server`, `database`, `role`, `readAt`, `opticli` (version), `cms` (major), `versions` (`{"<guid>": {"<lang>|*":
+<version id written>}}`). `apply` accepts it and doesn't read it.
+
+Media: `--blobs <folder>` holds the blob containers (`<folder>/<container>/<file>`, a copy of `App_Data/blobs`);
+`--blobs https://<account>.blob.core.windows.net/<container>?<SAS>` reads each file with a GET (the token is never
+printed). Without `--blobs`, a local database's files come from the project's file blob folder (appsettings, or
+`EPiServer__Cms__FileBlobProvider__Path`); a remote one's media is left out with a warning. Media without its file, or
+over 50 MB, is `skipped`; `--no-media` leaves all media out. References to skipped content stay GUIDs.
+
+Output (`data`): `folder`, `plan`, `source`, `items`, `steps`, `kinds`, `types`, `languages` (branches per language, `*`
+for none), `files` (`count`, `bytes`, `from`), `texts`, `heldBack` (values a later `set` writes), `skipped[]` (`ref`,
+`guid`, `type`, `name`, `reason`), `drafts[]` (`ref`, `guid`, `name`, `language`, `draft`), `externalRefs[]` (content the
+plan refers to and doesn't create: `guid`, `ref`, `type`, `name`, `missing`/`deleted` in the source, `placement` when
+something is created under it, `from[]`: the target needs it, or the dry run fails with `not_found`), `visitorGroups[]`
+(`id`, `name`; null for a role), `dropped[]` (`guid`, `language`, `property`, `reason`: a property the source's code no
+longer has, a reference without a GUID, rich text with an inline block, a composition node whose block isn't stored),
+`providerRefs[]` (a content provider's content, kept as `id__provider`), `notExported`. Warnings sum up what needs
+attention.
 
 ## serve and env
 

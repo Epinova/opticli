@@ -1,0 +1,23 @@
+{
+  "guidNamespace": "0d6f3a52-8b1e-4c7a-9e25-5a4c1b7d3f90",
+  "operations": [
+    {"op": "create", "id": "experience", "parent": "7b08c7d5-7585-47e5-add7-5822da68c3ce", "type": "VbExperience", "name": "Sync experience",
+      "properties": {
+        "Summary": "An experience made in the source",
+        "composition": {"sections": [
+          {"type": "VbBanner", "name": "Banner", "properties": {"Title": "Made in the source"}},
+          {"type": "VbSection", "name": "Cards", "rows": [{"name": "Card row", "displayTemplate": "vbRow", "displaySettings": {"gap": "wide"}, "columns": [
+            {"name": "First", "elements": [
+              {"type": "VbCardElement", "name": "Card", "displayTemplate": "vbElement", "displaySettings": {"color": "plain"}, "properties": {
+                "Heading": "Card in the source",
+                "Image": "155cba62-ae10-561d-b0c6-831fbd91606f",
+                "Teaser": "<p>See <a href=\"~/link/e351ed2f34a55da4be93cb2fb61413ca.aspx\">page A</a>.</p>",
+                "Links": [{"text": "Page B", "href": "~/link/93f7bac3ef175a8ca3607b6bc009bf43.aspx"}, {"text": "Elsewhere", "href": "https://example.com/elsewhere", "target": "_blank"}],
+                "Priority": 2}}]},
+            {"name": "Second", "elements": [
+              {"type": "VbLinkElement", "name": "Link", "properties": {"Heading": "To page A", "Target": "e351ed2f-34a5-5da4-be93-cb2fb61413ca"}},
+              {"ref": "7a1c2e3d-5b6f-4a70-9c81-0d2e3f4a5b02", "name": "Shared"}]}]}]}]}},
+      "publish": true},
+    {"op": "translate", "ref": "$experience", "lang": "sv", "name": "Synkupplevelse", "properties": {"Summary": "En upplevelse från källan"}, "publish": true}
+  ]
+}

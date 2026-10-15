@@ -95,6 +95,7 @@ internal partial class Program
         root.Subcommands.Add(JobsCommand.Create(options));
         root.Subcommands.Add(BlobCommand.Create(options));
         root.Subcommands.Add(SqlCommand.Create(options));
+        root.Subcommands.Add(ExportCommand.Create(options));
         root.Subcommands.Add(ServeCommand.Create(options));
         root.Subcommands.Add(EnvCommand.Create(options));
         root.Subcommands.Add(DriftCommand.Create(options));

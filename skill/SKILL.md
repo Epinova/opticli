@@ -75,6 +75,7 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
 | Did a job (an import, a sync) run, and how did it end? | `opticli jobs log "<job name>"` (`--failed --since 1d` for every job) |
 | Run a job now (only when asked) | `opticli jobs run "<job name>"` (needs `serve`; waits for it) |
 | Sign in locally to a restored database (only when asked) | `opticli users add <name> --dry-run` (needs `serve`); `opticli users roles` |
+| Copy content from another environment's database (only when asked) | `opticli export <ref> --descendants --db <name> --out <dir>`, then `opticli apply <dir>/plan.json --update-existing --dry-run` |
 | Anything else (read-only) | `opticli sql "SELECT TOP 10 ... FROM tblContent ..."` |
 
 ## Recipes
@@ -95,6 +96,12 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
 - **What's unpublished?** `opticli drafts --since <yyyy-MM-dd>` (with `--kind page`, `--type`, `--by <user>`,
   `--lang`); each row names the newest draft version (`get <that ref>` shows its values). `checkedOut` = being edited,
   `checkedIn` = ready to publish; a `drafts` count in the thousands means an import or integration job saves versions.
+- **Content from another environment** (only when the user asked): `opticli export <ref>... --descendants --db <name>
+  --out <dir>` reads it over SQL (production too: export only reads) and writes a plan with the source's GUIDs, media
+  files (`--blobs <folder or https container URL with SAS>` for a database that isn't local) and long texts. Check
+  `externalRefs` (content the plan refers to but doesn't create: the development database must have it), `skipped`,
+  `drafts` and `dropped`, then `opticli apply <dir>/plan.json --update-existing --dry-run` against the development
+  database, and run it once the user agrees. Applying it to production is refused, as every write there.
 - **Just the metadata of an item** (`saved`, `changedBy`, `status`): `opticli get <ref> --fields name`. Without
   `--version`, `get` shows the published version, or the latest draft when the branch was never published.
 

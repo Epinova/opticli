@@ -246,11 +246,52 @@ What `prod` means:
 - `serve`, `env` and every write command (including `--dry-run` and `apply`) are `refused` (exit 3,
   `details.reason: "prodDatabase"`), whichever way the database was picked. opticli doesn't write to production.
 
+### Exporting content
+
+`opticli export` writes content of any database as a plan folder that `apply --update-existing` brings into another
+database, with the same GUIDs. It only reads the database (over SQL, never through a site), so it works on production:
+
+```sh
+opticli export /en/about-us/ /globalassets/about-us/ --descendants --db prod --blobs ../prod-blobs --out about-us
+opticli apply about-us/plan.json --update-existing --dry-run    # against the development database; then without --dry-run
+```
+
+- **What**: the refs (one or more), with `--descendants` everything below them; `--site <name>` a site's start page with
+  everything below it, the site's assets and the global assets; `--all` every site. Blocks and media in a "For this
+  page" folder go with the content they belong to. Never the root, the recycle bin, the asset roots themselves or
+  content in the recycle bin. Every language branch, or `--languages en,sv` (an item's master branch always).
+- **The folder** (`--out`, default `export-<database>-<time>`; one with an earlier export's `plan.json` is written
+  over, any other that isn't empty is refused): `plan.json`, `files/` with the media files, and `texts/` with rich text
+  longer than 4000 characters, which the plan reads as `@file` values.
+- **The plan**: each item is a `create`, `block` or `upload` step with the source's GUID and its values, including the
+  built-in settings (publish dates, URL segment, menu visibility, simple address, shortcut, sort order and index,
+  category); parents come first, and content before what refers to it where references allow it. References to what
+  the plan creates are `$id`s, to anything else GUIDs (never ids, which differ between databases), also inside local
+  and inline blocks, block lists, rich text and CMS 13 compositions (which keep their node keys, so a second run finds
+  them). Values that refer to content created later in the plan (a cycle: A links to B and B to A) are written by a
+  `set` once both exist. Other language branches are `translate` steps with their culture-specific values. A branch
+  published in the source is published by the last step that writes it; an unpublished one stays a draft; a newer
+  draft than the published version is left out. A top-level `"source"` says where and when the plan was read, and the
+  version written of each branch; `apply` doesn't read it.
+- **Media**: the files come from `--blobs`, a folder holding the blob containers (a copy of the site's
+  `App_Data/blobs`) or an Azure blob container's `https://` URL with a SAS token (read with a plain GET; the token is
+  never shown), or, for a local database, from the project's file blob folder (`EPiServer:Cms:FileBlobProvider:Path`,
+  also from the environment). Media whose file isn't found is left out and listed; `--no-media` leaves all media out.
+  Applied again, an upload whose file changed gets the new file.
+- **The result** counts items, steps, kinds, types, languages and files, and lists `skipped` items, newer `drafts` left
+  out, `externalRefs` (content the plan refers to but doesn't create, with its name and whether it is missing or in
+  the source's recycle bin: the target must have it, or the dry run fails with `not_found`), `visitorGroups`
+  personalized values show to, `dropped` values that can't be written to another database (a value of a property the
+  source's code no longer has, a reference to content that doesn't exist, rich text with an inline block), references
+  to a content provider's content (`providerRefs`, kept as they are), and `notExported`: access rights, other versions
+  and who saved them when, and everything that isn't content (Forms submissions, visitor groups, categories, users).
+
 ## Safety model
 
 | Rule | Enforced by |
 |---|---|
 | A remote database is used only when the user chose it as the development database, or for one run with `--db` or `--connection`, with a warning on every response. Only literal loopback names (`localhost`, `127.0.0.1`, `::1`, `.`, `(local)`) and LocalDB count as local. A host name that resolves to 127.0.0.1 counts as remote. | CLI, before connecting |
+| `export` only reads (over SQL, never through a site), so it works on production; it writes nothing but its own folder. | CLI |
 | A database with the role `prod` is only read, and only when a run picks it: it is never the development database (`db use` and a saved choice that became production are refused), and `serve`, `env` and every write are refused (exit 3, `details.reason: "prodDatabase"`), whether it was picked by name, id, database name, `--connection`, `--profile`, `OPTICLI_DB` or an exported connection string. Roles belong to a server and database, and a weaker one needs a person at a terminal. Reads connect with `ApplicationIntent=ReadOnly`. | CLI before anything is read, again on the way to the site, and when starting it |
 | The site started by `serve` is pinned to the database the CLI reads. It refuses to start against any remote database except the approved development one. There it runs without scheduler, schema updates, content type sync or store remapping, and `serve` refuses a build with EF Core migrations the database lacks. If the site turns hosting startups off in its code, so the pin can't run, it refuses to start. | CLI + site agent at startup |
 | The site agent answers only loopback callers that send the per-run token, and only in `Development`. The token is kept in a state file only your user can read. | Site agent, per request |
@@ -340,6 +381,7 @@ add-ons need first.
 | `jobs [--failed]`, `jobs log [<job>] [--failed] [--since]` | scheduled jobs: schedule, next and last run, how it ended, overdue, running; their runs with status and message (see [Scheduled jobs](#scheduled-jobs)) |
 | `display-templates [--type T]` | CMS 13: Visual Builder display templates and their settings, the styles a composition's nodes can use |
 | `blob <ref>` | where a media file lives on disk |
+| `export <ref>... [--descendants]`, `export --site <name>\|--all` | content of any database, production too, as a plan folder that `apply --update-existing` brings into another one (see [Exporting content](#exporting-content)) |
 | `drift` | what differs between the build and a shared database (needs `serve`; see [Shared databases](#shared-databases)) |
 | `access <ref>` | who may read and edit an item: its access rights, and the ancestor they are inherited from |
 | `sql "<SELECT …>"` | anything else, read-only |
@@ -1342,6 +1384,24 @@ Scripts in `tests/fixtures/cms13/` run whole command sets against one site and s
 CMS 13 site with the CMS 12 site it came from, or a CMS 12 site before and after a change), `write-battery.sh` the
 content writes, and `vb-write-battery.sh` Visual Builder writes. The write batteries start and stop `serve` themselves,
 check that the site renders what they wrote, and leave their content in the recycle bin.
+
+#### The content sync fixtures
+
+`tests/fixtures/sync/` makes databases to export from and to, as copies of an edge-case site's database (`alloy-edge*`
+only; the base database and the site's own blobs are only read). `make-source.sh` makes the source,
+`alloy-edge-source`, and changes it through opticli the way editors change another environment (`source-changes.plan.json`:
+new pages with a cycle between two of them, a block in a "For this page" folder, media, an edited page, a draft, a
+move, a page in the recycle bin, a new language branch; on CMS 13 also a Visual Builder experience). `round-trip.sh`
+exports part of it and applies the plan to a fresh copy of the base database whose ids differ from the source's, then
+compares every item and language branch the plan writes in both databases (`get --full --all-properties`, ids,
+versions and who saved when aside; publish dates included), and applies it again, which must change nothing. Both stop
+the sites they start; `round-trip.sh` drops its target unless `KEEP_TARGET=1`. Each script's comment lists its
+modes and settings (`OPTICLI` picks the opticli to run, e.g. a wrapper around this checkout's build).
+
+```sh
+SQLCMDPASSWORD=... tests/fixtures/sync/round-trip.sh                       # CMS 12: /demo/AlloyEdge, alloy-edge
+SQLCMDPASSWORD=... tests/fixtures/sync/round-trip.sh /demo/AlloyEdge13 alloy-edge13 alloy-edge-13-source alloy-edge-13-target
+```
 
 #### The MCP test site
 

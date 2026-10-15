@@ -10,7 +10,7 @@
 #   make-source.sh --stop <copy-db> [<site-dir> [<base-db>]]    stop that site
 #   make-source.sh --env <copy-db> [<site-dir> [<base-db>]]     print the shell variables that point opticli at the
 #                                                               copy (eval "$(make-source.sh --env ...)")
-#   make-source.sh --drop <copy-db> [<site-dir> [<base-db>]]    stop its site, drop the copy and its folder
+#   make-source.sh --drop <copy-db> [<site-dir> [<base-db>]]    stop its site, drop the copy, its folder and its backup
 #
 # Every run of the first form starts from a fresh copy, so it repeats. A copy's name must start with "alloy-edge-"
 # (no base database's does), and an existing copy is only replaced or dropped when it has its copy home (below), so
@@ -36,6 +36,10 @@
 #   moved            Become a reseller: About us -> How to buy
 #   trashed          Management (the start page's link collection still links to it)
 #   new language     Whitepaper: sv branch "Vitbok", published
+# On CMS 13 (a site with the Visual Builder fixture's VbExperience) also source-changes.cms13.plan.json:
+#   new experience   "Sync experience" under Start: a banner, a section whose card element shows the new image and links
+#                    to page A in its rich text and to page B in its links, a link element whose Target is page A, and
+#                    the fixture's shared element; an sv branch "Synkupplevelse"; all published
 #
 # Needs sqlcmd, jq, rsync and opticli (OPTICLI overrides the command), and SQL Server credentials in SQLCMDSERVER,
 # SQLCMDUSER and SQLCMDPASSWORD (default: localhost,1433 and sa).
@@ -107,12 +111,15 @@ serve() {
   echo "$started" | jq -c '.data | {state, url, database: .database.name}'
 }
 
+# The backup a copy is restored from, in the SQL Server's own backup folder.
+BACKUP_FILE="CAST(SERVERPROPERTY('InstanceDefaultBackupPath') AS nvarchar(4000)) + N'/$COPY_DB.bak'"
+
 copy() {
   require_own_copy
   stop
   echo "== database: $BASE_DB -> $COPY_DB (fresh)"
   sqlcmd -b -Q "
-    DECLARE @bak nvarchar(4000) = CAST(SERVERPROPERTY('InstanceDefaultBackupPath') AS nvarchar(4000)) + N'/$COPY_DB.bak';
+    DECLARE @bak nvarchar(4000) = $BACKUP_FILE;
     DECLARE @dir nvarchar(4000) = CAST(SERVERPROPERTY('InstanceDefaultDataPath') AS nvarchar(4000));
     DECLARE @data sysname = (SELECT name FROM sys.master_files WHERE database_id = DB_ID(N'$BASE_DB') AND type = 0);
     DECLARE @log sysname = (SELECT name FROM sys.master_files WHERE database_id = DB_ID(N'$BASE_DB') AND type = 1);
@@ -138,8 +145,10 @@ case "$MODE" in
     require_own_copy
     stop
     sqlcmd -b -Q "IF DB_ID(N'$COPY_DB') IS NOT NULL BEGIN ALTER DATABASE [$COPY_DB] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$COPY_DB]; END"
+    # The backup the copy was made from, which nothing else uses (copies are named after it).
+    sqlcmd -b -Q "SET NOCOUNT ON; DECLARE @bak nvarchar(4000) = $BACKUP_FILE; EXEC master.sys.xp_delete_files @bak;" >/dev/null
     rm -rf "$COPY_HOME"
-    echo "== dropped $COPY_DB and $COPY_HOME"
+    echo "== dropped $COPY_DB, its backup and $COPY_HOME"
     exit 0 ;;
   copy)
     copy
@@ -159,6 +168,18 @@ if ! result=$($OPTICLI apply "$HERE/source-changes.plan.json" --connection "$COP
 fi
 echo "$result" > "$COPY_HOME/changes.json"
 echo "$result" | jq -c '.data.operations[] | {index, op, id, status, ref: (.result.ref // null), guid: (.guid // .result.guid // null)}'
+
+experiences=$(sqlcmd -b -h -1 -W -d "$COPY_DB" -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM tblContentType WHERE Name = N'VbExperience'")
+if [ "$experiences" != 0 ]; then
+  echo "== CMS 13 changes (source-changes.cms13.plan.json)"
+  if ! cms13=$($OPTICLI apply "$HERE/source-changes.cms13.plan.json" --connection "$COPY_CONNECTION"); then
+    echo "$cms13" | jq '.error | {code, message, hint}' >&2
+    echo "$cms13" | jq -c '.error.details.operations[]? | {index, op, id, status, error: .error.message}' >&2
+    exit 1
+  fi
+  echo "$cms13" > "$COPY_HOME/changes.cms13.json"
+  echo "$cms13" | jq -c '.data.operations[] | {index, op, id, status, ref: (.result.ref // null), guid: (.guid // .result.guid // null)}'
+fi
 
 # The image must be in the copy's blob folder, not the edge-case site's. `opticli blob` maps the URI with the site's
 # appsettings, which don't know $BLOBS: only its container and file name count.
