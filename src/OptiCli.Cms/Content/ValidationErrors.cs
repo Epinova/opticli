@@ -9,7 +9,7 @@ using DataAnnotationsValidationException = System.ComponentModel.DataAnnotations
 namespace OptiCli.Cms.Content;
 
 /// <summary>Runs the CMS's own save validation and reports every issue, not just the first.</summary>
-internal static class ValidationErrors
+internal static partial class ValidationErrors
 {
     /// <summary>
     /// The validators the CMS runs on save (required properties, [AllowedTypes] and other data
@@ -68,7 +68,7 @@ internal static class ValidationErrors
                 "The master language branch has never been published, and the CMS publishes it first. Save this branch as a draft (leave out publish) and give the user its editUrl; or, if the user asks, publish the master branch first (publish_content with its lang). Nothing was published."),
             AgentErrorReasons.MasterNotPublished);
 
-    private static ValidationIssue ToIssue(ValidationError error) => new(
+    internal static ValidationIssue ToIssue(ValidationError error) => new(
         string.IsNullOrEmpty(error.PropertyName) ? null : error.PropertyName,
         error.ErrorMessage,
         error.Severity switch
@@ -78,11 +78,24 @@ internal static class ValidationErrors
             _ => "info",
         })
     {
-        Code = error.Source?.GetType().FullName == ReferencingContentValidator ? ValidationIssueCodes.UnresolvedReference : null,
+        Code = IsUnresolvedReference(error) ? ValidationIssueCodes.UnresolvedReference : null,
     };
+
+    /// <summary>
+    /// CMS 13's refusal of a reference to content that doesn't exist. Its validator is the error's source for the content's
+    /// own properties; for a value inside a block (a local block, a block list, an inline block) the CMS's validation
+    /// service names the validator that validated the block as the source instead (13.3's <c>BlockValidator</c>), and only
+    /// the message, which the CMS doesn't translate, says what it is.
+    /// </summary>
+    private static bool IsUnresolvedReference(ValidationError error) =>
+        error.Source?.GetType().FullName == ReferencingContentValidator || UnresolvedReferenceMessage().IsMatch(error.ErrorMessage ?? "");
 
     /// <summary>
     /// CMS 13's validator of references to content that doesn't exist; internal, so known by name. CMS 12 has none.
     /// </summary>
     private const string ReferencingContentValidator = "EPiServer.Validation.Internal.ReferencingContentValidator";
+
+    /// <summary>That validator's message: <c>Property 'Url' has an unresolved reference to content with ID &lt;id or GUID&gt;.</c></summary>
+    [System.Text.RegularExpressions.GeneratedRegex(@"^Property '[^']*' has an unresolved reference to content with ID \S+\.$")]
+    private static partial System.Text.RegularExpressions.Regex UnresolvedReferenceMessage();
 }

@@ -604,6 +604,13 @@ internal sealed class PropertyWriter(
             JsonValueKind.String when DateTimeOffset.TryParse(value.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var at) => at.LocalDateTime,
             _ => throw AgentException.Usage($"{which} must be a date or time like 2025-02-14 or 2025-02-14T08:00:00+01:00, or null."),
         };
+        var current = which == StartPublishKey ? versionable.StartPublish : versionable.StopPublish;
+        if (SameMillisecond(current, parsed))
+        {
+            // get shows dates to the millisecond (all CMS 12's datetime holds); CMS 13 keeps ticks. Written back as get
+            // shows it, a date is the one the content has, not a change.
+            return;
+        }
         if (which == StartPublishKey)
         {
             versionable.StartPublish = parsed;
@@ -613,6 +620,12 @@ internal sealed class PropertyWriter(
             versionable.StopPublish = parsed;
         }
     }
+
+    /// <summary>Whether two times are the same instant to within a millisecond (both null counts).</summary>
+    internal static bool SameMillisecond(DateTime? a, DateTime? b) =>
+        a is null || b is null
+            ? a is null && b is null
+            : Math.Abs((a.Value.ToUniversalTime() - b.Value.ToUniversalTime()).Ticks) < TimeSpan.TicksPerMillisecond;
 
     private static void SetSorting(PageData page, string which, JsonElement value)
     {

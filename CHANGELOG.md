@@ -74,6 +74,13 @@ again to update the skill.
   (`set --lang sv` with `{"composition": {"sections": []}}`, or `composition --lang sv remove` of its last node; a draft
   save is enough) is `refused` (exit 3). The CMS (13.3) deleted the master branch's stored blocks on such a save, so
   every node of the published composition read as missing, in opticli and in the CMS.
+- CMS 13: a plan's dry run takes a link inside a block (a local block's `Url`, a link in a block list or an inline
+  block) to content the plan creates for what it is, as it already did for one in the content's own properties: the CMS
+  reports those through the block's validator, so the dry run failed with "unresolved reference" and nothing was
+  applied. An export whose start page's logo links to an image it exports ran into it.
+- CMS 13: `StartPublish` or `StopPublish` written as `get` shows it (to the millisecond; CMS 13 keeps finer times) is
+  the date the content has, not a change. Before, it saved a new version, so applying an export to a database that
+  already had the content saved (and published) every such item again.
 
 ### Skill
 

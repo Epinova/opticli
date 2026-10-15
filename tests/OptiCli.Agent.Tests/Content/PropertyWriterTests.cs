@@ -411,4 +411,18 @@ public class PropertyWriterTests
 
         protected override void SetDefaultValue() => _value = null;
     }
+
+    [Fact]
+    public void A_publish_date_as_get_shows_it_to_the_millisecond_is_the_one_the_content_has()
+    {
+        // CMS 13 keeps ticks (datetime2); get shows milliseconds, as CMS 12's datetime holds them.
+        var stored = new DateTime(2026, 10, 7, 6, 54, 23, DateTimeKind.Utc).AddTicks(6603958);
+        var shown = DateTimeOffset.Parse("2026-10-07T06:54:23.66Z", System.Globalization.CultureInfo.InvariantCulture).LocalDateTime;
+
+        Assert.True(PropertyWriter.SameMillisecond(stored, shown));
+        Assert.True(PropertyWriter.SameMillisecond(null, null));
+        Assert.False(PropertyWriter.SameMillisecond(stored, shown.AddMilliseconds(2)));
+        Assert.False(PropertyWriter.SameMillisecond(stored, null));
+        Assert.False(PropertyWriter.SameMillisecond(null, shown));
+    }
 }
