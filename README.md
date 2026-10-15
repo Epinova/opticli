@@ -387,11 +387,13 @@ These commands write:
   one created as `$id`. A property value `"@texts/body.html"` is that file's text, as `Prop=@file` is on the command
   line. Files in a plan are relative to the plan file and must stay inside its folder. With `"guidNamespace"`, what a
   plan creates gets the same GUIDs in every database, and `apply --update-existing` runs it again: existing content is
-  updated (and moved back out of the recycle bin), and steps that are already done change nothing. A plan that stops
+  updated (and moved back out of the recycle bin; an upload's file replaced when the bytes differ), and steps that are
+  already done change nothing. A plan that stops
   halfway (a failure, Ctrl+C) still reports what it saved, with undo hints and `details.partial: true`.
 
 Every write command takes `--dry-run`. Structured values use `--values`, e.g.
-`--values '{"MainArea":[{"ref":"456"}]}'`; a value may also be given as `get` shows it (`{"type": ..., "value": ...}`).
+`--values '{"MainArea":[{"ref":"456"}]}'`; a value may also be given as `get` shows it (`{"type": ..., "value": ...}`;
+a reference in it is written by its GUID, so `get` output from another database names the same content).
 `set` and `area` check that nobody saved a newer version in the meantime (exit 5 on a conflict). `--base-version <id>` pins the version the change is based on, and `--force` skips the check.
 `--from published` (or `--from <version>`) bases the change on that version instead of the latest, and the check
 stays: newer drafts are left out and stay as they are, and the output lists them (`leftOut`).

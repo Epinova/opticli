@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using EPiServer.Core;
 using EPiServer.DataAbstraction;
 using EPiServer.DataAccess;
@@ -33,13 +34,7 @@ internal static class UploadOperation
 
         if (body.Guid is { } guid && ExistingContent.Find(flow, guid) is { } existing)
         {
-            var name = string.IsNullOrWhiteSpace(body.Name) ? body.FileName.Trim() : body.Name;
-            var updated = ExistingContent.Update(flow, existing, body.UpdateExisting, type, parent, null, name, body.Properties, body.Publish, body.RequestApproval, body.IncludeDraft, body.DryRun);
-            return updated with
-            {
-                MediaType = type.Name,
-                Validation = [.. updated.Validation ?? [], new ValidationIssue(null, "The media item exists, so its file was kept; replace it in the CMS edit UI if it changed.", "warning")],
-            };
+            return UpdateExisting(call, flow, body, existing, type, parent, extension, data);
         }
 
         var media = flow.Repository.GetDefault<MediaData>(parent.ContentLink, type.ID);
@@ -74,6 +69,84 @@ internal static class UploadOperation
             // Nothing references the file if the save failed.
             call.Service<IBlobFactory>().Delete(blob.ID);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Media with the request's GUID exists (<c>updateExisting</c>, a plan run again): updated like other content, and its
+    /// file replaced in the new version when it differs from the one it has, compared by SHA-256 (a dry run sends only the
+    /// hash). The same file is no change.
+    /// </summary>
+    private static WriteResult UpdateExisting(CmsCall call, WriteFlow flow, UploadRequest body, IContent existing, ContentType type, IContent parent, string extension, byte[]? data)
+    {
+        var name = string.IsNullOrWhiteSpace(body.Name) ? body.FileName.Trim() : body.Name;
+        var hash = data is not null ? Convert.ToHexString(SHA256.HashData(data)) : body.Sha256;
+        if (hash is null)
+        {
+            // Nothing to compare with (a dry run of a request without the hash): the file is left as it is.
+            var kept = ExistingContent.Update(flow, existing, body.UpdateExisting, type, parent, null, name, body.Properties, body.Publish, body.RequestApproval, body.IncludeDraft, body.DryRun);
+            return kept with
+            {
+                MediaType = type.Name,
+                Validation = [.. kept.Validation ?? [], new ValidationIssue(null, "The media item exists, so its file was kept; replace it in the CMS edit UI if it changed.", "warning")],
+            };
+        }
+
+        Blob? blob = null;
+        var replaced = false;
+        bool Replace(IContent writable)
+        {
+            if (writable is not MediaData media || SameFile(media.BinaryData, hash))
+            {
+                return false;
+            }
+            replaced = true;
+            if (!body.DryRun)
+            {
+                blob = call.Service<IBlobFactory>().CreateBlob(media.BinaryDataContainer, extension);
+                using var stream = new MemoryStream(data!, writable: false);
+                blob.Write(stream);
+                media.BinaryData = blob;
+            }
+            return true;
+        }
+
+        WriteResult updated;
+        try
+        {
+            updated = ExistingContent.Update(flow, existing, body.UpdateExisting, type, parent, null, name, body.Properties, body.Publish, body.RequestApproval, body.IncludeDraft, body.DryRun, alter: Replace);
+        }
+        catch when (blob is not null)
+        {
+            // The save failed (or was refused), so nothing references the new file.
+            call.Service<IBlobFactory>().Delete(blob.ID);
+            throw;
+        }
+        return updated with
+        {
+            MediaType = type.Name,
+            Validation = replaced
+                ? [.. updated.Validation ?? [], new ValidationIssue(null, $"The file differs from the media item's, so {(body.DryRun ? "it would be" : "it was")} replaced in the new version.", "warning")]
+                : updated.Validation,
+        };
+    }
+
+    /// <summary>Whether the stored file has the SHA-256 <paramref name="hash"/> (hex); false when it can't be read.</summary>
+    private static bool SameFile(Blob? stored, string hash)
+    {
+        if (stored is null)
+        {
+            return false;
+        }
+        try
+        {
+            using var stream = stored.OpenRead();
+            return Convert.ToHexString(SHA256.HashData(stream)).Equals(hash.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or NotSupportedException)
+        {
+            // A file the provider can't find (a copied database without its blobs): replacing it is what helps.
+            return false;
         }
     }
 

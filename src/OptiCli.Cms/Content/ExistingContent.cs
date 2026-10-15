@@ -30,6 +30,10 @@ internal static class ExistingContent
 
     /// <param name="parent">Where the request puts the content; existing content must be there (or in the recycle bin).</param>
     /// <param name="includeDraft">Confirms that a publish also puts other people's unpublished changes live.</param>
+    /// <param name="alter">
+    /// Changes the new version beyond its values (an upload's file); true when it changed something, which is then saved
+    /// even when no value changed.
+    /// </param>
     public static WriteResult Update(
         WriteFlow flow,
         IContent existing,
@@ -44,7 +48,8 @@ internal static class ExistingContent
         bool includeDraft,
         bool dryRun,
         DateTime? publishAt = null,
-        CompositionNodeValue? composition = null)
+        CompositionNodeValue? composition = null,
+        Func<IContent, bool>? alter = null)
     {
         var link = existing.ContentLink.ToReferenceWithoutVersion();
         var existingType = flow.Types.Load(existing.ContentTypeID)?.Name ?? existing.ContentTypeID.ToString(CultureInfo.InvariantCulture);
@@ -98,6 +103,7 @@ internal static class ExistingContent
         writable.Name = name;
         flow.Writer.Apply(writable, properties);
         Compat.CmsCompositionWrites.Apply(flow, writable, composition, null);
+        var altered = alter?.Invoke(writable) ?? false;
         if (deleted)
         {
             // Validated where it will be once restored, not in the recycle bin.
@@ -125,7 +131,7 @@ internal static class ExistingContent
                 dryRun,
                 ContentSummaries.Describe(current, flow.Types),
                 current.ContentLink.WorkID > 0 ? current.ContentLink.WorkID : null,
-                saveUnchanged: decision is not null && current is IVersionable { Status: not VersionStatus.Published },
+                saveUnchanged: altered || (decision is not null && current is IVersionable { Status: not VersionStatus.Published }),
                 precheck: cleared is null ? null : [cleared],
                 beforeSave: deleted ? Restore : null);
         }

@@ -83,7 +83,7 @@ internal interface ICompositionBlocks
 /// Applies a request's Visual Builder composition (<see cref="DraftRequest.Composition"/>) and edits
 /// (<see cref="DraftRequest.CompositionOps"/>) to a composition, with the CMS's structure rules checked up front so a
 /// mistake is named in opticli's terms: an outline holds sections and section-enabled blocks, a section rows, a row
-/// columns, a column element-enabled blocks. Keys stay as they are; new nodes get new ones.
+/// columns, a column element-enabled blocks. Keys stay as they are; new nodes get new ones, or the one they are given.
 /// </summary>
 internal sealed class CompositionEditor(DraftNode root, ICompositionBlocks blocks, Func<string>? newKey = null)
 {
@@ -321,8 +321,22 @@ internal sealed class CompositionEditor(DraftNode root, ICompositionBlocks block
         }
         if (!existing.TryGetValue(value.Key, out var node))
         {
-            throw AgentException.Usage($"{where}: no node of the composition has the key {value.Key}.",
-                "Keys are what get shows; leave key out for a new node.");
+            // A new node that keeps the key it is given (a composition copied from another database keeps its keys, so
+            // writing it again finds them). Its children are rebuilt as any node's: a key among them may be an existing node's.
+            var keys = new HashSet<string>(existing.Keys.Concat(used), StringComparer.OrdinalIgnoreCase);
+            var added = Build(value with { Nodes = null }, parent, keys, where);
+            used.Add(added.Key!);
+            var given = (value.Nodes ?? []).ToList();
+            if (given.Count > 0 && !(added.NodeType is DraftNode.Row or DraftNode.Column || added.HasGrid))
+            {
+                throw AgentException.Usage($"{where}: {added.Describe()} can't hold other nodes{(added.Block is { Shared: true } ? " (a shared section's rows are the shared block's own)" : "")}.");
+            }
+            if (given.Count > 0 && value.Blueprint is not null)
+            {
+                throw AgentException.Usage($"{where}: a section from a blueprint has the blueprint's rows; add more once it is there.");
+            }
+            added.Children.AddRange(given.Select((child, i) => Rebuild(child, added, existing, used, Child(where, added, i))));
+            return added;
         }
         if (!used.Add(node.Key!))
         {

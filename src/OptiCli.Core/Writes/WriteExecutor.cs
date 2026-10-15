@@ -482,12 +482,15 @@ public sealed class WriteExecutor(
             UpdateExisting = updateExisting,
             IncludeDraft = op.IncludeDraft,
             RequestApproval = op.RequestApproval,
+            // Existing media gets the file when it differs: a dry run, which sends no bytes, compares this.
+            Sha256 = updateExisting && op.ContentGuid is not null ? await MediaFiles.Sha256Async(file, cancellationToken) : null,
         };
 
         var result = await PublishingPostAsync(AgentRoutes.Media, request, r => r with { IncludeDraft = true }, cancellationToken);
         var output = Created(result, result.MediaType ?? type?.Name, request.Name ?? request.FileName, request.Parent, request.Guid) with
         {
-            Upload = new UploadInfo(file.FullName, file.Length, result.Saved && !result.Existing && result.Content is { } saved ? await BlobAsync(saved.Id, cancellationToken) : null),
+            // The database's file is the published version's: for existing media only shown once the new one is.
+            Upload = new UploadInfo(file.FullName, file.Length, result.Saved && (!result.Existing || result.Published) && result.Content is { } saved ? await BlobAsync(saved.Id, cancellationToken) : null),
         };
         return Outcome(output, CreatedId(result));
     }

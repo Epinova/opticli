@@ -134,6 +134,8 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
             stopPublish,
             isPage ? Queries.ChildOrder.Name(sortingVersion?.ChildOrderRule ?? header.ChildOrderRule) : null,
             isPage ? sortingVersion?.PeerOrder ?? header.PeerOrder : null,
+            isPage ? facts?.UrlSegment ?? row?.UrlSegment : null,
+            isPage ? facts?.VisibleInMenu : null,
             isPage ? ShortcutInfo.SimpleAddressPath(facts?.ExternalUrl ?? row?.ExternalUrl) : null,
             shortcut,
             category.Count == 0 ? null : category.Select(Model.CategoryName).ToList(),

@@ -53,4 +53,19 @@ public class BlobLocatorTests
         Assert.False(missing.Exists);
         Assert.Null(missing.Size);
     }
+
+    [Fact]
+    public void The_environment_overrides_the_settings_files_as_aspnet_core_reads_it()
+    {
+        using var temp = new TempDirectory();
+        temp.Write("site/appsettings.Development.json", """{ "EPiServer": { "Cms": { "FileBlobProvider": { "Path": "[appDataPath]\\blobs" } } } }""");
+        temp.Write("copy/0123456789abcdef0123456789abcdef/fedcba9876543210fedcba9876543210.jpg", "123");
+
+        var found = BlobLocator.Locate(Uri, temp.Combine("site"), [KeyValuePair.Create("EPiServer__Cms__FileBlobProvider__Path", temp.Combine("copy"))]);
+
+        Assert.True(found.Exists);
+        Assert.Equal(temp.Combine("copy"), found.Root);
+        Assert.Equal("EPiServer:Cms:FileBlobProvider:Path in the environment", found.RootSource);
+        Assert.Equal(temp.Combine("site/App_Data/blobs"), BlobLocator.Root(temp.Combine("site"), []).Root);
+    }
 }

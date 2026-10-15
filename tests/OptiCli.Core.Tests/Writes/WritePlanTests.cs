@@ -375,8 +375,21 @@ public class WritePlanTests
     [Theory]
     [InlineData("""{"operations": [{"op": "delete", "ref": "1"}], "extra": 1}""")]
     [InlineData("""{"guidNamespace": "6f1c2b3a-9d4e-4f5a-8b7c-1d2e3f4a5b6c"}""")]
-    public void Only_operations_and_a_guid_namespace_are_allowed_at_the_top(string json)
+    public void Only_operations_a_guid_namespace_and_a_source_are_allowed_at_the_top(string json)
     {
         Assert.Contains("guidNamespace", Assert.Throws<UsageException>(() => WritePlan.Parse(json)).Message);
+    }
+
+    [Fact]
+    public void An_exports_source_is_accepted_and_not_read()
+    {
+        var plan = WritePlan.Parse("""
+            {"source": {"server": "localhost", "database": "alloy", "versions": {"x": {"en": 12}}},
+             "operations": [{"op": "delete", "ref": "1"}]}
+            """);
+        Assert.Single(plan.Steps);
+
+        var error = Assert.Throws<UsageException>(() => WritePlan.Parse("""{"source": "prod", "operations": [{"op": "delete", "ref": "1"}]}"""));
+        Assert.Contains("\"source\" must be an object", error.Message);
     }
 }

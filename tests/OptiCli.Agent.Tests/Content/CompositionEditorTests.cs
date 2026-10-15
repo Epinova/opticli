@@ -386,17 +386,62 @@ public class CompositionEditorTests
     }
 
     [Fact]
-    public void A_whole_composition_refuses_unknown_and_repeated_keys_and_a_changed_type()
+    public void A_whole_composition_refuses_keys_that_arent_guids_repeated_keys_and_a_changed_type()
     {
         var (editor, _, _) = Experience();
 
-        Assert.Contains("no node of the composition has the key", Assert.Throws<AgentException>(() => editor.Replace(new CompositionNodeValue { Nodes = [new CompositionNodeValue { Key = "gone" }] })).Message);
+        Assert.Contains("the key 'gone' of a new node isn't a GUID", Assert.Throws<AgentException>(() => editor.Replace(new CompositionNodeValue { Nodes = [new CompositionNodeValue { Key = "gone", Type = "Banner" }] })).Message);
         Assert.Contains("given twice", Assert.Throws<AgentException>(() => editor.Replace(new CompositionNodeValue { Nodes = [new CompositionNodeValue { Key = "promo" }, new CompositionNodeValue { Key = "promo" }] })).Message);
         // Located as the input (get's shape) names it, not as the protocol does.
         Assert.StartsWith("composition.sections[1]: ", Assert.Throws<AgentException>(() => editor.Replace(new CompositionNodeValue { Nodes = [new CompositionNodeValue { Key = "promo" }, new CompositionNodeValue { Key = "promo" }] })).Message);
         Assert.Contains("is a Text, not a Teaser", Assert.Throws<AgentException>(() => editor.Replace(new CompositionNodeValue
         {
             Nodes = [new CompositionNodeValue { Key = "hero", Nodes = [new CompositionNodeValue { Key = "row", Nodes = [new CompositionNodeValue { Key = "left", Nodes = [new CompositionNodeValue { Key = "intro", Type = "Teaser" }] }] }] }],
+        })).Message);
+    }
+
+    [Fact]
+    public void A_whole_composition_makes_nodes_with_the_keys_it_gives_that_the_composition_lacks_and_finds_them_again()
+    {
+        var (editor, _, root) = Experience();
+        const string section = "2715f4d1-094d-4284-93de-9a4ba6086df9", row = "910bd0cf-1336-452e-928d-21289b6e3ded", column = "1ce5b84b-bbc1-440f-b427-aaf55e490a9a", element = "7a05f524-7625-44a4-93da-c4eec05e9225";
+        var copied = new CompositionNodeValue
+        {
+            Nodes =
+            [
+                new CompositionNodeValue { Key = "promo" },
+                new CompositionNodeValue
+                {
+                    Key = section, Type = "Section", Name = "Copied",
+                    Nodes = [new CompositionNodeValue { Key = row, Nodes = [new CompositionNodeValue { Key = column, Nodes =
+                    [
+                        new CompositionNodeValue { Key = element, Type = "Text", Name = "Copied text", Properties = new Dictionary<string, JsonElement> { ["Heading"] = Json("Hi") } },
+                        // An existing node, moved into the new column.
+                        new CompositionNodeValue { Key = "intro" },
+                    ] }] }],
+                },
+            ],
+        };
+
+        editor.Replace(copied);
+
+        Assert.Equal(["promo", section], Keys(root));
+        Assert.Equal([element, "intro"], Keys(editor.Find(column, "", "")));
+        Assert.Equal("Hi", ((Block)editor.Find(element, "", "").Block!.Block).Values["Heading"]);
+
+        // Written again: the same nodes, found by their keys.
+        var made = editor.Find(element, "", "");
+        var copy = ((Block)made.Block!.Block).Copy;
+        editor.Replace(copied);
+        Assert.Same(made, editor.Find(element, "", ""));
+        Assert.Equal([element, "intro"], Keys(editor.Find(column, "", "")));
+        Assert.Equal("Copied text", made.Name);
+        // Its own block, with the values set on a copy of it, as for any node with a key.
+        Assert.Equal(copy + 1, ((Block)made.Block!.Block).Copy);
+
+        Assert.Contains("already has a node with the key", Assert.Throws<AgentException>(() => editor.Replace(new CompositionNodeValue
+        {
+            Nodes = [new CompositionNodeValue { Key = "0d6f3a52-8b1e-4c7a-9e25-5a4c1b7d3f90", Type = "Banner" }, new CompositionNodeValue { Key = "0D6F3A52-8B1E-4C7A-9E25-5A4C1B7D3F90", Type = "Banner" }],
         })).Message);
     }
 

@@ -434,11 +434,21 @@ public sealed record UploadRequest
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Replace { get; init; }
 
-    /// <summary>As <see cref="CreateRequest.UpdateExisting"/>; existing media keeps its file.</summary>
+    /// <summary>
+    /// As <see cref="CreateRequest.UpdateExisting"/>; existing media gets the file in its new version when the file differs
+    /// from the one it has (by <see cref="Sha256"/>), and keeps its own when it is the same.
+    /// </summary>
     public bool UpdateExisting { get; init; }
 
     /// <summary>As <see cref="CreateRequest.IncludeDraft"/>.</summary>
     public bool IncludeDraft { get; init; }
+
+    /// <summary>
+    /// The file's SHA-256, hex: with <see cref="UpdateExisting"/>, what a dry run (which sends no <see cref="Data"/>)
+    /// compares with the stored file. Without it, a dry run takes the file to be the same.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Sha256 { get; init; }
 }
 
 /// <summary>Body of <see cref="AgentRoutes.Languages"/>: create a language branch as a draft.</summary>

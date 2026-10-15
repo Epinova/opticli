@@ -34,6 +34,13 @@ public static class MediaFiles
         };
     }
 
+    /// <summary>The file's SHA-256, hex, as the site agent compares it with a stored file.</summary>
+    public static async Task<string> Sha256Async(FileInfo file, CancellationToken cancellationToken)
+    {
+        await using var stream = file.OpenRead();
+        return Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(stream, cancellationToken));
+    }
+
     /// <summary>
     /// A plan's <c>file</c>, relative to the plan's folder. It must stay inside that folder, also after following
     /// symlinks, unless <paramref name="allowOutside"/>: a checked-in plan shouldn't be able to upload arbitrary files.

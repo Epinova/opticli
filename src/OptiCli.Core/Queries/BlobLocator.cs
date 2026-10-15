@@ -12,7 +12,8 @@ public sealed record BlobLocation(string Uri, string? Provider, string? Containe
 /// <summary>
 /// Maps a media item's blob URI to the file the site's <c>FileBlobProvider</c> keeps it in, reading the
 /// provider path the way CMS 12 does: <c>EPiServer:Cms:FileBlobProvider:Path</c> (default
-/// <c>[appDataPath]\blobs</c>), with <c>[appDataPath]</c> from <c>...:AppDataPath</c> (default <c>App_Data</c>).
+/// <c>[appDataPath]\blobs</c>), with <c>[appDataPath]</c> from <c>...:AppDataPath</c> (default <c>App_Data</c>), from
+/// appsettings and, over them as ASP.NET Core reads it, the environment (<c>EPiServer__Cms__FileBlobProvider__Path</c>).
 /// </summary>
 public static class BlobLocator
 {
@@ -55,7 +56,8 @@ public static class BlobLocator
         return (System.IO.Path.GetFullPath(System.IO.Path.Combine(projectDirectory, expanded)), source!);
     }
 
-    public static BlobLocation Locate(string uri, string? projectDirectory)
+    /// <param name="environment">The environment variables to read the settings from too; null for this process's.</param>
+    public static BlobLocation Locate(string uri, string? projectDirectory, IEnumerable<KeyValuePair<string, string>>? environment = null)
     {
         var (provider, container, file) = ParseUri(uri);
         if (provider is null || projectDirectory is null)
@@ -63,11 +65,33 @@ public static class BlobLocator
             return new BlobLocation(uri, provider, container, file, null, null, null, null, null);
         }
 
-        var (root, source) = ResolveRoot(ReadSettings(projectDirectory), projectDirectory);
+        var (root, source) = Root(projectDirectory, environment);
         var path = container is null || file is null ? null : System.IO.Path.Combine(root, container, file);
         var info = path is null ? null : new FileInfo(path);
         return new BlobLocation(uri, provider, container, file, root, source, path, info?.Exists, info is { Exists: true } ? info.Length : null);
     }
+
+    /// <summary>The file blob provider's folder for the project, and where that came from.</summary>
+    /// <param name="environment">The environment variables to read the settings from too; null for this process's.</param>
+    public static (string Root, string Source) Root(string projectDirectory, IEnumerable<KeyValuePair<string, string>>? environment = null)
+    {
+        var settings = ReadSettings(projectDirectory);
+        foreach (var (name, value) in environment ?? ProcessEnvironment())
+        {
+            // ASP.NET Core's environment configuration: EPiServer__Cms__FileBlobProvider__Path is EPiServer:Cms:FileBlobProvider:Path.
+            var key = name.Replace("__", ":", StringComparison.Ordinal);
+            if (key.StartsWith("EPiServer:", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(value))
+            {
+                settings[key] = (value, "the environment");
+            }
+        }
+        return ResolveRoot(settings, projectDirectory);
+    }
+
+    private static IEnumerable<KeyValuePair<string, string>> ProcessEnvironment() =>
+        Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
+            .Where(e => e.Key is string && e.Value is string)
+            .Select(e => KeyValuePair.Create((string)e.Key, (string)e.Value!));
 
     private static Dictionary<string, (string? Value, string File)> ReadSettings(string projectDirectory)
     {

@@ -25,6 +25,15 @@ public class TextRefsTests
         Assert.Equal("""<a href="$page">x</a>""", TextRefs.Map("""<a href="$page">x</a>""", r => TextRefs.Value(r.Attribute, null, null)));
     }
 
+    [Fact]
+    public void An_image_and_a_link_with_a_language_become_permanent_links_too()
+    {
+        var text = TextRefs.Map("""<img src="$image" alt="x"><a href="$page?epslanguage=sv#top">sv</a>""", r => TextRefs.Value(r.Attribute, 42, Page));
+
+        Assert.Equal("""<img src="~/link/11111111222233334444555555555555.aspx" alt="x"><a href="~/link/11111111222233334444555555555555.aspx?epslanguage=sv#top">sv</a>""", text);
+        Assert.True(TextRefs.NeedsOnlyGuid(TextRefs.Src));
+    }
+
     private const string Namespace = "\"guidNamespace\": \"0f6c2a8e-5b1d-4e7a-9a43-7d2c8e1b5f60\",";
 
     private static string Plan(string guidNamespace, string firstBody, string secondBody = "<p>B</p>") => $$$"""

@@ -26,6 +26,19 @@ again to update the skill.
 - `doctor` warns when the login saved for a production database can write (`db_owner`, `db_datawriter`, or INSERT or
   UPDATE on `tblContent`); it says nothing when it may not ask or can't connect.
 - `meta.database` also appears for a local database with a role other than `local`, and has `role`.
+- `get` shows a page's `urlSegment` and `visibleInMenu` (as the version shown has them), which `set` writes as
+  `PageURLSegment` and `PageVisibleInMenu`.
+- `apply --update-existing` replaces an existing upload's file, in a new version, when the step's file differs
+  (compared by SHA-256, also in a dry run, which sends no bytes; a warning says so), and is `unchanged` when it is the
+  same. Before, the media item kept its file and the step said `unchanged` whatever the file was.
+- CMS 13: a whole composition written to content (`composition` in `set`/`create` values or a plan) makes a node with a
+  key the content doesn't have with that key, instead of refusing it (`usage`, "no node of the composition has the
+  key"). A composition copied from another database keeps its keys, so writing it again finds them and changes
+  nothing; before, it was written without keys and saved again, with new ones, every time.
+- Plans may have a top-level `"source"` object, which `apply` accepts and doesn't read (`export` will write it). In rich
+  text in a plan, `src="$id"` (an image) and `href="$id?epslanguage=sv"` become permanent links too.
+- `blob` and the blob an upload reports read the file blob path from the environment too
+  (`EPiServer__Cms__FileBlobProvider__Path`, over appsettings, as the site reads it).
 
 ### Changed
 
@@ -43,6 +56,8 @@ again to update the skill.
   block list, a shortcut's `to` and a composition's shared block. Given `get` output from another database (a copy,
   another environment), the ref named whatever content has that id there, often another item, and was written without
   a word. A reference without a GUID, and a content provider's, still go by their ref.
+- The site agent's refusal of a value in `get`'s `{type, value}` shape in a plan names `get`, not the MCP tool
+  `get_content`.
 
 ### Skill
 

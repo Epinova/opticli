@@ -77,7 +77,8 @@ production entry's login can write.
 {"ref":"123","guid":"...","type":"ArticlePage","name":"News","language":"en","status":"published",
  "url":"/en/news/","kind":"page","version":"123_456","masterLanguage":"en","languages":["en","de"],
  "parent":"45","saved":"2024-05-01T10:00:00Z","changedBy":"editor","startPublish":"...",
- "childSortOrder":"PublishedDescending","sortIndex":100,"simpleAddress":"/news","category":["Press"],
+ "childSortOrder":"PublishedDescending","sortIndex":100,"urlSegment":"news","visibleInMenu":true,
+ "simpleAddress":"/news","category":["Press"],
  "shortcut":{"type":"shortcut","to":{"ref":"456","type":"NewsPage","name":"News archive","url":"/en/archive/"}},
  "properties":{
    "Heading":{"type":"String","value":"Hello","culture":"en"},
@@ -86,7 +87,8 @@ production entry's login can write.
    "Hero":{"type":"Block","blockType":"HeroBlock","value":{"Heading":{"type":"String","value":"..."}}}}}
 ```
 
-`simpleAddress`, `shortcut` (absent on a normal page; an external link also has `url`, and `to`/`anchor` when it is
+Pages show `urlSegment` (the name in its URL) and `visibleInMenu`, which `set` writes as `PageURLSegment` and
+`PageVisibleInMenu`. `simpleAddress`, `shortcut` (absent on a normal page; an external link also has `url`, and `to`/`anchor` when it is
 a permanent link to a page), `category` and `approval` (see [Approval sequences](#approval-sequences)) appear when
 set. A fetch-data page (`shortcut.type: "fetchData"`) shows its own values; `notes` says the site fills the empty ones
 from the page in `shortcut.to`. `culture` on a top-level property is the branch its value came from (shared properties come from the master
@@ -652,8 +654,8 @@ step by step. `get` and `access` show it as `approval`: `definedOn`, `inherited`
 Ops: `set`, `create`, `area`, `block`, `upload`, `translate`, `publish`, `unpublish`, `discard`, `move`, `delete`,
 `restore`, `access`, with the same fields as the commands (`opticli apply --help` lists them). `"$id"` refers to what an earlier
 `create`, `block` or `upload` with that `id` made.
-- In rich text (and `@file` HTML), `href="$id"` (or `"$id#anchor"`) links to planned content: it is stored as its
-  permanent link, `~/link/<guid>.aspx`, as the CMS does. A block in the text takes `data-contentguid="$id"` (or
+- In rich text (and `@file` HTML), `href="$id"` (or `"$id#anchor"`, `"$id?epslanguage=sv"`) links to planned content,
+  and `src="$id"` shows a planned image: it is stored as its permanent link, `~/link/<guid>.aspx`, as the CMS does. A block in the text takes `data-contentguid="$id"` (or
   `data-contentlink="$id"`, its id). A link to content a later step creates (or the same step) needs its GUID up front:
   `"guidNamespace"` on the plan or `"guid"` on that step; `data-contentlink` always needs the content to come first.
   The dry run checks the HTML with that GUID, or a stand-in.
@@ -720,7 +722,12 @@ Plans that run again (a section rebuilt after a database refresh, or repaired af
   `publish: true` that changes nothing on published content, and `delete` of deleted content change nothing.
 - Step statuses: `saved`, or `unchanged` when the content was already as the step wants it. `result.existing: true`
   marks updated content. `area remove`/`move` by index are not repeatable; set whole ContentAreas in `properties`
-  instead. Content that is no longer in the plan is left alone. An existing upload keeps its file.
+  instead. Content that is no longer in the plan is left alone. An existing upload gets the step's file in a new
+  version when the bytes differ (compared by SHA-256, also in the dry run; a warning says so) and is `unchanged` when
+  they are the same.
+- CMS 13: a whole composition (`"composition"` in `properties`) whose nodes have keys the content lacks makes those
+  nodes with those keys (a composition copied from another database keeps its keys), so running it again finds them
+  and is `unchanged`. A key must be a GUID.
 
 ## serve and env
 

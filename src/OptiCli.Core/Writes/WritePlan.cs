@@ -42,6 +42,12 @@ public sealed partial class WritePlan
         ["access"] = ["ref*", "grant", "grantUsers", "revoke", "breakInheritance", "inherit", "allowUnknownRole"],
     };
 
+    /// <summary>
+    /// What <c>export</c> says about where a plan came from (database, time, versions): <c>apply</c> accepts it and doesn't
+    /// read it.
+    /// </summary>
+    public const string SourceField = "source";
+
     /// <summary>Ops that create content, and so can have an <c>id</c> and a <c>guid</c>.</summary>
     public static readonly IReadOnlySet<string> CreatingOps = new HashSet<string>(StringComparer.Ordinal) { "create", "block", "upload" };
 
@@ -69,12 +75,16 @@ public sealed partial class WritePlan
             throw new UsageException($"The plan is not valid JSON: {ex.Message}");
         }
         if (root is not JsonObject { } plan || plan["operations"] is not JsonArray { Count: > 0 } operations
-            || plan.Any(p => p.Key is not ("operations" or "guidNamespace")))
+            || plan.Any(p => p.Key is not ("operations" or "guidNamespace" or SourceField)))
         {
-            throw new UsageException("""A plan is an object with "operations", a non-empty array, and optionally "guidNamespace".""", PlanHint);
+            throw new UsageException("""A plan is an object with "operations", a non-empty array, and optionally "guidNamespace" (and "source", which `export` writes).""", PlanHint);
         }
 
         var problems = new List<string>();
+        if (plan.ContainsKey(SourceField) && plan[SourceField] is not JsonObject)
+        {
+            problems.Add("\"source\" must be an object (export writes where the plan came from there; apply doesn't read it).");
+        }
         Guid? guidNamespace = null;
         if (plan["guidNamespace"] is { } namespaceNode)
         {

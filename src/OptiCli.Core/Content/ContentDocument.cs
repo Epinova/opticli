@@ -9,6 +9,8 @@ namespace OptiCli.Core.Content;
 /// <param name="LatestDraft">A newer unpublished version of this branch, when one exists.</param>
 /// <param name="ChildSortOrder">Pages only: how its children are sorted (<c>FilterSortOrder</c> name).</param>
 /// <param name="SortIndex">Pages only: its place among its siblings when the parent sorts by index.</param>
+/// <param name="UrlSegment">Pages only: the page's name in URLs (<c>about-us</c>), as the version shown has it.</param>
+/// <param name="VisibleInMenu">Pages only: whether it shows in menus (edit mode's "Display in navigation").</param>
 /// <param name="SimpleAddress">Pages only: the simple address (<c>/campaign</c>), when it has one.</param>
 /// <param name="Shortcut">Pages only: where its link goes instead of the page itself, when it isn't a normal page.</param>
 /// <param name="Category">Pages, shared blocks and media: the built-in category's names, when it has any.</param>
@@ -39,6 +41,8 @@ public sealed record ContentDocument(
     DateTime? StopPublish,
     string? ChildSortOrder,
     int? SortIndex,
+    string? UrlSegment,
+    bool? VisibleInMenu,
     string? SimpleAddress,
     ShortcutInfo? Shortcut,
     IReadOnlyList<string>? Category,

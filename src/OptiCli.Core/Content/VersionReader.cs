@@ -53,6 +53,15 @@ public sealed record VersionInfo(
 
     /// <summary>The simple address, as stored: <c>~/campaign</c>.</summary>
     [JsonIgnore] public string? ExternalUrl { get; init; }
+
+    /// <summary>The page's URL segment (its name in URLs) as saved in this version.</summary>
+    [JsonIgnore] public string? UrlSegment { get; init; }
+
+    /// <summary>Whether the page shows in menus, as saved in this version.</summary>
+    [JsonIgnore] public bool? VisibleInMenu { get; init; }
+
+    /// <summary>A media item's file in this version: <c>epi.fx.blob://default/{container}/{file}</c>.</summary>
+    [JsonIgnore] public string? BlobUri { get; init; }
 }
 
 public static class VersionReader
@@ -60,6 +69,7 @@ public static class VersionReader
     private static string Columns(CmsSchema schema) => $"""
         wc.pkID, wc.fkContentID, wc.fkLanguageBranchID, wc.Status, wc.Name, wc.Saved, wc.ChangedByName, wc.StartPublish,
         wc.StopPublish, wc.DelayPublishUntil, wc.ChildOrderRule, wc.PeerOrder, wc.LinkType, wc.LinkURL, wc.ContentLinkGUID, wc.ExternalURL,
+        wc.URLSegment, wc.VisibleInMenu, wc.BlobUri,
         f.FrameName, cl.Status AS BranchStatus, cl.Version AS BranchVersion, cd.CommonDraftId, {(schema.Variations ? "v.[Key]" : "NULL")} AS Variation
         """;
 
@@ -177,6 +187,9 @@ public static class VersionReader
             ShortcutGuid = r.GetGuidOrNull("ContentLinkGUID"),
             FrameName = r.GetStringOrNull("FrameName"),
             ExternalUrl = r.GetStringOrNull("ExternalURL"),
+            UrlSegment = r.GetStringOrNull("URLSegment"),
+            VisibleInMenu = r.GetBooleanOrNull("VisibleInMenu"),
+            BlobUri = r.GetStringOrNull("BlobUri"),
         };
     }
 }

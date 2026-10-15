@@ -889,7 +889,7 @@ internal sealed class PropertyWriter(
 
         if (value.ValueKind == JsonValueKind.Object && value.TryGetProperty("type", out _) && value.EnumerateObject().All(p => p.Name is "type" or "value" or "blockType"))
         {
-            throw AgentException.Usage($"'{property.Name}' was given get_content's {{type, value}} shape.",
+            throw AgentException.Usage($"'{property.Name}' was given {call.ForCaller("get", "get_content")}'s {{type, value}} shape.",
                 "Give the value alone: for a block, an object of its property names to their values.");
         }
         // Interfaces like IList<string> can't be instantiated; a List<T> satisfies them.

@@ -16,7 +16,7 @@ internal static class BlobCommand
         var command = new Command("blob", """
             Show where a media item's file lives: blob URI, path on disk and whether the file exists (also for the thumbnail).
             The disk path is for the file blob provider: EPiServer:Cms:FileBlobProvider:Path in appsettings.json or
-            appsettings.Development.json, default App_Data/blobs.
+            appsettings.Development.json, or EPiServer__Cms__FileBlobProvider__Path in the environment; default App_Data/blobs.
             Example: opticli blob /globalassets/logo.png
             """);
         content.AddTo(command, withLang: false);
@@ -37,8 +37,8 @@ internal static class BlobCommand
             var identity = session.Identities.Describe(header, null);
             return new CommandResult(new BlobResult(
                 identity.Ref!, header.Guid, identity.Type!, identity.Name, identity.Url,
-                row?.BlobUri is { } blob ? BlobLocator.Locate(blob, project) : null,
-                row?.ThumbnailUri is { } thumbnail ? BlobLocator.Locate(thumbnail, project) : null,
+                row?.BlobUri is { } blob ? BlobLocator.Locate(blob, project, context.Environment.Variables) : null,
+                row?.ThumbnailUri is { } thumbnail ? BlobLocator.Locate(thumbnail, project, context.Environment.Variables) : null,
                 row?.BlobUri is null ? "The item has no blob." : project is null ? "No project found, so the blob folder could not be resolved." : null));
         });
         return command;
