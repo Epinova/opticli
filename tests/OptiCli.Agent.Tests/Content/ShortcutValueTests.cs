@@ -24,6 +24,8 @@ public class ShortcutValueTests
     [InlineData("{\"to\": \"123\"}", "123")]
     [InlineData("{\"type\": \"Shortcut\", \"ref\": \"123\"}", "123")]
     [InlineData("{\"type\": \"shortcut\", \"to\": {\"ref\": \"123\", \"name\": \"As get shows it\"}}", "123")]
+    [InlineData("{\"type\": \"shortcut\", \"to\": {\"ref\": \"123\", \"guid\": \"8C9CCB7A-963F-4D19-9672-7FD7356A2252\"}}", "8c9ccb7a-963f-4d19-9672-7fd7356a2252")]
+    [InlineData("{\"type\": \"shortcut\", \"to\": {\"ref\": \"63__dam\", \"guid\": \"8c9ccb7a-963f-4d19-9672-7fd7356a2252\", \"provider\": \"dam\"}}", "63__dam")]
     public void A_ref_is_a_shortcut_to_that_page(string json, string to) =>
         Assert.Equal(new ShortcutValue(ShortcutValue.Shortcut, To: to), Parse(json));
 

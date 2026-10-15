@@ -143,7 +143,8 @@ public static class CompositionInput
         var type = Text(node["type"], $"{where}.type");
         var typeId = type is null ? (int?)null : model.RequireType(type).Id;
         var reference = Text(node["ref"], $"{where}.ref")
-            ?? (node["content"] is JsonObject content ? Text(content["ref"], $"{where}.content.ref") ?? Text(content["guid"], $"{where}.content.guid") : null);
+            // get's content by its GUID, which names the same block in another database, where its id may be other content's.
+            ?? (node["content"] is JsonObject content ? Text(content["guid"], $"{where}.content.guid") ?? Text(content["ref"], $"{where}.content.ref") : null);
         var given = Text(node["nodeType"], $"{where}.nodeType");
         if (given is not null && nodeType is not null && Normal(given) != Normal(nodeType) && !(Normal(nodeType) == "section" && Normal(given) == "component"))
         {
@@ -205,7 +206,7 @@ public static class CompositionInput
 
     /// <summary>
     /// An inline block's property values as <c>set</c> takes them: <c>get</c>'s <c>{type, value}</c> unwrapped, a reference
-    /// as its ref, a link without the content <c>get</c> adds, ContentArea items as <see cref="PropertyNameCheck.AreaItems"/>
+    /// by its GUID, a link without the content <c>get</c> adds, ContentArea items as <see cref="PropertyNameCheck.AreaItems"/>
     /// makes them. Names are checked against the block type when it is known.
     /// </summary>
     /// <param name="keyed">The node has a key, so it keeps its block (the type it is checked against may not be the block's).</param>

@@ -136,13 +136,30 @@ public class PropertyArgumentsTests : IDisposable
             """);
 
         Assert.Equal("Title", (string?)result["MetaTitle"]);
-        Assert.Equal("22", (string?)result["ContactsPageLink"]);
+        // By GUID, not by ref: in another database the id may be other content's.
+        Assert.Equal("588b2a04-0b50-483c-983c-51a40a53da65", (string?)result["ContactsPageLink"]);
         Assert.Equal("""[{"text":"About","href":"~/link/61104228962d4dd2925cb5b12e2373ee.aspx"}]""", result["Links"]!.ToJsonString());
         // A ContentArea's items are what set takes already: kept whole.
         Assert.Equal("JumbotronBlock", (string?)result["MainArea"]![0]!["type"]);
         Assert.Equal("narrow", (string?)result["MainArea"]![1]!["displayOption"]);
         Assert.Equal("""{"Title":"Alloy","Url":"~/link/310b49a7f3b2488ab21b895fe69baa09.aspx"}""", result["Logo"]!.ToJsonString());
         Assert.Equal("as set takes it", (string?)result["Plain"]);
+    }
+
+    [Fact]
+    public void A_reference_without_a_guid_or_from_a_content_provider_is_written_by_its_ref()
+    {
+        var result = Parse("""
+            {
+              "Gone": {"type": "ContentReference", "value": {"ref": "99", "guid": "00000000-0000-0000-0000-000000000000", "missing": true}},
+              "Dam": {"type": "ContentReference", "value": {"ref": "63__dam", "guid": "8c9ccb7a-963f-4d19-9672-7fd7356a2252", "provider": "dam"}},
+              "Pages": {"type": "ContentReferenceList", "value": [{"ref": "22", "guid": "588b2a04-0b50-483c-983c-51a40a53da65", "name": "Contacts"}, {"ref": "23"}]}
+            }
+            """);
+
+        Assert.Equal("99", (string?)result["Gone"]);
+        Assert.Equal("63__dam", (string?)result["Dam"]);
+        Assert.Equal("""["588b2a04-0b50-483c-983c-51a40a53da65","23"]""", result["Pages"]!.ToJsonString());
     }
 
     [Fact]

@@ -43,7 +43,7 @@ public static class GetShape
     }
 
     /// <summary>
-    /// One wrapped value as <c>set</c> takes it: the value, a reference as its ref, a link without the content <c>get</c>
+    /// One wrapped value as <c>set</c> takes it: the value, a reference by its GUID, a link without the content <c>get</c>
     /// adds; a local block's (or block list's) own values unwrapped too; a ContentArea's items as they are (set takes them).
     /// </summary>
     /// <exception cref="UsageException">The value (or one inside it) was cut short by <c>get</c>.</exception>
@@ -65,13 +65,18 @@ public static class GetShape
         };
     }
 
-    /// <summary>A value as <c>get</c> shows it, as <c>set</c> takes it: references by their ref, links without the content added for reading.</summary>
+    /// <summary>
+    /// A value as <c>get</c> shows it, as <c>set</c> takes it: references by their GUID (their ref when they have none, or
+    /// are a content provider's), links without the content added for reading.
+    /// </summary>
     public static JsonNode? Plain(JsonNode? value)
     {
         switch (value)
         {
             case JsonObject reference when reference["ref"] is JsonValue refValue && reference.All(p => Identity.Contains(p.Key)):
-                return refValue.DeepClone();
+                // The GUID names the same content in another database (a copy, another environment); the id may name other
+                // content there, which would be written without a word.
+                return Guid(reference) is { } guid ? JsonValue.Create(guid.ToString("D")) : refValue.DeepClone();
             case JsonObject link when link["href"] is not null && link.ContainsKey("content"):
                 var copy = (JsonObject)link.DeepClone();
                 copy.Remove("content");
@@ -89,4 +94,14 @@ public static class GetShape
                 return value?.DeepClone();
         }
     }
+
+    /// <summary>
+    /// The GUID of a reference as <c>get</c> shows it, unless it is a content provider's (known to the CMS by its
+    /// <c>id__provider</c> ref) or missing an id's GUID.
+    /// </summary>
+    private static Guid? Guid(JsonObject reference) =>
+        reference["provider"] is null && reference["guid"] is JsonValue value && value.TryGetValue<string>(out var text)
+        && System.Guid.TryParse(text, out var guid) && guid != System.Guid.Empty
+            ? guid
+            : null;
 }

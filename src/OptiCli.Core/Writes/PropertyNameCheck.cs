@@ -119,8 +119,8 @@ public static class PropertyNameCheck
     }
 
     /// <summary>
-    /// An inline block's values as the agent takes them: <c>get</c>'s <c>{type, value}</c> unwrapped (a reference as its
-    /// ref), names checked against <paramref name="type"/>.
+    /// An inline block's values as the agent takes them: <c>get</c>'s <c>{type, value}</c> unwrapped (a reference by its
+    /// GUID), names checked against <paramref name="type"/>.
     /// </summary>
     /// <param name="prefix">What the names are shown after in messages (<c>MainArea[2].</c>).</param>
     public static JsonObject InlineValues(CmsModel model, ContentTypeInfo type, JsonObject values, string prefix)
@@ -132,7 +132,7 @@ public static class PropertyNameCheck
 
     /// <summary>
     /// A block's values as <c>set</c> takes them, names not checked: <c>get</c>'s <c>{type, value}</c> unwrapped, other
-    /// values as <see cref="GetShape.Plain"/> makes them (a reference as its ref), local blocks and block lists by their own
+    /// values as <see cref="GetShape.Plain"/> makes them (a reference by its GUID), local blocks and block lists by their own
     /// type. A ContentArea's items, and an inline block's values by position (<c>MainArea[2]</c>), are kept as given, for
     /// <see cref="AreaItems"/> and <see cref="UntypedValues"/>: a shared block there stays <c>{"ref": "37"}</c>.
     /// </summary>

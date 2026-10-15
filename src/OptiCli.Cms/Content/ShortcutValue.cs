@@ -64,8 +64,14 @@ internal sealed record ShortcutValue(string Type, string? To = null, string? Url
                     type = TypeName(Text(field.Value, "type")) ?? throw AgentException.Usage($"Shortcut type must be one of {string.Join(", ", Types.Select(CamelCase))}.");
                     break;
                 case "to" or "ref":
-                    // As get shows it ({"ref": ...}) or as a plain ref.
-                    to = field.Value.ValueKind == JsonValueKind.Object && field.Value.TryGetProperty("ref", out var inner) ? Text(inner, "to.ref") : Text(field.Value, "to");
+                    // As a plain ref, or as get shows it: by its GUID, which names the same page in another database, where
+                    // its id may be another page's.
+                    to = field.Value.ValueKind != JsonValueKind.Object ? Text(field.Value, "to")
+                        : field.Value.TryGetProperty("guid", out var guid) && Text(guid, "to.guid") is { } text && Guid.TryParse(text, out var parsed) && parsed != Guid.Empty
+                            && !field.Value.TryGetProperty("provider", out _)
+                            ? parsed.ToString("D")
+                        : field.Value.TryGetProperty("ref", out var inner) ? Text(inner, "to.ref")
+                        : Text(field.Value, "to");
                     break;
                 case "url":
                     url = Text(field.Value, "url");

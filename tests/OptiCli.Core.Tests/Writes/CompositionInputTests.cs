@@ -74,7 +74,7 @@ public class CompositionInputTests
         """;
 
     [Fact]
-    public async Task Gets_shape_is_taken_as_it_is_with_values_unwrapped_and_references_as_refs()
+    public async Task Gets_shape_is_taken_as_it_is_with_values_unwrapped_and_references_by_guid()
     {
         var value = await CompositionInput.RootAsync(Model, Json(FromGet), Resolve);
 
@@ -90,11 +90,11 @@ public class CompositionInputTests
         Assert.Equal("column", column.NodeType);
         var card = column.Nodes![0];
         Assert.Equal("component", card.NodeType);
-        Assert.Equal("\"6\"", card.Properties!["Target"].GetRawText());
+        Assert.Equal("\"7b08c7d5-7585-47e5-add7-5822da68c3ce\"", card.Properties!["Target"].GetRawText());
         Assert.Equal("[{\"text\":\"Start\",\"href\":\"~/link/7b08c7d5758547e5add75822da68c3ce.aspx\"}]", card.Properties["Links"].GetRawText());
         Assert.Equal("<p>Text</p>", card.Properties["Body"].GetString());
         var shared = column.Nodes[1];
-        Assert.Equal(("103", null), (shared.Ref, shared.Type));
+        Assert.Equal(("7a1c2e3d-5b6f-4a70-9c81-0d2e3f4a5b02", null), (shared.Ref, shared.Type));
         Assert.Equal("f8bddd30-28c4-47cb-a2ba-002e59368220", shared.Key);
     }
 

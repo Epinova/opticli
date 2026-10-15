@@ -36,6 +36,14 @@ again to update the skill.
 - `--db <name>` with a database name that several connection strings share is no longer ambiguous when they point at
   the same server spelled differently (`localhost` and `127.0.0.1,1433`, say).
 
+### Fixed
+
+- A reference written back as `get` shows it (`set --values`, a plan's `properties`, a composition) is written by its
+  GUID, not its ref: a ContentReference, PageReference or ContentReferenceList, one in a local or inline block or a
+  block list, a shortcut's `to` and a composition's shared block. Given `get` output from another database (a copy,
+  another environment), the ref named whatever content has that id there, often another item, and was written without
+  a word. A reference without a GUID, and a content provider's, still go by their ref.
+
 ### Skill
 
 - The skill tells an agent what `prod` means, never to work around a production refusal or a refused role change,
