@@ -13,9 +13,10 @@
 #   make-source.sh --drop <copy-db> [<site-dir> [<base-db>]]    stop its site, drop the copy and its folder
 #
 # Every run of the first form starts from a fresh copy, so it repeats. A copy's name must start with "alloy-edge-"
-# (no base database's does), so the script can't overwrite a database it didn't make. It works on the CMS 13 edge site
-# too (/demo/AlloyEdge13 alloy-edge13 alloy-edge-13-source): the plan names existing content by the Alloy sample's
-# GUIDs, which both have.
+# (no base database's does), and an existing copy is only replaced or dropped when it has its copy home (below), so
+# the script can't overwrite a database it didn't make (such as drift.sh's alloy-edge-shared). It works on the CMS 13
+# edge site too (/demo/AlloyEdge13 alloy-edge13 alloy-edge-13-source): the plan names existing content by the Alloy
+# sample's GUIDs, which both have.
 #
 # A copy's site runs from the edge-case site's build, with opticli state of its own (so it runs beside a `serve` of the
 # edge-case site itself) and its own blob folder: media bytes are in <copy home>/blobs, not the site's App_Data/blobs.
@@ -40,7 +41,7 @@
 # SQLCMDUSER and SQLCMDPASSWORD (default: localhost,1433 and sa).
 set -euo pipefail
 
-usage() { sed -n '2,42p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 1; }
 HERE=$(cd "$(dirname "$0")" && pwd)
 OPTICLI=${OPTICLI:-opticli}
 export SQLCMDSERVER=${SQLCMDSERVER:-localhost,1433} SQLCMDUSER=${SQLCMDUSER:-sa}
@@ -81,6 +82,16 @@ COPY_CONNECTION=${base_connection/Database=$BASE_DB;/Database=$COPY_DB;}
 export XDG_STATE_HOME=$COPY_HOME/state
 cd "$SITE"
 
+# An existing copy is only replaced or dropped when this script made it: it then has its copy home.
+require_own_copy() {
+  local exists
+  exists=$(sqlcmd -b -h -1 -W -Q "SET NOCOUNT ON; SELECT CASE WHEN DB_ID(N'$COPY_DB') IS NULL THEN 0 ELSE 1 END")
+  if [ "$exists" = 1 ] && [ ! -d "$COPY_HOME" ]; then
+    echo "$COPY_DB exists but has no copy home ($COPY_HOME): this script didn't make it, so it leaves it alone." >&2
+    exit 1
+  fi
+}
+
 stop() { $OPTICLI serve --stop --connection "$COPY_CONNECTION" >/dev/null 2>&1 || true; }
 
 serve() {
@@ -97,6 +108,7 @@ serve() {
 }
 
 copy() {
+  require_own_copy
   stop
   echo "== database: $BASE_DB -> $COPY_DB (fresh)"
   sqlcmd -b -Q "
@@ -123,6 +135,7 @@ case "$MODE" in
     printf 'export XDG_STATE_HOME=%q OPTICLI_DB=%q\n' "$XDG_STATE_HOME" "$COPY_CONNECTION"
     exit 0 ;;
   drop)
+    require_own_copy
     stop
     sqlcmd -b -Q "IF DB_ID(N'$COPY_DB') IS NOT NULL BEGIN ALTER DATABASE [$COPY_DB] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$COPY_DB]; END"
     rm -rf "$COPY_HOME"
