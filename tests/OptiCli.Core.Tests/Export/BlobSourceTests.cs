@@ -20,6 +20,12 @@ public class BlobSourceTests
         var missing = await source.CopyAsync(Uri.Replace(".png", ".jpg"), temp.Combine("out/files/b.jpg"), CancellationToken.None);
         Assert.Contains("695de89db07d4067a44c5b31c99f5f6d.jpg doesn't exist", missing);
         Assert.Contains("names no container", await source.CopyAsync("https://cdn.example.com/a.png", temp.Combine("out/c.png"), CancellationToken.None));
+
+        // The URI comes from the source database: an escaped path out of the blob folder isn't followed.
+        temp.Write("secret.txt", "secret");
+        var outside = await source.CopyAsync("epi.fx.blob://default/155cba62ae10561db0c6831fbd91606f/..%2F..%2Fsecret.txt", temp.Combine("out/d.txt"), CancellationToken.None);
+        Assert.Contains("outside the blob folder", outside);
+        Assert.False(File.Exists(temp.Combine("out/d.txt")));
     }
 
     [Fact]

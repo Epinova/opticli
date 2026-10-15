@@ -141,8 +141,10 @@ internal static class ExportCommand
                 ? codes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(code => session.Model.RequireLanguage(code).Id).ToHashSet()
                 : null;
 
+            // Checked before reading (a folder that isn't an export's is refused at once), cleared only once the read worked.
             var folder = Folder(parse.GetValue(output), current, chosen?.Database, readAt);
             var read = await reader.ReadAsync(roots, languageIds, cancellationToken);
+            Clear(folder);
 
             // Media: the file from the blobs, or the item is left out (its references then go by GUID).
             var skipped = read.Skipped.ToList();
@@ -260,29 +262,54 @@ internal static class ExportCommand
     private static readonly JsonSerializerOptions PlanJson = new(JsonOutput.Options) { WriteIndented = true };
 
     /// <summary>
-    /// The folder to write: <c>--out</c>, made if it doesn't exist; one with an earlier export's <c>plan.json</c> is written
-    /// over (its plan, files and texts removed first). Any other folder with something in it is refused.
+    /// The folder to write: <c>--out</c>, made if it doesn't exist. One with something in it must be an earlier export's
+    /// (its <c>plan.json</c> has the <c>source</c> an export writes), which <see cref="Clear"/> then empties of what an
+    /// export writes; any other folder with something in it is refused, also one with a plan of its own, whose files an
+    /// export would delete.
     /// </summary>
-    private static string Folder(string? output, string current, string? database, DateTime now)
+    internal static string Folder(string? output, string current, string? database, DateTime now)
     {
         var folder = Path.GetFullPath(output ?? $"export-{Safe(database ?? "database")}-{now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture)}", current);
-        if (Directory.Exists(folder) && Directory.EnumerateFileSystemEntries(folder).Any())
+        if (File.Exists(folder))
         {
-            if (!File.Exists(Path.Combine(folder, "plan.json")))
-            {
-                throw new UsageException($"{folder} isn't empty and holds no earlier export (plan.json).", "Give --out a new folder, or one an earlier export wrote.");
-            }
-            File.Delete(Path.Combine(folder, "plan.json"));
-            foreach (var part in (string[])["files", "texts"])
-            {
-                if (Directory.Exists(Path.Combine(folder, part)))
-                {
-                    Directory.Delete(Path.Combine(folder, part), recursive: true);
-                }
-            }
+            throw new UsageException($"{folder} is a file.", "Give --out a folder: a new one, or one an earlier export wrote.");
+        }
+        if (Directory.Exists(folder) && Directory.EnumerateFileSystemEntries(folder).Any() && !IsExport(Path.Combine(folder, "plan.json")))
+        {
+            throw new UsageException($"{folder} isn't empty and isn't an earlier export's folder (a plan.json with the source export writes).",
+                "Give --out a new folder, or one an earlier export wrote.");
         }
         Directory.CreateDirectory(folder);
         return folder;
+    }
+
+    /// <summary>Removes what an earlier export wrote in <paramref name="folder"/>: its plan, files and texts.</summary>
+    internal static void Clear(string folder)
+    {
+        File.Delete(Path.Combine(folder, "plan.json"));
+        foreach (var part in (string[])["files", "texts"])
+        {
+            if (Directory.Exists(Path.Combine(folder, part)))
+            {
+                Directory.Delete(Path.Combine(folder, part), recursive: true);
+            }
+        }
+    }
+
+    /// <summary>Whether <paramref name="plan"/> is a plan an export wrote: its <c>source</c> has the time it was read and opticli's version.</summary>
+    private static bool IsExport(string plan)
+    {
+        try
+        {
+            return File.Exists(plan)
+                && JsonNode.Parse(File.ReadAllText(plan)) is JsonObject { } root
+                && root[Core.Writes.WritePlan.SourceField] is JsonObject { } source
+                && source["readAt"] is JsonValue && source["opticli"] is JsonValue && root["operations"] is JsonArray;
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     /// <summary>A local database's media: the project's file blob folder (appsettings, or the environment), when there is one.</summary>

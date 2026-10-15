@@ -62,7 +62,12 @@ public sealed class BlobSource : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
         if (_folder is not null)
         {
-            var source = Path.Combine(_folder, container, file);
+            // The URI comes from the source database: it names a file in the blob folder, never one elsewhere.
+            var source = Path.GetFullPath(Path.Combine(_folder, container, file));
+            if (!source.StartsWith(Path.TrimEndingDirectorySeparator(_folder) + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            {
+                return $"its blob URI {blobUri} names a file outside the blob folder";
+            }
             var info = new FileInfo(source);
             if (!info.Exists)
             {
@@ -78,9 +83,12 @@ public sealed class BlobSource : IDisposable
 
         var url = new UriBuilder(_container!);
         url.Path = $"{url.Path.TrimEnd('/')}/{Uri.EscapeDataString(container)}/{Uri.EscapeDataString(file)}";
+        // The client's timeout ends with the headers; the whole download gets as long.
+        using var transfer = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        transfer.CancelAfter(_http!.Timeout);
         try
         {
-            using var response = await _http!.GetAsync(url.Uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            using var response = await _http.GetAsync(url.Uri, HttpCompletionOption.ResponseHeadersRead, transfer.Token);
             if (!response.IsSuccessStatusCode)
             {
                 // Never the URL itself: its query is the token.
@@ -95,9 +103,17 @@ public sealed class BlobSource : IDisposable
             {
                 return TooLarge(response.Content.Headers.ContentLength.Value);
             }
+            long written;
+            await using (var body = await response.Content.ReadAsStreamAsync(transfer.Token))
             await using (var target = File.Create(destination))
             {
-                await response.Content.CopyToAsync(target, cancellationToken);
+                // A response without a length is counted as it comes.
+                written = await CopyAtMostAsync(body, target, UploadRequest.MaxBytes, transfer.Token);
+            }
+            if (written > UploadRequest.MaxBytes)
+            {
+                File.Delete(destination);
+                return TooLarge(written);
             }
             return null;
         }
@@ -106,11 +122,31 @@ public sealed class BlobSource : IDisposable
             File.Delete(destination);
             return $"{container}/{file} couldn't be fetched ({ex.HttpRequestError})";
         }
-        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (IOException)
+        {
+            // The connection broke while reading.
+            File.Delete(destination);
+            return $"{container}/{file} couldn't be read to the end";
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             File.Delete(destination);
             return $"fetching {container}/{file} timed out";
         }
+    }
+
+    /// <summary>Copies up to one byte more than <paramref name="limit"/>; returns how many were copied.</summary>
+    private static async Task<long> CopyAtMostAsync(Stream source, Stream target, long limit, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[81920];
+        long total = 0;
+        int read;
+        while (total <= limit && (read = await source.ReadAsync(buffer, cancellationToken)) > 0)
+        {
+            await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+            total += read;
+        }
+        return total;
     }
 
     private static string TooLarge(long bytes) =>

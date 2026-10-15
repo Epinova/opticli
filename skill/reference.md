@@ -284,6 +284,9 @@ its key (as `get` shows it), or its name when only one node has it; `root` (or n
   `composition=@file.json`, or a plan's `properties`), in `get`'s shape. Structure, order, names and styles are set as
   given; a node with a key keeps its block (its type can't change) and only the properties given change; a node
   without a key is new; nodes left out are removed. `get`'s output written back unchanged changes nothing.
+- An empty composition (no nodes) on a language branch other than the master branch that isn't published is `refused`
+  (CMS 13.3 would delete the master branch's stored blocks): leave the composition out, keep a node, or publish the
+  branch first.
 - Output: `composition[]` per changed node: `change` (`added`, `removed`, `moved`, `changed`), `nodeType`, `key`, `name`,
   `type`, `in`, `at`, `changes[]` (`field`, `before`, `after`). New nodes get new keys, shown here.
 - `--variation <key>` (also on `set`): writes that content variation; one without a version yet starts from the
@@ -736,14 +739,16 @@ Plans that run again (a section rebuilt after a database refresh, or repaired af
 [--no-media] [--db <name>]`, or `--site <name>` / `--all` instead of refs. Reads the database only (over SQL), so it
 works on production, and writes a folder:
 - `plan.json`: `{"source": {...}, "operations": [...]}`; `files/<guid>/<name>`: media files; `texts/`: rich text over
-  4000 characters (`"MainBody": "@texts/<guid>.<lang>.MainBody.html"`). `--out` defaults to `export-<database>-<time>`; a
-  folder with an earlier export's `plan.json` is written over, any other non-empty one refused (usage).
+  4000 characters (`"MainBody": "@texts/<guid>.<lang>.MainBody.html"`). `--out` defaults to `export-<database>-<time>`; an
+  earlier export's folder (its `plan.json` has export's `source`) is written over, any other non-empty one refused
+  (usage), also a folder with a plan of its own.
 - What: each ref (`--descendants`: and everything below it); `--site`: the start page and everything below it, the site's
   assets and the global assets (not those folders themselves); `--all`: every site. Blocks and media in a "For this page"
   folder come with their owner. Never the root, the recycle bin, asset roots, "For this page" folders themselves,
   content in the recycle bin, blueprints, or content of other kinds than pages, blocks, media and folders (`skipped`).
 - Branches: all, or the master branch plus `--languages`. A published branch's published version; a branch never
-  published: its newest draft, written as a draft. A newer draft than the published version is left out (`drafts`).
+  published: its newest draft, written as a draft (a scheduled one too, without its publish time). A newer draft than
+  the published version is left out (`drafts`).
 
 The plan, in order:
 1. One step per item, parents first (and a "For this page" folder's owner before its content), then where references
@@ -783,7 +788,8 @@ for none), `files` (`count`, `bytes`, `from`), `texts`, `heldBack` (values a lat
 plan refers to and doesn't create: `guid`, `ref`, `type`, `name`, `missing`/`deleted` in the source, `placement` when
 something is created under it, `from[]`: the target needs it, or the dry run fails with `not_found`), `visitorGroups[]`
 (`id`, `name`; null for a role), `dropped[]` (`guid`, `language`, `property`, `reason`: a property the source's code no
-longer has, a reference without a GUID, rich text with an inline block, a composition node whose block isn't stored),
+longer has, a reference without a GUID, rich text with an inline block, a composition node whose block isn't stored,
+an empty composition on a branch other than the master branch),
 `providerRefs[]` (a content provider's content, kept as `id__provider`), `notExported`. Warnings sum up what needs
 attention.
 

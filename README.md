@@ -260,8 +260,8 @@ opticli apply about-us/plan.json --update-existing --dry-run    # against the de
   everything below it, the site's assets and the global assets; `--all` every site. Blocks and media in a "For this
   page" folder go with the content they belong to. Never the root, the recycle bin, the asset roots themselves or
   content in the recycle bin. Every language branch, or `--languages en,sv` (an item's master branch always).
-- **The folder** (`--out`, default `export-<database>-<time>`; one with an earlier export's `plan.json` is written
-  over, any other that isn't empty is refused): `plan.json`, `files/` with the media files, and `texts/` with rich text
+- **The folder** (`--out`, default `export-<database>-<time>`; an earlier export's folder is written over, any other
+  that isn't empty is refused, also one with a plan of its own): `plan.json`, `files/` with the media files, and `texts/` with rich text
   longer than 4000 characters, which the plan reads as `@file` values.
 - **The plan**: each item is a `create`, `block` or `upload` step with the source's GUID and its values, including the
   built-in settings (publish dates, URL segment, menu visibility, simple address, shortcut, sort order and index,
@@ -270,8 +270,8 @@ opticli apply about-us/plan.json --update-existing --dry-run    # against the de
   and inline blocks, block lists, rich text and CMS 13 compositions (which keep their node keys, so a second run finds
   them). Values that refer to content created later in the plan (a cycle: A links to B and B to A) are written by a
   `set` once both exist. Other language branches are `translate` steps with their culture-specific values. A branch
-  published in the source is published by the last step that writes it; an unpublished one stays a draft; a newer
-  draft than the published version is left out. A top-level `"source"` says where and when the plan was read, and the
+  published in the source is published by the last step that writes it; an unpublished one stays a draft (a
+  scheduled one too: its publish time isn't carried over); a newer draft than the published version is left out. A top-level `"source"` says where and when the plan was read, and the
   version written of each branch; `apply` doesn't read it.
 - **Media**: the files come from `--blobs`, a folder holding the blob containers (a copy of the site's
   `App_Data/blobs`) or an Azure blob container's `https://` URL with a SAS token (read with a plain GET; the token is
@@ -282,7 +282,8 @@ opticli apply about-us/plan.json --update-existing --dry-run    # against the de
   out, `externalRefs` (content the plan refers to but doesn't create, with its name and whether it is missing or in
   the source's recycle bin: the target must have it, or the dry run fails with `not_found`), `visitorGroups`
   personalized values show to, `dropped` values that can't be written to another database (a value of a property the
-  source's code no longer has, a reference to content that doesn't exist, rich text with an inline block), references
+  source's code no longer has, a reference to content that doesn't exist, rich text with an inline block, an empty CMS 13
+  composition on a branch other than the master branch, which the CMS can't save safely), references
   to a content provider's content (`providerRefs`, kept as they are), and `notExported`: access rights, other versions
   and who saved them when, and everything that isn't content (Forms submissions, visitor groups, categories, users).
 
