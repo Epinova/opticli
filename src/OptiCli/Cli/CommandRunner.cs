@@ -28,6 +28,11 @@ internal static class CommandRunner
                 var context = new CliContext(parse, options, environment);
                 try
                 {
+                    if (WriteCommands.Writes(parse))
+                    {
+                        // Before the command reads, asks or looks for the site; the write path refuses it again.
+                        context.RequireWritable();
+                    }
                     var result = await body(context, cancellationToken);
                     var warnings = (result.Warnings ?? []).Concat(context.DatabaseWarnings).ToList();
                     if (!warnings.Any(w => w.StartsWith(DriftText.Prefix, StringComparison.Ordinal)))

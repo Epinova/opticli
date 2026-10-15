@@ -38,15 +38,13 @@ public sealed class CmsDatabase : IAsyncDisposable
             r.GetBooleanOrNull("Blueprints") == true,
             r.GetBooleanOrNull("Compositions") == true), cancellationToken)).Single();
 
-    public static async Task<CmsDatabase> OpenAsync(VerifiedConnectionString connectionString, CancellationToken cancellationToken)
+    /// <param name="connectTimeoutSeconds">Overrides the string's connect timeout (a quick check that shouldn't wait long).</param>
+    public static async Task<CmsDatabase> OpenAsync(VerifiedConnectionString connectionString, CancellationToken cancellationToken, int? connectTimeoutSeconds = null)
     {
-        var builder = new SqlConnectionStringBuilder(connectionString.Value) { ApplicationName = "opticli" };
-        if (connectionString.IsLocal)
+        var builder = Builder(connectionString);
+        if (connectTimeoutSeconds is { } seconds)
         {
-            // A hint only (it matters for availability-group listeners); read-only is enforced by opticli running
-            // fixed SELECTs, not by the server. Left off for remote servers: on Azure SQL it routes to a read
-            // replica, which can lag behind the writes the site just made.
-            builder.ApplicationIntent = ApplicationIntent.ReadOnly;
+            builder.ConnectTimeout = seconds;
         }
 
         if (ConnectionSafety.Unusable(builder.ConnectionString) is { } unusable)
@@ -104,6 +102,26 @@ public sealed class CmsDatabase : IAsyncDisposable
         }
 
         return new CmsDatabase(connection, connectionString);
+    }
+
+    /// <summary>The string opticli connects with: its own application name, and the read-only intent where it applies.</summary>
+    internal static SqlConnectionStringBuilder Builder(VerifiedConnectionString connectionString)
+    {
+        var builder = new SqlConnectionStringBuilder(connectionString.Value) { ApplicationName = "opticli" };
+        if (connectionString.IsLocal)
+        {
+            // A hint only (it matters for availability-group listeners); read-only is enforced by opticli running
+            // fixed SELECTs, not by the server. Left off for remote servers: on Azure SQL it routes to a read
+            // replica, which can lag behind the writes the site just made.
+            builder.ApplicationIntent = ApplicationIntent.ReadOnly;
+        }
+        else if (connectionString.IsProduction && !builder.ShouldSerialize("Application Intent"))
+        {
+            // Production is only read, so a replica's lag doesn't matter, and the load stays off the primary. A string
+            // that sets the intent itself keeps it.
+            builder.ApplicationIntent = ApplicationIntent.ReadOnly;
+        }
+        return builder;
     }
 
     internal async Task<IReadOnlyList<T>> QueryAsync<T>(

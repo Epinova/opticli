@@ -1,6 +1,7 @@
 using System.Text.Json;
 using OptiCli.Core.Discovery;
 using OptiCli.Core.Errors;
+using OptiCli.Core.Safety;
 using OptiCli.Core.Text;
 
 namespace OptiCli.Core.Configuration;
@@ -16,7 +17,12 @@ namespace OptiCli.Core.Configuration;
 /// opticli never guesses a remote database: when the Development configuration points at one, several launch
 /// profiles disagree, or only other environments' settings have a connection string, it fails with
 /// <see cref="NeedsSelectionException"/> listing the choices, and the user picks once. Other environments'
-/// <c>appsettings.{Environment}.json</c> are listed but only used when chosen.
+/// <c>appsettings.{Environment}.json</c> and the databases added by name (<c>opticli db add</c>) are listed but only
+/// used when chosen.
+/// Every candidate gets the role of its server and database (<see cref="DatabaseKey"/>) from the user config. A
+/// production database is never the development database: a saved choice, configured connection or Development
+/// default that is one is refused (<see cref="ProductionDatabase"/>). It is only used when picked for a run, and then
+/// only read.
 /// </remarks>
 public static class ConnectionResolver
 {
@@ -39,14 +45,16 @@ public static class ConnectionResolver
     {
         var explicitStep = ExplicitStep(request, environment);
         var userConfig = new Step([]);
+        var named = new Step([]);
         var chain = new List<Step>();
         var others = new Step([]);
         SavedDatabase? saved = null;
         Profiles? profiles = null;
+        var (roles, rolesFailure) = ReadRoles(environment);
 
         if (project is not null)
         {
-            (userConfig, saved) = UserConfigStep(project, environment);
+            (userConfig, saved, named) = UserConfigStep(project, environment);
             profiles = LaunchProfileStep(request, project);
             // ASP.NET Core's precedence: environment variables override user secrets and appsettings. A launch profile's
             // environmentVariables are environment variables too, set over the shell's when the site runs with the profile.
@@ -62,16 +70,27 @@ public static class ConnectionResolver
         {
             candidate.Status = CandidateStatus.Available;
         }
-        var candidates = new[] { explicitStep, userConfig }.Concat(chain).Append(others).SelectMany(s => s.Candidates).ToList();
+        var candidates = new[] { explicitStep, userConfig }.Concat(chain).Append(others).Append(named).SelectMany(s => s.Candidates).ToList();
+        foreach (var candidate in candidates)
+        {
+            candidate.Role = roles.Of(candidate);
+        }
         var projectDirectory = project?.Directory;
-        var development = FindDevelopment(request, saved, userConfig, chain, candidates, projectDirectory);
+        var development = rolesFailure is null
+            ? FindDevelopment(request, saved, userConfig, chain, candidates, projectDirectory)
+            : new Default(null, null, rolesFailure);
 
         ConnectionCandidate? chosen = null;
         SelectionMode? mode = SelectionMode.Explicit;
         OptiCliException? failure = null;
         var pickers = (explicitStep.Candidates.Count > 0 ? 1 : 0) + (request.Database is null ? 0 : 1) + (request.Profile is null ? 0 : 1);
 
-        if (pickers > 1 && request.Explicit is null && explicitStep.Candidates.Count > 0)
+        if (rolesFailure is not null)
+        {
+            // Without the roles opticli can't tell a production database from another: it uses none.
+            failure = rolesFailure;
+        }
+        else if (pickers > 1 && request.Explicit is null && explicitStep.Candidates.Count > 0)
         {
             // Mostly left over from `eval "$(opticli env --include-connection)"` in this shell, not a choice made now.
             failure = new UsageException(
@@ -113,7 +132,27 @@ public static class ConnectionResolver
             development.Candidate,
             development.Mode,
             saved,
-            chosen is null ? failure : null);
+            chosen is null ? failure : null,
+            roles);
+    }
+
+    /// <summary>The roles in the user config; with a failure when they can't be read, in which case no database is used.</summary>
+    private static (RoleTable, OptiCliException?) ReadRoles(OptiCliEnvironment environment)
+    {
+        try
+        {
+            return (new RoleTable(UserConfig.Roles(environment.UserConfigFile)), null);
+        }
+        catch (UsageException ex)
+        {
+            return (new RoleTable([]), ex);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return (new RoleTable([]), new UsageException(
+                $"Could not read {environment.UserConfigFile}: {ex.Message}",
+                "opticli uses no database until it can read the roles in it (a production database's among them). Fix its permissions."));
+        }
     }
 
     /// <summary>The project's development database, or why it isn't known yet.</summary>
@@ -130,7 +169,10 @@ public static class ConnectionResolver
             if ((candidates.FirstOrDefault(c => c.IsSelectable && string.Equals(c.Id, saved.Id, StringComparison.OrdinalIgnoreCase))
                 ?? candidates.FirstOrDefault(c => c.IsSelectable && string.Equals(c.LegacyId, saved.Id, StringComparison.OrdinalIgnoreCase))) is { } match)
             {
-                return new(match, SelectionMode.Saved, null);
+                return match.Role == DatabaseRole.Prod
+                    ? new(null, null, ProductionDatabase.DefaultRefusal(match.Server, match.Database, "chosen with `opticli db use`",
+                        "It was chosen before it was given the role prod. The user chooses another development database with `opticli db use <id>` (`opticli db list` shows them; ask them, don't choose), or clears the choice with `opticli db forget`. Reading it for one run with --db works."))
+                    : new(match, SelectionMode.Saved, null);
             }
             return new(null, null, NeedsSelection(
                 $"The development database chosen for this project ('{saved.Database}' on '{saved.Server}', from "
@@ -141,7 +183,10 @@ public static class ConnectionResolver
 
         if (userConfig.Candidates.FirstOrDefault(c => c.IsUsable) is { } configured)
         {
-            return new(configured, SelectionMode.Configured, null);
+            return configured.Role == DatabaseRole.Prod
+                ? new(null, null, ProductionDatabase.DefaultRefusal(configured.Server, configured.Database, "\"connection\" in the opticli user config",
+                    $"Point \"connection\" in {configured.Location} at the development database, or remove it; ask the user. Reading it for one run with --db works."))
+                : new(configured, SelectionMode.Configured, null);
         }
 
         foreach (var step in chain)
@@ -152,6 +197,12 @@ public static class ConnectionResolver
             }
             if (step.Candidates.FirstOrDefault(c => c.IsUsable) is { } first)
             {
+                if (first.Role == DatabaseRole.Prod)
+                {
+                    return new(null, null, ProductionDatabase.DefaultRefusal(first.Server, first.Database,
+                        $"the site's Development configuration, from {DatabaseChoice.Describe(first.Source, first.Location, first.Profile, projectDirectory)}",
+                        "Point the site's Development configuration at the development database, or have the user choose one with `opticli db use <id>` (`opticli db list` shows them; ask them, don't choose). Reading it for one run with --db works."));
+                }
                 return first.IsLocal == true
                     ? new(first, SelectionMode.Automatic, null)
                     : new(null, null, NeedsSelection(
@@ -181,6 +232,17 @@ public static class ConnectionResolver
             ? (candidate, null)
             : (null, new RefusedException($"Refusing the connection string from {candidate.Location}: {candidate.Reason ?? "it is empty."}"));
 
+    /// <summary>
+    /// The candidate <paramref name="wanted"/> names as <c>--db</c> takes it: its id, the name it was added with, or its
+    /// database name when that is one database.
+    /// </summary>
+    /// <exception cref="OptiCliException">It names none (<c>not_found</c>) or several (<c>usage</c>).</exception>
+    public static ConnectionCandidate Find(ConnectionResolution resolution, string wanted, string? projectDirectory)
+    {
+        var (found, failure) = PickDatabase(resolution.Candidates, wanted, projectDirectory, resolution.Development);
+        return found ?? throw failure!;
+    }
+
     private static (ConnectionCandidate?, OptiCliException?) PickDatabase(
         IReadOnlyList<ConnectionCandidate> candidates, string wanted, string? projectDirectory, ConnectionCandidate? development)
     {
@@ -189,9 +251,13 @@ public static class ConnectionResolver
         {
             return (byId, null);
         }
+        if (selectable.FirstOrDefault(c => string.Equals(c.Name, wanted, StringComparison.OrdinalIgnoreCase)) is { } byEntry)
+        {
+            return (byEntry, null);
+        }
 
         var byName = selectable.Where(c => string.Equals(c.Database, wanted, StringComparison.OrdinalIgnoreCase)).ToList();
-        if (byName.Count > 0 && byName.All(c => c.SameTarget(byName[0].Server, byName[0].Database)))
+        if (byName.Count > 0 && byName.All(c => c.Target == byName[0].Target))
         {
             return (byName[0], null);
         }
@@ -205,7 +271,7 @@ public static class ConnectionResolver
                 "Pass the id instead.") { Details = new SelectionDetails(choices, null) });
         }
         return (null, new NotFoundException(
-            $"--db '{wanted}' is neither the id nor the database name of one of this project's connection strings.",
+            $"--db '{wanted}' is neither the id, the name nor the database name of one of this project's connection strings.",
             "`opticli db list` shows them.") { Details = new SelectionDetails(choices, null) });
     }
 
@@ -248,7 +314,8 @@ public static class ConnectionResolver
         return new Step(candidates);
     }
 
-    private static (Step, SavedDatabase?) UserConfigStep(ProjectInfo project, OptiCliEnvironment environment)
+    /// <returns>The configured connection, the saved choice, and the databases added by name (each available, used only when chosen).</returns>
+    private static (Step, SavedDatabase?, Step) UserConfigStep(ProjectInfo project, OptiCliEnvironment environment)
     {
         var file = environment.UserConfigFile;
         try
@@ -257,11 +324,18 @@ public static class ConnectionResolver
             var step = settings?.Connection is null
                 ? new Step([])
                 : new Step([new ConnectionCandidate(ConnectionSource.UserConfig, file, $"projects:{project.Directory}:connection", null, settings.Connection)]);
-            return (step, settings?.Database);
+            var named = (settings?.Databases ?? [])
+                .Select(d => new ConnectionCandidate(ConnectionSource.Named, file, $"databases:{d.Name}", null, d.Connection, d.Name))
+                .ToList();
+            foreach (var candidate in named.Where(c => c.Status == CandidateStatus.Shadowed))
+            {
+                candidate.Status = CandidateStatus.Available;
+            }
+            return (step, settings?.Database, new Step(named));
         }
         catch (Exception ex) when (ex is UsageException or IOException or UnauthorizedAccessException)
         {
-            return (new Step([ConnectionCandidate.Unreadable(ConnectionSource.UserConfig, file, $"Could not read: {ex.Message}")]), null);
+            return (new Step([ConnectionCandidate.Unreadable(ConnectionSource.UserConfig, file, $"Could not read: {ex.Message}")]), null, new Step([]));
         }
     }
 

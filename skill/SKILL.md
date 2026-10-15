@@ -131,15 +131,25 @@ placed by reference has `content: {ref, ...}` (its values are its own: `set <its
 
 - A command fails with `needs_selection` (exit 6) when opticli doesn't know the project's development database yet,
   or the saved choice no longer matches the configuration. `error.details.choices` lists the options
-  (`n`, `id`, `server`, `database`, `local`, `from`).
+  (`n`, `id`, `name`, `server`, `database`, `local`, `role`, `from`).
   1. Show the user the choices (server, database, from) and **ask which one is their development database**. Use
      your question tool if you have one. Never choose for them, even when one looks obvious.
   2. Run `opticli db use <id>` with the id of the one they picked, then rerun the original command.
 - `opticli db list` shows every connection string and the current choice; `opticli db forget` clears it.
-- `meta.database` appears when the database in use is remote. `development: true` means it is the one the user chose.
-- `--db <id|name>` uses another database for one run. Only pass it when the user asked for that environment; the
-  response then warns that it isn't the development database. Never use `--db`/`--connection` to get around a
-  refusal.
+- `meta.database` appears when the database in use is remote or has a role (`role`: `dev`, `test`, `prod`).
+  `development: true` means it is the one the user chose.
+- `--db <id|name>` uses another database for one run (a name is one the user added with `opticli db add`). Only pass
+  it when the user asked for that environment; the response then warns that it isn't the development database. Never
+  use `--db`/`--connection` to get around a refusal.
+- **Production** (`role: "prod"` in `db list` and `meta.database`) is only read, and only when the user asked for it
+  (`--db prod`): every response warns. Writes (`--dry-run` and `apply` too), `serve` and `env` against it are
+  `refused` (exit 3, `details.reason: "prodDatabase"`), and so is `db use` of it. **Never try to get around a
+  production refusal**: no other `--db`, `--connection`, `OPTICLI_DB`, exported connection string or spelling of the
+  server, no editing the user config, no `sql`. Tell the user that opticli doesn't write to production.
+- Roles are the user's: don't run `opticli db add` or `opticli db role` unless they asked. A weaker role than a
+  database has needs their own terminal (`refused`, `details.reason: "roleLowered"`, elsewhere): tell them, don't
+  look for another way. Don't pass a connection string with a password on the command line; ask the user to run
+  `opticli db add <name> --role <role>` themselves, which asks for it.
 
 ## Reading results and errors
 
@@ -273,7 +283,7 @@ order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a cod
 - Start `serve` only when a write is needed, and stop it (`opticli serve --stop`) when you are done.
 - Never run `opticli db use` or pass `--db`/`--connection`/`OPTICLI_DB` on your own initiative: which database is
   the development one, and whether to touch any other, is the user's decision. Writes to anything but the development
-  database are refused (exit 3). Don't try to work around a refusal; tell the user.
+  database are refused (exit 3), and production is never written to. Don't try to work around a refusal; tell the user.
 - Don't write to the CMS database with SQL; `sql` is read-only by design.
 - Whenever you mention content to the user (in a report, a proposal or a question), give its name next to the ref,
   and the type or language when that tells items apart: "About us" (page 10, draft 10_1473), not 10 or 10_1473

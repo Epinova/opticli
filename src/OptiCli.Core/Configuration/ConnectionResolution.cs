@@ -29,7 +29,8 @@ public sealed class ConnectionResolution(
     ConnectionCandidate? development,
     SelectionMode? developmentMode,
     SavedDatabase? saved,
-    OptiCliException? failure)
+    OptiCliException? failure,
+    RoleTable? roles = null)
 {
     /// <summary>Connection string name, e.g. <c>EPiServerDB</c>.</summary>
     public string Name { get; } = name;
@@ -54,11 +55,18 @@ public sealed class ConnectionResolution(
 
     public OptiCliException? Failure { get; } = failure;
 
+    /// <summary>The roles given in the user config, by server and database.</summary>
+    public RoleTable Roles { get; } = roles ?? new RoleTable([]);
+
+    /// <summary>The chosen database has the role <c>prod</c>: it is only read.</summary>
+    public bool IsProduction => Chosen?.Role == DatabaseRole.Prod;
+
     /// <summary>The candidates <c>--db</c> and <c>db use</c> accept, numbered from 1 in this order.</summary>
     public IReadOnlyList<ConnectionCandidate> Selectable => Candidates.Where(c => c.IsSelectable).ToList();
 
-    /// <summary>A local database (always fine), or the project's development database.</summary>
+    /// <summary>A local database (always fine), or the project's development database; never a production database.</summary>
     public bool IsDevelopment => Chosen is { } chosen
+        && chosen.Role != DatabaseRole.Prod
         && (chosen.IsLocal == true || (Development is { } development && chosen.SameTarget(development.Server, development.Database)));
 
     /// <summary>
@@ -67,7 +75,15 @@ public sealed class ConnectionResolution(
     /// </summary>
     /// <exception cref="OptiCliException">No usable candidate (the reason is in <see cref="Failure"/>).</exception>
     public VerifiedConnectionString Require() =>
-        Chosen is { } chosen ? ConnectionSafety.Approve(chosen.ConnectionString, DataDirectoryOf(projectDirectory)) : throw Failure!;
+        Chosen is { } chosen ? ConnectionSafety.Approve(chosen.ConnectionString, DataDirectoryOf(projectDirectory), chosen.Role == DatabaseRole.Prod) : throw Failure!;
+
+    /// <summary>
+    /// The checked string of a candidate that isn't the one in use, for a read opticli makes of it itself (<c>doctor</c>'s
+    /// check of a production login). Production stays production: nothing that writes or starts the site takes it.
+    /// </summary>
+    /// <exception cref="OptiCliException">The candidate's string is invalid.</exception>
+    public VerifiedConnectionString Approve(ConnectionCandidate candidate) =>
+        ConnectionSafety.Approve(candidate.ConnectionString, DataDirectoryOf(projectDirectory), candidate.Role == DatabaseRole.Prod);
 
     /// <summary>
     /// The site's data directory: <c>App_Data</c> in its project folder (its content root), which the CMS templates'
@@ -76,9 +92,13 @@ public sealed class ConnectionResolution(
     public static string? DataDirectoryOf(string? projectDirectory) =>
         projectDirectory is null ? null : Path.Combine(projectDirectory, "App_Data");
 
-    /// <summary>What the caller should be told about the database in use: a remote one that isn't the development database.</summary>
+    /// <summary>What the caller should be told about the database in use: a production database, or a remote one that isn't the development database.</summary>
     public IReadOnlyList<string> Warnings()
     {
+        if (Chosen is { Role: DatabaseRole.Prod } production)
+        {
+            return [$"Using the production database '{production.Database}' on '{production.Server}' (role prod, {Describe(production)}) for this run: opticli only reads it, and refuses writes, `serve` and `env`. Only use it when the user asked for it."];
+        }
         if (Chosen is not { } chosen || IsDevelopment)
         {
             return [];

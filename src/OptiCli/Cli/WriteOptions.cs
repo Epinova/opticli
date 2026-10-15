@@ -66,8 +66,10 @@ internal sealed class WriteOptions
         HelpName = "fingerprint",
     };
 
+    /// <summary>The options every write command has; also marks it as one (<see cref="WriteCommands"/>).</summary>
     public void AddCommon(Command command, bool publish = true)
     {
+        WriteCommands.Mark(command);
         command.Options.Add(DryRun);
         if (publish)
         {

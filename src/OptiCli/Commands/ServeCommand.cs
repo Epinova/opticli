@@ -90,6 +90,12 @@ internal static class ServeCommand
                 {
                     statusWarnings.Add(OldAgentSchedulerWarning(current, null));
                 }
+                if (current is { State: AgentState.Running, Database: { } running }
+                    && context.ResolveConnection().Roles.Of(running.Server, running.Name, running.Local) == DatabaseRole.Prod)
+                {
+                    // Started before its database was given the role; writes to it are refused, but the site runs.
+                    statusWarnings.Add($"The running site uses '{running.Name}' on '{running.Server}', which has the role prod: stop it with `opticli serve --stop`. opticli refuses writes to it.");
+                }
                 return new CommandResult(current, Warnings: statusWarnings.Count > 0 ? statusWarnings : null, Source: WriteExecutor.AgentSource);
             }
             if (parse.GetValue(logs))
@@ -306,11 +312,12 @@ internal static class ServeCommand
     /// The database the site may run against: a local one, or the remote development database the user chose. A local
     /// build writing to a shared database also syncs its content types into it, so another environment is never served.
     /// </summary>
-    /// <exception cref="RefusedException">A remote database that isn't the development database.</exception>
+    /// <exception cref="RefusedException">A production database, or a remote database that isn't the development database.</exception>
     public static Core.Safety.VerifiedConnectionString RequireServable(CliContext context)
     {
         var connection = context.UseConnection();
         var resolution = context.ResolveConnection();
+        Core.Safety.ProductionDatabase.RequireNot(connection, "run the site against");
         if (!resolution.IsDevelopment)
         {
             var choose = resolution.Chosen is { IsSelectable: true, Id: { } id }

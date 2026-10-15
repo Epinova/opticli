@@ -1,6 +1,7 @@
 using OptiCli.Commands;
 using OptiCli.Core.Configuration;
 using OptiCli.Core.Output;
+using OptiCli.Core.Safety;
 
 namespace OptiCli.Cli;
 
@@ -28,7 +29,7 @@ internal static class DatabasePrompt
             error.WriteLine(reason);
             error.WriteLine();
         }
-        TextRenderer.Render(JsonOutput.ToNode(resolution.Choices().Select(c => new { c.N, c.Server, c.Database, c.Local, c.From })), error);
+        TextRenderer.Render(JsonOutput.ToNode(resolution.Choices().Select(c => new { c.N, c.Name, c.Server, c.Database, c.Local, c.Role, c.From })), error);
         error.WriteLine();
 
         while (true)
@@ -42,6 +43,11 @@ internal static class DatabasePrompt
             if (int.TryParse(answer, out var n) && n >= 1 && n <= selectable.Count)
             {
                 var chosen = selectable[n - 1];
+                if (chosen.Role == DatabaseRole.Prod)
+                {
+                    error.WriteLine($"'{chosen.Database}' on '{chosen.Server}' is a production database (role prod), which is never the development database. Choose another.");
+                    continue;
+                }
                 Save(context, chosen, SavedDatabase.ViaPrompt);
                 error.WriteLine($"Saved '{chosen.Database}' on '{chosen.Server}' as the development database (change it with `opticli db use`).");
                 if (chosen.IsLocal != true)
@@ -54,8 +60,13 @@ internal static class DatabasePrompt
         }
     }
 
+    /// <exception cref="Core.Errors.RefusedException">A production database (<c>details.reason</c>: <c>prodDatabase</c>).</exception>
     public static SavedDatabase Save(CliContext context, ConnectionCandidate candidate, string via)
     {
+        if (candidate.Role == DatabaseRole.Prod)
+        {
+            throw ProductionDatabase.Refusal("make the development database", candidate.Server, candidate.Database, ProductionDatabase.ChoiceHint);
+        }
         var saved = SavedDatabase.From(candidate, via, DateTimeOffset.UtcNow);
         UserConfig.SaveDatabase(context.Environment.UserConfigFile, context.Project.Directory, saved);
         return saved;

@@ -169,9 +169,11 @@ public static class AgentProbe
     /// A client for the project's running agent, checked to use the database opticli reads.
     /// </summary>
     /// <exception cref="UnreachableException">No agent runs or it doesn't answer (exit 4).</exception>
-    /// <exception cref="RefusedException">It uses another database (exit 3).</exception>
+    /// <exception cref="RefusedException">It uses another database, or the database is production (exit 3).</exception>
     public static async Task<AgentClient> ConnectAsync(StateStore store, VerifiedConnectionString expected, CancellationToken cancellationToken)
     {
+        // Everything the agent is asked for runs the site's code against its database: never production.
+        ProductionDatabase.RequireNot(expected, "use the site's agent against");
         var status = await ProbeAsync(store, expected, cancellationToken);
         return status.State switch
         {

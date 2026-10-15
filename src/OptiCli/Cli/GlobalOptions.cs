@@ -30,7 +30,7 @@ internal sealed class GlobalOptions
 
     public Option<string?> Database { get; } = new("--db")
     {
-        Description = "Use another of the project's connection strings for this run: its id or database name from `opticli db list`. Default: the development database.",
+        Description = "Use another of the project's connection strings for this run: its id, name (`opticli db add`) or database name from `opticli db list`. Default: the development database. A prod database is only read.",
         HelpName = "id|name",
         Recursive = true,
     };

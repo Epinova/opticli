@@ -39,6 +39,10 @@ public static class SiteEnvironment
         string? driftFile = null,
         bool scheduler = false)
     {
+        foreach (var target in new[] { connection, approvedRemote }.OfType<VerifiedConnectionString>())
+        {
+            ProductionDatabase.RequireNot(target, "run the site against");
+        }
         var variables = new List<KeyValuePair<string, string>>
         {
             new("ASPNETCORE_ENVIRONMENT", "Development"),

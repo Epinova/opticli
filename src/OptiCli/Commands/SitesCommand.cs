@@ -100,6 +100,7 @@ internal static class SitesCommand
         command.Options.Add(forget);
         // No --accept-drift: drift is only checked against a shared database, where this is refused anyway.
         command.Options.Add(write.DryRun);
+        WriteCommands.Mark(command);
 
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
         {
@@ -296,6 +297,7 @@ internal static class SitesCommand
         command.Arguments.Add(site);
         command.Arguments.Add(name);
         command.Options.Add(write.DryRun);
+        WriteCommands.Mark(command);
 
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
         {

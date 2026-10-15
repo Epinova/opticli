@@ -8,7 +8,7 @@ Companion to [SKILL.md](SKILL.md). `opticli <command> --help` is always the auth
 |---|---|
 | `--project <path>` | The site's `.csproj` (or a directory/solution to search) when discovery finds none or several. |
 | `--connection-name <name>` | Connection string name in the site's config (default `EPiServerDB`). |
-| `--db <id\|name>` | Use another of the project's connection strings for this run (ids from `opticli db list`). |
+| `--db <id\|name>` | Use another of the project's connection strings for this run: its id or name from `opticli db list`, or its database name. A `prod` database is only read. |
 | `--profile <name>` | Use the connection string of this `Properties/launchSettings.json` profile. |
 | `--connection <string>` / `OPTICLI_DB` | Override the connection string for this run. |
 | `--json` / `--text` | Force JSON / tables. List commands also take `--jsonl`. |
@@ -23,9 +23,20 @@ the one saved with `opticli db use`, else `connection` in the user config (`~/.c
 
 | Command | Notes |
 |---|---|
-| `db list` | `choices[]` (`n`, `id`, `server`, `database`, `local`, `from`, `development`), `development`, `mode` (`saved`, `configured`, `automatic`), `saved` (with `stillMatches`), `problem`. |
+| `db list` | `choices[]` (`n`, `id`, `name`, `server`, `database`, `local`, `role`, `from`, `development`), `development`, `mode` (`saved`, `configured`, `automatic`), `saved` (with `stillMatches`), `problem`. |
 | `db use <id>` | Saves the development database (the id changes when that setting's server or database changes, and opticli asks again). Without an id on a terminal: pick from a list. Only with the user's choice. |
 | `db forget` | Removes the saved choice. |
+| `db add <name> --role <local\|dev\|test\|prod> [--connection <string>]` | The user adds another environment's database by name (in the user config), with a role; without `--connection` at a terminal it asks (the password hidden). `data.database` is its choice, `note` says what `prod` means. Only when the user asks. |
+| `db remove <name>` | Removes an entry; the role of its server and database stays (`roleKept`). |
+| `db role <id\|name> <role>` | Gives a database (any `db list` entry) a role. Roles belong to the server and database, so every entry and setting naming them has it. A weaker role than it has needs the user's own terminal (`refused`, `details.reason: "roleLowered"`, elsewhere). Only when the user asks. |
+
+Roles: `local` (the default for a database on this machine), `dev`, `test`, `prod` (a remote database without one
+behaves as `dev`/`test` do: shared mode, drift gate). `prod` is only read, when a run picks it: `meta.warnings` says
+so and `meta.database.role` is `prod`, and opticli connects with `ApplicationIntent=ReadOnly`. It is never the
+development database (`db use` refuses it; a saved choice, configured connection or Development default that is
+production is `refused` with a hint), and writes (`--dry-run` too), `apply`, `serve` and `env` against it are
+`refused` (exit 3, `details.reason: "prodDatabase"`). `sql` works, with the warning. `doctor` warns when a
+production entry's login can write.
 
 ## Read commands
 
@@ -746,6 +757,8 @@ Plans that run again (a section rebuilt after a database refresh, or repaired af
 | `not_found`: no CMS project / several candidates | `cd` into the site's repository, or pass `--project path/to/Site.csproj`. |
 | No connection string | `opticli doctor`; `--connection-name` if the site's connection string has another name. |
 | `needs_selection` (exit 6) | Show the user `error.details.choices`, ask which is their development database, run `opticli db use <id>`. |
+| `refused` (exit 3), `details.reason: "prodDatabase"` | The database is production: opticli only reads it. Tell the user; don't try another way to the same database (another `--db`, `--connection`, spelling, `OPTICLI_DB`, config edit). From a command without `--db`: the development database (saved, configured or the site's default) is production; the user chooses another with `opticli db use <id>`. |
+| `refused` (exit 3), `details.reason: "roleLowered"` | Giving a database a weaker role needs the user's own terminal. Tell the user; never fake a terminal. |
 | `refused` (exit 3) | A safety rule: serving against a remote database that isn't the development one, SQL the `sql` guard won't run, or a request the site agent won't do (e.g. moving or deleting a start page or a folder that contains one). Don't work around it; tell the user. |
 | `unreachable` (exit 4) on a remote database | Firewall (Azure SQL allows only listed client IPs), VPN, or no Entra ID token: `az login`. Tell the user. |
 | `login_failed` (exit 4) | The server was reached but refused the login. Tell the user who was refused (`error.details.identity`: UPN or object id): for Entra ID, that identity has no user in the database, which a database admin adds, or the user signs in as another identity (another account for the same subscription in its own `AZURE_CONFIG_DIR`, see the README); otherwise the password or the database name is wrong. Don't retry. |

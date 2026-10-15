@@ -22,6 +22,12 @@ public sealed class VerifiedConnectionString
     /// <summary>A SQL Server on this machine; otherwise a remote (usually shared) one.</summary>
     public bool IsLocal { get; }
 
+    /// <summary>
+    /// The database has the role <c>prod</c>: it is only read, with <c>ApplicationIntent=ReadOnly</c> unless the string
+    /// sets it, and nothing that writes or starts the site takes it (<see cref="ProductionDatabase"/>).
+    /// </summary>
+    public bool IsProduction { get; init; }
+
     /// <summary>The normalised connection string opticli connects with, credentials included. Never printed.</summary>
     internal string Value { get; }
 

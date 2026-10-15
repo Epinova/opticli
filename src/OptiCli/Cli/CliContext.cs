@@ -67,14 +67,35 @@ internal sealed class CliContext(ParseResult parse, GlobalOptions options, OptiC
     public async Task<CmsDatabase> OpenDatabaseAsync(CancellationToken cancellationToken) =>
         await CmsDatabase.OpenAsync(UseConnection(), cancellationToken);
 
-    /// <summary>Warnings about the database used: a remote one that isn't the development database.</summary>
+    /// <summary>Warnings about the database used: a production database, or a remote one that isn't the development database.</summary>
     public IReadOnlyList<string> DatabaseWarnings => _databaseUsed ? ResolveConnection().Warnings() : [];
 
-    /// <summary><c>meta.database</c>: set when the database used is remote.</summary>
+    /// <summary><c>meta.database</c>: set when the database used is remote, or has a role other than <c>local</c>.</summary>
     public DatabaseMeta? DatabaseMeta =>
-        _databaseUsed && ResolveConnection() is { Chosen: { IsLocal: false } chosen } resolution
-            ? new DatabaseMeta(chosen.Server, chosen.Database, false, resolution.IsDevelopment)
+        _databaseUsed && ResolveConnection() is { Chosen: { } chosen } resolution && (chosen.IsLocal == false || chosen.Role is not (null or DatabaseRole.Local))
+            ? new DatabaseMeta(chosen.Server, chosen.Database, chosen.IsLocal == true, resolution.IsDevelopment, chosen.Role)
             : null;
+
+    /// <summary>
+    /// Refuses a production database for a write, before anything is read or asked. Every write passes here: marked
+    /// write commands before they run (<see cref="WriteCommands"/>), and <see cref="Writes"/>; the site's agent isn't
+    /// reached for a production database either (<see cref="AgentProbe.ConnectAsync"/>). A development database that
+    /// is production was refused when it was resolved: that refusal comes here too. Other resolution failures are left
+    /// to the command.
+    /// </summary>
+    /// <exception cref="RefusedException">The database is production (<c>details.reason</c>: <c>prodDatabase</c>).</exception>
+    public void RequireWritable()
+    {
+        var resolution = ResolveConnection();
+        if (resolution.Chosen is { Role: DatabaseRole.Prod } production)
+        {
+            throw ProductionDatabase.Refusal("write to", production.Server, production.Database);
+        }
+        if (resolution.Chosen is null && resolution.Failure is RefusedException refused)
+        {
+            throw refused;
+        }
+    }
 
     /// <summary>Opens the database and loads the content model; disposing the session closes the connection.</summary>
     public async Task<ContentSession> OpenContentAsync(CancellationToken cancellationToken)
@@ -96,6 +117,7 @@ internal sealed class CliContext(ParseResult parse, GlobalOptions options, OptiC
 
     /// <summary>The project's running agent, verified to use the database opticli reads; connected once per invocation.</summary>
     /// <exception cref="UnreachableException">No agent runs (exit 4).</exception>
+    /// <exception cref="RefusedException">The database is production (<see cref="AgentProbe.ConnectAsync"/> refuses it).</exception>
     public async Task<AgentClient> ConnectAgentAsync(CancellationToken cancellationToken) =>
         _agent ??= await AgentProbe.ConnectAsync(StateStore, UseConnection(), cancellationToken);
 
@@ -104,13 +126,17 @@ internal sealed class CliContext(ParseResult parse, GlobalOptions options, OptiC
     /// On a terminal, ask whether a publish may include someone else's unpublished changes (and the like). Drift is
     /// asked about either way: once, before anything is written.
     /// </param>
-    public WriteExecutor Writes(ContentSession session, string? site = null, bool updateExisting = false, bool ask = true) =>
-        new(session, ConnectAgentAsync, site, TryGetProject(out _)?.Directory, updateExisting,
+    /// <exception cref="RefusedException">The database is production.</exception>
+    public WriteExecutor Writes(ContentSession session, string? site = null, bool updateExisting = false, bool ask = true)
+    {
+        RequireWritable();
+        return new(session, ConnectAgentAsync, site, TryGetProject(out _)?.Directory, updateExisting,
             ask && DatabasePrompt.CanAsk ? PendingDraftPrompt.Ask : null,
             ask && DatabasePrompt.CanAsk ? ReferencesPrompt.Ask : null,
             ask && DatabasePrompt.CanAsk ? ConfirmPrompt.Ask : null,
             AcceptedDrift,
             DatabasePrompt.CanAsk ? DriftPrompt.Ask : null);
+    }
 
     /// <summary>The command's <c>--accept-drift</c>, on the write commands that have it.</summary>
     private string? AcceptedDrift =>

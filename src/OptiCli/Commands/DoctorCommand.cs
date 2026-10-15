@@ -69,6 +69,7 @@ internal static class DoctorCommand
 
     private sealed record CandidateView(
         string? Id,
+        string? Name,
         ConnectionSource Source,
         string Location,
         string? Key,
@@ -76,6 +77,7 @@ internal static class DoctorCommand
         string? Server,
         string? Database,
         bool? Local,
+        DatabaseRole? Role,
         CandidateStatus Status,
         string? Reason);
 
@@ -143,6 +145,7 @@ internal static class DoctorCommand
             }
 
             var databaseSection = await ProbeDatabaseAsync(context, cancellationToken);
+            await ProductionLoginsAsync(resolution, warnings, cancellationToken);
             if (projectSection.CmsMajor is { } builds && databaseSection.CmsMajor is { } stored && builds != stored)
             {
                 warnings.Add($"The project builds against CMS {builds} ({projectSection.CmsVersion}), but the database has a CMS {stored} schema (version {databaseSection.SchemaVersion}): "
@@ -319,6 +322,35 @@ internal static class DoctorCommand
         return found.OfType<InstalledSkill>().DistinctBy(s => s.Path).ToList();
     }
 
+    /// <summary>
+    /// Warns when the login saved for a production database can write: it should only read. Checks the databases added by
+    /// name with the role prod, and the database in use when it is one; one that can't be reached, or whose login may not
+    /// ask, is skipped without a word.
+    /// </summary>
+    private static async Task ProductionLoginsAsync(ConnectionResolution resolution, List<string> warnings, CancellationToken cancellationToken)
+    {
+        var production = resolution.Candidates
+            .Where(c => c.Role == DatabaseRole.Prod && (c.Source == ConnectionSource.Named || c.Status == CandidateStatus.Chosen))
+            .DistinctBy(c => c.Id ?? c.Location)
+            .ToList();
+        foreach (var candidate in production)
+        {
+            try
+            {
+                await using var db = await CmsDatabase.OpenAsync(resolution.Approve(candidate), cancellationToken, connectTimeoutSeconds: 10);
+                if (await WriteAccessReader.ReadAsync(db, cancellationToken) is { Count: > 0 } rights)
+                {
+                    warnings.Add($"The login saved for the production database '{candidate.Database}' on '{candidate.Server}' ({resolution.Describe(candidate)}{(candidate.Name is null ? "" : $", '{candidate.Name}'")}) can write to it ({string.Join(", ", rights)}). "
+                        + "opticli only reads it, but the string can do more anywhere else it is used: save a read-only login (db_datareader) for it.");
+                }
+            }
+            catch (OptiCliException)
+            {
+                // Unreachable, a refused login: not what this check is about.
+            }
+        }
+    }
+
     private static async Task<DatabaseSection> ProbeDatabaseAsync(CliContext context, CancellationToken cancellationToken)
     {
         try
@@ -340,7 +372,7 @@ internal static class DoctorCommand
         var location = project is not null && c.Location.StartsWith(project.Directory + System.IO.Path.DirectorySeparatorChar, StringComparison.Ordinal)
             ? System.IO.Path.GetRelativePath(project.Directory, c.Location)
             : c.Location;
-        return new(c.Id, c.Source, location, c.Key, c.Profile, c.Server, c.Database, c.IsLocal, c.Status, c.Reason);
+        return new(c.Id, c.Name, c.Source, location, c.Key, c.Profile, c.Server, c.Database, c.IsLocal, c.Role, c.Status, c.Reason);
     }
 
     private static VerifiedConnectionString? TryVerify(ConnectionResolution resolution)

@@ -40,6 +40,7 @@ internal static class TypesRemoveCommand
         command.Arguments.Add(names);
         command.Options.Add(unknown);
         command.Options.Add(write.DryRun);
+        WriteCommands.Mark(command);
 
         CommandRunner.SetHandler(command, options, (context, cancellationToken) =>
             RunAsync(context, new OrphanRemovalRequest
@@ -75,6 +76,7 @@ internal static class TypesRemoveCommand
         command.Options.Add(allowDestructive);
         command.Options.Add(unknown);
         command.Options.Add(write.DryRun);
+        WriteCommands.Mark(command);
 
         CommandRunner.SetHandler(command, options, (context, cancellationToken) =>
             RunAsync(context, new OrphanRemovalRequest
@@ -110,6 +112,7 @@ internal static class TypesRemoveCommand
         command.Options.Add(allowDestructive);
         command.Options.Add(unknown);
         command.Options.Add(write.DryRun);
+        WriteCommands.Mark(command);
 
         CommandRunner.SetHandler(command, options, (context, cancellationToken) =>
             RunAsync(context, new OrphanRemovalRequest

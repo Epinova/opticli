@@ -15,7 +15,19 @@ namespace OptiCli.Core.Configuration;
 /// The saved <c>sites primary</c> mapping (<c>sites primary --save</c>): <c>Site A</c> or <c>Site A@nb</c> to the host.
 /// What <c>sites primary --from-config</c> applies after a restore.
 /// </param>
-public sealed record ProjectSettings(string? Connection, string? Output, int? Port, SavedDatabase? Database = null, bool Https = false, IReadOnlyDictionary<string, SavedPrimaryHost>? PrimaryHosts = null, bool Scheduler = false);
+/// <param name="Databases">The databases added by name (<c>opticli db add</c>), in the file's order.</param>
+public sealed record ProjectSettings(string? Connection, string? Output, int? Port, SavedDatabase? Database = null, bool Https = false, IReadOnlyDictionary<string, SavedPrimaryHost>? PrimaryHosts = null, bool Scheduler = false, IReadOnlyList<NamedDatabase>? Databases = null);
+
+/// <summary>A database added by name (<c>opticli db add</c>): <c>--db &lt;name&gt;</c> uses it. Its role belongs to its server and database.</summary>
+/// <param name="Connection">The connection string, with any password in it; never printed.</param>
+public sealed record NamedDatabase(string Name, string? Connection);
+
+/// <summary>
+/// A role given to a server and database (<see cref="DatabaseKey"/>), for every project: every connection string that
+/// points at it has it.
+/// </summary>
+/// <param name="SetVia"><c>add</c> (<c>db add</c>) or <c>role</c> (<c>db role</c>).</param>
+public sealed record RoleEntry(DatabaseKey Key, DatabaseRole Role, DateTimeOffset SetAt, string SetVia);
 
 /// <summary>
 /// One entry of the saved <c>sites primary</c> mapping. Saved as the plain host string (<c>"localhost:5001"</c>) unless
@@ -64,11 +76,16 @@ public sealed record SavedDatabase(
 /// <summary>
 /// <c>~/.config/opticli/config.json</c>:
 /// <c>{"projects": {"/abs/project/dir": {"connection": "...", "output": "bin/Debug/net8.0/X.dll", "port": 5199, "database": {...},
-/// "sites": {"primary": {"Site A": "localhost:5001"}}}}}</c>.
+/// "databases": {"prod": {"connection": "..."}}, "sites": {"primary": {"Site A": "localhost:5001"}}}},
+/// "roles": [{"server": "sql.example.com", "database": "site", "role": "prod", ...}]}</c>.
 /// </summary>
 public static class UserConfig
 {
-    private const string DatabaseKey = "database";
+    private const string ChosenKey = "database";
+
+    private const string DatabasesKey = "databases";
+
+    private const string RolesKey = "roles";
 
     private const string SitesKey = "sites";
 
@@ -102,14 +119,115 @@ public static class UserConfig
                     GetString(entry.Value, "connection"),
                     GetString(entry.Value, "output"),
                     entry.Value.TryGetProperty("port", out var port) && port.TryGetInt32(out var number) ? number : null,
-                    entry.Value.TryGetProperty(DatabaseKey, out var database) ? ReadDatabase(database) : null,
+                    entry.Value.TryGetProperty(ChosenKey, out var database) ? ReadDatabase(database) : null,
                     entry.Value.TryGetProperty("https", out var https) && https.ValueKind == JsonValueKind.True,
                     ReadPrimaryHosts(entry.Value),
-                    entry.Value.TryGetProperty("scheduler", out var scheduler) && scheduler.ValueKind == JsonValueKind.True);
+                    entry.Value.TryGetProperty("scheduler", out var scheduler) && scheduler.ValueKind == JsonValueKind.True,
+                    ReadNamedDatabases(entry.Value));
             }
         }
         return null;
     }
+
+    /// <summary>The roles given to servers and databases, for every project.</summary>
+    /// <exception cref="UsageException">The config file is not valid JSON, or a role in it is not one opticli knows.</exception>
+    public static IReadOnlyList<RoleEntry> Roles(string configFile)
+    {
+        if (!File.Exists(configFile))
+        {
+            return [];
+        }
+
+        using var document = Invalid(configFile, () => JsonConfigFile.Parse(configFile));
+        if (!document.RootElement.TryGetProperty(RolesKey, out var roles) || roles.ValueKind == JsonValueKind.Null)
+        {
+            return [];
+        }
+        if (roles.ValueKind != JsonValueKind.Array)
+        {
+            throw BadRoles(configFile, $"\"{RolesKey}\" is not a list");
+        }
+        var entries = new List<RoleEntry>();
+        foreach (var element in roles.EnumerateArray())
+        {
+            // A role that can't be read is an error, not a role less: it may be a production database's.
+            if (element.ValueKind != JsonValueKind.Object
+                || DatabaseKey.Of(GetString(element, "server"), GetString(element, "database")) is not { } key
+                || DatabaseRoles.TryParse(GetString(element, "role")) is not { } role)
+            {
+                throw BadRoles(configFile, $"an entry of \"{RolesKey}\" has no server or no known role ({DatabaseRoles.Syntax}): {element.GetRawText()}");
+            }
+            var at = DateTimeOffset.TryParse(GetString(element, "setAt"), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed) ? parsed : DateTimeOffset.MinValue;
+            entries.Add(new RoleEntry(key, role, at, GetString(element, "setVia") ?? "role"));
+        }
+        return entries;
+    }
+
+    /// <summary>Gives <paramref name="entry"/>'s server and database its role, replacing the one they had; keeps everything else in the file.</summary>
+    /// <remarks>The file is rewritten as plain JSON, so comments in it are lost.</remarks>
+    /// <exception cref="UsageException">The existing config file is not valid JSON.</exception>
+    public static void SaveRole(string configFile, RoleEntry entry) =>
+        Update(configFile, root =>
+        {
+            if (root[RolesKey] is not JsonArray roles)
+            {
+                roles = [];
+                root[RolesKey] = roles;
+            }
+            foreach (var existing in roles.OfType<JsonObject>().Where(r => DatabaseKey.Of(Text(r["server"]), Text(r["database"])) == entry.Key).ToList())
+            {
+                roles.Remove(existing);
+            }
+            roles.Add(new JsonObject
+            {
+                ["server"] = entry.Key.Server,
+                ["database"] = entry.Key.Database,
+                ["role"] = DatabaseRoles.Name(entry.Role),
+                ["setAt"] = entry.SetAt.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
+                ["setVia"] = entry.SetVia,
+            });
+        });
+
+    /// <summary>Adds (or replaces) a database by name for the project, keeping everything else in the file.</summary>
+    /// <remarks>The file is rewritten as plain JSON, so comments in it are lost.</remarks>
+    /// <exception cref="UsageException">The existing config file is not valid JSON.</exception>
+    public static void SaveNamedDatabase(string configFile, string projectDirectory, NamedDatabase database) =>
+        UpdateProject(configFile, projectDirectory, create: true, project =>
+        {
+            if (project[DatabasesKey] is not JsonObject databases)
+            {
+                databases = [];
+                project[DatabasesKey] = databases;
+            }
+            var existing = databases.Select(p => p.Key).FirstOrDefault(k => string.Equals(k, database.Name, StringComparison.OrdinalIgnoreCase));
+            if (existing is not null)
+            {
+                databases.Remove(existing);
+            }
+            databases[database.Name] = new JsonObject { ["connection"] = database.Connection };
+        });
+
+    /// <summary>Removes the project's database of that name (any case), keeping everything else in the file. Its role stays.</summary>
+    /// <returns>False when the project had no database of that name.</returns>
+    /// <exception cref="UsageException">The existing config file is not valid JSON.</exception>
+    public static bool RemoveNamedDatabase(string configFile, string projectDirectory, string name)
+    {
+        var removed = false;
+        UpdateProject(configFile, projectDirectory, create: false, project =>
+        {
+            if (project[DatabasesKey] is JsonObject databases
+                && databases.Select(p => p.Key).FirstOrDefault(k => string.Equals(k, name, StringComparison.OrdinalIgnoreCase)) is { } key)
+            {
+                removed = databases.Remove(key);
+            }
+        });
+        return removed;
+    }
+
+    private static string? Text(JsonNode? node) => node is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
+
+    private static UsageException BadRoles(string configFile, string problem) =>
+        new($"{configFile} can't be used: {problem}.", $"Fix the entry (roles are {DatabaseRoles.Syntax}); opticli uses no database until it can read every role.");
 
     /// <summary>Saves (or with null, removes) the project's chosen development database, keeping everything else in the file.</summary>
     /// <remarks>The file is rewritten as plain JSON, so comments in it are lost.</remarks>
@@ -119,7 +237,7 @@ public static class UserConfig
         {
             if (database is null)
             {
-                project.Remove(DatabaseKey);
+                project.Remove(ChosenKey);
             }
             else
             {
@@ -140,7 +258,7 @@ public static class UserConfig
                 {
                     saved.Remove(empty);
                 }
-                project[DatabaseKey] = saved;
+                project[ChosenKey] = saved;
             }
         });
 
@@ -233,9 +351,7 @@ public static class UserConfig
     /// <param name="create">Add the project when the file doesn't have it; otherwise a missing project is left alone.</param>
     private static void UpdateProject(string configFile, string projectDirectory, bool create, Action<JsonObject> change)
     {
-        var root = File.Exists(configFile)
-            ? Invalid(configFile, () => JsonNode.Parse(File.ReadAllText(configFile), documentOptions: ReadOptions) as JsonObject ?? throw new JsonException("The root is not a JSON object."))
-            : [];
+        var root = Load(configFile);
         if (root["projects"] is not JsonObject projects)
         {
             projects = [];
@@ -255,9 +371,38 @@ public static class UserConfig
         }
 
         change(project);
+        Save(configFile, root);
+    }
 
+    private static void Update(string configFile, Action<JsonObject> change)
+    {
+        var root = Load(configFile);
+        change(root);
+        Save(configFile, root);
+    }
+
+    private static JsonObject Load(string configFile) =>
+        File.Exists(configFile)
+            ? Invalid(configFile, () => JsonNode.Parse(File.ReadAllText(configFile), documentOptions: ReadOptions) as JsonObject ?? throw new JsonException("The root is not a JSON object."))
+            : [];
+
+    private static void Save(string configFile, JsonObject root)
+    {
         Directory.CreateDirectory(Path.GetDirectoryName(configFile)!);
         Replace(configFile, root.ToJsonString(WriteOptions) + System.Environment.NewLine);
+    }
+
+    private static IReadOnlyList<NamedDatabase>? ReadNamedDatabases(JsonElement project)
+    {
+        if (!project.TryGetProperty(DatabasesKey, out var databases) || databases.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+        var named = databases.EnumerateObject()
+            .Where(d => d.Value.ValueKind == JsonValueKind.Object && !string.IsNullOrWhiteSpace(d.Name))
+            .Select(d => new NamedDatabase(d.Name, GetString(d.Value, "connection")))
+            .ToList();
+        return named.Count > 0 ? named : null;
     }
 
     private static IReadOnlyDictionary<string, SavedPrimaryHost>? ReadPrimaryHosts(JsonElement project)

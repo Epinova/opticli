@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.Text;
 using OptiCli.Cli;
 using OptiCli.Core.Errors;
 using OptiCli.Core.Serve;
@@ -59,6 +58,7 @@ internal static class UsersCommand
         command.Options.Add(roles);
         command.Options.Add(passwordStdin);
         command.Options.Add(write.DryRun);
+        WriteCommands.Mark(command);
 
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
         {
@@ -148,6 +148,7 @@ internal static class UsersCommand
             """);
         command.Arguments.Add(name);
         command.Options.Add(write.DryRun);
+        WriteCommands.Mark(command);
 
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
         {
@@ -235,42 +236,16 @@ internal static class UsersCommand
     {
         while (true)
         {
-            var first = ReadHidden($"Password for {user}: ");
+            var first = HiddenInput.Read($"Password for {user}: ");
             if (first.Length == 0)
             {
                 throw new UsageException("No password given; nothing was created.");
             }
-            if (ReadHidden("Again: ") == first)
+            if (HiddenInput.Read("Again: ") == first)
             {
                 return first;
             }
             Console.Error.WriteLine("They differ; try again.");
-        }
-    }
-
-    private static string ReadHidden(string question)
-    {
-        Console.Error.Write(question);
-        var text = new StringBuilder();
-        while (true)
-        {
-            var key = Console.ReadKey(intercept: true);
-            if (key.Key == ConsoleKey.Enter)
-            {
-                Console.Error.WriteLine();
-                return text.ToString();
-            }
-            if (key.Key == ConsoleKey.Backspace)
-            {
-                if (text.Length > 0)
-                {
-                    text.Length--;
-                }
-            }
-            else if (!char.IsControl(key.KeyChar))
-            {
-                text.Append(key.KeyChar);
-            }
         }
     }
 }

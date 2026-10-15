@@ -61,6 +61,9 @@ internal static class AccessCommand
         command.Options.Add(inherit);
         command.Options.Add(allowUnknown);
         write.AddCommon(command, publish: false);
+        // Without changes it only shows the rights.
+        WriteCommands.Mark(command, parse => parse.GetValue(grant) is { Length: > 0 } || parse.GetValue(user) is { Length: > 0 } || parse.GetValue(revoke) is { Length: > 0 }
+            || parse.GetValue(breakInheritance) || parse.GetValue(inherit));
 
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
         {

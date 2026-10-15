@@ -62,8 +62,10 @@ public static partial class SiteLauncher
     /// <summary>Starts the site detached from this process; returns once the agent answers.</summary>
     /// <param name="startLock">The project's start lock (<see cref="StateStore.LockAsync"/>), released once the state file is written.</param>
     /// <remarks>Cancelled (Ctrl+C) before the agent answers, the site is stopped again rather than left half started.</remarks>
+    /// <exception cref="RefusedException">The database is production.</exception>
     public static async Task<AgentStatus> StartBackgroundAsync(StateStore store, LaunchRequest request, IDisposable? startLock, CancellationToken cancellationToken)
     {
+        ProductionDatabase.RequireNot(request.Connection, "run the site against");
         store.PrepareLog();
         var token = SiteEnvironment.NewToken();
         using var process = SiteProcess.StartDetached(SiteProcess.DotnetHost(), request.Output.Dll, request.Project.Directory, Environment(request, token), store.LogPath);
@@ -77,8 +79,10 @@ public static partial class SiteLauncher
     /// <summary>Runs the site attached, copying its output to <paramref name="output"/> and the log, until it exits or is cancelled (Ctrl+C).</summary>
     /// <param name="startLock">As for <see cref="StartBackgroundAsync"/>.</param>
     /// <param name="onReady">Called once the agent answers.</param>
+    /// <exception cref="RefusedException">The database is production.</exception>
     public static async Task RunForegroundAsync(StateStore store, LaunchRequest request, IDisposable? startLock, TextWriter output, Action<AgentStatus> onReady, CancellationToken cancellationToken)
     {
+        ProductionDatabase.RequireNot(request.Connection, "run the site against");
         var token = SiteEnvironment.NewToken();
         await using var log = new StreamWriter(store.CreateLog()) { AutoFlush = true };
         using var process = SiteProcess.StartAttached(SiteProcess.DotnetHost(), request.Output.Dll, request.Project.Directory, Environment(request, token));

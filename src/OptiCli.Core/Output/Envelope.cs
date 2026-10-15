@@ -18,11 +18,12 @@ public sealed record Envelope(bool Ok, object? Data, Meta? Meta, ErrorBody? Erro
 /// <param name="Version">opticli version that produced the response.</param>
 /// <param name="Next">Cursor for the next page (pass as <c>--cursor</c>); null on the last page.</param>
 /// <param name="Warnings">Things the caller should know about an otherwise successful result (e.g. a capped search).</param>
-/// <param name="Database">Present when the database used is remote, so it is never missed.</param>
+/// <param name="Database">Present when the database used is remote, or has a role other than <c>local</c>, so it is never missed.</param>
 public sealed record Meta(string Source, string Version, string? Next = null, IReadOnlyList<string>? Warnings = null, DatabaseMeta? Database = null);
 
 /// <param name="Development">It is the project's development database (chosen by the user); false means opticli was pointed elsewhere for this run.</param>
-public sealed record DatabaseMeta(string? Server, string? Name, bool Local, bool Development);
+/// <param name="Role">The role of the server and database (<c>opticli db list</c>); omitted for a remote one without a role.</param>
+public sealed record DatabaseMeta(string? Server, string? Name, bool Local, bool Development, Configuration.DatabaseRole? Role = null);
 
 /// <param name="Details">Structured context for some errors (validation issues, log lines, partial plan runs).</param>
 public sealed record ErrorBody(string Code, string Message, string? Hint, object? Details = null);

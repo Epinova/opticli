@@ -155,6 +155,7 @@ internal static class JobsCommand
         command.Options.Add(timeout);
         command.Options.Add(allowDestructive);
         command.Options.Add(write.DryRun);
+        WriteCommands.Mark(command);
 
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
         {
@@ -198,6 +199,7 @@ internal static class JobsCommand
         write.DryRun.Description = "Check that the site runs the job and can stop it, without stopping it.";
         command.Arguments.Add(job);
         command.Options.Add(write.DryRun);
+        WriteCommands.Mark(command);
 
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
         {
@@ -239,6 +241,7 @@ internal static class JobsCommand
         command.Options.Add(next);
         command.Options.Add(allowDestructive);
         command.Options.Add(write.DryRun);
+        WriteCommands.Mark(command);
 
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
         {

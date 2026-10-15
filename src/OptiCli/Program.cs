@@ -47,6 +47,7 @@ internal partial class Program
             Run it anywhere in the site's repository: the CMS project and its development database are found automatically
             (`opticli doctor` shows what was found). A local database is used as is; a remote one (e.g. a dev database in Azure)
             only once the user has chosen it with `opticli db use`: until then commands fail with needs_selection (exit 6).
+            A database with the role prod (`opticli db list`) is only read, with --db: writes, serve and env are refused (exit 3).
 
             Refs: {{{ContentRefParser.Syntax}}}
             Reads query the database directly and need nothing running.

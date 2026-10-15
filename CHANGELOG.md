@@ -3,6 +3,43 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## Unreleased
+
+### New
+
+- Environment roles. `opticli db add <name> --role <local|dev|test|prod>` adds another environment's database by name
+  (asking for the connection string, and its password without showing it, at a terminal; or `--connection`), and
+  `--db <name>` reads it for a run. `db role <id|name> <role>` gives any database in `db list` a role, and
+  `db remove <name>` removes an entry. `db list` and `doctor` show each database's name and role. A role belongs to
+  the server and database (compared as SqlClient reads them, ignoring case, `tcp:`, the default port and the loopback
+  names), not to the entry: every entry, setting and connection string that points at a production database is
+  production, in every project. A weaker role than a database has needs a terminal, where the user types the
+  database's name (`refused`, exit 3, `details.reason: "roleLowered"`, elsewhere), and `db remove` keeps the role.
+- A database with the role `prod` is only read, when a run picks it with `--db`, `--connection`, `--profile` or
+  `OPTICLI_DB`: responses carry a warning and `meta.database.role: "prod"`, and opticli connects with
+  `ApplicationIntent=ReadOnly` unless the string sets the intent. `sql` works, with the warning. It is never the
+  development database: `db use` refuses it, and a saved choice, a configured `connection` or a Development default
+  that is production is refused with a hint to choose another. `serve`, `env` and every write command, `--dry-run`
+  and `apply` included, are `refused` (exit 3, `details.reason: "prodDatabase"`), however the database was picked;
+  the check runs before the command reads anything, again on the way to the site agent, and when the site starts.
+  `serve --status` warns when the running site's database has been given the role since it started.
+- `doctor` warns when the login saved for a production database can write (`db_owner`, `db_datawriter`, or INSERT or
+  UPDATE on `tblContent`); it says nothing when it may not ask or can't connect.
+- `meta.database` also appears for a local database with a role other than `local`, and has `role`.
+
+### Changed
+
+- A `roles` entry in the user config that opticli can't read stops it from using any database until it is fixed, and
+  so does a user config that isn't valid JSON (before, such a file was skipped): without the roles opticli can't tell
+  production from another database.
+- `--db <name>` with a database name that several connection strings share is no longer ambiguous when they point at
+  the same server spelled differently (`localhost` and `127.0.0.1,1433`, say).
+
+### Skill
+
+- The skill tells an agent what `prod` means, never to work around a production refusal or a refused role change,
+  and to leave `db add` and `db role` to the user.
+
 ## 0.17.0 (14 October 2026)
 
 ### Fixed

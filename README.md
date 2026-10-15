@@ -126,6 +126,7 @@ The skill sets these rules for agents:
 - Dry-run first.
 - Start `serve` only when writing.
 - Never choose the development database for the user.
+- Never try to get around a refusal, such as a production database's: tell the user.
 
 opticli enforces its own safety rules either way (see [Safety model](#safety-model)).
 
@@ -163,11 +164,14 @@ opticli works with the project's **development database**: the one the site uses
    server or database at that source changes, opticli asks again.
 
 ```sh
-opticli db list               # every connection string: id, server, database, local?, where it was found
+opticli db list               # every connection string: id, name, server, database, local?, role, where it was found
 opticli db use a71c3f         # make it the development database (no id on a terminal: pick from a list)
 opticli db forget             # back to the default
 opticli get 123 --db e02d9b   # another database, for one run (a remote one is flagged in meta.warnings)
 ```
+
+Other environments' databases can be added by name, and given a role, so production is only ever read: see
+[Environments](#environments).
 
 **LocalDB.** The CMS templates (`epi-alloy-mvc`, `epi-cms-empty`, CMS 12 and 13 alike) connect to SQL Server Express
 LocalDB with `AttachDbFilename=|DataDirectory|\<Name>.mdf`, and the site points `DataDirectory` at its `App_Data`
@@ -176,8 +180,9 @@ folder. On Windows opticli resolves `|DataDirectory|` to the project's `App_Data
 can use that string there: opticli refuses it (`refused`, exit 3) with a hint to point the connection string at a SQL
 Server database by name, e.g. SQL Server in a container (`doctor` shows which file it comes from).
 
-When the database in use is remote, every response carries `meta.database` (`server`, `name`, `local`,
-`development`). A remote database that isn't the development one also adds a warning.
+When the database in use is remote, or has a role other than `local`, every response carries `meta.database`
+(`server`, `name`, `local`, `development`, `role`). A remote database that isn't the development one also adds a
+warning, and so does a production database.
 
 `serve` runs the site only against a local database or the chosen development database. It sets
 `ConnectionStrings__<Name>` to that database and removes other spellings of it inherited from the shell, so an
@@ -198,11 +203,53 @@ starts the site:
 Once the site answers, `serve` reports drift: what differs between the build and the database (see
 [Shared databases](#shared-databases)).
 
+## Environments
+
+opticli knows which databases are production, and keeps them read-only and never the default. Add the databases of
+other environments by name, with a role:
+
+```sh
+opticli db add prod --role prod    # asks for the connection string, and its password without showing it
+opticli db add test --role test --connection "Server=...;Database=...;User Id=...;Password=..."
+opticli db role e02d9b prod        # give a database the project already has (from db list) a role
+opticli db remove test             # forget the entry; its role stays
+opticli get /en/about/ --db prod   # read production for one run
+```
+
+A database added by name is listed by `db list` and used only when a command asks for it with `--db <name>`. The
+connection string is kept in the user config (see [Files](#files)), with its password, so **save only a read-only
+login for production** (`db_datareader`): `opticli doctor` warns when a production entry's login can write (it checks
+`db_owner`, `db_datawriter` and INSERT/UPDATE on `tblContent`, and says nothing when it may not ask or can't connect).
+Run `db add` at your own terminal rather than having an agent pass `--connection`, which puts the password in the
+command line.
+
+The roles are `local`, `dev`, `test` and `prod`. A database on this machine is `local` until it is given another; a
+remote one has none until it is given one, and behaves as remote databases always have (`dev` and `test` do too:
+shared mode and the drift gate, see [Shared databases](#shared-databases)). A role belongs to the **server and
+database**, not to an entry: once a database is `prod`, every entry, setting and connection string that points at it
+is production, in every project. The server is compared as SqlClient reads it, ignoring case, a `tcp:` prefix, the
+default port 1433 and the loopback names (`localhost`, `127.0.0.1`, `.`, `(local)`, `::1` are one server); another
+name for the same server (an IP address, an alias) is another server. Giving a database a weaker role than it has
+(`prod` to `test`, say, by `db role` or by a second `db add`) needs a terminal, where you confirm by typing the
+database's name; elsewhere it is `refused` (exit 3, `details.reason: "roleLowered"`), so an agent can't make
+production writable. `db remove` keeps the role. A local database may be given `prod`; the tests use that.
+
+What `prod` means:
+- It is never the development database. `db use` refuses it (exit 3), and a saved choice, a configured `connection` or
+  a Development default that turns out to be production is refused with a hint to choose another: a command without
+  `--db` never reaches it.
+- Reads work when a run picks it (`--db`, `--connection`, `--profile`, `OPTICLI_DB`). Each response has a warning in
+  `meta.warnings` and `meta.database.role: "prod"`, and opticli connects with `ApplicationIntent=ReadOnly` unless the
+  connection string sets the intent itself. `sql` works too (it is read-only and keeps personal data out).
+- `serve`, `env` and every write command (including `--dry-run` and `apply`) are `refused` (exit 3,
+  `details.reason: "prodDatabase"`), whichever way the database was picked. opticli doesn't write to production.
+
 ## Safety model
 
 | Rule | Enforced by |
 |---|---|
 | A remote database is used only when the user chose it as the development database, or for one run with `--db` or `--connection`, with a warning on every response. Only literal loopback names (`localhost`, `127.0.0.1`, `::1`, `.`, `(local)`) and LocalDB count as local. A host name that resolves to 127.0.0.1 counts as remote. | CLI, before connecting |
+| A database with the role `prod` is only read, and only when a run picks it: it is never the development database (`db use` and a saved choice that became production are refused), and `serve`, `env` and every write are refused (exit 3, `details.reason: "prodDatabase"`), whether it was picked by name, id, database name, `--connection`, `--profile`, `OPTICLI_DB` or an exported connection string. Roles belong to a server and database, and a weaker one needs a person at a terminal. Reads connect with `ApplicationIntent=ReadOnly`. | CLI before anything is read, again on the way to the site, and when starting it |
 | The site started by `serve` is pinned to the database the CLI reads. It refuses to start against any remote database except the approved development one. There it runs without scheduler, schema updates, content type sync or store remapping, and `serve` refuses a build with EF Core migrations the database lacks. If the site turns hosting startups off in its code, so the pin can't run, it refuses to start. | CLI + site agent at startup |
 | The site agent answers only loopback callers that send the per-run token, and only in `Development`. The token is kept in a state file only your user can read. | Site agent, per request |
 | Writes create drafts; publishing needs `--publish` (or `publish`). Saves are attributed to the user `opticli`. | CLI + site agent |
@@ -219,6 +266,9 @@ Once the site answers, `serve` reports drift: what differs between the build and
 Things these rules can't see:
 - A port-forward or tunnel on `localhost,<port>` to a remote server looks local to opticli.
 - So does a hosts-file entry or SQL client alias that maps a loopback name elsewhere.
+- A production database reached by another name than the one it was given the role under (an IP address, an alias)
+  isn't known to be production. Neither is one whose role was edited out of the user config, or a run with another
+  user config (`XDG_CONFIG_HOME`, `APPDATA`): the user config is what holds the roles.
 
 Don't point opticli at such a connection unless you mean to write to what is behind it.
 
@@ -267,6 +317,7 @@ add-ons need first.
 |---|---|
 | `doctor` | project, connection string candidates, database, schema version, site agent, drift (against a shared database), sites whose primary host differs from the saved `sites primary` mapping, installed skill |
 | `db list`, `db use`, `db forget` | the development database (see [Which database](#which-database)) |
+| `db add <name> --role R`, `db remove <name>`, `db role <id\|name> R` | other environments' databases by name, and roles: `prod` is only read (see [Environments](#environments)) |
 | `sites`, `languages` | site definitions (CMS 13: applications) and hosts; language branches |
 | `types [--kind] [--unused] [--orphaned] [--sort]` | content types with instance counts and kinds (page, block, media, folder, other; on CMS 13 also experience, section, element, contract); `--orphaned`: types whose class is gone from the code, which the CMS keeps while content uses them (the running site checks every class, `meta.source: agent`; otherwise the site's sources are scanned for its own types, with a warning saying why); see [Orphaned content types](#orphaned-content-types-and-properties) for removing them |
 | `type <name>` | properties (type, culture-specific, required, tab, order, source line, `[AllowedTypes]`; one that isn't in the code with how many values it has stored), C# class file, views |
@@ -780,13 +831,17 @@ the site's own, newer CMS assemblies at runtime. It ships no copies of them.
 | What `types remove`, `remove-property` and `prune` removed (one JSON line each, never rotated) | `$XDG_STATE_HOME/opticli/removals.jsonl`, readable by you only | `%LOCALAPPDATA%\opticli\removals.jsonl` |
 
 You can set per-project defaults in the user config (`output`, `port`, `https` and `scheduler` for `serve`).
-`opticli db use` adds the chosen `database` there, and `opticli sites primary --save` the `sites.primary` mapping.
-opticli keeps the file's permissions when it rewrites it, and creates it readable by you only on Linux and macOS.
+`opticli db use` adds the chosen `database` there, `opticli db add` an entry to `databases` (and its role to `roles`,
+which holds the roles of every project's databases), and `opticli sites primary --save` the `sites.primary` mapping.
+opticli keeps the file's permissions when it rewrites it, and creates it readable by you only on Linux and macOS. A
+`roles` entry opticli can't read stops it from using any database until it is fixed.
 
 ```json
 {"projects": {"/abs/path/to/Site": {"connection": "...", "output": "bin/Debug/net8.0/Site.dll", "port": 5199, "https": true,
+  "databases": {"prod": {"connection": "Server=...;Database=...;User Id=reader;Password=..."}},
   "sites": {"primary": {"Site A": "localhost:5001", "Site A@nb": "https://localhost:5004",
-    "Site B": {"host": "localhost:5002", "keepEdit": true}}}}}}
+    "Site B": {"host": "localhost:5002", "keepEdit": true}}}}},
+ "roles": [{"server": "sql.example.com", "database": "site", "role": "prod", "setAt": "2026-10-15T09:00:00Z", "setVia": "add"}]}
 ```
 
 ## Supported versions

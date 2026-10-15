@@ -25,6 +25,9 @@ public enum ConnectionSource
 
     /// <summary><c>appsettings.{Environment}.json</c> for an environment other than Development: never used automatically, only when chosen.</summary>
     AppSettingsEnvironment,
+
+    /// <summary>A database added by name with <c>opticli db add</c> (in the opticli user config): only used when chosen.</summary>
+    Named,
 }
 
 public enum CandidateStatus
@@ -57,8 +60,9 @@ public enum CandidateStatus
 /// </summary>
 public sealed class ConnectionCandidate
 {
-    internal ConnectionCandidate(ConnectionSource source, string location, string? key, string? profile, string? connectionString)
+    internal ConnectionCandidate(ConnectionSource source, string location, string? key, string? profile, string? connectionString, string? name = null)
     {
+        Name = name;
         Source = source;
         Location = location;
         Key = key;
@@ -93,6 +97,9 @@ public sealed class ConnectionCandidate
     [JsonIgnore]
     internal string? LegacyId { get; }
 
+    /// <summary>The name it was added with (<see cref="ConnectionSource.Named"/>), which <c>--db</c> takes.</summary>
+    public string? Name { get; }
+
     public ConnectionSource Source { get; }
 
     /// <summary>File path, or the flag / environment variable name.</summary>
@@ -110,6 +117,16 @@ public sealed class ConnectionCandidate
 
     /// <summary>On this machine; null when the string is empty or invalid.</summary>
     public bool? IsLocal { get; }
+
+    /// <summary>
+    /// The role of its server and database (<see cref="DatabaseKey"/>): the one given to them, else <c>local</c> for a
+    /// local database; null for a remote one that has none, or an invalid string.
+    /// </summary>
+    public DatabaseRole? Role { get; internal set; }
+
+    /// <summary>Its server and database as roles are kept; null for an empty or invalid string.</summary>
+    [JsonIgnore]
+    public DatabaseKey? Target => IsValid ? DatabaseKey.Of(Server, Database) : null;
 
     public CandidateStatus Status { get; internal set; }
 

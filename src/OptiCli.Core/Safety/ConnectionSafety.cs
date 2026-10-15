@@ -58,6 +58,38 @@ public static class ConnectionSafety
         return new SafetyVerdict(true, server, database, null);
     }
 
+    /// <summary>
+    /// For a connection string typed without its password (<c>db add</c> at a terminal): true when it has none and signs in
+    /// with a SQL login, not integrated security or Microsoft Entra ID authentication.
+    /// </summary>
+    /// <exception cref="UsageException">Not a valid SQL Server connection string.</exception>
+    public static bool LacksPassword(string connectionString)
+    {
+        var builder = Parse(connectionString);
+        return string.IsNullOrEmpty(builder.Password) && !builder.IntegratedSecurity && builder.Authentication == SqlAuthenticationMethod.NotSpecified;
+    }
+
+    /// <summary>The string with <paramref name="password"/> as its password.</summary>
+    /// <exception cref="UsageException">Not a valid SQL Server connection string.</exception>
+    public static string WithPassword(string connectionString, string password)
+    {
+        var builder = Parse(connectionString);
+        builder.Password = password;
+        return builder.ConnectionString;
+    }
+
+    private static SqlConnectionStringBuilder Parse(string connectionString)
+    {
+        try
+        {
+            return new SqlConnectionStringBuilder(connectionString);
+        }
+        catch (Exception ex) when (ex is ArgumentException or FormatException or KeyNotFoundException or InvalidOperationException or NotSupportedException)
+        {
+            throw new UsageException($"Not a valid SQL Server connection string: {ex.Message}");
+        }
+    }
+
     /// <summary>The start of the message when SqlClient can't use a string on this machine (<see cref="Unusable"/>).</summary>
     public const string UnusableHere = "This connection string can't be used here:";
 
@@ -150,24 +182,25 @@ public static class ConnectionSafety
     /// </summary>
     /// <exception cref="RefusedException">The string is not a valid SQL Server connection string.</exception>
     /// <param name="dataDirectory">The site's data directory, for <c>|DataDirectory|</c> (<see cref="ResolveDataDirectory"/>).</param>
-    internal static VerifiedConnectionString Approve(string? connectionString, string? dataDirectory = null)
+    /// <param name="production">The database has the role <c>prod</c> (<see cref="VerifiedConnectionString.IsProduction"/>).</param>
+    internal static VerifiedConnectionString Approve(string? connectionString, string? dataDirectory = null, bool production = false)
     {
         var verdict = Check(connectionString);
         if (!verdict.IsValid || string.IsNullOrWhiteSpace(verdict.Server))
         {
             throw new RefusedException($"Refusing to use this connection string: {verdict.Reason ?? "it names no server."}");
         }
-        return Create(connectionString!, verdict, dataDirectory);
+        return Create(connectionString!, verdict, dataDirectory, production);
     }
 
-    private static VerifiedConnectionString Create(string connectionString, SafetyVerdict verdict, string? dataDirectory = null)
+    private static VerifiedConnectionString Create(string connectionString, SafetyVerdict verdict, string? dataDirectory = null, bool production = false)
     {
         // Re-serialising through the builder collapses duplicates and synonyms, so the string we
         // later connect with is exactly the one whose server was checked.
         var normalized = new SqlConnectionStringBuilder(connectionString).ConnectionString;
         // The site keeps the string as configured and expands |DataDirectory| itself; opticli connects with it expanded.
         var resolved = Unusable(normalized) is null ? ResolveDataDirectory(normalized, dataDirectory) : normalized;
-        return new VerifiedConnectionString(resolved, verdict.Server!, verdict.Database, verdict.IsLocal) { ForSite = normalized };
+        return new VerifiedConnectionString(resolved, verdict.Server!, verdict.Database, verdict.IsLocal) { ForSite = normalized, IsProduction = production };
     }
 
     /// <summary>
