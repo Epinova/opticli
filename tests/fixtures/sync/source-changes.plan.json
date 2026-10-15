@@ -1,0 +1,30 @@
+{
+  "guidNamespace": "0d6f3a52-8b1e-4c7a-9e25-5a4c1b7d3f90",
+  "operations": [
+    {"op": "create", "id": "section", "parent": "7b08c7d5-7585-47e5-add7-5822da68c3ce", "type": "StandardPage", "name": "Sync section",
+      "properties": {"TeaserText": "A section made in the source", "MainBody": "<p>Made in the source database.</p>"}},
+    {"op": "create", "id": "pageA", "parent": "$section", "type": "StandardPage", "name": "Sync page A"},
+    {"op": "create", "id": "pageB", "parent": "$section", "type": "StandardPage", "name": "Sync page B"},
+    {"op": "create", "id": "pageA1", "parent": "$pageA", "type": "StandardPage", "name": "Sync page A1",
+      "properties": {"TeaserText": "A grandchild"}},
+    {"op": "create", "id": "mediaFolder", "parent": "e56f85d0-e833-4e02-976a-2d11fe4d598c", "type": "SysContentFolder", "name": "Sync media"},
+    {"op": "upload", "id": "image", "file": "sync-image.png", "parent": "$mediaFolder", "publish": true},
+    {"op": "block", "id": "teaser", "type": "TeaserBlock", "name": "Sync teaser", "for": "$section",
+      "properties": {"Heading": "Sync teaser", "Text": "Points at page B", "Image": "$image", "Link": "$pageB"}, "publish": true},
+    {"op": "set", "ref": "$section", "properties": {"PageImage": "$image"}},
+    {"op": "area", "ref": "$section", "property": "MainContentArea", "action": "add", "item": "$teaser"},
+    {"op": "set", "ref": "$pageA", "properties": {"MainBody": "<p>See <a href=\"$pageB\">page B</a>.</p>"}},
+    {"op": "area", "ref": "$pageA", "property": "MainContentArea", "action": "add", "item": "$pageB"},
+    {"op": "set", "ref": "$pageB", "properties": {"MainBody": "<p>Back to <a href=\"$pageA\">page A</a>.</p>"}},
+    {"op": "publish", "ref": "$section"},
+    {"op": "publish", "ref": "$pageA"},
+    {"op": "publish", "ref": "$pageB"},
+    {"op": "publish", "ref": "$pageA1"},
+    {"op": "set", "ref": "61104228-962d-4dd2-925c-b5b12e2373ee", "properties": {"TeaserText": "Edited in the source"}, "publish": true},
+    {"op": "set", "ref": "f5d5ac23-d96d-4c2f-b8e1-56dfe7e05733", "properties": {"TeaserText": "A draft saved in the source"}},
+    {"op": "move", "ref": "ef61f729-8e7a-4c56-aede-98d361f1556d", "to": "e9cefa25-6a0a-47d0-b12c-74c3f6a51c9a"},
+    {"op": "delete", "ref": "43772e2d-46fa-412a-92ea-16bc0940fcda", "ignoreReferences": true},
+    {"op": "translate", "ref": "b28e8711-2526-4696-b02d-8249cf812e84", "lang": "sv", "name": "Vitbok",
+      "properties": {"TeaserText": "Svensk text"}, "publish": true}
+  ]
+}
