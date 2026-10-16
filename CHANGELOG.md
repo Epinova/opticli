@@ -3,7 +3,45 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
-## Unreleased
+## 0.19.0 (16 October 2026)
+
+Fewer drafts from plans, drift that tells removed code from newer code, and access rights in "For this page" folders.
+
+### New
+
+- Drift looks up content types and properties only in the database in the checkout's git history: an item whose class
+  (or the property) a commit removed from code, and that `HEAD` doesn't have, carries `removedFromCode` (commit, date,
+  subject), and the text says "its class was removed from code in abc1234 (2026-09-14)". When every difference on the
+  database's side is such a removal, the advice says pulling won't change it. Only a removal tied to the type counts:
+  by its GUID, by its class name when the removed class had no GUID or the same one, and for a property in the type's
+  class or the base classes it names; a comment naming the class or property doesn't count. The lookup needs a `.git`
+  in the project's folder or above and `git` on the path, and stops after 50 items or 5 seconds; without it drift is
+  reported as before. The fingerprint, the counts and what stops writes don't change.
+
+### Changed
+
+- An `apply` plan no longer leaves a draft per step. A `set`, `area` or `composition` step on content and a language
+  that an earlier step of the run saved a draft of saves into that draft, as the edit UI does, so a plan leaves one
+  draft per content and language (after a step that publishes, the next change starts a new one). The step's result
+  says `intoVersion: true`, the step `savedInto` (the draft and the step that made it), and its undo points to that
+  step's. opticli saves into the draft only while the database still has it as the branch's latest version, unpublished
+  and saved by opticli, and the site checks the same again; otherwise the step makes a new version and its warning says
+  so. Steps with `from`, `baseVersion`, `force` or a ref naming a version make a new version as before.
+  `apply --version-per-step` keeps a version per step; use it on a site whose own code asks for a new version on every
+  save (a handler that sets `RequireNewVersion`), where a save into the draft fails with a `conflict` that says so. A
+  later `discard` without a version discards the whole draft, with every step's changes in it, and when a later step
+  publishes, schedules or sends the draft for review, the undos of the steps that saved it point to that step's.
+  Sealed applies to production and `sync pull` run their plans the same way; `--version-per-step` doesn't apply to a
+  sealed plan.
+- Drift with the database ahead no longer only says "the environment runs newer code than this checkout: pull and
+  build". A content type or property only in the database is often one whose class was removed from code and that the
+  CMS kept for its content, so the advice (in `opticli drift`, the `drift` error and its hint, the prompt and `serve`'s
+  start message) names both causes and points to `opticli types --orphaned`. With only EF Core migrations or the CMS
+  schema version on the database's side it still says "pull and build".
+- When `serve` (or `env`) refuses a remote database passed with `--connection` or `OPTICLI_DB`, the hint now says how
+  to make it choosable: add it to a launch profile in `Properties/launchSettings.json` (`environmentVariables`,
+  `ConnectionStrings__<Name>`), user secrets or `appsettings.Development.json`, then choose it from `opticli db list`
+  with `opticli db use <id>`. It only said that a string from the site's configuration can be chosen.
 
 ### Fixed
 
@@ -16,39 +54,11 @@ again to update the skill.
   ancestors (often the root, `from: 1`) instead of the owner. It now follows the owner as the CMS does, and
   `assetsOf` names it.
 
-### Changed
+### Skill
 
-- When `serve` (or `env`) refuses a remote database passed with `--connection` or `OPTICLI_DB`, the hint now says how
-  to make it choosable: add it to a launch profile in `Properties/launchSettings.json` (`environmentVariables`,
-  `ConnectionStrings__<Name>`), user secrets or `appsettings.Development.json`, then choose it from `opticli db list`
-  with `opticli db use <id>`. It only said that a string from the site's configuration can be chosen.
-- Drift with the database ahead no longer only says "the environment runs newer code than this checkout: pull and
-  build". A content type or property only in the database is often one whose class was removed from code and that the
-  CMS kept for its content, so the advice (in `opticli drift`, the `drift` error and its hint, the prompt and `serve`'s
-  start message) names both causes and points to `opticli types --orphaned`. With only EF Core migrations or the CMS
-  schema version on the database's side it still says "pull and build".
-- An `apply` plan no longer leaves a draft per step. A `set`, `area` or `composition` step on content and a language
-  that an earlier step of the run saved a draft of saves into that draft, as the edit UI does, so a plan leaves one
-  draft per content and language (after a step that publishes, the next change starts a new one). The step's result
-  says `intoVersion: true`, the step `savedInto` (the draft and the step that made it), and its undo points to that
-  step's. opticli saves into the draft only while the database still has it as the branch's latest version, unpublished
-  and saved by opticli, and the site checks the same again; otherwise the step makes a new version and its warning says
-  so. Steps with `from`, `baseVersion`, `force` or a ref naming a version make a new version as before.
-  `apply --version-per-step` keeps a version per step; use it on a site whose own code asks for a new version on every
-  save (a handler that sets `RequireNewVersion`), where a save into the draft fails with a `conflict` that says so. A
-  later `discard` without a version discards the whole draft, with every step's changes in it, and when a later step
-  publishes, schedules or sends the draft for review, the undos of the steps that saved it point to that step's.
-
-### Added
-
-- Drift looks up content types and properties only in the database in the checkout's git history: an item whose class
-  (or the property) a commit removed from code, and that `HEAD` doesn't have, carries `removedFromCode` (commit, date,
-  subject), and the text says "its class was removed from code in abc1234 (2026-09-14)". When every difference on the
-  database's side is such a removal, the advice says pulling won't change it. Only a removal tied to the type counts:
-  by its GUID, by its class name when the removed class had no GUID or the same one, and for a property in the type's
-  class or the base classes it names; a comment naming the class or property doesn't count. The lookup needs a `.git` in the project's folder or above
-  and `git` on the path, and stops after 50 items or 5 seconds; without it drift is reported as before. The
-  fingerprint, the counts and what stops writes don't change.
+- The skill says that a plan leaves one draft per content and language (`savedInto`, `--version-per-step`), what to
+  tell the user when drift has `removedFromCode` and when it hasn't, that "For this page" content follows its owner's
+  access rights (`assetsOf`), and to pass the `serve` refusal's hint on to the user.
 
 ## 0.18.0 (16 October 2026)
 
