@@ -12,8 +12,10 @@ public static class ProductionDatabase
     public const string Reason = "prodDatabase";
 
     private const string NoWritesHint =
-        "opticli doesn't write to a production database, or run the site against one: write to the development database "
-        + "instead. Reading it for one run with --db <name|id> works. An agent tells the user and doesn't look for another way in.";
+        "opticli writes to a production database only through a sealed apply, which the user runs in their own terminal: "
+        + "prepare and seal a plan (`opticli apply <plan> --dry-run --seal-for <name>`, or `opticli sync push --to <name>`), and "
+        + "hand the user the command it prints (data.userCommand). Reading it for one run with --db <name|id> works. An agent "
+        + "never runs the sealed command itself and doesn't look for another way in.";
 
     /// <summary>A write, or <c>serve</c>/<c>env</c>, against it.</summary>
     /// <param name="action">What was refused, e.g. "write to" or "run the site against".</param>

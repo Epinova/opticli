@@ -33,6 +33,11 @@ internal class StartupHook
         AssemblyLoadContext.Default.Resolving += (_, name) =>
             string.Equals(name.Name, selfName, StringComparison.Ordinal) ? self : null;
 
+        if (StdinSecrets.Expected)
+        {
+            // Before anything reads the environment: the sealed apply gives the token and the connection string here.
+            StdinSecrets.Read(Console.In);
+        }
         var settings = AgentSettings.FromEnvironment();
         if (settings.PinnedConnection is not null
             && string.Equals(Environment.GetEnvironmentVariable(PreventHostingStartupVariable), "true", StringComparison.OrdinalIgnoreCase))

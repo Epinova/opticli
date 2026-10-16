@@ -15,17 +15,93 @@ public static class PlanFiles
 
     public const string Hint = "Plan files are relative to the plan and stay inside its folder; pass --allow-outside to apply if this is intended. Write @@ for a value that starts with a literal @.";
 
+    /// <param name="snapshot">
+    /// The files as they were read once, for a sealed apply (<see cref="Seals.PlanSnapshot"/>): text comes from there, never
+    /// from the disk again, so a file swapped after the plan was hashed isn't what runs.
+    /// </param>
     /// <exception cref="UsageException">Any file escapes the folder or can't be read; <c>details.problems</c> lists every one.</exception>
-    public static IReadOnlyList<PlanStep> Resolve(IEnumerable<PlanStep> steps, string planDirectory, bool allowOutside)
+    public static IReadOnlyList<PlanStep> Resolve(IEnumerable<PlanStep> steps, string planDirectory, bool allowOutside, Seals.PlanSnapshot? snapshot = null)
     {
         var problems = new List<string>();
-        var resolved = steps.Select(step => Resolve(step, planDirectory, allowOutside, problems)).ToList();
+        var resolved = steps.Select(step => Resolve(step, planDirectory, allowOutside, problems, snapshot)).ToList();
         return problems.Count == 0
             ? resolved
             : throw new UsageException($"The plan has {problems.Count} problem(s): {string.Join(" ", problems)}", Hint) { Details = new { problems } };
     }
 
-    private static PlanStep Resolve(PlanStep step, string planDirectory, bool allowOutside, List<string> problems)
+    /// <summary>Every file the plan reads (uploads' files and <c>"@path"</c> values), as full paths, in plan order.</summary>
+    /// <exception cref="UsageException">Any file escapes the folder; <c>details.problems</c> lists every one.</exception>
+    public static IReadOnlyList<string> Files(IEnumerable<PlanStep> steps, string planDirectory, bool allowOutside)
+    {
+        var problems = new List<string>();
+        var files = new List<string>();
+        foreach (var step in steps)
+        {
+            var where = $"operations[{step.Index}]";
+            if (step.Operation is UploadOperation upload)
+            {
+                Add(upload.File, where);
+            }
+            foreach (var values in ValuesOf(step.Operation))
+            {
+                Visit(values);
+            }
+
+            void Visit(JsonNode? node)
+            {
+                switch (node)
+                {
+                    case JsonObject obj:
+                        foreach (var (_, value) in obj)
+                        {
+                            Visit(value);
+                        }
+                        break;
+                    case JsonArray array:
+                        foreach (var item in array)
+                        {
+                            Visit(item);
+                        }
+                        break;
+                    case JsonValue leaf when leaf.TryGetValue<string>(out var text) && text.StartsWith('@') && !text.StartsWith("@@", StringComparison.Ordinal):
+                        Add(text[1..], where);
+                        break;
+                }
+            }
+        }
+        return problems.Count == 0
+            ? files.Distinct(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal).ToList()
+            : throw new UsageException($"The plan has {problems.Count} problem(s): {string.Join(" ", problems)}", Hint) { Details = new { problems } };
+
+        void Add(string file, string where)
+        {
+            try
+            {
+                files.Add(MediaFiles.ForPlan(file, planDirectory, allowOutside));
+            }
+            catch (UsageException ex)
+            {
+                problems.Add($"{where}: {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>The value objects of a step that may hold <c>"@path"</c> strings.</summary>
+    private static IEnumerable<JsonObject> ValuesOf(WriteOperation operation) => new[]
+    {
+        operation switch
+        {
+            SetOperation set => set.Properties,
+            CreateOperation create => create.Properties,
+            BlockCreateOperation block => block.Properties,
+            UploadOperation media => media.Properties,
+            TranslateOperation translate => translate.Properties,
+            CompositionEdit composition => composition.Value,
+            _ => null,
+        },
+    }.OfType<JsonObject>();
+
+    private static PlanStep Resolve(PlanStep step, string planDirectory, bool allowOutside, List<string> problems, Seals.PlanSnapshot? snapshot)
     {
         var where = $"operations[{step.Index}]";
         var operation = step.Operation;
@@ -41,7 +117,7 @@ public static class PlanFiles
             }
         }
 
-        JsonObject? Read(JsonObject? properties) => properties is null ? null : ReadValues(properties, where, planDirectory, allowOutside, problems);
+        JsonObject? Read(JsonObject? properties) => properties is null ? null : ReadValues(properties, where, planDirectory, allowOutside, problems, snapshot);
         operation = operation switch
         {
             SetOperation set => set with { Properties = Read(set.Properties) },
@@ -56,7 +132,7 @@ public static class PlanFiles
     }
 
     /// <summary>A copy with every <c>"@path"</c> string, at any depth (local blocks, link texts), replaced by the file's text.</summary>
-    private static JsonObject ReadValues(JsonObject properties, string where, string planDirectory, bool allowOutside, List<string> problems)
+    private static JsonObject ReadValues(JsonObject properties, string where, string planDirectory, bool allowOutside, List<string> problems, Seals.PlanSnapshot? snapshot)
     {
         var copy = (JsonObject)properties.DeepClone();
         Visit(copy, "properties");
@@ -108,6 +184,15 @@ public static class PlanFiles
             try
             {
                 var full = MediaFiles.ForPlan(value[1..], planDirectory, allowOutside);
+                if (snapshot is not null)
+                {
+                    if (snapshot.Text(full) is { } kept)
+                    {
+                        return kept;
+                    }
+                    problems.Add($"{where}: {path}: {full} isn't one of the files read with the plan.");
+                    return value;
+                }
                 var file = new FileInfo(full);
                 if (!file.Exists)
                 {

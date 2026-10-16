@@ -58,6 +58,22 @@ public static class AgentProtocol
     public const string SchedulerOn = "on";
 
     /// <summary>
+    /// Environment variable that tells the agent to read its secrets from the site's stdin instead of the environment, when
+    /// it is <see cref="SecretsFromStdin"/>: one line, a JSON object of variables (<see cref="TokenVariable"/>,
+    /// <see cref="DatabaseVariable"/> and <c>ConnectionStrings__&lt;name&gt;</c>) that the startup hook sets in the process
+    /// before the site reads its configuration. The sealed apply to production starts the site this way, so the write
+    /// credentials and the token never show in the process's environment block (<c>/proc/&lt;pid&gt;/environ</c>), and the
+    /// agent removes them from the environment again once the site has started.
+    /// </summary>
+    public const string SecretsVariable = "OPTICLI_SECRETS";
+
+    public const string SecretsFromStdin = "stdin";
+
+    /// <summary>Whether a variable may come from the stdin line (<see cref="SecretsVariable"/>): the token and connection strings only.</summary>
+    public static bool IsSecret(string name) =>
+        name == TokenVariable || name == DatabaseVariable || name.StartsWith("ConnectionStrings__", StringComparison.Ordinal);
+
+    /// <summary>
     /// Request header confirming a write although the build and the shared database differ: the
     /// <see cref="DriftReport.Fingerprint"/> the user agreed to. Without it (or with another one) such writes fail with
     /// <see cref="AgentErrorCodes.Drift"/>.

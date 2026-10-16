@@ -1,6 +1,6 @@
 namespace OptiCli.Tests;
 
-/// <summary><c>sync pull</c>'s own usage rules, which it checks before it reads anything.</summary>
+/// <summary><c>sync pull</c>'s and <c>sync push</c>'s own usage rules, which they check before they read anything.</summary>
 [Collection(ConsoleCollection.Name)]
 public sealed class SyncCommandTests
 {
@@ -9,7 +9,10 @@ public sealed class SyncCommandTests
     [InlineData("sync pull --from prod 1 --all", "Give refs, --site <name> or --all")]
     [InlineData("sync pull --from prod --site Alloy --all", "Give refs, --site <name> or --all")]
     [InlineData("sync pull --all", "--from")]
-    public async Task What_sync_pull_is_given_is_checked_first(string line, string message)
+    [InlineData("sync push --to prod", "Give refs, --site <name> or --all")]
+    [InlineData("sync push --to prod 1 --all", "Give refs, --site <name> or --all")]
+    [InlineData("sync push --all", "--to")]
+    public async Task What_sync_is_given_is_checked_first(string line, string message)
     {
         var run = await Opticli.RunAsync([.. line.Split(' '), "--json"]);
 

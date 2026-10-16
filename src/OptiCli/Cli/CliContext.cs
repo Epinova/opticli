@@ -26,6 +26,9 @@ internal sealed class CliContext(ParseResult parse, GlobalOptions options, OptiC
 
     public ParseResult Parse { get; } = parse;
 
+    /// <summary>The global options, to read one that a command treats specially (the sealed apply's <c>--db</c>, <c>--connection</c>).</summary>
+    public GlobalOptions Options { get; } = options;
+
     public OptiCliEnvironment Environment { get; } = environment;
 
     public ConnectionRequest ConnectionRequest { get; } = new(
@@ -173,7 +176,7 @@ internal sealed class CliContext(ParseResult parse, GlobalOptions options, OptiC
     {
         try
         {
-            return (ProjectLocator.Locate(Parse.GetValue(options.Project), Environment.CurrentDirectory), null);
+            return (ProjectLocator.Locate(Parse.GetValue(Options.Project), Environment.CurrentDirectory), null);
         }
         catch (OptiCliException ex)
         {

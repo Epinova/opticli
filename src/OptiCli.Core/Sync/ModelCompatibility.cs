@@ -123,6 +123,6 @@ public sealed class ModelCompatibility
 
     private static string Shown(PropertyDefinition property) => property.IsList ? $"{property.TypeName}[]" : property.TypeName;
 
-    private static async Task<IReadOnlySet<int>> RemovedAsync(CmsDatabase db, CancellationToken cancellationToken) =>
+    internal static async Task<IReadOnlySet<int>> RemovedAsync(CmsDatabase db, CancellationToken cancellationToken) =>
         (await db.QueryAsync("SELECT pkID FROM tblPropertyDefinition WHERE ExistsOnModel = 0", r => r.GetInt32("pkID"), cancellationToken)).ToHashSet();
 }

@@ -317,11 +317,15 @@ public static partial class SiteLauncher
             : null;
 
     /// <param name="port">The port opticli waited on, to point out a site that listens elsewhere.</param>
-    internal static OptiCliException StartupFailure(StateStore store, string message, bool timedOut = false, int? port = null)
+    internal static OptiCliException StartupFailure(StateStore store, string message, bool timedOut = false, int? port = null) =>
+        StartupFailure(store.LogPath, message, timedOut, port);
+
+    /// <param name="logPath">The run's log, whose last lines and first exception the error carries.</param>
+    internal static OptiCliException StartupFailure(string logPath, string message, bool timedOut = false, int? port = null)
     {
-        var lines = LogTail.Read(store.LogPath, FailureLogLines);
-        var first = FirstException(store.LogPath);
-        var details = new StartupLog(store.LogPath, lines, first);
+        var lines = LogTail.Read(logPath, FailureLogLines);
+        var first = FirstException(logPath);
+        var details = new StartupLog(logPath, lines, first);
         if (lines.Any(l => l.Contains(RefusalMarker, StringComparison.Ordinal)))
         {
             return new RefusedException($"{message} The opticli agent refused to start the site: {lines.Last(l => l.Contains(RefusalMarker, StringComparison.Ordinal)).Trim()}",
@@ -340,7 +344,7 @@ public static partial class SiteLauncher
                 "Create one with `dotnet dev-certs https --trust`, in the same environment the site runs in, or start without --https.")
             { Details = details };
         }
-        if (timedOut && port is { } expected && ListeningElsewhere(store.LogPath, expected) is { Count: > 0 } elsewhere)
+        if (timedOut && port is { } expected && ListeningElsewhere(logPath, expected) is { Count: > 0 } elsewhere)
         {
             return new UnreachableException($"{message} The site listens on {string.Join(", ", elsewhere)} instead of {SiteEnvironment.Url(expected)}.",
                 "Something in the site sets its own addresses (UseUrls, Listen or ConfigureKestrel in code, or Kestrel settings opticli didn't see). Let it use ASPNETCORE_URLS in Development, or start it yourself with the variables from `opticli env`.")

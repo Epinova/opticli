@@ -70,12 +70,14 @@ public static class SiteProcess
     private static string? FirstExisting(params string[] paths) => paths.FirstOrDefault(File.Exists);
 
     /// <summary>Starts the site as a child whose output the caller reads (foreground mode).</summary>
-    public static Process StartAttached(string dotnet, string dll, string workingDirectory, IEnumerable<KeyValuePair<string, string?>> environment)
+    /// <param name="redirectInput">Give the site a pipe as stdin, which the caller writes to (the sealed apply's secrets).</param>
+    public static Process StartAttached(string dotnet, string dll, string workingDirectory, IEnumerable<KeyValuePair<string, string?>> environment, bool redirectInput = false)
     {
         var info = new ProcessStartInfo(dotnet)
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = redirectInput,
         };
         info.ArgumentList.Add(dll);
         return Start(info, workingDirectory, environment);

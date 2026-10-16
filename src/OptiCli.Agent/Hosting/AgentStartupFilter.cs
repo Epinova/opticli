@@ -15,6 +15,11 @@ internal sealed class AgentStartupFilter : IStartupFilter
     {
         app.Map(AgentProtocol.BasePath, branch => branch.Run(AgentMiddleware.HandleAsync));
         Console.Error.WriteLine($"[opticli] agent {AgentInfo.Version} (protocol v{AgentProtocol.Version}) mapped at {AgentProtocol.BasePath}");
+        if (StdinSecrets.Expected)
+        {
+            // The configuration and the agent's settings have read them by now.
+            StdinSecrets.Forget();
+        }
         next(app);
     };
 }

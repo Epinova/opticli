@@ -49,6 +49,17 @@ internal sealed class DriftCheck
         return report;
     }
 
+    /// <summary>
+    /// The code compared with the database's content types, properties and stores, whatever the mode (<c>?compare=model</c>):
+    /// against a local database, what is only in the database (removed code, admin mode) after the content type sync.
+    /// </summary>
+    internal static DriftReport CompareModel(IServiceProvider services)
+    {
+        var (types, properties) = Guarded("content types and properties", () => ContentModelScan.Compare(services), ex => ([Failed("content model", ex)], []));
+        var stores = Guarded("Dynamic Data Store types", () => StoreDrift.Compare(services), ex => [Failed("Dynamic Data Store", ex)]);
+        return DriftReport.Create(types, properties, [], stores, [], [CodeOnlyNote, "EF Core migrations and the CMS schema version weren't compared (compare=model)."]);
+    }
+
     /// <summary>What <c>serve</c> compared before the start; nothing (with a note) when the site wasn't started by it.</summary>
     internal static StartupDrift ReadStartup(string? path, List<string> notes)
     {

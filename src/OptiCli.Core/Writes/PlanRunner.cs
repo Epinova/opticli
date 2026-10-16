@@ -72,6 +72,18 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     /// <summary>Called after each step is checked (<c>"checking"</c>) and after each one runs (<c>"applying"</c>), with how many of how many.</summary>
     public Action<string, int, int>? Progress { get; init; }
 
+    /// <summary>
+    /// The plan's files as they were read once (a sealed apply): <c>"@path"</c> values come from there, never from the disk,
+    /// so the files that run are the ones that were hashed.
+    /// </summary>
+    public Seals.PlanSnapshot? Files { get; init; }
+
+    /// <summary>
+    /// Called once the whole plan passed validation, right before the first step saves anything (a sealed apply checks
+    /// production again there); an exception stops the plan with nothing saved.
+    /// </summary>
+    public Func<CancellationToken, Task>? BeforeSaving { get; init; }
+
     /// <exception cref="OptiCliException">
     /// Validation failed (nothing written), or a step failed during execution; <c>details</c> is the
     /// <see cref="PlanRun"/> with each step's status, results of the saved steps and undo hints.
@@ -81,7 +93,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         // Rich text from @file values only has its $ids once the files are read.
         var steps = WritePlan.LinkText(PlanFiles.Resolve(plan.Steps
             .Select(s => publishAll ? s with { Operation = s.Operation.WithPublish() } : s)
-            .Select(s => requestApproval ? s with { Operation = s.Operation.WithRequestApproval() } : s), planDirectory, allowOutside));
+            .Select(s => requestApproval ? s with { Operation = s.Operation.WithRequestApproval() } : s), planDirectory, allowOutside, Files));
         var guids = WritePlan.FixedGuids(steps);
 
         var existing = executor.UpdateExisting ? await ExistingAsync(steps, cancellationToken) : new Dictionary<string, int>();
@@ -117,6 +129,10 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
 
         // Drift is confirmed once for the whole plan (apply --accept-drift), before its first step saves anything.
         await executor.RequireDriftAcceptedAsync(cancellationToken);
+        if (BeforeSaving is { } beforeSaving)
+        {
+            await beforeSaving(cancellationToken);
+        }
         var created = new Dictionary<string, int>(StringComparer.Ordinal);
         var results = new List<PlanStepResult>();
         foreach (var step in steps)

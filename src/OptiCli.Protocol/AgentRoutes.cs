@@ -43,6 +43,14 @@ public static class AgentRoutes
     public static readonly string Drift = $"{Prefix}/drift";
 
     /// <summary>
+    /// <c>GET /v1/drift?compare=model</c>: against a local database too, the site's code compared with the content types,
+    /// properties and stores in its database (no EF Core migrations or schema). What a sealed apply's site would find against a
+    /// production database whose model is the same: types and properties only in the database (removed code, admin mode).
+    /// An agent from before it answers as <see cref="Drift"/> does (<see cref="DriftReport.Checked"/> false locally).
+    /// </summary>
+    public static readonly string DriftOfModel = $"{Prefix}/drift?compare=model";
+
+    /// <summary>
     /// <c>GET /v1/types/{name}</c>, name or GUID. Response: <see cref="ContentTypeModel"/>.
     /// Errors: <c>not_found</c> with close matches in the hint.
     /// </summary>

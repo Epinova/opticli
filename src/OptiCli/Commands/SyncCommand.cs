@@ -9,6 +9,7 @@ using OptiCli.Core.Errors;
 using OptiCli.Core.Export;
 using OptiCli.Core.Output;
 using OptiCli.Core.Queries;
+using OptiCli.Core.Seals;
 using OptiCli.Core.Sync;
 using OptiCli.Core.Writes;
 
@@ -28,6 +29,7 @@ internal static class SyncCommand
             its running site (`opticli serve`), like every write.
             """);
         sync.Subcommands.Add(Pull(options));
+        sync.Subcommands.Add(Push(options));
         return sync;
     }
 
@@ -178,6 +180,120 @@ internal static class SyncCommand
                     Directory.Delete(folder, recursive: true);
                 }
             }
+        });
+        return command;
+    }
+
+    private static Command Push(GlobalOptions options)
+    {
+        var to = new Option<string>("--to") { Description = "The production database to seal the push for: its name (`opticli db add`), id or database name from `opticli db list`, with the role prod. Only read.", HelpName = "name|id", Required = true };
+        var reference = new Argument<string[]>("ref") { Description = "The local content to push with everything below it: one or more (" + Core.Refs.ContentRefParser.Syntax + "); or --site / --all.", Arity = ArgumentArity.ZeroOrMore };
+        var site = new Option<string?>("--site") { Description = "Without a ref: the site's start page with everything below it, its assets and the global assets. With a ref: the site a path ref belongs to.", HelpName = "name|host" };
+        var all = new Option<bool>("--all") { Description = "Every site's start page with everything below it, the sites' assets and the global assets." };
+        var languages = new Option<string?>("--languages") { Description = "Only these language branches (comma-separated codes), besides each item's master branch, which is always written.", HelpName = "en,sv" };
+        var output = new Option<string?>("--out") { Description = "The folder for the plan (new or empty); it must stay until the user ran the sealed command. Default: push-<database>-<time> here.", HelpName = "dir" };
+
+        var command = new Command("push", """
+            Prepare local content for production and seal it: the user then runs one command in their own terminal, which writes it
+            (`opticli apply <plan> --db <name> --seal <id>`, data.userCommand). Nothing is written to production by this command.
+            It is `export` of the local development database (which must have the role local, with its site running: `opticli
+            serve`), compared with production over SQL by GUID (read only): content production lacks is created (or restored from
+            its recycle bin), content that differs updated, content moved locally moved; content production already has the same
+            is left out, and so is content with someone's unpublished changes in production. Content production changed since the
+            last pull (or never pulled from it) is a conflict, left out: a push never writes over production's own changes (pull
+            first, `sync pull --from <name>`; its sync state tells them apart). Never deletes, and no media (listed:
+            upload it in production's edit UI). Then the plan is checked against the local site and sealed, as `apply --dry-run
+            --seal-for` does: production's content model must be the build's, and the versions of everything the plan touches are
+            recorded; the run refuses if they changed. The seal is good for 24 hours and runs once.
+            Example: opticli sync push --to prod /en/campaign/
+            """);
+        command.Options.Add(to);
+        command.Arguments.Add(reference);
+        command.Options.Add(site);
+        command.Options.Add(all);
+        command.Options.Add(languages);
+        command.Options.Add(output);
+        // It writes nothing, but dry-runs the plan through the local site, as every write's dry run does.
+        WriteCommands.Mark(command);
+
+        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        {
+            var parse = context.Parse;
+            var given = parse.GetValue(reference) is { Length: > 0 } refs ? refs : null;
+            var siteName = parse.GetValue(site);
+            var everything = parse.GetValue(all);
+            if ((given is null ? 0 : 1) + (given is null && siteName is not null ? 1 : 0) + (everything ? 1 : 0) != 1)
+            {
+                throw new UsageException("Give refs, --site <name> or --all (one of them).", "Example: opticli sync push --to prod /en/campaign/");
+            }
+            var current = context.Environment.CurrentDirectory;
+            var project = context.Project;
+            var productionName = parse.GetValue(to)!;
+            var (production, productionConnection) = Sealing.Production(context, productionName, "--to");
+            var localChosen = Sealing.RequireLocal(context, production, "sync push");
+
+            await using var localSession = await context.OpenContentAsync(cancellationToken);
+            // Before reading anything: the plan's dry run needs the local site on this database.
+            context.Writes(localSession, ask: false);
+            await context.ConnectAgentAsync(cancellationToken);
+            await using var productionSession = await ContentSession.OpenAsync(await CmsDatabase.OpenAsync(productionConnection, cancellationToken), cancellationToken);
+            await Sealing.RequireSameModelAsync(localSession, productionSession, cancellationToken);
+
+            var reader = new ExportReader(localSession);
+            IReadOnlyList<ExportRoot> roots;
+            if (given is not null)
+            {
+                var located = new List<ExportRoot>();
+                foreach (var each in given)
+                {
+                    located.Add(reader.Root((await localSession.LocateAsync(each, siteName, cancellationToken)).Id, descendants: true));
+                }
+                roots = located.Distinct().ToList();
+            }
+            else
+            {
+                roots = (everything ? localSession.Model.Sites.All : [localSession.Model.Sites.RequireSite(siteName!)])
+                    .SelectMany(reader.SiteRoots)
+                    .Distinct()
+                    .ToList();
+            }
+            var languageIds = parse.GetValue(languages) is { } codes
+                ? codes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(code => localSession.Model.RequireLanguage(code).Id).ToHashSet()
+                : null;
+
+            var folder = Folder(parse.GetValue(output) ?? $"push-{Core.Export.ExportFiles.Safe(production.Database ?? "production")}-{DateTime.Now:yyyyMMdd-HHmmss}", current);
+            // What the last pulls from production read: a push writes only over what production still has as they read it.
+            var pulled = SyncState.Load(SyncState.PathFor(context.Environment, project.Directory, production.Target!, localChosen.Target!), project.Directory, production.Target!, localChosen.Target!);
+            var push = await new SyncPush(localSession, productionSession, pulled, folder).BuildAsync(roots, languageIds, Database(localChosen), cancellationToken);
+            var warnings = new List<string>();
+            if (push.Media.Count > 0)
+            {
+                warnings.Add($"{push.Media.Count} media item(s) were left out (media): a sealed apply writes no files. Upload them in production's edit UI.");
+            }
+            if (push.Conflicts.Count > 0)
+            {
+                warnings.Add($"{push.Conflicts.Count} item(s) were changed in production since the last pull, or never pulled from it (conflicts), and were left out: `opticli sync pull --from {productionName}` first, then push again.");
+            }
+            if (push.Skipped.Count > 0)
+            {
+                warnings.Add($"{push.Skipped.Count} item(s) were skipped (skipped).");
+            }
+            if (push.Dropped.Count > 0)
+            {
+                warnings.Add($"{push.Dropped.Count} value(s) refer to what production doesn't have and were left out (dropped).");
+            }
+            if (push.Steps == 0)
+            {
+                return new CommandResult(new { push, seal = (SealResult?)null, userCommand = (string?)null },
+                    Text: $"Nothing to push: production has the {push.Unchanged} item(s) as the local database has them.{Environment.NewLine}", Warnings: warnings, Source: CommandResult.DbSource);
+            }
+            var plan = await PlanSnapshot.ReadAsync(push.Plan, cancellationToken);
+            var sealResult = await Sealing.SealAsync(context, plan, productionName, new SealOptions(UpdateExisting: true, Publish: false, RequestApproval: false, MovesFirst: true), "sync push",
+                localSession, production, productionSession, warnings, cancellationToken);
+            var text = new StringBuilder()
+                .AppendLine(CultureInfo.InvariantCulture, $"Push to '{production.Database}': created {push.Created.Count}, updated {push.Updated.Count}, moved {push.Moved.Count}, restored {push.Restored.Count}, unchanged {push.Unchanged}; conflicts {push.Conflicts.Count}, skipped {push.Skipped.Count}, media left out {push.Media.Count}.")
+                .Append(Sealing.Text(sealResult));
+            return new CommandResult(new { push, seal = sealResult, userCommand = sealResult.UserCommand }, Text: text.ToString(), Warnings: warnings, Source: WriteExecutor.AgentSource);
         });
         return command;
     }

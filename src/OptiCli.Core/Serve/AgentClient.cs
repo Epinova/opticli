@@ -67,6 +67,13 @@ public sealed class AgentClient : IDisposable
         }
     }
 
+    /// <summary>
+    /// The site's code compared with its database's content model even when it is local (<see cref="AgentRoutes.DriftOfModel"/>);
+    /// an agent from before that reports <see cref="DriftReport.Checked"/> false.
+    /// </summary>
+    public Task<DriftReport> ModelDriftAsync(CancellationToken cancellationToken) =>
+        SendAsync<DriftReport>(HttpMethod.Get, AgentRoutes.DriftOfModel, null, WriteTimeout, cancellationToken);
+
     /// <summary>Sends <paramref name="fingerprint"/> with every later request: the user confirmed writing despite those differences.</summary>
     public void AcceptDrift(string fingerprint)
     {

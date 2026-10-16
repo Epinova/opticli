@@ -1,6 +1,9 @@
 using System.CommandLine;
 using OptiCli.Cli;
+using OptiCli.Core.Content;
+using OptiCli.Core.Data;
 using OptiCli.Core.Errors;
+using OptiCli.Core.Seals;
 using OptiCli.Core.Queries;
 using OptiCli.Core.SourceScan;
 using OptiCli.Core.Writes;
@@ -19,6 +22,16 @@ internal static class ApplyCommand
         var updateExisting = new Option<bool>("--update-existing")
         {
             Description = "Run a plan again: content that already has a step's GUID is updated (and moved back out of the recycle bin), and steps that are already done change nothing.",
+        };
+        var sealFor = new Option<string?>("--seal-for")
+        {
+            Description = "With --dry-run: check the plan against the local site and against production (read only: its content model and the versions of everything the plan touches), and seal it for that production database (name or id, role prod). Writes nothing but the seal, and prints the command the user runs in their own terminal (data.userCommand). Only create, change, move, translate and publish steps by GUID; no media.",
+            HelpName = "name",
+        };
+        var seal = new Option<string?>("--seal")
+        {
+            Description = "Run a sealed plan against production (with --db <name>): only the user, in their own terminal. Shows what the plan does, asks for the database's name and the write login (never saved), and refuses if the plan, the build or production changed since the seal, or after 24 hours. Takes its options from the seal. An agent never runs it.",
+            HelpName = "id",
         };
         var write = new WriteOptions();
         write.Publish.Description = "Publish every set, create, area, composition, block, upload and translate operation (as if each had \"publish\": true).";
@@ -63,12 +76,41 @@ internal static class ApplyCommand
         command.Arguments.Add(file);
         command.Options.Add(allowOutside);
         command.Options.Add(updateExisting);
+        command.Options.Add(sealFor);
+        command.Options.Add(seal);
         write.AddCommon(command);
+        // A sealed run (--seal) refuses everything but production itself, and is its own narrow way past the refusal: the
+        // write commands' check before the command runs would stop it first. Every other apply is checked as a write.
+        WriteCommands.Mark(command, parse => parse.GetValue(seal) is null);
 
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             var path = parse.GetValue(file)!;
+            if (parse.GetValue(seal) is { } sealId)
+            {
+                var given = new (bool Given, string Name)[]
+                {
+                    (parse.GetValue(sealFor) is not null, "--seal-for"), (parse.GetValue(write.DryRun), "--dry-run"), (parse.GetValue(write.Publish), "--publish"),
+                    (parse.GetValue(updateExisting), "--update-existing"), (parse.GetValue(allowOutside), "--allow-outside"), (parse.GetValue(write.RequestApproval), "--request-approval"),
+                    (parse.GetValue(write.AcceptDrift) is not null, "--accept-drift"), (parse.GetValue(options.Connection) is not null, "--connection"), (parse.GetValue(options.Profile) is not null, "--profile"),
+                }.Where(o => o.Given).Select(o => o.Name).ToList();
+                if (given.Count > 0)
+                {
+                    throw new UsageException($"--seal takes no {string.Join(", ", given)}: the run's options are the ones the plan was sealed with, and production is named with --db.",
+                        "Run exactly the command the seal printed: opticli apply <plan> --db <name> --seal <id>.");
+                }
+                if (parse.GetValue(options.Database) is not { } production || path == "-")
+                {
+                    throw new UsageException("--seal needs the plan file and --db naming the production database it was sealed for.", "Run exactly the command the seal printed: opticli apply <plan> --db <name> --seal <id>.");
+                }
+                return await SealedApply.RunAsync(context, path, sealId, production, cancellationToken);
+            }
+            if (parse.GetValue(sealFor) is { } sealTarget)
+            {
+                return await SealAsync(context, path, sealTarget, parse.GetValue(write.DryRun), parse.GetValue(updateExisting), parse.GetValue(write.Publish),
+                    parse.GetValue(write.RequestApproval), parse.GetValue(allowOutside), parse.GetValue(write.AcceptDrift), cancellationToken);
+            }
             var plan = WritePlan.Parse(await ReadPlanAsync(path, context.Environment.CurrentDirectory, cancellationToken));
             var planDirectory = path == "-" ? context.Environment.CurrentDirectory : Path.GetDirectoryName(Path.GetFullPath(path, context.Environment.CurrentDirectory))!;
             await using var session = await context.OpenContentAsync(cancellationToken);
@@ -80,6 +122,30 @@ internal static class ApplyCommand
             return new CommandResult(run, Warnings: run.DryRun ? [Coverage(run)] : null, Source: WriteExecutor.AgentSource);
         });
         return command;
+    }
+
+    /// <summary><c>apply &lt;plan&gt; --dry-run --seal-for &lt;prod&gt;</c>: checks the plan and seals it for the user to run.</summary>
+    private static async Task<CommandResult> SealAsync(CliContext context, string path, string production, bool dryRun, bool updateExisting, bool publish, bool requestApproval,
+        bool allowOutside, string? acceptDrift, CancellationToken cancellationToken)
+    {
+        if (!dryRun)
+        {
+            throw new UsageException("--seal-for seals a dry run: add --dry-run. Nothing is written to production by sealing; the user runs the sealed plan.");
+        }
+        if (path == "-" || allowOutside || acceptDrift is not null)
+        {
+            throw new UsageException("A sealed plan is a plan file whose files stay in its folder, run against a production database whose content model is the build's: no stdin, --allow-outside or --accept-drift.");
+        }
+        var (candidate, connection) = Sealing.Production(context, production, "--seal-for");
+        Sealing.RequireLocal(context, candidate, "Sealing");
+        var plan = await PlanSnapshot.ReadAsync(Path.GetFullPath(path, context.Environment.CurrentDirectory), cancellationToken);
+        // What can be checked without a database first; reference values once the model is known.
+        SealedPlan.Require(plan.Plan, model: null);
+        await using var session = await context.OpenContentAsync(cancellationToken);
+        await using var productionSession = await ContentSession.OpenAsync(await CmsDatabase.OpenAsync(connection, cancellationToken), cancellationToken);
+        var warnings = new List<string>();
+        var result = await Sealing.SealAsync(context, plan, production, new SealOptions(updateExisting, publish, requestApproval), "apply", session, candidate, productionSession, warnings, cancellationToken);
+        return new CommandResult(result, Text: Sealing.Text(result), Warnings: warnings.Count > 0 ? warnings : null, Source: WriteExecutor.AgentSource);
     }
 
     /// <summary>How thoroughly the dry run could check the plan.</summary>
