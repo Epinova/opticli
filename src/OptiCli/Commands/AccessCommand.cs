@@ -9,8 +9,9 @@ namespace OptiCli.Commands;
 
 internal static class AccessCommand
 {
+    /// <param name="AssetsOf">The content whose "For this page" folder this is, or holds this item: its access rights apply.</param>
     /// <param name="Approval">The content approval sequence publishing goes through, when one applies.</param>
-    private sealed record AccessView(string Ref, Guid Guid, string? Type, string? Name, bool Inherited, string? From, IReadOnlyList<AccessEntry> Entries, ApprovalSequence? Approval);
+    private sealed record AccessView(string Ref, Guid Guid, string? Type, string? Name, bool Inherited, string? From, string? AssetsOf, IReadOnlyList<AccessEntry> Entries, ApprovalSequence? Approval);
 
     public static Command Create(GlobalOptions options)
     {
@@ -49,7 +50,8 @@ internal static class AccessCommand
             With options it changes them through the site (needs `opticli serve`), for this item only: children that inherit
             follow automatically, nothing is applied to descendants. An inherited ACL can only be changed with
             --break-inheritance. The root, the recycle bin, start pages and asset roots are refused (exit 3), and so is any
-            change that leaves no role with Administer. Access rights aren't versioned: the output shows before and after, and
+            change that leaves no role with Administer. Content in a "For this page" folder has its owner's access rights
+            (shown as assetsOf) and is refused too, as in the edit UI: change the owner instead. Access rights aren't versioned: the output shows before and after, and
             the undo is the inverse command.
             Example: opticli access /en/members/ --break-inheritance --revoke Everyone --grant Authenticated=Read --dry-run
             """);
@@ -93,7 +95,7 @@ internal static class AccessCommand
             var identity = session.Identities.Describe(header, null);
             var access = await AccessReader.ReadAsync(session.Db, header, cancellationToken);
             var approval = await ApprovalReader.ResolveAsync(session.Db, session.Model, header, cancellationToken);
-            return new CommandResult(new AccessView(identity.Ref!, header.Guid, identity.Type, identity.Name, access.Inherited, access.From, access.Entries, approval));
+            return new CommandResult(new AccessView(identity.Ref!, header.Guid, identity.Type, identity.Name, access.Inherited, access.From, access.AssetsOf, access.Entries, approval));
         });
         return command;
     }

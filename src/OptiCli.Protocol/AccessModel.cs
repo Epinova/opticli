@@ -54,7 +54,11 @@ public sealed record AccessResult
 /// <summary>The effective ACL of an item.</summary>
 /// <param name="Inherited">True when the item has no entries of its own and uses <paramref name="From"/>'s.</param>
 /// <param name="From">Ref of the item the entries are stored on: the item itself, or the nearest ancestor with its own.</param>
-public sealed record AccessList(bool Inherited, string? From, IReadOnlyList<AccessEntry> Entries);
+/// <param name="AssetsOf">
+/// For a "For this page" folder and the content in it: ref of the content that owns the folder. The CMS gives them that
+/// content's access rights, so <paramref name="From"/> is the owner or where the owner inherits from.
+/// </param>
+public sealed record AccessList(bool Inherited, string? From, IReadOnlyList<AccessEntry> Entries, string? AssetsOf = null);
 
 /// <param name="Kind">One of <see cref="AccessKinds"/>.</param>
 /// <param name="Levels">Level names (<see cref="AccessLevels.Describe"/>): <c>FullAccess</c>, or the individual levels.</param>

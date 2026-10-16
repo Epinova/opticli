@@ -64,7 +64,7 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
 | Items of a type, filtered | `opticli find --type ArticlePage --where Heading~news --under /en/` |
 | Where a block, page or file is used | `opticli where-used 456` (`--pages`: follow nested blocks up to the pages) |
 | Text anywhere in names or text properties | `opticli search "opening hours" --in strings` |
-| Who may read or edit an item (access rights) | `opticli access 123` (`inherited`, `from`: where they come from) |
+| Who may read or edit an item (access rights) | `opticli access 123` (`inherited`, `from`: where they come from; `assetsOf`: the owner, for "For this page" content) |
 | Version history / unpublished work | `opticli versions 123` / `opticli drafts --since 2024-06-01 --kind page` |
 | Who moved, deleted or published an item, and when | `opticli history 123` (`--since 30d`) |
 | Content waiting to go live / expired | `opticli find --type ArticlePage --status scheduled` (`expired`) |
@@ -282,8 +282,8 @@ order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a cod
   should go (`--to <parent>`), or restore that parent first. Restore what was deleted, not something below it.
 - Never change access rights (`access` with `--grant`, `--user`, `--revoke`, `--break-inheritance`, `--inherit`) unless
   the user explicitly asked for it. They aren't versioned: report the `before` from the output, which is the only
-  record of what they were. Root, start pages and asset roots, and changes that leave no role with Administer, are
-  refused.
+  record of what they were. Root, start pages and asset roots, "For this page" content (it follows `assetsOf`, its
+  owner), and changes that leave no role with Administer, are refused.
 - Never change site hosts (`sites primary`, `sites host add|remove`) unless the user asked for it, and dry-run first.
   Which host goes with which site is the user's call: ports in the launch profile say nothing about which site is
   which, so ask rather than guess. Pass `--save` only when they want the mapping kept for the next restore (then

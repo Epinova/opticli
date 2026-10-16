@@ -81,6 +81,49 @@ public sealed class WriteRoundTripTests
     }
 
     [SiteFact]
+    public async Task For_this_page_content_follows_its_owner_and_its_access_rights_are_refused()
+    {
+        var cancellationToken = CancellationToken.None;
+        await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
+        // An EdgePage, which allows pages below it.
+        if (await EdgeFixture.FindAsync(site, EdgeFixture.LanguageRoot, cancellationToken) is not { } root)
+        {
+            return;
+        }
+        var writes = new WriteExecutor(site.Session, _ => Task.FromResult(site.Agent));
+        var type = site.Session.Model.TypeName(root.TypeId)!;
+        var page = WriteOutput.Id((await writes.RunAsync(new CreateOperation(WriteOutput.Id(root.Id), type, $"opticli-it {Guid.NewGuid():N}"), dryRun: false, cancellationToken)).CreatedId!.Value);
+        var file = Path.Combine(Path.GetTempPath(), $"opticli-it-{Guid.NewGuid():N}.png");
+        await File.WriteAllBytesAsync(file, Convert.FromBase64String(OnePixelPng), cancellationToken);
+        try
+        {
+            var media = WriteOutput.Id((await writes.RunAsync(new UploadOperation(file, For: page), dryRun: false, cancellationToken)).CreatedId!.Value);
+            var folder = WriteOutput.Id((await ContentHeaderReader.ByIdAsync(site.Session.Db, int.Parse(media, System.Globalization.CultureInfo.InvariantCulture), cancellationToken))!.ParentId!.Value);
+
+            Assert.Equal(page, (await AssertSameAsync(site, media, inherited: true, cancellationToken)).AssetsOf);
+            Assert.Equal(page, (await AssertSameAsync(site, folder, inherited: true, cancellationToken)).AssetsOf);
+
+            // The page's own entries reach the media through the folder, not the asset root's ancestors.
+            await writes.RunAsync(new AccessOperation(page, Grant: new Dictionary<string, string> { ["Everyone"] = "Read" }, BreakInheritance: true), dryRun: false, cancellationToken);
+            Assert.Equal(page, (await AssertSameAsync(site, media, inherited: true, cancellationToken)).From);
+
+            foreach (var target in new[] { media, folder })
+            {
+                foreach (var dryRun in new[] { true, false })
+                {
+                    var refused = await Assert.ThrowsAsync<Core.Errors.RefusedException>(() => writes.RunAsync(new AccessOperation(target, BreakInheritance: true), dryRun, cancellationToken));
+                    Assert.Contains($"For this page\" folder of {page}", refused.Message);
+                }
+            }
+        }
+        finally
+        {
+            File.Delete(file);
+            await writes.RunAsync(new DeleteOperation(page), dryRun: false, cancellationToken);
+        }
+    }
+
+    [SiteFact]
     public async Task A_draft_shows_its_own_stop_publish_and_an_unchanged_publish_saves_nothing()
     {
         var cancellationToken = CancellationToken.None;
@@ -358,7 +401,7 @@ public sealed class WriteRoundTripTests
         new ContentLoader(site.Session.Db, new IdentityResolver(site.Session.Db, site.Session.Model)).GetAsync(id, version, null, new Core.Properties.DecodeOptions(), cancellationToken);
 
     /// <summary>The ACL as <see cref="AccessReader"/> reads it from the database equals the CMS's (a no-op dry run).</summary>
-    private static async Task AssertSameAsync(SiteUnderTest site, string reference, bool inherited, CancellationToken cancellationToken)
+    private static async Task<AccessList> AssertSameAsync(SiteUnderTest site, string reference, bool inherited, CancellationToken cancellationToken)
     {
         var header = await ContentHeaderReader.ByIdAsync(site.Session.Db, int.Parse(reference, System.Globalization.CultureInfo.InvariantCulture), cancellationToken)
             ?? throw new InvalidOperationException($"No content {reference}.");
@@ -366,7 +409,8 @@ public sealed class WriteRoundTripTests
         var fromCms = (await site.Agent.SendAsync<AccessResult>(HttpMethod.Post, AgentRoutes.Access(reference), new AccessRequest { DryRun = true }, cancellationToken)).Before;
 
         Assert.Equal(inherited, fromDb.Inherited);
-        Assert.Equal((fromCms.Inherited, fromCms.From), (fromDb.Inherited, fromDb.From));
+        Assert.Equal((fromCms.Inherited, fromCms.From, fromCms.AssetsOf), (fromDb.Inherited, fromDb.From, fromDb.AssetsOf));
         Assert.Equal(fromCms.Entries.Select(e => (e.Name, e.Kind, e.Mask)), fromDb.Entries.Select(e => (e.Name, e.Kind, e.Mask)));
+        return fromDb;
     }
 }

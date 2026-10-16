@@ -591,7 +591,9 @@ These commands write:
 - `access <ref>` with `--grant Role=Levels`, `--user Name=Levels`, `--revoke Name`, `--break-inheritance` or
   `--inherit` changes one item's access rights. Children that inherit follow; nothing is applied to descendants.
   Access rights aren't versioned, so the output shows them before and after. The root, the recycle bin, start pages
-  and asset roots are refused, and so is a change that leaves no role with Administer.
+  and asset roots are refused, and so is a change that leaves no role with Administer. A "For this page" folder and
+  the content in it have the access rights of the content that owns the folder (`assetsOf`), so they are refused as
+  well, as in the edit UI: change the owner instead.
 - `composition` (CMS 13) adds, moves, changes and removes the sections, rows, columns and elements of a Visual Builder
   experience; `set` and `create` also take a whole composition, `create --blueprint` makes content from a blueprint,
   and `--variation` writes a content variation. See [Visual Builder](#visual-builder).

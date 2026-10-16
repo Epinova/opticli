@@ -9,6 +9,12 @@ again to update the skill.
 
 - Windows: the command a seal hands over (`userCommand`) gives a path as it is, without quotes, unless it needs them: a
   backslash no longer counts as a character to quote.
+- `access <ref>` with a change failed with an `InvalidCastException` for content in a "For this page" folder. Such
+  content has the access rights of the content that owns the folder, and the CMS doesn't let them be changed on their
+  own, so a change is now refused (exit 3), as in the edit UI, naming the owner to change instead.
+- `access <ref>` without options showed the wrong origin for a "For this page" folder and its content: the asset root's
+  ancestors (often the root, `from: 1`) instead of the owner. It now follows the owner as the CMS does, and
+  `assetsOf` names it.
 
 ## 0.18.0 (16 October 2026)
 

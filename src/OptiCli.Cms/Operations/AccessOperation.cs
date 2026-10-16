@@ -37,17 +37,27 @@ internal static class AccessOperation
         {
             throw AgentException.Usage("inherit drops the item's own entries; it can't be combined with grants, revokes or breakInheritance.");
         }
-        if (!changes && !body.Inherit && !body.BreakInheritance && !body.DryRun)
+        var mutates = changes || body.Inherit || body.BreakInheritance;
+        if (!mutates && !body.DryRun)
         {
             throw AgentException.Usage("Nothing to change: give grant, grantUsers, revoke, breakInheritance or inherit.");
+        }
+        if (mutates && AssetFolder(flow, link) is { } assetFolder)
+        {
+            throw AssetFolderRefusal(flow, link, assetFolder);
         }
 
         // The CMS doesn't check who saves an ACL; the edit UI only lets those with Administer change one.
         call.RequireAccess(flow.Locator.LoadAnyLanguage(link), AccessLevel.Administer);
 
         var security = call.Service<IContentSecurityRepository>();
-        var current = (AccessControlList)security.Get(link);
         var before = Effective(flow, security, link);
+        if (!mutates)
+        {
+            return Result(flow, link, before, before, saved: false, dryRun: true, []);
+        }
+        // Not a "For this page" folder (refused above), so the CMS's own ACL type.
+        var current = (AccessControlList)security.Get(link);
         if (current.IsInherited && changes && !body.BreakInheritance)
         {
             throw AgentException.Usage(
@@ -120,16 +130,18 @@ internal static class AccessOperation
             after = Effective(flow, security, link);
             saved = true;
         }
-        return new AccessResult
-        {
-            Content = ContentSummaries.Describe(flow.Locator.LoadUnchecked(link), flow.Types),
-            Before = before,
-            After = after,
-            Saved = saved,
-            DryRun = body.DryRun,
-            Validation = issues.Count > 0 ? issues : null,
-        };
+        return Result(flow, link, before, after, saved, body.DryRun, issues);
     }
+
+    private static AccessResult Result(WriteFlow flow, ContentReference link, AccessList before, AccessList after, bool saved, bool dryRun, List<ValidationIssue> issues) => new()
+    {
+        Content = ContentSummaries.Describe(flow.Locator.LoadUnchecked(link), flow.Types),
+        Before = before,
+        After = after,
+        Saved = saved,
+        DryRun = dryRun,
+        Validation = issues.Count > 0 ? issues : null,
+    };
 
     private static void Grant(AccessControlList acl, string name, string levels, SecurityEntityType type)
     {
@@ -156,29 +168,82 @@ internal static class AccessOperation
         acl.Entries.FirstOrDefault(e => e.Name.Equals(name, StringComparison.Ordinal))
         ?? acl.Entries.FirstOrDefault(e => e.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>The ACL that applies to <paramref name="link"/>: its own, or that of the nearest ancestor with one.</summary>
+    /// <summary>
+    /// The ACL that applies to <paramref name="link"/>: its own, or that of the nearest ancestor with one. A "For this
+    /// page" folder has no ACL of its own: the CMS gives it, and what inherits below it, its owner's.
+    /// </summary>
     private static AccessList Effective(WriteFlow flow, IContentSecurityRepository security, ContentReference link)
     {
-        var acl = (AccessControlList)security.Get(link);
-        if (!acl.IsInherited)
-        {
-            return Own(link, acl);
-        }
+        // The CMS resolves the inherited entries itself; the walk only finds where they are stored.
+        var entries = Entries(security.Get(link));
+        string? assetsOf = null;
+        var owners = new HashSet<int>();
         // Ancestors unchecked: only the id of the one the rights come from is shown, as the edit UI does.
-        for (var parent = flow.Locator.LoadUnchecked(link).ParentLink; !ContentReference.IsNullOrEmpty(parent); parent = flow.Locator.LoadUnchecked(parent).ParentLink)
+        for (var item = link; !ContentReference.IsNullOrEmpty(item);)
         {
-            if (!((AccessControlList)security.Get(parent)).IsInherited)
+            var content = flow.Locator.LoadUnchecked(item);
+            if (content is ContentAssetFolder { ContentOwnerID: var ownerGuid } && ownerGuid != Guid.Empty && !ContentReference.IsNullOrEmpty(content.ParentLink))
             {
-                return new AccessList(true, parent.ToReferenceWithoutVersion().ToString(), Entries(acl));
+                // As ContentAssetFolder.GetContentSecurityDescriptor: the owner's ACL, or the parent's when the owner is gone.
+                if (Owner(flow, ownerGuid) is { } owner && owners.Add(owner.ID))
+                {
+                    assetsOf ??= Ref(owner);
+                    item = owner;
+                }
+                else
+                {
+                    item = content.ParentLink;
+                }
+                continue;
             }
+            if (!security.Get(item).IsInherited)
+            {
+                return new AccessList(!item.CompareToIgnoreWorkID(link), Ref(item), entries, assetsOf);
+            }
+            item = content.ParentLink;
         }
-        return new AccessList(true, null, Entries(acl));
+        return new AccessList(true, null, entries, assetsOf);
     }
 
     private static AccessList Own(ContentReference link, AccessControlList acl) =>
-        new(false, link.ToReferenceWithoutVersion().ToString(), Entries(acl));
+        new(false, Ref(link), Entries(acl));
 
-    private static IReadOnlyList<AccessEntry> Entries(AccessControlList acl) =>
+    private static string Ref(ContentReference link) => link.ToReferenceWithoutVersion().ToString();
+
+    /// <summary>The "For this page" folder <paramref name="link"/> is, or is in; the edit UI offers no access rights for those.</summary>
+    private static ContentAssetFolder? AssetFolder(WriteFlow flow, ContentReference link)
+    {
+        for (var item = link; !ContentReference.IsNullOrEmpty(item);)
+        {
+            var content = flow.Locator.LoadUnchecked(item);
+            if (content is ContentAssetFolder folder)
+            {
+                return folder;
+            }
+            item = content.ParentLink;
+        }
+        return null;
+    }
+
+    private static ContentReference? Owner(WriteFlow flow, Guid owner) =>
+        flow.Call.Service<IPermanentLinkMapper>().Find(owner)?.ContentReference is { } found && !ContentReference.IsNullOrEmpty(found) ? found : null;
+
+    private static AgentException AssetFolderRefusal(WriteFlow flow, ContentReference link, ContentAssetFolder folder)
+    {
+        var where = folder.ContentLink.CompareToIgnoreWorkID(link) ? "is the \"For this page\" folder" : "is in the \"For this page\" folder";
+        if (folder.ContentOwnerID == Guid.Empty || Owner(flow, folder.ContentOwnerID) is not { } owner)
+        {
+            return AgentException.Refused(
+                $"Content {link.ID} {where} {folder.ContentLink.ID}, whose owner no longer exists; the CMS doesn't let its access rights be changed.",
+                $"Move {link.ID} to a shared folder to give it access rights of its own.");
+        }
+        var name = flow.Locator.LoadUnchecked(owner).Name;
+        return AgentException.Refused(
+            $"Content {link.ID} {where} of {owner.ID} ('{name}'): its access rights follow {owner.ID}'s and can't be changed on their own, as in the edit UI.",
+            $"Change the access rights of {owner.ID} instead, or move {link.ID} to a shared folder to give it its own.");
+    }
+
+    private static IReadOnlyList<AccessEntry> Entries(IEditableSecurityDescriptor acl) =>
         AccessEntry.Sorted(acl.Entries.Select(e => new AccessEntry(
             e.Name, AccessKinds.From((int)e.EntityType), AccessLevels.Describe((int)e.Access), (int)e.Access)));
 
