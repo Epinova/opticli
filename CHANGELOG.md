@@ -96,7 +96,8 @@ pull another environment's content into the local database, and let the user wri
   summary counts steps that set an expiry that has passed, which takes content offline. The output says to restart
   production's site: its servers keep what they had cached.
 - `opticli sync push --to <prod> (<ref>... | --site <name> | --all)`: what changed locally, as a sealed plan for production
-  (an export of the local content with only what differs from production). Media is left out and listed; so is content
+  (an export of the local content with only what differs from production). Media is left out and listed (unless
+  production has it as it is locally: the same place, values and stored file); so is content
   production changed since the last pull, or never pulled from it (`conflicts`), and content with someone's unpublished
   changes there. It writes nothing to production; the user runs the command it prints.
 - The site agent compares its code with a local database's content model on request (`drift?compare=model`), which

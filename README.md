@@ -392,7 +392,8 @@ reads production over SQL with its saved read-only login, and writes nothing the
 
 `sync push --to <name> (<ref>... | --site <name> | --all)` builds such a plan from the local database and seals it: an
 export of the local content, compared with production by GUID, with only what differs (created, updated, moved, or
-restored from production's recycle bin). It leaves out media (listed: upload it in production's edit UI), content
+restored from production's recycle bin). It leaves out media (listed, unless production has it as it is here: in the same
+place, with the same values and stored file; upload or change it in production's edit UI), content
 production already has as it is, content with someone's unpublished changes in production, and content production
 changed since the last pull, or that was never pulled from it (`conflicts`: the pull's sync state says what production had
 then; pull first). It never deletes. The plan folder (`--out`, default `push-<database>-<time>`) must stay until the

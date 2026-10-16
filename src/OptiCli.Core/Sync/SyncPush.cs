@@ -11,7 +11,8 @@ using OptiCli.Core.Writes;
 namespace OptiCli.Core.Sync;
 
 /// <param name="Plan">The plan file written (<c>plan.json</c> in the folder).</param>
-/// <param name="Media">Media in the selection, left out: a sealed apply writes no files.</param>
+/// <param name="Media">Media in the selection that production lacks or has otherwise, left out: a sealed apply writes no files.
+/// Media production has as the local database has it (same place, values and stored file) counts as unchanged.</param>
 /// <param name="Drafts">Local branches with a newer draft than the published version the plan writes.</param>
 /// <param name="Unchanged">Items production already has as the local database has them (and where it has them).</param>
 /// <param name="Conflicts">Items production changed since the last pull, or that were never pulled from it: left out, so a push never writes over production's changes.</param>
@@ -34,7 +35,8 @@ public sealed record PushPlan(
 /// <c>sync push</c>: the plan that brings the local database's content into production, written as a folder for a seal. It is
 /// an export of the local database, compared with production over SQL by GUID (read only), with only what differs: content
 /// production lacks is created (or restored from its recycle bin), content that differs updated, content moved locally moved.
-/// Never anything that deletes, and no media: the sealed run writes no files, so media is left out and listed. Content
+/// Never anything that deletes, and no media: the sealed run writes no files, so media is left out and listed, unless
+/// production already has it as it is locally (in the same place, with the same values and the same stored file). Content
 /// production has with someone's unpublished changes is left out too, as publishing over it would put those live (the run
 /// would refuse it anyway). Content only in production is left alone.
 /// <para>
@@ -70,23 +72,44 @@ public sealed class SyncPush(ContentSession local, ContentSession production, Sy
         return null;
     }
 
+    /// <summary>
+    /// Why a media item in the selection is listed as left out; null when production has it as the local database has it: in
+    /// the same place, with the same values and the same stored file (the blob a version names: the same one means the same
+    /// bytes, as in a copy of the database). A file stored under another name may hold the same bytes, but production's blobs
+    /// aren't read, so it is listed.
+    /// </summary>
+    /// <param name="mine">The local media item's values; <paramref name="mineFile"/> its stored file.</param>
+    /// <param name="there">Production's item (outside its recycle bin), or null when it has none.</param>
+    public static string? MediaLeftOut(ExportCandidate candidate, ExportItem? mine, string? mineFile, ExportCandidate? there, ExportItem? theirs, string? theirFile, ExportTarget? target = null)
+    {
+        if (there is null || theirs is null)
+        {
+            return "media production doesn't have: a sealed apply writes no files (upload it in production's edit UI)";
+        }
+        var same = mine is not null
+            && mineFile is not null && string.Equals(mineFile, theirFile, StringComparison.OrdinalIgnoreCase)
+            && SyncDiff.Place(candidate.Parent, candidate.Owner) == SyncDiff.Place(there.Parent, there.Owner)
+            && SyncDiff.Same(ExportPlanBuilder.Comparable(mine, target), ExportPlanBuilder.Comparable(theirs)) is null;
+        return same ? null : "media production has otherwise (another file, other values or another place): a sealed apply writes no files (change it in production's edit UI)";
+    }
+
     public async Task<PushPlan> BuildAsync(IReadOnlyList<ExportRoot> roots, IReadOnlySet<int>? languages, SyncDatabase from, CancellationToken cancellationToken)
     {
         var readAt = DateTime.UtcNow;
         var selection = await new ExportReader(local).SelectAsync(roots, languages, cancellationToken);
         var skipped = selection.Skipped.Select(s => new SyncEntry(s.Guid, null, s.Type, s.Name, s.Reason)).ToList();
-        var media = selection.Items.Where(c => c.Kind == ContentKind.Media)
-            .Select(c => Entry(c, "media: a sealed apply writes no files (upload it in production's edit UI)")).ToList();
+        var mediaCandidates = selection.Items.Where(c => c.Kind == ContentKind.Media).ToList();
         var candidates = selection.Items.Where(c => c.Kind != ContentKind.Media).ToList();
         var bySource = candidates.ToDictionary(c => c.Guid);
 
         // Production's side: what it has (in its recycle bin too) and, for what it has outside it, the values.
-        var ids = await ContentHeaderReader.IdsByGuidsAsync(production.Db, candidates.Select(c => c.Guid), cancellationToken);
+        var ids = await ContentHeaderReader.IdsByGuidsAsync(production.Db, selection.Items.Select(c => c.Guid), cancellationToken);
         var headers = (await ContentHeaderReader.ByIdsAsync(production.Db, ids.Values, cancellationToken)).Values.ToDictionary(h => h.Guid);
         var prodReader = new ExportReader(production);
         var prodSelection = await prodReader.CandidatesAsync(headers.Values.Where(h => !h.Deleted).Select(h => h.Id).ToList(), null, cancellationToken);
         var prodCandidates = prodSelection.Items.ToDictionary(c => c.Guid);
-        var theirs = (await prodReader.ReadAsync(prodSelection.Items, cancellationToken)).Items.ToDictionary(i => i.Guid);
+        var theirRead = await prodReader.ReadAsync(prodSelection.Items, cancellationToken);
+        var theirs = theirRead.Items.ToDictionary(i => i.Guid);
         var unpublished = await ContentHeaderReader.NewestUnpublishedAsync(production.Db, prodSelection.Items.Select(c => c.Id), cancellationToken);
 
         var read = await new ExportReader(local).ReadAsync(candidates, cancellationToken);
@@ -123,6 +146,25 @@ public sealed class SyncPush(ContentSession local, ContentSession production, Sy
         var moves = new List<ExportCandidate>();
         var conflicts = new List<SyncEntry>();
         var unchanged = 0;
+
+        // Media is never pushed: listed, unless production has it as it is here (a copy of the database has all of it).
+        var media = new List<SyncEntry>();
+        var mineMedia = mediaCandidates.Count == 0 ? null : await new ExportReader(local).ReadAsync(mediaCandidates, cancellationToken);
+        foreach (var candidate in mediaCandidates)
+        {
+            var guid = candidate.Guid;
+            var there = headers.TryGetValue(guid, out var header) && !header.Deleted ? prodCandidates.GetValueOrDefault(guid) : null;
+            var why = MediaLeftOut(candidate, mineMedia!.Items.FirstOrDefault(i => i.Guid == guid), mineMedia.BlobUris.GetValueOrDefault(guid),
+                there, there is null ? null : theirs.GetValueOrDefault(guid), theirRead.BlobUris.GetValueOrDefault(guid), target);
+            if (why is null)
+            {
+                unchanged++;
+            }
+            else
+            {
+                media.Add(Entry(candidate, why));
+            }
+        }
         foreach (var guid in items.Keys.ToList())
         {
             var candidate = bySource[guid];

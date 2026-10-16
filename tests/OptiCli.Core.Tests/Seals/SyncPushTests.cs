@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using OptiCli.Core.Cms;
 using OptiCli.Core.Content;
 using OptiCli.Core.Export;
@@ -35,5 +36,39 @@ public class SyncPushTests
         Assert.Contains("en branch changed", SyncPush.ProductionChanged(There(published: false), Pulled()), StringComparison.Ordinal);
         Assert.Contains("moved in production", SyncPush.ProductionChanged(There(parent: Guid.NewGuid()), Pulled()), StringComparison.Ordinal);
         Assert.Contains("en branch changed", SyncPush.ProductionChanged(There(), new SyncedItem(Start.ToString("D"), null, new Dictionary<string, SyncedBranch>())), StringComparison.Ordinal);
+    }
+
+    private static readonly Guid Image = Guid.Parse("d657fc6e-1c8a-400e-8117-7aa063f001a6");
+    private static readonly Guid Folder = Guid.Parse("0e2b5a3c-7d61-4f0e-9a43-5be1c1e6f7a2");
+    private const string File = "epi.fx.blob://default/421f8f60ecdb4ab7a01f0c5454bdd521/0b8e1c2d3f4a5b6c7d8e9f0a1b2c3d4e.png";
+
+    private static ExportCandidate MediaThere(Guid? parent = null) =>
+        new(new ContentHeader(63, Image, 1, 62, ".1.62.", 1, false, 0, 0, new Dictionary<int, ContentLanguageRow>()),
+            ContentKind.Media, "ImageFile", parent ?? Folder, null, 1, [new CandidateBranch(1, null, 64, true)]);
+
+    private static ExportItem MediaItem(string description = "The meeting screen") =>
+        new(63, Image, ContentKind.Media, "ImageFile", Folder, null, null,
+            [new ExportBranch(null, 64, true, new JsonObject
+            {
+                ["ref"] = "63", ["guid"] = Image.ToString("D"), ["name"] = "AlloyMeetScreen.png", ["status"] = "published",
+                ["properties"] = new JsonObject { ["Description"] = new JsonObject { ["type"] = "LongString", ["value"] = description } },
+            })],
+            new HashSet<string>(), 1);
+
+    [Fact]
+    public void Media_production_has_as_it_is_locally_is_not_listed_as_left_out()
+    {
+        Assert.Null(SyncPush.MediaLeftOut(MediaThere(), MediaItem(), File, MediaThere(), MediaItem(), File));
+    }
+
+    [Fact]
+    public void Media_production_lacks_or_has_otherwise_is_listed_as_left_out()
+    {
+        Assert.Contains("doesn't have", SyncPush.MediaLeftOut(MediaThere(), MediaItem(), File, null, null, null), StringComparison.Ordinal);
+        // Another stored file (it may hold other bytes; production's blobs aren't read), other values, another place.
+        Assert.Contains("has otherwise", SyncPush.MediaLeftOut(MediaThere(), MediaItem(), File, MediaThere(), MediaItem(), File.Replace(".png", "-2.png", StringComparison.Ordinal)), StringComparison.Ordinal);
+        Assert.Contains("has otherwise", SyncPush.MediaLeftOut(MediaThere(), MediaItem(), null, MediaThere(), MediaItem(), null), StringComparison.Ordinal);
+        Assert.Contains("has otherwise", SyncPush.MediaLeftOut(MediaThere(), MediaItem("A new caption"), File, MediaThere(), MediaItem(), File), StringComparison.Ordinal);
+        Assert.Contains("has otherwise", SyncPush.MediaLeftOut(MediaThere(), MediaItem(), File, MediaThere(parent: Start), MediaItem(), File), StringComparison.Ordinal);
     }
 }
