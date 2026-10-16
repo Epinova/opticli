@@ -244,5 +244,6 @@ internal static class Sealing
     public static string Describe(SealSummary summary) =>
         $"{summary.Steps} step(s): {string.Join(", ", summary.Operations.Select(o => $"{o.Value} {o.Key}"))}"
         + (summary.Types.Count > 0 ? $"; content types {string.Join(", ", summary.Types.Select(t => $"{t.Key} {t.Value}"))}" : "")
-        + $"; {summary.New} new, {summary.Existing} existing in production (updated), {summary.Publishes} publishing, {summary.Touched} existing item(s) whose versions are checked";
+        + (summary.New + summary.Existing > 0 ? $"; creates {summary.New} new item(s), updates {summary.Existing} production has" : "")
+        + $"; {summary.Publishes} publishing; {summary.Touched} item(s) production has, whose versions are checked";
 }

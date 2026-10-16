@@ -96,7 +96,7 @@ public static class SiteEnvironment
     /// <summary>The variables opticli gives the site that <paramref name="variables"/> leaves out, which must not be inherited from an earlier <c>opticli env</c>.</summary>
     public static IReadOnlyList<string> NotSet(IEnumerable<KeyValuePair<string, string>> variables)
     {
-        string[] owned = [AgentProtocol.TokenVariable, AgentProtocol.DatabaseVariable, AgentProtocol.ConnectionNameVariable, AgentProtocol.RemoteDatabaseVariable, AgentProtocol.DriftFileVariable, AgentProtocol.SchedulerVariable];
+        string[] owned = [AgentProtocol.TokenVariable, AgentProtocol.DatabaseVariable, AgentProtocol.ConnectionNameVariable, AgentProtocol.RemoteDatabaseVariable, AgentProtocol.DriftFileVariable, AgentProtocol.SchedulerVariable, AgentProtocol.SecretsVariable];
         var set = variables.Select(v => v.Key).ToHashSet(StringComparer.Ordinal);
         return owned.Where(name => !set.Contains(name)).ToList();
     }
