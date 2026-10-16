@@ -108,6 +108,13 @@ public sealed record WriteResult
     public IReadOnlyList<LeftOutVersion>? LeftOut { get; init; }
 
     /// <summary>
+    /// The change was saved into <see cref="DraftRequest.IntoVersion"/> (for a dry run: would be) instead of a new version,
+    /// so <see cref="Content"/> is that version, now with the change. False when it made a new version, or saved nothing.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool IntoVersion { get; init; }
+
+    /// <summary>
     /// The content was saved, but the site's own code failed after that (a handler of the CMS's save or publish events,
     /// such as a search indexer): its message. The save stands; details are in the site's log.
     /// </summary>

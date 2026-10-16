@@ -59,6 +59,9 @@ internal static class DraftOperation
         var what = $"{link.ID} ('{current.Name}')";
         Approvals.RequireNotInReview(branch, what, language?.Name);
         var action = WriteFlow.Publishing(call, link, body.Publish, body.RequestApproval, body.PublishAt, what);
+        // The draft the caller names, when it is still the latest and theirs: the base is then that version itself.
+        var into = body.IntoVersion is not null && current is IVersionable
+            && SaveInto.Applies(body.IntoVersion, latest, call.UserName, startsVariation, basedElsewhere: body.From is not null || link.WorkID > 0);
 
         // Read before saving: the publish changes which version is published.
         var pending = action is SaveAction.Publish or SaveAction.Schedule
@@ -86,13 +89,14 @@ internal static class DraftOperation
         var result = flow.Save(
             writable,
             before,
-            WriteFlow.DraftAction(action),
+            into ? SaveInto.Action(action) : WriteFlow.DraftAction(action),
             body.DryRun,
             ContentSummaries.Describe(current, flow.Types),
             baseLink.WorkID,
             // Publishing a draft (or sending it for review) saves it even unchanged; an unchanged published version stays as it is.
             saveUnchanged: action is not null && current is IVersionable { Status: not VersionStatus.Published },
-            precheck: cleared is null ? null : [cleared]);
+            precheck: cleared is null ? null : [cleared],
+            intoVersion: into ? baseLink.WorkID : null);
         return result with
         {
             PendingDraft = pending,

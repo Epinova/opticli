@@ -173,6 +173,7 @@ public sealed class WriteExecutor(
             DryRun = dryRun,
             BaseVersion = await BaseVersionAsync(target, language, op.BaseVersion, op.Force, cancellationToken, op.Variation),
             From = op.From?.Request,
+            IntoVersion = op.IntoVersion,
         };
         if (request.Properties is null && request.Name is null && request.Composition is null && op.AreaEdits is null && op.CompositionEdits is null)
         {
@@ -199,6 +200,7 @@ public sealed class WriteExecutor(
             DryRun = dryRun,
             BaseVersion = await BaseVersionAsync(target, language, op.BaseVersion, op.Force, cancellationToken),
             From = op.From?.Request,
+            IntoVersion = op.IntoVersion,
         };
         return WithWarning(await DraftAsync(target, request, op.From, op.Publishes, cancellationToken), masterFirst);
     }
@@ -223,6 +225,7 @@ public sealed class WriteExecutor(
             DryRun = dryRun,
             BaseVersion = await BaseVersionAsync(target, language, op.BaseVersion, op.Force, cancellationToken, op.Variation),
             From = op.From?.Request,
+            IntoVersion = op.IntoVersion,
         };
         return WithWarning(await DraftAsync(target, request, op.From, op.Publishes, cancellationToken), masterFirst);
     }

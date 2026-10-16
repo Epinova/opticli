@@ -100,6 +100,18 @@ public sealed record DraftRequest
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? From { get; init; }
 
+    /// <summary>
+    /// Save the change into this version instead of a new one, as the edit UI keeps saving into the draft it edits; a
+    /// publish, scheduled publish or review request then publishes, schedules or sends that version itself. Only when it
+    /// is the latest version of the branch (of <see cref="Variation"/>'s, for a variation), a draft (<c>checkedOut</c>),
+    /// and saved by the caller (<see cref="AgentProtocol.PrincipalName"/> for the agent, the editor for the MCP module),
+    /// and the request has no <see cref="From"/> and its ref names no version. Otherwise the change is saved as a new
+    /// version, as without it. <see cref="WriteResult.IntoVersion"/> says which happened. Left out when null: an older
+    /// agent refuses fields it doesn't know.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? IntoVersion { get; init; }
+
     /// <summary>The <see cref="From"/> value for the published version.</summary>
     public const string FromPublished = "published";
 }

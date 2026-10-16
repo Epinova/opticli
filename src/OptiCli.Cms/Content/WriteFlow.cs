@@ -128,6 +128,10 @@ internal sealed class WriteFlow
     /// Runs once everything is checked, right before a real save or in place of it when nothing changed (e.g. restoring
     /// the content from the recycle bin).
     /// </param>
+    /// <param name="intoVersion">
+    /// The version <paramref name="action"/> saves into instead of a new one (<see cref="SaveInto"/>): the one
+    /// <paramref name="writable"/> is a clone of. The result's <see cref="WriteResult.IntoVersion"/> says whether it did.
+    /// </param>
     public WriteResult Save(
         IContent writable,
         IReadOnlyDictionary<string, JsonElement?> before,
@@ -137,7 +141,8 @@ internal sealed class WriteFlow
         int? baseVersion,
         bool saveUnchanged,
         IEnumerable<ValidationIssue>? precheck = null,
-        Action? beforeSave = null)
+        Action? beforeSave = null,
+        int? intoVersion = null)
     {
         // For an editor: edit access to the language, and the publish gate for a save that would put something live, are
         // checked for a dry run too, so the assistant learns before it tries.
@@ -161,6 +166,7 @@ internal sealed class WriteFlow
                 BaseVersion = baseVersion,
                 Changes = changes,
                 Validation = issues.Count > 0 ? issues : null,
+                IntoVersion = intoVersion is not null && (diff.Count > 0 || saveUnchanged),
             };
         }
         if (!valid)
@@ -178,6 +184,7 @@ internal sealed class WriteFlow
 
         var isNew = ContentReference.IsNullOrEmpty(writable.ContentLink);
         var newestBefore = isNew || writable is not IVersionable ? 0 : NewestVersion(writable.ContentLink);
+        var intoBefore = intoVersion is { } into ? Versions.Load(new ContentReference(writable.ContentLink.ID, into)) : null;
         ContentReference saved;
         string? siteError = null;
         try
@@ -188,7 +195,8 @@ internal sealed class WriteFlow
         {
             throw ValidationErrors.MasterFirst(ex, Call);
         }
-        catch (Exception ex) when (ex is not AgentException && SavedAnyway(writable, isNew, newestBefore) is { } stored)
+        catch (Exception ex) when (ex is not AgentException
+            && (intoBefore is null ? SavedAnyway(writable, isNew, newestBefore) : SavedInto(intoBefore, before)) is { } stored)
         {
             // The CMS raises its post-save events inside Save: a site handler that throws (a search indexer, say) fails
             // the call after the content was saved. The save stands, so report it, or a plan would lose what it made.
@@ -215,6 +223,7 @@ internal sealed class WriteFlow
             Changes = changes,
             Validation = issues.Count > 0 ? issues : null,
             SiteError = siteError,
+            IntoVersion = intoVersion is { } target && saved.WorkID == target,
         };
     }
 
@@ -235,6 +244,19 @@ internal sealed class WriteFlow
     /// <summary>The highest version id of the content; 0 when it has none.</summary>
     private int NewestVersion(ContentReference link) =>
         Versions.List(link.ToReferenceWithoutVersion()).Select(v => v.ContentLink.WorkID).DefaultIfEmpty(0).Max();
+
+    /// <summary>
+    /// After a failed save into <paramref name="version"/>: that version, when the save changed it all the same (its
+    /// values, status or saved time); null when it is as it was. No new version to look for.
+    /// </summary>
+    /// <param name="values">Its values before the save (<see cref="PropertyValues.Snapshot"/>).</param>
+    private ContentReference? SavedInto(ContentVersion version, IReadOnlyDictionary<string, JsonElement?> values)
+    {
+        var now = Versions.Load(version.ContentLink);
+        var changed = now is not null && (now.Status != version.Status || now.Saved != version.Saved
+            || PropertyValues.Diff(values, PropertyValues.Snapshot(Repository.Get<IContent>(version.ContentLink))).Count > 0);
+        return changed ? version.ContentLink : null;
+    }
 
     /// <summary>
     /// After a failed save: the version it saved all the same, found by the new content's GUID, or as a version of

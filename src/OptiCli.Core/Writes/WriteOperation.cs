@@ -147,6 +147,13 @@ public sealed record SetOperation(
     /// </summary>
     public string? Variation { get; init; }
 
+    /// <summary>
+    /// Save into this draft instead of a new version, where the agent finds it may (<see cref="Protocol.DraftRequest.IntoVersion"/>:
+    /// still the latest, a draft, opticli's); otherwise the change gets a new version as without it. Not an option or a
+    /// plan field: a plan run sets it for a step on content it already saved a draft of.
+    /// </summary>
+    internal int? IntoVersion { get; init; }
+
     public override IEnumerable<string?> Refs => [Ref];
 
     public override WriteOperation MapRefs(Func<string, string> map) => this with { Ref = map(Ref), Properties = MapValues(Properties, map) };
@@ -233,6 +240,9 @@ public sealed record AreaEdit(
     /// <summary>add with <see cref="Type"/>: the inline block's name in the area (<c>--name</c>, a plan's <c>name</c>).</summary>
     public string? Name { get; init; }
 
+    /// <summary>As <see cref="SetOperation.IntoVersion"/>.</summary>
+    internal int? IntoVersion { get; init; }
+
     public override IEnumerable<string?> Refs => [Ref, Item];
 
     public override WriteOperation MapRefs(Func<string, string> map) => this with { Ref = map(Ref), Item = Map(Item, map), Values = MapValues(Values, map) };
@@ -274,6 +284,9 @@ public sealed record CompositionEdit(
 
     /// <summary>As <see cref="SetOperation.Variation"/>.</summary>
     public string? Variation { get; init; }
+
+    /// <summary>As <see cref="SetOperation.IntoVersion"/>.</summary>
+    internal int? IntoVersion { get; init; }
 
     public override IEnumerable<string?> Refs => [Ref];
 

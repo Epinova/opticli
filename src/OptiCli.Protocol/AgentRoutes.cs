@@ -150,8 +150,9 @@ public static class AgentRoutes
 
     /// <summary>
     /// <c>POST /v1/content/{ref}/draft</c>. Body: <see cref="DraftRequest"/>. Response: <see cref="WriteResult"/>.
-    /// Always saves a new version (<c>Save | ForceNewVersion</c>, or <c>Publish | ForceNewVersion</c>),
-    /// based on the ref's version if it has one, else the latest version in the language. A saved draft
+    /// Saves a new version (<c>Save | ForceNewVersion</c>, or <c>Publish | ForceNewVersion</c>),
+    /// based on the ref's version if it has one, else the latest version in the language; with
+    /// <see cref="DraftRequest.IntoVersion"/>, into that draft of the caller's instead, where it may. A saved draft
     /// becomes the primary (common) draft, the version edit mode opens.
     /// Errors: <c>conflict</c> 409 when <see cref="DraftRequest.BaseVersion"/> is not the latest
     /// (<see cref="AgentError.CurrentVersion"/> says which is), or when a publish would include someone else's

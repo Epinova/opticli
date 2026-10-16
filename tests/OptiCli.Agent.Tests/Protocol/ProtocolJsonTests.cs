@@ -143,6 +143,18 @@ public class ProtocolJsonTests
     }
 
     [Fact]
+    public void Into_version_is_sent_only_when_given_so_an_older_agent_takes_every_other_request()
+    {
+        var request = JsonSerializer.Deserialize<DraftRequest>("""{"properties":{},"baseVersion":458,"intoVersion":458}""", AgentRequest.RequestOptions)!;
+        Assert.Equal(458, request.IntoVersion);
+        Assert.DoesNotContain("intoVersion", JsonSerializer.Serialize(new DraftRequest { BaseVersion = 458 }, AgentJson.Options));
+
+        Assert.True(RoundTrip(new WriteResult { Saved = true, IntoVersion = true }, out var json).IntoVersion);
+        Assert.Contains("\"intoVersion\":true", json);
+        Assert.DoesNotContain("intoVersion", JsonSerializer.Serialize(new WriteResult { Saved = true }, AgentJson.Options));
+    }
+
+    [Fact]
     public void Write_result_envelope_round_trips()
     {
         var result = new WriteResult
