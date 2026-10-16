@@ -351,6 +351,21 @@ https://your-site.example/episerver/opticli/mcp</pre>
         <code>opticli skill install</code> again to update the skill.</p>
     </div>
     <ol class="changelog">
+      <li><div class="v"><b>0.19.0</b><span>16 October 2026</span></div>
+        <ul>
+          <li><b>One draft per plan run:</b> an <code>apply</code> plan that changes the same page in many steps no longer
+            leaves a draft per step. Later steps save into the draft the run already made, as the edit UI does, while the
+            database still has it as the latest unpublished draft of opticli's; each step still reports on its own, and
+            its undo points to the step that made the draft. <code>--version-per-step</code> keeps the old way.</li>
+          <li><b>Drift that tells removed code from newer code:</b> a content type or property only the database has is
+            no longer just "newer code there: pull and build". The advice names classes removed from code too
+            (<code>opticli types --orphaned</code>), and where the project is a git repository, drift names the commit that
+            removed the class or property.</li>
+          <li><b>Fixed:</b> changing the access rights of content in a "For this page" folder failed with a cast error.
+            Such content has its owner's access rights, so a change is refused, as in the edit UI, naming the owner; reads
+            show where the rights come from (<code>assetsOf</code>). Details in the
+            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
+        </ul></li>
       <li><div class="v"><b>0.18.0</b><span>16 October 2026</span></div>
         <ul>
           <li><b>Environment roles:</b> <code>db add prod --role prod</code> adds another environment's database by name
