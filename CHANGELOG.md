@@ -3,6 +3,13 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## Unreleased
+
+### Fixed
+
+- Windows: the command a seal hands over (`userCommand`) gives a path as it is, without quotes, unless it needs them: a
+  backslash no longer counts as a character to quote.
+
 ## 0.18.0 (16 October 2026)
 
 Environments and content sync: give databases roles (production is only read), export content as a plan,

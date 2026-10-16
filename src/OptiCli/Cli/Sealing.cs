@@ -217,10 +217,14 @@ internal static class Sealing
         return string.Join(' ', parts);
     }
 
-    /// <summary>A word as a shell takes it: as it is when it is plain, else quoted (single quotes on Unix, double on Windows).</summary>
+    /// <summary>
+    /// A word as a shell takes it: as it is when it is plain, else quoted (single quotes on Unix, double on Windows).
+    /// A backslash is plain on Windows, where cmd and PowerShell don't escape with it, so a path stays as it is.
+    /// </summary>
     internal static string Quote(string word)
     {
-        if (word.Length > 0 && word.All(c => char.IsAsciiLetterOrDigit(c) || "_-./:@%+=,".Contains(c)))
+        var plain = OperatingSystem.IsWindows() ? "_-./:@%+=,\\" : "_-./:@%+=,";
+        if (word.Length > 0 && word.All(c => char.IsAsciiLetterOrDigit(c) || plain.Contains(c)))
         {
             return word;
         }
