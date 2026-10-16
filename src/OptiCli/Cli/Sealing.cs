@@ -57,7 +57,7 @@ internal static class Sealing
     [
         "production's servers keep what they have cached: restart the site (every instance) after the run",
         "the run starts this build in Development against production: its startup code, event handlers (search indexing, webhooks, emails) and configuration run with it",
-        "media, deletes, unpublishing and access rights: a sealed apply never does them",
+        "media, deletes, unpublish steps and access rights: a sealed apply never does them; an expiry (StopPublish) that has passed, set by the plan, still takes content offline (summary.expiring counts those steps)",
     ];
 
     /// <summary>The production database named by <c>--seal-for</c>, <c>--to</c> or the run's <c>--db</c>: like <c>--db</c>, never <c>--connection</c> or <c>OPTICLI_DB</c>.</summary>
@@ -245,5 +245,6 @@ internal static class Sealing
         $"{summary.Steps} step(s): {string.Join(", ", summary.Operations.Select(o => $"{o.Value} {o.Key}"))}"
         + (summary.Types.Count > 0 ? $"; content types {string.Join(", ", summary.Types.Select(t => $"{t.Key} {t.Value}"))}" : "")
         + (summary.New + summary.Existing > 0 ? $"; creates {summary.New} new item(s), updates {summary.Existing} production has" : "")
-        + $"; {summary.Publishes} publishing; {summary.Touched} item(s) production has, whose versions are checked";
+        + $"; {summary.Publishes} publishing; {summary.Touched} item(s) production has, whose versions are checked"
+        + (summary.Expiring > 0 ? $"; {summary.Expiring} set an expiry (StopPublish) that has passed: published, that content goes offline" : "");
 }

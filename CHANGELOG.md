@@ -16,11 +16,13 @@ again to update the skill.
   `details.reason: "sealNeedsTerminal"`, otherwise), shows what the plan does, asks for the database's name and a write
   login (never saved; the saved login stays read-only), refuses when the plan, the build, production's model or a touched
   item changed (`conflict`, exit 5, with what changed), starts the site against production for that run only (shared
-  mode, no drift accepted, loopback only, the token and the login given on its stdin, not in its environment), checks
+  mode, no drift accepted, loopback only, serving only opticli's agent: its pages and edit UI answer 404; the token and the
+  login given on its stdin, not in its environment), checks
   production again right before the first save, applies the plan from the bytes it hashed, and stops the site. Sealed
   plans only create, change, move, translate and publish content by GUID: no deletes, unpublishing, access rights,
-  discards, uploads, other people's drafts or skipped concurrency checks (`refused`, `details.reason: "sealedPlan"`). The
-  output says to restart production's site: its servers keep what they had cached.
+  discards, uploads, other people's drafts or skipped concurrency checks (`refused`, `details.reason: "sealedPlan"`); the
+  summary counts steps that set an expiry that has passed, which takes content offline. The output says to restart
+  production's site: its servers keep what they had cached.
 - `opticli sync push --to <prod> (<ref>... | --site <name> | --all)`: what changed locally, as a sealed plan for production
   (an export of the local content with only what differs from production). Media is left out and listed; so is content
   production changed since the last pull, or never pulled from it (`conflicts`), and content with someone's unpublished

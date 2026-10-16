@@ -41,6 +41,16 @@ internal static class SealedApply
         + "default; content read more often never refreshes). Content no server had cached shows at once. Restart the site (every instance; "
         + "on DXP the environment's web app) to show these changes.";
 
+    /// <summary>A run that stopped after saving something: the undo hints of a plan run are opticli commands, which production refuses.</summary>
+    public const string PartialHint =
+        "details lists what was saved; its undo hints are opticli commands for a development database, which production refuses: undo those changes in production's edit UI (or seal a plan that puts them back).";
+
+    /// <summary>A hint about <c>serve</c> (the site stopped answering), which doesn't apply to the run's own site, made to point at its log.</summary>
+    internal static string? SiteHint(string? hint, string logPath) =>
+        hint?.Contains("opticli serve", StringComparison.Ordinal) == true
+            ? $"The site started for this run stopped (its log: {logPath}), and nothing more is written. Check what production has (`opticli get <ref> --db <name>`) before sealing again."
+            : hint;
+
     public static async Task<CommandResult> RunAsync(CliContext context, string planPath, string sealId, string database, CancellationToken cancellationToken)
     {
         var terminal = Terminal;
@@ -153,7 +163,12 @@ internal static class SealedApply
         }
         catch (OptiCliException ex) when (ex.Details is PlanRun partial && partial.Operations.Any(o => o.Status == PlanStepStatus.Saved))
         {
-            throw OptiCliException.Create(ex.Code, ex.Message, $"{ex.Hint} {RestartWarning}".Trim(), ex.Details);
+            throw OptiCliException.Create(ex.Code, ex.Message, $"{SiteHint(ex.Hint, launch.LogPath)} {PartialHint} {RestartWarning}".Trim(), ex.Details);
+        }
+        catch (OptiCliException ex) when (ex.Hint?.Contains("opticli serve", StringComparison.Ordinal) == true)
+        {
+            // Hints written for `serve`, which never runs against production.
+            throw OptiCliException.Create(ex.Code, ex.Message, SiteHint(ex.Hint, launch.LogPath), ex.Details);
         }
         finally
         {
@@ -185,7 +200,7 @@ internal static class SealedApply
         terminal.WriteLine($"  options: {(seal.Options.Flags.Count > 0 ? string.Join(' ', seal.Options.Flags) : "(none)")}");
         terminal.WriteLine($"  steps:   {Printable.Of(Sealing.Describe(summary))}");
         terminal.WriteLine("  checks:  production's content model and the versions of the content the plan touches must be as sealed: next, and again right before the first save");
-        terminal.WriteLine("  never:   deletes, unpublishing, access rights, media files");
+        terminal.WriteLine("  never:   deletes, unpublish steps, access rights, media files");
         terminal.WriteLine();
     }
 

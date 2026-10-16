@@ -110,8 +110,9 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
   check it there; then `opticli sync push --to <name> <ref>` (what changed below `<ref>`), or write a plan by GUID and
   seal it with `opticli apply <plan> --dry-run --seal-for <name> --update-existing`. Both check the plan against the local
   site and read production (only read), and print `data.userCommand`: **give the user that command to run in their own
-  terminal, with what it does** (`summary`/`push`: created, updated, moved; `conflicts`, `skipped`, `media` and
-  `dropped` left out) **and what it doesn't** (`notChecked`: production's servers need a restart afterwards, the local
+  terminal, with what it does** (`summary`/`push`: created, updated, moved, and `summary.expiring`, steps whose expiry has
+  passed, which take that content offline; `conflicts`, `skipped`, `media` and `dropped` left out) **and what it
+  doesn't** (`notChecked`: production's servers need a restart afterwards, the local
   build's code runs against production, media goes through the edit UI). Never run that command yourself (it is
   `refused` without a terminal, `details.reason: "sealNeedsTerminal"`, and it asks for a write login only the user
   has), never fake a terminal for it (`script`, `expect`, `unbuffer`), never pass it input, and never edit, copy, write or

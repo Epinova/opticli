@@ -74,6 +74,22 @@ public class SealedPlanTests
     }
 
     [Fact]
+    public void An_expiry_that_has_passed_is_counted_for_the_user_to_see()
+    {
+        var plan = Plan(
+            $$$"""{"op": "set", "ref": "{{{Page}}}", "properties": {"StopPublish": "2020-01-01T00:00:00Z"}, "publish": true}""",
+            $$$"""{"op": "create", "id": "x", "guid": "71f80142-5378-5061-9f34-b49bc3640495", "parent": "{{{Start}}}", "type": "StandardPage", "name": "X", "properties": {"pageStopPublish": "2030-05-01 10:00"}}""",
+            $$$"""{"op": "set", "ref": "{{{Page}}}", "properties": {"StopPublish": null}, "publish": true}""");
+        var production = new ProductionState("m", []);
+        var options = new SealOptions(UpdateExisting: false, Publish: false, RequestApproval: false);
+
+        Assert.Empty(SealedPlan.Problems(plan, Model()));
+        Assert.Equal(1, SealSummary.Of(plan, options, production, now: new DateTimeOffset(2026, 10, 16, 0, 0, 0, TimeSpan.Zero)).Expiring);
+        // Counted again when the plan runs: by then an expiry may have passed.
+        Assert.Equal(2, SealSummary.Of(plan, options, production, now: new DateTimeOffset(2031, 1, 1, 0, 0, 0, TimeSpan.Zero)).Expiring);
+    }
+
+    [Fact]
     public void Every_problem_is_listed_at_once_and_ids_in_values_need_the_model()
     {
         var plan = Plan(

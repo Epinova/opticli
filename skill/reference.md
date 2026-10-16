@@ -879,7 +879,8 @@ the run's site would refuse to write against production): `conflict`, exit 5, `d
 `details.differences[]` (`side`, `type`, `property`, `difference`) or `details.drift`. It reads production's versions of
 everything the plan touches. Output (`data`; `sync push` puts it in `data.seal`): `seal` (the id), `file`, `expires` (24
 hours), `target`, `plan`, `planHash`, `planFiles`, `options`, `summary` (`steps`, `operations`, `types`, `publishes`,
-`existing`, `new`, `touched`), `build` (`output`, `built`, `commit`, `uncommitted`), `model`, `validatedOn`,
+`existing`, `new`, `touched`, `expiring`: steps that set an expiry that has passed, which takes that content offline),
+`build` (`output`, `built`, `commit`, `uncommitted`), `model`, `validatedOn`,
 **`userCommand`** (`opticli apply <plan> --db <name> --seal <id>`), `notChecked`.
 
 Hand the user `userCommand` with what it will do and `notChecked`. Never run it (without a terminal: `refused`,

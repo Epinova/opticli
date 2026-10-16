@@ -183,6 +183,17 @@ public sealed class SealedApplyTests : IDisposable
         Assert.False(Used(seal.Id));
     }
 
+    [Fact]
+    public void A_hint_about_serve_points_at_the_runs_own_site_instead()
+    {
+        var hint = SealedApply.SiteHint("Check it with `opticli serve --status` and `opticli serve --logs`; start it with `opticli serve`.", "/state/sealed/x.log");
+
+        Assert.DoesNotContain("opticli serve", hint, StringComparison.Ordinal);
+        Assert.Contains("/state/sealed/x.log", hint, StringComparison.Ordinal);
+        Assert.Equal("Seal again.", SealedApply.SiteHint("Seal again.", "/state/sealed/x.log"));
+        Assert.Contains("edit UI", SealedApply.PartialHint, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(new[] { "--seal-for", "prod" }, 1, "usage", null)]
     [InlineData(new[] { "--seal-for", "prod", "--dry-run", "--accept-drift", "a1b2c3d4e5f6" }, 1, "usage", null)]

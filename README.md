@@ -405,8 +405,8 @@ option (the seal's are used), and:
    the project, the plan file and its hash (read once: the plan runs from those bytes, so a file swapped afterwards isn't
    what runs), the build, and its age. Another target, project or plan file is `refused`; an expired seal, a changed plan
    or build is a `conflict` (exit 5): seal again;
-2. shows what the plan does (counted from the plan it read: steps, types, new and existing content, publishes), the target,
-   the build (and its git commit), and asks for the database's name;
+2. shows what the plan does (counted from the plan it read: steps, types, new and existing content, publishes, and steps
+   that set an expiry that has passed), the target, the build (and its git commit), and asks for the database's name;
 3. reads production again with the saved login: its model and every touched item must be as sealed (`conflict`, exit 5,
    `details.reason: "productionChanged"`, `details.changes` says what changed: seal again);
 4. asks for the write login (user, and the password without showing it), used for this run only and never written
@@ -416,12 +416,18 @@ option (the seal's are used), and:
    failure or Ctrl+C): in shared mode (scheduler, schema updates, content type sync and store remapping off), refusing
    pending EF Core migrations and any drift (nothing is accepted), on `127.0.0.1` only (a site that also listens elsewhere is
    stopped before anything is written), with no `serve` state (no other command finds it), the token and the connection
-   string handed to it on stdin rather than in its environment;
+   string handed to it on stdin rather than in its environment. It serves opticli's agent and nothing else: the site's
+   pages, edit UI, login and other endpoints answer 404 while it runs, so no other program on the machine reaches the
+   site while it runs in `Development` with the write login;
 6. checks the plan against production (a dry run of every step), checks production once more, right before the first
    save, and applies it. A publish that would put someone else's unpublished changes live is refused, as everywhere
    (no `--include-draft`).
 
 What a seal doesn't cover:
+- **The summary counts; it doesn't show the values.** It says how many steps of which kind and type, what is new and
+  what production has, not what the steps write. Read the plan (`plan.json` and the files beside it) before you type the
+  name. A plan can change any value of the content it touches, its publish dates included: an expiry (`StopPublish`) that
+  has passed takes the content offline once it is published (the summary counts those steps).
 - **Production's servers keep their cache.** The run's site isn't on production's event bus, so nothing tells production's
   servers: changed and moved content stays as it was there (a moved page keeps answering at its old URL), and new
   content is missing from menus and listings, until the site restarts or an item goes unread for the content cache's
@@ -431,7 +437,8 @@ What a seal doesn't cover:
   (search indexing, webhooks, emails, cache warmers) and configuration run as they do locally, in `Development`, with your
   local settings (search index and webhook endpoints included). The seal makes sure the build is the one that was sealed;
   it can't say what that code does. Review what the agent changed in the code before you run a sealed apply.
-- **Media, deletes, unpublishing and access rights**: never. Do those in production's edit UI.
+- **Media, deletes, unpublish steps and access rights**: never (an expiry that has passed still takes content offline, see
+  above). Do those in production's edit UI.
 - Content an editor changes after the last check, while the plan runs, is caught by each step's own checks (a newer
   version is a conflict, someone's draft isn't published), not by the seal.
 - A production database with types or properties its code no longer has is drift, and the run accepts none: clean them
@@ -452,7 +459,7 @@ apply or not: give production a read-only SQL login for reads and a separate log
 | `export` only reads (over SQL, never through a site), so it works on production; it writes nothing but its own folder. | CLI |
 | `sync pull` only reads its source (over SQL, read-only intent for production) and writes only to a database with the role `local` (refused otherwise, exit 3, `details.reason: "syncTarget"`), through its site, as `apply --update-existing` does. It never deletes for good: `--delete` moves content to the recycle bin. A local change to content the source changed too is a conflict, left alone unless `--overwrite-local`. | CLI, then the site agent |
 | A database with the role `prod` is only read, and only when a run picks it: it is never the development database (`db use` and a saved choice that became production are refused), and `serve`, `env` and every write are refused (exit 3, `details.reason: "prodDatabase"`), whether it was picked by name, id, database name, `--connection`, `--profile`, `OPTICLI_DB` or an exported connection string. Roles belong to a server and database, and a weaker one needs a person at a terminal. Reads connect with `ApplicationIntent=ReadOnly`. The only exception is a sealed apply (next row). | CLI before anything is read, again on the way to the site, and when starting it |
-| A sealed apply writes to production only at a terminal (stdin, stdout and stderr), after the user typed the database's name and the write login, once per seal (24 hours), and only if the plan and its files, the build, production's content model and every item the plan touches are as sealed (checked before the login is asked, and again right before the first save). Sealed plans create, change, move, translate and publish by GUID; never delete, unpublish, change access, discard, upload, or include someone else's draft. The site for the run listens on loopback only, gets its token and the write login on stdin (not in its environment or a state file), runs in shared mode, accepts no drift, and is stopped afterwards. The write login is never saved. | CLI (seal, terminal, checks), the run's own site launcher, site agent |
+| A sealed apply writes to production only at a terminal (stdin, stdout and stderr), after the user typed the database's name and the write login, once per seal (24 hours), and only if the plan and its files, the build, production's content model and every item the plan touches are as sealed (checked before the login is asked, and again right before the first save). Sealed plans create, change, move, translate and publish by GUID; never delete, unpublish, change access, discard, upload, or include someone else's draft. The site for the run listens on loopback only, serves nothing but the agent (its own pages and edit UI answer 404), gets its token and the write login on stdin (not in its environment or a state file), runs in shared mode, accepts no drift, and is stopped afterwards. The write login is never saved. | CLI (seal, terminal, checks), the run's own site launcher, site agent |
 | The site started by `serve` is pinned to the database the CLI reads. It refuses to start against any remote database except the approved development one. There it runs without scheduler, schema updates, content type sync or store remapping, and `serve` refuses a build with EF Core migrations the database lacks. If the site turns hosting startups off in its code, so the pin can't run, it refuses to start. | CLI + site agent at startup |
 | The site agent answers only loopback callers that send the per-run token, and only in `Development`. The token is kept in a state file only your user can read. | Site agent, per request |
 | Writes create drafts; publishing needs `--publish` (or `publish`). Saves are attributed to the user `opticli`. | CLI + site agent |
@@ -479,7 +486,8 @@ Things these rules can't see:
   remove the mark that one was used. A forged seal still shows the user the plan as it is, checks production, and needs
   the name and the write login typed.
 - A sealed apply's write login is in the memory of opticli and of the site for the run: a process running as you that
-  can read other processes' memory (Windows; Linux without Yama's `ptrace_scope`, which Ubuntu sets), or opens the site's
+  can read other processes' memory (Windows; Linux without Yama's `ptrace_scope`, which Ubuntu sets), makes one of them
+  dump core where you can read the dump (a raised core limit, or `systemd-coredump`'s `coredumpctl`), or opens the site's
   stdin in its first moment, can read it. If opticli is killed hard (SIGKILL), the site it started for the run keeps
   running until stopped by hand; the run prints its pid.
 

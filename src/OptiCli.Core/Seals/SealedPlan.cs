@@ -133,6 +133,18 @@ public static class SealedPlan
         return values is null ? [] : [(op is CompositionEdit ? "value" : op is AreaEdit ? "values" : "properties", values)];
     }
 
+    /// <summary>The names a plan sets the expiry by (<c>StopPublish</c>, or a page's <c>PageStopPublish</c>).</summary>
+    private static readonly HashSet<string> ExpiryNames = new(StringComparer.OrdinalIgnoreCase) { "StopPublish", "PageStopPublish" };
+
+    /// <summary>
+    /// Whether the step sets an expiry (<c>StopPublish</c>) that is <paramref name="now"/> or earlier: once published, that
+    /// content is offline, as after an unpublish. Not refused (content already expired in production has one too, and a
+    /// sync carries it), but counted in what the user confirms (<see cref="SealSummary.Expiring"/>).
+    /// </summary>
+    public static bool SetsPassedExpiry(WriteOperation op, DateTimeOffset now) =>
+        Values(op).Any(v => v.Values.Any(p => ExpiryNames.Contains(p.Key) && p.Value is JsonValue leaf && leaf.TryGetValue<string>(out var text)
+            && DateTimeOffset.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeLocal, out var when) && when <= now));
+
     /// <summary>The names of reference properties (ContentReference, PageReference, lists of them) of any content type.</summary>
     private static HashSet<string> ReferenceProperties(CmsModel model) =>
         model.Properties.Values
