@@ -27,6 +27,17 @@ again to update the skill.
   CMS kept for its content, so the advice (in `opticli drift`, the `drift` error and its hint, the prompt and `serve`'s
   start message) names both causes and points to `opticli types --orphaned`. With only EF Core migrations or the CMS
   schema version on the database's side it still says "pull and build".
+- An `apply` plan no longer leaves a draft per step. A `set`, `area` or `composition` step on content and a language
+  that an earlier step of the run saved a draft of saves into that draft, as the edit UI does, so a plan leaves one
+  draft per content and language (after a step that publishes, the next change starts a new one). The step's result
+  says `intoVersion: true`, the step `savedInto` (the draft and the step that made it), and its undo points to that
+  step's. opticli saves into the draft only while the database still has it as the branch's latest version, unpublished
+  and saved by opticli, and the site checks the same again; otherwise the step makes a new version and its warning says
+  so. Steps with `from`, `baseVersion`, `force` or a ref naming a version make a new version as before.
+  `apply --version-per-step` keeps a version per step; use it on a site whose own code asks for a new version on every
+  save (a handler that sets `RequireNewVersion`), where a save into the draft fails with a `conflict` that says so. A
+  later `discard` without a version discards the whole draft, with every step's changes in it, and when a later step
+  publishes, schedules or sends the draft for review, the undos of the steps that saved it point to that step's.
 
 ### Added
 

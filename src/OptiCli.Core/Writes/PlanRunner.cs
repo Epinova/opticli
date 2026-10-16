@@ -39,7 +39,11 @@ public sealed record PlanStepResult(
     ErrorBody? Error = null,
     string? Undo = null,
     IReadOnlyList<string>? Warnings = null,
-    Guid? Guid = null);
+    Guid? Guid = null)
+{
+    /// <summary>The draft an earlier operation made that this one saved into, instead of a new version (<see cref="PlanDrafts"/>).</summary>
+    public SavedInto? SavedInto { get; init; }
+}
 
 /// <param name="Created">Plan id to content ref, for every created item.</param>
 public sealed record PlanRun(bool DryRun, IReadOnlyList<PlanStepResult> Operations, IReadOnlyDictionary<string, string> Created)
@@ -83,6 +87,12 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     /// production again there); an exception stops the plan with nothing saved.
     /// </summary>
     public Func<CancellationToken, Task>? BeforeSaving { get; init; }
+
+    /// <summary>
+    /// Save every set, area and composition operation as a new version (<c>apply --version-per-step</c>), instead of into
+    /// the draft the run already saved for that content and language (<see cref="PlanDrafts"/>).
+    /// </summary>
+    public bool VersionPerStep { get; init; }
 
     /// <exception cref="OptiCliException">
     /// Validation failed (nothing written), or a step failed during execution; <c>details</c> is the
@@ -135,12 +145,21 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         }
         var created = new Dictionary<string, int>(StringComparer.Ordinal);
         var results = new List<PlanStepResult>();
+        var drafts = VersionPerStep ? null : new PlanDrafts();
         foreach (var step in steps)
         {
             var operation = WritePlan.Resolve(step, created, guids);
             try
             {
+                // A change to a branch this run already saved a draft of goes into that draft.
+                var draft = drafts is null ? null : await drafts.ForAsync(operation, session, cancellationToken);
+                if (draft is not null)
+                {
+                    operation = PlanDrafts.Into(operation, draft.Version);
+                }
                 var outcome = await executor.RunAsync(operation, dryRun: false, cancellationToken);
+                var (into, note) = drafts?.After(operation, step.Index, outcome.Output, draft) ?? default;
+                IReadOnlyList<string> warnings = note is null ? outcome.Warnings : [.. outcome.Warnings, note];
                 if (step.Operation.Id is { } id && outcome.CreatedId is { } createdId)
                 {
                     created[id] = createdId;
@@ -150,9 +169,13 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                     }
                 }
                 results.Add(new PlanStepResult(step.Index, operation.Kind, operation.Id, Changed(outcome.Output) ? PlanStepStatus.Saved : PlanStepStatus.Unchanged,
-                    outcome.Output, Undo: UndoHints.For(operation, outcome.Output), Warnings: outcome.Warnings.Count > 0 ? outcome.Warnings : null,
-                    Guid: operation.ContentGuid));
+                    outcome.Output, Undo: UndoHints.For(operation, outcome.Output, into), Warnings: warnings.Count > 0 ? warnings : null,
+                    Guid: operation.ContentGuid) { SavedInto = into });
                 Progress?.Invoke("applying", results.Count, steps.Count);
+                if (drafts?.Ended is { } ended)
+                {
+                    PlanDrafts.Revise(results, ended.Draft, step.Index, ended.How);
+                }
             }
             catch (Exception caught)
             {

@@ -21,7 +21,7 @@ public sealed class AgentClient : IDisposable
     /// under way finishes.
     /// </summary>
     public const string MayHaveSavedHint =
-        "The site may still have saved the change if it was already saving: check with `opticli versions <ref>` (or `opticli get`) before running it again.";
+        "The site may still have saved the change if it was already saving: check with `opticli versions <ref>` (a new version) and `opticli get <ref> --version latest` (a change saved into an existing draft, as `apply` does for later operations on the same content) before running it again.";
 
     private readonly HttpClient _http;
 

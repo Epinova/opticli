@@ -33,6 +33,10 @@ internal static class ApplyCommand
             Description = "Run a sealed plan against production (with --db <name>): only the user, in their own terminal. Shows what the plan does, asks for the database's name and the write login (never saved), and refuses if the plan, the build or production changed since the seal, or after 24 hours. Takes its options from the seal. An agent never runs it.",
             HelpName = "id",
         };
+        var versionPerStep = new Option<bool>("--version-per-step")
+        {
+            Description = "Save each set, area and composition operation as a version of its own, as the single commands do, instead of into the draft the run already saved for that content and language.",
+        };
         var write = new WriteOptions();
         write.Publish.Description = "Publish every set, create, area, composition, block, upload and translate operation (as if each had \"publish\": true).";
         var command = new Command("apply", $$$"""
@@ -45,6 +49,10 @@ internal static class ApplyCommand
             "from" (on that version, with the changes since), and a set on a language branch an earlier translate creates.
             The rest get their names checked ("deferred"). Then they run in order; on a failure
             opticli stops and reports what was saved (refs and versions), what failed, and how to undo each saved operation.
+            A set, area or composition operation on content and a language this run already saved a draft of saves into
+            that draft, as the edit UI does ("savedInto" names it and the operation that made it), so a plan leaves one
+            draft per content and language; after a publish the next change starts a new one. --version-per-step saves a
+            version per operation instead. "from", "baseVersion", "force" and a ref naming a version always make a new version.
             Plan: {"operations": [ {"op": "...", ...}, ... ]} ("source", which `opticli export` writes, is accepted and not
             read). A create, block or upload operation may have an "id"; later
             operations refer to what it created as "$id", in ref fields and as a whole string value in "properties".
@@ -78,6 +86,7 @@ internal static class ApplyCommand
         command.Options.Add(updateExisting);
         command.Options.Add(sealFor);
         command.Options.Add(seal);
+        command.Options.Add(versionPerStep);
         write.AddCommon(command);
         // A sealed run (--seal) refuses everything but production itself, and is its own narrow way past the refusal: the
         // write commands' check before the command runs would stop it first. Every other apply is checked as a write.
@@ -94,6 +103,7 @@ internal static class ApplyCommand
                     (parse.GetValue(sealFor) is not null, "--seal-for"), (parse.GetValue(write.DryRun), "--dry-run"), (parse.GetValue(write.Publish), "--publish"),
                     (parse.GetValue(updateExisting), "--update-existing"), (parse.GetValue(allowOutside), "--allow-outside"), (parse.GetValue(write.RequestApproval), "--request-approval"),
                     (parse.GetValue(write.AcceptDrift) is not null, "--accept-drift"), (parse.GetValue(options.Connection) is not null, "--connection"), (parse.GetValue(options.Profile) is not null, "--profile"),
+                    (parse.GetValue(versionPerStep), "--version-per-step"),
                 }.Where(o => o.Given).Select(o => o.Name).ToList();
                 if (given.Count > 0)
                 {
@@ -108,6 +118,10 @@ internal static class ApplyCommand
             }
             if (parse.GetValue(sealFor) is { } sealTarget)
             {
+                if (parse.GetValue(versionPerStep))
+                {
+                    throw new UsageException("--version-per-step doesn't apply to a sealed plan: its run saves the changes to each content and language into one draft.");
+                }
                 return await SealAsync(context, path, sealTarget, parse.GetValue(write.DryRun), parse.GetValue(updateExisting), parse.GetValue(write.Publish),
                     parse.GetValue(write.RequestApproval), parse.GetValue(allowOutside), parse.GetValue(write.AcceptDrift), cancellationToken);
             }
@@ -118,8 +132,12 @@ internal static class ApplyCommand
             var writes = context.Writes(session, updateExisting: parse.GetValue(updateExisting), ask: false);
             var project = context.TryGetProject(out _);
             var allowedTypes = project is null ? null : new AllowedTypesCheck(session.Model, () => CSharpSourceIndex.Build(project.SourceRoot));
-            var run = await new PlanRunner(session, writes, planDirectory, parse.GetValue(allowOutside), allowedTypes, parse.GetValue(write.RequestApproval)).RunAsync(plan, parse.GetValue(write.DryRun), parse.GetValue(write.Publish), cancellationToken);
-            return new CommandResult(run, Warnings: run.DryRun ? [Coverage(run)] : null, Source: WriteExecutor.AgentSource);
+            var runner = new PlanRunner(session, writes, planDirectory, parse.GetValue(allowOutside), allowedTypes, parse.GetValue(write.RequestApproval))
+            {
+                VersionPerStep = parse.GetValue(versionPerStep),
+            };
+            var run = await runner.RunAsync(plan, parse.GetValue(write.DryRun), parse.GetValue(write.Publish), cancellationToken);
+            return new CommandResult(run, Warnings: run.DryRun ? [Coverage(run, runner.VersionPerStep)] : null, Source: WriteExecutor.AgentSource);
         });
         return command;
     }
@@ -149,13 +167,20 @@ internal static class ApplyCommand
     }
 
     /// <summary>How thoroughly the dry run could check the plan.</summary>
-    private static string Coverage(PlanRun run)
+    /// <param name="versionPerStep">The real run saves a version per operation (<c>--version-per-step</c>).</param>
+    internal static string Coverage(PlanRun run, bool versionPerStep = false)
     {
         int Count(string status) => run.Operations.Count(o => o.Status == status);
         var deferred = Count(PlanStepStatus.Deferred);
-        return $"Dry run of {run.Operations.Count} operation(s): {Count(PlanStepStatus.Valid)} checked by the site, "
+        var coverage = $"Dry run of {run.Operations.Count} operation(s): {Count(PlanStepStatus.Valid)} checked by the site, "
             + $"{Count(PlanStepStatus.Simulated)} checked as their content will be after earlier operations, or against stand-ins for content the plan creates (their warnings say what wasn't), "
             + $"{deferred} only name-checked{(deferred > 0 ? " (the site validates them when the plan runs)" : "")}.";
+        // A change after a step that may have saved a draft (of the same content, or not: kept simple).
+        var draftFirst = run.Operations.Select(o => o.Op).ToList().FindIndex(op => op is "set" or "area" or "composition" or "create" or "block" or "upload" or "translate");
+        var savesInto = draftFirst >= 0 && run.Operations.Skip(draftFirst + 1).Any(o => o.Op is "set" or "area" or "composition");
+        return savesInto && !versionPerStep
+            ? $"{coverage} When it runs, a set, area or composition operation on content and a language that an earlier operation saved a draft of saves into that draft (one draft per content and language; --version-per-step: a version each)."
+            : coverage;
     }
 
     private static async Task<string> ReadPlanAsync(string path, string currentDirectory, CancellationToken cancellationToken)

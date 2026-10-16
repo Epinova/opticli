@@ -701,8 +701,24 @@ Every operation is validated before anything is written; on a failure opticli st
 how to undo it, also when it is interrupted (Ctrl+C: `cancelled`, exit 130) or something unexpected fails:
 `details.partial: true`, `details.operations` with each step's status and undo, `details.created`. The step that was
 running when the plan was interrupted, or whose answer timed out (`unreachable`), may still have been saved: check with
-`opticli versions <ref>` before running the plan again. `--publish` on `apply` publishes every operation: only when the
+`opticli versions <ref>`, and `opticli get <ref> --version latest` for a step that saves into the run's draft (no new
+version shows that), before running the plan again. `--publish` on `apply` publishes every operation: only when the
 user asked.
+
+One draft per content and language: a `set`, `area` or `composition` step on content and a language that an earlier
+step of the same run saved a draft of (set, area, composition, or a create, block, upload or translate that didn't
+publish) saves into that draft, as the edit UI does, instead of a new version. The step's result has `intoVersion: true`
+and the step `savedInto: {"version": "123_456", "operation": 2}` (the step that made the draft); its `undo` points to
+that step's undo, since discarding the draft would drop every change saved into it: a later `discard` without a
+version discards them all. A step that publishes, schedules, requests approval, unpublishes, discards or deletes ends
+the draft: the next change makes a new one, and the earlier steps' undos point to the step that published (scheduled,
+sent for review, discarded) it. `from`,
+`baseVersion`, `force` or a ref naming a version always make a new version. When the draft is no longer opticli's
+latest unpublished version (someone saved or published in between), the step makes a new version and its warning says
+so. Each step still runs and reports on its own. `apply --version-per-step` saves a version per step instead. A site
+whose own code asks for a new version on every save (a saving-event handler setting `RequireNewVersion`) makes a save
+into the draft fail (`conflict`, nothing saved, the hint names `--version-per-step`): tell the user, and run the rest
+with `--version-per-step` if they agree.
 
 How far the dry run gets (`meta.warnings` sums it up; step statuses):
 - `valid`: the site dry-ran the operation as is.

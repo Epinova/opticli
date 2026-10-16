@@ -77,6 +77,12 @@ public sealed record WriteOutput(
     /// </summary>
     public IReadOnlyList<LeftOutVersion>? LeftOut { get; init; }
 
+    /// <summary>
+    /// True when the change was saved into the draft it was given (<see cref="SetOperation.IntoVersion"/>, set by
+    /// <c>apply</c> for a draft an earlier operation saved) instead of a new version: <see cref="Version"/> is that draft.
+    /// </summary>
+    public bool? IntoVersion { get; init; }
+
     /// <param name="type">Shown when the agent returns no content (a dry-run create).</param>
     public static WriteOutput From(WriteResult result, string? type = null, string? name = null, string? parent = null)
     {
@@ -108,6 +114,7 @@ public sealed record WriteOutput(
             Unpublished = result.Unpublished ? true : null,
             Discarded = result.Discarded ? true : null,
             LeftOut = result.LeftOut is { Count: > 0 } leftOut ? leftOut : null,
+            IntoVersion = result.IntoVersion ? true : null,
         };
     }
 

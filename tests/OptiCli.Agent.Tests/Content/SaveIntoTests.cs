@@ -73,4 +73,22 @@ public class SaveIntoTests
         Assert.All(new SaveAction?[] { null, SaveAction.Schedule, SaveAction.RequestApproval, SaveAction.Publish },
             a => Assert.False(SaveInto.Action(a).HasFlag(SaveAction.ForceNewVersion)));
     }
+
+    [Fact]
+    public void A_site_handler_asking_for_a_new_version_is_told_apart_from_other_failures()
+    {
+        // DefaultContentRepository.Save after the saving events, when a handler set RequireNewVersion.
+        var refused = new InvalidOperationException("Cannot force new version and force current version at the same time.");
+
+        Assert.True(SaveInto.NewVersionRequired(SaveAction.Save | SaveAction.ForceCurrentVersion, refused));
+        Assert.True(SaveInto.NewVersionRequired(SaveAction.Schedule | SaveAction.ForceCurrentVersion, new Exception("Save failed", refused)));
+        // Not a save into a version (a publish into it has no ForceCurrentVersion), or another failure.
+        Assert.False(SaveInto.NewVersionRequired(SaveAction.Publish, refused));
+        Assert.False(SaveInto.NewVersionRequired(SaveAction.Save | SaveAction.ForceCurrentVersion, new InvalidOperationException("The indexer is down.")));
+
+        var error = SaveInto.NewVersionRequiredError(456);
+        Assert.Equal(AgentErrorCodes.Conflict, error.Code);
+        Assert.Contains("draft 456", error.Message, StringComparison.Ordinal);
+        Assert.Contains("apply --version-per-step", error.Hint, StringComparison.Ordinal);
+    }
 }

@@ -157,6 +157,7 @@ public sealed class WriteExecutor(
         {
             compositionOps.Add(await CompositionOperationAsync(edit, target, cancellationToken));
         }
+        var baseVersion = await BaseVersionAsync(target, language, op.BaseVersion, op.Force, cancellationToken, op.Variation);
         var request = new DraftRequest
         {
             Lang = language?.Code,
@@ -171,9 +172,9 @@ public sealed class WriteExecutor(
             RequestApproval = op.RequestApproval,
             PublishAt = op.PublishAt?.UtcDateTime,
             DryRun = dryRun,
-            BaseVersion = await BaseVersionAsync(target, language, op.BaseVersion, op.Force, cancellationToken, op.Variation),
+            BaseVersion = baseVersion,
             From = op.From?.Request,
-            IntoVersion = op.IntoVersion,
+            IntoVersion = await IntoVersionAsync(op.IntoVersion, target, language, baseVersion, op.From is not null || op.BaseVersion is not null, op.Variation, cancellationToken),
         };
         if (request.Properties is null && request.Name is null && request.Composition is null && op.AreaEdits is null && op.CompositionEdits is null)
         {
@@ -189,6 +190,7 @@ public sealed class WriteExecutor(
         var edit = await AreaOperationAsync(op, target, cancellationToken);
         var language = LanguageFor(op.Lang, target);
         var masterFirst = await MasterFirstAsync(target, language, op, dryRun, cancellationToken);
+        var baseVersion = await BaseVersionAsync(target, language, op.BaseVersion, op.Force, cancellationToken);
         var request = new DraftRequest
         {
             Lang = language?.Code,
@@ -198,9 +200,9 @@ public sealed class WriteExecutor(
             RequestApproval = op.RequestApproval,
             PublishAt = op.PublishAt?.UtcDateTime,
             DryRun = dryRun,
-            BaseVersion = await BaseVersionAsync(target, language, op.BaseVersion, op.Force, cancellationToken),
+            BaseVersion = baseVersion,
             From = op.From?.Request,
-            IntoVersion = op.IntoVersion,
+            IntoVersion = await IntoVersionAsync(op.IntoVersion, target, language, baseVersion, op.From is not null || op.BaseVersion is not null, null, cancellationToken),
         };
         return WithWarning(await DraftAsync(target, request, op.From, op.Publishes, cancellationToken), masterFirst);
     }
@@ -213,6 +215,7 @@ public sealed class WriteExecutor(
         var edit = await CompositionOperationAsync(op, target, cancellationToken);
         var language = LanguageFor(op.Lang, target);
         var masterFirst = await MasterFirstAsync(target, language, op, dryRun, cancellationToken);
+        var baseVersion = await BaseVersionAsync(target, language, op.BaseVersion, op.Force, cancellationToken, op.Variation);
         var request = new DraftRequest
         {
             Lang = language?.Code,
@@ -223,9 +226,9 @@ public sealed class WriteExecutor(
             RequestApproval = op.RequestApproval,
             PublishAt = op.PublishAt?.UtcDateTime,
             DryRun = dryRun,
-            BaseVersion = await BaseVersionAsync(target, language, op.BaseVersion, op.Force, cancellationToken, op.Variation),
+            BaseVersion = baseVersion,
             From = op.From?.Request,
-            IntoVersion = op.IntoVersion,
+            IntoVersion = await IntoVersionAsync(op.IntoVersion, target, language, baseVersion, op.From is not null || op.BaseVersion is not null, op.Variation, cancellationToken),
         };
         return WithWarning(await DraftAsync(target, request, op.From, op.Publishes, cancellationToken), masterFirst);
     }
@@ -1167,6 +1170,23 @@ public sealed class WriteExecutor(
             ? await VersionReader.VariationAsync(session.Db, session.Model, target.Id, branch, key.Trim(), latest: true, cancellationToken)
             : await VersionReader.LatestAsync(session.Db, session.Model, target.Id, branch, cancellationToken);
         return latest?.Id;
+    }
+
+    /// <summary>
+    /// The draft to save into (<see cref="SetOperation.IntoVersion"/>), when this database read shows it is still one: the
+    /// latest version of the branch (and variation) written, which <paramref name="baseVersion"/> was just read as, a draft,
+    /// and saved by opticli. The agent checks the same against its own (cached) view; this closes the case where its cache
+    /// is behind the database. Null (a new version, as without it) for a change that names its base (<c>--from</c>,
+    /// <c>--base-version</c>, a ref naming a version) or skips the check (<c>--force</c>).
+    /// </summary>
+    private async Task<int?> IntoVersionAsync(int? into, Target target, LanguageBranch? language, int? baseVersion, bool namesBase, string? variation, CancellationToken cancellationToken)
+    {
+        if (into is not { } version || namesBase || target.Version is not null || baseVersion != version)
+        {
+            return null;
+        }
+        var saved = await VersionReader.ByIdAsync(session.Db, session.Model, version, cancellationToken);
+        return PlanDrafts.StillOurs(saved, target.Id, (language ?? MasterLanguage(target)).Id, variation) ? version : null;
     }
 
     private LanguageBranch MasterLanguage(Target target) =>

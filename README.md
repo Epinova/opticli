@@ -639,6 +639,17 @@ These commands write:
   updated (and moved back out of the recycle bin; an upload's file replaced when the bytes differ), and steps that are
   already done change nothing. A plan that stops
   halfway (a failure, Ctrl+C) still reports what it saved, with undo hints and `details.partial: true`.
+  A plan leaves one draft per content and language, as the edit UI does: a `set`, `area` or `composition` step on
+  content and a language that an earlier step of the run saved a draft of (a set, area or composition, or a create,
+  block, upload or translate that didn't publish) saves into that draft. Such a step says `savedInto` (the version and
+  the step that made it), and its undo points to that step's. So a later `discard` without a version discards the whole
+  draft, with the changes of every step that saved into it. After a step that publishes, schedules, sends for review,
+  unpublishes, discards or deletes, the next change starts a new draft (and the undos of the steps that saved into the
+  draft point to that step's). Steps with `from`, `baseVersion` or `force`, or a ref that names a version, make a new
+  version, and so does a step whose draft someone else saved or published in the meantime (opticli checks the
+  database, the site checks again; the step's warning says so). `apply --version-per-step` saves a version per step,
+  as earlier versions did; use it on a site whose own code asks for a new version on every save (a saving-event
+  handler that sets `RequireNewVersion`), where saving into the draft fails with a `conflict` that says so.
 
 Every write command takes `--dry-run`. Structured values use `--values`, e.g.
 `--values '{"MainArea":[{"ref":"456"}]}'`; a value may also be given as `get` shows it (`{"type": ..., "value": ...}`;

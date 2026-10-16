@@ -195,6 +195,11 @@ internal sealed class WriteFlow
         {
             throw ValidationErrors.MasterFirst(ex, Call);
         }
+        catch (Exception ex) when (ex is not AgentException && intoBefore is not null && SaveInto.NewVersionRequired(action, ex) && SavedInto(intoBefore, before) is null)
+        {
+            // A site handler wants a new version on every save, which a save into the draft can't give.
+            throw SaveInto.NewVersionRequiredError(intoBefore.ContentLink.WorkID);
+        }
         catch (Exception ex) when (ex is not AgentException
             && (intoBefore is null ? SavedAnyway(writable, isNew, newestBefore) : SavedInto(intoBefore, before)) is { } stored)
         {

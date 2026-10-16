@@ -40,6 +40,24 @@ public static class UndoHints
         _ => null,
     };
 
+    /// <summary>
+    /// For a plan operation that saved into the draft an earlier one made (<paramref name="into"/>): that operation's undo
+    /// covers it, and discarding the draft would drop the earlier operations' changes as well.
+    /// </summary>
+    public static string? For(WriteOperation operation, object output, SavedInto? into)
+    {
+        if (into is null || output is not WriteOutput { Saved: true } saved)
+        {
+            return For(operation, output);
+        }
+        if (saved is { Published: false, ScheduledFor: null, ApprovalRequested: not true })
+        {
+            return $"Saved into {into.Version}, the draft operation {into.Operation} made, so nothing live changed; operation {into.Operation}'s undo covers this change too (the draft holds the changes of operation {into.Operation} and of the operations after it that saved into it, so discarding it drops them all).";
+        }
+        // Published, scheduled or sent for review: its own undo, which also reverses what the earlier operations saved into it.
+        return $"Saved into {into.Version}, the draft operation {into.Operation} made, so what follows covers the changes saved into it before this one too: {For(operation, output)}";
+    }
+
     private static string Version(WriteOutput saved) => saved.Published
         ? Republish(saved)
         : $"{saved.Version} is an unpublished draft, so nothing live changed; the version it was based on ({saved.BaseVersion}) is unchanged.";

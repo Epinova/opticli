@@ -231,7 +231,10 @@ area: there an inline item that isn't an exact copy of a block is a new block wi
 
 Structured values (ContentArea items, links, lists) go in `--values '{"MainArea":[{"ref":"456"}]}'`; several related
 writes can run as one validated plan with `opticli apply plan.json`. A plan with `"guidNamespace"` can be run again
-with `apply --update-existing` (always `--dry-run` it first). Syntax for all of this: [reference.md](reference.md).
+with `apply --update-existing` (always `--dry-run` it first). A plan leaves one draft per content and language (later
+steps save into the draft an earlier step made; after a publish, a new one), not a version per step; tell the user
+there is one draft to review. `apply --version-per-step` gives a version per step, only when the user wants that.
+Syntax for all of this: [reference.md](reference.md).
 
 Besides the content type's properties, writes take a few built-in settings: `Name`, `PageURLSegment`,
 `PageVisibleInMenu`, `StartPublish`/`StopPublish`, `Category`, and on pages `ChildSortOrder`, `SortIndex`,
@@ -321,7 +324,8 @@ order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a cod
   only when they want every one of them gone.
 - Always `--dry-run` a multi-step `apply` plan first, and a single write when you are unsure of its effect.
 - A write that timed out (`unreachable`, "no response within") or a plan that stopped halfway (`details.partial`) may
-  have saved more than it reports: check with `opticli versions <ref>` before running it again.
+  have saved more than it reports: check with `opticli versions <ref>` and, since a plan saves into its draft,
+  `opticli get <ref> --version latest` before running it again.
 - Start `serve` only when a write is needed, and stop it (`opticli serve --stop`) when you are done.
 - Never run `opticli db use` or pass `--db`/`--connection`/`OPTICLI_DB` on your own initiative: which database is
   the development one, and whether to touch any other, is the user's decision. Writes to anything but the development

@@ -36,6 +36,33 @@ internal static class SaveInto
         && latest.Status == VersionStatus.CheckedOut
         && PendingDrafts.SavedBy(latest.SavedBy, self);
 
+    /// <summary>
+    /// The CMS refused to save into the version because the site's own code asked for a new one: a handler of the saving
+    /// events that sets <c>SaveContentEventArgs.RequireNewVersion</c> adds <c>ForceNewVersion</c>, and together with
+    /// <c>ForceCurrentVersion</c> <c>DefaultContentRepository.Save</c> throws (<c>SaveActionExtentions.ThrowIfInvalid</c>:
+    /// an <c>InvalidOperationException</c>, in CMS 13's save pipeline an <c>EPiServerException</c>) before anything is saved.
+    /// </summary>
+    public static bool NewVersionRequired(SaveAction action, Exception ex)
+    {
+        if (!action.HasFlag(SaveAction.ForceCurrentVersion))
+        {
+            return false;
+        }
+        for (Exception? e = ex; e is not null; e = e.InnerException)
+        {
+            if (e.Message.Contains("Cannot force new version and force current version", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>The error for <see cref="NewVersionRequired"/>: only <c>apply</c> asks to save into a draft, and its <c>--version-per-step</c> avoids it.</summary>
+    public static AgentException NewVersionRequiredError(int version) => AgentException.Conflict(
+        $"The site's own code asks for a new version on this save (a handler of the CMS's saving events sets RequireNewVersion), so the change can't go into draft {version}, where `apply` saves later operations on the same content and language. Nothing was saved.",
+        "Run the plan with `opticli apply --version-per-step`, which saves a version per operation; check first what the operations before this one saved (their results and undo hints).");
+
     /// <param name="action">From <see cref="WriteFlow.Publishing"/>: null saves a draft.</param>
     public static SaveAction Action(SaveAction? action) => action switch
     {
