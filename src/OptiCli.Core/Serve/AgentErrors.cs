@@ -11,7 +11,7 @@ public static class AgentErrors
 
     /// <summary>What to do about a write that stopped on drift.</summary>
     public const string DriftHint =
-        "details lists what differs between this build and the shared database (`opticli drift` shows it too). Show it to the user and ask whether to write with this build anyway; only if they agree, run again with --accept-drift <details.fingerprint> (for a plan: apply --accept-drift). \"local\" ahead means this branch has changes that aren't deployed (check out what is deployed, or deploy first); \"database\" ahead means the environment runs newer code (pull and build).";
+        "details lists what differs between this build and the shared database (`opticli drift` shows it too). Show it to the user and ask whether to write with this build anyway; only if they agree, run again with --accept-drift <details.fingerprint> (for a plan: apply --accept-drift). \"local\" ahead means this branch has changes that aren't deployed (check out what is deployed, or deploy first); \"database\" ahead means the database has what this build lacks: newer code in that environment (pull and build), or classes or properties removed from code that the CMS kept for their content (`opticli types --orphaned`); an item's removedFromCode, when there, names the commit in this checkout's git history that removed it.";
 
     public static ErrorCode CodeFor(string agentCode) => agentCode switch
     {

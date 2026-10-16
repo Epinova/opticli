@@ -16,7 +16,7 @@ internal static class DriftPrompt
     {
         var error = Console.Error;
         error.WriteLine($"This build and the shared database differ ({DriftText.Short(report.Ahead)}). A write runs this build's code (models, validators, event handlers) against content the deployed site serves.");
-        error.WriteLine(DriftText.Advice(report.Ahead));
+        error.WriteLine(DriftText.Advice(report));
         error.WriteLine();
         TextRenderer.Render(JsonOutput.ToNode(DriftCommand.Rows(report)), error);
         error.WriteLine();

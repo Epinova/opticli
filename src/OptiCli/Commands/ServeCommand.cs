@@ -170,6 +170,8 @@ internal static class ServeCommand
         var siteOutput = OutputLocator.Locate(project, output, settings?.Output, context.Environment.CurrentDirectory);
         var warnings = new List<string>();
         string? driftFile = null;
+        // The database's content types, for the git history of what only the database has once the site reports drift.
+        IReadOnlyList<Core.Cms.ContentTypeInfo> types = [];
         if (!connection.IsLocal)
         {
             warnings.Add(SharedDatabaseWarning(connection));
@@ -178,6 +180,14 @@ internal static class ServeCommand
             await using (var db = await context.OpenDatabaseAsync(cancellationToken))
             {
                 startup = await StartupDriftCheck.RunAsync(db, Path.GetDirectoryName(siteOutput.Dll)!, cancellationToken);
+                try
+                {
+                    types = await Core.Cms.ContentTypeReader.ListAsync(db, cancellationToken);
+                }
+                catch (OptiCliException)
+                {
+                    // Only for the history lookup, which then goes by name.
+                }
             }
             startup.ThrowIfBlocked(allowPendingMigrations);
             warnings.AddRange(startup.Warnings);
@@ -237,7 +247,7 @@ internal static class ServeCommand
             {
                 warnings.Add($"The site redirects {url} to HTTPS, so it can't be browsed there (opticli itself is unaffected). `opticli serve --stop`, then `opticli serve --https` adds an HTTPS address.");
             }
-            if (DriftWarning(store, started: true) is { } drift)
+            if (DriftWarning(store, started: true, project.Directory, types) is { } drift)
             {
                 warnings.Add(drift);
             }
@@ -258,7 +268,7 @@ internal static class ServeCommand
             {
                 PortClaims.ForUser.ReleaseAll();
                 Console.Error.WriteLine($"[opticli] agent ready at {ready.Url}{(ready.BrowseUrl is { } browse ? $", browse the site at {browse}" : "")} (pid {ready.Pid}, database '{ready.Database?.Name}'); Ctrl+C stops the site.");
-                if (DriftWarning(store, started: true) is { } drift)
+                if (DriftWarning(store, started: true, project.Directory, types) is { } drift)
                 {
                     Console.Error.WriteLine($"warning: {drift}");
                 }
@@ -399,12 +409,18 @@ internal static class ServeCommand
         $"{overdue.Count} overdue job{(overdue.Count == 1 ? "" : "s")} will {when}: {string.Join(", ", overdue.Take(10).Select(j => j.Name))}{(overdue.Count > 10 ? ", ..." : "")}. `opticli jobs` lists them.";
 
     /// <summary>What the agent reported as drift once the site answered, kept in the state file; null when nothing differs.</summary>
-    /// <param name="started">The site was just started: the longer summary; otherwise the short warning other commands give.</param>
-    private static string? DriftWarning(StateStore store, bool started)
+    /// <param name="started">
+    /// The site was just started: the longer summary, with the commits that removed from code what only the database has
+    /// (<see cref="DriftHistory"/>, in <paramref name="projectDirectory"/>'s git history; <paramref name="types"/> give the
+    /// GUIDs); otherwise the short warning other commands give.
+    /// </param>
+    private static string? DriftWarning(StateStore store, bool started, string? projectDirectory = null, IReadOnlyList<Core.Cms.ContentTypeInfo>? types = null)
     {
         try
         {
-            return store.Read()?.Drift is { Fingerprint: not null } drift ? started ? DriftText.Started(drift) : DriftText.Warning(drift) : null;
+            return store.Read()?.Drift is { Fingerprint: not null } drift
+                ? started ? DriftText.Started(DriftHistory.Annotate(drift, projectDirectory, types ?? [])) : DriftText.Warning(drift)
+                : null;
         }
         catch (CorruptStateException)
         {

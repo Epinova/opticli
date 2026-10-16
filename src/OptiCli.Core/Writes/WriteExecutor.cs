@@ -1298,13 +1298,18 @@ public sealed class WriteExecutor(
             var given = acceptDrift?.Trim();
             if (!string.Equals(given, fingerprint, StringComparison.OrdinalIgnoreCase))
             {
+                // Shown to the user: which of the types and properties only the database has this checkout removed from code.
+                if (projectDirectory is not null && DriftHistory.Applies(report))
+                {
+                    report = DriftHistory.Annotate(report, projectDirectory, session.Model.Types);
+                }
                 if (confirmDrift is null || (given is not null && given.Length > 0))
                 {
                     throw Drifted(report, given);
                 }
                 if (!confirmDrift(report))
                 {
-                    throw new DriftException("Not written, as answered; nothing was saved.", DriftText.Advice(report.Ahead));
+                    throw new DriftException("Not written, as answered; nothing was saved.", DriftText.Advice(report));
                 }
             }
             agent.AcceptDrift(fingerprint);
@@ -1319,8 +1324,9 @@ public sealed class WriteExecutor(
         var changed = string.IsNullOrEmpty(accepted)
             ? ""
             : $" --accept-drift {accepted} no longer matches: the differences changed since, and are now {report.Fingerprint}.";
+        var removed = DriftHistory.AllRemovedFromCode(report) ? $" {DriftText.Advice(report)}" : "";
         return new DriftException(
-            $"This build and the shared database differ: {report.Describe()}. A write would run this build's code (models, validators, event handlers) against content the deployed site serves.{changed}",
+            $"This build and the shared database differ: {report.Describe()}. A write would run this build's code (models, validators, event handlers) against content the deployed site serves.{removed}{changed}",
             AgentErrors.DriftHint)
         {
             Details = report,

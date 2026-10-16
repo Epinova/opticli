@@ -214,7 +214,7 @@ internal static class DoctorCommand
                 && string.Equals(state.DbServer?.Trim(), chosen.Server?.Trim(), StringComparison.OrdinalIgnoreCase)
                 && string.Equals(state.DbName?.Trim(), chosen.Database?.Trim(), StringComparison.OrdinalIgnoreCase))
             {
-                return reported;
+                return await DriftCommand.WithHistoryAsync(context, reported, cancellationToken);
             }
         }
         catch (CorruptStateException)

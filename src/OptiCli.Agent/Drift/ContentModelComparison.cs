@@ -45,7 +45,7 @@ internal static class ContentModelComparison
 {
     public const string OnlyInCode = "only in the code";
 
-    public const string OnlyInDatabase = "only in the database";
+    public const string OnlyInDatabase = DriftItem.OnlyInDatabase;
 
     /// <param name="typesOnlyInDatabase">Content types the sync made from code that no model in the build matches.</param>
     /// <param name="typesOfUnknownOrigin">

@@ -11,7 +11,10 @@ public static class DriftAhead
     /// <summary>The local build has it and the database doesn't: the branch has changes that aren't deployed there.</summary>
     public const string Local = "local";
 
-    /// <summary>The database has it and the local build doesn't: the environment runs newer code than the checkout.</summary>
+    /// <summary>
+    /// The database has it and the local build doesn't: the environment runs newer code than the checkout, or (content
+    /// types and properties) their classes were removed from code and the CMS kept them for their content.
+    /// </summary>
     public const string Database = "database";
 
     /// <summary>Some differences one way, some the other.</summary>
@@ -21,10 +24,16 @@ public static class DriftAhead
     public const string Unknown = "unknown";
 
     /// <summary>What it means, for messages: "local is ahead (...)".</summary>
-    public static string Describe(string? ahead) => ahead switch
+    /// <param name="contentModel">
+    /// A content type or property is on the database's side, which may be a class removed from code; false when only EF
+    /// Core migrations or the CMS schema version are, which only newer code makes.
+    /// </param>
+    public static string Describe(string? ahead, bool contentModel = true) => ahead switch
     {
         Local => "local is ahead: this build has changes the database's environment doesn't",
+        Database when contentModel => "the database is ahead: it has what this build lacks, from newer code in its environment or from classes or properties removed from code that the CMS kept for their content",
         Database => "the database is ahead: its environment runs newer code than this checkout",
+        Both when contentModel => "both are ahead: this build has changes the database's environment doesn't, and the database has what this build lacks",
         Both => "both are ahead: this build and the database's environment each have changes the other lacks",
         _ => "they differ, and the database doesn't say which side changed",
     };
@@ -37,12 +46,31 @@ public static class DriftAhead
 public sealed record DriftItem(string Name, string Ahead, string Difference)
 {
     /// <summary>
+    /// The <see cref="Difference"/> of a content type or property only the database has (the agent's), which the CLI
+    /// looks up in the git history.
+    /// </summary>
+    public const string OnlyInDatabase = "only in the database";
+
+    /// <summary>
     /// Listed, but not a difference that stops writes: it counts toward neither <see cref="DriftReport.Differences"/> nor the
     /// fingerprint (CMS 13 content types of unknown origin, which admin mode makes too).
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Informational { get; init; }
+
+    /// <summary>
+    /// For a content type or property only in the database: the commit in the checkout's git history that removed its
+    /// class (or the property) from code. The CLI adds it, not the agent, so the fingerprint doesn't cover it.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CodeRemoval? RemovedFromCode { get; init; }
 }
+
+/// <summary>A commit that removed something from code.</summary>
+/// <param name="Commit">The abbreviated commit hash.</param>
+/// <param name="Date">Its author date, <c>yyyy-MM-dd</c>.</param>
+/// <param name="Subject">The first line of its message.</param>
+public sealed record CodeRemoval(string Commit, string Date, string Subject);
 
 /// <summary>
 /// What the CLI found before the site started (<c>serve</c>), handed to the site agent in the file
@@ -162,11 +190,27 @@ public sealed record DriftReport
             return "nothing differs";
         }
         var items = Sections().Where(s => !s.Item.Informational).ToList();
-        var shown = items.Take(max).Select(i => $"{Label(i.Section)} {i.Item.Name} ({i.Item.Difference})");
+        var shown = items.Take(max).Select(i => $"{Label(i.Section)} {i.Item.Name} ({Shown(i.Section, i.Item)})");
         var more = items.Count > max ? $"; and {items.Count - max} more" : "";
         return string.Create(CultureInfo.InvariantCulture,
-            $"{Differences} difference{(Differences == 1 ? "" : "s")} ({DriftAhead.Describe(Ahead)}): {string.Join("; ", shown)}{more}");
+            $"{Differences} difference{(Differences == 1 ? "" : "s")} ({DescribeAhead()}): {string.Join("; ", shown)}{more}");
     }
+
+    /// <summary>Whether a content type or property that stops writes is on the database's side (not only migrations or the schema version).</summary>
+    [JsonIgnore]
+    public bool ContentModelInDatabase =>
+        ContentTypes.Concat(Properties).Any(i => !i.Informational && i.Ahead == DriftAhead.Database);
+
+    /// <summary><see cref="DriftAhead.Describe"/> for this report's direction and items.</summary>
+    public string DescribeAhead() => DriftAhead.Describe(Ahead, ContentModelInDatabase);
+
+    /// <summary>
+    /// The item's difference, with the commit that removed it from code when the CLI found one: "only in the database;
+    /// its class was removed from code in abc1234 (2026-09-14)".
+    /// </summary>
+    public static string Shown(string section, DriftItem item) => item.RemovedFromCode is { } removed
+        ? $"{item.Difference}; {(section == "properties" ? "removed" : "its class was removed")} from code in {removed.Commit} ({removed.Date})"
+        : item.Difference;
 
     private static string Label(string section) => section switch
     {

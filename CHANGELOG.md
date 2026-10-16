@@ -22,6 +22,22 @@ again to update the skill.
   to make it choosable: add it to a launch profile in `Properties/launchSettings.json` (`environmentVariables`,
   `ConnectionStrings__<Name>`), user secrets or `appsettings.Development.json`, then choose it from `opticli db list`
   with `opticli db use <id>`. It only said that a string from the site's configuration can be chosen.
+- Drift with the database ahead no longer only says "the environment runs newer code than this checkout: pull and
+  build". A content type or property only in the database is often one whose class was removed from code and that the
+  CMS kept for its content, so the advice (in `opticli drift`, the `drift` error and its hint, the prompt and `serve`'s
+  start message) names both causes and points to `opticli types --orphaned`. With only EF Core migrations or the CMS
+  schema version on the database's side it still says "pull and build".
+
+### Added
+
+- Drift looks up content types and properties only in the database in the checkout's git history: an item whose class
+  (or the property) a commit removed from code, and that `HEAD` doesn't have, carries `removedFromCode` (commit, date,
+  subject), and the text says "its class was removed from code in abc1234 (2026-09-14)". When every difference on the
+  database's side is such a removal, the advice says pulling won't change it. Only a removal tied to the type counts:
+  by its GUID, by its class name when the removed class had no GUID or the same one, and for a property in the type's
+  class or the base classes it names; a comment naming the class or property doesn't count. The lookup needs a `.git` in the project's folder or above
+  and `git` on the path, and stops after 50 items or 5 seconds; without it drift is reported as before. The
+  fingerprint, the counts and what stops writes don't change.
 
 ## 0.18.0 (16 October 2026)
 

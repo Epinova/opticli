@@ -254,9 +254,12 @@ order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a cod
 - Against a shared (remote) development database, a write stops when this build and the database differ: `drift`
   (exit 5). The database keeps what the deployed code made, so the write would run this build's code against content
   the deployed site serves. Show the user what differs (`error.details`, or `opticli drift`) and what it means:
-  `local` ahead = this branch has changes that aren't deployed there; `database` ahead = that environment runs newer
-  code than this checkout (pull); `unknown` = they differ and the database doesn't say which side changed. Ask whether
-  to write with this build anyway. Pass `--accept-drift <details.fingerprint>` (a plan takes it once:
+  `local` ahead = this branch has changes that aren't deployed there; `database` ahead = the database has what this
+  build lacks: that environment runs newer code (pull), or a class or property was removed from code and the CMS
+  kept it for its content (`opticli types --orphaned`). An item with `removedFromCode` names the commit in this
+  checkout that removed it: say so, and that pulling won't change it (orphaned there, or the removal isn't deployed
+  yet); without it, name both causes. `unknown` = they differ and the database doesn't say which side changed. Ask
+  whether to write with this build anyway. Pass `--accept-drift <details.fingerprint>` (a plan takes it once:
   `apply --accept-drift`) only after they said yes, never on your own initiative, and never with a fingerprint from an
   earlier answer: it stops counting when the differences change. Dry runs don't stop.
 - `serve` refuses (exit 3) a build with EF Core migrations the shared database lacks (`details.reason:

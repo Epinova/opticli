@@ -628,7 +628,18 @@ compared (`checked: false`).
   fingerprint is a hash of the differences: it stops counting when they change, e.g. after a deploy or a pull (restart
   `serve` to compare again). Ask the user before confirming.
 - `local` ahead: this branch has changes that aren't deployed there (check out what is deployed, or deploy first).
-  `database` ahead: that environment runs newer code than this checkout (pull and build).
+  `database` ahead: the database has what this build lacks. Either that environment runs newer code than this
+  checkout (pull and build), or a class or property was removed from code and the CMS kept it for the content that
+  uses it (orphaned: `opticli types --orphaned` lists such types; pulling doesn't change those). When only EF Core
+  migrations or the CMS schema version are on the database's side, it is newer code: pull and build.
+- A content type or property item with `difference: "only in the database"` may carry `removedFromCode`
+  (`commit`, `date`, `subject`): this checkout's git history removed its class (or the property) in that commit, and
+  `HEAD` doesn't have it. Tell the user so, naming the commit: either the CMS kept the type or property for its
+  content (orphaned there), or that environment doesn't run the removal yet; pulling won't help either way, and
+  writing with this build doesn't remove it (the site doesn't sync content types into a shared database). Without
+  `removedFromCode` (no git, no removal opticli could tie to the type, or more than 50 items or 5 seconds of
+  lookups) say both causes are possible and suggest checking `git log` or what is deployed. Don't remove orphans in a
+  shared database: `types remove` and `types prune` are refused there anyway. `removedFromCode` is the CLI's: it isn't part of the fingerprint.
 - CMS 13: types of unknown origin are listed with `ahead: unknown`, `informational: true`; they count toward neither
   `differences` nor the fingerprint, so they don't stop writes. New job classes the site registers at startup aren't
   drift.

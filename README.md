@@ -511,10 +511,27 @@ what the local build expects, which is what matters before a write:
 - EF Core migrations, Dynamic Data Store types and the CMS schema version.
 
 Each difference says which side is ahead. `local`: your branch has changes that aren't deployed there (check out what
-is deployed, or deploy first). `database`: the environment runs newer code than your checkout (pull and build).
-`unknown`: they differ, and the database doesn't say which side changed. Required, display names, sort order, tabs
-and `[AllowedTypes]` aren't stored for a model: the running code decides them, so they never show as drift. On CMS 13,
-content types of unknown origin (see [CMS 13](#cms-13)) are listed with `informational: true` and don't stop writes.
+is deployed, or deploy first). `database`: the database has what your build lacks. Either the environment runs newer
+code than your checkout (pull and build), or a class or property was removed from code and the CMS kept its content
+type or property for the content that uses it (`opticli types --orphaned` lists such types); pulling doesn't change
+those. When only EF Core migrations or the CMS schema version are on the database's side, that is newer code (pull and
+build). `unknown`: they differ, and the database doesn't say which side changed. Required, display names, sort order,
+tabs and `[AllowedTypes]` aren't stored for a model: the running code decides them, so they never show as drift. On
+CMS 13, content types of unknown origin (see [CMS 13](#cms-13)) are listed with `informational: true` and don't stop
+writes.
+
+For a content type or property only in the database, opticli looks in your checkout's git history for the commit that
+removed it from code, and names it on the item in `opticli drift`, `doctor`, `serve`'s start message, the `drift`
+error and the prompt (`removedFromCode`: commit, date, subject; in text "its class was removed from code in abc1234
+(2026-09-14)"). A type is looked up by its GUID (the `[ContentType(GUID = ...)]` string), then by `class <Name>` (not
+in a comment), in `*.cs` files; by name only when the removed class had no GUID or the type's. A property is looked up by its declaration
+(not a comment) in its type's class files, then in those of the base classes they name, as far as the repository has
+them; a same-named property of another class doesn't count. Only what isn't in `HEAD` counts, and when opticli can't
+tie a removal to the type it names none. When every difference on the database's side is such a removal, the advice
+says so instead of "pull and build": the CMS kept them for their content, or that environment doesn't run the removal
+yet. The lookup runs only below a `.git` (in the project's folder or above) with `git` on the path, for up to 50 items
+within 5 seconds; without git, or when it takes longer, drift is reported without it. It is the CLI's addition: the
+fingerprint and what stops writes stay the site agent's.
 
 `opticli drift` lists the differences and `doctor` shows them. Once `serve` has reported drift, a short warning comes
 with every command that uses the database, and with `serve --status`. A site you start yourself with `opticli env`
