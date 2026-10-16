@@ -79,31 +79,36 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
   --term-color-12: #8cc0ff; --term-color-13: #e2a9ff; --term-color-14: #7fdce3; --term-color-15: #eef2f6;
 }
 
-/* The chapters are a segmented timeline under the player: each bar fills as its chapter plays (--p, 0 to 1). */
-.chapters { list-style: none; margin: 0; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; }
-.chapters button {
-  width: 100%; text-align: left; cursor: pointer;
-  display: grid; gap: 3px; align-content: start;
-  padding: 0 2px 6px 0; border: 0; background: none; color: var(--ink); font: inherit;
+/* The chapters: a timeline under the player, one segment per chapter, as long as the chapter, each filling as it plays
+   (--p, 0 to 1); below it an index of the chapters, grouped by theme (build.py's CASTS). Both seek to a chapter, and both
+   mark the one playing. */
+.chapters { display: grid; gap: 16px; }
+.timeline { display: flex; gap: 3px; }
+.timeline button { flex: var(--len, 1) 1 0; min-width: 4px; padding: 5px 0; border: 0; background: none; cursor: pointer; }
+.timeline .bar { display: block; height: 6px; border-radius: 3px; background: var(--rule); overflow: hidden; transition: background .15s; }
+.timeline .bar::after { content: ""; display: block; height: 100%; width: calc(var(--p, 0) * 100%); background: var(--accent); }
+.timeline button[aria-current="true"] .bar { background: color-mix(in srgb, var(--accent) 22%, var(--rule)); }
+.timeline button:hover .bar { background: color-mix(in srgb, var(--accent) 40%, var(--rule)); }
+/* The groups flow into up to four columns (fewer on narrower screens), each column at least wide enough for the longest
+   title on one line; a short group (Agents) sits below another rather than taking a column, or a row, of its own. */
+.index { columns: 4 270px; column-gap: 32px; }
+.index .group { display: grid; gap: 4px; align-content: start; break-inside: avoid; padding-bottom: 16px; }
+.index .label { padding-left: 8px; font: 600 .72rem var(--body); letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+.index ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.index button {
+  width: 100%; display: grid; grid-template-columns: 2.4ch minmax(0, 1fr) auto; column-gap: 8px; align-items: baseline;
+  padding: 4px 8px; border: 0; border-radius: 6px; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer;
 }
-.chapters .bar { display: block; height: 4px; border-radius: 2px; background: var(--rule); overflow: hidden; margin-bottom: 9px; transition: background .15s; }
-.chapters .bar::after { content: ""; display: block; height: 100%; width: calc(var(--p, 0) * 100%); background: var(--accent); }
-.chapters button:hover .bar { background: color-mix(in srgb, var(--accent) 35%, var(--rule)); }
-.chapters .meta { display: flex; gap: 8px; font: .78rem var(--mono); font-variant-numeric: tabular-nums; }
-.chapters .n { font-weight: 700; color: var(--accent); }
-.chapters .time { color: var(--muted); }
-.chapters .t { font-weight: 600; font-size: .94rem; line-height: 1.3; }
-.chapters button:hover .t, .chapters button[aria-current="true"] .t { color: var(--accent); }
+.index .n { font: 700 .78rem var(--mono); color: var(--accent); font-variant-numeric: tabular-nums; }
+.index .t { font-weight: 600; font-size: .94rem; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.index .time { font: .78rem var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.index button:hover .t { color: var(--accent); }
+.index button[aria-current="true"] { background: var(--accent-soft); }
+.index button[aria-current="true"] .t { color: var(--accent); }
 @media (max-width: 720px) {
-  /* A vertical list on narrow screens, the bar running down the left of each chapter. */
-  .chapters { grid-auto-flow: row; grid-auto-columns: auto; gap: 0; }
-  .chapters button { grid-template-columns: 4px auto 1fr auto; align-items: baseline; column-gap: 12px; padding: 7px 0; }
-  .chapters .bar { grid-row: 1; align-self: stretch; height: auto; margin: 0; }
-  .chapters .bar::after { width: 100%; height: calc(var(--p, 0) * 100%); }
-  .chapters .meta { display: contents; }
-  .chapters .n { grid-column: 2; }
-  .chapters .time { grid-column: 4; }
-  .chapters .t { grid-column: 3; grid-row: 1; }
+  /* A single list on narrow screens, group after group; long titles may wrap. */
+  .index { columns: 1; }
+  .index .t { white-space: normal; }
 }
 
 section { display: grid; gap: 20px; }
@@ -161,7 +166,7 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
       <div class="term-bar"><i></i><i></i><i></i><span>opticli on the Alloy sample site</span></div>
       <div class="player" id="player"></div>
     </div>
-    <ol class="chapters" id="chapters"><li><button type="button" data-index="0" data-start="4.018" data-end="28.164" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">1</span><span class="time">0:04</span></span><span class="t">No setup</span></button></li><li><button type="button" data-index="1" data-start="28.164" data-end="57.092" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">2</span><span class="time">0:28</span></span><span class="t">Find the content</span></button></li><li><button type="button" data-index="2" data-start="57.092" data-end="74.239" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">3</span><span class="time">0:57</span></span><span class="t">Find the code</span></button></li><li><button type="button" data-index="3" data-start="74.239" data-end="155.04" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">4</span><span class="time">1:14</span></span><span class="t">Make the change</span></button></li><li><button type="button" data-index="4" data-start="155.04" data-end="229.146" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">5</span><span class="time">2:35</span></span><span class="t">A section as a plan</span></button></li><li><button type="button" data-index="5" data-start="229.146" data-end="257.621" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">6</span><span class="time">3:49</span></span><span class="t">Run it again</span></button></li><li><button type="button" data-index="6" data-start="257.621" data-end="326.141" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">7</span><span class="time">4:17</span></span><span class="t">Safety nets</span></button></li><li><button type="button" data-index="7" data-start="326.141" data-end="368.516" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">8</span><span class="time">5:26</span></span><span class="t">Scheduled jobs</span></button></li><li><button type="button" data-index="8" data-start="368.516" data-end="406.265" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">9</span><span class="time">6:08</span></span><span class="t">Clean up leftovers</span></button></li><li><button type="button" data-index="9" data-start="406.265" data-end="461.052" aria-current="false"><span class="bar"></span><span class="meta"><span class="n">10</span><span class="time">6:46</span></span><span class="t">Let an agent do it</span></button></li></ol>
+    <nav class="chapters" id="chapters" aria-label="Screencast chapters"><div class="timeline" role="group" aria-label="Chapters on a timeline"><button type="button" data-index="0" data-start="4.014" data-end="28.263" aria-current="false" style="--len: 24.2" title="1 · No setup · 0:04" aria-label="Chapter 1: No setup, at 0:04"><span class="bar"></span></button><button type="button" data-index="1" data-start="28.263" data-end="56.57" aria-current="false" style="--len: 28.3" title="2 · Find the content · 0:28" aria-label="Chapter 2: Find the content, at 0:28"><span class="bar"></span></button><button type="button" data-index="2" data-start="56.57" data-end="73.546" aria-current="false" style="--len: 17.0" title="3 · Find the code · 0:56" aria-label="Chapter 3: Find the code, at 0:56"><span class="bar"></span></button><button type="button" data-index="3" data-start="73.546" data-end="153.673" aria-current="false" style="--len: 80.1" title="4 · Make the change · 1:13" aria-label="Chapter 4: Make the change, at 1:13"><span class="bar"></span></button><button type="button" data-index="4" data-start="153.673" data-end="225.531" aria-current="false" style="--len: 71.9" title="5 · A section as a plan · 2:33" aria-label="Chapter 5: A section as a plan, at 2:33"><span class="bar"></span></button><button type="button" data-index="5" data-start="225.531" data-end="253.66" aria-current="false" style="--len: 28.1" title="6 · Run it again · 3:45" aria-label="Chapter 6: Run it again, at 3:45"><span class="bar"></span></button><button type="button" data-index="6" data-start="253.66" data-end="321.887" aria-current="false" style="--len: 68.2" title="7 · Safety nets · 4:13" aria-label="Chapter 7: Safety nets, at 4:13"><span class="bar"></span></button><button type="button" data-index="7" data-start="321.887" data-end="364.276" aria-current="false" style="--len: 42.4" title="8 · Scheduled jobs · 5:21" aria-label="Chapter 8: Scheduled jobs, at 5:21"><span class="bar"></span></button><button type="button" data-index="8" data-start="364.276" data-end="402.291" aria-current="false" style="--len: 38.0" title="9 · Clean up leftovers · 6:04" aria-label="Chapter 9: Clean up leftovers, at 6:04"><span class="bar"></span></button><button type="button" data-index="9" data-start="402.291" data-end="435.233" aria-current="false" style="--len: 32.9" title="10 · Production is read-only · 6:42" aria-label="Chapter 10: Production is read-only, at 6:42"><span class="bar"></span></button><button type="button" data-index="10" data-start="435.233" data-end="474.102" aria-current="false" style="--len: 38.9" title="11 · Pull from production · 7:15" aria-label="Chapter 11: Pull from production, at 7:15"><span class="bar"></span></button><button type="button" data-index="11" data-start="474.102" data-end="538.226" aria-current="false" style="--len: 64.1" title="12 · Push to production · 7:54" aria-label="Chapter 12: Push to production, at 7:54"><span class="bar"></span></button><button type="button" data-index="12" data-start="538.226" data-end="591.876" aria-current="false" style="--len: 53.6" title="13 · Let an agent do it · 8:58" aria-label="Chapter 13: Let an agent do it, at 8:58"><span class="bar"></span></button></div><div class="index"><div class="group" role="group" aria-labelledby="chapters-g0"><p class="label" id="chapters-g0">Find and change</p><ol><li><button type="button" data-index="0" data-start="4.014" data-end="28.263" aria-current="false"><span class="n">1</span><span class="t">No setup</span><span class="time">0:04</span></button></li><li><button type="button" data-index="1" data-start="28.263" data-end="56.57" aria-current="false"><span class="n">2</span><span class="t">Find the content</span><span class="time">0:28</span></button></li><li><button type="button" data-index="2" data-start="56.57" data-end="73.546" aria-current="false"><span class="n">3</span><span class="t">Find the code</span><span class="time">0:56</span></button></li><li><button type="button" data-index="3" data-start="73.546" data-end="153.673" aria-current="false"><span class="n">4</span><span class="t">Make the change</span><span class="time">1:13</span></button></li></ol></div><div class="group" role="group" aria-labelledby="chapters-g1"><p class="label" id="chapters-g1">Plans</p><ol><li><button type="button" data-index="4" data-start="153.673" data-end="225.531" aria-current="false"><span class="n">5</span><span class="t">A section as a plan</span><span class="time">2:33</span></button></li><li><button type="button" data-index="5" data-start="225.531" data-end="253.66" aria-current="false"><span class="n">6</span><span class="t">Run it again</span><span class="time">3:45</span></button></li></ol></div><div class="group" role="group" aria-labelledby="chapters-g2"><p class="label" id="chapters-g2">Safety and operations</p><ol><li><button type="button" data-index="6" data-start="253.66" data-end="321.887" aria-current="false"><span class="n">7</span><span class="t">Safety nets</span><span class="time">4:13</span></button></li><li><button type="button" data-index="7" data-start="321.887" data-end="364.276" aria-current="false"><span class="n">8</span><span class="t">Scheduled jobs</span><span class="time">5:21</span></button></li><li><button type="button" data-index="8" data-start="364.276" data-end="402.291" aria-current="false"><span class="n">9</span><span class="t">Clean up leftovers</span><span class="time">6:04</span></button></li></ol></div><div class="group" role="group" aria-labelledby="chapters-g3"><p class="label" id="chapters-g3">Environments</p><ol><li><button type="button" data-index="9" data-start="402.291" data-end="435.233" aria-current="false"><span class="n">10</span><span class="t">Production is read-only</span><span class="time">6:42</span></button></li><li><button type="button" data-index="10" data-start="435.233" data-end="474.102" aria-current="false"><span class="n">11</span><span class="t">Pull from production</span><span class="time">7:15</span></button></li><li><button type="button" data-index="11" data-start="474.102" data-end="538.226" aria-current="false"><span class="n">12</span><span class="t">Push to production</span><span class="time">7:54</span></button></li></ol></div><div class="group" role="group" aria-labelledby="chapters-g4"><p class="label" id="chapters-g4">Agents</p><ol><li><button type="button" data-index="12" data-start="538.226" data-end="591.876" aria-current="false"><span class="n">13</span><span class="t">Let an agent do it</span><span class="time">8:58</span></button></li></ol></div></div></nav>
   </div>
 
   <section id="what-its-for">
@@ -214,7 +219,8 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
         <code class="eg">opticli access 123 --revoke Everyone</code></li>
       <li><h3>Plans you can run again</h3>
         <p>With <code>"guidNamespace"</code> every item a plan creates gets the same GUID in every database.
-          <code>--update-existing</code> then updates what is there, restores it from the recycle bin, and leaves finished steps alone.</p>
+          <code>--update-existing</code> then updates what is there, restores it from the recycle bin, and leaves finished steps alone.
+          <code>export</code> writes existing content of any database as such a plan.</p>
         <code class="eg">opticli apply plan.json --update-existing</code></li>
       <li><h3>Rich text from files</h3>
         <p>A plan value of <code>"@body.html"</code> is that file's text, so long rich text stays in reviewable files next to
@@ -235,6 +241,16 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
           run it again after every restore. <code>users add</code> gives you a local admin login, its password in a file
           only you can read.</p>
         <code class="eg">opticli sites primary --from-config</code></li>
+      <li><h3>Production's content, without a bacpac</h3>
+        <p><code>sync pull</code> brings what editors did in production into your local database: new, changed and moved
+          content, matched by GUID and written through your local site. It only reads production, keeps your own local
+          changes, lists conflicts instead of overwriting them, and remembers what it synced, so the next pull is quick.</p>
+        <code class="eg">opticli sync pull --from prod --all --dry-run</code></li>
+      <li><h3>Changes for production: the agent seals, you run</h3>
+        <p>A coding agent can prepare content for production but never write it. <code>sync push</code> seals what changed
+          locally; you run the command it prints in your own terminal, see what it does, type the database's name and a
+          write login that is never saved. It runs only if the plan, the build and production are as sealed.</p>
+        <code class="eg">opticli sync push --to prod /en/campaign/</code></li>
       <li><h3>Scheduled jobs, without surprises</h3>
         <p>See every job's schedule, last run and log, and where its code lives. Run one and wait for its result, stop
           it, or change when it runs. <code>serve</code> keeps a restored database's overdue jobs from all running at
@@ -280,6 +296,7 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
       <li><b>Which database does it use?</b><span>Your local one by default: opticli reads the connection string from the site's Development config. To use a remote database you have to choose it explicitly, and every response then carries a warning.</span></li>
       <li><b>Can a read change anything?</b><span>No. Reads use fixed queries. <code>opticli sql</code> accepts a single <code>SELECT</code> against the site's own database and runs it in a transaction that is rolled back.</span></li>
       <li><b>Can it publish or delete by accident?</b><span>Changes are saved as drafts by the user <code>opticli</code>. Publishing needs <code>--publish</code>, and <code>delete</code> only moves content to the recycle bin, and not while other content still references it.</span></li>
+      <li><b>Can it write to production?</b><span>Not on its own. A database with the role <code>prod</code> is only ever read: every response carries a warning, and <code>serve</code> and every write, dry runs included, are refused. The one way in is a sealed apply that you run in your own terminal, with a write login you type and opticli never saves; an agent can prepare and seal it, not run it.</span></li>
       <li><b>Can starting it change a shared database?</b><span>Against a remote development database, the scheduler, schema updates, content type sync and store remapping are off, and <code>serve</code> won't start a build with EF Core migrations the database lacks. The CMS still registers the build's scheduled jobs and add-on content roots there, and the site's own startup code still runs, so use a login without DDL rights where your add-ons allow it.</span></li>
       <li><b>What if my branch isn't what's deployed?</b><span>opticli compares the build with the shared database: content types, properties, migrations. While they differ, writes stop until you confirm with <code>--accept-drift</code>, and it says which side is ahead. Reads keep working.</span></li>
       <li><b>What can the MCP server do to a production site?</b><span>Only what the signed-in editor may do: every read and save is checked against their access rights, and content they can't read looks the same as content that doesn't exist. Changes are drafts, without script. Publishing and deleting are off until the site turns them on, and approval sequences always apply. Only Claude, or an app on the editor's own machine, can be connected, and editors can see and revoke their connections.</span></li>
@@ -334,6 +351,30 @@ https://your-site.example/episerver/opticli/mcp</pre>
         <code>opticli skill install</code> again to update the skill.</p>
     </div>
     <ol class="changelog">
+      <li><div class="v"><b>0.18.0</b><span>16 October 2026</span></div>
+        <ul>
+          <li><b>Environment roles:</b> <code>db add prod --role prod</code> adds another environment's database by name
+            (asking for the password without showing it), and <code>--db prod</code> reads it for one run. A database with
+            the role <code>prod</code> is only read, from every project: responses carry a warning, and <code>serve</code>,
+            <code>env</code> and every write, dry runs included, are refused. <code>doctor</code> warns when the login saved
+            for it can write.</li>
+          <li><b>Export:</b> <code>export &lt;ref&gt; --descendants</code> (or <code>--site</code>, <code>--all</code>)
+            writes content of any database, production included, as a plan folder with its media and long rich text, and
+            <code>apply --update-existing</code> brings it into another database with the same GUIDs.</li>
+          <li><b>Sync pull:</b> <code>sync pull --from prod --all</code> keeps the local database's content in step with
+            another environment's: what it lacks is created, what differs updated, what was moved moved, matched by GUID
+            and written through the local site. Local changes are kept and conflicts listed, nothing is deleted without
+            <code>--delete</code>, and the next pull only reads what changed since.</li>
+          <li><b>Sealed apply to production:</b> a coding agent prepares and seals a plan (<code>sync push --to prod</code>,
+            or <code>apply --dry-run --seal-for prod</code>) but can't run it. You run the command it prints in your own
+            terminal: it shows what the plan does, asks for the database's name and a write login that is never saved,
+            refuses if the plan, the build or production's content changed since the seal, and writes through your build,
+            started against production for that run only. No deletes, unpublishing, access rights or media; restart
+            production's site afterwards.</li>
+          <li><b>Fixed:</b> a reference written back as <code>get</code> shows it goes by its GUID, so <code>get</code>
+            output from another database can't name other content there by its id. Details, CMS 13 fixes included, in the
+            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
+        </ul></li>
       <li><div class="v"><b>0.17.0</b><span>14 October 2026</span></div>
         <ul>
           <li><b>Refused logins:</b> a database server that answers but refuses the login is now <code>login_failed</code>
@@ -591,9 +632,10 @@ function start() {
   setInterval(paint, 200);
 }
 
-const chapters = [...document.querySelectorAll('#chapters button')];
+// Every chapter has two buttons: its timeline segment and its line in the index.
+const chapters = [...document.querySelectorAll('#chapters button[data-index]')];
 
-// Fill each chapter's bar up to the playback position and mark the chapter that is playing.
+// Fill each chapter's segment up to the playback position and mark the chapter that is playing.
 async function paint() {
   const time = await player.getCurrentTime();
   if (typeof time !== 'number') return;
