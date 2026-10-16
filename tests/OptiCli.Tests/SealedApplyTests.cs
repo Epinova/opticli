@@ -67,6 +67,7 @@ public sealed class SealedApplyTests : IDisposable
     [InlineData("--seal-for", "prod")]
     [InlineData("--connection", Prod)]
     [InlineData("--profile", "Prod")]
+    [InlineData("--version-per-step")]
     public async Task The_run_takes_no_other_option(params string[] option)
     {
         await AddProd();
@@ -198,6 +199,7 @@ public sealed class SealedApplyTests : IDisposable
     [InlineData(new[] { "--seal-for", "prod" }, 1, "usage", null)]
     [InlineData(new[] { "--seal-for", "prod", "--dry-run", "--accept-drift", "a1b2c3d4e5f6" }, 1, "usage", null)]
     [InlineData(new[] { "--seal-for", "prod", "--dry-run", "--allow-outside" }, 1, "usage", null)]
+    [InlineData(new[] { "--seal-for", "prod", "--dry-run", "--version-per-step" }, 1, "usage", null)]
     [InlineData(new[] { "--seal-for", RolesSite.DevDatabase, "--dry-run" }, 3, "refused", "sealTarget")]
     public async Task Sealing_needs_a_dry_run_for_production_and_nothing_that_weakens_it(string[] options, int exit, string code, string? reason)
     {
