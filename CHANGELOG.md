@@ -7,6 +7,28 @@ again to update the skill.
 
 ### New
 
+- `opticli sync pull --from <name> (<ref>... | --site <name> | --all)` keeps the local database's content in step with
+  another environment's: an export of the source (read over SQL only, so production is fine), a diff against the local
+  database by GUID, and an `apply --update-existing` of only what changed, through the local site. What the local
+  database lacks is created, what differs updated (published when the source's branch is), what the source moved moved,
+  what is in the local recycle bin restored, and with `--delete` what the source deleted since it was synced (or has in
+  its recycle bin) moved to the local recycle bin; content only in the local database is left alone. A sync state in the
+  user config folder (per project, source and local database) records what each item's versions were, so the next pull
+  reads only what changed: a local change to content the source changed too is a conflict, listed and left alone unless
+  `--overwrite-local`; a local change alone is kept. The first pull takes the baseline. The source's content model is
+  compared with the local build's over SQL: content of a type the build lacks is skipped and properties it lacks are
+  left out, each listed (`--strict` fails instead), and so are values that refer to content, visitor groups or
+  categories the local database doesn't have. An empty diff applies nothing. It writes only to a database with the role
+  `local` (`refused`, `details.reason: "syncTarget"`, otherwise). Output: counts and lists per action, `run` with
+  `apply`'s report; progress on stderr at a terminal; after Ctrl+C or a failed step the state holds what was saved.
+- `export` reads in batches: a few queries per 250 items instead of about ten per language branch (an `--all` export of
+  a 16 000-item site took 10 s instead of 97 s), with the same plan.
+- `export` brings folders in a "For this page" folder, and what is in them (before: skipped), and a branch scheduled for
+  publishing at a later time as a draft with a `publish` step at that time (before: a plain draft).
+- A plan's `create` takes `"for": <ref>` instead of `"parent"`: a folder in that content's "For this page" folder (made
+  when it doesn't exist), which has a GUID of its own in every database.
+- `move` to the parent the content already has changes nothing (`unchanged` in a plan, a warning); the CMS saved and
+  logged a move to the same place.
 - `opticli export <ref>... [--descendants]` (or `--site <name>`, `--all`) writes content of any database as a plan
   folder (`plan.json`, `files/` with media, `texts/` with long rich text) that `apply --update-existing` brings into
   another database with the same GUIDs. It only reads the database, over SQL, so it works on production (`--db prod`).
@@ -54,6 +76,11 @@ again to update the skill.
 
 ### Changed
 
+- `apply` checks a plan of thousands of steps much faster: what each step's check looked up by scanning the whole plan
+  is indexed once per plan, and the approval sequence of the content steps publish below is read once per ancestor
+  (the dry run of a 17 000-step plan `sync pull` made, reading included: 56 s instead of 240 s).
+- `export` leaves out only the ContentArea item it can't write (a reference to content that doesn't exist), not the whole
+  area (`dropped` names the item: `MainArea[2]`).
 - A `roles` entry in the user config that opticli can't read stops it from using any database until it is fixed, and
   so does a user config that isn't valid JSON or whose root isn't an object (before, such a file was skipped, or
   failed as `internal`): without the roles opticli can't tell production from another database. An empty file counts
@@ -84,6 +111,8 @@ again to update the skill.
 
 ### Skill
 
+- `sync pull`: run it only when the user asked, `--dry-run` first, and never add `--overwrite-local` or `--delete`, or
+  delete the sync state, on its own.
 - The skill tells an agent what `prod` means, never to work around a production refusal or a refused role change,
   and to leave `db add` and `db role` to the user.
 

@@ -257,9 +257,10 @@ opticli apply about-us/plan.json --update-existing --dry-run    # against the de
 ```
 
 - **What**: the refs (one or more), with `--descendants` everything below them; `--site <name>` a site's start page with
-  everything below it, the site's assets and the global assets; `--all` every site. Blocks and media in a "For this
-  page" folder go with the content they belong to. Never the root, the recycle bin, the asset roots themselves or
-  content in the recycle bin. Every language branch, or `--languages en,sv` (an item's master branch always).
+  everything below it, the site's assets and the global assets; `--all` every site. Blocks, media and folders in a "For
+  this page" folder go with the content they belong to (a folder there is made with `create --for`), and what is in such
+  a folder with that folder. Never the root, the recycle bin, the asset roots themselves or content in the recycle bin.
+  Every language branch, or `--languages en,sv` (an item's master branch always).
 - **The folder** (`--out`, default `export-<database>-<time>`; an earlier export's folder is written over, any other
   that isn't empty is refused, also one with a plan of its own): `plan.json`, `files/` with the media files, and `texts/` with rich text
   longer than 4000 characters, which the plan reads as `@file` values.
@@ -270,9 +271,10 @@ opticli apply about-us/plan.json --update-existing --dry-run    # against the de
   and inline blocks, block lists, rich text and CMS 13 compositions (which keep their node keys, so a second run finds
   them). Values that refer to content created later in the plan (a cycle: A links to B and B to A) are written by a
   `set` once both exist. Other language branches are `translate` steps with their culture-specific values. A branch
-  published in the source is published by the last step that writes it; an unpublished one stays a draft (a
-  scheduled one too: its publish time isn't carried over); a newer draft than the published version is left out. A top-level `"source"` says where and when the plan was read, and the
-  version written of each branch; `apply` doesn't read it.
+  published in the source is published by the last step that writes it; an unpublished one stays a draft, and one
+  scheduled for publishing gets a `publish` step with its `publishAt` (a time that has passed leaves it a draft, as the
+  source has it); a newer draft than the published version is left out. A top-level `"source"` says where and when the
+  plan was read, and the version written of each branch; `apply` doesn't read it.
 - **Media**: the files come from `--blobs`, a folder holding the blob containers (a copy of the site's
   `App_Data/blobs`) or an Azure blob container's `https://` URL with a SAS token (read with a plain GET; the token is
   never shown), or, for a local database, from the project's file blob folder (`EPiServer:Cms:FileBlobProvider:Path`,
@@ -282,10 +284,72 @@ opticli apply about-us/plan.json --update-existing --dry-run    # against the de
   out, `externalRefs` (content the plan refers to but doesn't create, with its name and whether it is missing or in
   the source's recycle bin: the target must have it, or the dry run fails with `not_found`), `visitorGroups`
   personalized values show to, `dropped` values that can't be written to another database (a value of a property the
-  source's code no longer has, a reference to content that doesn't exist, rich text with an inline block, an empty CMS 13
+  source's code no longer has, a reference to content that doesn't exist (in a ContentArea only that item), rich text
+  with an inline block (whose values the CMS keeps apart from the text, and no write takes), an empty CMS 13
   composition on a branch other than the master branch, which the CMS can't save safely), references
   to a content provider's content (`providerRefs`, kept as they are), and `notExported`: access rights, other versions
   and who saved them when, and everything that isn't content (Forms submissions, visitor groups, categories, users).
+
+### Pulling content from another environment
+
+`opticli sync pull` keeps the local database's content in step with another environment's. It is an export of the
+source (read over SQL only, so production is fine), a diff against the local database by GUID, and an `apply
+--update-existing` of only what changed, through the local site:
+
+```sh
+opticli db add prod --role prod                    # once, at your terminal: a read-only login
+opticli serve                                      # the local site, on the current build
+opticli sync pull --from prod --all --blobs ../prod-blobs --dry-run
+opticli sync pull --from prod --all --blobs ../prod-blobs --delete
+opticli sync pull --from prod /en/news/            # a ref (or several) and everything below it; --site <name> for one site
+```
+
+- **What it does with each item**, matched by GUID: what the local database lacks is created; what differs is updated
+  (a new version, published when the source's branch is; a newer draft in the source is left out and listed in
+  `drafts`); what the source moved is moved (a `move`, then the update); what is in the local recycle bin and live in
+  the source is restored. With `--delete`, content synced before that the source no longer has, or has in its recycle
+  bin, is moved to the local recycle bin (never deleted for good; content the source has in its recycle bin counts as
+  synced before even on the first pull, since its GUID says it came from there); without it, it is listed in `gone`.
+  Content only in the local database, never synced, is left alone, and so are language branches only it has.
+- **The sync state** (in the user config folder, see [Files](#files)) records per item and language the source's version
+  that was read and the local version it became, so the next pull reads only what changed in either. The first pull of
+  a source takes the **baseline**: every item is compared, what differs is updated. A **local change** since the last
+  pull (a branch saved, the item moved or moved to the recycle bin) to content the source changed too is a **conflict**:
+  listed in `conflicts` and left as it is; `--overwrite-local` writes the source's content over it (the local versions
+  stay in the history, and other people's drafts are included). Content changed only locally is listed in `kept`. Before
+  the baseline exists, a local draft newer than the published version counts as a local change. A local trash of
+  synced content is a conflict too; `--overwrite-local` restores it.
+- **The content model**: the source database's content types and properties are compared with the local database's,
+  which holds the build's once its site has started on that build (types by GUID, then name; properties by name; a
+  property the code no longer has isn't in the build). Content of a type the build lacks is skipped, a property it
+  lacks or has as another type is left out of the values, each listed (`model`, `skipped`). `--strict` fails instead
+  (exit 5, `details.reason: "modelDiffers"`).
+- **What the local database lacks**: a value that refers to content the local database doesn't have (and the pull doesn't
+  create), to a visitor group or a category it doesn't have, is left out and listed in `dropped` (in a ContentArea, only
+  that item); content whose parent isn't there is skipped.
+- **Media** comes from `--blobs` as for `export` (for a local source, the project's file blob folder by default). A media
+  item's file is compared with the local site's (`EPiServer:Cms:FileBlobProvider:Path`, also from the environment);
+  where that can't be read, the upload goes to the site, which compares the bytes.
+- **Output**: `counts` and lists per action (`created`, `updated`, `moved`, `restored`, `trashed`, `conflicts`, `kept`,
+  `gone`, `skipped` with reasons), `dropped`, `drafts` (refs are the source's), `model`, the media `files`, the number of
+  plan `steps` and `run`, `apply`'s report with each step's status and undo hints. An empty diff applies nothing:
+  `steps` is 0 and `run` null. Progress goes to stderr on a terminal. `--out <dir>` keeps the plan the pull applied.
+- **Ctrl+C** (or a failed step) stops the plan; the sync state records only what was saved, so the next pull carries on
+  where it stopped, and the error's `details.run` lists what was saved with undo hints.
+- **Where it may write**: only a database with the role `local` (refused for `dev`, `test` and `prod`, exit 3,
+  `details.reason: "syncTarget"`): a shared database is other people's, and in shared mode its database doesn't hold
+  the build's model. `--from` is picked like `--db` (a name from `db add`, an id or a database name); `--connection` and
+  `OPTICLI_DB` name the local database.
+- **Not synced**: access rights, other versions and who saved them when (the local history says the sync wrote it),
+  Forms submissions, visitor groups, categories, users, the schema and content types. A bacpac (or a database backup)
+  is still the tool for an empty local database, for the schema and what isn't content, and where only a bacpac of
+  production can be had; `sync pull` is for keeping a restored copy, or part of one, current afterwards.
+
+How long it takes, on a local copy of the edge-case site with 16 000 pages and blocks: the first pull into a database
+that has none of them about 6 minutes (a minute to read, compare and check the plan, then about 20 ms a step through the
+site); the baseline of a copy that has them all, 20 seconds; a pull after 50 edits in the source, 7 seconds; one with
+nothing changed, 3–5 seconds (it compares versions only). A site whose saves run event handlers (search indexing, cache
+warmers) writes slower.
 
 ## Safety model
 
@@ -293,6 +357,7 @@ opticli apply about-us/plan.json --update-existing --dry-run    # against the de
 |---|---|
 | A remote database is used only when the user chose it as the development database, or for one run with `--db` or `--connection`, with a warning on every response. Only literal loopback names (`localhost`, `127.0.0.1`, `::1`, `.`, `(local)`) and LocalDB count as local. A host name that resolves to 127.0.0.1 counts as remote. | CLI, before connecting |
 | `export` only reads (over SQL, never through a site), so it works on production; it writes nothing but its own folder. | CLI |
+| `sync pull` only reads its source (over SQL, read-only intent for production) and writes only to a database with the role `local` (refused otherwise, exit 3, `details.reason: "syncTarget"`), through its site, as `apply --update-existing` does. It never deletes for good: `--delete` moves content to the recycle bin. A local change to content the source changed too is a conflict, left alone unless `--overwrite-local`. | CLI, then the site agent |
 | A database with the role `prod` is only read, and only when a run picks it: it is never the development database (`db use` and a saved choice that became production are refused), and `serve`, `env` and every write are refused (exit 3, `details.reason: "prodDatabase"`), whether it was picked by name, id, database name, `--connection`, `--profile`, `OPTICLI_DB` or an exported connection string. Roles belong to a server and database, and a weaker one needs a person at a terminal. Reads connect with `ApplicationIntent=ReadOnly`. | CLI before anything is read, again on the way to the site, and when starting it |
 | The site started by `serve` is pinned to the database the CLI reads. It refuses to start against any remote database except the approved development one. There it runs without scheduler, schema updates, content type sync or store remapping, and `serve` refuses a build with EF Core migrations the database lacks. If the site turns hosting startups off in its code, so the pin can't run, it refuses to start. | CLI + site agent at startup |
 | The site agent answers only loopback callers that send the per-run token, and only in `Development`. The token is kept in a state file only your user can read. | Site agent, per request |
@@ -426,6 +491,8 @@ These commands write:
   [Local users](#local-users-after-a-database-restore).
 - `types remove`, `types remove-property` and `types prune` remove content types and properties that removed code left
   in the database; see [Orphaned content types](#orphaned-content-types-and-properties).
+- `sync pull --from <name>` brings another environment's content into the local database, writing only what changed;
+  see [Pulling content from another environment](#pulling-content-from-another-environment).
 - `apply plan.json` runs several operations validated together. Later operations can refer to an item an earlier
   one created as `$id`. A property value `"@texts/body.html"` is that file's text, as `Prop=@file` is on the command
   line. Files in a plan are relative to the plan file and must stay inside its folder. With `"guidNamespace"`, what a
@@ -878,6 +945,7 @@ the site's own, newer CMS assemblies at runtime. It ships no copies of them.
 | `serve` state, start lock and logs (the last 3 runs) | `$XDG_STATE_HOME/opticli/` (default `~/.local/state/opticli/`) | `%LOCALAPPDATA%\opticli\` |
 | Generated passwords of `users add` | `$XDG_STATE_HOME/opticli/users/<project>/<name>.txt`, readable by you only (the folders too) | `%LOCALAPPDATA%\opticli\users\<project>\<name>.txt`, in your user profile, which other users can't read by default (opticli sets no ACL of its own) |
 | What `types remove`, `remove-property` and `prune` removed (one JSON line each, never rotated) | `$XDG_STATE_HOME/opticli/removals.jsonl`, readable by you only | `%LOCALAPPDATA%\opticli\removals.jsonl` |
+| The sync state of `sync pull`, one file per project, source and local database (delete one to take a new baseline) | `$XDG_CONFIG_HOME/opticli/sync/<hash>.json`, readable by you only | `%APPDATA%\opticli\sync\<hash>.json` |
 
 You can set per-project defaults in the user config (`output`, `port`, `https` and `scheduler` for `serve`).
 `opticli db use` adds the chosen `database` there, `opticli db add` an entry to `databases` (and its role to `roles`,
@@ -1395,13 +1463,21 @@ new pages with a cycle between two of them, a block in a "For this page" folder,
 move, a page in the recycle bin, a new language branch; on CMS 13 also a Visual Builder experience). `round-trip.sh`
 exports part of it and applies the plan to a fresh copy of the base database whose ids differ from the source's, then
 compares every item and language branch the plan writes in both databases (`get --full --all-properties`, ids,
-versions and who saved when aside; publish dates included), and applies it again, which must change nothing. Both stop
-the sites they start; `round-trip.sh` drops its target unless `KEEP_TARGET=1`. Each script's comment lists its
-modes and settings (`OPTICLI` picks the opticli to run, e.g. a wrapper around this checkout's build).
+versions and who saved when aside; publish dates included), and applies it again, which must change nothing.
+`sync-pull.sh` tests `sync pull` on copies of its own (`alloy-edge-sync-source` and `alloy-edge-sync-target`, ids
+shifted): the baseline (a page in the target's recycle bin restored), then make-source.sh's changes and
+`sync-changes.plan.json`'s (a folder in a "For this page" folder, a page scheduled for 2030, a page of a type the target
+lacks) pulled with `--delete` and compared item by item as round-trip.sh compares them, a second pull that applies
+nothing, a conflict and `--overwrite-local`, a local change kept, and a local trash that is a conflict until
+`--overwrite-local` restores it. They all stop the sites they start; `round-trip.sh` drops its target unless
+`KEEP_TARGET=1`, `sync-pull.sh` both copies unless `KEEP=1`. Each script's comment lists its modes and settings
+(`OPTICLI` picks the opticli to run, e.g. a wrapper around this checkout's build).
 
 ```sh
 SQLCMDPASSWORD=... tests/fixtures/sync/round-trip.sh                       # CMS 12: /demo/AlloyEdge, alloy-edge
 SQLCMDPASSWORD=... tests/fixtures/sync/round-trip.sh /demo/AlloyEdge13 alloy-edge13 alloy-edge-13-source alloy-edge-13-target
+SQLCMDPASSWORD=... tests/fixtures/sync/sync-pull.sh                        # CMS 12
+SQLCMDPASSWORD=... tests/fixtures/sync/sync-pull.sh /demo/AlloyEdge13 alloy-edge13 alloy-edge-13-sync-source alloy-edge-13-sync-target
 ```
 
 #### The MCP test site

@@ -76,6 +76,7 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
 | Run a job now (only when asked) | `opticli jobs run "<job name>"` (needs `serve`; waits for it) |
 | Sign in locally to a restored database (only when asked) | `opticli users add <name> --dry-run` (needs `serve`); `opticli users roles` |
 | Copy content from another environment's database (only when asked) | `opticli export <ref> --descendants --db <name> --out <dir>`, then `opticli apply <dir>/plan.json --update-existing --dry-run` |
+| Bring the local database up to date with another environment's content (only when asked) | `opticli sync pull --from <name> --all --dry-run` (needs `serve`), then without `--dry-run` once the user agrees |
 | Anything else (read-only) | `opticli sql "SELECT TOP 10 ... FROM tblContent ..."` |
 
 ## Recipes
@@ -102,6 +103,14 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
   `externalRefs` (content the plan refers to but doesn't create: the development database must have it), `skipped`,
   `drafts` and `dropped`, then `opticli apply <dir>/plan.json --update-existing --dry-run` against the development
   database, and run it once the user agrees. Applying it to production is refused, as every write there.
+- **Keep the local database in step with another environment** (only when the user asked): `opticli sync pull --from
+  <name> --all` (or refs, or `--site <name>`; needs `serve` on the local database, on the current build). It creates,
+  updates, moves and restores what changed in the source, by GUID; `--delete` also moves what the source deleted to
+  the local recycle bin. Run `--dry-run` first and show the user `counts`, `conflicts`, `skipped`, `dropped` and `model`.
+  A **conflict** is content changed both locally and in the source since the last pull: it is left alone, and
+  `--overwrite-local` writes over the local change. Never add `--overwrite-local` or `--delete` on your own: ask the user,
+  naming what they overwrite or trash. It writes only to a `local` database (`refused`, `details.reason: "syncTarget"`,
+  for any other): don't work around that either. Don't delete the sync state file to get rid of conflicts.
 - **Just the metadata of an item** (`saved`, `changedBy`, `status`): `opticli get <ref> --fields name`. Without
   `--version`, `get` shows the published version, or the latest draft when the branch was never published.
 

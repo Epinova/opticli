@@ -167,6 +167,7 @@ directly: see [Approval sequences](#approval-sequences).
 | `users add <name> [--role R]... [--password-stdin]` | `opticli users add dev --dry-run` (only when the user asked; see [Local users](#local-users)) |
 | `users remove <name>` | `opticli users remove dev` |
 | `apply <plan.json\|->` | `opticli apply plan.json --dry-run` |
+| `sync pull --from <name> (<ref>... \| --site <name> \| --all) [--delete] [--overwrite-local]` | `opticli sync pull --from prod --all --dry-run` (only when the user asked; see [Sync pull](#sync-pull)) |
 
 `unpublish` takes a published branch offline as the edit UI's expiry does: a copy of the published version with
 `StopPublish` set to now is published (`unpublished: true`), drafts stay as they are, and `get` notes that it is offline.
@@ -666,6 +667,8 @@ Ops: `set`, `create`, `area`, `block`, `upload`, `translate`, `publish`, `unpubl
 - A string value `"@path"` anywhere in `properties` is that file's text, like `Prop=@file`:
   `"MainBody": "@texts/article.html"`. `"@@..."` is a literal `@`.
 - `{"op": "upload", "id": "q1", "file": "files/q1.pdf", "parent": "$reports"}`.
+- A folder in a page's "For this page" folder: `{"op": "create", "id": "files", "for": "$page", "type": "SysContentFolder",
+  "name": "Files"}` (`for` instead of `parent`, as for `block` and `upload`); what goes in it takes `"parent": "$files"`.
 - Plan files (`@path` values and upload files) are relative to the plan file (the working directory for `-`) and must
   stay inside its folder, also through symlinks, unless `apply --allow-outside`.
 - `{"op": "access", "ref": "$page", "grant": {"Authenticated": "Read"}, "revoke": ["Everyone"], "breakInheritance": true}`
@@ -743,18 +746,19 @@ works on production, and writes a folder:
   earlier export's folder (its `plan.json` has export's `source`) is written over, any other non-empty one refused
   (usage), also a folder with a plan of its own.
 - What: each ref (`--descendants`: and everything below it); `--site`: the start page and everything below it, the site's
-  assets and the global assets (not those folders themselves); `--all`: every site. Blocks and media in a "For this page"
-  folder come with their owner. Never the root, the recycle bin, asset roots, "For this page" folders themselves,
-  content in the recycle bin, blueprints, or content of other kinds than pages, blocks, media and folders (`skipped`).
+  assets and the global assets (not those folders themselves); `--all`: every site. Blocks, media and folders in a "For
+  this page" folder come with their owner, and what is in such a folder with it. Never the root, the recycle bin, asset
+  roots, "For this page" folders themselves, content in the recycle bin, blueprints, or content of other kinds than
+  pages, blocks, media and folders (`skipped`).
 - Branches: all, or the master branch plus `--languages`. A published branch's published version; a branch never
-  published: its newest draft, written as a draft (a scheduled one too, without its publish time). A newer draft than
-  the published version is left out (`drafts`).
+  published: its newest draft, written as a draft; when it is scheduled for publishing at a later time, a `publish`
+  step with `publishAt` follows. A newer draft than the published version is left out (`drafts`).
 
 The plan, in order:
 1. One step per item, parents first (and a "For this page" folder's owner before its content), then where references
    allow it content before what refers to it: `{"op": "create"|"block"|"upload", "id": "c<guid without dashes>",
-   "guid": "<source GUID>", "parent": "$id"|"<GUID>"}` (`"for": "$id"|"<GUID>"` instead of `parent` in a "For this
-   page" folder), `type`, `name`, `lang` (master language), `file` (upload), `properties` and `"publish": true` when the
+   "guid": "<source GUID>", "parent": "$id"|"<GUID>"}` (`"for": "$id"|"<GUID>"` instead of `parent` directly in a "For
+   this page" folder, folders too), `type`, `name`, `lang` (master language), `file` (upload), `properties` and `"publish": true` when the
    branch is published (folders never). `properties` has every property of the type (null clears one the target has)
    except values that refer to content created by this step or a later one, plus the built-in settings: `StartPublish`,
    `StopPublish`, pages' `PageURLSegment`, `PageVisibleInMenu`, `SimpleAddress`, `Shortcut`, `ChildSortOrder`,
@@ -764,6 +768,7 @@ The plan, in order:
 3. `{"op": "translate", "ref": "$id", "lang": "sv", "name": ..., "properties": {...}}` per other branch, with its
    culture-specific values and `StartPublish`, `StopPublish`, `PageURLSegment`, `SimpleAddress`, `Shortcut`; on CMS 13 a
    `set` with the branch's `composition` after it (translate takes none). The last step of a published branch publishes it.
+4. `{"op": "publish", "ref": "$id", "lang": ..., "publishAt": "<UTC time>"}` per branch scheduled for later in the source.
 
 Values are plain (never `get`'s `{type, value}`): references to planned content are `"$id"`, to anything else the GUID
 (never an id), also in local and inline blocks, block lists, ContentReferenceLists, a shortcut's `to` and a
@@ -788,10 +793,57 @@ for none), `files` (`count`, `bytes`, `from`), `texts`, `heldBack` (values a lat
 plan refers to and doesn't create: `guid`, `ref`, `type`, `name`, `missing`/`deleted` in the source, `placement` when
 something is created under it, `from[]`: the target needs it, or the dry run fails with `not_found`), `visitorGroups[]`
 (`id`, `name`; null for a role), `dropped[]` (`guid`, `language`, `property`, `reason`: a property the source's code no
-longer has, a reference without a GUID, rich text with an inline block, a composition node whose block isn't stored,
+longer has, a reference without a GUID (in a ContentArea only that item, `MainArea[2]`), rich text with an inline block
+(its values are stored apart from the text, and no write takes them), a composition node whose block isn't stored,
 an empty composition on a branch other than the master branch),
 `providerRefs[]` (a content provider's content, kept as `id__provider`), `notExported`. Warnings sum up what needs
 attention.
+
+## Sync pull
+
+`opticli sync pull --from <name|id> (<ref>... | --site <name> | --all) [--languages en,sv] [--delete] [--overwrite-local]
+[--strict] [--blobs <dir|https URL>] [--out <dir>] [--dry-run]`. Needs `serve` on the local database, which must have the
+role `local` (else `refused`, `details.reason: "syncTarget"`); `--from` is picked as `--db` is (`--connection` and
+`OPTICLI_DB` name the local database). A ref syncs it and everything below it (found in the source).
+
+It exports the source as `export` does (read over SQL only), compares by GUID with the local database and the sync
+state (`<user config folder>/sync/<hash>.json`, per project, source and local database: per item and language, the
+source's version read and the local version it became), and applies a plan of only what changed, as `apply
+--update-existing` (plus a `move` step before an item the source moved, and `delete` steps with `ignoreReferences` for
+`--delete`). Per item:
+
+| Source | Local | Last sync | Result |
+|---|---|---|---|
+| has it | lacks it | not synced (or the sync trashed it) | `created` |
+| has it | in the recycle bin | not synced, or the sync trashed it | `restored` |
+| has it | in the recycle bin, or deleted for good | synced | conflict ("moved to the recycle bin in the target"); `--overwrite-local`: restored |
+| unchanged since | unchanged since | synced | unchanged (not read) |
+| unchanged since | changed (a branch saved, moved) | synced | `kept` |
+| changed (version, publish state, place) | unchanged since | synced | compared: `updated` and/or `moved`, or unchanged |
+| changed | changed | synced | compared: unchanged when the same, else a conflict; `--overwrite-local`: updated |
+| has it | has it | no state yet (the baseline) | compared: `updated`/`moved`, unchanged, or a conflict when the local branch has a newer draft than its published version |
+| gone, or in its recycle bin | has it | synced, or (no state) the GUID is in the source's recycle bin | `--delete`: `trashed` (a conflict when changed locally); else `gone` |
+| — | only local, never synced | — | left alone |
+
+Compared means every value the plan would write (with references by GUID), the name and the publish state, per branch;
+values only the local model has and the GUID of a "For this page" folder in URLs don't count; a media item's file by
+SHA-256 when the local site's file can be read (else the upload goes to the site, which compares it).
+
+What the local database can't take: content of a type its build lacks (`skipped`; types by GUID, then name), a property
+it lacks or has as another type (left out; both listed in `model[]`: `type`, `property`, `difference`; `--strict`
+fails instead with `conflict`, exit 5, `details.reason: "modelDiffers"`, `details.differences`), a value referring to
+content it lacks and the pull doesn't create, or to a visitor group or category it lacks (`dropped`; in a ContentArea
+only that item), content whose parent it lacks (`skipped`).
+
+Output (`data`): `source`, `target` (`server`, `database`, `role`), `dryRun`, `baseline` (the first pull from this
+source), `state` (the file), `counts` (`created`, `updated`, `moved`, `restored`, `trashed`, `unchanged`, `kept`,
+`conflicts`, `gone`, `skipped`), the lists `created[]`, `updated[]`, `moved[]`, `restored[]`, `trashed[]`, `conflicts[]`,
+`kept[]`, `gone[]`, `skipped[]` (`guid`, `ref` (the local one), `type`, `name`, `reason`), `dropped[]`, `drafts[]` (newer
+drafts in the source, with the source's refs), `model[]`, `files` (`count`, `bytes`, `from`), `steps` (0: nothing to
+apply, and nothing was), `plan` (the folder, with `--out`), `run` (`apply`'s report: each step's `status`, `result`,
+`undo`), `notSynced`. A dry run validates the plan against the local site and changes neither the database nor the
+state. On a failed step or Ctrl+C the error's `details` is the same object, `run` with `partial: true`; the state has
+what was saved, so the next pull carries on.
 
 ## serve and env
 
