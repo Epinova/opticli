@@ -58,6 +58,20 @@ public sealed record PlanRun(bool DryRun, IReadOnlyList<PlanStepResult> Operatio
 /// <param name="requestApproval">Every step that publishes requests approval where a sequence applies (<c>apply --request-approval</c>).</param>
 public sealed class PlanRunner(ContentSession session, WriteExecutor executor, string planDirectory, bool allowOutside = false, Queries.AllowedTypesCheck? allowedTypes = null, bool requestApproval = false)
 {
+    /// <summary>
+    /// <c>sync pull</c> only: a create, block or upload step that updates existing content which an earlier <c>move</c>
+    /// step of the plan moves (by its GUID) is dry-run where the content is now, so it isn't taken for content that was
+    /// moved elsewhere. Plain <c>apply</c> keeps its rule: existing content under another parent than the step's is a
+    /// conflict.
+    /// </summary>
+    public bool MovesFirst { get; init; }
+
+    /// <summary>The approval sequence of existing content steps publish below, by ref, read once per plan run.</summary>
+    private readonly Dictionary<string, Queries.ApprovalSequence?> _approvals = new(StringComparer.Ordinal);
+
+    /// <summary>Called after each step is checked (<c>"checking"</c>) and after each one runs (<c>"applying"</c>), with how many of how many.</summary>
+    public Action<string, int, int>? Progress { get; init; }
+
     /// <exception cref="OptiCliException">
     /// Validation failed (nothing written), or a step failed during execution; <c>details</c> is the
     /// <see cref="PlanRun"/> with each step's status, results of the saved steps and undo hints.
@@ -85,6 +99,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             var (result, failure) = await ValidateAsync(step, steps, existing, resolved, targets, masters, cancellationToken);
             checks.Add(result);
             firstFailure ??= failure;
+            Progress?.Invoke("checking", checks.Count, steps.Count);
         }
         if (firstFailure is not null)
         {
@@ -121,6 +136,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                 results.Add(new PlanStepResult(step.Index, operation.Kind, operation.Id, Changed(outcome.Output) ? PlanStepStatus.Saved : PlanStepStatus.Unchanged,
                     outcome.Output, Undo: UndoHints.For(operation, outcome.Output), Warnings: outcome.Warnings.Count > 0 ? outcome.Warnings : null,
                     Guid: operation.ContentGuid));
+                Progress?.Invoke("applying", results.Count, steps.Count);
             }
             catch (Exception caught)
             {
@@ -236,7 +252,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         {
             var (lang, parent) = step.Operation switch
             {
-                CreateOperation create => (create.Lang, create.Parent),
+                CreateOperation create => (create.Lang, create.For ?? create.Parent),
                 BlockCreateOperation block => (block.Lang, block.For ?? block.Parent),
                 UploadOperation upload => (null, upload.For ?? upload.Parent),
                 _ => ((string?)null, (string?)null),
@@ -338,6 +354,16 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                 {
                     return await SimulateAsync(step, onExisting, steps, existing, cancellationToken);
                 }
+                (op, var moved) = await WhereItIsAsync(op, step.Index, steps, existing, cancellationToken);
+                if (moved is not null)
+                {
+                    var here = await executor.RunAsync(op, dryRun: true, cancellationToken);
+                    if (here.Output is WriteOutput { PendingDraft: { } pendingHere } && !op.IncludeDraft)
+                    {
+                        throw WriteExecutor.UnconfirmedDraft(pendingHere, op);
+                    }
+                    return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Simulated, here.Output, Warnings: [moved, .. here.Warnings], Guid: op.ContentGuid), null);
+                }
             }
             else
             {
@@ -351,6 +377,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                 {
                     return await SimulateAsync(step, simulation, steps, existing, cancellationToken);
                 }
+                (op, var movedFirst) = await WhereItIsAsync(op, step.Index, steps, existing, cancellationToken);
                 if (PlanSimulation.WithStandInLinks(op, steps, existing) is { } linking)
                 {
                     WriteOutcome linked;
@@ -369,7 +396,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                         throw WriteExecutor.UnconfirmedDraft(pending, op);
                     }
                     return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Simulated, linked.Output,
-                        Warnings: ["Its rich text links to content the plan creates; the dry run checked them with that content's GUID (or a stand-in), and the plan links them when it runs.", .. linked.Warnings],
+                        Warnings: ["Its rich text links to content the plan creates; the dry run checked them with that content's GUID (or a stand-in), and the plan links them when it runs.", .. (movedFirst is null ? [] : (string[])[movedFirst]), .. linked.Warnings],
                         Guid: op.ContentGuid), null);
                 }
                 if (op is AreaEdit { Action: Protocol.AreaOps.Add } add && await AreaPlacementAsync(add, steps, cancellationToken) is { } checkedAdd)
@@ -395,6 +422,39 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         {
             return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Invalid, ex.Details, Error(ex), Guid: op.ContentGuid), ex);
         }
+    }
+
+    /// <summary>The first move step of each content GUID a plan moves by its GUID.</summary>
+    private Dictionary<Guid, PlanStep> Moves(IReadOnlyList<PlanStep> steps) =>
+        _moves ??= steps.Where(s => s.Operation is MoveOperation move && Guid.TryParse(move.Ref, out _))
+            .GroupBy(s => Guid.Parse(((MoveOperation)s.Operation).Ref)).ToDictionary(g => g.Key, g => g.First());
+
+    private Dictionary<Guid, PlanStep>? _moves;
+
+    /// <summary>
+    /// <see cref="MovesFirst"/>: a create, block or upload step on existing content that an earlier move step moves (named by
+    /// its GUID), as the dry run checks it: where the content is now, since the move hasn't happened yet. Other steps, and
+    /// every step without <see cref="MovesFirst"/>, as they are.
+    /// </summary>
+    /// <returns>The step to dry-run, and a note for its warnings when it was changed.</returns>
+    private async Task<(WriteOperation Operation, string? Note)> WhereItIsAsync(WriteOperation op, int index, IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing, CancellationToken cancellationToken)
+    {
+        if (!MovesFirst || op is not (CreateOperation or BlockCreateOperation or UploadOperation) || op.Id is not { } id || op.ContentGuid is not { } guid
+            || !existing.TryGetValue(id, out var contentId)
+            || Moves(steps).GetValueOrDefault(guid) is not { } moving || moving.Index >= index
+            || (await session.HeaderAsync(contentId, cancellationToken)).ParentId is not { } parent)
+        {
+            return (op, null);
+        }
+        var here = WriteOutput.Id(parent);
+        WriteOperation atParent = op switch
+        {
+            CreateOperation create => create with { Parent = here, For = null },
+            BlockCreateOperation block => block with { Parent = here, For = null },
+            UploadOperation upload => upload with { Parent = here, For = null },
+            _ => op,
+        };
+        return (atParent, $"Dry-run under its parent now, {here}: operation {moving.Index} moves it to this step's place first when the plan runs.");
     }
 
     /// <summary>
@@ -650,7 +710,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         // Up through the planned content to the first item that exists.
         for (var hops = 0; reference is not null && PlanSimulation.PlanId(reference) is { } id && hops <= steps.Count; hops++)
         {
-            reference = steps.Select(s => s.Operation).FirstOrDefault(o => o.Id == id) is { } creating ? ParentOf(creating) : null;
+            reference = PlanSimulation.Index(steps).Operation(id) is { } creating ? ParentOf(creating) : null;
         }
         if (reference is null || PlanSimulation.PlanId(reference) is not null)
         {
@@ -658,9 +718,13 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         }
         try
         {
-            var located = await session.LocateAsync(reference, null, cancellationToken);
-            var header = await session.HeaderAsync(located.Id, cancellationToken);
-            var sequence = await Queries.ApprovalReader.ResolveAsync(session.Db, session.Model, header, cancellationToken);
+            // Many steps of one plan share their nearest existing ancestor (a sync's new pages, say): read once.
+            if (!_approvals.TryGetValue(reference, out var sequence))
+            {
+                var located = await session.LocateAsync(reference, null, cancellationToken);
+                var header = await session.HeaderAsync(located.Id, cancellationToken);
+                _approvals[reference] = sequence = await Queries.ApprovalReader.ResolveAsync(session.Db, session.Model, header, cancellationToken);
+            }
             ApprovalRules.Check(sequence, op, $"The content operations[{step.Index}] publishes");
         }
         catch (NotFoundException)
@@ -672,7 +736,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     /// <summary>Where a creating step puts its content; null for a "For this page" folder, which only exists once it runs.</summary>
     private static string? ParentOf(WriteOperation op) => op switch
     {
-        CreateOperation create => create.Parent,
+        CreateOperation { Parent: { } parent } => parent,
         BlockCreateOperation { Parent: { } parent } => parent,
         UploadOperation { Parent: { } parent } => parent,
         _ => null,
@@ -692,7 +756,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         {
             return;
         }
-        var typeName = steps.Select(s => s.Operation).FirstOrDefault(o => o.Id == reference[1..]) switch
+        var typeName = PlanSimulation.Index(steps).Operation(reference[1..]) switch
         {
             CreateOperation create => create.Type,
             BlockCreateOperation block => block.Type,

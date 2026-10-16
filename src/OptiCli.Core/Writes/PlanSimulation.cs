@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 
 namespace OptiCli.Core.Writes;
@@ -40,6 +41,60 @@ public sealed record MasterOrder(int? PublishedBy, string Note);
 /// </summary>
 public static class PlanSimulation
 {
+    /// <summary>
+    /// Lookups over a plan's steps that every step's check needs, made once per list of steps: a plan of thousands of steps
+    /// (a sync of a whole site) would otherwise be scanned for each of its steps.
+    /// </summary>
+    internal sealed class StepIndex
+    {
+        private readonly ConditionalWeakTable<IReadOnlyDictionary<string, int>, HashSet<string>> _planned = new();
+
+        public StepIndex(IReadOnlyList<PlanStep> steps)
+        {
+            Steps = steps;
+            Guids = WritePlan.FixedGuids(steps);
+            foreach (var step in steps)
+            {
+                if (step.Operation.Id is { } id)
+                {
+                    ById.TryAdd(id, step);
+                }
+            }
+        }
+
+        public IReadOnlyList<PlanStep> Steps { get; }
+
+        /// <summary>The first step with each plan id.</summary>
+        public Dictionary<string, PlanStep> ById { get; } = new(StringComparer.Ordinal);
+
+        public Dictionary<string, Guid> Guids { get; }
+
+        /// <summary>The plan ids whose content doesn't exist yet (not in <paramref name="existing"/>).</summary>
+        public HashSet<string> Planned(IReadOnlyDictionary<string, int> existing) =>
+            _planned.GetValue(existing, e => ById.Keys.Where(id => !e.ContainsKey(id)).ToHashSet(StringComparer.Ordinal));
+
+        /// <summary>The operation that has the plan id; null for none.</summary>
+        public WriteOperation? Operation(string id) => ById.TryGetValue(id, out var step) ? step.Operation : null;
+
+        /// <summary>The steps after <paramref name="from"/> up to and including <paramref name="to"/>, by index.</summary>
+        public IEnumerable<PlanStep> Between(int from, int to)
+        {
+            // Steps are numbered by their place in the plan; a list that isn't (a test's) is searched instead.
+            for (var i = Math.Max(from + 1, 0); i <= to && i < Steps.Count; i++)
+            {
+                if (Steps[i].Index != i)
+                {
+                    return Steps.Where(s => s.Index > from && s.Index <= to);
+                }
+            }
+            return Enumerable.Range(Math.Max(from + 1, 0), Math.Max(0, Math.Min(to, Steps.Count - 1) - from)).Select(i => Steps[i]);
+        }
+    }
+
+    private static readonly ConditionalWeakTable<IReadOnlyList<PlanStep>, StepIndex> Indexes = new();
+
+    internal static StepIndex Index(IReadOnlyList<PlanStep> steps) => Indexes.GetValue(steps, s => new StepIndex(s));
+
     /// <param name="existing">Plan ids whose content already exists (<c>--update-existing</c>): real refs, not stand-ins.</param>
     /// <param name="updateExisting">Leave the GUID out, so the agent doesn't match it against content under the stand-in.</param>
     /// <returns>
@@ -60,7 +115,7 @@ public static class PlanSimulation
             ? step
             : target is null
                 ? null
-                : steps.FirstOrDefault(s => s.Operation.Id == target && s.Index < step.Index && s.Operation is CreateOperation or BlockCreateOperation or UploadOperation);
+                : Index(steps).ById.TryGetValue(target, out var first) && first.Index < step.Index && first.Operation is CreateOperation or BlockCreateOperation or UploadOperation ? first : null;
         if (creating is null || (target is not null && existing.ContainsKey(target)))
         {
             return null;
@@ -80,7 +135,7 @@ public static class PlanSimulation
         var properties = Properties(creating.Operation)?.DeepClone().AsObject() ?? [];
         var name = NameOf(creating.Operation);
         var language = LanguageOf(creating.Operation);
-        foreach (var later in steps.Where(s => s.Index > creating.Index && s.Index <= step.Index))
+        foreach (var later in Index(steps).Between(creating.Index, step.Index))
         {
             if (later.Operation is SetOperation set && PlanId(set.Ref) == target && SameLanguage(set.Lang, language))
             {
@@ -104,16 +159,27 @@ public static class PlanSimulation
         var standIns = new Dictionary<string, string>(StringComparer.Ordinal);
         string Place(string reference) => StandIn(reference, steps, existing, standIns, depth: 0);
         var (values, skipped, references) = Strip(properties, steps, existing);
+        // Below a folder the plan makes in a "For this page" folder: dry-run in that folder, as the owner's (the CMS checks
+        // what may go there as for its "For this page" folder; a stand-in parent would be the owner itself, a page).
+        var inAssets = Parent(creating.Operation) is { } plannedParent ? AssetsOwner(plannedParent, steps, existing) : null;
+        if (inAssets is not null)
+        {
+            standIns[Parent(creating.Operation)!] = $"the \"For this page\" folder of {Place(inAssets)}";
+        }
 
         WriteOperation simulated = creating.Operation switch
         {
+            CreateOperation create when inAssets is not null => create with { Parent = null, For = Place(inAssets), Name = name ?? create.Name, Properties = values, Publish = publish },
+            BlockCreateOperation block when inAssets is not null => block with { Parent = null, For = Place(inAssets), Name = name ?? block.Name, Properties = values, Publish = publish },
+            UploadOperation upload when inAssets is not null => upload with { Parent = null, For = Place(inAssets), Name = name ?? upload.Name, Properties = values, Publish = publish },
             CreateOperation create => create with
             {
-                Parent = Place(create.Parent),
+                Parent = create.Parent is null ? null : Place(create.Parent),
+                For = create.For is null ? null : Place(create.For),
                 Name = name ?? create.Name,
                 Properties = values,
                 Publish = publish,
-                PlannedParentType = PlanId(create.Parent) is { } parentId && !existing.ContainsKey(parentId) ? TypeOf(parentId, steps) : null,
+                PlannedParentType = create.Parent is not null && PlanId(create.Parent) is { } parentId && !existing.ContainsKey(parentId) ? TypeOf(parentId, steps) : null,
             },
             BlockCreateOperation block => block with
             {
@@ -136,6 +202,36 @@ public static class PlanSimulation
         // A GUID is only checked for the step that creates the content: whether it exists already.
         simulated = simulated with { Id = null, ContentGuid = updateExisting || creating.Index != step.Index ? null : creating.Operation.ContentGuid };
         return new Simulation(simulated, target, standIns, skipped, references);
+    }
+
+    private static string? Parent(WriteOperation op) => op switch
+    {
+        CreateOperation create => create.Parent,
+        BlockCreateOperation block => block.Parent,
+        UploadOperation upload => upload.Parent,
+        _ => null,
+    };
+
+    /// <summary>
+    /// When <paramref name="reference"/> is a folder the plan makes in a "For this page" folder (a create with <c>for</c>),
+    /// or one below such a folder: the content that "For this page" folder belongs to. Null otherwise.
+    /// </summary>
+    private static string? AssetsOwner(string reference, IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing)
+    {
+        for (var hops = 0; hops <= steps.Count && PlanId(reference) is { } id && !existing.ContainsKey(id); hops++)
+        {
+            switch (Index(steps).Operation(id))
+            {
+                case CreateOperation { For: { } owner }:
+                    return owner;
+                case CreateOperation { Parent: { } parent }:
+                    reference = parent;
+                    break;
+                default:
+                    return null;
+            }
+        }
+        return null;
     }
 
     /// <summary>
@@ -426,7 +522,7 @@ public static class PlanSimulation
             PublishOperation publish => (PlanId(publish.Ref), publish.Lang),
             _ => (null, null),
         };
-        if (id is null || steps.FirstOrDefault(s => s.Operation.Id == id && s.Operation is CreateOperation or BlockCreateOperation or UploadOperation) is not { } creating)
+        if (id is null || !Index(steps).ById.TryGetValue(id, out var creating) || creating.Operation is not (CreateOperation or BlockCreateOperation or UploadOperation))
         {
             return null;
         }
@@ -580,7 +676,7 @@ public static class PlanSimulation
 
     /// <summary>The content type a planned id is created as; null for an upload whose type follows from the file.</summary>
     public static string? TypeOf(string planId, IReadOnlyList<PlanStep> steps) =>
-        steps.Select(s => s.Operation).FirstOrDefault(o => o.Id == planId) switch
+        Index(steps).Operation(planId) switch
         {
             CreateOperation create => create.Type,
             BlockCreateOperation block => block.Type,
@@ -595,8 +691,8 @@ public static class PlanSimulation
     /// <returns>Null when the step refers to planned content in any other way (a ref, a ContentArea item, a block in text).</returns>
     public static WriteOperation? WithStandInLinks(WriteOperation op, IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing)
     {
-        var planned = steps.Select(s => s.Operation.Id).OfType<string>().Where(id => !existing.ContainsKey(id)).ToHashSet(StringComparer.Ordinal);
-        var guids = WritePlan.FixedGuids(steps);
+        var planned = Index(steps).Planned(existing);
+        var guids = Index(steps).Guids;
         var other = false;
         var links = false;
         var mapped = op.MapRefs(value =>
@@ -644,8 +740,8 @@ public static class PlanSimulation
         {
             return false;
         }
-        var guids = WritePlan.FixedGuids(steps);
-        return steps.Select(s => s.Operation.Id).OfType<string>().Where(id => !existing.ContainsKey(id))
+        var guids = Index(steps).Guids;
+        return Index(steps).Planned(existing)
             .Select(id => guids.TryGetValue(id, out var fixedGuid) ? fixedGuid : StandInGuid(id))
             .Any(guid => issue.Message.Contains(guid.ToString(), StringComparison.OrdinalIgnoreCase));
     }
@@ -705,9 +801,9 @@ public static class PlanSimulation
         {
             return WriteOutput.Id(existingId);
         }
-        var parent = steps.Select(s => s.Operation).FirstOrDefault(o => o.Id == id) switch
+        var parent = Index(steps).Operation(id) switch
         {
-            CreateOperation create => create.Parent,
+            CreateOperation create => create.For ?? create.Parent,
             BlockCreateOperation block => block.For ?? block.Parent,
             UploadOperation upload => upload.For ?? upload.Parent,
             _ => null,
@@ -727,8 +823,8 @@ public static class PlanSimulation
     /// </summary>
     private static (JsonObject? Values, List<string> Skipped, List<(string, string)> References) Strip(JsonObject properties, IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing)
     {
-        var planned = steps.Select(s => s.Operation.Id).OfType<string>().Where(id => !existing.ContainsKey(id)).ToHashSet(StringComparer.Ordinal);
-        var guids = WritePlan.FixedGuids(steps);
+        var planned = Index(steps).Planned(existing);
+        var guids = Index(steps).Guids;
         var values = new JsonObject();
         var skipped = new List<string>();
         var references = new List<(string, string)>();

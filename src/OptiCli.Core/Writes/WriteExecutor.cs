@@ -377,7 +377,11 @@ public sealed class WriteExecutor(
 
     private async Task<WriteOutcome> CreateAsync(CreateOperation op, bool dryRun, CancellationToken cancellationToken)
     {
-        var parent = await ResolveAsync(op.Parent, "parent", cancellationToken);
+        if ((op.For is null) == (op.Parent is null))
+        {
+            throw new UsageException("Give exactly one of parent or for (the content whose \"For this page\" folder it goes in).");
+        }
+        var parent = await ResolveAsync(op.Parent ?? op.For!, op.Parent is null ? "for" : "parent", cancellationToken);
         // CMS 13: from a blueprint, whose type it is.
         var blueprint = op.Blueprint is { } named ? await BlueprintReader.FindAsync(session, named, cancellationToken) : null;
         var type = string.IsNullOrWhiteSpace(op.Type) && blueprint is not null
@@ -396,7 +400,8 @@ public sealed class WriteExecutor(
         var properties = PropertyNameCheck.Prepare(session.Model, type.Id, split);
         var request = new CreateRequest
         {
-            Parent = parent.ContentRef,
+            Parent = op.Parent is null ? null : parent.ContentRef,
+            ForContent = op.For is null ? null : parent.ContentRef,
             Type = type.Name,
             Name = op.Name,
             Lang = session.Language(op.Lang)?.Code,
@@ -412,7 +417,7 @@ public sealed class WriteExecutor(
             PublishAt = op.PublishAt?.UtcDateTime,
             ParentType = dryRun ? op.PlannedParentType : null,
         };
-        return await CreatedAsync(request, type.Name, cancellationToken, parent.Stored);
+        return await CreatedAsync(request, type.Name, cancellationToken, op.Parent is null ? null : parent.Stored);
     }
 
     private async Task<WriteOutcome> BlockAsync(BlockCreateOperation op, bool dryRun, CancellationToken cancellationToken)
@@ -884,6 +889,12 @@ public sealed class WriteExecutor(
             throw new UsageException($"Can't move {target.Id} below itself.");
         }
         var descendants = await DescendantCountAsync(target.Header, cancellationToken);
+        if (target.Header.ParentId == destination.Id && !target.Header.Deleted)
+        {
+            // The CMS would save a move to where it is (and log one); nothing to do, as a plan run again expects.
+            return new WriteOutcome(DryMove(target, destination.ContentRef, descendants, recycleBin: null) with { DryRun = dryRun },
+                DbSource, null, [$"Content {target.Id} is already under {destination.Id}; nothing to do."]);
+        }
         // A dry run asks the site too: whether the type may go below the new parent is the CMS's answer.
         MoveResult result;
         try

@@ -45,6 +45,36 @@ public static class PropertyRowReader
         return WithCategories(rows, await VersionCategoriesAsync(db, contentId, versionId, languageId, cancellationToken));
     }
 
+    /// <summary>
+    /// <see cref="VersionAsync"/> for several versions at once, in batches: each version's rows, and its built-in category
+    /// (<see cref="BuiltInCategoriesAsync"/>), by version id.
+    /// </summary>
+    public static async Task<(ILookup<int, PropertyRow> Rows, ILookup<int, int> BuiltInCategories)> VersionsAsync(
+        CmsDatabase db, IReadOnlyCollection<(int ContentId, int VersionId, int LanguageId)> versions, CancellationToken cancellationToken)
+    {
+        var owners = versions.GroupBy(v => v.VersionId).ToDictionary(g => g.Key, g => g.First());
+        var rows = new List<(int Version, PropertyRow Row)>();
+        var categories = new List<(int Version, CategoryRow Row)>();
+        foreach (var list in SqlLists.Ints(owners.Keys))
+        {
+            rows.AddRange(await db.QueryAsync($"SELECT fkWorkContentID, {Columns} FROM tblWorkContentProperty WHERE fkWorkContentID IN ({list})", r =>
+            {
+                var owner = owners[r.GetInt32("fkWorkContentID")];
+                return (owner.VersionId, Map(r, owner.ContentId, owner.LanguageId));
+            }, cancellationToken));
+            categories.AddRange(await db.QueryAsync($"SELECT fkWorkContentID, CategoryType, ScopeName, fkCategoryID FROM tblWorkContentCategory WHERE fkWorkContentID IN ({list}) ORDER BY pkID", r =>
+            {
+                var owner = owners[r.GetInt32("fkWorkContentID")];
+                return (owner.VersionId, new CategoryRow(owner.ContentId, owner.LanguageId, r.GetInt32("CategoryType"), r.GetStringOrNull("ScopeName"), r.GetInt32("fkCategoryID")));
+            }, cancellationToken));
+        }
+        var categoriesByVersion = categories.ToLookup(c => c.Version, c => c.Row);
+        var withCategories = rows.GroupBy(r => r.Version)
+            .SelectMany(g => WithCategories(g.Select(r => r.Row).ToList(), categoriesByVersion[g.Key].ToList()).Select(row => (Version: g.Key, Row: row)));
+        return (withCategories.ToLookup(r => r.Version, r => r.Row),
+            categories.Where(c => c.Row.CategoryType == BuiltInCategoryType).ToLookup(c => c.Version, c => c.Row.CategoryId));
+    }
+
     /// <summary>The built-in category of pages and media (<c>CategoryType</c> 0) of one branch, or of one version.</summary>
     public static async Task<IReadOnlyList<int>> BuiltInCategoriesAsync(
         CmsDatabase db, int contentId, int languageId, int? versionId, CancellationToken cancellationToken)

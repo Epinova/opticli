@@ -157,8 +157,9 @@ public sealed record SetOperation(
     public override bool Publishes => Publish || PublishAt is not null;
 }
 
+/// <param name="Parent">Where the content goes; null with <see cref="For"/>.</param>
 public sealed record CreateOperation(
-    string Parent,
+    string? Parent,
     string Type,
     string Name,
     JsonObject? Properties = null,
@@ -179,9 +180,15 @@ public sealed record CreateOperation(
     /// </summary>
     public string? Blueprint { get; init; }
 
-    public override IEnumerable<string?> Refs => [Parent];
+    /// <summary>
+    /// Instead of <see cref="Parent"/>: in this content's "For this page" folder (a plan's <c>for</c>), which the create
+    /// makes when it doesn't exist; for a folder there, which has a GUID of its own in every database.
+    /// </summary>
+    public string? For { get; init; }
 
-    public override WriteOperation MapRefs(Func<string, string> map) => this with { Parent = map(Parent), Properties = MapValues(Properties, map) };
+    public override IEnumerable<string?> Refs => [Parent, For];
+
+    public override WriteOperation MapRefs(Func<string, string> map) => this with { Parent = Map(Parent, map), For = Map(For, map), Properties = MapValues(Properties, map) };
 
     // A step scheduled for later stays scheduled.
     public override WriteOperation WithPublish() => PublishAt is null ? this with { Publish = true } : this;

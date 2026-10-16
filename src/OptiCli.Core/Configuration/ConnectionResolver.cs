@@ -41,9 +41,13 @@ public static class ConnectionResolver
 
     private sealed record Default(ConnectionCandidate? Candidate, SelectionMode? Mode, OptiCliException? Failure);
 
-    public static ConnectionResolution Resolve(ConnectionRequest request, ProjectInfo? project, OptiCliEnvironment environment)
+    /// <param name="runConnection">
+    /// Whether <c>--connection</c> and <c>OPTICLI_DB</c> pick the database. False for a second database a command names
+    /// itself (<c>sync pull --from</c>): those pick the one it works on, and the other is chosen like <c>--db</c>.
+    /// </param>
+    public static ConnectionResolution Resolve(ConnectionRequest request, ProjectInfo? project, OptiCliEnvironment environment, bool runConnection = true)
     {
-        var explicitStep = ExplicitStep(request, environment);
+        var explicitStep = runConnection ? ExplicitStep(request, environment) : new Step([]);
         var userConfig = new Step([]);
         var named = new Step([]);
         var chain = new List<Step>();

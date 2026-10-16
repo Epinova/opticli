@@ -291,6 +291,29 @@ public class WritePlanTests
     }
 
     [Fact]
+    public void A_create_takes_a_parent_or_the_content_whose_for_this_page_folder_it_goes_in()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "create", "id": "page", "parent": "3", "type": "ArticlePage", "name": "P"},
+              {"op": "create", "id": "folder", "for": "$page", "type": "SysContentFolder", "name": "Files"}
+            ]}
+            """);
+        var error = Assert.Throws<UsageException>(() => WritePlan.Parse("""
+            {"operations": [
+              {"op": "create", "type": "SysContentFolder", "name": "Neither"},
+              {"op": "create", "parent": "3", "for": "4", "type": "SysContentFolder", "name": "Both"}
+            ]}
+            """));
+
+        var folder = Assert.IsType<CreateOperation>(plan.Steps[1].Operation);
+        Assert.Equal((null, "$page"), (folder.Parent, folder.For));
+        Assert.Equal(["page"], plan.Steps[1].DependsOn);
+        Assert.Contains("operations[0] (create): give exactly one of \"parent\" and \"for\"", error.Message);
+        Assert.Contains("operations[1] (create): give exactly one of \"parent\" and \"for\"", error.Message);
+    }
+
+    [Fact]
     public void A_guid_namespace_gives_every_creating_step_a_guid_from_its_id()
     {
         var plan = WritePlan.Parse("""

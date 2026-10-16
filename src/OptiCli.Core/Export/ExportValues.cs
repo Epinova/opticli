@@ -16,8 +16,11 @@ namespace OptiCli.Core.Export;
 /// What a reference to content becomes: <c>$id</c> for content the plan creates, else the GUID. It also learns which
 /// content a value refers to (the plan builder orders by it and holds back forward references).
 /// </param>
-/// <param name="where">Prefix for <see cref="Dropped"/> entries, e.g. the item's GUID and language.</param>
-internal sealed partial class ExportValues(Func<Guid, string> reference)
+/// <param name="knownGroup">
+/// Whether the database the plan is for has a visitor group (or role) id; a value personalized for one it lacks is left
+/// out. Null: every id is kept (an export doesn't know where its plan goes).
+/// </param>
+internal sealed partial class ExportValues(Func<Guid, string> reference, Func<string, bool>? knownGroup = null)
 {
     /// <summary>Values that can't be written to another database, left out: property path and why.</summary>
     public List<(string Property, string Reason)> Dropped { get; } = [];
@@ -174,34 +177,43 @@ internal sealed partial class ExportValues(Func<Guid, string> reference)
             }
             var itemPath = $"{path}[{i}]";
             JsonObject written;
-            if (item["inline"] is JsonValue inline && inline.GetValueKind() == JsonValueKind.True)
+            try
             {
-                written = new JsonObject { ["type"] = item["type"]?.DeepClone() };
-                if (item["name"] is { } name)
+                foreach (var group in item["visitorGroups"] as JsonArray ?? [])
                 {
-                    written["name"] = name.DeepClone();
+                    if ((string?)group is { } id)
+                    {
+                        Group(id);
+                    }
                 }
-                if (item["properties"] is JsonObject properties)
+                if (item["inline"] is JsonValue inline && inline.GetValueKind() == JsonValueKind.True)
                 {
-                    written["properties"] = Properties(properties, $"{itemPath}.");
+                    written = new JsonObject { ["type"] = item["type"]?.DeepClone() };
+                    if (item["name"] is { } name)
+                    {
+                        written["name"] = name.DeepClone();
+                    }
+                    if (item["properties"] is JsonObject properties)
+                    {
+                        written["properties"] = Properties(properties, $"{itemPath}.");
+                    }
+                }
+                else
+                {
+                    written = new JsonObject { ["ref"] = Reference(item, itemPath) };
                 }
             }
-            else
+            catch (DroppedValue dropped)
             {
-                written = new JsonObject { ["ref"] = Reference(item, itemPath) };
+                // The item, not the whole area: the rest of it can still be written.
+                Dropped.Add((itemPath, dropped.Message));
+                continue;
             }
             foreach (var field in (string[])["displayOption", "group", "visitorGroups"])
             {
                 if (item[field] is { } kept)
                 {
                     written[field] = kept.DeepClone();
-                }
-            }
-            foreach (var group in item["visitorGroups"] as JsonArray ?? [])
-            {
-                if ((string?)group is { } id)
-                {
-                    VisitorGroups.Add(id);
                 }
             }
             result.Add(written);
@@ -260,7 +272,7 @@ internal sealed partial class ExportValues(Func<Guid, string> reference)
             {
                 if ((string?)group is { } id)
                 {
-                    VisitorGroups.Add(id);
+                    Group(id);
                 }
             }
         }
@@ -304,6 +316,17 @@ internal sealed partial class ExportValues(Func<Guid, string> reference)
         // Anywhere else (an attribute opticli doesn't map): the content still counts.
         Links(text);
         return text;
+    }
+
+    /// <summary>A visitor group a value is personalized for: learnt, or a value the target can't show as it is.</summary>
+    /// <exception cref="DroppedValue">The target doesn't have the group (<c>knownGroup</c>).</exception>
+    private void Group(string id)
+    {
+        if (knownGroup is not null && !knownGroup(id))
+        {
+            throw new DroppedValue($"it is personalized for the visitor group {id}, which the target doesn't have");
+        }
+        VisitorGroups.Add(id);
     }
 
     /// <summary>Whether an object is a reference as <c>get</c> shows it (rather than a structured value).</summary>

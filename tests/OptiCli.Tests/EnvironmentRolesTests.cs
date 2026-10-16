@@ -38,6 +38,7 @@ public sealed class EnvironmentRolesTests : IDisposable
         "restore 1",
         "access 1 --grant Everyone=Read",
         "apply plan.json",
+        "sync pull --from other --all",
         "sites primary Site=localhost:5001",
         "sites host add Site localhost:5001",
         "sites host remove Site localhost:5001",
@@ -278,6 +279,41 @@ public sealed class EnvironmentRolesTests : IDisposable
         Assert.Equal("prod", remove.Json().GetProperty("data").GetProperty("roleKept").GetString());
         Assert.Equal("not_found", again.Error().GetProperty("code").GetString());
         AssertProdRefused(write);
+    }
+
+    [Theory]
+    [InlineData("test")]
+    [InlineData("dev")]
+    public async Task Sync_pull_writes_only_to_a_local_database(string role)
+    {
+        await AddProd();
+        Assert.Equal(0, (await _site.RunAsync("db", "role", await DevId(), role)).ExitCode);
+
+        var run = await _site.RunAsync("sync", "pull", "--from", "prod", "--all");
+
+        Assert.True(run.ExitCode == 3, run.ToString());
+        Assert.Equal("syncTarget", run.Error().GetProperty("details").GetProperty("reason").GetString());
+        Assert.Contains($"has the role {role}", run.Error().GetProperty("message").GetString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Sync_pull_reads_production_but_never_writes_to_it_and_never_from_the_database_it_writes_to()
+    {
+        await AddProd();
+
+        var into = await _site.RunAsync("sync", "pull", "--from", DevDatabase, "--all", "--db", "prod");
+        var same = await _site.RunAsync("sync", "pull", "--from", DevDatabase, "--all");
+        var unknown = await _site.RunAsync("sync", "pull", "--from", "nowhere", "--all");
+        // OPTICLI_DB names the database written to, never the source: --from is chosen as --db is.
+        using var _ = _site.Variable("OPTICLI_DB", $"Server=localhost,1433;Database={DevDatabase};User Id=sa;Password=hunter2-dev");
+        var named = await _site.RunAsync("sync", "pull", "--from", DevDatabase, "--all");
+
+        AssertProdRefused(into);
+        Assert.True(same.ExitCode == 1, same.ToString());
+        Assert.Contains("names the database sync pull writes to", same.Error().GetProperty("message").GetString(), StringComparison.Ordinal);
+        Assert.True(unknown.ExitCode == 2, unknown.ToString());
+        Assert.True(named.ExitCode == 1, named.ToString());
+        Assert.Contains("names the database sync pull writes to", named.Error().GetProperty("message").GetString(), StringComparison.Ordinal);
     }
 
     private async Task<Run> AddProd()

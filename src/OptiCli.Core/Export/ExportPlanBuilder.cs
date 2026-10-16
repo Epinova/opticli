@@ -14,6 +14,14 @@ public sealed record DroppedValue(Guid Guid, string? Language, string Property, 
 /// <param name="Placement">Some item is placed under it (its parent, or the owner of its "For this page" folder).</param>
 public sealed record ExternalReference(Guid Guid, IReadOnlyList<Guid> From, bool Placement);
 
+/// <summary>
+/// What the database a plan is for has, when the builder knows it (a sync knows its target): a value that refers to
+/// content, a visitor group or a category it lacks is left out and listed in <see cref="ExportPlan.Dropped"/>, rather than
+/// failing the plan. An export doesn't know where its plan goes and keeps them all.
+/// </summary>
+/// <param name="HasContent">The content exists there (outside the recycle bin or in it); content the plan creates always does.</param>
+public sealed record ExportTarget(Func<Guid, bool> HasContent, Func<string, bool> HasVisitorGroup, Func<string, bool> HasCategory);
+
 /// <param name="Operations">The plan's steps, in order.</param>
 /// <param name="Texts">Long rich text, by its path relative to the export folder (<c>texts/…</c>), which the plan reads as <c>@file</c>.</param>
 /// <param name="Skipped">Items left out: GUID and why.</param>
@@ -51,8 +59,11 @@ public static class ExportPlanBuilder
 
     private const string CompositionField = Properties.Compositions.Field;
 
-    public static ExportPlan Build(IReadOnlyList<ExportItem> items, int textFileLength = TextFileLength)
+    /// <param name="target">What the plan's database has, when it is known (<see cref="ExportTarget"/>).</param>
+    /// <param name="now">For a branch scheduled for publishing: only a time after this is carried over (default: now).</param>
+    public static ExportPlan Build(IReadOnlyList<ExportItem> items, int textFileLength = TextFileLength, ExportTarget? target = null, DateTime? now = null)
     {
+        var at = now ?? DateTime.UtcNow;
         var skipped = items.Where(i => i.Kind == ContentKind.Media && i.File is null)
             .Select(i => (i.Guid, "media without its file: its bytes weren't found (see --blobs), or --no-media"))
             .ToList();
@@ -69,6 +80,7 @@ public static class ExportPlanBuilder
         var creates = new List<JsonObject>();
         var sets = new List<JsonObject>();
         var branches = new List<JsonObject>();
+        var schedules = new List<JsonObject>();
         var heldBack = 0;
 
         for (var me = 0; me < order.Count; me++)
@@ -85,6 +97,10 @@ public static class ExportPlanBuilder
                     forward |= at >= me && !placement;
                     return $"${PlanId(guid)}";
                 }
+                if (!placement && target is not null && !target.HasContent(guid))
+                {
+                    throw new ExportValues.DroppedValue($"it refers to {guid:D}, which the target doesn't have");
+                }
                 if (!externals.TryGetValue(guid, out var entry))
                 {
                     entry = ([], false);
@@ -95,9 +111,9 @@ public static class ExportPlanBuilder
             }
 
             var master = item.Branches[0];
-            var (now, later) = Values(item, master, isMaster: true, Ref, () => forward, f => forward = f, dropped, groups, providers);
+            var (values, later) = Values(item, master, isMaster: true, Ref, () => forward, f => forward = f, dropped, groups, providers, target);
             heldBack += later.Count;
-            MoveTexts(item, master, now, texts, textFileLength);
+            MoveTexts(item, master, values, texts, textFileLength);
             MoveTexts(item, master, later, texts, textFileLength);
 
             var step = new JsonObject { ["op"] = Op(item.Kind), ["id"] = id, ["guid"] = item.Guid.ToString("D") };
@@ -106,7 +122,7 @@ public static class ExportPlanBuilder
             {
                 step["file"] = item.File;
             }
-            if (item.Owner is { } owner && item.Kind is not ContentKind.Page and not ContentKind.Experience and not ContentKind.Folder)
+            if (item.Owner is { } owner && item.Kind is not ContentKind.Page and not ContentKind.Experience)
             {
                 step["for"] = Ref(owner);
             }
@@ -121,9 +137,9 @@ public static class ExportPlanBuilder
             {
                 step["lang"] = language;
             }
-            if (now.Count > 0)
+            if (values.Count > 0)
             {
-                step["properties"] = now;
+                step["properties"] = values;
             }
             creates.Add(step);
 
@@ -142,15 +158,19 @@ public static class ExportPlanBuilder
             {
                 last["publish"] = true;
             }
+            else if (Scheduled(master, at) is { } masterAt)
+            {
+                schedules.Add(Schedule(id, master.Language, masterAt));
+            }
 
             foreach (var branch in item.Branches.Skip(1))
             {
                 // Every item is created by now: nothing to hold back.
-                var (values, _) = Values(item, branch, isMaster: false, Ref, () => false, _ => { }, dropped, groups, providers);
+                var (branchValues, _) = Values(item, branch, isMaster: false, Ref, () => false, _ => { }, dropped, groups, providers, target);
                 // translate takes no composition: a set on the new branch writes it.
-                var composition = values[CompositionField];
-                values.Remove(CompositionField);
-                MoveTexts(item, branch, values, texts, textFileLength);
+                var composition = branchValues[CompositionField];
+                branchValues.Remove(CompositionField);
+                MoveTexts(item, branch, branchValues, texts, textFileLength);
                 var translate = new JsonObject
                 {
                     ["op"] = "translate",
@@ -158,9 +178,9 @@ public static class ExportPlanBuilder
                     ["lang"] = branch.Language,
                     ["name"] = (string?)branch.Document["name"],
                 };
-                if (values.Count > 0)
+                if (branchValues.Count > 0)
                 {
-                    translate["properties"] = values;
+                    translate["properties"] = branchValues;
                 }
                 branches.Add(translate);
                 var lastOfBranch = translate;
@@ -179,11 +199,15 @@ public static class ExportPlanBuilder
                 {
                     lastOfBranch["publish"] = true;
                 }
+                else if (Scheduled(branch, at) is { } branchAt)
+                {
+                    schedules.Add(Schedule(id, branch.Language, branchAt));
+                }
             }
         }
 
         return new ExportPlan(
-            new JsonArray(creates.Concat(sets).Concat(branches).Select(o => (JsonNode)o).ToArray()),
+            new JsonArray(creates.Concat(sets).Concat(branches).Concat(schedules).Select(o => (JsonNode)o).ToArray()),
             texts,
             skipped,
             externals.Select(e => new ExternalReference(e.Key, e.Value.From.ToList(), e.Value.Placement)).ToList(),
@@ -191,6 +215,60 @@ public static class ExportPlanBuilder
             heldBack,
             groups.ToList(),
             providers.ToList());
+    }
+
+    /// <summary>
+    /// When a branch that was never published is scheduled for publishing (its version waits for <c>DelayPublishUntil</c>,
+    /// which get shows as its <c>startPublish</c>) at a time after <paramref name="now"/>: that time. A time that has passed
+    /// (the source's scheduler hasn't run) leaves it a draft, as it is in the source.
+    /// </summary>
+    private static DateTime? Scheduled(ExportBranch branch, DateTime now) =>
+        !branch.Published && (string?)branch.Document["status"] == "delayedPublish"
+            && DateTime.TryParse((string?)branch.Document["startPublish"], CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var at)
+            && at > now
+            ? at
+            : null;
+
+    /// <summary>A publish of the branch's latest version at <paramref name="at"/>: the scheduled publish a create or translate can't say.</summary>
+    private static JsonObject Schedule(string id, string? language, DateTime at)
+    {
+        var step = new JsonObject { ["op"] = "publish", ["ref"] = $"${id}" };
+        if (language is not null)
+        {
+            step["lang"] = language;
+        }
+        step["publishAt"] = at.ToString("yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'", CultureInfo.InvariantCulture);
+        return step;
+    }
+
+    /// <summary>
+    /// Each branch of an item as a plan would write it, for comparing the same item in two databases (a sync's diff): its
+    /// name, whether it is published, and its values with every reference by GUID. With <paramref name="target"/>, the values
+    /// the plan would leave out are left out here too, and listed in <paramref name="dropped"/>.
+    /// </summary>
+    /// <returns>Per branch (by language, <c>*</c> for content without languages): <c>{name, published, values}</c>.</returns>
+    public static IReadOnlyDictionary<string, JsonObject> Comparable(ExportItem item, ExportTarget? target = null, List<DroppedValue>? dropped = null)
+    {
+        var result = new Dictionary<string, JsonObject>(StringComparer.OrdinalIgnoreCase);
+        string Reference(Guid guid) => target is null || target.HasContent(guid)
+            ? guid.ToString("D")
+            : throw new ExportValues.DroppedValue($"it refers to {guid:D}, which the target doesn't have");
+        foreach (var (branch, i) in item.Branches.Select((b, i) => (b, i)))
+        {
+            var forward = false;
+            var (values, later) = Values(item, branch, i == 0, Reference, () => forward, f => forward = f, dropped ?? [], [], [], target);
+            foreach (var (name, value) in later)
+            {
+                values[name] = value?.DeepClone();
+            }
+            result[branch.Language ?? "*"] = new JsonObject
+            {
+                ["name"] = (string?)branch.Document["name"],
+                ["published"] = branch.Published,
+                ["values"] = values,
+            };
+        }
+        return result;
     }
 
     private static string Op(ContentKind kind) => kind switch
@@ -207,9 +285,9 @@ public static class ExportPlanBuilder
     /// </summary>
     private static (JsonObject Now, JsonObject Later) Values(
         ExportItem item, ExportBranch branch, bool isMaster, Func<Guid, string> reference, Func<bool> isForward, Action<bool> setForward,
-        List<DroppedValue> dropped, SortedSet<string> groups, SortedSet<string> providers)
+        List<DroppedValue> dropped, SortedSet<string> groups, SortedSet<string> providers, ExportTarget? target = null)
     {
-        var converter = new ExportValues(reference);
+        var converter = new ExportValues(reference, target?.HasVisitorGroup);
         var now = new JsonObject();
         var later = new JsonObject();
         void Put(string name, JsonNode? value)
@@ -229,6 +307,11 @@ public static class ExportPlanBuilder
             setForward(false);
             if (converter.Wrapped(wrapped, name, out var plain))
             {
+                if (target is not null && (string?)wrapped?["type"] == "Category" && MissingCategory(plain, target) is { } missing)
+                {
+                    converter.Dropped.Add((name, $"the category '{missing}', which the target doesn't have"));
+                    continue;
+                }
                 Put(name, Escape(plain));
             }
         }
@@ -239,8 +322,22 @@ public static class ExportPlanBuilder
             && (isMaster || item.CultureSpecific.Contains(CompositionField)))
         {
             setForward(false);
-            var written = converter.Composition(composition, CompositionField);
-            if (isMaster || HasNodes(written))
+            JsonObject? written;
+            try
+            {
+                written = converter.Composition(composition, CompositionField);
+            }
+            catch (ExportValues.DroppedValue ex)
+            {
+                // A shared block (or a personalized node) the target lacks: the composition is written whole or not at all.
+                converter.Dropped.Add((CompositionField, ex.Message));
+                written = null;
+            }
+            if (written is null)
+            {
+                setForward(false);
+            }
+            else if (isMaster || HasNodes(written))
             {
                 Put(CompositionField, Escape(written));
             }
@@ -251,6 +348,11 @@ public static class ExportPlanBuilder
         }
         foreach (var (name, value) in BuiltIns(item, branch, isMaster, converter))
         {
+            if (target is not null && name == "Category" && MissingCategory(value, target) is { } missing)
+            {
+                converter.Dropped.Add((name, $"the category '{missing}', which the target doesn't have"));
+                continue;
+            }
             Put(name, value);
         }
 
@@ -259,6 +361,10 @@ public static class ExportPlanBuilder
         providers.UnionWith(converter.ProviderRefs);
         return (now, later);
     }
+
+    /// <summary>The first category in a value (a list of names) that the target doesn't have; null when it has them all.</summary>
+    private static string? MissingCategory(JsonNode? value, ExportTarget target) =>
+        (value as JsonArray ?? []).Select(c => (string?)c).FirstOrDefault(c => c is not null && !target.HasCategory(c));
 
     /// <summary>Whether a composition (as a plan writes it) has a node: a section or element in an outline, a row in a grid.</summary>
     private static bool HasNodes(JsonObject composition) =>
@@ -575,6 +681,9 @@ public static class ExportPlanBuilder
         }
         return component;
     }
+
+    /// <summary>Every content GUID the items' values refer to (not where they are placed).</summary>
+    public static IReadOnlySet<Guid> Referenced(IEnumerable<ExportItem> items) => items.SelectMany(References).ToHashSet();
 
     /// <summary>The content an item's values refer to, in every branch it writes.</summary>
     private static HashSet<Guid> References(ExportItem item)

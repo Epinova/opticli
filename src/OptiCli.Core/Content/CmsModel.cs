@@ -169,6 +169,9 @@ public sealed class CmsModel
 
     public LanguageBranch? Language(int id) => Languages.FirstOrDefault(l => l.Id == id);
 
+    /// <summary>Every category's name, as <c>set</c> takes them.</summary>
+    public IEnumerable<string> CategoryNames => _categories.Values;
+
     /// <summary>A category's name (<c>tblCategory.CategoryName</c>), as <c>set</c> takes it.</summary>
     public string CategoryName(int id) => _categories.TryGetValue(id, out var name) ? name : $"#{id}";
 

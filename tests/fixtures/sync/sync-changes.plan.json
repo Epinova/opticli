@@ -1,0 +1,10 @@
+{
+  "guidNamespace": "4f1d9c2e-7a3b-4e8f-b6d1-9c0e2a5f7b31",
+  "operations": [
+    {"op": "create", "id": "subfolder", "for": "f7a3aca5-85c9-5b56-9fec-4a82895877da", "type": "SysContentFolder", "name": "Sync subfolder"},
+    {"op": "upload", "id": "subImage", "file": "sync-image.png", "parent": "$subfolder", "name": "sync-sub-image.png", "publish": true},
+    {"op": "create", "id": "scheduled", "parent": "f7a3aca5-85c9-5b56-9fec-4a82895877da", "type": "StandardPage", "name": "Sync scheduled page",
+      "properties": {"TeaserText": "Published in 2030"}, "publishAt": "2030-01-01T08:00:00Z"},
+    {"op": "create", "id": "orphanTypePage", "parent": "6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e03", "type": "EdgeRemovedEmptyPage", "name": "Sync orphan-type page", "publish": true}
+  ]
+}

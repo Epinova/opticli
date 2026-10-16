@@ -167,7 +167,7 @@ internal static class ExportCommand
                     : null;
                 if (problem is null)
                 {
-                    var relative = ExportPlanBuilder.FilePath(item.Guid, FileName(name, uri!));
+                    var relative = ExportPlanBuilder.FilePath(item.Guid, ExportFiles.FileName(name, uri!));
                     var destination = Path.Combine(folder, relative);
                     problem = await media!.CopyAsync(uri!, destination, cancellationToken);
                     if (problem is null)
@@ -269,7 +269,7 @@ internal static class ExportCommand
     /// </summary>
     internal static string Folder(string? output, string current, string? database, DateTime now)
     {
-        var folder = Path.GetFullPath(output ?? $"export-{Safe(database ?? "database")}-{now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture)}", current);
+        var folder = Path.GetFullPath(output ?? $"export-{ExportFiles.Safe(database ?? "database")}-{now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture)}", current);
         if (File.Exists(folder))
         {
             throw new UsageException($"{folder} is a file.", "Give --out a folder: a new one, or one an earlier export wrote.");
@@ -327,23 +327,6 @@ internal static class ExportCommand
         }
         var (root, _) = BlobLocator.Root(project.Directory, context.Environment.Variables);
         return Directory.Exists(root) ? BlobSource.Local(root) : null;
-    }
-
-    /// <summary>
-    /// The file's name in the plan: the media item's name when it has the stored file's extension, else the stored
-    /// file's name; characters a file name can't have on some system become <c>_</c>.
-    /// </summary>
-    private static string FileName(string? name, string blobUri)
-    {
-        var stored = BlobLocator.ParseUri(blobUri).File ?? "file";
-        var chosen = name is { Length: > 0 } && Path.GetExtension(name).Equals(Path.GetExtension(stored), StringComparison.OrdinalIgnoreCase) ? name : stored;
-        return Safe(chosen);
-    }
-
-    private static string Safe(string name)
-    {
-        var text = new string(name.Select(c => c < 32 || "<>:\"/\\|?*".Contains(c) ? '_' : c).ToArray()).Trim().TrimEnd('.');
-        return text.Length == 0 ? "file" : text;
     }
 
     private static IReadOnlyDictionary<string, int> Count(IEnumerable<string> values) =>

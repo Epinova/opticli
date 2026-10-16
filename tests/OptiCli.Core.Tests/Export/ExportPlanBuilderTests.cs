@@ -370,4 +370,86 @@ public class ExportPlanBuilderTests
         Assert.Contains(plan.Dropped, d => d.Property == "composition" && d.Language == "nb" && d.Reason.Contains("master branch's stored blocks", StringComparison.Ordinal));
         Parse(operations);
     }
+
+    [Fact]
+    public void A_folder_in_a_for_this_page_folder_goes_with_its_owner_and_what_is_in_it_with_the_folder()
+    {
+        var owner = Page(Section, Start, order: 0);
+        var subfolder = new ExportItem(2, Folder, ContentKind.Folder, "SysContentFolder", Guid.NewGuid(), Section, null, [Branch(null, "Sub")], new HashSet<string>(), Order: 1);
+        var image = new ExportItem(3, Image, ContentKind.Media, "ImageFile", Folder, null, null, [Branch(null, "a.png")], new HashSet<string>(), Order: 2) { File = "files/a.png" };
+
+        var operations = Operations([owner, subfolder, image]);
+
+        var folder = Step(operations, "create", Folder);
+        Assert.Equal((Ref(Section), null), ((string?)folder["for"], (string?)folder["parent"]));
+        Assert.Equal(Ref(Folder), (string?)Step(operations, "upload", Image)["parent"]);
+        Parse(operations);
+    }
+
+    [Fact]
+    public void A_branch_scheduled_for_later_is_published_then_and_one_whose_time_has_passed_stays_a_draft()
+    {
+        var now = new DateTime(2026, 10, 15, 12, 0, 0, DateTimeKind.Utc);
+        var later = Page(PageA, Start, order: 0, published: false);
+        later.Branches[0].Document["status"] = "delayedPublish";
+        later.Branches[0].Document["startPublish"] = "2030-01-01T08:00:00";
+        var passed = Page(PageB, Start, order: 1, published: false);
+        passed.Branches[0].Document["status"] = "delayedPublish";
+        passed.Branches[0].Document["startPublish"] = "2026-01-01T08:00:00";
+
+        var operations = ExportPlanBuilder.Build([later, passed], now: now).Operations;
+
+        var publish = operations.OfType<JsonObject>().Single(o => (string?)o["op"] == "publish");
+        Assert.Equal((Ref(PageA), "en", "2030-01-01T08:00:00Z"), ((string?)publish["ref"], (string?)publish["lang"], (string?)publish["publishAt"]));
+        Assert.Equal("publish", (string?)operations[^1]!["op"]);
+        Assert.Null(Step(operations, "create", PageA)["publish"]);
+        Assert.Null(Step(operations, "create", PageB)["publish"]);
+        Parse(operations);
+    }
+
+    [Fact]
+    public void For_a_known_target_values_that_refer_to_what_it_lacks_are_dropped_and_the_rest_of_an_area_kept()
+    {
+        var group = "5c1b2a0e-3f4d-4a6b-9c8d-7e6f5a4b3c2d";
+        var page = Page(PageA, Start, order: 0, $$$"""
+            {"MainContentArea": {"type": "ContentArea", "value": [{{{Identity(Outside)}}}, {{{Identity(Image)}}}, {"ref": "4", "guid": "{{{PageB}}}", "visitorGroups": ["{{{group}}}"]}]},
+             "PageImage": {"type": "ContentReference", "value": {{{Identity(Outside)}}}},
+             "MainBody": {"type": "XhtmlString", "value": "<p><a href=\"~/link/{{{Outside:N}}}.aspx\">x</a></p>"},
+             "Topics": {"type": "Category", "value": ["News", "Gone"]},
+             "Heading": {"type": "LongString", "value": "Kept"}}
+            """, more: """ "category": ["Gone"] """);
+        var target = new ExportTarget(g => g == Image || g == PageB || g == Start, id => id != group, name => name == "News");
+
+        var plan = ExportPlanBuilder.Build([page], target: target);
+
+        var values = Step(plan.Operations, "create", PageA)["properties"]!.AsObject();
+        // The image stays; the item the target lacks and the item for a visitor group it lacks go.
+        Assert.Equal($$$"""[{"ref":"{{{Image}}}"}]""", values["MainContentArea"]!.ToJsonString());
+        Assert.False(values.ContainsKey("PageImage") || values.ContainsKey("MainBody") || values.ContainsKey("Topics") || values.ContainsKey("Category"));
+        Assert.Equal("Kept", (string?)values["Heading"]);
+        Assert.Equal(["Category", "MainBody", "MainContentArea[0]", "MainContentArea[2]", "PageImage", "Topics"], plan.Dropped.Select(d => d.Property).Order());
+        Assert.Contains(plan.Dropped, d => d.Property == "MainContentArea[2]" && d.Reason.Contains(group, StringComparison.Ordinal));
+        Assert.DoesNotContain(plan.ExternalRefs, e => e.Guid == Outside);
+        Parse(plan.Operations);
+    }
+
+    [Fact]
+    public void Comparable_values_name_every_reference_by_guid_with_held_back_values_in()
+    {
+        var a = Page(PageA, Start, order: 0, $$$"""{"Related": {"type": "ContentReference", "value": {{{Identity(PageB)}}}}, "Heading": {"type": "LongString", "value": "A"}}""",
+            otherBranches: Branch("sv", "A sv", """{"Heading": {"type": "LongString", "value": "A sv", "culture": "sv"}}""", published: false));
+
+        var comparable = ExportPlanBuilder.Comparable(a);
+
+        Assert.Equal(["en", "sv"], comparable.Keys.Order());
+        var en = comparable["en"];
+        Assert.Equal(("Page 0", true), ((string?)en["name"], (bool?)en["published"]));
+        Assert.Equal(PageB.ToString(), (string?)en["values"]!["Related"]);
+        Assert.Equal("A", (string?)en["values"]!["Heading"]);
+        Assert.Equal(("A sv", false), ((string?)comparable["sv"]["name"], (bool?)comparable["sv"]["published"]));
+        // With a target that lacks B, the reference is left out of what is compared, as the plan leaves it out.
+        var dropped = new List<DroppedValue>();
+        Assert.False(ExportPlanBuilder.Comparable(a, new ExportTarget(_ => false, _ => true, _ => true), dropped)["en"]["values"]!.AsObject().ContainsKey("Related"));
+        Assert.Single(dropped);
+    }
 }

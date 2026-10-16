@@ -87,6 +87,43 @@ public static class VersionReader
         (await db.QueryAsync($"{Select(model)} WHERE wc.pkID = @version", r => Map(r, model), cancellationToken,
             new SqlParameter("@version", versionId))).FirstOrDefault();
 
+    /// <summary>Several versions by id, in batches (an export's or a sync's read); versions that don't exist are left out.</summary>
+    public static async Task<IReadOnlyDictionary<int, VersionInfo>> ByIdsAsync(CmsDatabase db, CmsModel model, IEnumerable<int> versionIds, CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<int, VersionInfo>();
+        foreach (var list in SqlLists.Ints(versionIds))
+        {
+            foreach (var version in await db.QueryAsync($"{Select(model)} WHERE wc.pkID IN ({list})", r => Map(r, model), cancellationToken))
+            {
+                result[version.Id] = version;
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// The newest version of each branch of the items, not counting a content variation's (CMS 13): content id and
+    /// language id to version id. What a sync compares to tell whether a branch was saved since it last looked.
+    /// </summary>
+    public static async Task<IReadOnlyDictionary<(int ContentId, int LanguageId), int>> LatestIdsAsync(CmsDatabase db, CmsModel model, IEnumerable<int> contentIds, CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<(int, int), int>();
+        foreach (var list in SqlLists.Ints(contentIds))
+        {
+            var rows = await db.QueryAsync($"""
+                SELECT wc.fkContentID, wc.fkLanguageBranchID, MAX(wc.pkID) AS Latest
+                FROM tblWorkContent wc
+                WHERE wc.fkContentID IN ({list}){model.Schema.DefaultVariationOnly("wc")}
+                GROUP BY wc.fkContentID, wc.fkLanguageBranchID
+                """, r => (Content: r.GetInt32("fkContentID"), Language: r.GetInt32("fkLanguageBranchID"), Latest: r.GetInt32("Latest")), cancellationToken);
+            foreach (var row in rows)
+            {
+                result[(row.Content, row.Language)] = row.Latest;
+            }
+        }
+        return result;
+    }
+
     /// <summary>The branch's newest version, not counting a content variation's (CMS 13).</summary>
     public static async Task<VersionInfo?> LatestAsync(CmsDatabase db, CmsModel model, int contentId, int languageId, CancellationToken cancellationToken) =>
         (await db.QueryAsync($"{Select(model, "TOP 1 ")} WHERE wc.fkContentID = @id AND wc.fkLanguageBranchID = @lang{model.Schema.DefaultVariationOnly("wc")} ORDER BY wc.pkID DESC",

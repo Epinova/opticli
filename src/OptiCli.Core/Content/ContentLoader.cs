@@ -154,6 +154,110 @@ public sealed class ContentLoader(CmsDatabase db, IdentityResolver identities)
     }
 
     /// <summary>
+    /// Several versions as <see cref="GetAsync"/> shows each one (<see cref="VersionKind.Specific"/>), read together in
+    /// batches: headers, versions, values, categories and the content they refer to each take a few queries per batch rather
+    /// than per version, which is what makes an export or a sync of a whole site practical. Left out, since nothing that reads
+    /// this many needs them: notes, the approval sequence and projects. A content variation's version is read on its own,
+    /// as <see cref="GetAsync"/> reads it.
+    /// </summary>
+    /// <returns>Each version's document, by version id; versions that don't belong to the content given are left out.</returns>
+    public async Task<IReadOnlyDictionary<int, ContentDocument>> GetVersionsAsync(
+        IReadOnlyCollection<(int ContentId, int VersionId)> wanted, DecodeOptions options, CancellationToken cancellationToken)
+    {
+        await identities.LoadAsync(wanted.Select(w => w.ContentId), [], cancellationToken);
+        var versions = await VersionReader.ByIdsAsync(db, Model, wanted.Select(w => w.VersionId), cancellationToken);
+        var shown = wanted
+            .Where(w => versions.TryGetValue(w.VersionId, out var v) && v.ContentId == w.ContentId && identities.Header(w.ContentId) is not null)
+            .Select(w => (Header: identities.Header(w.ContentId)!, Version: versions[w.VersionId]))
+            .ToList();
+        var documents = new Dictionary<int, ContentDocument>();
+        foreach (var (header, version) in shown.Where(s => s.Version.Variation is not null))
+        {
+            documents[version.Id] = await GetAsync(header.Id, new VersionSelector(VersionKind.Specific, version.Id), null, options, cancellationToken);
+        }
+        shown = shown.Where(s => s.Version.Variation is null).ToList();
+
+        // A branch other than the master branch shares the master branch's values that aren't culture-specific.
+        var (versionRows, categories) = await PropertyRowReader.VersionsAsync(db, shown.Select(s => (s.Header.Id, s.Version.Id, s.Version.LanguageId)).ToList(), cancellationToken);
+        var shared = (await PropertyRowReader.PrimaryAsync(db,
+                shown.Where(s => s.Version.LanguageId != s.Header.MasterLanguageId).Select(s => s.Header.Id),
+                shown.Where(s => s.Version.LanguageId != s.Header.MasterLanguageId).Select(s => s.Header.MasterLanguageId), cancellationToken))
+            .ToLookup(r => (r.ContentId, r.LanguageId));
+        var trees = shown.Select(s =>
+        {
+            var rows = versionRows[s.Version.Id].AsEnumerable();
+            if (s.Version.LanguageId != s.Header.MasterLanguageId)
+            {
+                rows = rows.Concat(shared[(s.Header.Id, s.Header.MasterLanguageId)]);
+            }
+            return (s.Header, s.Version, Tree: PropertyTree.Build(Effective(rows, s.Version.LanguageId, s.Header.MasterLanguageId)));
+        }).ToList();
+
+        // Everything the values refer to, and every page's shortcut target, in one load.
+        var collector = new ReferenceCollector();
+        foreach (var (header, _, tree) in trees)
+        {
+            Decoder(collector, options, header).Decode(header.TypeId, tree);
+        }
+        var shortcuts = shown.Where(s => Model.Kind(s.Header.TypeId).IsPage()).Select(s => s.Version)
+            .SelectMany(v => new[] { v.ShortcutGuid, LinkTarget.From(automaticLink: false, fetchData: false, contentLinkGuid: null, v.LinkUrl)?.Guid })
+            .OfType<Guid>();
+        await identities.LoadAsync(collector.Ids, collector.Guids.Concat(shortcuts), cancellationToken);
+
+        foreach (var (header, version, tree) in trees)
+        {
+            var branchLanguage = Model.Language(version.LanguageId);
+            var properties = Decoder(new ResolvedReferences(identities, branchLanguage), options, header).Decode(header.TypeId, tree);
+            var kind = Model.Kind(header.TypeId);
+            var composition = Composition(header.TypeId, kind, options, tree, properties);
+            var row = header.Languages.GetValueOrDefault(version.LanguageId);
+            var isPage = kind.IsPage();
+            // As GetAsync: sorting isn't culture-specific, so only the master branch's version has it.
+            var sortingVersion = version.LanguageId == header.MasterLanguageId ? version : null;
+            var category = kind.IsPage() || kind.IsBlock() || kind == Cms.ContentKind.Media ? categories[version.Id].ToList() : [];
+            var identity = identities.Describe(header, branchLanguage, status: version.StatusValue, name: version.Name);
+            documents[version.Id] = new ContentDocument(
+                identity.Ref!,
+                header.Guid,
+                identity.Type!,
+                identity.Name,
+                identity.Language,
+                identity.Status!,
+                identity.Url,
+                kind.Name(),
+                ContentIdentity.RefFor(header.Id, version.Id),
+                null,
+                Model.Language(header.MasterLanguageId)?.DisplayCode,
+                header.Languages.Keys.Select(id => Model.Language(id)?.DisplayCode).OfType<string>().Order().ToList(),
+                header.ParentId is { } parent ? ContentIdentity.RefFor(parent) : null,
+                version.Saved,
+                version.ChangedBy,
+                (version.StatusValue == VersionStatus.DelayedPublish ? version.DelayPublishUntil : null) ?? version.StartPublish,
+                version.StopPublish,
+                isPage ? Queries.ChildOrder.Name(sortingVersion?.ChildOrderRule ?? header.ChildOrderRule) : null,
+                isPage ? sortingVersion?.PeerOrder ?? header.PeerOrder : null,
+                isPage ? version.UrlSegment ?? row?.UrlSegment : null,
+                isPage ? version.VisibleInMenu : null,
+                isPage ? ShortcutInfo.SimpleAddressPath(version.ExternalUrl ?? row?.ExternalUrl) : null,
+                isPage ? await ShortcutAsync(version, branchLanguage, cancellationToken) : null,
+                category.Count == 0 ? null : category.Select(Model.CategoryName).ToList(),
+                LatestDraft: null,
+                header.Deleted ? true : null,
+                RequestedLanguage: null,
+                LanguageRule: null,
+                Approval: null,
+                Projects: null,
+                Notes: null,
+                properties)
+            {
+                Blueprint = header.Blueprint ? true : null,
+                Composition = composition,
+            };
+        }
+        return documents;
+    }
+
+    /// <summary>
     /// CMS 13: the composition of a Visual Builder experience or section, which replaces the properties it is stored in
     /// (<c>Layout</c>, <c>UnstructuredData</c>). Those are shown as stored only when <c>--fields</c> names them; the
     /// composition when <c>--fields</c> is not given or names <c>composition</c>. Null for other content.

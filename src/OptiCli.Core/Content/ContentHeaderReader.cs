@@ -133,6 +133,30 @@ public static class ContentHeaderReader
         return rows.Count > 0 ? rows[0] : null;
     }
 
+    /// <summary>
+    /// For several items at once: each branch's newest version that is not published yet (not a variation's), by content id
+    /// and language id. A branch's newer draft (<see cref="NewerDraftAsync"/>) is that version when it is newer than the
+    /// published one.
+    /// </summary>
+    public static async Task<IReadOnlyDictionary<(int ContentId, int LanguageId), int>> NewestUnpublishedAsync(CmsDatabase db, IEnumerable<int> contentIds, CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<(int, int), int>();
+        var schema = await db.SchemaAsync(cancellationToken);
+        foreach (var list in SqlLists.Ints(contentIds))
+        {
+            var rows = await db.QueryAsync($"""
+                SELECT w.fkContentID, w.fkLanguageBranchID, MAX(w.pkID) AS Newest FROM tblWorkContent w
+                WHERE w.fkContentID IN ({list}) AND w.Status IN ({VersionStatuses.UnpublishedSql}){schema.DefaultVariationOnly("w")}
+                GROUP BY w.fkContentID, w.fkLanguageBranchID
+                """, r => (Content: r.GetInt32("fkContentID"), Language: r.GetInt32("fkLanguageBranchID"), Newest: r.GetInt32("Newest")), cancellationToken);
+            foreach (var row in rows)
+            {
+                result[(row.Content, row.Language)] = row.Newest;
+            }
+        }
+        return result;
+    }
+
     /// <summary>The newest version of a branch that is not published yet and is newer than the published one (not a variation's).</summary>
     public static async Task<int?> NewerDraftAsync(CmsDatabase db, int contentId, int languageId, int? publishedVersion, CancellationToken cancellationToken)
     {

@@ -27,7 +27,7 @@ public sealed partial class WritePlan
     public static readonly IReadOnlyDictionary<string, string[]> Fields = new Dictionary<string, string[]>
     {
         ["set"] = ["ref*", "properties", "name", "lang", "variation", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force"],
-        ["create"] = ["parent*", "type", "blueprint", "name*", "properties", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "id", "guid"],
+        ["create"] = ["parent", "for", "type", "blueprint", "name*", "properties", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "id", "guid"],
         ["area"] = ["ref*", "property*", "action*", "item", "type", "values", "name", "index", "at", "to", "display", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force"],
         ["composition"] = ["ref*", "action*", "node", "nodeType", "in", "at", "value", "lang", "variation", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force"],
         ["block"] = ["type*", "name*", "for", "parent", "properties", "lang", "publish", "includeDraft", "requestApproval", "id", "guid"],
@@ -316,9 +316,10 @@ public sealed partial class WritePlan
                 From = reader.From("from"),
                 Variation = reader.String("variation"),
             },
-            "create" => new CreateOperation(reader.Ref("parent"), reader.String("type") ?? "", reader.String("name") ?? "", reader.Object("properties"), reader.String("lang"), reader.Bool("publish"))
+            "create" => new CreateOperation(reader.OptionalRef("parent"), reader.String("type") ?? "", reader.String("name") ?? "", reader.Object("properties"), reader.String("lang"), reader.Bool("publish"))
             {
                 Blueprint = reader.OptionalRef("blueprint"),
+                For = reader.OptionalRef("for"),
             },
             "composition" => new CompositionEdit(reader.Ref("ref"), reader.String("action") ?? "", reader.String("node"), reader.String("nodeType"), reader.String("in"), reader.Int("at"),
                 reader.Object("value"), reader.String("lang"), reader.Bool("publish"), reader.Int("baseVersion"), reader.Bool("force"))
@@ -412,6 +413,10 @@ public sealed partial class WritePlan
             {
                 problems.Add($"{reader.Where}: \"replace\" replaces the file of existing media; it takes no \"for\", \"parent\", \"type\", \"id\" or \"guid\".");
             }
+        }
+        else if (operation is CreateOperation create && (create.For is null) == (create.Parent is null))
+        {
+            problems.Add($"{reader.Where}: give exactly one of \"parent\" and \"for\" (a folder in that content's \"For this page\" folder).");
         }
         else if ((operation is BlockCreateOperation block && (block.For is null) == (block.Parent is null))
             || (operation is UploadOperation upload && (upload.For is null) == (upload.Parent is null)))

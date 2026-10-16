@@ -31,6 +31,28 @@ public class PlanSimulationTests
     }
 
     [Fact]
+    public void What_goes_in_a_folder_the_plan_makes_in_a_for_this_page_folder_runs_in_that_folder_of_the_owner()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "create", "id": "folder", "for": "200", "type": "SysContentFolder", "name": "Files"},
+              {"op": "create", "id": "deeper", "parent": "$folder", "type": "SysContentFolder", "name": "Deeper"},
+              {"op": "upload", "id": "image", "file": "a.png", "parent": "$deeper"}
+            ]}
+            """);
+
+        var upload = Assert.IsType<UploadOperation>(PlanSimulation.For(plan.Steps[2], plan.Steps, None, updateExisting: false)!.Operation);
+        var folder = Assert.IsType<CreateOperation>(PlanSimulation.For(plan.Steps[1], plan.Steps, None, updateExisting: false)!.Operation);
+
+        // Not under the owner itself (a page, where media can't go): in its "For this page" folder.
+        Assert.Equal(("200", null), (upload.For, upload.Parent));
+        Assert.Equal(("200", null), (folder.For, folder.Parent));
+        // Once the folder exists, its own content runs under it as under any other parent.
+        var existing = Assert.IsType<UploadOperation>(PlanSimulation.For(plan.Steps[2], plan.Steps, new Dictionary<string, int> { ["deeper"] = 301 }, updateExisting: false)!.Operation);
+        Assert.Equal((null, "301"), (existing.For, existing.Parent));
+    }
+
+    [Fact]
     public void Values_that_refer_to_planned_content_are_left_out_and_reported()
     {
         var simulation = PlanSimulation.For(Plan.Steps[2], Plan.Steps, None, updateExisting: false)!;
