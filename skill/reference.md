@@ -915,7 +915,9 @@ After a run, production's servers still show what they had cached: tell the user
   talking to the agent over HTTP. Without a certificate the site fails to start: `dotnet dev-certs https --trust`.
 - The agent refuses to start if the site would use a different database, or a remote one other than the development
   database (exit 3). It answers only loopback callers with the per-run token, and only in Development. `serve`
-  refuses a remote database that isn't the development one.
+  refuses a remote database that isn't the development one. A string from `--connection`/`OPTICLI_DB` can't be
+  chosen: the hint says how to add it to a launch profile, user secrets or `appsettings.Development.json`, so that
+  `opticli db use <id>` can choose it. Pass that on to the user; adding it and choosing it are theirs to do.
 - Against a remote development database the site runs with the scheduler (`--scheduler` is a `usage` error there),
   automatic schema updates, content type sync and Dynamic Data Store remapping off (a warning says so): content types
   or properties that exist only in local code aren't in the database, so writes to them fail. Before it starts the site, `serve` refuses (exit 3) a build with

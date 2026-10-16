@@ -186,9 +186,15 @@ When the database in use is remote, or has a role other than `local`, every resp
 (`server`, `name`, `local`, `development`, `role`). A remote database that isn't the development one also adds a
 warning, and so does a production database.
 
-`serve` runs the site only against a local database or the chosen development database. It sets
-`ConnectionStrings__<Name>` to that database and removes other spellings of it inherited from the shell, so an
-exported one can't win over the pin. It turns the site's scheduler off for every run (see
+`serve` runs the site only against a local database or the chosen development database. Any other remote
+database is refused (exit 3), also one passed with `--connection` or `OPTICLI_DB`, and such a string can't be chosen:
+only one in the site's configuration can. To run the site against it, add it to a launch profile in
+`Properties/launchSettings.json` (`environmentVariables`, `ConnectionStrings__EPiServerDB`; mind the password in a
+committed file), user secrets or `appsettings.Development.json`, then choose it from `opticli db list` with
+`opticli db use <id>`. `serve` then runs against it without `--connection`.
+
+`serve` sets `ConnectionStrings__<Name>` to the database it runs against and removes other spellings of it inherited
+from the shell, so an exported one can't win over the pin. It turns the site's scheduler off for every run (see
 [Scheduled jobs](#scheduled-jobs)), and against a remote one it also turns off, for that run:
 - automatic schema updates;
 - content type sync;

@@ -16,6 +16,13 @@ again to update the skill.
   ancestors (often the root, `from: 1`) instead of the owner. It now follows the owner as the CMS does, and
   `assetsOf` names it.
 
+### Changed
+
+- When `serve` (or `env`) refuses a remote database passed with `--connection` or `OPTICLI_DB`, the hint now says how
+  to make it choosable: add it to a launch profile in `Properties/launchSettings.json` (`environmentVariables`,
+  `ConnectionStrings__<Name>`), user secrets or `appsettings.Development.json`, then choose it from `opticli db list`
+  with `opticli db use <id>`. It only said that a string from the site's configuration can be chosen.
+
 ## 0.18.0 (16 October 2026)
 
 Environments and content sync: give databases roles (production is only read), export content as a plan,

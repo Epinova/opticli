@@ -321,14 +321,32 @@ internal static class ServeCommand
         Core.Safety.ProductionDatabase.RequireNot(connection, "run the site against");
         if (!resolution.IsDevelopment)
         {
-            var choose = resolution.Chosen is { IsSelectable: true, Id: { } id }
-                ? $"If it is the development database, the user makes it so with `opticli db use {id}` (ask them; don't choose for them)."
-                : "Only a connection string from the site's configuration can be chosen as the development database (`opticli db list`).";
             throw new RefusedException(
                 $"Not running the site against '{connection.Database}' on remote server '{connection.Server}': it is not this project's development database.",
-                $"The site only runs against a local database or the development database the user chose. {choose} Reads with --db work; writes to other environments are not supported.");
+                NotDevelopmentHint(resolution));
         }
         return connection;
+    }
+
+    /// <summary>
+    /// How the remote database in use becomes the development database. A string from <c>--connection</c> or
+    /// <c>OPTICLI_DB</c> can't be chosen: it has to be in the site's configuration first, where <c>db list</c> finds it.
+    /// </summary>
+    internal static string NotDevelopmentHint(ConnectionResolution resolution)
+    {
+        var (choose, reads) = resolution.Chosen switch
+        {
+            { IsSelectable: true, Id: { } id } =>
+                ($"If it is the development database, the user makes it so with `opticli db use {id}` (ask them; don't choose for them).", "--db"),
+            { Source: ConnectionSource.Flag or ConnectionSource.OptiCliDb } chosen =>
+                ($"A connection string from {chosen.Location} can't be chosen as the development database; one in the site's configuration can. "
+                    + $"If it is the development database, the user adds it there: user secrets (`ConnectionStrings:{resolution.Name}`), appsettings.Development.json, "
+                    + $"or a launch profile's `environmentVariables` in Properties/launchSettings.json (`ConnectionStrings__{resolution.Name}`); mind the password in a committed file. "
+                    + $"Then the user chooses it from `opticli db list` with `{ConnectionResolver.UseCommand}` (ask them; don't choose for them), and the site runs against it without {chosen.Location}.",
+                    chosen.Location),
+            _ => ("Only a connection string from the site's configuration can be chosen as the development database (`opticli db list`).", "--db"),
+        };
+        return $"The site only runs against a local database or the development database the user chose. {choose} Reads with {reads} work; writes to other environments are not supported.";
     }
 
     /// <summary>
