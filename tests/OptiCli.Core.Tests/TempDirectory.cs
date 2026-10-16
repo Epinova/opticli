@@ -28,6 +28,22 @@ internal sealed class TempDirectory : IDisposable
         {
             Directory.Delete(Path, recursive: true);
         }
+        catch (UnauthorizedAccessException)
+        {
+            // Windows won't delete a read-only file, and git's objects are read-only: clear the flag and try again.
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(Path, "*", SearchOption.AllDirectories))
+                {
+                    File.SetAttributes(file, FileAttributes.Normal);
+                }
+                Directory.Delete(Path, recursive: true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Best effort: a leftover temp directory is harmless.
+            }
+        }
         catch (IOException)
         {
             // Best effort: a leftover temp directory is harmless.
