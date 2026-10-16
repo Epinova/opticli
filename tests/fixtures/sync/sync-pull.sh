@@ -23,6 +23,8 @@
 # 7. About us edited in both: a conflict, left as the target has it; then --overwrite-local writes the source's.
 # 8. Sync page B edited only in the target: kept. Sync page A1 moved to the target's recycle bin: a conflict; then
 #    --overwrite-local restores it.
+# 9. Sync page A translated to sv in both: a conflict (the target's branch isn't the sync's). About us given the same value
+#    in both and a draft in the target, then changed in the source: a conflict, the draft kept.
 #
 # Both copies are dropped at the end (KEEP=1 keeps them, with their sites running). The pulls' results are in
 # $WORK (printed). Needs what make-source.sh needs (sqlcmd, jq, rsync, opticli; OPTICLI overrides the command,
@@ -238,5 +240,26 @@ expect local '.data.steps' 0 "nothing written for local changes"
 pull restore --delete --overwrite-local
 expect restore "[.data.restored[].guid]" "[\"$PAGE_A1\"]" "--overwrite-local restores the locally trashed page"
 [ "$(target get "$PAGE_A1" --json | jq -r '.data.deleted // false')" = false ] || fail "Sync page A1 is still in the recycle bin"
+
+echo "== a language branch made in both, and a local draft behind values found the same"
+# Sync page A gets a sv branch in the target and in the source: the target's isn't the sync's, so it is a conflict.
+# About us gets the same published value in both and a draft in the target: found the same, but the draft stays a local
+# change, so a later change in the source is a conflict, not written over the draft.
+target translate "$PAGE_A" --lang sv --name "Sync page A (target)" --publish >/dev/null
+target set "$ABOUT_US" TeaserText="The same in both" --publish >/dev/null
+target set "$ABOUT_US" MetaTitle="A draft in the target" >/dev/null
+serve_source
+source_ translate "$PAGE_A" --lang sv --name "Sync page A (source)" --publish >/dev/null
+source_ set "$ABOUT_US" TeaserText="The same in both" --publish >/dev/null
+stop_source
+pull branches --delete
+expect branches "[.data.conflicts[] | select(.guid == \"$PAGE_A\") | .guid]" "[\"$PAGE_A\"]" "a branch made in both is a conflict"
+[ "$(target get "$PAGE_A" --lang sv --json | jq -r '.data.name')" = "Sync page A (target)" ] || fail "the target's sv branch of Sync page A was written over"
+serve_source
+source_ set "$ABOUT_US" MetaDescription="Changed in the source" --publish >/dev/null
+stop_source
+pull draft --delete
+expect draft "[.data.conflicts[] | select(.guid == \"$ABOUT_US\") | .guid]" "[\"$ABOUT_US\"]" "a local draft behind values found the same is a local change"
+[ "$(target get "$ABOUT_US" --version latest --fields MetaTitle --json | jq -r '.data.properties.MetaTitle.value')" = "A draft in the target" ] || fail "the target's draft of About us was written over"
 
 echo "OK: the baseline, the changes ($compared branches the same in both), the second pull, conflicts and local changes."

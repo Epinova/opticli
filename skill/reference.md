@@ -808,7 +808,7 @@ role `local` (else `refused`, `details.reason: "syncTarget"`); `--from` is picke
 
 It exports the source as `export` does (read over SQL only), compares by GUID with the local database and the sync
 state (`<user config folder>/sync/<hash>.json`, per project, source and local database: per item and language, the
-source's version read and the local version it became), and applies a plan of only what changed, as `apply
+source's version read and the local version it became, with its saved time), and applies a plan of only what changed, as `apply
 --update-existing` (plus a `move` step before an item the source moved, and `delete` steps with `ignoreReferences` for
 `--delete`). Per item:
 
@@ -819,9 +819,10 @@ source's version read and the local version it became), and applies a plan of on
 | has it | in the recycle bin, or deleted for good | synced | conflict ("moved to the recycle bin in the target"); `--overwrite-local`: restored |
 | unchanged since | unchanged since | synced | unchanged (not read) |
 | unchanged since | changed (a branch saved, moved) | synced | `kept` |
+| a branch it didn't have at the last sync | the same branch, made locally | synced | compared: unchanged when the same, else a conflict; `--overwrite-local`: updated |
 | changed (version, publish state, place) | unchanged since | synced | compared: `updated` and/or `moved`, or unchanged |
 | changed | changed | synced | compared: unchanged when the same, else a conflict; `--overwrite-local`: updated |
-| has it | has it | no state yet (the baseline) | compared: `updated`/`moved`, unchanged, or a conflict when the local branch has a newer draft than its published version |
+| has it | has it | no state yet (the baseline) | compared: `updated`/`moved` (a published local change is written over: the baseline can't tell it from the source's), unchanged, or a conflict when the local branch has a newer draft than its published version |
 | gone, or in its recycle bin | has it | synced, or (no state) the GUID is in the source's recycle bin | `--delete`: `trashed` (a conflict when changed locally); else `gone` |
 | — | only local, never synced | — | left alone |
 

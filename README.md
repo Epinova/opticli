@@ -312,9 +312,14 @@ opticli sync pull --from prod /en/news/            # a ref (or several) and ever
   synced before even on the first pull, since its GUID says it came from there); without it, it is listed in `gone`.
   Content only in the local database, never synced, is left alone, and so are language branches only it has.
 - **The sync state** (in the user config folder, see [Files](#files)) records per item and language the source's version
-  that was read and the local version it became, so the next pull reads only what changed in either. The first pull of
-  a source takes the **baseline**: every item is compared, what differs is updated. A **local change** since the last
-  pull (a branch saved, the item moved or moved to the recycle bin) to content the source changed too is a **conflict**:
+  that was read and the local version it became (with when it was saved: a local database restored from a backup reuses
+  version ids), so the next pull reads only what changed in either. The first pull of
+  a source takes the **baseline**: every item is compared, what differs is updated. The baseline can't tell a local
+  change from the source's, so a published local change made before it is written over (it stays in the history; a
+  local draft newer than the published version is a conflict instead): look at `updated` in its `--dry-run` first. The
+  same goes for a pull without its state (another project folder, another user config, a deleted state file). A **local
+  change** since the last pull (a branch saved, a language branch made locally that the source has too, the item moved
+  or moved to the recycle bin) to content the source changed too is a **conflict**:
   listed in `conflicts` and left as it is; `--overwrite-local` writes the source's content over it (the local versions
   stay in the history, and other people's drafts are included). Content changed only locally is listed in `kept`. Before
   the baseline exists, a local draft newer than the published version counts as a local change. A local trash of
@@ -945,7 +950,7 @@ the site's own, newer CMS assemblies at runtime. It ships no copies of them.
 | `serve` state, start lock and logs (the last 3 runs) | `$XDG_STATE_HOME/opticli/` (default `~/.local/state/opticli/`) | `%LOCALAPPDATA%\opticli\` |
 | Generated passwords of `users add` | `$XDG_STATE_HOME/opticli/users/<project>/<name>.txt`, readable by you only (the folders too) | `%LOCALAPPDATA%\opticli\users\<project>\<name>.txt`, in your user profile, which other users can't read by default (opticli sets no ACL of its own) |
 | What `types remove`, `remove-property` and `prune` removed (one JSON line each, never rotated) | `$XDG_STATE_HOME/opticli/removals.jsonl`, readable by you only | `%LOCALAPPDATA%\opticli\removals.jsonl` |
-| The sync state of `sync pull`, one file per project, source and local database (delete one to take a new baseline) | `$XDG_CONFIG_HOME/opticli/sync/<hash>.json`, readable by you only | `%APPDATA%\opticli\sync\<hash>.json` |
+| The sync state of `sync pull`, one file per project, source and local database (deleting one takes a new baseline, which writes the source's content over published local changes) | `$XDG_CONFIG_HOME/opticli/sync/<hash>.json`, readable by you only | `%APPDATA%\opticli\sync\<hash>.json` |
 
 You can set per-project defaults in the user config (`output`, `port`, `https` and `scheduler` for `serve`).
 `opticli db use` adds the chosen `database` there, `opticli db add` an entry to `databases` (and its role to `roles`,
@@ -1468,8 +1473,8 @@ versions and who saved when aside; publish dates included), and applies it again
 shifted): the baseline (a page in the target's recycle bin restored), then make-source.sh's changes and
 `sync-changes.plan.json`'s (a folder in a "For this page" folder, a page scheduled for 2030, a page of a type the target
 lacks) pulled with `--delete` and compared item by item as round-trip.sh compares them, a second pull that applies
-nothing, a conflict and `--overwrite-local`, a local change kept, and a local trash that is a conflict until
-`--overwrite-local` restores it. They all stop the sites they start; `round-trip.sh` drops its target unless
+nothing, a conflict and `--overwrite-local`, a local change kept, a local trash that is a conflict until
+`--overwrite-local` restores it, a language branch made in both, and a local draft behind values found the same. They all stop the sites they start; `round-trip.sh` drops its target unless
 `KEEP_TARGET=1`, `sync-pull.sh` both copies unless `KEEP=1`. Each script's comment lists its modes and settings
 (`OPTICLI` picks the opticli to run, e.g. a wrapper around this checkout's build).
 

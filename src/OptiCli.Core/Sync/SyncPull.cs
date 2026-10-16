@@ -342,7 +342,7 @@ public sealed class SyncPull(ContentSession source, ContentSession target, Write
         var done = Done(run, operations);
         if (!options.DryRun && (run is null || !run.DryRun))
         {
-            await RecordAsync(decisions, planned, trashing, done, bySource, readAt, CancellationToken.None);
+            await RecordAsync(decisions, planned, trashing, done, bySource, targets, readAt, CancellationToken.None);
         }
 
         var result = await ResultAsync(options, from, to, baseline, decisions, planned, trashing, done, run, skipped, dropped, drafts, differences, files, operations.Count, targets, bySource, CancellationToken.None);
@@ -431,7 +431,7 @@ public sealed class SyncPull(ContentSession source, ContentSession target, Write
     private async Task<Dictionary<Guid, TargetItem>> TargetItemsAsync(IEnumerable<Guid> guids, CancellationToken cancellationToken)
     {
         var headers = await TargetHeadersAsync(guids, cancellationToken);
-        var latest = await VersionReader.LatestIdsAsync(target.Db, target.Model, headers.Values.Select(h => h.Id), cancellationToken);
+        var latest = await VersionReader.LatestStampsAsync(target.Db, target.Model, headers.Values.Select(h => h.Id), cancellationToken);
         var places = await PlacesAsync(target.Db, headers.Values.Select(h => h.ParentId).OfType<int>(), cancellationToken);
         return headers.Values.ToDictionary(h => h.Guid, h => new TargetItem(
             h.Id,
@@ -441,8 +441,11 @@ public sealed class SyncPull(ContentSession source, ContentSession target, Write
             h.Deleted,
             h.Languages.Where(l => l.Value.VersionId is not null).ToDictionary(
                 l => target.Model.Language(l.Key) is { IsInvariant: false } language ? language.DisplayCode ?? "*" : "*",
-                l => new TargetBranch(l.Value.VersionId!.Value, l.Value.Status == VersionStatus.Published, latest.GetValueOrDefault((h.Id, l.Key), l.Value.VersionId!.Value)),
-                StringComparer.OrdinalIgnoreCase)));
+                l => latest.TryGetValue((h.Id, l.Key), out var newest)
+                    ? new TargetBranch(l.Value.VersionId!.Value, l.Value.Status == VersionStatus.Published, newest.Id, newest.Saved)
+                    : new TargetBranch(l.Value.VersionId!.Value, l.Value.Status == VersionStatus.Published, l.Value.VersionId!.Value),
+                StringComparer.OrdinalIgnoreCase),
+            h.LanguageRow(null)?.Name));
     }
 
     private async Task<IReadOnlyDictionary<Guid, ContentHeader>> TargetHeadersAsync(IEnumerable<Guid> guids, CancellationToken cancellationToken)
@@ -617,17 +620,20 @@ public sealed class SyncPull(ContentSession source, ContentSession target, Write
     /// The state after the sync: what is the same on both sides now (found the same, or written), as both have it; what the
     /// sync moved to the recycle bin; nothing for conflicts, local changes kept, skipped items, or steps that didn't run.
     /// </summary>
+    /// <param name="targets">The target as it was compared: what an item found the same is recorded as (not as it is now,
+    /// which may have a local change saved while the sync ran).</param>
     private async Task RecordAsync(Dictionary<Guid, SyncDecision> decisions, IReadOnlyList<Planned> planned, IReadOnlyList<Guid> trashing,
-        IReadOnlyDictionary<Guid, bool> done, IReadOnlyDictionary<Guid, ExportCandidate> bySource, DateTime readAt, CancellationToken cancellationToken)
+        IReadOnlyDictionary<Guid, bool> done, IReadOnlyDictionary<Guid, ExportCandidate> bySource, IReadOnlyDictionary<Guid, TargetItem> targets,
+        DateTime readAt, CancellationToken cancellationToken)
     {
         var plannedIds = planned.Select(p => p.Item.Guid).ToHashSet();
-        var record = decisions.Where(d => d.Value.Step == SyncStep.Unchanged && bySource.ContainsKey(d.Key)).Select(d => d.Key)
-            .Concat(plannedIds.Where(done.ContainsKey))
-            .ToList();
-        var now = await TargetItemsAsync(record.Concat(trashing).Concat(decisions.Where(d => d.Value.Step == SyncStep.Gone).Select(d => d.Key)), cancellationToken);
+        var same = decisions.Where(d => d.Value.Step == SyncStep.Unchanged && bySource.ContainsKey(d.Key) && targets.ContainsKey(d.Key)).Select(d => d.Key).ToHashSet();
+        var record = same.Concat(plannedIds.Where(done.ContainsKey)).ToList();
+        var now = await TargetItemsAsync(record.Where(g => !same.Contains(g)).Concat(trashing).Concat(decisions.Where(d => d.Value.Step == SyncStep.Gone).Select(d => d.Key)), cancellationToken);
         foreach (var guid in record)
         {
-            if (!now.TryGetValue(guid, out var there))
+            var found = same.Contains(guid);
+            if (!(found ? targets : now).TryGetValue(guid, out var there))
             {
                 continue;
             }
@@ -636,7 +642,11 @@ public sealed class SyncPull(ContentSession source, ContentSession target, Write
             foreach (var branch in candidate.Branches)
             {
                 var language = branch.Language ?? "*";
-                branches[language] = new SyncedBranch(branch.VersionId, branch.Published, there.Branches.GetValueOrDefault(language)?.Latest ?? 0);
+                var mine = there.Branches.GetValueOrDefault(language);
+                // Found the same: only the version compared is in step; a newer local draft stays a local change.
+                branches[language] = mine is null ? new SyncedBranch(branch.VersionId, branch.Published, 0)
+                    : found ? SyncDiff.InStep(branch.VersionId, branch.Published, mine)
+                    : new SyncedBranch(branch.VersionId, branch.Published, mine.Latest, mine.LatestSaved);
             }
             state.Items[guid] = new SyncedItem(SyncDiff.Place(candidate.Parent, candidate.Owner), there.Place, branches);
         }
@@ -680,7 +690,8 @@ public sealed class SyncPull(ContentSession source, ContentSession target, Write
                 : created.GetValueOrDefault(ExportPlanBuilder.PlanId(guid));
             return bySource.TryGetValue(guid, out var candidate)
                 ? new SyncEntry(guid, reference, candidate.Type, candidate.Header.LanguageRow(null)?.Name, reason)
-                : new SyncEntry(guid, reference, targets.TryGetValue(guid, out var item) ? target.Model.TypeName(item.TypeId) : null, null, reason);
+                : targets.TryGetValue(guid, out var item) ? new SyncEntry(guid, reference, target.Model.TypeName(item.TypeId), item.Name, reason)
+                : new SyncEntry(guid, reference, null, null, reason);
         }
         var real = run is { DryRun: false };
         bool Wrote(Guid guid) => !real || (done.TryGetValue(guid, out var saved) && saved);

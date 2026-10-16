@@ -105,20 +105,29 @@ public static class VersionReader
     /// The newest version of each branch of the items, not counting a content variation's (CMS 13): content id and
     /// language id to version id. What a sync compares to tell whether a branch was saved since it last looked.
     /// </summary>
-    public static async Task<IReadOnlyDictionary<(int ContentId, int LanguageId), int>> LatestIdsAsync(CmsDatabase db, CmsModel model, IEnumerable<int> contentIds, CancellationToken cancellationToken)
+    public static async Task<IReadOnlyDictionary<(int ContentId, int LanguageId), int>> LatestIdsAsync(CmsDatabase db, CmsModel model, IEnumerable<int> contentIds, CancellationToken cancellationToken) =>
+        (await LatestStampsAsync(db, model, contentIds, cancellationToken)).ToDictionary(p => p.Key, p => p.Value.Id);
+
+    /// <summary>
+    /// Each branch's newest version (not a content variation's) with when it was saved: a version id alone can come back
+    /// for another version once the database is restored from a backup (the ids continue from the backup's).
+    /// </summary>
+    public static async Task<IReadOnlyDictionary<(int ContentId, int LanguageId), (int Id, DateTime? Saved)>> LatestStampsAsync(CmsDatabase db, CmsModel model, IEnumerable<int> contentIds, CancellationToken cancellationToken)
     {
-        var result = new Dictionary<(int, int), int>();
+        var result = new Dictionary<(int, int), (int, DateTime?)>();
         foreach (var list in SqlLists.Ints(contentIds))
         {
             var rows = await db.QueryAsync($"""
-                SELECT wc.fkContentID, wc.fkLanguageBranchID, MAX(wc.pkID) AS Latest
-                FROM tblWorkContent wc
-                WHERE wc.fkContentID IN ({list}){model.Schema.DefaultVariationOnly("wc")}
-                GROUP BY wc.fkContentID, wc.fkLanguageBranchID
-                """, r => (Content: r.GetInt32("fkContentID"), Language: r.GetInt32("fkLanguageBranchID"), Latest: r.GetInt32("Latest")), cancellationToken);
+                SELECT fkContentID, fkLanguageBranchID, pkID, Saved FROM (
+                    SELECT wc.fkContentID, wc.fkLanguageBranchID, wc.pkID, wc.Saved,
+                        ROW_NUMBER() OVER (PARTITION BY wc.fkContentID, wc.fkLanguageBranchID ORDER BY wc.pkID DESC) AS Newest
+                    FROM tblWorkContent wc
+                    WHERE wc.fkContentID IN ({list}){model.Schema.DefaultVariationOnly("wc")}) v
+                WHERE Newest = 1
+                """, r => (Content: r.GetInt32("fkContentID"), Language: r.GetInt32("fkLanguageBranchID"), Latest: r.GetInt32("pkID"), Saved: r.GetDateTimeOrNull("Saved")), cancellationToken);
             foreach (var row in rows)
             {
-                result[(row.Content, row.Language)] = row.Latest;
+                result[(row.Content, row.Language)] = (row.Latest, row.Saved);
             }
         }
         return result;

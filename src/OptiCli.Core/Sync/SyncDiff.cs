@@ -6,12 +6,14 @@ namespace OptiCli.Core.Sync;
 /// <summary>One branch of an item in the target, as a sync compares it.</summary>
 /// <param name="Primary">The branch's primary version (the published one, else the common draft): what is compared.</param>
 /// <param name="Latest">Its newest version, drafts included: newer than the last sync's is a local change.</param>
-public sealed record TargetBranch(int Primary, bool Published, int Latest);
+/// <param name="LatestSaved">When the newest version was saved: the same id saved at another time is another version (a database restored from a backup reuses ids).</param>
+public sealed record TargetBranch(int Primary, bool Published, int Latest, DateTime? LatestSaved = null);
 
 /// <summary>An item the target has (found by the source's GUID).</summary>
 /// <param name="Place">Where it is: its parent's GUID, or <c>for:&lt;owner GUID&gt;</c> in a "For this page" folder.</param>
 /// <param name="Branches">By language (<c>*</c> for content without languages).</param>
-public sealed record TargetItem(int Id, Guid Guid, int TypeId, string? Place, bool Deleted, IReadOnlyDictionary<string, TargetBranch> Branches);
+/// <param name="Name">Its name (in its master language), for the result.</param>
+public sealed record TargetItem(int Id, Guid Guid, int TypeId, string? Place, bool Deleted, IReadOnlyDictionary<string, TargetBranch> Branches, string? Name = null);
 
 /// <summary>An item the source has, as a sync compares it with the last sync's state.</summary>
 /// <param name="Branches">The version read of each branch and whether it is published, by language.</param>
@@ -97,7 +99,7 @@ public static partial class SyncDiff
                 : new SyncDecision(SyncStep.Compare);
         }
         var sourceChanged = SourceChanged(source, state);
-        var local = TargetChanged(target, state);
+        var local = TargetChanged(target, state, source.Branches.Keys);
         return (sourceChanged, local) switch
         {
             (false, null) => new SyncDecision(SyncStep.Unchanged),
@@ -137,9 +139,14 @@ public static partial class SyncDiff
 
     /// <summary>
     /// How the target changed the item since the last sync (a branch saved, moved, restored from the recycle bin the sync
-    /// moved it to); before the first sync, a draft newer than the published version. Null: it didn't.
+    /// moved it to, or a branch the source writes made there and not by a sync); before the first sync, a draft newer than
+    /// the published version. Null: it didn't.
     /// </summary>
-    public static string? TargetChanged(TargetItem target, SyncedItem? state)
+    /// <param name="sourceBranches">
+    /// The branches the source writes now: one of them that the target has but the last sync didn't record (made locally,
+    /// say by a translation) would be written over.
+    /// </param>
+    public static string? TargetChanged(TargetItem target, SyncedItem? state, IEnumerable<string>? sourceBranches = null)
     {
         if (state is null)
         {
@@ -161,13 +168,30 @@ public static partial class SyncDiff
             {
                 return $"its {Branch(language)} branch was removed in the target";
             }
-            if (branch.Latest != synced.Target)
+            if (branch.Latest != synced.Target || (synced.TargetSaved is { } saved && branch.LatestSaved is { } now && now != saved))
             {
                 return $"changed in the target ({Branch(language)})";
             }
         }
+        foreach (var language in sourceBranches ?? [])
+        {
+            if (!state.Branches.ContainsKey(language) && target.Branches.ContainsKey(language))
+            {
+                return $"its {Branch(language)} branch was made in the target, not by a sync";
+            }
+        }
         return null;
     }
+
+    /// <summary>
+    /// The target's version of a branch a sync found the same as the source's, as the state records it: the newest one,
+    /// except that a draft newer than the published version (which isn't what was compared) is left out, so it stays a local
+    /// change.
+    /// </summary>
+    public static SyncedBranch InStep(int sourceVersion, bool sourcePublished, TargetBranch branch) =>
+        branch.Published && branch.Latest > branch.Primary
+            ? new SyncedBranch(sourceVersion, sourcePublished, branch.Primary)
+            : new SyncedBranch(sourceVersion, sourcePublished, branch.Latest, branch.LatestSaved);
 
     private static string Branch(string language) => language == "*" ? "the item" : language;
 

@@ -29,6 +29,12 @@ public sealed class SyncStateTests : IDisposable
         Assert.Equal(path, SyncState.PathFor(environment, project, DatabaseKey.Of("PROD.example.net", "cms")!, DatabaseKey.Of("127.0.0.1", "CMS-LOCAL")!));
         Assert.NotEqual(path, SyncState.PathFor(environment, Path.Combine(_root, "other"), Source, Target));
         Assert.NotEqual(path, SyncState.PathFor(environment, project, Target, Source));
+        // The same folder, written otherwise, is the same project: another file would be a new baseline.
+        Assert.Equal(path, SyncState.PathFor(environment, project + Path.DirectorySeparatorChar, Source, Target));
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Equal(path, SyncState.PathFor(environment, project.ToUpperInvariant(), Source, Target));
+        }
     }
 
     [Fact]
@@ -41,7 +47,7 @@ public sealed class SyncStateTests : IDisposable
         Assert.Null(state.Synced);
         Assert.Empty(state.Items);
 
-        state.Items[item] = new SyncedItem("parent", $"for:{Guid.Empty}", new Dictionary<string, SyncedBranch> { ["en"] = new(10, true, 20), ["*"] = new(3, false, 4) });
+        state.Items[item] = new SyncedItem("parent", $"for:{Guid.Empty}", new Dictionary<string, SyncedBranch> { ["en"] = new(10, true, 20), ["*"] = new(3, false, 4), ["sv"] = new(5, true, 6, new DateTime(2026, 10, 16, 8, 1, 2, 997)) });
         state.Items[Guid.NewGuid()] = new SyncedItem(null, null, new Dictionary<string, SyncedBranch>(), Trashed: true);
         var synced = new DateTime(2026, 10, 15, 12, 0, 0, DateTimeKind.Utc);
         state.Save(synced);
@@ -50,6 +56,7 @@ public sealed class SyncStateTests : IDisposable
         Assert.Equal(synced, read.Synced);
         Assert.Equal(2, read.Items.Count);
         Assert.Equal(new SyncedBranch(10, true, 20), read.Items[item].Branches["en"]);
+        Assert.Equal(new SyncedBranch(5, true, 6, new DateTime(2026, 10, 16, 8, 1, 2, 997)), read.Items[item].Branches["sv"]);
         Assert.Equal(("parent", $"for:{Guid.Empty}", false), (read.Items[item].Source, read.Items[item].Target, read.Items[item].Trashed));
         Assert.Single(read.Items.Values, i => i.Trashed);
         Assert.Empty(Directory.EnumerateFiles(Path.GetDirectoryName(path)!, "*.tmp"));

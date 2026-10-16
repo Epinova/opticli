@@ -95,6 +95,53 @@ public class SyncDiffTests
     }
 
     [Fact]
+    public void A_branch_made_in_the_target_that_the_source_now_writes_too_is_a_local_change()
+    {
+        // Synced with en only; then sv was translated in the target, and in the source as well.
+        var source = new SourceItem(Parent, new Dictionary<string, (int, bool)> { ["en"] = (10, true), ["sv"] = (12, true) });
+        var target = new TargetItem(5, Item, 7, Parent, false, new Dictionary<string, TargetBranch> { ["en"] = new(20, true, 20), ["sv"] = new(30, true, 30) });
+
+        var decision = SyncDiff.Present(source, target, Synced(), false);
+
+        Assert.Equal((SyncStep.Compare, true), (decision.Step, decision.ConflictIfDifferent));
+        Assert.Contains("sv branch was made in the target", decision.Reason, StringComparison.Ordinal);
+        Assert.Equal(SyncStep.Conflict, SyncDiff.Compared(decision, different: true, moved: false).Step);
+        // The source's new branch that the target doesn't have is only the source's change.
+        Assert.False(SyncDiff.Present(source, Target(), Synced(), false).ConflictIfDifferent);
+    }
+
+    [Theory]
+    [InlineData(20, true, 20, 20)]
+    [InlineData(20, true, 21, 20)]
+    [InlineData(20, false, 21, 21)]
+    public void A_branch_found_the_same_is_recorded_without_a_newer_local_draft(int primary, bool published, int latest, int recorded)
+    {
+        // The draft wasn't compared: recorded as the published version, it stays a local change for the next sync.
+        Assert.Equal(recorded, SyncDiff.InStep(10, true, new TargetBranch(primary, published, latest)).Target);
+        var next = SyncDiff.Present(Source(), Target(primary, latest, published), Synced(target: recorded), false);
+        Assert.Equal(latest != recorded ? SyncStep.Kept : SyncStep.Unchanged, next.Step);
+    }
+
+    [Fact]
+    public void A_version_with_the_synced_id_saved_at_another_time_is_a_local_change()
+    {
+        // The target restored from a backup taken before the sync, then edited: the edit gets the id the sync's version had.
+        var saved = new DateTime(2026, 10, 16, 8, 0, 0);
+        var synced = new SyncedItem(Parent, Parent, new Dictionary<string, SyncedBranch> { ["en"] = new(10, true, 20, saved) });
+        TargetItem At(DateTime? when) => new(5, Item, 7, Parent, false, new Dictionary<string, TargetBranch> { ["en"] = new(20, true, 20, when) });
+
+        Assert.Null(SyncDiff.TargetChanged(At(saved), synced));
+        Assert.Equal("changed in the target (en)", SyncDiff.TargetChanged(At(saved.AddMinutes(5)), synced));
+        // A state without the time (or a version without one) compares the id only.
+        Assert.Null(SyncDiff.TargetChanged(At(saved.AddMinutes(5)), Synced()));
+        var both = SyncDiff.Present(Source(11), At(saved.AddMinutes(5)), synced, false);
+        Assert.Equal((SyncStep.Compare, true), (both.Step, both.ConflictIfDifferent));
+        // Recorded with the time when found the same, without it when a newer local draft stays a local change.
+        Assert.Equal(saved, SyncDiff.InStep(10, true, new TargetBranch(20, true, 20, saved)).TargetSaved);
+        Assert.Null(SyncDiff.InStep(10, true, new TargetBranch(20, true, 21, saved)).TargetSaved);
+    }
+
+    [Fact]
     public void Gone_from_the_source_is_trashed_only_with_delete_and_a_local_change_makes_it_a_conflict()
     {
         Assert.Equal(SyncStep.Gone, SyncDiff.Absent(Target(), Synced(), delete: false, false).Step);

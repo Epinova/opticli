@@ -11,7 +11,8 @@ namespace OptiCli.Core.Sync;
 /// <param name="Source">The source's version the sync read (the one written, or found the same).</param>
 /// <param name="Published">The source's branch was published.</param>
 /// <param name="Target">The target's newest version of the branch once the sync was done: a newer one is a local change.</param>
-public sealed record SyncedBranch(int Source, bool Published, int Target);
+/// <param name="TargetSaved">When that version was saved, so a version with the same id saved later (the target restored from a backup, then edited) is a local change too; null when not known.</param>
+public sealed record SyncedBranch(int Source, bool Published, int Target, DateTime? TargetSaved = null);
 
 /// <summary>One item as the last sync left it.</summary>
 /// <param name="Source">Where the item was in the source: its parent's GUID, or <c>for:&lt;owner GUID&gt;</c> in a "For this page" folder.</param>
@@ -66,7 +67,10 @@ public sealed class SyncState
     /// <summary>The state's file: <c>sync/&lt;hash of project, source and target&gt;.json</c> in the user config folder.</summary>
     public static string PathFor(OptiCliEnvironment environment, string project, DatabaseKey source, DatabaseKey target)
     {
-        var identity = string.Join("\n", System.IO.Path.GetFullPath(project).TrimEnd('/', '\\'), source.Server, source.Database, target.Server, target.Database);
+        // As the serve state keys a project: the same folder typed in another case on Windows is the same project (another
+        // key would be a new baseline, which writes over local changes).
+        var directory = System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(project));
+        var identity = string.Join("\n", OperatingSystem.IsWindows() ? directory.ToUpperInvariant() : directory, source.Server, source.Database, target.Server, target.Database);
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity)))[..16].ToLowerInvariant();
         return System.IO.Path.Combine(System.IO.Path.GetDirectoryName(environment.UserConfigFile)!, "sync", $"{hash}.json");
     }
@@ -87,7 +91,7 @@ public sealed class SyncState
         catch (JsonException ex)
         {
             throw new UsageException($"The sync state {path} can't be read: {ex.Message}",
-                "Delete it to start over: the next sync then compares every item again (a new baseline) and lists what differs.");
+                "Deleting it starts over: the next sync then compares every item again (a new baseline), and writes the source's content over published local changes since the last sync (they stay in the history). Run that sync with --dry-run first.");
         }
     }
 

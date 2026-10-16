@@ -110,7 +110,9 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
   A **conflict** is content changed both locally and in the source since the last pull: it is left alone, and
   `--overwrite-local` writes over the local change. Never add `--overwrite-local` or `--delete` on your own: ask the user,
   naming what they overwrite or trash. It writes only to a `local` database (`refused`, `details.reason: "syncTarget"`,
-  for any other): don't work around that either. Don't delete the sync state file to get rid of conflicts.
+  for any other): don't work around that either. Don't delete the sync state file to get rid of conflicts: the pull
+  after that is a new baseline, which writes over published local changes. On a first pull (`baseline: true`) show the
+  user `updated` from the dry run: those local pages get the source's content.
 - **Just the metadata of an item** (`saved`, `changedBy`, `status`): `opticli get <ref> --fields name`. Without
   `--version`, `get` shows the published version, or the latest draft when the branch was never published.
 

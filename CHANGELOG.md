@@ -15,9 +15,10 @@ again to update the skill.
   its recycle bin) moved to the local recycle bin; content only in the local database is left alone. A sync state in the
   user config folder (per project, source and local database) records what each item's versions were, so the next pull
   reads only what changed: a local change to content the source changed too is a conflict, listed and left alone unless
-  `--overwrite-local`; a local change alone is kept. The first pull takes the baseline. The source's content model is
-  compared with the local build's over SQL: content of a type the build lacks is skipped and properties it lacks are
-  left out, each listed (`--strict` fails instead), and so are values that refer to content, visitor groups or
+  `--overwrite-local`; a local change alone is kept. The first pull takes the baseline (it can't tell local changes
+  from the source's, so it writes over published local changes; a local draft is a conflict). The source's content
+  model is compared with the local build's over SQL: content of a type the build lacks is skipped and properties it
+  lacks are left out, each listed (`--strict` fails instead), and so are values that refer to content, visitor groups or
   categories the local database doesn't have. An empty diff applies nothing. It writes only to a database with the role
   `local` (`refused`, `details.reason: "syncTarget"`, otherwise). Output: counts and lists per action, `run` with
   `apply`'s report; progress on stderr at a terminal; after Ctrl+C or a failed step the state holds what was saved.
