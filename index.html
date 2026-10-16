@@ -95,16 +95,16 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .index .group { display: grid; gap: 4px; align-content: start; break-inside: avoid; padding-bottom: 16px; }
 .index .label { padding-left: 8px; font: 600 .72rem var(--body); letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
 .index ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
-.index button {
+.index a {
   width: 100%; display: grid; grid-template-columns: 2.4ch minmax(0, 1fr) auto; column-gap: 8px; align-items: baseline;
-  padding: 4px 8px; border: 0; border-radius: 6px; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer;
+  padding: 4px 8px; border: 0; border-radius: 6px; background: none; color: var(--ink); font: inherit; text-align: left; text-decoration: none; cursor: pointer;
 }
 .index .n { font: 700 .78rem var(--mono); color: var(--accent); font-variant-numeric: tabular-nums; }
 .index .t { font-weight: 600; font-size: .94rem; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .index .time { font: .78rem var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
-.index button:hover .t { color: var(--accent); }
-.index button[aria-current="true"] { background: var(--accent-soft); }
-.index button[aria-current="true"] .t { color: var(--accent); }
+.index a:hover .t { color: var(--accent); }
+.index a[aria-current="true"] { background: var(--accent-soft); }
+.index a[aria-current="true"] .t { color: var(--accent); }
 @media (max-width: 720px) {
   /* A single list on narrow screens, group after group; long titles may wrap. */
   .index { columns: 1; }
@@ -166,7 +166,7 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
       <div class="term-bar"><i></i><i></i><i></i><span>opticli on the Alloy sample site</span></div>
       <div class="player" id="player"></div>
     </div>
-    <nav class="chapters" id="chapters" aria-label="Screencast chapters"><div class="timeline" role="group" aria-label="Chapters on a timeline"><button type="button" data-index="0" data-start="4.014" data-end="28.263" aria-current="false" style="--len: 24.2" title="1 · No setup · 0:04" aria-label="Chapter 1: No setup, at 0:04"><span class="bar"></span></button><button type="button" data-index="1" data-start="28.263" data-end="56.57" aria-current="false" style="--len: 28.3" title="2 · Find the content · 0:28" aria-label="Chapter 2: Find the content, at 0:28"><span class="bar"></span></button><button type="button" data-index="2" data-start="56.57" data-end="73.546" aria-current="false" style="--len: 17.0" title="3 · Find the code · 0:56" aria-label="Chapter 3: Find the code, at 0:56"><span class="bar"></span></button><button type="button" data-index="3" data-start="73.546" data-end="153.673" aria-current="false" style="--len: 80.1" title="4 · Make the change · 1:13" aria-label="Chapter 4: Make the change, at 1:13"><span class="bar"></span></button><button type="button" data-index="4" data-start="153.673" data-end="225.531" aria-current="false" style="--len: 71.9" title="5 · A section as a plan · 2:33" aria-label="Chapter 5: A section as a plan, at 2:33"><span class="bar"></span></button><button type="button" data-index="5" data-start="225.531" data-end="253.66" aria-current="false" style="--len: 28.1" title="6 · Run it again · 3:45" aria-label="Chapter 6: Run it again, at 3:45"><span class="bar"></span></button><button type="button" data-index="6" data-start="253.66" data-end="321.887" aria-current="false" style="--len: 68.2" title="7 · Safety nets · 4:13" aria-label="Chapter 7: Safety nets, at 4:13"><span class="bar"></span></button><button type="button" data-index="7" data-start="321.887" data-end="364.276" aria-current="false" style="--len: 42.4" title="8 · Scheduled jobs · 5:21" aria-label="Chapter 8: Scheduled jobs, at 5:21"><span class="bar"></span></button><button type="button" data-index="8" data-start="364.276" data-end="402.291" aria-current="false" style="--len: 38.0" title="9 · Clean up leftovers · 6:04" aria-label="Chapter 9: Clean up leftovers, at 6:04"><span class="bar"></span></button><button type="button" data-index="9" data-start="402.291" data-end="435.233" aria-current="false" style="--len: 32.9" title="10 · Production is read-only · 6:42" aria-label="Chapter 10: Production is read-only, at 6:42"><span class="bar"></span></button><button type="button" data-index="10" data-start="435.233" data-end="474.102" aria-current="false" style="--len: 38.9" title="11 · Pull from production · 7:15" aria-label="Chapter 11: Pull from production, at 7:15"><span class="bar"></span></button><button type="button" data-index="11" data-start="474.102" data-end="538.226" aria-current="false" style="--len: 64.1" title="12 · Push to production · 7:54" aria-label="Chapter 12: Push to production, at 7:54"><span class="bar"></span></button><button type="button" data-index="12" data-start="538.226" data-end="591.876" aria-current="false" style="--len: 53.6" title="13 · Let an agent do it · 8:58" aria-label="Chapter 13: Let an agent do it, at 8:58"><span class="bar"></span></button></div><div class="index"><div class="group" role="group" aria-labelledby="chapters-g0"><p class="label" id="chapters-g0">Find and change</p><ol><li><button type="button" data-index="0" data-start="4.014" data-end="28.263" aria-current="false"><span class="n">1</span><span class="t">No setup</span><span class="time">0:04</span></button></li><li><button type="button" data-index="1" data-start="28.263" data-end="56.57" aria-current="false"><span class="n">2</span><span class="t">Find the content</span><span class="time">0:28</span></button></li><li><button type="button" data-index="2" data-start="56.57" data-end="73.546" aria-current="false"><span class="n">3</span><span class="t">Find the code</span><span class="time">0:56</span></button></li><li><button type="button" data-index="3" data-start="73.546" data-end="153.673" aria-current="false"><span class="n">4</span><span class="t">Make the change</span><span class="time">1:13</span></button></li></ol></div><div class="group" role="group" aria-labelledby="chapters-g1"><p class="label" id="chapters-g1">Plans</p><ol><li><button type="button" data-index="4" data-start="153.673" data-end="225.531" aria-current="false"><span class="n">5</span><span class="t">A section as a plan</span><span class="time">2:33</span></button></li><li><button type="button" data-index="5" data-start="225.531" data-end="253.66" aria-current="false"><span class="n">6</span><span class="t">Run it again</span><span class="time">3:45</span></button></li></ol></div><div class="group" role="group" aria-labelledby="chapters-g2"><p class="label" id="chapters-g2">Safety and operations</p><ol><li><button type="button" data-index="6" data-start="253.66" data-end="321.887" aria-current="false"><span class="n">7</span><span class="t">Safety nets</span><span class="time">4:13</span></button></li><li><button type="button" data-index="7" data-start="321.887" data-end="364.276" aria-current="false"><span class="n">8</span><span class="t">Scheduled jobs</span><span class="time">5:21</span></button></li><li><button type="button" data-index="8" data-start="364.276" data-end="402.291" aria-current="false"><span class="n">9</span><span class="t">Clean up leftovers</span><span class="time">6:04</span></button></li></ol></div><div class="group" role="group" aria-labelledby="chapters-g3"><p class="label" id="chapters-g3">Environments</p><ol><li><button type="button" data-index="9" data-start="402.291" data-end="435.233" aria-current="false"><span class="n">10</span><span class="t">Production is read-only</span><span class="time">6:42</span></button></li><li><button type="button" data-index="10" data-start="435.233" data-end="474.102" aria-current="false"><span class="n">11</span><span class="t">Pull from production</span><span class="time">7:15</span></button></li><li><button type="button" data-index="11" data-start="474.102" data-end="538.226" aria-current="false"><span class="n">12</span><span class="t">Push to production</span><span class="time">7:54</span></button></li></ol></div><div class="group" role="group" aria-labelledby="chapters-g4"><p class="label" id="chapters-g4">Agents</p><ol><li><button type="button" data-index="12" data-start="538.226" data-end="591.876" aria-current="false"><span class="n">13</span><span class="t">Let an agent do it</span><span class="time">8:58</span></button></li></ol></div></div></nav>
+    <nav class="chapters" id="chapters" aria-label="Screencast chapters"><div class="timeline" role="group" aria-label="Chapters on a timeline"><button type="button" data-index="0" data-n="1" data-start="4.014" data-end="28.263" aria-current="false" style="--len: 24.2" title="1 · No setup · 0:04" aria-label="Chapter 1: No setup, at 0:04"><span class="bar"></span></button><button type="button" data-index="1" data-n="2" data-start="28.263" data-end="56.57" aria-current="false" style="--len: 28.3" title="2 · Find the content · 0:28" aria-label="Chapter 2: Find the content, at 0:28"><span class="bar"></span></button><button type="button" data-index="2" data-n="3" data-start="56.57" data-end="73.546" aria-current="false" style="--len: 17.0" title="3 · Find the code · 0:56" aria-label="Chapter 3: Find the code, at 0:56"><span class="bar"></span></button><button type="button" data-index="3" data-n="4" data-start="73.546" data-end="153.673" aria-current="false" style="--len: 80.1" title="4 · Make the change · 1:13" aria-label="Chapter 4: Make the change, at 1:13"><span class="bar"></span></button><button type="button" data-index="4" data-n="5" data-start="153.673" data-end="225.531" aria-current="false" style="--len: 71.9" title="5 · A section as a plan · 2:33" aria-label="Chapter 5: A section as a plan, at 2:33"><span class="bar"></span></button><button type="button" data-index="5" data-n="6" data-start="225.531" data-end="253.66" aria-current="false" style="--len: 28.1" title="6 · Run it again · 3:45" aria-label="Chapter 6: Run it again, at 3:45"><span class="bar"></span></button><button type="button" data-index="6" data-n="7" data-start="253.66" data-end="321.887" aria-current="false" style="--len: 68.2" title="7 · Safety nets · 4:13" aria-label="Chapter 7: Safety nets, at 4:13"><span class="bar"></span></button><button type="button" data-index="7" data-n="8" data-start="321.887" data-end="364.276" aria-current="false" style="--len: 42.4" title="8 · Scheduled jobs · 5:21" aria-label="Chapter 8: Scheduled jobs, at 5:21"><span class="bar"></span></button><button type="button" data-index="8" data-n="9" data-start="364.276" data-end="402.291" aria-current="false" style="--len: 38.0" title="9 · Clean up leftovers · 6:04" aria-label="Chapter 9: Clean up leftovers, at 6:04"><span class="bar"></span></button><button type="button" data-index="9" data-n="10" data-start="402.291" data-end="435.233" aria-current="false" style="--len: 32.9" title="10 · Production is read-only · 6:42" aria-label="Chapter 10: Production is read-only, at 6:42"><span class="bar"></span></button><button type="button" data-index="10" data-n="11" data-start="435.233" data-end="474.102" aria-current="false" style="--len: 38.9" title="11 · Pull from production · 7:15" aria-label="Chapter 11: Pull from production, at 7:15"><span class="bar"></span></button><button type="button" data-index="11" data-n="12" data-start="474.102" data-end="538.226" aria-current="false" style="--len: 64.1" title="12 · Push to production · 7:54" aria-label="Chapter 12: Push to production, at 7:54"><span class="bar"></span></button><button type="button" data-index="12" data-n="13" data-start="538.226" data-end="591.876" aria-current="false" style="--len: 53.6" title="13 · Let an agent do it · 8:58" aria-label="Chapter 13: Let an agent do it, at 8:58"><span class="bar"></span></button></div><div class="index"><div class="group" role="group" aria-labelledby="chapters-g0"><p class="label" id="chapters-g0">Find and change</p><ol><li><a href="#chapter-1" data-index="0" data-n="1" data-start="4.014" data-end="28.263" aria-current="false"><span class="n">1</span><span class="t">No setup</span><span class="time">0:04</span></a></li><li><a href="#chapter-2" data-index="1" data-n="2" data-start="28.263" data-end="56.57" aria-current="false"><span class="n">2</span><span class="t">Find the content</span><span class="time">0:28</span></a></li><li><a href="#chapter-3" data-index="2" data-n="3" data-start="56.57" data-end="73.546" aria-current="false"><span class="n">3</span><span class="t">Find the code</span><span class="time">0:56</span></a></li><li><a href="#chapter-4" data-index="3" data-n="4" data-start="73.546" data-end="153.673" aria-current="false"><span class="n">4</span><span class="t">Make the change</span><span class="time">1:13</span></a></li></ol></div><div class="group" role="group" aria-labelledby="chapters-g1"><p class="label" id="chapters-g1">Plans</p><ol><li><a href="#chapter-5" data-index="4" data-n="5" data-start="153.673" data-end="225.531" aria-current="false"><span class="n">5</span><span class="t">A section as a plan</span><span class="time">2:33</span></a></li><li><a href="#chapter-6" data-index="5" data-n="6" data-start="225.531" data-end="253.66" aria-current="false"><span class="n">6</span><span class="t">Run it again</span><span class="time">3:45</span></a></li></ol></div><div class="group" role="group" aria-labelledby="chapters-g2"><p class="label" id="chapters-g2">Safety and operations</p><ol><li><a href="#chapter-7" data-index="6" data-n="7" data-start="253.66" data-end="321.887" aria-current="false"><span class="n">7</span><span class="t">Safety nets</span><span class="time">4:13</span></a></li><li><a href="#chapter-8" data-index="7" data-n="8" data-start="321.887" data-end="364.276" aria-current="false"><span class="n">8</span><span class="t">Scheduled jobs</span><span class="time">5:21</span></a></li><li><a href="#chapter-9" data-index="8" data-n="9" data-start="364.276" data-end="402.291" aria-current="false"><span class="n">9</span><span class="t">Clean up leftovers</span><span class="time">6:04</span></a></li></ol></div><div class="group" role="group" aria-labelledby="chapters-g3"><p class="label" id="chapters-g3">Environments</p><ol><li><a href="#chapter-10" data-index="9" data-n="10" data-start="402.291" data-end="435.233" aria-current="false"><span class="n">10</span><span class="t">Production is read-only</span><span class="time">6:42</span></a></li><li><a href="#chapter-11" data-index="10" data-n="11" data-start="435.233" data-end="474.102" aria-current="false"><span class="n">11</span><span class="t">Pull from production</span><span class="time">7:15</span></a></li><li><a href="#chapter-12" data-index="11" data-n="12" data-start="474.102" data-end="538.226" aria-current="false"><span class="n">12</span><span class="t">Push to production</span><span class="time">7:54</span></a></li></ol></div><div class="group" role="group" aria-labelledby="chapters-g4"><p class="label" id="chapters-g4">Agents</p><ol><li><a href="#chapter-13" data-index="12" data-n="13" data-start="538.226" data-end="591.876" aria-current="false"><span class="n">13</span><span class="t">Let an agent do it</span><span class="time">8:58</span></a></li></ol></div></div></nav>
   </div>
 
   <section id="what-its-for">
@@ -621,24 +621,45 @@ https://your-site.example/episerver/opticli/mcp</pre>
 <script>
 let player;
 
+// Every chapter has a timeline segment (a button) and a line in the index (a link to #chapter-<n>).
+const chapters = [...document.querySelectorAll('#chapters [data-index]')];
+const playerBox = document.getElementById('player');
+
+// The chapter a #chapter-<n> link names, if any.
+function linked() {
+  const m = /^#chapter-(\d+)$/.exec(location.hash);
+  return m ? chapters.find(c => c.dataset.n === m[1]) : undefined;
+}
+
+// Bring the player into view (its frame, title bar included), once the page has laid out around it.
+function show(smooth) {
+  requestAnimationFrame(() => playerBox.closest('.term').scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'auto' }));
+}
+
+// A chapter link scrolls to the player, not to where the page was the last time it was open.
+if (linked()) history.scrollRestoration = 'manual';
+
 function start() {
-  player = AsciinemaPlayer.create('opticli-demo.cast', document.getElementById('player'), {
+  // Opened through a chapter's link: start there, with that chapter's first moments as the poster.
+  const chapter = linked();
+  const at = chapter ? Number(chapter.dataset.start) : 0;
+  player = AsciinemaPlayer.create('opticli-demo.cast', playerBox, {
     theme: 'opti',
     fit: 'width',
-    poster: 'npt:0:4.5',
+    poster: `npt:${at + 4.5}`,
+    ...(chapter ? { startAt: at } : {}),
     terminalFontFamily: '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace',
     terminalLineHeight: 1.3,
   });
+  if (chapter) {
+    mark(at);
+    show();
+  }
   setInterval(paint, 200);
 }
 
-// Every chapter has two buttons: its timeline segment and its line in the index.
-const chapters = [...document.querySelectorAll('#chapters button[data-index]')];
-
 // Fill each chapter's segment up to the playback position and mark the chapter that is playing.
-async function paint() {
-  const time = await player.getCurrentTime();
-  if (typeof time !== 'number') return;
+function mark(time) {
   for (const b of chapters) {
     const start = Number(b.dataset.start), end = Number(b.dataset.end);
     b.style.setProperty('--p', Math.min(1, Math.max(0, (time - start) / (end - start))).toFixed(4));
@@ -646,13 +667,33 @@ async function paint() {
   }
 }
 
-document.getElementById('chapters').addEventListener('click', async e => {
-  const button = e.target.closest('button[data-index]');
-  if (!button || !player) return;
-  const index = Number(button.dataset.index);
-  await player.seek({ marker: index });
+async function paint() {
+  const time = await player.getCurrentTime();
+  if (typeof time === 'number' && time > 0) mark(time);
+}
+
+async function play(chapter) {
+  await player.seek({ marker: Number(chapter.dataset.index) });
   player.play();
   paint();
+}
+
+// A click plays the chapter and puts its link in the address bar, without a jump or a history entry per click.
+document.getElementById('chapters').addEventListener('click', e => {
+  const chapter = e.target.closest('[data-index]');
+  if (!chapter || !player || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+  e.preventDefault();
+  history.replaceState(null, '', `#chapter-${chapter.dataset.n}`);
+  play(chapter);
+});
+
+// A #chapter-<n> link followed on the page itself (or the hash edited) plays that chapter.
+addEventListener('hashchange', () => {
+  const chapter = linked();
+  if (chapter && player) {
+    show(true);
+    play(chapter);
+  }
 });
 
 // The terminal measures its font when it is created, so wait for the font (at most 1.5 s).
