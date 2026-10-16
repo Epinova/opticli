@@ -3,9 +3,81 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
-## Unreleased
+## 0.18.0 (16 October 2026)
+
+Environments and content sync: give databases roles (production is only read), export content as a plan,
+pull another environment's content into the local database, and let the user write a sealed plan to production.
 
 ### New
+
+- Environment roles. `opticli db add <name> --role <local|dev|test|prod>` adds another environment's database by name
+  (asking for the connection string, and its password without showing it, at a terminal; or `--connection`), and
+  `--db <name>` reads it for a run. `db role <id|name> <role>` gives any database in `db list` a role, and
+  `db remove <name>` removes an entry. `db list` and `doctor` show each database's name and role. A role belongs to
+  the server and database (compared as SqlClient reads them, ignoring case, `tcp:`, the default port, an instance
+  name beside a port and the loopback names; a `Failover Partner` counts too), not to the entry: every entry, setting and connection string that points at a production database is
+  production, in every project. A weaker role than a database has needs a terminal, where the user types the
+  database's name (`refused`, exit 3, `details.reason: "roleLowered"`, elsewhere), and `db remove` keeps the role.
+- A database with the role `prod` is only read, when a run picks it with `--db`, `--connection`, `--profile` or
+  `OPTICLI_DB`: responses carry a warning and `meta.database.role: "prod"`, and opticli connects with
+  `ApplicationIntent=ReadOnly` unless the string sets the intent. `sql` works, with the warning. It is never the
+  development database: `db use` refuses it, and a saved choice, a configured `connection` or a Development default
+  that is production is refused with a hint to choose another. `serve`, `env` and every write command, `--dry-run`
+  and `apply` included, are `refused` (exit 3, `details.reason: "prodDatabase"`), however the database was picked;
+  the check runs before the command reads anything, again on the way to the site agent, and when the site starts.
+  `serve --status` warns when the running site's database has been given the role since it started.
+- `doctor` warns when the login saved for a production database can write (`db_owner`, `db_datawriter`, or INSERT or
+  UPDATE on `tblContent`); it says nothing when it may not ask or can't connect.
+- `meta.database` also appears for a local database with a role other than `local`, and has `role`.
+
+- `opticli export <ref>... [--descendants]` (or `--site <name>`, `--all`) writes content of any database as a plan
+  folder (`plan.json`, `files/` with media, `texts/` with long rich text) that `apply --update-existing` brings into
+  another database with the same GUIDs. It only reads the database, over SQL, so it works on production (`--db prod`).
+  Each item is a create, block or upload step with its values and built-in settings (publish dates, URL segment, menu
+  visibility, simple address, shortcut, sort order and index, category), parents first and content before what refers
+  to it; references go by `$id` to what the plan creates and by GUID to anything else, in blocks, rich text and CMS 13
+  compositions (which keep their node keys) too; a cycle is closed by a later `set`; other languages are `translate`
+  steps; published branches are published. Media files come from `--blobs` (a folder of blob containers, or an Azure
+  container URL with a SAS token) or the local site's blob folder. The result lists what the target must already have
+  (`externalRefs`), what was left out and why (`skipped`, newer `drafts`, `dropped` values) and what an export never
+  writes (`notExported`).
+- `export` reads in batches: a few queries per 250 items instead of about ten per language branch (an `--all` export of
+  a 16 000-item site took 10 s instead of 97 s), with the same plan.
+- `export` brings folders in a "For this page" folder, and what is in them (before: skipped), and a branch scheduled for
+  publishing at a later time as a draft with a `publish` step at that time (before: a plain draft).
+- A plan's `create` takes `"for": <ref>` instead of `"parent"`: a folder in that content's "For this page" folder (made
+  when it doesn't exist), which has a GUID of its own in every database.
+- Plans may have a top-level `"source"` object, which `apply` accepts and doesn't read (`export` will write it). In rich
+  text in a plan, `src="$id"` (an image) and `href="$id?epslanguage=sv"` become permanent links too.
+- `get` shows a page's `urlSegment` and `visibleInMenu` (as the version shown has them), which `set` writes as
+  `PageURLSegment` and `PageVisibleInMenu`.
+- `apply --update-existing` replaces an existing upload's file, in a new version, when the step's file differs
+  (compared by SHA-256, also in a dry run, which sends no bytes; a warning says so), and is `unchanged` when it is the
+  same. Before, the media item kept its file and the step said `unchanged` whatever the file was.
+- CMS 13: a whole composition written to content (`composition` in `set`/`create` values or a plan) makes a node with a
+  key the content doesn't have with that key, instead of refusing it (`usage`, "no node of the composition has the
+  key"). A composition copied from another database keeps its keys, so writing it again finds them and changes
+  nothing; before, it was written without keys and saved again, with new ones, every time.
+- `blob` and the blob an upload reports read the file blob path from the environment too
+  (`EPiServer__Cms__FileBlobProvider__Path`, over appsettings, as the site reads it).
+
+- `opticli sync pull --from <name> (<ref>... | --site <name> | --all)` keeps the local database's content in step with
+  another environment's: an export of the source (read over SQL only, so production is fine), a diff against the local
+  database by GUID, and an `apply --update-existing` of only what changed, through the local site. What the local
+  database lacks is created, what differs updated (published when the source's branch is), what the source moved moved,
+  what is in the local recycle bin restored, and with `--delete` what the source deleted since it was synced (or has in
+  its recycle bin) moved to the local recycle bin; content only in the local database is left alone. A sync state in the
+  user config folder (per project, source and local database) records what each item's versions were, so the next pull
+  reads only what changed: a local change to content the source changed too is a conflict, listed and left alone unless
+  `--overwrite-local`; a local change alone is kept. The first pull takes the baseline (it can't tell local changes
+  from the source's, so it writes over published local changes; a local draft is a conflict). The source's content
+  model is compared with the local build's over SQL: content of a type the build lacks is skipped and properties it
+  lacks are left out, each listed (`--strict` fails instead), and so are values that refer to content, visitor groups or
+  categories the local database doesn't have. An empty diff applies nothing. It writes only to a database with the role
+  `local` (`refused`, `details.reason: "syncTarget"`, otherwise). Output: counts and lists per action, `run` with
+  `apply`'s report; progress on stderr at a terminal; after Ctrl+C or a failed step the state holds what was saved.
+- `move` to the parent the content already has changes nothing (`unchanged` in a plan, a warning); the CMS saved and
+  logged a move to the same place.
 
 - A sealed apply writes to production, run by the user in their own terminal; a coding agent prepares and seals it but
   can't run it. `opticli apply <plan> --dry-run --seal-for <prod>` checks the plan against the local site, compares
@@ -29,74 +101,6 @@ again to update the skill.
   changes there. It writes nothing to production; the user runs the command it prints.
 - The site agent compares its code with a local database's content model on request (`drift?compare=model`), which
   sealing uses: types and properties only in the database would stop the sealed run's writes.
-
-- `opticli sync pull --from <name> (<ref>... | --site <name> | --all)` keeps the local database's content in step with
-  another environment's: an export of the source (read over SQL only, so production is fine), a diff against the local
-  database by GUID, and an `apply --update-existing` of only what changed, through the local site. What the local
-  database lacks is created, what differs updated (published when the source's branch is), what the source moved moved,
-  what is in the local recycle bin restored, and with `--delete` what the source deleted since it was synced (or has in
-  its recycle bin) moved to the local recycle bin; content only in the local database is left alone. A sync state in the
-  user config folder (per project, source and local database) records what each item's versions were, so the next pull
-  reads only what changed: a local change to content the source changed too is a conflict, listed and left alone unless
-  `--overwrite-local`; a local change alone is kept. The first pull takes the baseline (it can't tell local changes
-  from the source's, so it writes over published local changes; a local draft is a conflict). The source's content
-  model is compared with the local build's over SQL: content of a type the build lacks is skipped and properties it
-  lacks are left out, each listed (`--strict` fails instead), and so are values that refer to content, visitor groups or
-  categories the local database doesn't have. An empty diff applies nothing. It writes only to a database with the role
-  `local` (`refused`, `details.reason: "syncTarget"`, otherwise). Output: counts and lists per action, `run` with
-  `apply`'s report; progress on stderr at a terminal; after Ctrl+C or a failed step the state holds what was saved.
-- `export` reads in batches: a few queries per 250 items instead of about ten per language branch (an `--all` export of
-  a 16 000-item site took 10 s instead of 97 s), with the same plan.
-- `export` brings folders in a "For this page" folder, and what is in them (before: skipped), and a branch scheduled for
-  publishing at a later time as a draft with a `publish` step at that time (before: a plain draft).
-- A plan's `create` takes `"for": <ref>` instead of `"parent"`: a folder in that content's "For this page" folder (made
-  when it doesn't exist), which has a GUID of its own in every database.
-- `move` to the parent the content already has changes nothing (`unchanged` in a plan, a warning); the CMS saved and
-  logged a move to the same place.
-- `opticli export <ref>... [--descendants]` (or `--site <name>`, `--all`) writes content of any database as a plan
-  folder (`plan.json`, `files/` with media, `texts/` with long rich text) that `apply --update-existing` brings into
-  another database with the same GUIDs. It only reads the database, over SQL, so it works on production (`--db prod`).
-  Each item is a create, block or upload step with its values and built-in settings (publish dates, URL segment, menu
-  visibility, simple address, shortcut, sort order and index, category), parents first and content before what refers
-  to it; references go by `$id` to what the plan creates and by GUID to anything else, in blocks, rich text and CMS 13
-  compositions (which keep their node keys) too; a cycle is closed by a later `set`; other languages are `translate`
-  steps; published branches are published. Media files come from `--blobs` (a folder of blob containers, or an Azure
-  container URL with a SAS token) or the local site's blob folder. The result lists what the target must already have
-  (`externalRefs`), what was left out and why (`skipped`, newer `drafts`, `dropped` values) and what an export never
-  writes (`notExported`).
-
-- Environment roles. `opticli db add <name> --role <local|dev|test|prod>` adds another environment's database by name
-  (asking for the connection string, and its password without showing it, at a terminal; or `--connection`), and
-  `--db <name>` reads it for a run. `db role <id|name> <role>` gives any database in `db list` a role, and
-  `db remove <name>` removes an entry. `db list` and `doctor` show each database's name and role. A role belongs to
-  the server and database (compared as SqlClient reads them, ignoring case, `tcp:`, the default port, an instance
-  name beside a port and the loopback names; a `Failover Partner` counts too), not to the entry: every entry, setting and connection string that points at a production database is
-  production, in every project. A weaker role than a database has needs a terminal, where the user types the
-  database's name (`refused`, exit 3, `details.reason: "roleLowered"`, elsewhere), and `db remove` keeps the role.
-- A database with the role `prod` is only read, when a run picks it with `--db`, `--connection`, `--profile` or
-  `OPTICLI_DB`: responses carry a warning and `meta.database.role: "prod"`, and opticli connects with
-  `ApplicationIntent=ReadOnly` unless the string sets the intent. `sql` works, with the warning. It is never the
-  development database: `db use` refuses it, and a saved choice, a configured `connection` or a Development default
-  that is production is refused with a hint to choose another. `serve`, `env` and every write command, `--dry-run`
-  and `apply` included, are `refused` (exit 3, `details.reason: "prodDatabase"`), however the database was picked;
-  the check runs before the command reads anything, again on the way to the site agent, and when the site starts.
-  `serve --status` warns when the running site's database has been given the role since it started.
-- `doctor` warns when the login saved for a production database can write (`db_owner`, `db_datawriter`, or INSERT or
-  UPDATE on `tblContent`); it says nothing when it may not ask or can't connect.
-- `meta.database` also appears for a local database with a role other than `local`, and has `role`.
-- `get` shows a page's `urlSegment` and `visibleInMenu` (as the version shown has them), which `set` writes as
-  `PageURLSegment` and `PageVisibleInMenu`.
-- `apply --update-existing` replaces an existing upload's file, in a new version, when the step's file differs
-  (compared by SHA-256, also in a dry run, which sends no bytes; a warning says so), and is `unchanged` when it is the
-  same. Before, the media item kept its file and the step said `unchanged` whatever the file was.
-- CMS 13: a whole composition written to content (`composition` in `set`/`create` values or a plan) makes a node with a
-  key the content doesn't have with that key, instead of refusing it (`usage`, "no node of the composition has the
-  key"). A composition copied from another database keeps its keys, so writing it again finds them and changes
-  nothing; before, it was written without keys and saved again, with new ones, every time.
-- Plans may have a top-level `"source"` object, which `apply` accepts and doesn't read (`export` will write it). In rich
-  text in a plan, `src="$id"` (an image) and `href="$id?epslanguage=sv"` become permanent links too.
-- `blob` and the blob an upload reports read the file blob path from the environment too
-  (`EPiServer__Cms__FileBlobProvider__Path`, over appsettings, as the site reads it).
 
 ### Changed
 
