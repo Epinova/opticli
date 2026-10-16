@@ -77,6 +77,7 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
 | Sign in locally to a restored database (only when asked) | `opticli users add <name> --dry-run` (needs `serve`); `opticli users roles` |
 | Copy content from another environment's database (only when asked) | `opticli export <ref> --descendants --db <name> --out <dir>`, then `opticli apply <dir>/plan.json --update-existing --dry-run` |
 | Bring the local database up to date with another environment's content (only when asked) | `opticli sync pull --from <name> --all --dry-run` (needs `serve`), then without `--dry-run` once the user agrees |
+| Get content to production (only when asked) | `opticli sync push --to <name> <ref>`, or `opticli apply <plan> --dry-run --seal-for <name> --update-existing` (needs `serve`): hand the user `data.userCommand`; never run it |
 | Anything else (read-only) | `opticli sql "SELECT TOP 10 ... FROM tblContent ..."` |
 
 ## Recipes
@@ -102,7 +103,24 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
   files (`--blobs <folder or https container URL with SAS>` for a database that isn't local) and long texts. Check
   `externalRefs` (content the plan refers to but doesn't create: the development database must have it), `skipped`,
   `drafts` and `dropped`, then `opticli apply <dir>/plan.json --update-existing --dry-run` against the development
-  database, and run it once the user agrees. Applying it to production is refused, as every write there.
+  database, and run it once the user agrees. Applying it to production is refused, as every write there: see the next
+  recipes.
+- **Content for production** (only when the user asked for it there): you prepare it, the user writes it. First pull
+  (`opticli sync pull --from <name>`), so the local database is a recent copy of production; make the change locally and
+  check it there; then `opticli sync push --to <name> <ref>` (what changed below `<ref>`), or write a plan by GUID and
+  seal it with `opticli apply <plan> --dry-run --seal-for <name> --update-existing`. Both check the plan against the local
+  site and read production (only read), and print `data.userCommand`: **give the user that command to run in their own
+  terminal, with what it does** (`summary`/`push`: created, updated, moved; `conflicts`, `skipped`, `media` and
+  `dropped` left out) **and what it doesn't** (`notChecked`: production's servers need a restart afterwards, the local
+  build's code runs against production, media goes through the edit UI). Never run that command yourself (it is
+  `refused` without a terminal, `details.reason: "sealNeedsTerminal"`, and it asks for a write login only the user
+  has), never fake a terminal for it (`script`, `expect`, `unbuffer`), never pass it input, and never edit, copy, write or
+  delete anything in the `seals` folder or `seal.key`. A refusal while sealing (`sealedPlan`, `modelDiffers`,
+  `sealValidation`) or a `conflict` the user reports from the run (`productionChanged`, `planChanged`, `buildChanged`,
+  `sealExpired`) means: fix the plan, or pull and seal again. A sealed plan never deletes, unpublishes, changes access
+  or uploads media: tell the user to do those in production's edit UI. After the user's run, remind them to restart
+  production's site so its servers show the changes. Don't change code or rebuild between sealing and the user's run (the
+  run refuses a changed build).
 - **Keep the local database in step with another environment** (only when the user asked): `opticli sync pull --from
   <name> --all` (or refs, or `--site <name>`; needs `serve` on the local database, on the current build). It creates,
   updates, moves and restores what changed in the source, by GUID; `--delete` also moves what the source deleted to
@@ -164,7 +182,8 @@ placed by reference has `content: {ref, ...}` (its values are its own: `set <its
   `refused` (exit 3, `details.reason: "prodDatabase"`), and so is `db use` of it. **Never try to get around a
   production refusal**: no other `--db`, `--connection`, `OPTICLI_DB`, exported connection string or spelling of the
   server, no editing, deleting or replacing the user config (no `XDG_CONFIG_HOME` or `APPDATA` pointing elsewhere),
-  no `sql`. Tell the user that opticli doesn't write to production.
+  no `sql`. Tell the user that opticli writes to production only through a sealed apply that they run themselves (see
+  **Content for production** above), and prepare one if they want that.
 - Roles are the user's: don't run `opticli db add` or `opticli db role` unless they asked. A weaker role than a
   database has needs their own terminal (`refused`, `details.reason: "roleLowered"`, elsewhere): tell them, don't
   look for another way (never fake a terminal with `script` or the like). Don't pass a connection string with a password on the command line; ask the user to run
@@ -302,7 +321,8 @@ order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a cod
 - Start `serve` only when a write is needed, and stop it (`opticli serve --stop`) when you are done.
 - Never run `opticli db use` or pass `--db`/`--connection`/`OPTICLI_DB` on your own initiative: which database is
   the development one, and whether to touch any other, is the user's decision. Writes to anything but the development
-  database are refused (exit 3), and production is never written to. Don't try to work around a refusal; tell the user.
+  database are refused (exit 3), and production is only written to by a sealed apply the user runs. Don't try to work
+  around a refusal; tell the user.
 - Don't write to the CMS database with SQL; `sql` is read-only by design.
 - Whenever you mention content to the user (in a report, a proposal or a question), give its name next to the ref,
   and the type or language when that tells items apart: "About us" (page 10, draft 10_1473), not 10 or 10_1473

@@ -36,7 +36,8 @@ so and `meta.database.role` is `prod`, and opticli connects with `ApplicationInt
 development database (`db use` refuses it; a saved choice, configured connection or Development default that is
 production is `refused` with a hint), and writes (`--dry-run` too), `apply`, `serve` and `env` against it are
 `refused` (exit 3, `details.reason: "prodDatabase"`). `sql` works, with the warning. `doctor` warns when a
-production entry's login can write.
+production entry's login can write. The one write to production is a sealed apply the user runs: see
+[Sealed apply to production](#sealed-apply-to-production).
 
 ## Read commands
 
@@ -168,6 +169,8 @@ directly: see [Approval sequences](#approval-sequences).
 | `users remove <name>` | `opticli users remove dev` |
 | `apply <plan.json\|->` | `opticli apply plan.json --dry-run` |
 | `sync pull --from <name> (<ref>... \| --site <name> \| --all) [--delete] [--overwrite-local]` | `opticli sync pull --from prod --all --dry-run` (only when the user asked; see [Sync pull](#sync-pull)) |
+| `sync push --to <name> (<ref>... \| --site <name> \| --all)` | `opticli sync push --to prod /en/campaign/`: a sealed plan for production; hand the user `data.userCommand` (see [Sealed apply to production](#sealed-apply-to-production)) |
+| `apply <plan> --dry-run --seal-for <name>` | `opticli apply plan.json --dry-run --seal-for prod --update-existing`: seals a plan for production; the user runs `apply <plan> --db <name> --seal <id>` |
 
 `unpublish` takes a published branch offline as the edit UI's expiry does: a copy of the published version with
 `StopPublish` set to now is published (`unpublished: true`), drafts stay as they are, and `get` notes that it is offline.
@@ -846,6 +849,56 @@ apply, and nothing was), `plan` (the folder, with `--out`), `run` (`apply`'s rep
 state. On a failed step or Ctrl+C the error's `details` is the same object, `run` with `partial: true`; the state has
 what was saved, so the next pull carries on.
 
+## Sealed apply to production
+
+Production (role `prod`) is written to only by a sealed plan that the user runs in their own terminal. You prepare it:
+
+- `opticli apply <plan> --dry-run --seal-for <name> [--update-existing] [--publish] [--request-approval]` (needs `serve` on
+  the local development database, which must have the role `local`, else `refused`, `details.reason: "sealValidation"`;
+  `<name>` must have the role `prod`, else `refused`, `details.reason: "sealTarget"`). No plan from stdin,
+  `--allow-outside` or `--accept-drift` (`usage`).
+- `opticli sync push --to <name> (<ref>... | --site <name> | --all) [--languages en,sv] [--out <dir>]`: the plan from the local
+  database (as `export` writes it, by GUID), with only what differs from production (read over SQL), then sealed as
+  above (with `--update-existing`). Output `data.push`: `created[]`, `updated[]`, `moved[]`, `restored[]` (from
+  production's recycle bin), `unchanged` (a count), `conflicts[]` (production changed it since the last pull, or it was
+  never pulled from there: pull first), `skipped[]` (someone's unpublished changes in production, a parent production
+  lacks, a move into a "For this page" folder), `media[]` (left out: a sealed apply writes no files), `dropped[]`,
+  `drafts[]`, `steps`, `plan`. No steps: nothing is sealed (`seal` null). `--out` (default `push-<database>-<time>`) must
+  stay until the user ran the command.
+
+What a sealed plan may do: `create`, `block`, `set`, `area`, `composition`, `translate`, `publish`, `move` and `restore`,
+with every ref a GUID or `$id` (also `parent`, `for`, `to`, `item`, a blueprint, a ContentArea item's `ref` and the value
+of a reference property), every `create`/`block` with a fixed GUID (`guid`, or `guidNamespace` and `id`). Not `delete`,
+`unpublish`, `access`, `discard`, `upload` (or `replace`), `translate` with `remove`, `includeDraft`, `force`,
+`baseVersion`, a version in `publish` or `from` (`"from": "published"` is fine): `refused`, exit 3,
+`details.reason: "sealedPlan"`, `details.problems[]` lists each.
+
+Sealing dry-runs the plan against the local site, and fails (nothing sealed) when production's content model differs from
+the local database's, or the local site's code differs from its own database (types or properties only in the database:
+the run's site would refuse to write against production): `conflict`, exit 5, `details.reason: "modelDiffers"`,
+`details.differences[]` (`side`, `type`, `property`, `difference`) or `details.drift`. It reads production's versions of
+everything the plan touches. Output (`data`; `sync push` puts it in `data.seal`): `seal` (the id), `file`, `expires` (24
+hours), `target`, `plan`, `planHash`, `planFiles`, `options`, `summary` (`steps`, `operations`, `types`, `publishes`,
+`existing`, `new`, `touched`), `build` (`output`, `built`, `commit`, `uncommitted`), `model`, `validatedOn`,
+**`userCommand`** (`opticli apply <plan> --db <name> --seal <id>`), `notChecked`.
+
+Hand the user `userCommand` with what it will do and `notChecked`. Never run it (without a terminal: `refused`,
+`details.reason: "sealNeedsTerminal"`, `details.userCommand`), never fake a terminal or feed it input, never touch the
+`seals` folder or `seal.key`, and don't change code or rebuild before the user ran it. What the user's run can answer, so
+you know what to do next:
+
+| `error` | Means | Do |
+|---|---|---|
+| `conflict`, `details.reason: "productionChanged"` | Production's model or content the plan touches changed since the seal (`details.changes[]`) | Pull, check, seal again |
+| `conflict`, `"planChanged"` / `"buildChanged"` | The plan, a file it reads, or the site's build changed since the seal | Seal again (and don't change them before the run) |
+| `conflict`, `"sealExpired"` | Older than 24 hours | Seal again |
+| `refused`, `"sealUsed"` | A seal runs once | Seal again |
+| `refused`, `"sealTampered"`, `"sealTarget"`, `"sealProject"`, `"sealPlan"` | The seal was edited, or run against another database, project or plan file | Seal again; run exactly `userCommand` |
+| `drift` | The site's code differs from production's database | Tell the user; nothing was written, and a sealed run accepts no drift |
+| `login_failed` | The write login was refused; nothing written, the seal unused | The user runs it again |
+
+After a run, production's servers still show what they had cached: tell the user to restart the site (every instance).
+
 ## serve and env
 
 - `opticli serve [--build] [--port N] [--https] [--scheduler] [--foreground] [--output <dll>] [--timeout s] [--allow-pending-migrations]`: runs the existing build
@@ -881,7 +934,8 @@ what was saved, so the next pull carries on.
 | `not_found`: no CMS project / several candidates | `cd` into the site's repository, or pass `--project path/to/Site.csproj`. |
 | No connection string | `opticli doctor`; `--connection-name` if the site's connection string has another name. |
 | `needs_selection` (exit 6) | Show the user `error.details.choices`, ask which is their development database, run `opticli db use <id>`. |
-| `refused` (exit 3), `details.reason: "prodDatabase"` | The database is production: opticli only reads it. Tell the user; don't try another way to the same database (another `--db`, `--connection`, spelling, `OPTICLI_DB`, config edit, another user config through `XDG_CONFIG_HOME`/`APPDATA`). From a command without `--db`: the development database (saved, configured or the site's default) is production; the user chooses another with `opticli db use <id>`. |
+| `refused` (exit 3), `details.reason: "prodDatabase"` | The database is production: opticli only reads it. Tell the user; don't try another way to the same database (another `--db`, `--connection`, spelling, `OPTICLI_DB`, config edit, another user config through `XDG_CONFIG_HOME`/`APPDATA`). To write there, prepare a sealed apply for the user to run ([Sealed apply to production](#sealed-apply-to-production)). From a command without `--db`: the development database (saved, configured or the site's default) is production; the user chooses another with `opticli db use <id>`. |
+| `refused` (exit 3), `details.reason: "sealNeedsTerminal"` | A sealed apply runs only in the user's own terminal. Give the user `details.userCommand`; never run it yourself or fake a terminal. |
 | `refused` (exit 3), `details.reason: "roleLowered"` | Giving a database a weaker role needs the user's own terminal. Tell the user; never fake a terminal. |
 | `refused` (exit 3) | A safety rule: serving against a remote database that isn't the development one, SQL the `sql` guard won't run, or a request the site agent won't do (e.g. moving or deleting a start page or a folder that contains one). Don't work around it; tell the user. |
 | `unreachable` (exit 4) on a remote database | Firewall (Azure SQL allows only listed client IPs), VPN, or no Entra ID token: `az login`. Tell the user. |

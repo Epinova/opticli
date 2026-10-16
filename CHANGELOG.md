@@ -7,6 +7,27 @@ again to update the skill.
 
 ### New
 
+- A sealed apply writes to production, run by the user in their own terminal; a coding agent prepares and seals it but
+  can't run it. `opticli apply <plan> --dry-run --seal-for <prod>` checks the plan against the local site, compares
+  production's content model with the local build's and reads production's versions of everything the plan touches
+  (over SQL, read only), and writes a seal (user config folder, MAC'd, 24 hours, used once) with the plan's hash (the
+  plan and every file it reads), the target, the project and the build's fingerprint. It prints the command for the user
+  (`data.userCommand`): `opticli apply <plan> --db <prod> --seal <id>`, which runs only at a terminal (`refused`,
+  `details.reason: "sealNeedsTerminal"`, otherwise), shows what the plan does, asks for the database's name and a write
+  login (never saved; the saved login stays read-only), refuses when the plan, the build, production's model or a touched
+  item changed (`conflict`, exit 5, with what changed), starts the site against production for that run only (shared
+  mode, no drift accepted, loopback only, the token and the login given on its stdin, not in its environment), checks
+  production again right before the first save, applies the plan from the bytes it hashed, and stops the site. Sealed
+  plans only create, change, move, translate and publish content by GUID: no deletes, unpublishing, access rights,
+  discards, uploads, other people's drafts or skipped concurrency checks (`refused`, `details.reason: "sealedPlan"`). The
+  output says to restart production's site: its servers keep what they had cached.
+- `opticli sync push --to <prod> (<ref>... | --site <name> | --all)`: what changed locally, as a sealed plan for production
+  (an export of the local content with only what differs from production). Media is left out and listed; so is content
+  production changed since the last pull, or never pulled from it (`conflicts`), and content with someone's unpublished
+  changes there. It writes nothing to production; the user runs the command it prints.
+- The site agent compares its code with a local database's content model on request (`drift?compare=model`), which
+  sealing uses: types and properties only in the database would stop the sealed run's writes.
+
 - `opticli sync pull --from <name> (<ref>... | --site <name> | --all)` keeps the local database's content in step with
   another environment's: an export of the source (read over SQL only, so production is fine), a diff against the local
   database by GUID, and an `apply --update-existing` of only what changed, through the local site. What the local
@@ -77,6 +98,7 @@ again to update the skill.
 
 ### Changed
 
+- The refusal of a write to production (`prodDatabase`) now points at the sealed apply in its hint.
 - `apply` checks a plan of thousands of steps much faster: what each step's check looked up by scanning the whole plan
   is indexed once per plan, and the approval sequence of the content steps publish below is read once per ancestor
   (the dry run of a 17 000-step plan `sync pull` made, reading included: 56 s instead of 240 s).
@@ -112,6 +134,8 @@ again to update the skill.
 
 ### Skill
 
+- The agent prepares writes to production as a sealed plan (`sync push`, `apply --dry-run --seal-for`) and hands the user
+  the command; it never runs it, fakes a terminal for it, changes a role or touches a seal.
 - `sync pull`: run it only when the user asked, `--dry-run` first, and never add `--overwrite-local` or `--delete`, or
   delete the sync state, on its own.
 - The skill tells an agent what `prod` means, never to work around a production refusal or a refused role change,

@@ -127,6 +127,8 @@ The skill sets these rules for agents:
 - Start `serve` only when writing.
 - Never choose the development database for the user.
 - Never try to get around a refusal, such as a production database's: tell the user.
+- Prepare writes to production as a sealed plan and hand the user the command; never run it, fake a terminal for it,
+  change a role or edit a seal.
 
 opticli enforces its own safety rules either way (see [Safety model](#safety-model)).
 
@@ -244,7 +246,8 @@ What `prod` means:
   `meta.warnings` and `meta.database.role: "prod"`, and opticli connects with `ApplicationIntent=ReadOnly` unless the
   connection string sets the intent itself. `sql` works too (it is read-only and keeps personal data out).
 - `serve`, `env` and every write command (including `--dry-run` and `apply`) are `refused` (exit 3,
-  `details.reason: "prodDatabase"`), whichever way the database was picked. opticli doesn't write to production.
+  `details.reason: "prodDatabase"`), whichever way the database was picked. The one way to write to production is a
+  sealed apply, which only the user runs, in their own terminal: see [Writing to production](#writing-to-production).
 
 ### Exporting content
 
@@ -356,6 +359,91 @@ site); the baseline of a copy that has them all, 20 seconds; a pull after 50 edi
 nothing changed, 3–5 seconds (it compares versions only). A site whose saves run event handlers (search indexing, cache
 warmers) writes slower.
 
+### Writing to production
+
+Content gets to production in one command that the user runs in their own terminal. A coding agent prepares it and
+checks it, and *seals* it; it can't run it, and opticli doesn't let it:
+
+```sh
+opticli sync pull --from prod --all                                 # first: the local database is a recent pull of production
+opticli sync push --to prod /en/campaign/                           # what changed locally, as a plan, sealed; or:
+opticli apply campaign.plan.json --dry-run --seal-for prod --update-existing
+# both print the command for the user (data.userCommand):
+opticli apply /path/to/plan.json --db prod --seal 7f3a9c1e0b7d4e55  # the user, at their terminal
+```
+
+**Sealing** (`apply <plan> --dry-run --seal-for <name>`, an agent may do it) checks the plan against the local site (a
+dry run, as `apply --dry-run` does; the development database must be `local`, with its site running on this build),
+reads production over SQL with its saved read-only login, and writes nothing there:
+- the plan may only create, change, move, translate and publish content, by GUID (or `$id` of what it creates): `delete`,
+  `unpublish`, `access`, `discard`, `upload` (and `replace`), a translation's `remove`, `includeDraft`, `force` and version
+  ids are refused (`refused`, exit 3, `details.reason: "sealedPlan"`, every problem listed), and so are content ids and
+  URLs (in refs, a ContentArea item's `ref`, the value of a reference property), which name other content in another
+  database. A create needs a fixed GUID (`guid`, or `guidNamespace`), so a second run can't make a copy;
+- production's content model must be the build's: compared with the local database's (which holds the build's model)
+  both ways, by GUID and name, and the local site's code with its own database (types and properties only in the
+  database, which removed code left, would stop the run's writes too). Otherwise `conflict` (exit 5,
+  `details.reason: "modelDiffers"`);
+- the seal records the plan's SHA-256 (plan.json and every file it reads), production's server and database (as roles
+  key them), the project, a fingerprint of the build output (every file in its folder, the project's `appsettings*.json`
+  and user secrets), production's model fingerprint, and the newest and published version (with when it was saved) of
+  every item the plan touches, and whether the items it only names are there. It is `seals/<id>.json` in the user config
+  folder, with a MAC (HMAC-SHA256, keyed with `seal.key` there), and is good for 24 hours, once.
+
+`sync push --to <name> (<ref>... | --site <name> | --all)` builds such a plan from the local database and seals it: an
+export of the local content, compared with production by GUID, with only what differs (created, updated, moved, or
+restored from production's recycle bin). It leaves out media (listed: upload it in production's edit UI), content
+production already has as it is, content with someone's unpublished changes in production, and content production
+changed since the last pull, or that was never pulled from it (`conflicts`: the pull's sync state says what production had
+then; pull first). It never deletes. The plan folder (`--out`, default `push-<database>-<time>`) must stay until the
+command has run.
+
+**The run** (`apply <plan> --db <name> --seal <id>`, the user only) refuses without a terminal on stdin, stdout and stderr
+(`refused`, exit 3, `details.reason: "sealNeedsTerminal"`, with the command in `details.userCommand`), takes no other
+option (the seal's are used), and:
+1. checks the seal: its MAC and that it wasn't used, the database `--db` names (production, the same server and database),
+   the project, the plan file and its hash (read once: the plan runs from those bytes, so a file swapped afterwards isn't
+   what runs), the build, and its age. Another target, project or plan file is `refused`; an expired seal, a changed plan
+   or build is a `conflict` (exit 5): seal again;
+2. shows what the plan does (counted from the plan it read: steps, types, new and existing content, publishes), the target,
+   the build (and its git commit), and asks for the database's name;
+3. reads production again with the saved login: its model and every touched item must be as sealed (`conflict`, exit 5,
+   `details.reason: "productionChanged"`, `details.changes` says what changed: seal again);
+4. asks for the write login (user, and the password without showing it), used for this run only and never written
+   anywhere (not the seal, the log, the output or the environment). It replaces the saved login's user and password; a
+   connection that signs in as the user (integrated security, Microsoft Entra ID) asks for nothing and writes as them;
+5. marks the seal used, starts the site against production for this run only and stops it again afterwards (also on a
+   failure or Ctrl+C): in shared mode (scheduler, schema updates, content type sync and store remapping off), refusing
+   pending EF Core migrations and any drift (nothing is accepted), on `127.0.0.1` only (a site that also listens elsewhere is
+   stopped before anything is written), with no `serve` state (no other command finds it), the token and the connection
+   string handed to it on stdin rather than in its environment;
+6. checks the plan against production (a dry run of every step), checks production once more, right before the first
+   save, and applies it. A publish that would put someone else's unpublished changes live is refused, as everywhere
+   (no `--include-draft`).
+
+What a seal doesn't cover:
+- **Production's servers keep their cache.** The run's site isn't on production's event bus, so nothing tells production's
+  servers: changed and moved content stays as it was there (a moved page keeps answering at its old URL), and new
+  content is missing from menus and listings, until the site restarts or an item goes unread for the content cache's
+  sliding expiration (12 hours by default; content read more often never refreshes). Restart the site (every
+  instance; on DXP the environment's web app) after the run. The output says so.
+- **Your build runs against production, with the write login.** Its startup code, initialization modules, event handlers
+  (search indexing, webhooks, emails, cache warmers) and configuration run as they do locally, in `Development`, with your
+  local settings (search index and webhook endpoints included). The seal makes sure the build is the one that was sealed;
+  it can't say what that code does. Review what the agent changed in the code before you run a sealed apply.
+- **Media, deletes, unpublishing and access rights**: never. Do those in production's edit UI.
+- Content an editor changes after the last check, while the plan runs, is caught by each step's own checks (a newer
+  version is a conflict, someone's draft isn't published), not by the seal.
+- A production database with types or properties its code no longer has is drift, and the run accepts none: clean them
+  up there (admin mode) first.
+
+Why an agent can't: the run needs a person at a terminal and the write login, which only the user has (save only a
+read-only login for production, see [Environments](#environments)). The seal ties what the user sees to what runs. An agent
+can still fake a terminal (`script`, `expect`); that gets it past the terminal check but not the write login. With
+integrated security or Microsoft Entra ID, the agent runs as the user and could write to production with any tool, sealed
+apply or not: give production a read-only SQL login for reads and a separate login for writes. See also
+[Things these rules can't see](#safety-model).
+
 ## Safety model
 
 | Rule | Enforced by |
@@ -363,7 +451,8 @@ warmers) writes slower.
 | A remote database is used only when the user chose it as the development database, or for one run with `--db` or `--connection`, with a warning on every response. Only literal loopback names (`localhost`, `127.0.0.1`, `::1`, `.`, `(local)`) and LocalDB count as local. A host name that resolves to 127.0.0.1 counts as remote. | CLI, before connecting |
 | `export` only reads (over SQL, never through a site), so it works on production; it writes nothing but its own folder. | CLI |
 | `sync pull` only reads its source (over SQL, read-only intent for production) and writes only to a database with the role `local` (refused otherwise, exit 3, `details.reason: "syncTarget"`), through its site, as `apply --update-existing` does. It never deletes for good: `--delete` moves content to the recycle bin. A local change to content the source changed too is a conflict, left alone unless `--overwrite-local`. | CLI, then the site agent |
-| A database with the role `prod` is only read, and only when a run picks it: it is never the development database (`db use` and a saved choice that became production are refused), and `serve`, `env` and every write are refused (exit 3, `details.reason: "prodDatabase"`), whether it was picked by name, id, database name, `--connection`, `--profile`, `OPTICLI_DB` or an exported connection string. Roles belong to a server and database, and a weaker one needs a person at a terminal. Reads connect with `ApplicationIntent=ReadOnly`. | CLI before anything is read, again on the way to the site, and when starting it |
+| A database with the role `prod` is only read, and only when a run picks it: it is never the development database (`db use` and a saved choice that became production are refused), and `serve`, `env` and every write are refused (exit 3, `details.reason: "prodDatabase"`), whether it was picked by name, id, database name, `--connection`, `--profile`, `OPTICLI_DB` or an exported connection string. Roles belong to a server and database, and a weaker one needs a person at a terminal. Reads connect with `ApplicationIntent=ReadOnly`. The only exception is a sealed apply (next row). | CLI before anything is read, again on the way to the site, and when starting it |
+| A sealed apply writes to production only at a terminal (stdin, stdout and stderr), after the user typed the database's name and the write login, once per seal (24 hours), and only if the plan and its files, the build, production's content model and every item the plan touches are as sealed (checked before the login is asked, and again right before the first save). Sealed plans create, change, move, translate and publish by GUID; never delete, unpublish, change access, discard, upload, or include someone else's draft. The site for the run listens on loopback only, gets its token and the write login on stdin (not in its environment or a state file), runs in shared mode, accepts no drift, and is stopped afterwards. The write login is never saved. | CLI (seal, terminal, checks), the run's own site launcher, site agent |
 | The site started by `serve` is pinned to the database the CLI reads. It refuses to start against any remote database except the approved development one. There it runs without scheduler, schema updates, content type sync or store remapping, and `serve` refuses a build with EF Core migrations the database lacks. If the site turns hosting startups off in its code, so the pin can't run, it refuses to start. | CLI + site agent at startup |
 | The site agent answers only loopback callers that send the per-run token, and only in `Development`. The token is kept in a state file only your user can read. | Site agent, per request |
 | Writes create drafts; publishing needs `--publish` (or `publish`). Saves are attributed to the user `opticli`. | CLI + site agent |
@@ -384,7 +473,15 @@ Things these rules can't see:
   isn't known to be production. Neither is one whose role was edited out of the user config, or a run with another
   user config (`XDG_CONFIG_HOME`, `APPDATA`): the user config is what holds the roles.
 - Lowering a role checks that stdin, stdout and stderr are a terminal; a pseudo-terminal (`script`, `expect`) passes
-  that check.
+  that check. So does a sealed apply's; it then needs the write login, which an agent doesn't have, unless production
+  signs in with the user's own identity (integrated security, Microsoft Entra ID).
+- Seals are MAC'd with a key in the user config folder: anything running as you can read it, and so forge a seal or
+  remove the mark that one was used. A forged seal still shows the user the plan as it is, checks production, and needs
+  the name and the write login typed.
+- A sealed apply's write login is in the memory of opticli and of the site for the run: a process running as you that
+  can read other processes' memory (Windows; Linux without Yama's `ptrace_scope`, which Ubuntu sets), or opens the site's
+  stdin in its first moment, can read it. If opticli is killed hard (SIGKILL), the site it started for the run keeps
+  running until stopped by hand; the run prints its pid.
 
 Don't point opticli at such a connection unless you mean to write to what is behind it.
 
@@ -498,6 +595,9 @@ These commands write:
   in the database; see [Orphaned content types](#orphaned-content-types-and-properties).
 - `sync pull --from <name>` brings another environment's content into the local database, writing only what changed;
   see [Pulling content from another environment](#pulling-content-from-another-environment).
+- `apply <plan> --dry-run --seal-for <prod>` and `sync push --to <prod>` prepare a write to production and seal it; only
+  the user runs it, with `apply <plan> --db <prod> --seal <id>` in their own terminal. See
+  [Writing to production](#writing-to-production).
 - `apply plan.json` runs several operations validated together. Later operations can refer to an item an earlier
   one created as `$id`. A property value `"@texts/body.html"` is that file's text, as `Prop=@file` is on the command
   line. Files in a plan are relative to the plan file and must stay inside its folder. With `"guidNamespace"`, what a
@@ -951,6 +1051,8 @@ the site's own, newer CMS assemblies at runtime. It ships no copies of them.
 | Generated passwords of `users add` | `$XDG_STATE_HOME/opticli/users/<project>/<name>.txt`, readable by you only (the folders too) | `%LOCALAPPDATA%\opticli\users\<project>\<name>.txt`, in your user profile, which other users can't read by default (opticli sets no ACL of its own) |
 | What `types remove`, `remove-property` and `prune` removed (one JSON line each, never rotated) | `$XDG_STATE_HOME/opticli/removals.jsonl`, readable by you only | `%LOCALAPPDATA%\opticli\removals.jsonl` |
 | The sync state of `sync pull`, one file per project, source and local database (deleting one takes a new baseline, which writes the source's content over published local changes) | `$XDG_CONFIG_HOME/opticli/sync/<hash>.json`, readable by you only | `%APPDATA%\opticli\sync\<hash>.json` |
+| Seals for production, their key, and the mark that one was run | `$XDG_CONFIG_HOME/opticli/seals/<id>.json` and `<id>.used`, `$XDG_CONFIG_HOME/opticli/seal.key`, readable by you only | `%APPDATA%\opticli\seals\`, `%APPDATA%\opticli\seal.key` |
+| A sealed apply's site log and what was compared before it started | `$XDG_STATE_HOME/opticli/sealed/<id>.log`, `<id>.drift.json`, readable by you only | `%LOCALAPPDATA%\opticli\sealed\` |
 
 You can set per-project defaults in the user config (`output`, `port`, `https` and `scheduler` for `serve`).
 `opticli db use` adds the chosen `database` there, `opticli db add` an entry to `databases` (and its role to `roles`,
