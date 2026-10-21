@@ -10,9 +10,21 @@ namespace OptiCli.Agent.Hosting;
 /// Puts the agent at the very front of the pipeline, ahead of the site's own middleware (auth, CMS
 /// routing, redirects), as a raw branch that never falls through, so it behaves the same on every site.
 /// </summary>
-internal sealed class AgentStartupFilter : IStartupFilter
+internal sealed class AgentStartupFilter(AgentSettings settings) : IStartupFilter
 {
-    public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => Pipeline(next, StdinSecrets.Expected, AgentMiddleware.HandleAsync);
+    public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
+    {
+        var pipeline = Pipeline(next, StdinSecrets.Expected, AgentMiddleware.HandleAsync);
+        if (!settings.Ide)
+        {
+            return pipeline;
+        }
+        return app =>
+        {
+            IdeRun.Register(app, settings);
+            pipeline(app);
+        };
+    }
 
     /// <param name="sealedRun">
     /// The site runs for a sealed apply to production (<see cref="StdinSecrets.Expected"/>): it then serves the agent only.

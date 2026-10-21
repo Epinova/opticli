@@ -72,6 +72,7 @@ internal static class SealedApply
         var plan = await PlanSnapshot.ReadAsync(planFile, cancellationToken);
         var settings = UserConfig.ForProject(environment.UserConfigFile, project.Directory);
         var output = OutputLocator.Locate(project, null, settings?.Output, environment.CurrentDirectory);
+        Sealing.RequireNoIdeHook(output.Dll);
         var build = BuildFingerprint.Of(project, output.Dll, environment);
         var verified = SealCheck.Verify(seal, candidate.Target!, project.Directory, plan, build, DateTimeOffset.UtcNow);
         SealedPlan.Require(plan.Plan, model: null);

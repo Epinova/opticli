@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -37,48 +36,19 @@ public sealed record BuildFingerprint(string Output, DateTime Built, string Hash
             hash.AppendData(Encoding.UTF8.GetBytes($"{name}\n{bytes.Length.ToString(CultureInfo.InvariantCulture)}\n"));
             hash.AppendData(bytes);
         }
-        var (commit, uncommitted) = Git(project.Directory);
+        var (commit, uncommitted) = GitState(project.Directory);
         return new BuildFingerprint(Path.GetFullPath(outputDll), File.GetLastWriteTimeUtc(outputDll), Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant(), list.Count, commit, uncommitted);
     }
 
     /// <summary>The commit and whether tracked files changed; nulls when git isn't there or this isn't a repository.</summary>
-    private static (string? Commit, bool? Uncommitted) Git(string directory)
+    private static (string? Commit, bool? Uncommitted) GitState(string directory)
     {
-        var head = Run(directory, "rev-parse", "--short=12", "HEAD");
+        var head = Git.Output(directory, "rev-parse", "--short=12", "HEAD");
         if (head is null)
         {
             return (null, null);
         }
-        var status = Run(directory, "status", "--porcelain", "--untracked-files=no");
+        var status = Git.Output(directory, "status", "--porcelain", "--untracked-files=no");
         return (head.Trim(), status is null ? null : status.Trim().Length > 0);
-    }
-
-    private static string? Run(string directory, params string[] args)
-    {
-        try
-        {
-            var info = new ProcessStartInfo("git") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, WorkingDirectory = directory };
-            foreach (var arg in args)
-            {
-                info.ArgumentList.Add(arg);
-            }
-            using var process = Process.Start(info);
-            if (process is null)
-            {
-                return null;
-            }
-            var output = process.StandardOutput.ReadToEndAsync();
-            _ = process.StandardError.ReadToEndAsync();
-            if (!process.WaitForExit(TimeSpan.FromSeconds(10)))
-            {
-                process.Kill(entireProcessTree: true);
-                return null;
-            }
-            return process.ExitCode == 0 ? output.Result : null;
-        }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
-        {
-            return null;
-        }
     }
 }

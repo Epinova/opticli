@@ -17,8 +17,16 @@ internal class StartupHook
     private const string HostingStartupVariable = "ASPNETCORE_HOSTINGSTARTUPASSEMBLIES";
     private const string PreventHostingStartupVariable = "ASPNETCORE_PREVENTHOSTINGSTARTUP";
 
+    private static int _initialized;
+
     public static void Initialize()
     {
+        // The runtime calls it once per listed hook: the same agent may be named both in DOTNET_STARTUP_HOOKS (serve) and
+        // in the build's runtimeconfig (opticli ide on).
+        if (Interlocked.Exchange(ref _initialized, 1) == 1)
+        {
+            return;
+        }
         if (!IsAspNetCoreHost())
         {
             // The variable reaches every .NET process started from a shell that exported it (opticli env),
@@ -49,13 +57,14 @@ internal class StartupHook
 
         var list = HostingStartupList.Append(Environment.GetEnvironmentVariable(HostingStartupVariable), selfName);
         Environment.SetEnvironmentVariable(HostingStartupVariable, list);
-        if (settings.PinnedConnection is not null || settings.SharedDatabase)
+        // In IDE mode a site that turns hosting startups off just runs without the agent: that run is the developer's.
+        if (!settings.Ide && (settings.PinnedConnection is not null || settings.SharedDatabase))
         {
             HostingStartupCheck.Install();
         }
 
         var version = self.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
-        Console.Error.WriteLine($"[opticli] startup hook loaded ({version}); hosting startups: {list}");
+        Console.Error.WriteLine($"[opticli] startup hook loaded ({version}{(settings.Ide ? ", IDE mode" : "")}); hosting startups: {list}");
     }
 
     private static bool IsAspNetCoreHost()

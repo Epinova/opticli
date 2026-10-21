@@ -32,6 +32,7 @@ public sealed class StateStore
         LogPath = Path.Combine(stateDirectory, $"{_key}.log");
         LockPath = Path.Combine(stateDirectory, $"{_key}.lock");
         DriftPath = Path.Combine(stateDirectory, $"{_key}.drift.json");
+        IdePath = Path.Combine(stateDirectory, $"{_key}.ide.json");
     }
 
     public string Directory { get; }
@@ -48,6 +49,12 @@ public sealed class StateStore
 
     /// <summary>What <c>serve</c> compared before starting a site against a shared database, for the site agent to read.</summary>
     public string DriftPath { get; }
+
+    /// <summary>
+    /// Where a site started from the IDE (<c>opticli ide on</c>) announces its agent (<see cref="IdeAnnouncement"/>); the
+    /// site writes it, never the CLI.
+    /// </summary>
+    public string IdePath { get; }
 
     /// <summary>The log of the run <paramref name="runsAgo"/> runs before the latest (1 up to <see cref="LogsKept"/> - 1).</summary>
     public string PreviousLogPath(int runsAgo) => Path.Combine(Directory, $"{_key}.{runsAgo}.log");

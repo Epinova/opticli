@@ -91,6 +91,23 @@ public static class AgentProtocol
         return (value[..bar], database.Length == 0 ? null : database);
     }
 
+    /// <summary>
+    /// Runtime property (<c>RuntimeHostConfigurationOption</c>, so in the build's <c>runtimeconfig.json</c>) that
+    /// <c>opticli ide on</c> sets: the path of the <see cref="IdeAnnouncement"/> file. A site started with it and without
+    /// <see cref="TokenVariable"/> runs the agent in IDE mode: it makes its own token, writes the file once it listens,
+    /// and never changes how the site starts.
+    /// </summary>
+    public const string IdeFileProperty = "OptiCli.IdeFile";
+
+    /// <summary>Runtime property with the approved remote development database (<see cref="FormatRemote"/>), for IDE mode.</summary>
+    public const string IdeRemoteDatabaseProperty = "OptiCli.RemoteDb";
+
+    /// <summary>Runtime property naming the connection string to check, for IDE mode (default <see cref="DefaultConnectionName"/>).</summary>
+    public const string IdeConnectionNameProperty = "OptiCli.ConnectionName";
+
+    /// <summary>The runtime property that names startup hooks, as <c>DOTNET_STARTUP_HOOKS</c> does.</summary>
+    public const string StartupHooksProperty = "STARTUP_HOOKS";
+
     /// <summary>Identity every agent write is saved as; shows up as the version's "saved by" in the CMS.</summary>
     public const string PrincipalName = "opticli";
 }

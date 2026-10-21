@@ -13,6 +13,12 @@ public enum ServeMode
 
     /// <summary><c>opticli env</c>: the user starts the site (e.g. from an IDE) with the printed variables.</summary>
     External,
+
+    /// <summary>
+    /// <c>opticli ide on</c>: the user starts the site from the IDE with the hook in its build; the agent announced itself
+    /// (<see cref="IdeSite"/>). Never in the state file.
+    /// </summary>
+    Ide,
 }
 
 /// <summary>
@@ -23,6 +29,7 @@ public enum ServeMode
 /// <param name="ProcessStartTime">Start time of <see cref="Pid"/>, so a reused pid is never mistaken for the site.</param>
 /// <param name="DbServer">Server of the database the site was pinned to (never the full connection string).</param>
 /// <param name="Drift">What differs between the site's code and its shared database, as the agent reported it once it answered.</param>
+/// <param name="AgentUrl">Where the agent answers when it isn't <c>http://127.0.0.1:&lt;port&gt;</c>: an IDE's site, on one of its own addresses.</param>
 public sealed record ServeState(
     ServeMode Mode,
     string ProjectDirectory,
@@ -37,10 +44,11 @@ public sealed record ServeState(
     string? OutputDll = null,
     string? AgentDll = null,
     int? HttpsPort = null,
-    DriftReport? Drift = null)
+    DriftReport? Drift = null,
+    Uri? AgentUrl = null)
 {
-    /// <summary>Where the CLI talks to the agent: always plain HTTP on the loopback address.</summary>
-    public Uri BaseUrl => new($"http://127.0.0.1:{Port}");
+    /// <summary>Where the CLI talks to the agent: plain HTTP on the loopback address, except for an IDE's site.</summary>
+    public Uri BaseUrl => AgentUrl ?? new($"http://127.0.0.1:{Port}");
 
     /// <summary>Where to open the site in a browser: the HTTPS address when it has one.</summary>
     public string BrowseUrl => HttpsPort is { } secure ? SiteEnvironment.HttpsUrl(secure) : BaseUrl.ToString().TrimEnd('/');

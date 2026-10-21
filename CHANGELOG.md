@@ -3,6 +3,37 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## Unreleased
+
+IDE mode: writes show in the site you run from your IDE, without a restart.
+
+### New
+
+- `opticli ide on|off|status`. `ide on` adds a labelled block to `<Project>.csproj.user` that names opticli's copy of
+  the site agent as the Debug build's startup hook (`RuntimeHostConfigurationOption`, so it is in the build's
+  `runtimeconfig.json`). The site you start from your IDE (Rider's run or debug, Visual Studio, `dotnet run`,
+  `dotnet watch`) then loads the agent with nothing set per run: writes go through that process, so they show there at
+  once instead of after a restart. A `.csproj.user` that git tracks is refused; one git doesn't ignore is added to
+  `.git/info/exclude`. The copy lives in opticli's state directory (`agent/<version>-<hash>/cms<major>/`), since the
+  tool's own path changes with every update; the block only adds the hook while the copy exists. Rebuild after `ide on`
+  and `ide off`.
+- In IDE mode the agent makes its own token and, once the site listens, writes where it listens to `<project>.ide.json`
+  in the state directory (readable by you only), and removes it when the site stops. opticli reaches it on the site's
+  own addresses (`localhost`, a loopback or wildcard address, or a name below `.localhost` such as
+  `site.dev.localhost`): plain HTTP first, else HTTPS on `localhost` with the ASP.NET Core development certificate, which opticli accepts on loopback addresses (also where OpenSSL doesn't trust it).
+- IDE mode never changes how the site starts or stops it from starting: no connection pin, and the scheduler, schema
+  updates and content type sync as the site sets them. Against a database other than a local one or the development
+  database, or outside Development, the agent stays off for that run and says why in the site's output.
+- `serve --status`, `doctor` and every write use the IDE's site while it runs (`mode: "ide"`); a site paused at a
+  breakpoint is reported as such. `serve` then starts nothing. `serve` without the IDE's site gives the site the agent
+  copy its build names, so one agent loads. `opticli env` is refused while IDE mode is on. `ide status` and `doctor`
+  say when the copy is from another opticli version, the build doesn't have the hook yet, or the development database
+  changed since `ide on`.
+- After `sites primary`, `sites host` and `types remove|remove-property|prune` through the IDE's site, the warning no
+  longer asks to restart it.
+- Sealing a plan for production (`apply --seal-for`, `sync push`) and the sealed run refuse a build from IDE mode
+  (`refused`, exit 3): a run with production's write login loads only this opticli's agent.
+
 ## 0.19.0 (16 October 2026)
 
 Fewer drafts from plans, drift that tells removed code from newer code, and access rights in "For this page" folders.

@@ -58,6 +58,14 @@ internal static class RequestGuard
             };
         }
 
+        if (settings.Ide && IdeRun.OffReason is { } off)
+        {
+            throw new AgentException(AgentErrorCodes.Refused, $"The opticli agent is off for this run of the site: {off}", "See the site's output for [opticli] lines.")
+            {
+                ForcedStatus = StatusCodes.Status503ServiceUnavailable,
+            };
+        }
+
         if (!TokenComparer.Matches(context.Request.Headers[AgentProtocol.TokenHeader].ToString(), settings.Token))
         {
             throw new AgentException(

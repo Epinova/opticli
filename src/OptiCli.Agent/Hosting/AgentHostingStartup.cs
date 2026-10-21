@@ -60,6 +60,11 @@ public sealed class AgentHostingStartup : IHostingStartup
 
     internal static void Configure(IWebHostBuilder builder, AgentSettings settings)
     {
+        if (settings.Ide)
+        {
+            ConfigureIde(builder, settings);
+            return;
+        }
         if (settings.PinnedConnection is { } pinned)
         {
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
@@ -97,6 +102,19 @@ public sealed class AgentHostingStartup : IHostingStartup
             services.AddTransient<IStartupFilter, AgentStartupFilter>();
         });
     }
+
+    /// <summary>
+    /// IDE mode: the agent's routes and nothing else. No pin, no check that throws, the scheduler, schema updates and
+    /// content type sync as the site sets them: the developer's run starts as it would without opticli. Whether the agent
+    /// can be used is decided once the site listens (<see cref="IdeRun"/>), and only turns the agent off.
+    /// </summary>
+    private static void ConfigureIde(IWebHostBuilder builder, AgentSettings settings) =>
+        builder.ConfigureServices(services =>
+        {
+            services.AddSingleton(settings);
+            services.AddSingleton<DriftCheck>();
+            services.AddTransient<IStartupFilter, AgentStartupFilter>();
+        });
 
     /// <summary>
     /// No schema created or updated, and on CMS 13 no raised compatibility level either (<c>UpdateDatabaseCompatibilityLevel</c>,

@@ -25,8 +25,9 @@ namespace OptiCli.Agent.Orphans;
 /// </remarks>
 internal static class OrphanRemovalOperation
 {
-    public const string RestartWarning =
-        "Removed through the site `opticli serve` runs, which uses the new content model now. Another process running this site against the same database (your IDE's, say) keeps its cached content types until it restarts.";
+    public static string RestartWarning => Hosting.IdeRun.Active
+        ? "Removed through the site your IDE runs (opticli ide on), which uses the new content model now. Another process running this site against the same database keeps its cached content types until it restarts."
+        : "Removed through the site `opticli serve` runs, which uses the new content model now. Another process running this site against the same database (your IDE's, say) keeps its cached content types until it restarts.";
 
     public static OrphanRemovalResult Run(AgentRequest request, OrphanRemovalRequest body)
     {

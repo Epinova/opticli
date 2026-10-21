@@ -120,6 +120,7 @@ internal static class Sealing
         var state = await ProductionState.ReadAsync(productionSession, SealedPlan.Touched(plan.Plan), SealedPlan.Referenced(plan.Plan), cancellationToken);
         var settings = UserConfig.ForProject(context.Environment.UserConfigFile, project.Directory);
         var output = OutputLocator.Locate(project, null, settings?.Output, context.Environment.CurrentDirectory);
+        RequireNoIdeHook(output.Dll);
         var build = BuildFingerprint.Of(project, output.Dll, context.Environment);
         var summary = SealSummary.Of(plan.Plan, options, state);
         var target = production.Target!;
@@ -251,4 +252,20 @@ internal static class Sealing
         + (summary.New + summary.Existing > 0 ? $"; creates {summary.New} new item(s), updates {summary.Existing} production has" : "")
         + $"; {summary.Publishes} publishing; {summary.Touched} item(s) production has, whose versions are checked"
         + (summary.Expiring > 0 ? $"; {summary.Expiring} set an expiry (StopPublish) that has passed: published, that content goes offline" : "");
+
+    /// <summary>
+    /// A build from IDE mode names opticli's copy of the agent in its <c>runtimeconfig.json</c>, which the runtime loads
+    /// besides the agent the sealed run gives the site: a run with production's write login loads this opticli's agent and
+    /// nothing else.
+    /// </summary>
+    /// <exception cref="RefusedException">The build has that hook.</exception>
+    public static void RequireNoIdeHook(string outputDll)
+    {
+        if (IdeProject.InBuild(outputDll).AgentDll is { } hook)
+        {
+            throw new RefusedException(
+                $"The build loads opticli's agent from `opticli ide on` ({hook}, in its runtimeconfig.json): a sealed run against production loads only this opticli's agent.",
+                "Turn IDE mode off (`opticli ide off`), rebuild the site, and seal again.");
+        }
+    }
 }

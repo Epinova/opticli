@@ -20,8 +20,9 @@ namespace OptiCli.Agent.Sites;
 /// </remarks>
 internal static class SiteHostsOperation
 {
-    public static string RestartWarning =>
-        $"Saved through the site that `opticli serve` runs, which uses the new hosts now. Another process running this site against the same database (your IDE's, say) keeps its cached {SiteStore.What} until it restarts, unless remote events are set up: restart the site there.";
+    public static string RestartWarning => Hosting.IdeRun.Active
+        ? $"Saved through the site your IDE runs (opticli ide on), which uses the new hosts now. Another process running this site against the same database keeps its cached {SiteStore.What} until it restarts."
+        : $"Saved through the site that `opticli serve` runs, which uses the new hosts now. Another process running this site against the same database (your IDE's, say) keeps its cached {SiteStore.What} until it restarts, unless remote events are set up: restart the site there, or run it with `opticli ide on`.";
 
     public static async Task<SiteHostsResult> RunAsync(AgentRequest request, SiteHostsRequest body)
     {

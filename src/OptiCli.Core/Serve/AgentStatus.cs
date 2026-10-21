@@ -16,7 +16,7 @@ public enum AgentState
     /// <summary>A state file whose process is gone (crashed, killed, machine restarted).</summary>
     Stale,
 
-    /// <summary>The process runs (or, for <c>env</c>, may run) but the agent doesn't answer: starting, hung, or started without the agent.</summary>
+    /// <summary>The process runs (or, for <c>env</c>, may run) but the agent doesn't answer: starting, hung, paused in the debugger, or started without the agent.</summary>
     Unresponsive,
 
     /// <summary>The agent answers but speaks another protocol version or rejects the token.</summary>
@@ -93,42 +93,76 @@ public static class AgentProbe
 
     /// <param name="expected">The database opticli reads; when given, a site on another database is reported as <see cref="AgentState.WrongDatabase"/>.</param>
     /// <remarks>An unreadable state file is <see cref="AgentState.Stale"/> with <see cref="AgentStatus.CorruptState"/> set; it is left in place.</remarks>
-    public static async Task<AgentStatus> ProbeAsync(StateStore store, VerifiedConnectionString? expected, CancellationToken cancellationToken)
+    public static async Task<AgentStatus> ProbeAsync(StateStore store, VerifiedConnectionString? expected, CancellationToken cancellationToken) =>
+        (await ProbeSiteAsync(store, expected, cancellationToken)).Status;
+
+    /// <summary>
+    /// <see cref="ProbeAsync"/>, with the state it probed: a site started from the IDE (<c>opticli ide on</c>) that still
+    /// runs wins over the state file, since its cache is the one the developer looks at.
+    /// </summary>
+    private static async Task<(AgentStatus Status, ServeState? State)> ProbeSiteAsync(StateStore store, VerifiedConnectionString? expected, CancellationToken cancellationToken)
     {
-        ServeState? state;
-        try
+        if (IdeSite.Running(store) is { } ide)
         {
-            state = store.Read();
+            return (await ProbeIdeAsync(store, ide, expected, cancellationToken), ide);
         }
-        catch (CorruptStateException ex)
+        return await ProbeStateFileAsync(store, expected, cancellationToken);
+    }
+
+    private static async Task<AgentStatus> ProbeIdeAsync(StateStore store, ServeState ide, VerifiedConnectionString? expected, CancellationToken cancellationToken)
+    {
+        var status = Describe(ide, store);
+        if (ide.AgentUrl is null)
         {
-            return new AgentStatus(AgentState.Stale, ex.Message)
+            return status with
             {
-                StatePath = store.StatePath,
-                Hint = "`opticli serve --stop` or `opticli serve --status` removes it; a site opticli started before it broke has to be stopped by hand.",
-                CorruptState = true,
+                State = AgentState.Unresponsive,
+                Url = null,
+                Message = $"The site your IDE runs (pid {ide.Pid}) listens on no address of this machine opticli can use (see {store.IdePath}).",
+                Hint = "Give its launch profile a localhost address (applicationUrl), or use `opticli serve`.",
             };
         }
-        if (state is null)
+        var (probed, ping) = await PingAsync(ide, status, cancellationToken);
+        if (ping is null)
         {
-            return new AgentStatus(AgentState.Stopped, "No opticli agent is running for this project.") { StatePath = store.StatePath, Hint = StartHint };
+            return probed;
         }
-
-        var status = Describe(state, store);
-        if (state.Pid is { } pid)
+        probed = probed with { Hint = OtherSiteHint(store) };
+        if (expected is not null && DatabaseMatch.Problem(ping.Database, expected, requirePinned: false) is { } problem)
         {
-            using var process = SiteProcess.Find(pid, state.ProcessStartTime);
-            if (process is null)
+            return probed with
             {
-                return status with
+                State = AgentState.WrongDatabase,
+                Message = $"The site your IDE runs can't be used: {problem}.",
+                Hint = "Point the site's connection string at the database opticli reads (`opticli doctor`), and restart it from the IDE.",
+            };
+        }
+        return probed with { State = AgentState.Running, Message = $"Agent running in the site your IDE started (pid {ide.Pid}), at {ide.BaseUrl}." };
+    }
+
+    /// <summary>A site <c>serve</c> started still runs beside the IDE's, with its own cache: worth stopping.</summary>
+    private static string? OtherSiteHint(StateStore store)
+    {
+        try
+        {
+            if (store.Read() is { Pid: { } pid } served && served.Mode != ServeMode.Ide)
+            {
+                using var process = SiteProcess.Find(pid, served.ProcessStartTime);
+                if (process is not null)
                 {
-                    State = AgentState.Stale,
-                    Message = $"The site opticli started (pid {pid}) is no longer running.",
-                    Hint = "Start it again with `opticli serve`; `opticli serve --logs` shows why it stopped.",
-                };
+                    return $"`opticli serve` also runs this site (pid {pid}), which keeps its own cache: stop it with `opticli serve --stop`.";
+                }
             }
         }
+        catch (CorruptStateException)
+        {
+        }
+        return null;
+    }
 
+    /// <summary>Pings the agent; on failure the status says why and the ping is null.</summary>
+    private static async Task<(AgentStatus Status, PingResponse? Ping)> PingAsync(ServeState state, AgentStatus status, CancellationToken cancellationToken)
+    {
         using var client = AgentClient.For(state);
         PingResponse ping;
         try
@@ -137,32 +171,90 @@ public static class AgentProbe
         }
         catch (OptiCliException ex) when (ex.Code == ErrorCode.Unreachable)
         {
-            return status with
+            return (status with
             {
                 State = AgentState.Unresponsive,
-                Message = state.Mode == ServeMode.External
-                    ? $"Nothing answers on port {state.Port}: start the site with the variables from `opticli env`."
-                    : $"The site (pid {state.Pid}) runs but its agent does not answer on port {state.Port}: {ex.Message}",
-                Hint = state.Mode == ServeMode.External ? "Or run `opticli serve` instead." : "It may still be starting; see `opticli serve --logs`.",
-            };
+                Message = state.Mode switch
+                {
+                    ServeMode.External => $"Nothing answers on port {state.Port}: start the site with the variables from `opticli env`.",
+                    ServeMode.Ide => $"The site your IDE runs (pid {state.Pid}) doesn't answer at {state.BaseUrl}: {ex.Message}",
+                    _ => $"The site (pid {state.Pid}) runs but its agent does not answer on port {state.Port}: {ex.Message}",
+                },
+                Hint = state.Mode switch
+                {
+                    ServeMode.External => "Or run `opticli serve` instead.",
+                    ServeMode.Ide => "It may be paused in the debugger, or still starting: continue it, then try again.",
+                    _ => "It may still be starting; see `opticli serve --logs`.",
+                },
+            }, null);
         }
         catch (OptiCliException ex) when (ex.Code is ErrorCode.NotFound or ErrorCode.Refused)
         {
-            return status with { State = AgentState.Incompatible, Message = ex.Message, Hint = ex.Hint, Failure = ex.Code };
+            return (status with
+            {
+                State = AgentState.Incompatible,
+                Message = ex.Message,
+                Hint = state.Mode == ServeMode.Ide && ex.Message.Contains("out of date", StringComparison.Ordinal)
+                    ? "Run `opticli ide on` again, rebuild, and restart the site from the IDE."
+                    : ex.Hint,
+                Failure = ex.Code,
+            }, null);
+        }
+        return (status with { Agent = AgentSummary.From(ping), Database = ping.Database, Scheduler = SchedulerText(ping.Scheduler) }, ping);
+    }
+
+    private static async Task<(AgentStatus Status, ServeState? State)> ProbeStateFileAsync(StateStore store, VerifiedConnectionString? expected, CancellationToken cancellationToken)
+    {
+        ServeState? state;
+        try
+        {
+            state = store.Read();
+        }
+        catch (CorruptStateException ex)
+        {
+            return (new AgentStatus(AgentState.Stale, ex.Message)
+            {
+                StatePath = store.StatePath,
+                Hint = "`opticli serve --stop` or `opticli serve --status` removes it; a site opticli started before it broke has to be stopped by hand.",
+                CorruptState = true,
+            }, null);
+        }
+        if (state is null)
+        {
+            return (new AgentStatus(AgentState.Stopped, "No opticli agent is running for this project.") { StatePath = store.StatePath, Hint = StartHintFor(store) }, null);
         }
 
-        status = status with { Agent = AgentSummary.From(ping), Database = ping.Database, Scheduler = SchedulerText(ping.Scheduler) };
+        var status = Describe(state, store);
+        if (state.Pid is { } pid)
+        {
+            using var process = SiteProcess.Find(pid, state.ProcessStartTime);
+            if (process is null)
+            {
+                return (status with
+                {
+                    State = AgentState.Stale,
+                    Message = $"The site opticli started (pid {pid}) is no longer running.",
+                    Hint = "Start it again with `opticli serve`; `opticli serve --logs` shows why it stopped.",
+                }, state);
+            }
+        }
+
+        var (probed, ping) = await PingAsync(state, status, cancellationToken);
+        if (ping is null)
+        {
+            return (probed, state);
+        }
         if (expected is not null
             && DatabaseMatch.Problem(ping.Database, expected, requirePinned: state.Mode != ServeMode.External) is { } problem)
         {
-            return status with
+            return (probed with
             {
                 State = AgentState.WrongDatabase,
                 Message = $"The running site can't be used: {problem}.",
                 Hint = "Restart it with `opticli serve --stop` and `opticli serve`.",
-            };
+            }, state);
         }
-        return status with { State = AgentState.Running, Message = $"Agent running at {state.BaseUrl}." };
+        return (probed with { State = AgentState.Running, Message = $"Agent running at {state.BaseUrl}." }, state);
     }
 
     /// <summary>
@@ -174,17 +266,23 @@ public static class AgentProbe
     {
         // Everything the agent is asked for runs the site's code against its database: never production.
         ProductionDatabase.RequireNot(expected, "use the site's agent against");
-        var status = await ProbeAsync(store, expected, cancellationToken);
+        var (status, state) = await ProbeSiteAsync(store, expected, cancellationToken);
         return status.State switch
         {
-            AgentState.Running => AgentClient.For(store.Read()!),
+            AgentState.Running => AgentClient.For(state!),
             AgentState.WrongDatabase => throw new RefusedException(status.Message, status.Hint),
             AgentState.Incompatible when status.Failure == ErrorCode.Refused => throw new RefusedException(status.Message, status.Hint),
             AgentState.Incompatible => throw new NotFoundException(status.Message, status.Hint),
-            AgentState.Stopped => throw new UnreachableException("No opticli agent is running for this project; writes go through the running site.", StartHint),
+            AgentState.Stopped => throw new UnreachableException("No opticli agent is running for this project; writes go through the running site.", status.Hint ?? StartHint),
             _ => throw new UnreachableException(status.Message, status.Hint),
         };
     }
+
+    /// <summary>With IDE mode on, the site the developer starts from the IDE is the one to write through.</summary>
+    private static string StartHintFor(StateStore store) =>
+        IdeProject.IsOn(store.ProjectDirectory)
+            ? "IDE mode is on: start the site from the IDE (opticli finds it), or with `opticli serve`. If it already runs, it was built without the agent: Rebuild in the IDE (Run's up-to-date check can skip it) and start it again; `opticli ide status` shows the build."
+            : StartHint;
 
     public static string? SchedulerText(bool? enabled) => enabled switch { true => "on", false => "off", null => null };
 
@@ -196,7 +294,7 @@ public static class AgentProbe
         Url = state.BaseUrl.ToString().TrimEnd('/'),
         BrowseUrl = state.HttpsPort is null ? null : state.BrowseUrl,
         StartedAt = state.StartedAt,
-        LogPath = state.Mode == ServeMode.External ? null : state.LogPath,
+        LogPath = state.Mode is ServeMode.External or ServeMode.Ide ? null : state.LogPath,
         StatePath = store.StatePath,
         Output = state.OutputDll,
         AgentDll = state.AgentDll,

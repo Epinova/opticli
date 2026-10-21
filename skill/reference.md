@@ -459,7 +459,7 @@ For a restored copy of a production database, whose sites still have the product
   `changes[]` (added, `a: primary → undefined`, `SiteUrl: old → new`, removed), `url`, `hosts[]` as `sites` prints
   them; `dryRun: true` for a dry run. `meta.warnings`: a language whose URLs still use a production host ("Site A's nb
   URLs still use site-a.no; add `Site A@nb=localhost:<port>`"), and after a save that another process running the
-  site keeps the old hosts until it restarts.
+  site keeps the old hosts until it restarts (in IDE mode the IDE's site saved, and uses them at once).
 - `--save` (after a real run) stores the pairs, with `--keep-edit` and `--keep-site-url`, in the user config's
   `sites.primary` for the project, replacing the entries for those sites (keys are `Site A` and `Site A@nb`: saving
   for a site `Shop` also replaces a site `Shop@en`'s entry); `--from-config` runs them, skipping (with a
@@ -568,7 +568,7 @@ its record has `originUnknown: true`; ask the user first.
   `content`, `inRecycleBin`, `inlineBlocks`, `pageTypeValues`, `pageTypeVersions` (at most 20 refs), `usedBy`,
   `otherUses`), `removed`, `dryRun`, `recordFile`. `meta.warnings`: no
   undo; admin-mode properties look the same; which values were (would be) deleted; another process running the site
-  keeps its cached content types until it restarts.
+  keeps its cached content types until it restarts (in IDE mode the IDE's site removed them).
 
 ### Concurrency
 
@@ -920,6 +920,7 @@ you know what to do next:
 | `conflict`, `details.reason: "productionChanged"` | Production's model or content the plan touches changed since the seal (`details.changes[]`) | Pull, check, seal again |
 | `conflict`, `"planChanged"` / `"buildChanged"` | The plan, a file it reads, or the site's build changed since the seal | Seal again (and don't change them before the run) |
 | `conflict`, `"sealExpired"` | Older than 24 hours | Seal again |
+| `refused`, "loads opticli's agent from `opticli ide on`" (also when sealing) | The build is from IDE mode: its runtimeconfig.json names opticli's agent copy | Ask the user to run `opticli ide off` and rebuild (or do it when they agree), then seal again |
 | `refused`, `"sealUsed"` | A seal runs once | Seal again |
 | `refused`, `"sealTampered"`, `"sealTarget"`, `"sealProject"`, `"sealPlan"` | The seal was edited, or run against another database, project or plan file | Seal again; run exactly `userCommand` |
 | `drift` | The site's code differs from production's database | Tell the user; nothing was written, and a sealed run accepts no drift |
@@ -955,7 +956,42 @@ After a run, production's servers still show what they had cached: tell the user
 - `opticli env [--format shell|powershell|dotenv|json|launchSettings] [--include-connection]` prints the variables
   to start the site yourself (IDE, `dotnet run`). Set them only for the site process (a subshell or launch profile):
   `DOTNET_STARTUP_HOOKS` affects every .NET process started from a shell that exports it. The connection string is
-  left out unless `--include-connection`. The scheduler stays as the site sets it (`OPTICLI_SCHEDULER=on`).
+  left out unless `--include-connection`. The scheduler stays as the site sets it (`OPTICLI_SCHEDULER=on`). Refused
+  (`usage`) while IDE mode is on.
+
+## IDE mode
+
+The site the user starts from their IDE (Rider's run or debug, Visual Studio, `dotnet run`, `dotnet watch`) loads the
+agent from its own build, so writes go through that process and show there at once (no second site with its own
+cache, no restart). Only turn it on or off when the user asks: it edits their `.csproj.user` (and `.git/info/exclude`).
+
+- `opticli ide on [--configuration Debug]`: writes a labelled `ItemGroup` (`Label="opticli ide"`) to
+  `<Project>.csproj.user` that names opticli's copy of the agent (`<state dir>/agent/<version>-<hash>/cms<major>/`) as the
+  build's startup hook (`RuntimeHostConfigurationOption` `STARTUP_HOOKS`, plus `OptiCli.IdeFile`, and
+  `OptiCli.RemoteDb` for a remote development database). Debug builds only, never when publishing, and only while the
+  copy exists. A `.csproj.user` git tracks is `refused` (exit 3); one git doesn't ignore goes into `.git/info/exclude`.
+  Output: `userFile`, `created`, `agent`, `agentVersion`, `configuration`, `ideFile`, `database` (`server`, `name`,
+  `remote`), `git` (`ignored`, `excluded`, `notIgnored`, `noRepository`), `excludeFile`, `prunedCopies`,
+  `rebuildNeeded`, `next`. Then the user rebuilds (Rebuild in Rider or Visual Studio: Run's up-to-date check doesn't
+  notice the changed `.csproj.user`) and starts the site from the IDE.
+- `opticli ide status`: `on`, `agent`, `agentExists`, `agentVersion`, `agentCurrent` (false: from another opticli
+  version, `ide on` again), `configuration`, `remoteDatabase`, `build` (`output`, `hasHook`: false means rebuild),
+  `git`, and `site` (what `serve --status` reports). `meta.warnings` says what to do.
+- `opticli ide off`: removes the block (and the file when nothing else is in it) and the exclude line. `rebuildNeeded`:
+  the current build still loads the agent until it is rebuilt.
+- The running site writes `<project>.ide.json` (pid, token, addresses) to the state directory once it listens, and
+  removes it when it stops; opticli ignores and removes one whose process is gone (the IDE's stop kills the site). The
+  agent is reached on the site's own addresses: HTTP on this machine first, else HTTPS on `localhost` with the
+  development certificate.
+- `serve --status` (and `doctor`) reports it as `mode: "ide"`, and every write goes there while it runs. `serve` then
+  starts nothing (a warning says so); `serve --stop` never stops it. `unresponsive` with "paused in the debugger":
+  the user has it stopped at a breakpoint; ask them to continue it. Without the IDE's site running, `serve` works as
+  usual (it runs the same build, with the copy that build names).
+- Sealing for production, and the user's sealed run, refuse a build from IDE mode (exit 3): `ide off`, rebuild, seal again.
+- It never changes how the site starts: no pin, and the scheduler, schema updates and content type sync stay as the
+  site sets them. Against another database, or outside Development, the agent stays off for the run (`[opticli] IDE
+  mode: the agent is off for this run. <why>` in the site's output) and the site starts anyway.
+- After updating opticli, or after `db use` changes the development database: `ide on` again, then rebuild.
 
 ## Troubleshooting
 
@@ -963,6 +999,8 @@ After a run, production's servers still show what they had cached: tell the user
 |---|---|
 | `not_found`: no CMS project / several candidates | `cd` into the site's repository, or pass `--project path/to/Site.csproj`. |
 | No connection string | `opticli doctor`; `--connection-name` if the site's connection string has another name. |
+| Changes don't show in the site the user runs from their IDE until they restart it | That site isn't the one opticli wrote through (`serve`'s is). Tell the user about IDE mode (`opticli ide on`, then rebuild and restart from the IDE); don't turn it on unasked. |
+| IDE mode on, but `serve --status` shows no `mode: "ide"` site | `opticli ide status`: rebuild when `build.hasHook` is false, `ide on` again when `agentCurrent` is false; the site's output says why when the agent stays off (another database, not Development). |
 | `needs_selection` (exit 6) | Show the user `error.details.choices`, ask which is their development database, run `opticli db use <id>`. |
 | `refused` (exit 3), `details.reason: "prodDatabase"` | The database is production: opticli only reads it. Tell the user; don't try another way to the same database (another `--db`, `--connection`, spelling, `OPTICLI_DB`, config edit, another user config through `XDG_CONFIG_HOME`/`APPDATA`). To write there, prepare a sealed apply for the user to run ([Sealed apply to production](#sealed-apply-to-production)). From a command without `--db`: the development database (saved, configured or the site's default) is production; the user chooses another with `opticli db use <id>`. |
 | `refused` (exit 3), `details.reason: "sealNeedsTerminal"` | A sealed apply runs only in the user's own terminal. Give the user `details.userCommand`; never run it yourself or fake a terminal. |

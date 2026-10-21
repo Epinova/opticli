@@ -184,6 +184,35 @@ public class AgentHostingStartupTests
 #endif
     }
 
+    private static AgentSettings Ide(string? approvedRemote = null) =>
+        new(OptiCli.Protocol.AgentProtocol.DefaultConnectionName, null, "token", OptiCli.Protocol.AgentProtocol.ParseRemote(approvedRemote), Scheduler: true, IdeFile: "/state/Web.ide.json");
+
+    [Fact]
+    public void In_ide_mode_a_remote_connection_string_doesnt_stop_the_site()
+    {
+        using var host = Build(Ide(), site: config => config.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:EPiServerDB"] = Remote,
+        }));
+
+        // Built, and the agent left the CMS's connection alone: whether it may be used is decided once the site listens.
+        Assert.Equal(Remote, host.Services.GetRequiredService<IConfiguration>().GetConnectionString("EPiServerDB"));
+    }
+
+    [Fact]
+    public void In_ide_mode_the_site_starts_as_it_would_without_opticli()
+    {
+        string? log = null;
+        using var host = Build(Ide(RemoteApproval), log: text => log = text);
+
+        Assert.True(host.Services.GetRequiredService<IOptions<SchedulerOptions>>().Value.Enabled);
+        Assert.True(host.Services.GetRequiredService<IOptions<ContentModelOptions>>().Value.EnableModelSyncCommit);
+        Assert.True(host.Services.GetRequiredService<IOptions<DataAccessOptions>>().Value.UpdateDatabaseSchema);
+        Assert.DoesNotContain("Scheduler is off", log, StringComparison.Ordinal);
+        Assert.DoesNotContain("Shared database", log, StringComparison.Ordinal);
+        Assert.Empty(host.Services.GetServices<IValidateOptions<DataAccessOptions>>().OfType<DataAccessOptionsGuard>());
+    }
+
     /// <param name="site">The site's own configuration (appsettings, user secrets, Key Vault), added before the web host.</param>
     /// <param name="after">What the site configures after ConfigureWebHostDefaults.</param>
     private static IHost Build(AgentSettings settings, Action<IConfigurationBuilder>? site = null, Action<IHostBuilder>? after = null, Action<string>? log = null)

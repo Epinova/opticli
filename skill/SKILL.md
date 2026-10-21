@@ -74,6 +74,7 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
 | Which scheduled jobs exist, which are overdue or failed last time? | `opticli jobs` (`--failed`) |
 | Did a job (an import, a sync) run, and how did it end? | `opticli jobs log "<job name>"` (`--failed --since 1d` for every job) |
 | Run a job now (only when asked) | `opticli jobs run "<job name>"` (needs `serve`; waits for it) |
+| Make writes show in the site the user runs from their IDE, without restarting it (only when asked) | `opticli ide on`; the user rebuilds and starts the site from the IDE. `opticli ide status` checks it |
 | Sign in locally to a restored database (only when asked) | `opticli users add <name> --dry-run` (needs `serve`); `opticli users roles` |
 | Copy content from another environment's database (only when asked) | `opticli export <ref> --descendants --db <name> --out <dir>`, then `opticli apply <dir>/plan.json --update-existing --dry-run` |
 | Bring the local database up to date with another environment's content (only when asked) | `opticli sync pull --from <name> --all --dry-run` (needs `serve`), then without `--dry-run` once the user agrees |
@@ -212,7 +213,10 @@ on the latest version (a conflict, exit 5, if someone saves a newer one meanwhil
 published version instead, leaving newer drafts out. Workflow:
 
 1. `opticli serve` - starts the local site in the background with the opticli site agent (takes 30-60 s; `serve --status`,
-   `serve --logs --tail 40` if it fails). Only start it when you are about to write. Against a remote development
+   `serve --logs --tail 40` if it fails). Only start it when you are about to write. If the user runs the site from
+   their IDE with IDE mode on (`opticli ide on`), `serve` reports that site (`mode: "ide"`) and starts nothing: writes
+   go through it and show there at once. `unresponsive` there usually means it is paused at a breakpoint: ask the user
+   to continue it. Against a remote development
    database it warns that the database is shared: tell the user that the writes will reach it. There it also says
    when this build and the database differ (`drift:` in `meta.warnings`): writes then stop until the user confirms.
 2. Dry-run first: add `--dry-run` to see the validated before/after without saving.
@@ -221,7 +225,7 @@ published version instead, leaving newer drafts out. Workflow:
    `opticli upload report.pdf --for 123` (a file as media; then reference its `ref` in a property).
 4. Verify: `opticli get <ref>` (the draft: `get <version ref from the output>` or `--version latest`) and
    `opticli versions <ref> --limit 3`.
-5. `opticli serve --stop` when you're done writing.
+5. `opticli serve --stop` when you're done writing (a site `serve` started; it never stops the IDE's).
 
 Inline blocks in a ContentArea (CMS 12.20+, stored in the area, no ref of their own): add one with
 `opticli area 123 MainArea add --type TeaserBlock Heading=Hi`, change one with `opticli set 123 'MainArea[2].Heading=New'`
@@ -295,7 +299,7 @@ order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a cod
   which, so ask rather than guess. Pass `--save` only when they want the mapping kept for the next restore (then
   `opticli sites primary --from-config`; `--forget <site>` drops a saved site that is gone). Site definitions aren't
   versioned: report the `changes` from the output. Tell the user to restart the site if it also runs elsewhere (their
-  IDE), as `meta.warnings` says. Against a shared database they are refused (exit 3): don't work around it.
+  IDE), as `meta.warnings` says; not when the IDE's site is the one that saved (IDE mode). Against a shared database they are refused (exit 3): don't work around it.
 - Never run, stop or reschedule a scheduled job (`jobs run`, `jobs stop`, `jobs set`) unless the user asked for it. Jobs
   that aren't the CMS's own (the site's, add-ons') may reach external systems (imports, syncs, emails): `jobs run`
   warns that opticli doesn't know what they do. When "an import didn't run", start with `opticli jobs log "<job>"` (status, message, trigger) and
@@ -327,6 +331,10 @@ order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a cod
   have saved more than it reports: check with `opticli versions <ref>` and, since a plan saves into its draft,
   `opticli get <ref> --version latest` before running it again.
 - Start `serve` only when a write is needed, and stop it (`opticli serve --stop`) when you are done.
+- Never run `opticli ide on` or `ide off` unless the user asked for it: they change the user's `.csproj.user` and
+  `.git/info/exclude`. When the user says they have to restart their site to see opticli's changes, tell them about
+  `opticli ide on` (see reference.md). After `ide on`, the user rebuilds and restarts the site from their IDE; don't
+  build or start it for them unless asked.
 - Never run `opticli db use` or pass `--db`/`--connection`/`OPTICLI_DB` on your own initiative: which database is
   the development one, and whether to touch any other, is the user's decision. Writes to anything but the development
   database are refused (exit 3), and production is only written to by a sealed apply the user runs. Don't try to work

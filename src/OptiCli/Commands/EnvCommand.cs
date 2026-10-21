@@ -56,6 +56,13 @@ internal static class EnvCommand
                 chosen = EnvFormat.Json;
             }
             var project = context.Project;
+            if (IdeProject.Read(IdeProject.UserFile(project)) is not null)
+            {
+                // The build loads the agent already; these variables would give it a token the IDE's runs don't have.
+                throw new UsageException(
+                    "IDE mode is on for this project (`opticli ide on`): start the site from your IDE as it is, without these variables.",
+                    "`opticli ide off` turns IDE mode off, if you want to use `opticli env` instead.");
+            }
             var connection = ServeCommand.RequireServable(context);
             var store = context.StateStore;
 

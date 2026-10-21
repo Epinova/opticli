@@ -138,6 +138,12 @@ internal static class ServeCommand
         var existing = await AgentProbe.ProbeAsync(store, connection, cancellationToken);
         switch (existing.State)
         {
+            case AgentState.Running when existing.Mode == ServeMode.Ide:
+                return new CommandResult(existing, Warnings: [$"The site your IDE started (pid {existing.Pid}) runs with the agent (opticli ide on), and writes go there; nothing was started."],
+                    Source: WriteExecutor.AgentSource);
+            case not AgentState.Stopped when existing.Mode == ServeMode.Ide:
+                // A second site would keep its own cache, and the IDE's would still win once it answers.
+                throw new UsageException($"The site your IDE started runs with the agent (opticli ide on) but can't be used: {existing.Message}", existing.Hint ?? "Fix it or stop it in the IDE, then try again.");
             case AgentState.Running when existing.Mode != ServeMode.External:
                 return new CommandResult(existing, Warnings: ["The site was already running; nothing was started.", .. DriftWarning(store, started: false) is { } drifted ? [drifted] : Array.Empty<string>()],
                     Source: WriteExecutor.AgentSource);
@@ -169,6 +175,7 @@ internal static class ServeCommand
         var agent = await SelectAgentAsync(context, connection, cancellationToken);
         var siteOutput = OutputLocator.Locate(project, output, settings?.Output, context.Environment.CurrentDirectory);
         var warnings = new List<string>();
+        var agentDll = BuildAgent(siteOutput.Dll, agent.Dll, warnings) ?? agent.Dll;
         string? driftFile = null;
         // The database's content types, for the git history of what only the database has once the site reports drift.
         IReadOnlyList<Core.Cms.ContentTypeInfo> types = [];
@@ -222,7 +229,7 @@ internal static class ServeCommand
             connection,
             context.ConnectionRequest.Name,
             siteOutput,
-            agent.Dll,
+            agentDll,
             httpPort,
             timeout,
             (https ?? settings?.Https == true) ? PortSelector.Select(null, null, p => p != httpPort && free(p)) : null,
@@ -276,6 +283,31 @@ internal static class ServeCommand
             cancellationToken);
         PortClaims.ForUser.ReleaseAll();
         return new CommandResult(new { stopped = true });
+    }
+
+    /// <summary>
+    /// The agent copy the build's runtimeconfig names (<c>opticli ide on</c>), which the runtime loads anyway: the site gets
+    /// that one through <c>DOTNET_STARTUP_HOOKS</c> too, so one agent loads, not two copies that may clash. Null when the
+    /// build names none.
+    /// </summary>
+    /// <exception cref="UsageException">The copy the build names is gone: the runtime would fail to start the site.</exception>
+    internal static string? BuildAgent(string outputDll, string toolAgent, List<string> warnings)
+    {
+        if (IdeProject.InBuild(outputDll).AgentDll is not { } hook)
+        {
+            return null;
+        }
+        if (!File.Exists(hook))
+        {
+            throw new UsageException(
+                $"The build names opticli's copy of the agent from `opticli ide on` as its startup hook, but {hook} is gone, so the site can't start.",
+                "Rebuild the site (`opticli serve --build`), or run `opticli ide on` again first.");
+        }
+        if (!File.ReadAllBytes(hook).AsSpan().SequenceEqual(File.ReadAllBytes(toolAgent)))
+        {
+            warnings.Add($"The build loads the agent from `opticli ide on` ({IdeProject.AgentVersion(hook) ?? "another version"}), not this opticli's ({IdeProject.AgentVersion(toolAgent) ?? "unknown"}): run `opticli ide on` again and rebuild to update it.");
+        }
+        return hook;
     }
 
     /// <summary>Waits for a site another <c>serve</c> is starting, and reports it like one that was already running.</summary>

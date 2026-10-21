@@ -160,6 +160,10 @@ internal static class DoctorCommand
             {
                 warnings.Add($"Agent: {agent.Message}");
             }
+            if (project is not null)
+            {
+                warnings.AddRange(IdeCommand.Warnings(context, project, IdeProject.Read(IdeProject.UserFile(project))));
+            }
 
             var scheduler = project is null || !databaseSection.Reachable
                 ? null

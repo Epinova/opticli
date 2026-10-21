@@ -28,7 +28,8 @@ public sealed class AgentClient : IDisposable
     public AgentClient(Uri baseUrl, string token, HttpMessageHandler? handler = null)
     {
         // No redirects: a site answering without the agent (HTTPS or canonical-host redirect) must not get the token sent elsewhere.
-        _http = new HttpClient(handler ?? new HttpClientHandler { AllowAutoRedirect = false });
+        // HTTPS only for an IDE's site that listens on nothing else, with the development certificate.
+        _http = new HttpClient(handler ?? new HttpClientHandler { AllowAutoRedirect = false, ServerCertificateCustomValidationCallback = IdeSite.AcceptCertificate });
         _http.BaseAddress = new Uri(baseUrl, AgentProtocol.BasePath + "/");
         _http.Timeout = Timeout.InfiniteTimeSpan;
         _http.DefaultRequestHeaders.Add(AgentProtocol.TokenHeader, token);

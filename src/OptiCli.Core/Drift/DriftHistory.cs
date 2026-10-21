@@ -86,22 +86,8 @@ public static class DriftHistory
         return database.Count > 0 && database.All(s => s.Item.RemovedFromCode is not null);
     }
 
-    /// <summary>
-    /// Whether <paramref name="directory"/> or a folder above it has a <c>.git</c> (folder, or file for a worktree or
-    /// submodule). git isn't run otherwise: on macOS without the command line tools, <c>git</c> offers to install them.
-    /// </summary>
-    internal static bool InRepository(string directory)
-    {
-        for (var current = new DirectoryInfo(directory); current is not null; current = current.Parent)
-        {
-            var dotGit = Path.Combine(current.FullName, ".git");
-            if (Directory.Exists(dotGit) || File.Exists(dotGit))
-            {
-                return true;
-            }
-        }
-        return false;
-    }
+    /// <summary>Whether <paramref name="directory"/> is in a git work tree (<see cref="Discovery.Git.InRepository"/>).</summary>
+    internal static bool InRepository(string directory) => Discovery.Git.InRepository(directory);
 
     private static bool Candidate(DriftItem item) =>
         !item.Informational && item.Ahead == DriftAhead.Database && item.Difference == OnlyInDatabase;

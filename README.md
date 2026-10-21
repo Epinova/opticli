@@ -24,7 +24,9 @@ writes:  opticli ──HTTP on 127.0.0.1 + per-run token──▶ site agent ins
   with their C# class files and Razor views, found by scanning the site's source.
 - **Writes** go through the CMS's own API, so versioning, validation, caches and events behave as they do in the
   edit UI. `opticli serve` starts the site's existing build output with the **site agent** injected at startup: a
-  small assembly that adds a few HTTP endpoints under `/_opticli/`. The site's code and files are not changed.
+  small assembly that adds a few HTTP endpoints under `/_opticli/`. The site's code and files are not changed. With
+  `opticli ide on`, the site you start from your IDE loads the agent instead, so changes show there without a restart
+  (see [IDE mode](#running-the-site-from-your-ide-ide-mode)).
 - Output is compact JSON when stdout is redirected (agents, pipes) and tables on a terminal. Every item has a
   `ref` you can pass back to another command.
 
@@ -595,7 +597,8 @@ language, or the language the URL selects. On CMS 13, Visual Builder blueprints 
 
 ### Writing (needs `opticli serve`)
 
-These commands write:
+These commands write through the running site: the one `opticli serve` started, or the one you run from your IDE
+with [IDE mode](#running-the-site-from-your-ide-ide-mode) on.
 - `set`, `create`, `area` (add, remove or move ContentArea items, shared blocks or, on CMS 12.20+, inline blocks
   stored in the area), `block create`, `upload` and `translate` save a draft unless `--publish` is given. `upload <file>` adds a PDF, image or other file (up to 50 MB) as media, as the
   type the site maps its extension to, and prints where the file was stored. `create` doesn't take media types (that
@@ -739,7 +742,8 @@ On CMS 13 the sites are applications, and a few of these rules differ: see
 
 Saving through the site clears its site definition cache, so the site `serve` runs uses the new hosts at once. Another
 process running the site against the same database (your IDE's) keeps the old ones until it restarts, unless remote
-events are set up. Site definitions aren't versioned: the output lists every change and the hosts after it.
+events are set up, or unless it is the site that saved ([IDE mode](#running-the-site-from-your-ide-ide-mode)). Site
+definitions aren't versioned: the output lists every change and the hosts after it.
 
 ### Scheduled jobs
 
@@ -840,7 +844,8 @@ nothing more once the CLI stops waiting). A run that stops halfway fails with th
 `error.details.removed`. Each item is checked once more just before it goes (its values, what uses it), and the run
 stops there if that changed; one removal runs at a time per site. The CMS records a type's removal in its activity log (`tblActivityLog`, type
 `ContentType`), not a property's. The site `serve` runs uses the new content model at once; another process running the
-site against the same database (your IDE's) keeps its cached content types until it restarts.
+site against the same database (your IDE's) keeps its cached content types until it restarts. With
+[IDE mode](#running-the-site-from-your-ide-ide-mode) the IDE's site is the one that removes them.
 
 Without `serve` these commands are `unreachable` (exit 4): only the running site can tell which classes it loads, and
 there is no database fallback for removing. Against a shared database they are refused (exit 3), with no override: the
@@ -1042,6 +1047,52 @@ are often committed, so keep the token out of git.
 | `OPTICLI_REMOVALS_FILE` | never (the edge-case test site sets it) | another file for the record of `types remove`, `remove-property` and `prune`, instead of `removals.jsonl` in opticli's state directory |
 | `OPTICLI_SCHEDULER` | `serve --scheduler`, `env` (not against a remote database) | `on` leaves the site's scheduler as the site sets it; without it the site agent turns the scheduler off |
 
+### Running the site from your IDE (IDE mode)
+
+`serve` runs a second process of the site. The process you started from your IDE keeps its own content cache, and
+nothing tells it that opticli changed the database, so it shows the old content until you restart it. `opticli ide on`
+fixes that: the site you start from the IDE (Rider's run or debug, Visual Studio, `dotnet run`, `dotnet watch`) loads
+the site agent from its own build, so writes go through that process and show there at once.
+
+```sh
+opticli ide on        # once per project (again after updating opticli)
+# rebuild, then start the site from the IDE as usual
+opticli ide status    # the block, the agent copy, whether the build has the hook, the running site
+opticli ide off
+```
+
+- `ide on` adds a labelled `ItemGroup` to `<Project>.csproj.user`, which MSBuild imports on its own and repositories
+  normally ignore. Its `RuntimeHostConfigurationOption` items put the agent into the build's `runtimeconfig.json` as a
+  startup hook (only for `Debug`, `--configuration` picks another, and never when publishing). Nothing else in the file
+  changes. A `.csproj.user` that git tracks is refused; one git doesn't ignore is added to `.git/info/exclude`, which is
+  never committed (`ide off` removes that line again).
+- The hook is a copy of the agent in opticli's state directory (`agent/<version>-<hash>/cms<major>/`): the tool's own
+  path changes with every update, and a startup hook that is missing stops the site from starting. The block only adds
+  the hook while the copy exists. `ide on` removes copies older than 30 days other than the current one.
+- At startup the agent makes its own token. Once the site listens, it writes where it listens and the token to
+  `<project>.ide.json` in the state directory (readable by you only), and removes it when the site stops. A file left by
+  a site the IDE killed is ignored and removed. Nothing secret goes into the project, the build output or a launch
+  profile.
+- opticli reaches the agent on the site's own addresses on this machine (`localhost`, loopback or wildcard addresses,
+  and names below `.localhost` such as `site.dev.localhost`): plain HTTP first, else HTTPS on `localhost`, accepting
+  the ASP.NET Core development certificate there (also on Linux, where OpenSSL doesn't trust it).
+- IDE mode never changes how the site starts. There's no connection pin, and the scheduler, schema updates and content
+  type sync stay as the site sets them, also against a remote development database (`serve` turns those off there). If
+  the site runs against a database other than a local one or the development database, or outside `Development`, the
+  agent stays off for that run (an `[opticli] IDE mode: the agent is off` line in the site's output) instead of
+  stopping the site. Writes to a remote development database still stop on drift.
+- `serve --status`, `doctor` and every write use the IDE's site while it runs (`mode: ide`). `serve` then starts nothing
+  and says so. When the IDE's site doesn't answer (paused at a breakpoint), writes say so; continue it.
+- `serve` still works when the IDE's site isn't running: it runs the same build, and gives the site the agent copy that
+  build names, so one agent loads. `opticli env` is refused while IDE mode is on.
+- After updating opticli, or after `db use` chooses another development database, run `ide on` again and rebuild.
+  `ide status` and `doctor` say when that's needed.
+- The `runtimeconfig.json` is written at build time: after `ide on` or `ide off`, rebuild. In Rider (and Visual Studio)
+  use Rebuild: the play button's up-to-date check doesn't notice a changed `.csproj.user` and starts the old build.
+  `dotnet build` and `dotnet run` do notice it.
+- Sealing a plan for production, and the sealed run, refuse a build from IDE mode (exit 3): a run with production's
+  write login loads only this opticli's agent. `ide off`, rebuild, and seal again.
+
 ### How the injection works
 
 `serve` starts `dotnet <Site>.dll` with `DOTNET_STARTUP_HOOKS` pointing at `OptiCli.Agent.dll`, which ships in the
@@ -1093,6 +1144,7 @@ the site's own, newer CMS assemblies at runtime. It ships no copies of them.
 |---|---|---|
 | User config | `$XDG_CONFIG_HOME/opticli/config.json` (default `~/.config/opticli/config.json`) | `%APPDATA%\opticli\config.json` |
 | `serve` state, start lock and logs (the last 3 runs) | `$XDG_STATE_HOME/opticli/` (default `~/.local/state/opticli/`) | `%LOCALAPPDATA%\opticli\` |
+| IDE mode: where the IDE's site says it listens, with its token (`<project>.ide.json`, written and removed by the site), and opticli's copies of the agent that builds name as their startup hook (`agent/`) | `$XDG_STATE_HOME/opticli/`, readable by you only | `%LOCALAPPDATA%\opticli\` |
 | Generated passwords of `users add` | `$XDG_STATE_HOME/opticli/users/<project>/<name>.txt`, readable by you only (the folders too) | `%LOCALAPPDATA%\opticli\users\<project>\<name>.txt`, in your user profile, which other users can't read by default (opticli sets no ACL of its own) |
 | What `types remove`, `remove-property` and `prune` removed (one JSON line each, never rotated) | `$XDG_STATE_HOME/opticli/removals.jsonl`, readable by you only | `%LOCALAPPDATA%\opticli\removals.jsonl` |
 | The sync state of `sync pull`, one file per project, source and local database (deleting one takes a new baseline, which writes the source's content over published local changes) | `$XDG_CONFIG_HOME/opticli/sync/<hash>.json`, readable by you only | `%APPDATA%\opticli\sync\<hash>.json` |
