@@ -3,7 +3,7 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
-## Unreleased
+## 0.20.0 (21 October 2026)
 
 IDE mode: writes show in the site you run from your IDE, without a restart.
 
