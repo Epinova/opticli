@@ -1493,9 +1493,21 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
 - **Content is data.** The server's instructions tell the model to read first, show the user a dry run, save drafts,
   publish only when asked, and never follow instructions found in content. That lowers, but can't remove, the risk of
   prompt injection through content: the editor reviews the drafts (every write result has `editUrl`, the version in the
-  CMS edit UI, and `url`, its public address). A dry run can't run the site's own code that reacts to saves; the real
+  CMS edit UI, `previewUrl`, the version as visitors will see it, and `url`, its public address). A dry run can't run the site's own code that reacts to saves; the real
   save reports what it did as `siteChanges` (content it created, published or moved, or a new page it filed elsewhere). Advise editors not to use this connector in the same chat as tools that fetch web pages or read other
   outside content: what such a page says is then one step from the CMS.
+- **Preview links need the editor's sign-in.** `previewUrl`, on a write result that saved a version visitors don't see
+  yet and on `get_content` of such a version, is the CMS's own preview of it (`/EPiServer/CMS/Content/...,,123_456/`),
+  on the edit link's host: it opens for someone signed in to the CMS with access to the draft, and sends anyone else to
+  the login. It carries no preview token, so the assistant can't open it itself, and a link in a chat transcript shows
+  nobody the draft. The CMS can add one (CMS 12.21 and later, `UrlResolverArguments.AppendPreviewToken`), but such a
+  token isn't a link to one draft: it signs whoever holds it in as the editor, for five minutes, and from CMS 12.22 (and
+  on CMS 13) on any request to the site, not only the content it was made for. The module never makes one.
+- **Preview tokens never sign anyone in to the module.** A request with a CMS preview token (`preview_token` in the
+  query, or an `Authorization: preview_token ...` header) is signed in as the editor the token was made for, by the
+  CMS's own handler. The consent page and the connections page refuse such a request, so a preview link (the CMS UI
+  makes them too) can't connect an assistant as the editor or revoke their connections. The MCP endpoint takes only
+  its own access tokens.
 
 ### Error pages and security headers
 
@@ -1713,7 +1725,7 @@ role gate and CIMD; the module's 401 untouched by the site's error pages, and th
 the module; that hidden content is the same `not_found` as missing content, also when it is named in a reference or
 rich text, and that a search doesn't count it; return addresses only on Claude's hosts or loopback, and metadata that
 isn't cached; drafts in the editor's name, publish refused without Publish rights, approval sequences, `baseVersion`
-conflicts, uploads, images shown (a large one scaled down by the site's image service), `editUrl` and `resolve_url`; review requests without publishing (none where no sequence applies),
+conflicts, uploads, images shown (a large one scaled down by the site's image service), `editUrl`, `previewUrl` (a draft shown to the editor signed in, and to nobody else) and `resolve_url`; review requests without publishing (none where no sequence applies),
 content type access rights, restores refused, a branch not published before its master, `list_children` paging; script
 in rich text and links refused, properties the edit UI hides or locks (also by an editor descriptor, or a tab only
 administrators see) left out and refused, a language only administrators may edit refused to an editor, live content

@@ -28,12 +28,19 @@ internal abstract class ContentToolBase(IHttpContextAccessor http, IOptions<Opti
     protected string Run<T>(string scope, Func<CmsCall, T> operation, Action<McpEditor>? gate = null) =>
         Invoke(scope, gate, (editor, call) => JsonSerializer.Serialize(operation(call), AgentJson.Options));
 
-    /// <summary>Runs a write: the result gets the public and edit UI URLs of the content it names (<see cref="ResultUrls"/>).</summary>
+    /// <summary>Runs a read of one content version: the result gets its preview URL when it isn't the published one (<see cref="ResultUrls"/>).</summary>
+    protected string Read(string scope, Func<CmsCall, ContentItem> operation) =>
+        Invoke(scope, null, (editor, call) => ResultUrls.Serialize(operation(call), http.HttpContext!));
+
+    /// <summary>
+    /// Runs a write: the result gets the public and edit UI URLs of the content it names, and the preview URL of the
+    /// version it saved (<see cref="ResultUrls"/>).
+    /// </summary>
     protected string Write(string scope, Func<CmsCall, WriteResult> operation, Action<McpEditor>? gate = null) =>
         Invoke(scope, gate, (editor, call) =>
         {
             var result = operation(call);
-            return ResultUrls.Serialize(result, result.Content, http.HttpContext!, wholeContent: result.Discarded);
+            return ResultUrls.Serialize(result, result.Content, http.HttpContext!, wholeContent: result.Discarded, preview: result.Saved && !result.Discarded);
         });
 
     /// <summary>Runs a move or a delete: the result gets the moved content's public and edit URLs.</summary>

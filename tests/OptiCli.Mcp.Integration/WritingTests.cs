@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Text.Json;
 using OptiCli.Mcp.Integration.Support;
 
@@ -78,6 +79,56 @@ public sealed class WritingTests(SharedSessions sessions)
         }
         var deleted = await editor.OkAsync("get_content", new { reference = page });
         Assert.True(deleted.GetProperty("deleted").GetBoolean());
+    }
+
+    [McpSiteFact]
+    public async Task A_draft_gets_a_preview_link_that_shows_it_to_the_signed_in_editor_and_to_nobody_else()
+    {
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var start = Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        var name = ScratchName();
+        var created = await editor.OkAsync("create_content", new { type = "StandardPage", name, parent = start, publish = true });
+        var page = Id(created.GetProperty("content"));
+        try
+        {
+            // Published: url shows it, so there's nothing to preview.
+            Assert.False(created.TryGetProperty("previewUrl", out _));
+            Assert.False((await editor.OkAsync("get_content", new { reference = page })).TryGetProperty("previewUrl", out _));
+            var baseVersion = created.GetProperty("content").GetProperty("version").GetInt32();
+            var draftName = $"{name} draft";
+            Assert.False((await editor.OkAsync("update_content", new { reference = page, name = draftName, baseVersion, dryRun = true })).TryGetProperty("previewUrl", out _));
+
+            var updated = await editor.OkAsync("update_content", new { reference = page, name = draftName, baseVersion });
+            var draft = updated.GetProperty("content").GetProperty("ref").GetString()!;
+            var previewUrl = updated.GetProperty("previewUrl").GetString()!;
+            // The CMS's own preview of that version, on the host the edit link is on; no token, so it needs a sign-in.
+            Assert.StartsWith(new Uri(McpSiteSettings.Url!, "EPiServer/CMS/Content/").ToString(), previewUrl, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains($",,{draft}", previewUrl);
+            Assert.DoesNotContain("preview_token", previewUrl);
+            Assert.Equal(previewUrl, (await editor.OkAsync("get_content", new { reference = page, version = "latest" })).GetProperty("previewUrl").GetString());
+
+            // Without a sign-in it goes to the login, and shows nothing of the draft.
+            using var anonymous = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
+            using (var response = await anonymous.GetAsync(previewUrl))
+            {
+                Assert.Equal(HttpStatusCode.Found, response.StatusCode);
+                Assert.Contains("/Util/Login", response.Headers.Location!.ToString());
+                Assert.DoesNotContain(draftName, await response.Content.ReadAsStringAsync());
+            }
+            // The editor, signed in to the site, sees the draft as visitors will; visitors still see the published name.
+            using var browser = new Browser(McpSiteSettings.Url!, TestUsers.Editor, McpSiteSettings.Password(TestUsers.Editor));
+            Assert.Contains(draftName, await browser.PageAsync(new Uri(previewUrl), CancellationToken.None));
+            var published = await anonymous.GetStringAsync(new Uri(McpSiteSettings.Url!, new Uri(updated.GetProperty("url").GetString()!).PathAndQuery));
+            Assert.Contains(name, published);
+            Assert.DoesNotContain(draftName, published);
+
+            // A discarded version is gone: no preview of it.
+            Assert.False((await editor.OkAsync("discard_draft", new { reference = page })).TryGetProperty("previewUrl", out _));
+        }
+        finally
+        {
+            await DeleteAsync(editor, page);
+        }
     }
 
     [McpSiteFact]

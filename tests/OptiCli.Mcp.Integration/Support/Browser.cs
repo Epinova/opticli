@@ -101,9 +101,12 @@ internal sealed partial class Browser : IDisposable
     }
 
     /// <summary>The connections page (<c>/episerver/opticli/connections</c>), signing in first if needed.</summary>
-    public async Task<string> ConnectionsAsync(CancellationToken cancellationToken)
+    public Task<string> ConnectionsAsync(CancellationToken cancellationToken) =>
+        PageAsync(new Uri(_http.BaseAddress!, "episerver/opticli/connections"), cancellationToken);
+
+    /// <summary>A page of the site as this editor sees it (a CMS preview, say), signing in first if needed.</summary>
+    public async Task<string> PageAsync(Uri url, CancellationToken cancellationToken)
     {
-        var url = new Uri(_http.BaseAddress!, "episerver/opticli/connections");
         for (var hop = 0; hop < 5; hop++)
         {
             using var response = await _http.GetAsync(url, cancellationToken);

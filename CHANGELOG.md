@@ -3,6 +3,19 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## Unreleased
+
+Preview links: the editor sees a draft as visitors will, without the edit UI around it.
+
+### MCP server for editors (preview)
+
+- Write results that saved a version visitors don't see yet (a draft, a version in review or scheduled) have
+  `previewUrl`: the CMS's own preview of that version, on the edit link's host. `get_content` gives it too when it read
+  such a version (`version: "latest"` or a version id). Not for a dry run, a discarded version, media or folders.
+- `previewUrl` needs the editor's sign-in to the CMS, as `editUrl` does: it carries no preview token, so a link in a
+  chat transcript shows nobody the draft. The server's instructions and the tool descriptions say so, and tell the
+  assistant to give the links to the user rather than open them.
+
 ## 0.22.0 (22 October 2026)
 
 Feedback from an assistant that published an article through the MCP server: searches answer in time, results give
