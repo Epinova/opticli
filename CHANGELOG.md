@@ -3,7 +3,7 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
-## Unreleased
+## 0.22.0 (22 October 2026)
 
 Feedback from an assistant that published an article through the MCP server: searches answer in time, results give
 full addresses, and a save says what the site's own code did besides.
