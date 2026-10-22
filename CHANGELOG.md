@@ -3,7 +3,7 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
-## Unreleased
+## 0.21.0 (22 October 2026)
 
 The MCP server for editors shows Claude the images in the media library.
 
