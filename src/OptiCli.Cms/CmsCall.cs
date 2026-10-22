@@ -95,6 +95,13 @@ internal sealed class CmsCall(IServiceProvider services, CancellationToken abort
     public bool MayRestore => !Checked;
 
     /// <summary>
+    /// Whether public URLs carry the site's host also for the site the request came in on (<see cref="Content.PublicUrls"/>).
+    /// For an editor they do: their assistant can't tell which host a path is on. The developer's agent gives them as
+    /// the CMS does, as the CLI's reads from the database do.
+    /// </summary>
+    public bool AbsoluteUrls => Checked;
+
+    /// <summary>
     /// Whether the caller may create content of <paramref name="type"/> below <paramref name="parent"/>, of
     /// <paramref name="parentType"/>, as far as access rights go: always for the developer; for an editor as the edit
     /// UI's list of types to create offers them, which the CMS doesn't check again on save. That list leaves out a type
@@ -154,11 +161,24 @@ internal sealed class CmsCall(IServiceProvider services, CancellationToken abort
     /// the content's language (<see cref="RequireLanguageAccess(IContent)"/>). A save that publishes or schedules, or of content
     /// without versions, passes the caller's publishing gate first, if it has one (<see cref="RequirePublishing"/>).
     /// </summary>
+    /// <remarks>What the site's own code does meanwhile is recorded, for <see cref="TakeSiteEvents"/>.</remarks>
     public ContentReference Save(IContent content, SaveAction action)
     {
         RequireLanguageAccess(content);
         RequirePublishing(action, content);
+        _siteEvents.Clear();
+        using var recording = SiteChanges.Record(OptionalService<IContentEvents>(), _siteEvents);
         return Checked ? Repository.Save(content, action) : Repository.Save(content, action, AccessLevel.NoAccess);
+    }
+
+    private readonly List<SiteEvent> _siteEvents = [];
+
+    /// <summary>The content events of the last <see cref="Save"/>, in order (<see cref="SiteChanges"/>), and forgets them.</summary>
+    public IReadOnlyList<SiteEvent> TakeSiteEvents()
+    {
+        var events = _siteEvents.ToList();
+        _siteEvents.Clear();
+        return events;
     }
 
     /// <summary>

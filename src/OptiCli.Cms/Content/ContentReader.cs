@@ -11,7 +11,8 @@ namespace OptiCli.Cms.Content;
 /// <summary>Describes a loaded content version as <see cref="ContentItem"/>.</summary>
 /// <param name="shown">Which properties to describe (see <see cref="ReadValues"/>); every one when null.</param>
 /// <param name="services">For CMS 13's composition mapper; no composition without it.</param>
-internal sealed class ContentReader(IContentTypeRepository types, IContentVersionRepository versions, IUrlResolver urls, Func<IContentData, PropertyData, bool>? shown = null, IServiceProvider? services = null)
+/// <param name="absoluteUrl">The URL with the site's host also for the site the request came in on (<see cref="CmsCall.AbsoluteUrls"/>).</param>
+internal sealed class ContentReader(IContentTypeRepository types, IContentVersionRepository versions, IUrlResolver urls, Func<IContentData, PropertyData, bool>? shown = null, IServiceProvider? services = null, bool absoluteUrl = false)
 {
     public ContentItem Describe(IContent content)
     {
@@ -41,7 +42,7 @@ internal sealed class ContentReader(IContentTypeRepository types, IContentVersio
             StopPublish = versionable?.StopPublish,
             Saved = tracked?.Saved,
             ChangedBy = tracked?.ChangedBy,
-            Url = Url(link, language),
+            Url = PublicUrls.Of(urls, link, Code(language), absoluteUrl),
             Properties = values.Properties(content),
             Composition = services is null ? null : Compat.CmsCompositions.Read(services, content, values.Properties),
         };
@@ -73,14 +74,4 @@ internal sealed class ContentReader(IContentTypeRepository types, IContentVersio
 
     private static string? Code(CultureInfo? culture) =>
         culture is null || culture.Equals(CultureInfo.InvariantCulture) ? null : culture.Name;
-
-    /// <summary>The public URL, as templates would link to it (never the edit or preview URL).</summary>
-    private string? Url(ContentReference link, CultureInfo? language)
-    {
-        var url = urls.GetUrl(
-            link.ToReferenceWithoutVersion(),
-            Code(language),
-            new UrlResolverArguments { ContextMode = ContextMode.Default, ForceCanonical = true });
-        return string.IsNullOrEmpty(url) ? null : url;
-    }
 }

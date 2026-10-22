@@ -119,7 +119,25 @@ public sealed record WriteResult
     /// such as a search indexer): its message. The save stands; details are in the site's log.
     /// </summary>
     public string? SiteError { get; init; }
+
+    /// <summary>
+    /// What the site's own code changed while the content was saved (handlers of the CMS's save and publish events):
+    /// other content it created, saved, published, moved or deleted, and the saved content itself when it put it
+    /// somewhere else than asked, or published it unasked. A dry run doesn't save, so it never has these. Null when
+    /// there were none.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<SiteChange>? SiteChanges { get; init; }
 }
+
+/// <summary>A change the site's own code made while content was saved: <see cref="WriteResult.SiteChanges"/>.</summary>
+/// <param name="Content">The content as it is after the save.</param>
+/// <param name="Actions">What happened to it, in order: <c>created</c>, <c>saved</c>, <c>published</c>, <c>moved</c>, <c>deleted</c> (to the recycle bin or for good).</param>
+/// <param name="PreviousParent">
+/// For <c>moved</c>: where it was; for the saved content itself, the parent it was asked to go below. For <c>deleted</c>,
+/// where it was before the recycle bin.
+/// </param>
+public sealed record SiteChange(ContentSummary Content, IReadOnlyList<string> Actions, string? PreviousParent = null);
 
 /// <summary>
 /// Changes a publish would put live besides its own: versions saved after the published version, in the language, by

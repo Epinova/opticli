@@ -183,6 +183,7 @@ internal sealed class WriteFlow
         }
 
         var isNew = ContentReference.IsNullOrEmpty(writable.ContentLink);
+        var askedParent = isNew ? writable.ParentLink : null;
         var newestBefore = isNew || writable is not IVersionable ? 0 : NewestVersion(writable.ContentLink);
         var intoBefore = intoVersion is { } into ? Versions.Load(new ContentReference(writable.ContentLink.ID, into)) : null;
         ContentReference saved;
@@ -210,6 +211,7 @@ internal sealed class WriteFlow
             siteError = $"{ex.Message} ({ex.GetType().FullName})";
         }
         var result = Repository.Get<IContent>(saved);
+        var siteChanges = SiteChanges.Report(Call, Types, Call.TakeSiteEvents(), result, askedParent, published);
         if (!published && writable is IVersionable && saved.WorkID > 0 && Compat.CmsApi.Variation(writable) is null)
         {
             // ForceNewVersion leaves the old primary draft in place, and edit mode would keep opening that one. (Not for a
@@ -228,6 +230,7 @@ internal sealed class WriteFlow
             Changes = changes,
             Validation = issues.Count > 0 ? issues : null,
             SiteError = siteError,
+            SiteChanges = siteChanges,
             IntoVersion = intoVersion is { } target && saved.WorkID == target,
         };
     }

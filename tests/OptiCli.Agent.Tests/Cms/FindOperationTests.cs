@@ -36,11 +36,22 @@ public class FindOperationTests
         Assert.True(developer.Truncated);
     }
 
+    [Fact]
+    public void A_search_out_of_time_answers_with_what_it_found()
+    {
+        var found = Find(CmsCaller.Editor, TimeSpan.Zero, Child(10, "Alloy Plan", AccessLevel.Read));
+
+        Assert.Empty(found.Items);
+        Assert.True(found.Truncated);
+    }
+
     private static CmsCallTests.Secured Child(int id, string name, AccessLevel access) =>
         new(new ContentReference(id), access) { Name = name, ParentLink = Folder };
 
     /// <summary>Searches the folder for "Alloy", one match at most, with the folder's children as given and nothing below them.</summary>
-    private static ContentList Find(CmsCaller caller, params IContent[] children)
+    private static ContentList Find(CmsCaller caller, params IContent[] children) => Find(caller, null, children);
+
+    private static ContentList Find(CmsCaller caller, TimeSpan? timeLimit, params IContent[] children)
     {
         var folder = new CmsCallTests.Secured(Folder, AccessLevel.Read) { Name = "Products" };
         var (repository, repositoryRecorder) = Recorder<IContentRepository>.Create();
@@ -69,6 +80,6 @@ public class FindOperationTests
             .AddSingleton(Recorder<ILanguageBranchRepository>.Create().Proxy)
             .AddSingleton<IPrincipalAccessor>(new CmsCallTests.PrincipalAccessor(new GenericPrincipal(new GenericIdentity("editor@example.com"), [])))
             .BuildServiceProvider();
-        return FindOperation.Run(new CmsCall(services, CancellationToken.None, caller), new FindRequest("Alloy", Root: "5", Limit: 1));
+        return FindOperation.Run(new CmsCall(services, CancellationToken.None, caller), new FindRequest("Alloy", Root: "5", Limit: 1), timeLimit);
     }
 }

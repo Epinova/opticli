@@ -14,8 +14,8 @@ internal sealed record ContentList(IReadOnlyList<ContentSummary> Items, int? Nex
     public ContentSummary? Of { get; init; }
 
     /// <summary>
-    /// For a search: true when it stopped before it had looked everywhere below its root, at the result limit or at the
-    /// most items it looks at, so there may be more matches. Null otherwise.
+    /// For a search: true when it stopped before it had looked everywhere below its root, at the result limit, at the
+    /// most items it looks at or at its time limit, so there may be more matches. Null otherwise.
     /// </summary>
     public bool? Truncated { get; init; }
 }

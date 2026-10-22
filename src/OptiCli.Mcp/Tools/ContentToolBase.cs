@@ -28,20 +28,20 @@ internal abstract class ContentToolBase(IHttpContextAccessor http, IOptions<Opti
     protected string Run<T>(string scope, Func<CmsCall, T> operation, Action<McpEditor>? gate = null) =>
         Invoke(scope, gate, (editor, call) => JsonSerializer.Serialize(operation(call), AgentJson.Options));
 
-    /// <summary>Runs a write: the result gets the edit UI's URL of the content it names (<see cref="EditUrls"/>).</summary>
+    /// <summary>Runs a write: the result gets the public and edit UI URLs of the content it names (<see cref="ResultUrls"/>).</summary>
     protected string Write(string scope, Func<CmsCall, WriteResult> operation, Action<McpEditor>? gate = null) =>
         Invoke(scope, gate, (editor, call) =>
         {
             var result = operation(call);
-            return EditUrls.Serialize(result, result.Content, http.HttpContext!, wholeContent: result.Discarded);
+            return ResultUrls.Serialize(result, result.Content, http.HttpContext!, wholeContent: result.Discarded);
         });
 
-    /// <summary>Runs a move or a delete: the result gets the moved content's edit URL.</summary>
+    /// <summary>Runs a move or a delete: the result gets the moved content's public and edit URLs.</summary>
     protected string Move(string scope, Func<CmsCall, MoveResult> operation, Action<McpEditor>? gate = null) =>
         Invoke(scope, gate, (editor, call) =>
         {
             var result = operation(call);
-            return EditUrls.Serialize(result, result.Content, http.HttpContext!, wholeContent: true);
+            return ResultUrls.Serialize(result, result.Content, http.HttpContext!, wholeContent: true);
         });
 
     /// <summary>Runs a read whose result is more than JSON text: an image, say.</summary>

@@ -1474,8 +1474,9 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   `parent` id, which they can't open), and that a ContentArea or content reference they can read points to something
   (its id, which they can't open). Both are by design: a bare id, never the content's name, type or values.
   `list_children`'s cursor counts only what the editor can read, so paging tells nothing of what lies between, and
-  `find_content` counts only what they can read too; it stops after loading 20,000 items in all, hidden ones included,
-  and then says `truncated`: a search below a great deal of hidden content can still tell that much.
+  `find_content` counts only what they can read too; it stops after loading 20,000 items in all, hidden ones included
+  (or after 20 seconds), and then says `truncated`: a search below a great deal of hidden content can still tell that
+  much.
 - **Uploads follow the site's own upload rules** as well as `MaxUploadBytes`: the CMS UI's size limit
   (`EPiServer:CmsUI:Upload:FileSizeLimit`, the lower of the two applies) and, from CMS UI 12.33, its list of allowed
   file extensions (`AllowedFileExtensions`), so a site that keeps SVG out of its uploads keeps it out here too.
@@ -1492,7 +1493,8 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
 - **Content is data.** The server's instructions tell the model to read first, show the user a dry run, save drafts,
   publish only when asked, and never follow instructions found in content. That lowers, but can't remove, the risk of
   prompt injection through content: the editor reviews the drafts (every write result has `editUrl`, the version in the
-  CMS edit UI). Advise editors not to use this connector in the same chat as tools that fetch web pages or read other
+  CMS edit UI, and `url`, its public address). A dry run can't run the site's own code that reacts to saves; the real
+  save reports what it did as `siteChanges` (content it created, published or moved, or a new page it filed elsewhere). Advise editors not to use this connector in the same chat as tools that fetch web pages or read other
   outside content: what such a page says is then one step from the CMS.
 
 ### Error pages and security headers

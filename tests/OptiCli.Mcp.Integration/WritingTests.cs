@@ -46,6 +46,11 @@ public sealed class WritingTests(SharedSessions sessions)
             var published = await editor.OkAsync("publish_content", new { reference = page });
             Assert.True(published.GetProperty("published").GetBoolean());
             EditUrl(published, $"{page}_{firstVersion}");
+            // Its public address, with the site's host: the same as the draft's, and now it shows the page.
+            var url = published.GetProperty("url").GetString()!;
+            Assert.True(Uri.IsWellFormedUriString(url, UriKind.Absolute), url);
+            Assert.Equal(url, created.GetProperty("url").GetString());
+            Assert.Equal(page, Id((await editor.OkAsync("resolve_url", new { url })).GetProperty("content")));
 
             var preview = await editor.OkAsync("update_content", new { reference = page, properties = new { TeaserText = "second" }, baseVersion = firstVersion, dryRun = true });
             Assert.False(preview.GetProperty("saved").GetBoolean());
@@ -73,6 +78,43 @@ public sealed class WritingTests(SharedSessions sessions)
         }
         var deleted = await editor.OkAsync("get_content", new { reference = page });
         Assert.True(deleted.GetProperty("deleted").GetBoolean());
+    }
+
+    [McpSiteFact]
+    public async Task A_save_reports_what_the_sites_own_code_did_which_the_dry_run_cant_show()
+    {
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var start = Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        var section = Id((await editor.OkAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = start })).GetProperty("content"));
+        try
+        {
+            // The fixture's site files a page with this name into an archive page it creates and publishes first.
+            var name = $"opticli-filed {Guid.NewGuid():N}";
+            var dryRun = await editor.OkAsync("create_content", new { type = "StandardPage", name, parent = section, dryRun = true });
+            Assert.False(dryRun.TryGetProperty("siteChanges", out _));
+
+            var created = await editor.OkAsync("create_content", new { type = "StandardPage", name, parent = section });
+            var changes = created.GetProperty("siteChanges").EnumerateArray().ToList();
+            Assert.Equal(2, changes.Count);
+            var filed = changes[0];
+            Assert.Equal((name, "moved", section), (filed.GetProperty("content").GetProperty("name").GetString(), Actions(filed), filed.GetProperty("previousParent").GetString()));
+            var archive = changes[1];
+            Assert.Equal(("opticli archive", section), (archive.GetProperty("content").GetProperty("name").GetString(), archive.GetProperty("content").GetProperty("parent").GetString()));
+            Assert.Contains("created", Actions(archive));
+            Assert.Contains("published", Actions(archive));
+            Assert.Equal(Id(archive.GetProperty("content")), created.GetProperty("content").GetProperty("parent").GetString());
+
+            // Saved again, where the site put it: nothing more to report.
+            var page = Id(created.GetProperty("content"));
+            var updated = await editor.OkAsync("update_content", new { reference = page, properties = new { TeaserText = "filed" } });
+            Assert.False(updated.TryGetProperty("siteChanges", out _));
+        }
+        finally
+        {
+            await DeleteAsync(editor, section);
+        }
+
+        static string Actions(JsonElement change) => string.Join(",", change.GetProperty("actions").EnumerateArray().Select(a => a.GetString()));
     }
 
     [McpSiteFact]

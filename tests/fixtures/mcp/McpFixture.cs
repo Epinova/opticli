@@ -1,7 +1,8 @@
 // Copied into a copy of the edge-case site by setup.sh, for the MCP module's end-to-end tests
 // (tests/OptiCli.Mcp.Integration). It adds a content type only administrators may create, a block type with properties
 // the edit UI hides or locks, and at startup makes the test users, the access rights, a language only administrators may
-// edit and the folders the tests rely on, on this site's database only. Passwords are generated, kept in
+// edit and the folders the tests rely on, on this site's database only. Like a site's own save handler, it files pages
+// named "opticli-filed ..." into an archive page it creates. Passwords are generated, kept in
 // App_Data/mcp-test-users.json (readable by the owner only) and never printed.
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
@@ -162,6 +163,15 @@ public class McpFixture : IInitializableModule
     public const string InertBody = "<p>Example:</p><textarea><img src=x onerror=alert(document.domain)></textarea>";
 
     /// <summary>
+    /// A page created with a name that starts with this goes below an <see cref="ArchiveName"/> page of its parent instead,
+    /// which the site creates and publishes first when it's missing: what a site that files articles into year folders
+    /// does on save, which a dry run can't show (<see cref="FileIntoArchive"/>).
+    /// </summary>
+    public const string FiledPrefix = "opticli-filed ";
+
+    public const string ArchiveName = "opticli archive";
+
+    /// <summary>
     /// Settings from the <c>OptiCli:Mcp</c> configuration section beat the ones Startup passes to AddOptiCliMcp, so the
     /// tests can start this site in another configuration (<c>OptiCli__Mcp__AllowPublish=false</c>). The module itself
     /// lets Startup's delegate win, as a site would want.
@@ -179,7 +189,30 @@ public class McpFixture : IInitializableModule
         }
     }
 
-    public void Initialize(InitializationEngine context) => context.InitComplete += (_, _) =>
+    public void Initialize(InitializationEngine context)
+    {
+        context.Locate.Advanced.GetRequiredService<IContentEvents>().CreatingContent += FileIntoArchive;
+        context.InitComplete += (_, _) => SetupAtStart(context);
+    }
+
+    private static void FileIntoArchive(object? sender, ContentEventArgs e)
+    {
+        if (e.Content is not PageData page || page.Name?.StartsWith(FiledPrefix, StringComparison.Ordinal) != true)
+        {
+            return;
+        }
+        var repository = ServiceLocator.Current.GetInstance<IContentRepository>();
+        ContentReference? archive = repository.GetChildren<PageData>(page.ParentLink).FirstOrDefault(p => p.Name == ArchiveName)?.ContentLink;
+        if (archive is null)
+        {
+            var created = repository.GetDefault<PageData>(page.ParentLink, page.ContentTypeID);
+            created.Name = ArchiveName;
+            archive = repository.Save(created, SaveAction.Publish | SaveAction.SkipValidation, AccessLevel.NoAccess);
+        }
+        e.Content.ParentLink = archive.ToReferenceWithoutVersion();
+    }
+
+    private static void SetupAtStart(InitializationEngine context)
     {
         try
         {
@@ -190,7 +223,7 @@ public class McpFixture : IInitializableModule
             // The site should still start; setup.sh looks for this line in the log.
             Console.Error.WriteLine($"[mcp-fixture] setup failed: {e}");
         }
-    };
+    }
 
     public void Uninitialize(InitializationEngine context)
     {

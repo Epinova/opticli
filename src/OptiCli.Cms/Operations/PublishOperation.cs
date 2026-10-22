@@ -103,10 +103,12 @@ internal static class PublishOperation
             saved = version.ContentLink;
             siteError = $"{ex.Message} ({ex.GetType().FullName})";
         }
+        var result = flow.Repository.Get<IContent>(saved);
         return new WriteResult
         {
-            Content = ContentSummaries.Describe(flow.Repository.Get<IContent>(saved), flow.Types),
+            Content = ContentSummaries.Describe(result, flow.Types),
             SiteError = siteError,
+            SiteChanges = SiteChanges.Report(call, flow.Types, call.TakeSiteEvents(), result, null, publishing),
             Saved = true,
             Published = publishing,
             ApprovalRequested = action == SaveAction.RequestApproval,

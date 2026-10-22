@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using EPiServer;
 using EPiServer.Core;
 using EPiServer.DataAbstraction;
@@ -15,7 +16,7 @@ internal sealed record FindRequest(string Name, string? Root = null, string? Typ
 /// <summary>
 /// Content whose name contains a text, below a root, breadth first, so the nearest matches come first. The CLI searches
 /// the database; the MCP module has only the CMS, so the walk is bounded: it looks at no more than
-/// <see cref="MaxVisited"/> items, and reports when it stopped early.
+/// <see cref="MaxVisited"/> items, for no longer than <see cref="TimeLimit"/>, and reports when it stopped early.
 /// </summary>
 /// <remarks>
 /// It walks the tree as the caller sees it: content an editor can't read is neither listed nor walked into, as for
@@ -36,10 +37,17 @@ internal static class FindOperation
     /// <summary>The most content items one search loads, those the caller can't read included: a safety stop.</summary>
     public const int MaxLoaded = 4 * MaxVisited;
 
+    /// <summary>
+    /// The longest one search walks before it answers with what it found so far: well within the time an assistant's
+    /// client waits for a tool (often 60 seconds), which a walk through a large site with a cold cache can take longer than.
+    /// </summary>
+    public static readonly TimeSpan TimeLimit = TimeSpan.FromSeconds(20);
+
     private const int Batch = 100;
 
+    /// <param name="timeLimit"><see cref="TimeLimit"/>, unless a test needs another.</param>
     /// <exception cref="AgentException"><c>usage</c> without a name; <c>not_found</c> for a root that doesn't exist or the caller can't read.</exception>
-    public static ContentList Run(CmsCall call, FindRequest body)
+    public static ContentList Run(CmsCall call, FindRequest body, TimeSpan? timeLimit = null)
     {
         var text = body.Name?.Trim();
         if (string.IsNullOrEmpty(text))
@@ -60,6 +68,8 @@ internal static class FindOperation
         var visited = 0;
         var loaded = 0;
         var truncated = false;
+        var limitAt = timeLimit ?? TimeLimit;
+        var clock = Stopwatch.StartNew();
         while (queue.Count > 0 && !truncated)
         {
             var parent = queue.Dequeue();
@@ -79,7 +89,7 @@ internal static class FindOperation
                         continue;
                     }
                     // Only now, with an item the caller can read left to look at, is the search cut short.
-                    if (found.Count == limit || visited == MaxVisited)
+                    if (found.Count == limit || visited == MaxVisited || clock.Elapsed >= limitAt)
                     {
                         truncated = true;
                         break;

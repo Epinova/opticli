@@ -71,6 +71,9 @@ public sealed record WriteOutput(
     /// <summary>The site's own code failed after the save (a handler of the CMS's events): its message. The save stands.</summary>
     public string? SiteError { get; init; }
 
+    /// <summary>What the site's own code changed while saving: other content, or this content put elsewhere or published unasked.</summary>
+    public IReadOnlyList<SiteChange>? SiteChanges { get; init; }
+
     /// <summary>
     /// For a change based on an older version (<c>--from</c>): the versions saved after <see cref="BaseVersion"/>, newest
     /// first, whose changes it doesn't have. They stay as they are.
@@ -109,6 +112,7 @@ public sealed record WriteOutput(
             PendingDraft = result.PendingDraft,
             PreviouslyPublished = content is not null && result.PreviouslyPublished is { } previous ? VersionRef(content.Id, previous) : null,
             SiteError = result.SiteError,
+            SiteChanges = result.SiteChanges,
             ApprovalRequested = result.ApprovalRequested ? true : null,
             ScheduledFor = result.ScheduledFor,
             Unpublished = result.Unpublished ? true : null,

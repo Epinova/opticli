@@ -38,9 +38,7 @@ internal static partial class ResolveUrlOperation
                 "Give the URL as visitors see it (the path alone works for this site's own hosts), or the content's id.");
 
         var language = (content as ILocale)?.Language;
-        var publicUrl = urls.GetUrl(content.ContentLink.ToReferenceWithoutVersion(), language?.Name,
-            new UrlResolverArguments { ContextMode = ContextMode.Default, ForceCanonical = true });
-        return new ResolvedUrl(ContentSummaries.Describe(content, types), string.IsNullOrEmpty(publicUrl) ? null : publicUrl);
+        return new ResolvedUrl(ContentSummaries.Describe(content, types), PublicUrls.Of(urls, content.ContentLink, language?.Name, call.AbsoluteUrls));
     }
 
     private static IContent? Route(CmsCall call, IUrlResolver urls, string text)

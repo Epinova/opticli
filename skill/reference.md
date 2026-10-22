@@ -401,6 +401,10 @@ with no `ref`.
 - If the site's own code fails after the save (e.g. a search indexer that can't parse the file), the save stands: the
   write succeeds with a warning that names the error (`siteError` in the output), so a plan keeps the new `ref`. The
   same goes for every write.
+- The site's own code may also change content when something is saved (file a new page into a year folder, create
+  and publish that folder): the write then warns, and `siteChanges` in the output lists each item with what happened
+  to it (`created`, `saved`, `published`, `moved`, `deleted`) and, for a move, `previousParent`. A dry run can't show
+  this.
 
 ### Access rights
 

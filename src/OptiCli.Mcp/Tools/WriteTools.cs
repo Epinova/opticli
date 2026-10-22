@@ -33,7 +33,7 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
     internal const string Properties = "Property values by name, e.g. {\"Heading\": \"Text\", \"MainBody\": \"<p>XHTML</p>\"}: strings, numbers, booleans, content refs, ContentArea arrays of {ref} (a shared block) or {type, properties} (an inline block, values as plain values: a whole area replaces the area, and an inline item keeps a block's other values only as an exact copy of it); \"MainArea[2]\": {...} sets values of the one inline block at that position; null clears. Names and types: get_content_type.";
 
     [McpServerTool(Name = "create_content", Title = "Create content", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
-    [Description("Creates a page, block or folder as a draft below parent (or in the \"For this page\" folder of forContent). Check allowed child types with get_content_type first. Returns editUrl: give it to the user to review the draft in the CMS.")]
+    [Description("Creates a page, block or folder as a draft below parent (or in the \"For this page\" folder of forContent). Check allowed child types with get_content_type first. Returns editUrl: give it to the user to review the draft in the CMS; url is its public address once published, and siteChanges what the site's own code did on save (such as filing it in another folder).")]
     public string CreateContent(
         [Description("The content type, e.g. ArticlePage.")] string type,
         [Description("The new content's name.")] string name,
@@ -60,7 +60,7 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
         }), PublishingIf(publish || publishAt is not null));
 
     [McpServerTool(Name = "update_content", Title = "Update content", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
-    [Description("Changes existing content: saves a new draft from the latest version with the given properties, name or ContentArea edits. Pass baseVersion (the version you read) so someone else's newer save isn't overwritten. Run with dryRun first. Returns editUrl for the user to review the draft.")]
+    [Description("Changes existing content: saves a new draft from the latest version with the given properties, name or ContentArea edits. Pass baseVersion (the version you read) so someone else's newer save isn't overwritten. Run with dryRun first. Returns editUrl for the user to review the draft, url (the public address) and siteChanges (what the site's own code did on save).")]
     public string UpdateContent(
         [Description("Content id or GUID.")] string reference,
         [Description(Properties)] Dictionary<string, JsonElement>? properties = null,

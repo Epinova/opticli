@@ -46,7 +46,7 @@ internal sealed class ReadTools(IHttpContextAccessor http, IOptions<OptiCliMcpOp
         Run(Scopes.Read, call => ResolveUrlOperation.Run(call, url));
 
     [McpServerTool(Name = "find_content", Title = "Find content", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-    [Description("Finds content whose name contains a text (any case) below root, nearest first. truncated: true means it stopped before searching everything: narrow root, name or type.")]
+    [Description("Finds content whose name contains a text (any case) below root, nearest first. Only names are matched, not other text. It answers within 20 seconds with what it found so far; truncated: true means it stopped before searching everything: narrow root, name or type.")]
     public string FindContent(
         [Description("Text the name contains.")] string name,
         [Description("Where to search below (id or GUID); the whole site when left out.")] string? root = null,

@@ -1146,7 +1146,18 @@ public sealed class WriteExecutor(
         {
             warnings.Add($"{output.Version ?? output.Ref} was saved, but the site's own code failed after saving it: {siteError}. The save stands; the site's log has the details (`opticli serve --logs`).");
         }
+        if (output.SiteChanges is { } siteChanges)
+        {
+            warnings.Add($"The site's own code changed content while {output.Version ?? output.Ref} was saved: {string.Join("; ", siteChanges.Select(Describe))}.");
+        }
         return new WriteOutcome(output, AgentSource, createdId, warnings);
+    }
+
+    /// <summary>"created, published 2026 (123) below 45", "moved Release notes (678) from 45 below 123".</summary>
+    private static string Describe(SiteChange change)
+    {
+        var from = change.PreviousParent is { } previous ? $" from {previous}" : "";
+        return $"{string.Join(", ", change.Actions)} {change.Content.Name} ({change.Content.Id}){from} below {change.Content.Parent}";
     }
 
     /// <summary>

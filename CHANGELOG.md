@@ -3,6 +3,30 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## Unreleased
+
+Feedback from an assistant that published an article through the MCP server: searches answer in time, results give
+full addresses, and a save says what the site's own code did besides.
+
+### MCP server for editors (preview)
+
+- `find_content` answers within 20 seconds with what it found so far (`truncated: true`), instead of searching on past
+  the time the assistant's client waits (often 60 seconds) on a large site with a cold cache. Its description says it
+  matches names only.
+- `get_content` and `resolve_url` give the public `url` with the site's host, also for the site the MCP server runs on.
+- Every write result has `url`, the content's public address (for a draft, where it will be once published), next to
+  `editUrl`; so does a move or a delete.
+- The server's instructions say a dry run doesn't run the site's own code, and to tell the user what `siteChanges`
+  reports.
+
+### Writes
+
+- A save reports what the site's own code changed meanwhile (handlers of the CMS's save and publish events), as
+  `siteChanges`: other content it created, saved, published, moved or deleted, and the saved content itself when the
+  site put it below another parent than asked (a site that files articles into year folders) or published it unasked.
+  Content the editor can't read is left out. The CLI shows them as a warning. A dry run doesn't save, so it can't
+  report them.
+
 ## 0.21.0 (22 October 2026)
 
 The MCP server for editors shows Claude the images in the media library.

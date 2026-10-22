@@ -147,7 +147,10 @@ public sealed class ReadingTests(SharedSessions sessions)
         var about = await editor.OkAsync("resolve_url", new { url = "/en/about-us/" });
         var aboutId = about.GetProperty("content").GetProperty("id").GetInt32();
         Assert.Equal("About us", about.GetProperty("content").GetProperty("name").GetString());
-        Assert.EndsWith("/en/about-us/", about.GetProperty("url").GetString());
+        // With the site's host, which the assistant can't guess, and back to the same page.
+        var aboutUrl = about.GetProperty("url").GetString()!;
+        Assert.True(Uri.IsWellFormedUriString(aboutUrl, UriKind.Absolute), aboutUrl);
+        Assert.EndsWith("/en/about-us/", aboutUrl);
 
         var absolute = await editor.OkAsync("resolve_url", new { url = new Uri(McpSiteSettings.Url!, "en/about-us/").ToString() });
         Assert.Equal(aboutId, absolute.GetProperty("content").GetProperty("id").GetInt32());
@@ -157,6 +160,7 @@ public sealed class ReadingTests(SharedSessions sessions)
         var permanent = await editor.OkAsync("resolve_url", new { url = $"/link/{guid:N}.aspx" });
         Assert.Equal(aboutId, permanent.GetProperty("content").GetProperty("id").GetInt32());
         Assert.Equal(startId.ToString(System.Globalization.CultureInfo.InvariantCulture), read.GetProperty("parent").GetString());
+        Assert.Equal(aboutUrl, read.GetProperty("url").GetString());
     }
 
     /// <summary>
