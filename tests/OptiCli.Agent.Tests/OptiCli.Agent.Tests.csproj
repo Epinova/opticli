@@ -23,6 +23,11 @@
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
 
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <!-- At runtime too, for the image service stand-in; the agent itself compiles against it only. -->
+    <PackageReference Include="EPiServer.ImageLibrary" />
+  </ItemGroup>
+
   <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
     <DefineConstants>$(DefineConstants);CMS13</DefineConstants>
   </PropertyGroup>

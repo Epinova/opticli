@@ -34,6 +34,7 @@ public sealed class ReadingTests(SharedSessions sessions)
         await same.ErrorAsync("get_content", TestUsers.HiddenPage, MissingGuid, r => new { reference = r });
         await same.ErrorAsync("get_content", $"{id}_1", $"{MissingId}_1", r => new { reference = r });
         await same.ErrorAsync("list_versions", id, MissingId, r => new { reference = r });
+        await same.ErrorAsync("view_media", id, MissingId, r => new { reference = r });
         await same.ErrorAsync("list_children", id, MissingId, r => new { reference = r });
         await same.ErrorAsync("update_content", id, MissingId, r => new { reference = r, name = "changed", dryRun = true });
         await same.ErrorAsync("discard_draft", id, MissingId, r => new { reference = r, dryRun = true });

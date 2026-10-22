@@ -29,6 +29,12 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" PrivateAssets="all" />
   </ItemGroup>
 
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <!-- IImageService (Compat/CmsImages.cs), part of EPiServer.CMS.Core on CMS 12. Compile-time only: a site without it
+         gets no image scaling, and nothing else changes. -->
+    <PackageReference Include="EPiServer.ImageLibrary" ExcludeAssets="runtime" PrivateAssets="all" />
+  </ItemGroup>
+
   <ItemGroup>
     <Compile Include="..\OptiCli.Protocol\**\*.cs" LinkBase="Protocol" />
     <!-- Dependency-free helper shared with the CLI so "did you mean" behaves the same on both sides. -->

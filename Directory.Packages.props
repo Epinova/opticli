@@ -25,6 +25,9 @@
   <ItemGroup Label="Agent, CMS 13" Condition="'$(TargetFramework)' == 'net10.0'">
     <!-- The oldest CMS 13; an agent built against it runs on 13.3. -->
     <PackageVersion Include="EPiServer.CMS.Core" Version="13.0.0" />
+    <!-- The image service's interface (IImageService), which CMS 12 has in EPiServer.CMS.Core and CMS 13 in a package of
+         its own, brought by EPiServer.CMS through EPiServer.ImageLibrary.ImageSharp. -->
+    <PackageVersion Include="EPiServer.ImageLibrary" Version="13.0.0" />
     <!-- What CMS 13.0.0 itself depends on: anything older is a downgrade (NU1605). -->
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.2" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.2" />

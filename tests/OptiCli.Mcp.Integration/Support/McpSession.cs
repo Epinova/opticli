@@ -10,8 +10,11 @@ using ModelContextProtocol.Protocol;
 
 namespace OptiCli.Mcp.Integration.Support;
 
-/// <summary>A tool's result: its JSON text, and whether it is an error result (the agent's error JSON then).</summary>
-public sealed record ToolResult(bool IsError, string Text)
+/// <summary>
+/// A tool's result: its JSON text, and whether it is an error result (the agent's error JSON then). Content has every
+/// block, for a result with more than JSON (view_media's image).
+/// </summary>
+public sealed record ToolResult(bool IsError, string Text, IList<ContentBlock> Content)
 {
     public JsonElement Json => JsonDocument.Parse(Text).RootElement.Clone();
 }
@@ -156,7 +159,7 @@ internal sealed class McpSession : IAsyncDisposable
             : JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(JsonSerializer.Serialize(arguments, Json))!.ToDictionary(p => p.Key, p => (object?)p.Value);
         var result = await Client.CallToolAsync(tool, values, cancellationToken: cancellationToken);
         var text = string.Concat(result.Content.OfType<TextContentBlock>().Select(c => c.Text));
-        return new ToolResult(result.IsError == true, text);
+        return new ToolResult(result.IsError == true, text, result.Content);
     }
 
     /// <summary>A tool call that must succeed: its JSON.</summary>

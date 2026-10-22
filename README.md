@@ -1479,6 +1479,12 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
 - **Uploads follow the site's own upload rules** as well as `MaxUploadBytes`: the CMS UI's size limit
   (`EPiServer:CmsUI:Upload:FileSizeLimit`, the lower of the two applies) and, from CMS UI 12.33, its list of allowed
   file extensions (`AllowedFileExtensions`), so a site that keeps SVG out of its uploads keeps it out here too.
+- **Images:** `view_media` shows the assistant a media item's image, with the editor's read access like every read.
+  JPEG, PNG, GIF and WebP files up to 1568 pixels on the longest side and 1 MB are sent as they are stored. Larger ones
+  are scaled down with the site's own image service, the one that makes the edit UI's thumbnails (built into CMS 12
+  before 12.17, then `EPiServer.ImageLibrary.ImageSharp`, which `EPiServer.CMS` brings). An image of more than 64
+  million pixels isn't decoded, and other files (PDF and the like) aren't shown. SVG is sent as its markup. Text in an
+  image is content like any other, with the same risk of prompt injection.
 - **Host names:** the module builds its issuer, resource and metadata URLs from the request's host, as the site's own
   login does, and its metadata documents are never cached (`Cache-Control: no-store`). Still, limit which hosts the site
   answers on: set `RequireHost` (or the site's `AllowedHosts`), and behind a proxy accept forwarded headers from the
@@ -1705,7 +1711,7 @@ role gate and CIMD; the module's 401 untouched by the site's error pages, and th
 the module; that hidden content is the same `not_found` as missing content, also when it is named in a reference or
 rich text, and that a search doesn't count it; return addresses only on Claude's hosts or loopback, and metadata that
 isn't cached; drafts in the editor's name, publish refused without Publish rights, approval sequences, `baseVersion`
-conflicts, uploads, `editUrl` and `resolve_url`; review requests without publishing (none where no sequence applies),
+conflicts, uploads, images shown (a large one scaled down by the site's image service), `editUrl` and `resolve_url`; review requests without publishing (none where no sequence applies),
 content type access rights, restores refused, a branch not published before its master, `list_children` paging; script
 in rich text and links refused, properties the edit UI hides or locks (also by an editor descriptor, or a tab only
 administrators see) left out and refused, a language only administrators may edit refused to an editor, live content

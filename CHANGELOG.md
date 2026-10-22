@@ -3,6 +3,30 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## Unreleased
+
+The MCP server for editors shows Claude the images in the media library.
+
+### MCP server for editors (preview)
+
+- New read tool `view_media`: Claude sees a media item's image instead of asking the editor to open it. It reads as the
+  editor, like `get_content`, with the same `lang` and `version` (drafts too); media they can't read is the same
+  `not_found` as missing media. The result is the file's description as JSON (version, name, size, and the stored
+  file's format and size when it was scaled) and the image itself.
+- JPEG, PNG, GIF and WebP files up to 1568 pixels on the longest side and 1 MB are sent as they are stored. Larger ones
+  are scaled down by the site's own image service, which makes the edit UI's thumbnails (built into CMS 12 before
+  12.17, then `EPiServer.ImageLibrary.ImageSharp`, which `EPiServer.CMS` brings), to `maxSize` (64 to 1568 pixels). A
+  PNG that is still over 1 MB becomes a JPEG. Images of more than 64 million pixels aren't decoded; a site without an
+  image service still shows small images.
+- SVG files are sent as their markup; other files (PDF and the like) are refused with a hint.
+- The server's instructions name `view_media`, and count text in images as the site's data.
+
+### Development
+
+- The image reading and scaling are content operations in `OptiCli.Cms`, built and tested for CMS 12 and CMS 13. On
+  CMS 13 the image service's interface is in the `EPiServer.ImageLibrary` package, referenced at compile time only. The
+  MCP module itself stays CMS 12 only.
+
 ## 0.20.0 (21 October 2026)
 
 IDE mode: writes show in the site you run from your IDE, without a restart.

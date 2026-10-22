@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ModelContextProtocol.Protocol;
 using OptiCli.Cms;
 using OptiCli.Protocol;
 
@@ -43,7 +44,11 @@ internal abstract class ContentToolBase(IHttpContextAccessor http, IOptions<Opti
             return EditUrls.Serialize(result, result.Content, http.HttpContext!, wholeContent: true);
         });
 
-    private string Invoke(string scope, Action<McpEditor>? gate, Func<McpEditor, CmsCall, string> run)
+    /// <summary>Runs a read whose result is more than JSON text: an image, say.</summary>
+    protected CallToolResult Show(string scope, Func<CmsCall, CallToolResult> operation) =>
+        Invoke(scope, null, (editor, call) => operation(call));
+
+    private TResult Invoke<TResult>(string scope, Action<McpEditor>? gate, Func<McpEditor, CmsCall, TResult> run)
     {
         var editor = McpEditor.From(http);
         editor.Require(scope);

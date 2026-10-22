@@ -1,10 +1,13 @@
 using System.ComponentModel;
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using OptiCli.Cms.Operations;
 using OptiCli.Mcp.OAuth;
+using OptiCli.Protocol;
 
 namespace OptiCli.Mcp.Tools;
 
@@ -65,4 +68,25 @@ internal sealed class ReadTools(IHttpContextAccessor http, IOptions<OptiCliMcpOp
         [Description("next from the previous page; leave out for the first.")] int? cursor = null,
         [Description("Page size, default 20, at most 100.")] int? limit = null) =>
         Run(Scopes.Read, call => VersionsOperation.Run(call, reference, new VersionsRequest(lang, cursor, limit)));
+
+    [McpServerTool(Name = "view_media", Title = "View media", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+    [Description("Shows a media item's image so you can see it: JPEG, PNG, GIF or WebP, scaled down when larger than maxSize (original gives the stored file's size), or an SVG as its markup. Use it to describe, check or choose images; other files (PDF and the like) can't be shown. " + Data + " That includes text in the image.")]
+    public CallToolResult ViewMedia(
+        [Description("The media item: " + Ref)] string reference,
+        [Description("Language branch, for media that has them; the master language when left out.")] string? lang = null,
+        [Description("published (default), latest (the newest version, often a draft) or a version id.")] string? version = null,
+        [Description("Longest side in pixels, 64 to 1568 (the default); smaller costs fewer tokens.")] int? maxSize = null) =>
+        Show(Scopes.Read, call => Shown(ViewMediaOperation.Run(call, reference, new ViewMediaRequest(lang, version, maxSize))));
+
+    /// <summary>What the file is, as JSON, then the image itself, or an SVG's markup as text.</summary>
+    private static CallToolResult Shown(MediaView view) => new()
+    {
+        Content =
+        [
+            new TextContentBlock { Text = JsonSerializer.Serialize(view, AgentJson.Options) },
+            view.Image is { } image
+                ? ImageContentBlock.FromBytes(image, view.MimeType)
+                : new TextContentBlock { Text = view.Svg ?? "" },
+        ],
+    };
 }

@@ -21,6 +21,15 @@ internal static class ReadOperation
 {
     public static ContentItem Run(CmsCall call, string reference, ReadRequest body)
     {
+        var content = Load(call, reference, body);
+
+        // An editor gets the properties the CMS edit UI shows them, as editable.
+        return new ContentReader(call.Service<IContentTypeRepository>(), call.Service<IContentVersionRepository>(), call.Service<IUrlResolver>(), call.Properties.Shown, call.Services).Describe(content);
+    }
+
+    /// <summary>The version <paramref name="body"/> asks for, which the caller may read (<see cref="CmsCall.RequireRead{T}"/>).</summary>
+    public static IContent Load(CmsCall call, string reference, ReadRequest body)
+    {
         var lang = Blank(body.Lang);
         var version = Blank(body.Version);
 
@@ -35,10 +44,7 @@ internal static class ReadOperation
 
         var language = Language(locator.LoadAnyLanguage(link), lang);
         var versionLink = link.WorkID > 0 ? link : SelectVersion(locator, link, language, version);
-        var content = call.RequireRead(versionLink is null ? Load(loader, link, language) : LoadVersion(loader, versions, versionLink));
-
-        // An editor gets the properties the CMS edit UI shows them, as editable.
-        return new ContentReader(call.Service<IContentTypeRepository>(), versions, call.Service<IUrlResolver>(), call.Properties.Shown, call.Services).Describe(content);
+        return call.RequireRead(versionLink is null ? Load(loader, link, language) : LoadVersion(loader, versions, versionLink));
     }
 
     /// <summary>Null for the primary version; otherwise the version to load.</summary>
