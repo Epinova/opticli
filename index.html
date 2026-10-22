@@ -358,6 +358,16 @@ https://your-site.example/episerver/opticli/mcp</pre>
         <code>opticli skill install</code> again to update the skill.</p>
     </div>
     <ol class="changelog">
+      <li><div class="v"><b>0.22.0</b><span>22 October 2026</span></div>
+        <ul>
+          <li><b>Saves say what the site did:</b> when the site's own code reacts to a save, filing a new article into a
+            year folder it creates and publishes, say, the result lists it as <code>siteChanges</code>, in the MCP server
+            and as a warning in the CLI. A dry run can't run that code, and the MCP server's instructions now say so.</li>
+          <li><b>Full addresses, searches in time:</b> the MCP server gives public URLs with the site's host, on reads and
+            on every write next to the edit link, and <code>find_content</code> answers within 20 seconds with what it
+            found so far. Update <code>OptiCli.Mcp</code> to <code>0.22.0-preview</code>. Details in the
+            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
+        </ul></li>
       <li><div class="v"><b>0.21.0</b><span>22 October 2026</span></div>
         <ul>
           <li><b>Claude sees images:</b> the MCP server's new <code>view_media</code> tool shows Claude a media item's image,
