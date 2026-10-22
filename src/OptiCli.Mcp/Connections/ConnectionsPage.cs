@@ -24,6 +24,10 @@ internal sealed class ConnectionsPage(
 {
     public async Task<IResult> Show(HttpContext context)
     {
+        if (PreviewToken(context) is { } previewToken)
+        {
+            return previewToken;
+        }
         if (context.User.Identity is not { IsAuthenticated: true, Name: { Length: > 0 } user })
         {
             return Results.Challenge(new AuthenticationProperties { RedirectUri = context.Request.PathBase + context.Request.Path });
@@ -67,6 +71,10 @@ internal sealed class ConnectionsPage(
 
     public async Task<IResult> Revoke(HttpContext context)
     {
+        if (PreviewToken(context) is { } previewToken)
+        {
+            return previewToken;
+        }
         if (context.User.Identity is not { IsAuthenticated: true, Name: { Length: > 0 } user })
         {
             return Message(context, HttpStatusCode.Forbidden, "Not signed in", "Sign in to the site first.");

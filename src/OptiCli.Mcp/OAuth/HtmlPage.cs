@@ -77,6 +77,15 @@ internal static class HtmlPage
             ? Message(context, HttpStatusCode.Forbidden, "Not sent from this site", "The form wasn't sent from this site's own page, so nothing was changed. Open the page on the site and try again.")
             : null;
 
+    /// <summary>
+    /// A 400 page for a request that carries a CMS preview token (<see cref="PreviewTokens"/>), which the site would
+    /// take as the editor's sign-in; null for any other request. The consent and connections pages check this first.
+    /// </summary>
+    public static IResult? PreviewToken(HttpContext context) =>
+        PreviewTokens.InRequest(context.Request)
+            ? Message(context, HttpStatusCode.BadRequest, "Not with a preview link", "A CMS preview link can't be used to sign in here. Open the page without its preview_token.")
+            : null;
+
     private static IResult Page(HttpContext context, HttpStatusCode status, string title, string body, string? formTarget)
     {
         var headers = context.Response.Headers;

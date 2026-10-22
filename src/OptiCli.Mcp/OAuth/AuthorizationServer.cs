@@ -254,6 +254,10 @@ internal sealed class AuthorizationServer(
         {
             return limited;
         }
+        if (PreviewToken(context) is { } previewToken)
+        {
+            return previewToken;
+        }
         var (request, error) = await ParseAsync(context);
         if (request is null)
         {
@@ -304,9 +308,9 @@ internal sealed class AuthorizationServer(
         {
             return limited;
         }
-        if (CrossSite(context) is { } crossSite)
+        if ((CrossSite(context) ?? PreviewToken(context)) is { } refused)
         {
-            return crossSite;
+            return refused;
         }
         if (!context.Request.HasFormContentType || !await antiforgery.IsRequestValidAsync(context))
         {
