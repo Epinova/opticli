@@ -127,6 +127,42 @@ public sealed class PreviewLinkTests(SharedSessions sessions)
     }
 
     [PreviewLinksSiteFact]
+    public async Task A_block_draft_and_a_translation_have_links_of_their_own()
+    {
+        var site = McpSiteSettings.PreviewLinksUrl!;
+        await using var editor = await McpSession.ConnectAsync(TestUsers.Editor, new SessionOptions { Site = site });
+        var start = WritingTests.Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        var name = ScratchName();
+        var page = WritingTests.Id((await editor.OkAsync("create_content", new { type = "StandardPage", name, parent = start })).GetProperty("content"));
+        try
+        {
+            using var anonymous = Anonymous();
+
+            // A block, through the site's preview template.
+            var marker = $"opticli block {Guid.NewGuid():N}";
+            var block = await editor.OkAsync("create_content", new { type = "EditorialBlock", name = ScratchName(), forContent = page, properties = new { MainBody = $"<p>{marker}</p>" } });
+            using (var response = await anonymous.GetAsync(block.GetProperty("assistantPreviewUrl").GetString()!))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                Assert.Contains(marker, await response.Content.ReadAsStringAsync());
+            }
+
+            // A language branch: its own version, in its own language.
+            var swedish = $"{name} sv";
+            var translated = await editor.OkAsync("add_language", new { reference = page, lang = "sv", name = swedish });
+            using (var response = await anonymous.GetAsync(translated.GetProperty("assistantPreviewUrl").GetString()!))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                Assert.Contains(swedish, await response.Content.ReadAsStringAsync());
+            }
+        }
+        finally
+        {
+            await editor.OkAsync("delete_content", new { reference = page });
+        }
+    }
+
+    [PreviewLinksSiteFact]
     public async Task A_link_stops_working_when_its_connection_is_revoked()
     {
         var site = McpSiteSettings.PreviewLinksUrl!;

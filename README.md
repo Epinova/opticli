@@ -1515,16 +1515,21 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   Protection keys; it carries no CMS preview token and nothing that works anywhere else. The module renders the CMS's
   preview of that one version inside the site, as the editor, for that one request: it answers GET and HEAD only,
   takes the version from the payload alone (a link with another path or any query is refused), drops the request's
-  cookies and `Authorization`, and sends no cookie, no redirect and no sign-in challenge back (anything but a success
-  is a plain 404), with `Cache-Control: no-store`, `X-Robots-Tag: noindex, nofollow` and `Referrer-Policy: no-referrer`.
+  body and every header but `Host`, content negotiation and the forwarded headers (so its cookies and `Authorization`
+  too), and sends no cookie, no redirect, no sign-in challenge and no error page back (anything but a success is a plain
+  404, or 500 for an error), with `Cache-Control: no-store`, `X-Robots-Tag: noindex, nofollow` and
+  `Referrer-Policy: no-referrer`.
   The link stops working after `PreviewLinkLifetime` (10 minutes), when the connection is revoked or ends, and when the
   editor can no longer read the version (with the roles of the connection's last refresh, as for every tool call).
   Until then, whoever has it sees that draft: the assistant, and anything that keeps the chat or the fetch, such as a
-  transcript or a proxy's log. So the server's instructions tell the assistant not to hand it to the user, who reviews
+  transcript or a proxy's log. They see it as the editor sees it: a page type whose view shows something for the
+  signed-in user (their account, content filtered by their access, a visitor group by role) shows the editor's. So the server's instructions tell the assistant not to hand it to the user, who reviews
   the draft through `editUrl` and `previewUrl`. Each opened link is audited (the version, the editor, the client and
   the outcome; never the link). The module adds a middleware at the start of the site's pipeline for it (only with the
-  option on), since a preview needs routing and the site's own views after it; call `AddOptiCliMcp()` after `AddCms()`,
-  as above, so it comes after the CMS's own first-request initialization.
+  option on), since a preview needs routing and the site's own views after it. Call `AddOptiCliMcp()` after `AddCms()`
+  (as above) and after `AddCmsCloudPlatformSupport()` on DXP, so it comes after the CMS's first-request initialization
+  and the forwarded headers (which the rate limit and `RequireHost` need). A base path the site sets with
+  `UsePathBase()` isn't supported for these links (an IIS application's is).
 - **Preview tokens never sign anyone in to the module.** A request with a CMS preview token (`preview_token` in the
   query, or an `Authorization: preview_token ...` header) is signed in as the editor the token was made for, by the
   CMS's own handler. The consent page and the connections page refuse such a request, so a preview link (the CMS UI

@@ -20,7 +20,10 @@ internal interface IPreviewVersions
     string? PreviewUrl(ContentReference version, string? language, ClaimsPrincipal editor);
 }
 
-/// <summary>The CMS's own: the version as the content loader has it, its access rights, and the URL resolver's preview URL.</summary>
+/// <summary>
+/// The CMS's own: the version as the content loader has it, its access rights, and the URL resolver's preview URL, when
+/// that names the version.
+/// </summary>
 /// <remarks>The CMS's services are looked up when used, so the module's own services build without a CMS (its tests).</remarks>
 internal sealed class CmsPreviewVersions(IServiceProvider services) : IPreviewVersions
 {
@@ -38,6 +41,29 @@ internal sealed class CmsPreviewVersions(IServiceProvider services) : IPreviewVe
             return null;
         }
         // Never with AppendPreviewToken: the CMS's token signs its holder in as the editor (PreviewTokens).
-        return services.GetRequiredService<IUrlResolver>().GetUrl(version, language, new UrlResolverArguments { ContextMode = ContextMode.Preview });
+        var url = services.GetRequiredService<IUrlResolver>().GetUrl(version, language, new UrlResolverArguments { ContextMode = ContextMode.Preview });
+        return Names(url, version) ? url : null;
+    }
+
+    /// <summary>
+    /// Whether preview URL <paramref name="url"/> is the one of <paramref name="version"/> itself (its <c>,,123_456</c>
+    /// segment), and not of other content the CMS put in its place: a shortcut page's preview URL is its target's, and
+    /// without a version, which the CMS then shows as that page's latest draft.
+    /// </summary>
+    internal static bool Names(string? url, ContentReference version)
+    {
+        if (string.IsNullOrEmpty(url))
+        {
+            return false;
+        }
+        var path = url.Split('?', '#')[0];
+        var at = path.LastIndexOf(",,", StringComparison.Ordinal);
+        if (at < 0)
+        {
+            return false;
+        }
+        var segment = path[(at + 2)..].TrimEnd('/');
+        return ContentReference.TryParse(Uri.UnescapeDataString(segment), out var named) && named.WorkID == version.WorkID
+            && named.ID == version.ID && string.Equals(named.ProviderName ?? "", version.ProviderName ?? "", StringComparison.Ordinal);
     }
 }
