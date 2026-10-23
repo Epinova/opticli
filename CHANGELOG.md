@@ -3,6 +3,25 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.23.1 (23 October 2026)
+
+Hardening of the MCP server for editors, from a review of what an assistant's tool calls can reach.
+
+### MCP server for editors (preview)
+
+- Media goes by what the site serves it as. The CMS serves a media item by its URL, whose last segment is made from its
+  name, with the content type of that extension. So for an editor, a file the site would serve as HTML, XML or script
+  isn't uploaded, whether its file name or the media's name says so (`upload_media`'s `name`, a rename, a replaced
+  file). The content types are the site's own, as its media are served with them. Besides `.html`, `.xml` and the others
+  it already refused, on a default site that is `.hxt`, `.stm`, `.xsd`, `.dtd`, `.wsdl`, `.jsx` and a few more legacy
+  types, which could only be uploaded on a site with a media type that takes any file. An SVG drawing without script
+  still uploads, also under a name the site serves as SVG.
+- A content reference given as an object (`{"id": 123}`), for a reference property or in a list property's item (also
+  in a dictionary), gets the same read check as one given as text: content the editor can't read is `not_found`, as
+  missing content is, and a version must be one of the content's own. A reference the property already has may be
+  written back as it was. A list item nested more than six levels deep is refused for an editor rather than left
+  unchecked.
+
 ## 0.23.0 (23 October 2026)
 
 Preview links: the editor sees a draft as visitors will, without the edit UI around it, and the assistant can look at
