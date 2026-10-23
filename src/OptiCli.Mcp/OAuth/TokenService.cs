@@ -106,7 +106,8 @@ internal sealed class TokenService(
 
     /// <summary>The editor as the CMS sees them: their name and the roles they had at their last (re)authorization.</summary>
     /// <param name="scope">The access token's scopes; the grant's when null.</param>
-    public static ClaimsPrincipal Principal(Grant grant, string? scope = null) => EditorGate.Principal(grant.UserName, grant.Roles, AuthenticationType,
+    /// <param name="authenticationType">The identity's type: the MCP endpoint's (<see cref="AuthenticationType"/>) when null.</param>
+    public static ClaimsPrincipal Principal(Grant grant, string? scope = null, string? authenticationType = null) => EditorGate.Principal(grant.UserName, grant.Roles, authenticationType ?? AuthenticationType,
     [
         new Claim(McpClaims.Grant, grant.GrantId),
         new Claim(McpClaims.Client, grant.ClientId),

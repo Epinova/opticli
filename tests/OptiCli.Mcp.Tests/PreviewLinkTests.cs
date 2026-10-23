@@ -1,0 +1,496 @@
+using System.Net;
+using System.Security.Claims;
+using System.Text;
+using System.Text.Json;
+using EPiServer.Core;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using OptiCli.Mcp.OAuth;
+using OptiCli.Mcp.Preview;
+using OptiCli.Mcp.Tests.Support;
+using OptiCli.Mcp.Tools;
+
+namespace OptiCli.Mcp.Tests;
+
+/// <summary>
+/// The assistant's preview links without a CMS: the signed payload, and the middleware in front of a fake CMS preview
+/// that records what reached it. What the CMS itself renders is the end-to-end tests' (PreviewLinkTests there).
+/// </summary>
+public sealed class PreviewLinkTests
+{
+    private const string Version = "123_456";
+
+    private const string PreviewPath = "/EPiServer/CMS/Content/en/about-us,,123_456/";
+
+    [Fact]
+    public void A_link_names_one_version_in_one_language_for_one_connection_and_expires()
+    {
+        var links = Links(TimeProvider.System);
+        var request = new DefaultHttpContext { Request = { Scheme = "https", Host = new HostString("editors.example.com") } }.Request;
+
+        var (url, expires) = links.Issue(request, "grant-1", "editor", Version, "en");
+        var (other, _) = links.Issue(request, "grant-1", "editor", Version, "en");
+
+        Assert.StartsWith("https://editors.example.com/episerver/opticli/preview/", url, StringComparison.Ordinal);
+        Assert.InRange(expires - DateTimeOffset.UtcNow, TimeSpan.FromMinutes(9), TimeSpan.FromMinutes(10));
+        var link = links.Read(Token(url))!;
+        Assert.Equal(("grant-1", "editor", Version, "en"), (link.GrantId, link.UserName, link.Version, link.Language));
+        Assert.Equal(expires.ToUnixTimeSeconds(), link.Expires.ToUnixTimeSeconds());
+        // Every link is its own, and none carries anything readable or the CMS's preview token.
+        Assert.NotEqual(url, other);
+        Assert.DoesNotContain("editor", Token(url));
+        Assert.DoesNotContain("preview_token", url);
+        Assert.Equal("", links.Read(Token(links.Issue(request, "grant-1", "editor", "7_8", null).Url))!.Language);
+    }
+
+    [Fact]
+    public void A_tampered_truncated_expired_or_foreign_payload_is_refused()
+    {
+        var protection = new EphemeralDataProtectionProvider();
+        var links = Links(TimeProvider.System, protection);
+        var request = new DefaultHttpContext { Request = { Scheme = "http", Host = new HostString("localhost") } }.Request;
+        var token = Token(links.Issue(request, "grant-1", "editor", Version, "en").Url);
+        Assert.NotNull(links.Read(token));
+
+        Assert.Null(links.Read(token[..^1] + (token[^1] == 'A' ? 'B' : 'A')));
+        Assert.Null(links.Read(token[..10] + (token[10] == 'A' ? 'B' : 'A') + token[11..]));
+        Assert.Null(links.Read(token[..^8]));
+        Assert.Null(links.Read(""));
+        Assert.Null(links.Read("not a link"));
+        Assert.Null(links.Read(new string('A', PreviewLinks.MaxLength + 1)));
+
+        // Issued longer ago than it lasts.
+        var past = new ManualTime();
+        past.Advance(DateTimeOffset.UtcNow - past.GetUtcNow() - TimeSpan.FromMinutes(11));
+        Assert.Null(links.Read(Token(Links(past, protection).Issue(request, "grant-1", "editor", Version, "en").Url)));
+
+        // The same payload, protected for another purpose (an access token's), or naming content rather than a version.
+        string Payload(string version) => JsonSerializer.Serialize(new { g = "grant-1", u = "editor", v = version, l = "en", iat = 0, n = "x" });
+        var later = DateTimeOffset.UtcNow.AddMinutes(5);
+        Assert.Null(links.Read(protection.CreateProtector("OptiCli.Mcp.AccessToken.v1").ToTimeLimitedDataProtector().Protect(Payload(Version), later)));
+        var ours = protection.CreateProtector("OptiCli.Mcp.PreviewLink.v1").ToTimeLimitedDataProtector();
+        Assert.NotNull(links.Read(ours.Protect(Payload(Version), later)));
+        Assert.Null(links.Read(ours.Protect(Payload("123"), later)));
+        Assert.Null(links.Read(ours.Protect(Payload("not a ref"), later)));
+        // An access token isn't a preview link either.
+        var tokens = new TokenService(protection, new InMemoryOAuthStore(), new GrantCache(TimeProvider.System), Options.Create(new OptiCliMcpOptions()), TimeProvider.System);
+        var (access, _) = tokens.Issue(new Grant
+        {
+            GrantId = "grant-1", ClientId = "c", ClientName = "c", UserName = "editor", Roles = [], Scope = Scopes.Read, Resource = "r",
+            RefreshHash = "h", Created = DateTimeOffset.UtcNow, RefreshIssued = DateTimeOffset.UtcNow, Expires = DateTimeOffset.UtcNow.AddDays(1),
+        });
+        Assert.Null(links.Read(access));
+        Assert.Null(links.Read(access[TokenService.Prefix.Length..]));
+    }
+
+    [Fact]
+    public async Task The_preview_runs_as_the_editor_on_the_cms_preview_path_without_the_requests_credentials_and_sets_no_cookie()
+    {
+        await using var preview = await PreviewSite.StartAsync();
+        var link = await preview.LinkAsync();
+        var request = new HttpRequestMessage(HttpMethod.Get, link);
+        request.Headers.Add("Cookie", ".AspNetCore.Identity.Application=someone-elses");
+        request.Headers.Add("Authorization", "preview_token abc");
+        request.Headers.Add("Proxy-Authorization", "Basic abc");
+        request.Headers.Add("Accept-Language", "sv");
+
+        using var response = await preview.Site.Client().SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("<h1>The draft</h1>", await response.Content.ReadAsStringAsync());
+        Assert.False(response.Headers.Contains("Set-Cookie"));
+        Assert.True(response.Headers.CacheControl!.NoStore);
+        Assert.Equal("noindex, nofollow", response.Headers.GetValues("X-Robots-Tag").Single());
+        Assert.Equal("no-referrer", response.Headers.GetValues("Referrer-Policy").Single());
+        Assert.Equal("text/html; charset=utf-8", response.Content.Headers.ContentType!.ToString());
+
+        var got = preview.Downstream.Got!;
+        // The CMS's preview of the version the link names, with its own query and nothing of the request's.
+        Assert.Equal((PreviewPath, "?epieditmode=false"), (got.Path, got.Query));
+        Assert.Equal(PreviewPath + "?epieditmode=false", got.RawTarget);
+        Assert.DoesNotContain("Cookie", got.Headers);
+        Assert.DoesNotContain("Authorization", got.Headers);
+        Assert.DoesNotContain("Proxy-Authorization", got.Headers);
+        Assert.Contains("Accept-Language", got.Headers);
+        Assert.Equal(0, got.Cookies);
+        // The editor of the link's connection, never an MCP editor.
+        Assert.Equal(("editor", PreviewLinkMiddleware.AuthenticationType), (got.User, got.AuthenticationType));
+        Assert.False(got.IsMcpEditor);
+        var (version, language, editor) = Assert.Single(preview.Versions.Calls);
+        Assert.Equal((ContentReference.Parse(Version), "en"), (version, language));
+        Assert.Equal(("editor", PreviewLinkMiddleware.AuthenticationType), (editor.Identity!.Name, editor.Identity.AuthenticationType));
+        Assert.True(editor.IsInRole("WebEditors"));
+    }
+
+    [Fact]
+    public async Task Without_another_login_the_preview_is_the_editors_and_never_an_mcp_editors()
+    {
+        await using var preview = await PreviewSite.StartAsync();
+        var link = await preview.LinkAsync();
+
+        using var response = await preview.Site.Client().GetAsync(link);
+        using var head = await preview.Site.Client().SendAsync(new HttpRequestMessage(HttpMethod.Head, link));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var got = preview.Downstream.Got!;
+        Assert.Equal(("editor", PreviewLinkMiddleware.AuthenticationType, true), (got.User, got.AuthenticationType, got.Roles.Contains("WebEditors")));
+        Assert.False(got.IsMcpEditor);
+        Assert.Equal(HttpStatusCode.OK, head.StatusCode);
+        Assert.Empty(await head.Content.ReadAsByteArrayAsync());
+        Assert.False(head.Headers.Contains("Set-Cookie"));
+        // Audited with the version, the editor and the client, never the link.
+        var audit = string.Join("\n", preview.Site.Audit.Audit);
+        Assert.Contains("MCP preview 123_456 en: user editor, client mcp_test, ok 200", audit);
+        Assert.DoesNotContain(link.Split('/').Last(), audit);
+    }
+
+    [Fact]
+    public async Task A_body_written_to_the_pipe_is_sent_whole()
+    {
+        await using var preview = await PreviewSite.StartAsync();
+        preview.Downstream.Respond = async context =>
+        {
+            context.Response.ContentType = "text/html";
+            await context.Response.BodyWriter.WriteAsync(Encoding.UTF8.GetBytes(new string('x', 100_000)));
+        };
+
+        using var response = await preview.Site.Client().GetAsync(await preview.LinkAsync());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(100_000, (await response.Content.ReadAsStringAsync()).Length);
+    }
+
+    [Theory]
+    [InlineData(302, 404)]
+    [InlineData(301, 404)]
+    [InlineData(401, 404)]
+    [InlineData(403, 404)]
+    [InlineData(404, 404)]
+    [InlineData(500, 500)]
+    public async Task A_redirect_challenge_refusal_or_error_from_the_site_is_never_passed_on(int status, int expected)
+    {
+        await using var preview = await PreviewSite.StartAsync();
+        preview.Downstream.Respond = async context =>
+        {
+            context.Response.StatusCode = status;
+            context.Response.Headers.Location = "https://elsewhere.example.com/login?ReturnUrl=%2Fdraft";
+            context.Response.Headers.WWWAuthenticate = "preview_token";
+            context.Response.Cookies.Append("session", "secret");
+            await context.Response.WriteAsync("the site's own page, with secret details");
+        };
+
+        using var response = await preview.Site.Client().GetAsync(await preview.LinkAsync());
+
+        Assert.Equal(expected, (int)response.StatusCode);
+        Assert.Null(response.Headers.Location);
+        Assert.False(response.Headers.Contains("Set-Cookie"));
+        Assert.Empty(response.Headers.WwwAuthenticate);
+        Assert.True(response.Headers.CacheControl!.NoStore);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("secret", body);
+        Assert.Equal(expected == 500 ? PreviewLinkMiddleware.Failed : PreviewLinkMiddleware.NotValid, body);
+        Assert.Contains($"refused: the site answered {status}", string.Join("\n", preview.Site.Audit.Audit));
+    }
+
+    [Fact]
+    public async Task The_sites_own_error_page_for_a_refused_preview_is_not_passed_on_either()
+    {
+        await using var preview = await PreviewSite.StartAsync(statusCodePages: true);
+        preview.Downstream.Respond = context =>
+        {
+            context.Response.StatusCode = 404;
+            return Task.CompletedTask;
+        };
+
+        using var response = await preview.Site.Client().GetAsync(await preview.LinkAsync());
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(PreviewLinkMiddleware.NotValid, await response.Content.ReadAsStringAsync());
+    }
+
+    [Theory]
+    [InlineData("POST")]
+    [InlineData("PUT")]
+    [InlineData("DELETE")]
+    [InlineData("PATCH")]
+    [InlineData("OPTIONS")]
+    public async Task Only_get_and_head_are_answered(string method)
+    {
+        await using var preview = await PreviewSite.StartAsync();
+
+        using var response = await preview.Site.Client().SendAsync(new HttpRequestMessage(new HttpMethod(method), await preview.LinkAsync()));
+
+        Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
+        Assert.Equal(["GET", "HEAD"], response.Content.Headers.Allow.Order());
+        Assert.Null(preview.Downstream.Got);
+        Assert.Empty(preview.Versions.Calls);
+    }
+
+    [Fact]
+    public async Task Only_the_link_as_it_was_given_is_answered()
+    {
+        await using var preview = await PreviewSite.StartAsync();
+        var link = await preview.LinkAsync();
+
+        foreach (var url in new[]
+        {
+            link + "?preview_token=abc", link + "?epieditmode=true", link + "?x", link + "/extra", link + "x",
+            "/episerver/opticli/preview", "/episerver/opticli/preview/", "/EPISERVER/opticli/preview/abc",
+        })
+        {
+            using var response = await preview.Site.Client().GetAsync(url);
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+            Assert.Equal(PreviewLinkMiddleware.NotValid, await response.Content.ReadAsStringAsync());
+        }
+        Assert.Null(preview.Downstream.Got);
+        Assert.Empty(preview.Versions.Calls);
+    }
+
+    [Fact]
+    public async Task A_revoked_or_ended_connection_or_another_editors_name_ends_the_link()
+    {
+        await using var preview = await PreviewSite.StartAsync();
+        var site = preview.Site;
+
+        var revoked = await preview.LinkAsync();
+        var grant = (await site.Store.ListGrantsAsync("editor", default)).Single();
+        await site.Store.DeleteGrantAsync(grant.GrantId, default);
+        site.Services.GetRequiredService<GrantCache>().Evict(grant.GrantId);
+        Assert.Equal(HttpStatusCode.NotFound, (await site.Client().GetAsync(revoked)).StatusCode);
+
+        // A link that names another editor than its connection's.
+        var forged = await preview.LinkAsync(user: "admin", linkUser: "editor");
+        Assert.Equal(HttpStatusCode.NotFound, (await site.Client().GetAsync(forged)).StatusCode);
+
+        // The connection's end (ConnectionLifetime), while the link itself would still work.
+        var ended = await preview.LinkAsync();
+        site.Time.Advance(TimeSpan.FromDays(31));
+        Assert.Equal(HttpStatusCode.NotFound, (await site.Client().GetAsync(ended)).StatusCode);
+
+        Assert.Null(preview.Downstream.Got);
+        Assert.Contains("refused: connection revoked or ended", string.Join("\n", site.Audit.Audit));
+    }
+
+    [Fact]
+    public async Task An_expired_link_or_a_version_the_editor_cant_read_shows_nothing()
+    {
+        await using var preview = await PreviewSite.StartAsync();
+        var site = preview.Site;
+
+        // Issued eleven minutes ago, with the default ten.
+        site.Time.Advance(TimeSpan.FromMinutes(-11));
+        var expired = await preview.LinkAsync();
+        site.Time.Advance(TimeSpan.FromMinutes(11));
+        Assert.Equal(HttpStatusCode.NotFound, (await site.Client().GetAsync(expired)).StatusCode);
+        Assert.Empty(preview.Versions.Calls);
+
+        preview.Versions.Readable = false;
+        using var response = await site.Client().GetAsync(await preview.LinkAsync());
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(PreviewLinkMiddleware.NotValid, await response.Content.ReadAsStringAsync());
+        Assert.Null(preview.Downstream.Got);
+        Assert.Contains("refused: version not readable", string.Join("\n", site.Audit.Audit));
+    }
+
+    [Fact]
+    public async Task Off_by_default_the_path_is_the_sites_like_any_other()
+    {
+        await using var preview = await PreviewSite.StartAsync(o => o.AllowPreviewLinks = false);
+        Assert.False(new OptiCliMcpOptions().AllowPreviewLinks);
+
+        // Even a link the module would have made is just a path the site has nothing on.
+        using var response = await preview.Site.Client().GetAsync(await preview.LinkAsync());
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Empty(await response.Content.ReadAsStringAsync());
+        Assert.False(response.Headers.Contains("X-Robots-Tag"));
+        Assert.Empty(preview.Versions.Calls);
+    }
+
+    [Fact]
+    public async Task On_a_site_that_requires_a_host_only_that_host_answers()
+    {
+        await using var preview = await PreviewSite.StartAsync(o => o.RequireHost = "editors.example.com");
+        var link = new Uri(await preview.LinkAsync()).PathAndQuery;
+
+        using var other = await preview.Site.Client().GetAsync(link);
+        using var editors = await preview.Site.Client("editors.example.com").GetAsync(link);
+
+        Assert.Equal(HttpStatusCode.NotFound, other.StatusCode);
+        Assert.False(other.Headers.Contains("X-Robots-Tag"));
+        Assert.Equal(HttpStatusCode.OK, editors.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("editors.example.com", "editors.example.com", true)]
+    [InlineData("EDITORS.example.com:8443", "editors.example.com", true)]
+    [InlineData("editors.example.com:8443", "editors.example.com:8443", true)]
+    [InlineData("editors.example.com", "editors.example.com:8443", false)]
+    [InlineData("editors.example.com:443", "editors.example.com:8443", false)]
+    [InlineData("www.example.com", "editors.example.com", false)]
+    public void The_host_matches_as_endpoint_routing_matches_it(string actual, string required, bool matches) =>
+        Assert.Equal(matches, PreviewLinkMiddleware.HostMatches(new HostString(actual), required));
+
+    [Fact]
+    public async Task Opened_links_are_rate_limited_per_address()
+    {
+        await using var preview = await PreviewSite.StartAsync(limits: new OptiCliMcpRateLimits { PreviewPerMinute = 1 });
+        var link = await preview.LinkAsync();
+
+        Assert.Equal(HttpStatusCode.OK, (await preview.Site.Client().GetAsync(link)).StatusCode);
+        using var limited = await preview.Site.Client().GetAsync(link);
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.True(limited.Headers.Contains("Retry-After"));
+    }
+
+    [Theory]
+    [InlineData("/EPiServer/CMS/Content/en/a,,5_6/?epieditmode=false", "", "/EPiServer/CMS/Content/en/a,,5_6/", "?epieditmode=false")]
+    // An absolute URL (content on another site's host) keeps the request's host: only its path and query are used.
+    [InlineData("https://other.example.com/EPiServer/CMS/Content/en/a,,5_6/?epieditmode=false", "", "/EPiServer/CMS/Content/en/a,,5_6/", "?epieditmode=false")]
+    // Under a base path, the CMS's URL has it, and the request has it already.
+    [InlineData("/app/EPiServer/CMS/Content/en/a,,5_6/", "/app", "/EPiServer/CMS/Content/en/a,,5_6/", "")]
+    [InlineData("/EPiServer/CMS/Content/sv/%C3%A5%C3%A4,,5_6/", "", "/EPiServer/CMS/Content/sv/åä,,5_6/", "")]
+    public void The_request_becomes_the_preview_url(string url, string pathBase, string path, string query)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.PathBase = pathBase;
+        context.Request.Path = "/episerver/opticli/preview/abc";
+        context.Request.QueryString = new QueryString("?x=1");
+        context.Request.Headers.Cookie = "a=b";
+        context.Request.Headers.Authorization = "Bearer x";
+
+        Assert.True(PreviewLinkMiddleware.Rewrite(context.Request, url));
+
+        Assert.Equal((path, query), (context.Request.Path.Value, context.Request.QueryString.Value ?? ""));
+        Assert.False(context.Request.Headers.ContainsKey("Cookie"));
+        Assert.False(context.Request.Headers.ContainsKey("Authorization"));
+        Assert.Equal(context.Request.PathBase.Add(context.Request.Path).ToUriComponent() + query, context.Features.Get<IHttpRequestFeature>()!.RawTarget);
+        Assert.False(PreviewLinkMiddleware.Rewrite(context.Request, ""));
+    }
+
+    [Fact]
+    public async Task The_lifetime_is_from_a_minute_to_an_hour_and_ten_minutes_by_default()
+    {
+        Assert.Equal(TimeSpan.FromMinutes(10), new OptiCliMcpOptions().PreviewLinkLifetime);
+        Assert.Null(new OptiCliMcpOptions { PreviewLinkLifetime = TimeSpan.FromMinutes(1) }.Problem());
+        Assert.Null(new OptiCliMcpOptions { PreviewLinkLifetime = TimeSpan.FromHours(1) }.Problem());
+        Assert.Contains("PreviewLinkLifetime", new OptiCliMcpOptions { PreviewLinkLifetime = TimeSpan.FromSeconds(59) }.Problem());
+        Assert.Contains("PreviewLinkLifetime", new OptiCliMcpOptions { PreviewLinkLifetime = TimeSpan.FromMinutes(61) }.Problem());
+        Assert.Contains("every limit must be positive", new OptiCliMcpOptions { RateLimits = new() { PreviewPerMinute = 0 } }.Problem());
+
+        await using var site = await TestSite.StartAsync(configuration: new()
+        {
+            ["OptiCli:Mcp:AllowPreviewLinks"] = "true",
+            ["OptiCli:Mcp:PreviewLinkLifetime"] = "00:05:00",
+        });
+        Assert.Equal((true, TimeSpan.FromMinutes(5)), (site.Options.AllowPreviewLinks, site.Options.PreviewLinkLifetime));
+    }
+
+    private static PreviewLinks Links(TimeProvider time, IDataProtectionProvider? protection = null) =>
+        new(protection ?? new EphemeralDataProtectionProvider(), Options.Create(new OptiCliMcpOptions()), time);
+
+    private static string Token(string url) => url[(url.LastIndexOf('/') + 1)..];
+
+    /// <summary>The CMS's preview, faked: the version is readable unless the test says otherwise.</summary>
+    private sealed class FakeVersions : IPreviewVersions
+    {
+        public bool Readable { get; set; } = true;
+
+        public List<(ContentReference Version, string? Language, ClaimsPrincipal Editor)> Calls { get; } = [];
+
+        public string? PreviewUrl(ContentReference version, string? language, ClaimsPrincipal editor)
+        {
+            Calls.Add((version, language, editor));
+            return Readable ? PreviewPath + "?epieditmode=false" : null;
+        }
+    }
+
+    /// <summary>What reached the site's preview endpoint.</summary>
+    private sealed record Received(string Path, string Query, string? RawTarget, HashSet<string> Headers, int Cookies, string? User, string? AuthenticationType, string[] Roles, bool IsMcpEditor);
+
+    /// <summary>The CMS's preview endpoint, faked: it records the request and answers as the test says, setting a cookie.</summary>
+    private sealed class Downstream
+    {
+        public Received? Got { get; private set; }
+
+        public Func<HttpContext, Task> Respond { get; set; } = async context =>
+        {
+            context.Response.Cookies.Append("EPiStateMarker", "true");
+            context.Response.OnStarting(() =>
+            {
+                context.Response.Headers.Append("Set-Cookie", "late=1; path=/");
+                return Task.CompletedTask;
+            });
+            context.Response.ContentType = "text/html; charset=utf-8";
+            await context.Response.WriteAsync("<h1>The draft</h1>");
+        };
+
+        public Task HandleAsync(HttpContext context)
+        {
+            var user = context.User;
+            Got = new Received(
+                context.Request.Path.Value!,
+                context.Request.QueryString.Value ?? "",
+                context.Features.Get<IHttpRequestFeature>()?.RawTarget,
+                context.Request.Headers.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase),
+                context.Request.Cookies.Count,
+                user.Identity?.Name,
+                user.Identity?.AuthenticationType,
+                user.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray(),
+                McpEditor.Of(context) is not null);
+            return Respond(context);
+        }
+    }
+
+    /// <summary>A test site with preview links on, the fake CMS preview mapped where the CMS has it, and the clock at now.</summary>
+    private sealed class PreviewSite : IAsyncDisposable
+    {
+        public required TestSite Site { get; init; }
+
+        public required FakeVersions Versions { get; init; }
+
+        public required Downstream Downstream { get; init; }
+
+        public static async Task<PreviewSite> StartAsync(Action<OptiCliMcpOptions>? configure = null, OptiCliMcpRateLimits? limits = null, bool statusCodePages = false)
+        {
+            var versions = new FakeVersions();
+            var downstream = new Downstream();
+            var site = await TestSite.StartAsync(
+                o =>
+                {
+                    o.AllowPreviewLinks = true;
+                    configure?.Invoke(o);
+                },
+                limits: limits,
+                services: s => s.AddSingleton<IPreviewVersions>(versions),
+                statusCodePages: statusCodePages,
+                endpoints: app => app.Map("/EPiServer/CMS/Content/{**rest}", downstream.HandleAsync));
+            // The link's own expiry is the Data Protection's, on the real clock.
+            site.Time.Advance(DateTimeOffset.UtcNow - site.Time.GetUtcNow());
+            return new PreviewSite { Site = site, Versions = versions, Downstream = downstream };
+        }
+
+        /// <summary>A connection of <paramref name="user"/>'s, and a link for it that names <paramref name="linkUser"/>.</summary>
+        public async Task<string> LinkAsync(string user = "editor", string? linkUser = null)
+        {
+            var now = Site.Time.GetUtcNow();
+            var grant = new Grant
+            {
+                GrantId = Secrets.New(), ClientId = "mcp_test", ClientName = "Test client", UserName = user,
+                Roles = user == "admin" ? ["WebAdmins"] : ["WebEditors"], Scope = "content:read content:write",
+                Resource = "http://localhost/episerver/opticli/mcp", RefreshHash = Secrets.Hash(Secrets.New()),
+                Created = now, RefreshIssued = now, Expires = now.AddDays(30),
+            };
+            await Site.Store.AddGrantAsync(grant, default);
+            var request = new DefaultHttpContext { Request = { Scheme = "http", Host = new HostString("localhost") } }.Request;
+            return Site.Services.GetRequiredService<PreviewLinks>().Issue(request, grant.GrantId, linkUser ?? user, Version, "en").Url;
+        }
+
+        public ValueTask DisposeAsync() => Site.DisposeAsync();
+    }
+}

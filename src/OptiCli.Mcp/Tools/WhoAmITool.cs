@@ -13,7 +13,7 @@ namespace OptiCli.Mcp.Tools;
 internal sealed class WhoAmITool(IHttpContextAccessor http, IOptions<OptiCliMcpOptions> options)
 {
     [McpServerTool(Name = "whoami", Title = "Who am I", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-    [Description("Who the assistant acts as on this site (the signed-in editor), with which roles, which scopes the editor approved, and what the site allows (publishing, deleting, upload size). Every change is made as this editor, with their access rights.")]
+    [Description("Who the assistant acts as on this site (the signed-in editor), with which roles, which scopes the editor approved, and what the site allows (publishing, deleting, upload size, preview links of the assistant's own). Every change is made as this editor, with their access rights.")]
     public string WhoAmI()
     {
         var editor = McpEditor.From(http);
@@ -29,6 +29,8 @@ internal sealed class WhoAmITool(IHttpContextAccessor http, IOptions<OptiCliMcpO
                 allowPublish = site.AllowPublish,
                 allowDelete = site.AllowDelete,
                 maxUploadBytes = site.MaxUploadBytes,
+                allowPreviewLinks = site.AllowPreviewLinks,
+                previewLinkLifetimeSeconds = site.AllowPreviewLinks ? (int?)site.PreviewLinkLifetime.TotalSeconds : null,
             },
         }, AgentJson.Options);
     }

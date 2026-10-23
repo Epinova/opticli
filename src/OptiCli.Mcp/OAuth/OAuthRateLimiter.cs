@@ -20,6 +20,9 @@ internal sealed record OAuthRateLimits
     /// <summary>Authorization requests (the page and the consent post), which may fetch a client metadata document.</summary>
     public int AuthorizePerMinute { get; init; } = 60;
 
+    /// <summary>Opened preview links, each a page rendered as the editor.</summary>
+    public int PreviewPerMinute { get; init; } = 60;
+
     public TimeSpan Window { get; init; } = TimeSpan.FromMinutes(1);
 
     public static OAuthRateLimits From(OptiCliMcpRateLimits limits) => new()
@@ -28,6 +31,7 @@ internal sealed record OAuthRateLimits
         TokenPerMinute = limits.TokenPerMinute,
         TokenPerAddressPerMinute = limits.TokenPerAddressPerMinute,
         AuthorizePerMinute = limits.AuthorizePerMinute,
+        PreviewPerMinute = limits.PreviewPerMinute,
     };
 }
 
@@ -43,6 +47,7 @@ internal sealed class OAuthRateLimiter : IDisposable
     public const string Token = "token";
     public const string TokenClient = "token-client";
     public const string Authorize = "authorize";
+    public const string Preview = "preview";
 
     private readonly Dictionary<string, PartitionedRateLimiter<string>> _limiters;
     private readonly TimeSpan _window;
@@ -56,6 +61,7 @@ internal sealed class OAuthRateLimiter : IDisposable
             [Token] = Create(limits.TokenPerAddressPerMinute, limits.Window),
             [TokenClient] = Create(limits.TokenPerMinute, limits.Window),
             [Authorize] = Create(limits.AuthorizePerMinute, limits.Window),
+            [Preview] = Create(limits.PreviewPerMinute, limits.Window),
         };
     }
 

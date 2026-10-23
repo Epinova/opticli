@@ -85,6 +85,51 @@ public sealed class ToolTests
         Assert.DoesNotContain("Deleting is turned off", openClient.ServerInstructions);
     }
 
+    [Fact]
+    public async Task The_assistant_is_told_about_its_own_preview_links_only_where_the_site_allows_them()
+    {
+        await using var site = await TestSite.StartAsync();
+        await using var client = await Connect(site);
+
+        Assert.DoesNotContain("fetch assistantPreviewUrl", client.ServerInstructions);
+        var off = await WhoAmISite(client);
+        Assert.False(off.GetProperty("allowPreviewLinks").GetBoolean());
+        Assert.False(off.TryGetProperty("previewLinkLifetimeSeconds", out _));
+        // The descriptions are the same everywhere: they send the assistant to whoami.
+        var tools = (await client.ListToolsAsync()).ToDictionary(t => t.Name, t => t.Description);
+        Assert.All(new[] { "get_content", "create_content", "update_content", "add_language", "publish_content" },
+            name => Assert.Contains("assistantPreviewUrl", tools[name]!));
+        Assert.All(new[] { "get_content", "create_content" }, name => Assert.Contains("whoami: allowPreviewLinks", tools[name]!));
+
+        await using var allowing = await TestSite.StartAsync(o => (o.AllowPreviewLinks, o.PreviewLinkLifetime) = (true, TimeSpan.FromMinutes(5)));
+        await using var allowed = await Connect(allowing);
+        var instructions = allowed.ServerInstructions!;
+        Assert.Contains("fetch assistantPreviewUrl", instructions);
+        Assert.Contains("for 5 minutes", instructions);
+        Assert.Contains("version: \"latest\"", instructions);
+        Assert.Contains("never give it to the user", instructions);
+        // The user's own links are still the user's.
+        Assert.Contains("only open for someone signed in to the CMS", instructions);
+        var on = await WhoAmISite(allowed);
+        Assert.True(on.GetProperty("allowPreviewLinks").GetBoolean());
+        Assert.Equal(300, on.GetProperty("previewLinkLifetimeSeconds").GetInt32());
+    }
+
+    [Theory]
+    [InlineData(600, "10 minutes")]
+    [InlineData(60, "1 minute")]
+    [InlineData(90, "90 seconds")]
+    [InlineData(3600, "60 minutes")]
+    public void A_lifetime_reads_as_the_model_reads_it_best(int seconds, string text) =>
+        Assert.Equal(text, McpInstructions.Duration(TimeSpan.FromSeconds(seconds)));
+
+    private static async Task<JsonElement> WhoAmISite(McpClient client)
+    {
+        var result = await client.CallToolAsync("whoami");
+        Assert.NotEqual(true, result.IsError);
+        return JsonDocument.Parse(result.Content.OfType<TextContentBlock>().Single().Text).RootElement.GetProperty("site").Clone();
+    }
+
     [Theory]
     [InlineData("update_content", """{"reference":"123","publish":true}""")]
     [InlineData("update_content", """{"reference":"123","publishAt":"2030-01-01T08:00:00+01:00"}""")]

@@ -7,7 +7,9 @@ using EPiServer.Web;
 using EPiServer.Web.Routing;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using OptiCli.Cms.Content;
+using OptiCli.Mcp.Preview;
 using OptiCli.Protocol;
 
 namespace OptiCli.Mcp.Tools;
@@ -34,6 +36,11 @@ namespace OptiCli.Mcp.Tools;
 /// left out for a version visitors already see (<c>url</c> shows it), a version that isn't saved (a dry run) or no
 /// longer exists (a discarded one), and for media and folders, which have no page of their own to preview.
 /// </para>
+/// <para>
+/// Where the site allows it (<see cref="OptiCliMcpOptions.AllowPreviewLinks"/>), the same version also gets
+/// <c>assistantPreviewUrl</c>: a short-lived link of the assistant's own, which opens without a sign-in
+/// (<see cref="PreviewLinks"/>), and <c>assistantPreviewExpires</c>, when it stops working.
+/// </para>
 /// </remarks>
 internal static class ResultUrls
 {
@@ -42,6 +49,13 @@ internal static class ResultUrls
     public const string Edit = "editUrl";
 
     public const string Preview = "previewUrl";
+
+    public const string AssistantPreview = "assistantPreviewUrl";
+
+    public const string AssistantPreviewExpires = "assistantPreviewExpires";
+
+    /// <summary>What the tool descriptions say about <see cref="AssistantPreview"/>, whether or not the site allows it.</summary>
+    public const string AssistantPreviewNote = "When this site allows it (whoami: allowPreviewLinks), assistantPreviewUrl is a short-lived link to the same preview that you may fetch yourself, without a sign-in.";
 
     /// <summary>
     /// <paramref name="result"/> as JSON, with <see cref="Public"/>, <see cref="Edit"/> and (with
@@ -64,6 +78,7 @@ internal static class ResultUrls
         if (preview && !wholeContent && content is not null && PreviewUrl(content.Ref, content.Language, content.Status, context, editUrl) is { } previewUrl)
         {
             json[Preview] = previewUrl;
+            AddAssistantPreview(json, content.Ref, content.Language, context);
         }
         return json.ToJsonString(AgentJson.Options);
     }
@@ -79,6 +94,7 @@ internal static class ResultUrls
         if (item.Kind is "page" or "block" && PreviewUrl(version, item.Language, item.Status, context) is { } previewUrl)
         {
             json[Preview] = previewUrl;
+            AddAssistantPreview(json, version!, item.Language, context);
         }
         return json.ToJsonString(AgentJson.Options);
     }
@@ -132,6 +148,24 @@ internal static class ResultUrls
         }
         var url = urls.GetUrl(link, language, new UrlResolverArguments { ContextMode = ContextMode.Preview });
         return Absolute(url, Origin(editUrl ?? EditUrl(link, language, context)) ?? RequestOrigin(context));
+    }
+
+    /// <summary>
+    /// Adds the assistant's own link to the version (<see cref="AssistantPreview"/>, <see cref="PreviewLinks"/>) and when
+    /// it expires (<see cref="AssistantPreviewExpires"/>, ISO 8601 UTC), beside its <see cref="Preview"/>, when the site
+    /// allows preview links: for the editor and connection of the MCP request.
+    /// </summary>
+    private static void AddAssistantPreview(JsonObject json, string version, string? language, HttpContext context)
+    {
+        if (context.RequestServices.GetService<IOptions<OptiCliMcpOptions>>()?.Value is not { AllowPreviewLinks: true }
+            || context.RequestServices.GetService<PreviewLinks>() is not { } links
+            || McpEditor.Of(context) is not { GrantId.Length: > 0, Name.Length: > 0 } editor)
+        {
+            return;
+        }
+        var (url, expires) = links.Issue(context.Request, editor.GrantId, editor.Name, version, language);
+        json[AssistantPreview] = url;
+        json[AssistantPreviewExpires] = expires.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
     }
 
     /// <summary>

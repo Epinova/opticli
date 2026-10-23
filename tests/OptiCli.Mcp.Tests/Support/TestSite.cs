@@ -43,7 +43,8 @@ internal sealed class TestSite : IAsyncDisposable
         OptiCliMcpRateLimits? limits = null,
         string environment = "Production",
         Action<IServiceCollection>? services = null,
-        bool statusCodePages = false)
+        bool statusCodePages = false,
+        Action<WebApplication>? endpoints = null)
     {
         var site = new TestSite();
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environment });
@@ -86,6 +87,8 @@ internal sealed class TestSite : IAsyncDisposable
         app.UseRouting();
         app.UseAuthentication();
         app.UseAuthorization();
+        // The site's own endpoints, before the module's, as a site maps them.
+        endpoints?.Invoke(app);
         app.MapOptiCliMcp();
         await app.StartAsync();
         site._app = app;

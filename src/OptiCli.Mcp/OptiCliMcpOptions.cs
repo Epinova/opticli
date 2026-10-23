@@ -92,6 +92,27 @@ public sealed class OptiCliMcpOptions
     public bool AllowDelete { get; set; }
 
     /// <summary>
+    /// Whether write results and <c>get_content</c> give the assistant a link of its own to the draft
+    /// (<c>assistantPreviewUrl</c>), which it can open without a sign-in to check how the draft looks. Off by default:
+    /// the site owner opts in. The link shows one saved version of one page or block, in one language, as the CMS's
+    /// preview shows it to the editor, and nothing else: it is GET only, read-only, expires after
+    /// <see cref="PreviewLinkLifetime"/>, and stops working when the connection is revoked or ends, or the editor can no
+    /// longer read the version.
+    /// </summary>
+    /// <remarks>
+    /// The module signs the link itself, with the site's Data Protection keys (as its access tokens), and renders the
+    /// preview inside the site as the editor, for that one request: the request's cookies and credentials are dropped,
+    /// and no cookie, redirect or sign-in leaves it. It never uses the CMS's own preview token, which from CMS 12.22
+    /// signs whoever holds it in as the editor, on any request, for its few minutes. Whoever has the link (the assistant,
+    /// a transcript, a log) sees the draft until it expires. The link is on the host the editor connected the assistant
+    /// to, which must be one the assistant can reach.
+    /// </remarks>
+    public bool AllowPreviewLinks { get; set; }
+
+    /// <summary>How long an assistant's preview link (<see cref="AllowPreviewLinks"/>) works: 10 minutes by default, 1 minute to 1 hour.</summary>
+    public TimeSpan PreviewLinkLifetime { get; set; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>
     /// The largest media file an assistant may upload, in bytes: 10 MB by default, 50 MB at most. The MCP endpoint takes
     /// requests up to this size as base64 plus 1 MB; on IIS, raise <c>maxAllowedContentLength</c> (30 MB by default) to
     /// match for more than about 20 MB.
@@ -150,9 +171,14 @@ public sealed class OptiCliMcpOptions
         {
             return "ConnectionLifetime can't be shorter than AccessTokenLifetime.";
         }
-        if (RateLimits is null || RateLimits.RegisterPerMinute <= 0 || RateLimits.TokenPerMinute <= 0 || RateLimits.TokenPerAddressPerMinute <= 0 || RateLimits.AuthorizePerMinute <= 0)
+        if (RateLimits is null || RateLimits.RegisterPerMinute <= 0 || RateLimits.TokenPerMinute <= 0 || RateLimits.TokenPerAddressPerMinute <= 0 || RateLimits.AuthorizePerMinute <= 0
+            || RateLimits.PreviewPerMinute <= 0)
         {
             return "RateLimits: every limit must be positive.";
+        }
+        if (PreviewLinkLifetime < TimeSpan.FromMinutes(1) || PreviewLinkLifetime > TimeSpan.FromHours(1))
+        {
+            return "PreviewLinkLifetime must be from 1 minute to 1 hour.";
         }
         if (MaxUploadBytes is <= 0 or > Protocol.UploadRequest.MaxBytes)
         {
@@ -190,4 +216,7 @@ public sealed class OptiCliMcpRateLimits
 
     /// <summary>Authorization requests (the consent page and its post) per IP address; these come from editors' browsers.</summary>
     public int AuthorizePerMinute { get; set; } = 60;
+
+    /// <summary>Opened preview links (<see cref="OptiCliMcpOptions.AllowPreviewLinks"/>) per IP address; each renders a page.</summary>
+    public int PreviewPerMinute { get; set; } = 60;
 }

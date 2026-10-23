@@ -5,8 +5,8 @@ namespace OptiCli.Mcp;
 
 /// <summary>
 /// The audit trail, as ordinary log entries in the <c>OptiCli.Mcp.Audit</c> category, so a site routes them wherever
-/// its other logs go: every authorization decision, token issue, refresh, revocation and tool call, with the user, the
-/// client and the outcome. Never tokens, codes, secrets or property values.
+/// its other logs go: every authorization decision, token issue, refresh, revocation, tool call and opened preview link,
+/// with the user, the client and the outcome. Never tokens, codes, links, secrets or property values.
 /// </summary>
 internal sealed class McpAudit(ILoggerFactory loggers)
 {
@@ -47,6 +47,15 @@ internal sealed class McpAudit(ILoggerFactory loggers)
         _logger.LogInformation(
             "MCP tool {Tool} {Outcome}: user {User}, client {ClientId}, content {ContentRefs}",
             Clean(tool), outcome, Clean(user), Clean(clientId), contentRefs.Count == 0 ? "-" : Clean(string.Join(", ", contentRefs)));
+
+    /// <summary>
+    /// A preview link opened (<see cref="Preview.PreviewLinkMiddleware"/>): the version and language it names, the
+    /// editor and client of its connection (<c>-</c> for a link that couldn't be read), and the outcome. Never the link.
+    /// </summary>
+    public void Preview(string version, string language, string user, string clientId, string outcome) =>
+        _logger.LogInformation(
+            "MCP preview {Version} {Language}: user {User}, client {ClientId}, {Outcome}",
+            Clean(version), language.Length == 0 ? "-" : Clean(language), Clean(user), Clean(clientId), outcome);
 
     /// <summary>
     /// Values a caller chose (a client id, a client's name) without control characters and cut to a sane length, so they

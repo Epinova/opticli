@@ -19,7 +19,7 @@ internal sealed class PublishTools(IHttpContextAccessor http, IOptions<OptiCliMc
     : ContentToolBase(http, options, loggers)
 {
     [McpServerTool(Name = "publish_content", Title = "Publish content", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-    [Description("Publishes a saved version (the latest by default), now or at publishAt; or, with requestApproval, sends it for review. Only when the user asked to publish, after confirming what goes live. Returns url (the public address), editUrl, previewUrl while the version isn't live yet (scheduled, or in review) and siteChanges (what the site's own code did on publish).")]
+    [Description("Publishes a saved version (the latest by default), now or at publishAt; or, with requestApproval, sends it for review. Only when the user asked to publish, after confirming what goes live. Returns url (the public address), editUrl, previewUrl while the version isn't live yet (scheduled, or in review) and siteChanges (what the site's own code did on publish). " + ResultUrls.AssistantPreviewNote)]
     public string PublishContent(
         [Description("Content id or GUID, or a version (123_456).")] string reference,
         [Description("The version id to publish; the latest when left out.")] int? version = null,

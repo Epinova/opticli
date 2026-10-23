@@ -2,6 +2,7 @@ using System.Reflection;
 using EPiServer.Web.Routing;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
@@ -13,6 +14,7 @@ using ModelContextProtocol.Server;
 using OptiCli.Cms.Content;
 using OptiCli.Mcp.Connections;
 using OptiCli.Mcp.OAuth;
+using OptiCli.Mcp.Preview;
 using OptiCli.Mcp.Tools;
 
 namespace OptiCli.Mcp;
@@ -55,6 +57,10 @@ public static class OptiCliMcpExtensions
         services.AddSingleton<TokenService>();
         services.AddSingleton<OAuthMaintenance>();
         services.AddSingleton<McpAudit>();
+        // The assistant's preview links: the middleware is only added when the site allows them (PreviewLinkStartupFilter).
+        services.AddSingleton<PreviewLinks>();
+        services.TryAddScoped<IPreviewVersions, CmsPreviewVersions>();
+        services.AddSingleton<IStartupFilter, PreviewLinkStartupFilter>();
         services.AddScoped<EditorGate>();
         // What the CMS edit UI shows an editor of each content item, for the content operations (EditUiProperties).
         services.AddScoped<IEditUiMetadata, CmsUiMetadata>();

@@ -25,15 +25,21 @@ internal sealed class McpEditor
 
     /// <exception cref="McpException">There is no request, or it isn't one the bearer handler signed in.</exception>
     public static McpEditor From(IHttpContextAccessor accessor) =>
-        accessor.HttpContext is { User.Identity: { IsAuthenticated: true, AuthenticationType: TokenService.AuthenticationType } } context
-            ? new McpEditor(context)
-            : throw new McpException("This tool only runs on the MCP endpoint, for a signed-in editor.");
+        (accessor.HttpContext is { } context ? Of(context) : null)
+        ?? throw new McpException("This tool only runs on the MCP endpoint, for a signed-in editor.");
+
+    /// <returns>The editor of an MCP request the bearer handler signed in; null for any other request.</returns>
+    public static McpEditor? Of(HttpContext context) =>
+        context.User.Identity is { IsAuthenticated: true, AuthenticationType: TokenService.AuthenticationType } ? new McpEditor(context) : null;
 
     public ClaimsPrincipal User => _context.User;
 
     public string Name => User.Identity?.Name ?? "";
 
     public string ClientId => User.FindFirst(McpClaims.Client)?.Value ?? "";
+
+    /// <summary>The connection (grant) the access token belongs to.</summary>
+    public string GrantId => User.FindFirst(McpClaims.Grant)?.Value ?? "";
 
     public string ClientName => User.FindFirst(McpClaims.ClientName)?.Value ?? "";
 
