@@ -187,6 +187,10 @@ public class McpFixture : IInitializableModule
         {
             options.AllowDelete = bool.Parse(delete);
         }
+        if (section[nameof(OptiCliMcpOptions.AllowPreviewLinks)] is { Length: > 0 } previewLinks)
+        {
+            options.AllowPreviewLinks = bool.Parse(previewLinks);
+        }
     }
 
     public void Initialize(InitializationEngine context)
