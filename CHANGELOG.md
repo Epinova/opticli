@@ -5,7 +5,8 @@ again to update the skill.
 
 ## Unreleased
 
-Preview links: the editor sees a draft as visitors will, without the edit UI around it.
+Preview links: the editor sees a draft as visitors will, without the edit UI around it, and where the site allows it,
+the assistant can look at the draft itself.
 
 ### MCP server for editors (preview)
 
@@ -15,6 +16,14 @@ Preview links: the editor sees a draft as visitors will, without the edit UI aro
 - `previewUrl` needs the editor's sign-in to the CMS, as `editUrl` does: it carries no preview token, so a link in a
   chat transcript shows nobody the draft. The server's instructions and the tool descriptions say so, and tell the
   assistant to give the links to the user rather than open them.
+- New option `AllowPreviewLinks` (off by default): the same results also have `assistantPreviewUrl`, a link of the
+  assistant's own to that preview, which it opens without a sign-in to check how the draft looks, and
+  `assistantPreviewExpires`. The link shows that one version, in its language, as the CMS's preview shows it to the
+  editor, and nothing else: GET only, no cookie, redirect or sign-in comes back, and it stops working after
+  `PreviewLinkLifetime` (10 minutes by default, at most an hour), when the connection is revoked or ends, or when the
+  editor can no longer read the version. It is signed by the module with the site's Data Protection keys and never
+  carries the CMS's preview token. `whoami` reports `allowPreviewLinks`, opened links are audited and rate limited
+  (`RateLimits.PreviewPerMinute`), and the instructions tell the assistant the link is for it alone.
 
 ## 0.22.0 (22 October 2026)
 

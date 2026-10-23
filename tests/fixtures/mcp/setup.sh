@@ -184,4 +184,8 @@ With the second configuration (publishing off) as well, on another port:
   $HERE/serve.sh $TARGET --port $((PORT + 1)) --no-publish
   OPTICLI_MCP_IT_URL=http://127.0.0.1:$PORT OPTICLI_MCP_IT_NO_PUBLISH_URL=http://127.0.0.1:$((PORT + 1)) OPTICLI_MCP_IT_USERS=$users dotnet test tests/OptiCli.Mcp.Integration
   $HERE/serve.sh $TARGET --port $((PORT + 1)) --stop
+And the third (the assistant's preview links on), on a third port:
+  $HERE/serve.sh $TARGET --port $((PORT + 2)) --preview-links
+  OPTICLI_MCP_IT_URL=http://127.0.0.1:$PORT OPTICLI_MCP_IT_PREVIEW_LINKS_URL=http://127.0.0.1:$((PORT + 2)) OPTICLI_MCP_IT_USERS=$users dotnet test tests/OptiCli.Mcp.Integration
+  $HERE/serve.sh $TARGET --port $((PORT + 2)) --stop
 EOF
