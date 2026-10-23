@@ -3,6 +3,20 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.22.1 (23 October 2026)
+
+A security fix for the MCP server on CMS 12.22 and later (and CMS 13).
+
+### MCP server for editors (preview)
+
+- **Preview links can no longer sign in to the module.** From CMS 12.22, a request carrying a CMS preview token (in the
+  `preview_token` query parameter or an `Authorization: preview_token …` header) is authenticated as the editor the
+  token was made for, on any endpoint, because the CMS makes its preview-token handler that request's default scheme. The
+  consent and connections pages took that as the editor's sign-in, so anyone holding a leaked preview link, which the CMS
+  edit UI itself mints, could approve an assistant connection or manage connections as that editor for the token's few
+  minutes. Both pages now refuse any request that carries a preview token (400). The MCP endpoint was never affected: it
+  only accepts its own bearer tokens. Reproduced and the fix confirmed on a CMS 12.24.3 site.
+
 ## 0.22.0 (22 October 2026)
 
 Feedback from an assistant that published an article through the MCP server: searches answer in time, results give
