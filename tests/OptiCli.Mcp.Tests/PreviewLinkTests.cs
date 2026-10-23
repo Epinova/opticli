@@ -462,6 +462,71 @@ public sealed class PreviewLinkTests
     }
 
     [Fact]
+    public async Task Forwarded_headers_applied_before_the_module_are_not_applied_again()
+    {
+        // As on DXP (AddCmsCloudPlatformSupport) or with ASPNETCORE_FORWARDEDHEADERS_ENABLED: a pass before the module,
+        // trusting any proxy. A second pass would take the entry the client wrote itself as its address.
+        await using var preview = await PreviewSite.StartAsync(
+            limits: new OptiCliMcpRateLimits { InvalidPreviewPerAddressPerMinute = 1 },
+            forwardedHeaders: TrustAnyProxy,
+            earlierForwardedHeaders: true);
+        HttpRequestMessage Garbage(string forwardedFor) => new(HttpMethod.Get, "/episerver/opticli/preview/garbage") { Headers = { { "X-Forwarded-For", forwardedFor } } };
+
+        using var first = await preview.Site.Client().SendAsync(Garbage("10.9.0.1, 9.9.9.9"));
+        using var second = await preview.Site.Client().SendAsync(Garbage("10.9.0.2, 9.9.9.9"));
+        using var other = await preview.Site.Client().SendAsync(Garbage("10.9.0.3, 9.9.9.8"));
+
+        Assert.Equal(HttpStatusCode.NotFound, first.StatusCode);
+        // Both from 9.9.9.9, whatever they claim before it.
+        Assert.Equal(HttpStatusCode.TooManyRequests, second.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, other.StatusCode);
+        // Refusals over the window aren't audited one by one.
+        Assert.Equal(2, preview.Site.Audit.Audit.Count(m => m.Contains("refused: not a valid link", StringComparison.Ordinal)));
+        // A link opens as before.
+        var link = await preview.LinkAsync();
+        using var opened = await preview.Site.Client().SendAsync(new HttpRequestMessage(HttpMethod.Get, link) { Headers = { { "X-Forwarded-For", "10.9.0.4, 9.9.9.9" } } });
+        Assert.Equal(HttpStatusCode.OK, opened.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_forged_sign_of_an_earlier_pass_gains_the_client_nothing()
+    {
+        // Only the module's own pass, and the client claims one ran already (X-Original-*): the module then checks the
+        // connection's own address and host, which the client doesn't choose.
+        await using var preview = await PreviewSite.StartAsync(
+            limits: new OptiCliMcpRateLimits { InvalidPreviewPerAddressPerMinute = 1 },
+            forwardedHeaders: TrustAnyProxy);
+        var link = new Uri(await preview.LinkAsync(host: "editors.example.com")).PathAndQuery;
+        HttpRequestMessage Forged(string url, string forwardedFor) => new(HttpMethod.Get, url)
+        {
+            Headers = { { "X-Forwarded-For", forwardedFor }, { "X-Forwarded-Host", "editors.example.com" }, { "X-Original-For", "198.51.100.1" } },
+        };
+
+        // The garbage all counts against the connection's own address, however the forwarded address varies.
+        Assert.Equal(HttpStatusCode.NotFound, (await preview.Site.Client().SendAsync(Forged("/episerver/opticli/preview/x", "203.0.113.1"))).StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await preview.Site.Client().SendAsync(Forged("/episerver/opticli/preview/x", "203.0.113.2"))).StatusCode);
+
+        // And the link's host is checked against the request's own (localhost), not the forwarded one it was issued on.
+        await using var fresh = await PreviewSite.StartAsync(forwardedHeaders: TrustAnyProxy);
+        var issued = new Uri(await fresh.LinkAsync(host: "editors.example.com")).PathAndQuery;
+        using var refused = await fresh.Site.Client().SendAsync(Forged(issued, "203.0.113.1"));
+        Assert.Equal(HttpStatusCode.NotFound, refused.StatusCode);
+        Assert.Null(fresh.Downstream.Got);
+        Assert.Contains("refused: issued for another host", string.Join("\n", fresh.Site.Audit.Audit));
+        // Without the forged header, the same request is the forwarded one, and opens.
+        using var forwarded = await fresh.Site.Client().SendAsync(new HttpRequestMessage(HttpMethod.Get, issued) { Headers = { { "X-Forwarded-Host", "editors.example.com" } } });
+        Assert.Equal(HttpStatusCode.OK, forwarded.StatusCode);
+    }
+
+    /// <summary>Forwarded headers trusted from any proxy, as DXP's are (and the test server has no client address).</summary>
+    private static void TrustAnyProxy(ForwardedHeadersOptions options)
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedHost | ForwardedHeaders.XForwardedProto;
+        options.KnownNetworks.Clear();
+        options.KnownProxies.Clear();
+    }
+
+    [Fact]
     public void The_sites_own_forwarded_headers_after_the_module_find_nothing_more_to_do()
     {
         var options = Options.Create(new ForwardedHeadersOptions { ForwardedHeaders = ForwardedHeaders.All });
@@ -708,9 +773,10 @@ public sealed class PreviewLinkTests
 
     /// <summary>
     /// Middleware outside the module's, as a startup filter registered before it adds it (the CMS UI's error handling):
-    /// it records whether the request was still signed in once the module was done, and may show an error page.
+    /// it records whether the request was still signed in once the module was done, and may show an error page or apply
+    /// the forwarded headers before the module.
     /// </summary>
-    private sealed class Outer(bool errorPage) : IStartupFilter
+    private sealed class Outer(bool errorPage, bool forwardedHeaders) : IStartupFilter
     {
         public bool? AuthenticatedAfter { get; private set; }
 
@@ -735,6 +801,16 @@ public sealed class PreviewLinkTests
                     AuthenticatedAfter = context.User.Identity?.IsAuthenticated;
                 }
             });
+            if (forwardedHeaders)
+            {
+                // The proxy's connection, which a real server always has and the test server doesn't.
+                app.Use((context, inner) =>
+                {
+                    context.Connection.RemoteIpAddress ??= IPAddress.Parse("10.0.0.1");
+                    return inner(context);
+                });
+                app.UseForwardedHeaders();
+            }
             if (errorPage)
             {
                 app.UseExceptionHandler(new ExceptionHandlerOptions
@@ -758,11 +834,11 @@ public sealed class PreviewLinkTests
         public required Outer Outer { get; init; }
 
         public static async Task<PreviewSite> StartAsync(Action<OptiCliMcpOptions>? configure = null, OptiCliMcpRateLimits? limits = null, bool statusCodePages = false, bool outerErrorPage = false,
-            Action<ForwardedHeadersOptions>? forwardedHeaders = null)
+            Action<ForwardedHeadersOptions>? forwardedHeaders = null, bool earlierForwardedHeaders = false)
         {
             var versions = new FakeVersions();
             var downstream = new Downstream();
-            var outer = new Outer(outerErrorPage);
+            var outer = new Outer(outerErrorPage, earlierForwardedHeaders);
             var site = await TestSite.StartAsync(
                 o =>
                 {

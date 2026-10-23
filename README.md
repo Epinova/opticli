@@ -1538,15 +1538,17 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   that aren't a valid link have a window of their own per address (`RateLimits.InvalidPreviewPerAddressPerMinute`), so
   that a flood of them from an assistant provider's shared addresses can't use up anyone's.
   The module adds a middleware at the start of the site's pipeline for it (only with the option on), since a preview
-  needs routing and the site's own views after it. It applies the site's own forwarded headers settings
-  (`ForwardedHeadersOptions`, with their `KnownProxies` and `KnownNetworks`) to these requests first, so the rate limit,
-  `RequireHost` and the link's host see the client's address and host behind a proxy; the site's own
-  `UseForwardedHeaders()` later finds them already applied. That needs the settings in the services
-  (`services.Configure<ForwardedHeadersOptions>(...)`, or `ASPNETCORE_FORWARDEDHEADERS_ENABLED`), not only passed to
-  `UseForwardedHeaders(options)` in `Configure`, which the module can't see: there, behind a proxy that changes the host,
-  links answer 404. Call `AddOptiCliMcp()` after `AddCms()` (as above) and after `AddCmsCloudPlatformSupport()` on DXP,
-  so it comes after the CMS's first-request initialization. A base path the site sets with `UsePathBase()` isn't
-  supported for these links (an IIS application's is).
+  needs routing and the site's own views after it. The rate limit, `RequireHost` and the link's host need the client's
+  address and host behind a proxy, so the forwarded headers must be applied before the module checks them. Where they
+  already are (a startup filter before the module: `AddCmsCloudPlatformSupport()` on DXP, or
+  `ASPNETCORE_FORWARDEDHEADERS_ENABLED`), the module leaves them as they are. Where the site applies them only in its
+  own `Configure`, after the module, the module applies the site's settings (`ForwardedHeadersOptions`, with their
+  `KnownProxies` and `KnownNetworks`) to these requests itself, and the site's own `UseForwardedHeaders()` then finds
+  nothing more to do. That needs the settings in the services (`services.Configure<ForwardedHeadersOptions>(...)`), not
+  only passed to `UseForwardedHeaders(options)` in `Configure`, which the module can't see: there, behind a proxy that
+  changes the host, links answer 404. Call `AddOptiCliMcp()` after `AddCms()` (as above), so the module comes after the
+  CMS's first-request initialization, and after `AddCmsCloudPlatformSupport()` on DXP, so it comes after its forwarded
+  headers. A base path the site sets with `UsePathBase()` isn't supported for these links (an IIS application's is).
 - **Preview tokens never sign anyone in to the module.** A request with a CMS preview token (`preview_token` in the
   query, or an `Authorization: preview_token ...` header) is signed in as the editor the token was made for, by the
   CMS's own handler. The consent page and the connections page refuse such a request, so a preview link (the CMS UI

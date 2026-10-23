@@ -102,11 +102,7 @@ internal sealed class PreviewLinkMiddleware(
             await next(context);
             return;
         }
-        // The site's forwarded headers come after the module in its pipeline, but the client's address (for the rate
-        // limit) and host (RequireHost, the link's own host) are the ones behind its proxy: apply them here, with the
-        // site's own settings and trust (KnownProxies, KnownNetworks). They are consumed, so the site's own pass later
-        // finds nothing more to do.
-        _forwarded.ApplyForwarders(context);
+        ApplyForwardedHeaders(context);
         if (options.Value.RequireHost is { Length: > 0 } host && !HostMatches(context.Request.Host, host))
         {
             await next(context);
@@ -136,6 +132,35 @@ internal sealed class PreviewLinkMiddleware(
         {
             context.User = Nobody;
         }
+    }
+
+    /// <summary>
+    /// The site's forwarded headers, unless they were applied already. Where the site applies them in its own
+    /// <c>Configure</c>, they come after the module, but the client's address (for the rate limit) and host
+    /// (<c>RequireHost</c>, the link's own host) must be the ones behind its proxy: they are applied here, with the site's
+    /// own settings and trust (<c>KnownProxies</c>, <c>KnownNetworks</c>, <c>ForwardLimit</c>), and consumed, so the site's
+    /// own pass later finds nothing more to do. Where a pass ran before the module (DXP's
+    /// <c>AddCmsCloudPlatformSupport()</c>, <c>ASPNETCORE_FORWARDEDHEADERS_ENABLED</c>), a second one here would go one
+    /// step too far: past the entries the proxies added, to what the client wrote itself.
+    /// </summary>
+    /// <remarks>
+    /// A pass that applied anything leaves the <c>X-Original-*</c> headers (<see cref="ForwardedHeadersOptions"/>' names
+    /// for them), so their presence means: done already. A client can send them too, which only makes the module skip
+    /// its own pass for that request, and that gains it nothing: the rate limit then counts against the connection's
+    /// own address (the proxy's, shared with everyone behind it, never one the client picks), and the host the link and
+    /// <c>RequireHost</c> are checked against is the request's own <c>Host</c>, which only matches where the link was
+    /// issued on that very host. Such a request is refused or shows what the link shows anyway.
+    /// </remarks>
+    private void ApplyForwardedHeaders(HttpContext context)
+    {
+        var settings = forwardedHeaders.Value;
+        var headers = context.Request.Headers;
+        if (headers.ContainsKey(settings.OriginalForHeaderName) || headers.ContainsKey(settings.OriginalProtoHeaderName)
+            || headers.ContainsKey(settings.OriginalHostHeaderName))
+        {
+            return;
+        }
+        _forwarded.ApplyForwarders(context);
     }
 
     /// <summary>The module's own 500; or, once the response has started (or can't), the connection cut.</summary>
