@@ -225,11 +225,56 @@ public class MarkupSafetyTests
     [InlineData(".mjs")]
     [InlineData(".xml")]
     [InlineData(".svgz")]
+    [InlineData(".hxt")]
+    [InlineData(".stm")]
+    [InlineData(".XSD")]
+    [InlineData(".dtd")]
+    [InlineData(".wsdl")]
+    [InlineData(".atom")]
+    [InlineData(".htc")]
     public void A_file_a_browser_runs_script_in_isnt_uploaded_for_an_editor(string extension)
     {
         var refused = Assert.Throws<AgentException>(() => OptiCli.Cms.Operations.UploadOperation.RequireNoScript(extension, [1, 2, 3]));
         Assert.Contains("can run script", refused.Message);
         Assert.Contains("CMS edit UI", refused.Hint);
+    }
+
+    [Theory]
+    [InlineData("text/html")]
+    [InlineData("text/html; charset=utf-8")]
+    [InlineData("TEXT/XML")]
+    [InlineData("application/xml")]
+    [InlineData("application/xhtml+xml")]
+    [InlineData("application/rss+xml")]
+    [InlineData("application/vnd.example+xml")]
+    [InlineData("text/javascript")]
+    [InlineData("application/x-javascript")]
+    [InlineData("message/rfc822")]
+    [InlineData("text/x-component")]
+    public void A_file_the_site_serves_as_a_type_that_runs_script_isnt_uploaded_for_an_editor(string servedAs)
+    {
+        // Whatever its extension: what counts is what the site serves it as (its own MIME registry may add types).
+        var refused = Assert.Throws<AgentException>(() => OptiCli.Cms.Operations.UploadOperation.RequireNoScript(".site-own", [1, 2, 3], servedAs));
+        Assert.Contains("can run script", refused.Message);
+    }
+
+    [Theory]
+    [InlineData(".pdf", "application/pdf")]
+    [InlineData(".docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")]
+    [InlineData(".txt", "text/plain")]
+    [InlineData(".css", "text/css")]
+    [InlineData(".mp4", "video/mp4")]
+    [InlineData(".zip", "application/x-zip-compressed")]
+    public void A_file_the_site_serves_as_a_type_that_runs_no_script_is_uploaded(string extension, string servedAs) =>
+        OptiCli.Cms.Operations.UploadOperation.RequireNoScript(extension, [1, 2, 3], servedAs);
+
+    [Fact]
+    public void A_file_the_site_serves_as_svg_is_read_as_svg_whatever_its_extension()
+    {
+        OptiCli.Cms.Operations.UploadOperation.RequireNoScript(".drawing", System.Text.Encoding.UTF8.GetBytes(Drawing), "image/svg+xml");
+        var refused = Assert.Throws<AgentException>(() => OptiCli.Cms.Operations.UploadOperation.RequireNoScript(".drawing",
+            System.Text.Encoding.UTF8.GetBytes("<svg xmlns=\"http://www.w3.org/2000/svg\" onload=\"alert(1)\"/>"), "image/svg+xml"));
+        Assert.Contains("'onload'", refused.Message);
     }
 
     [Theory]

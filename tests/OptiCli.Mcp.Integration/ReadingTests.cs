@@ -72,6 +72,13 @@ public sealed class ReadingTests(SharedSessions sessions)
             await same.ErrorAsync("update_content", id, MissingId, r => new { reference = page, properties = new { MainContentArea = new[] { new { @ref = r } } }, dryRun = true });
             await same.ErrorAsync("create_content", id, MissingId, r => new { type = "McpFieldsBlock", name = "x", forContent = page, properties = new { Related = new[] { r } }, dryRun = true });
             await same.ErrorAsync("create_content", id, MissingId, r => new { type = "McpFieldsBlock", name = "x", forContent = page, properties = new { Target = int.Parse(r, System.Globalization.CultureInfo.InvariantCulture) }, dryRun = true });
+            // As an object, which JSON makes into a ContentReference of its own.
+            await same.ErrorAsync("create_content", id, MissingId, r => new { type = "McpFieldsBlock", name = "x", forContent = page, properties = new { Target = new { id = int.Parse(r, System.Globalization.CultureInfo.InvariantCulture) } }, dryRun = true });
+            // With a version of the hidden content under content the editor reads: the CMS would load it as the hidden content.
+            var hiddenVersion = (await product.OkAsync("get_content", new { reference = TestUsers.HiddenPage })).GetProperty("version").GetInt32().ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var versions = new Comparer(editor, [(hiddenVersion, "987654321", "<version>")]);
+            await versions.ErrorAsync("create_content", hiddenVersion, "987654321", v => new { type = "McpFieldsBlock", name = "x", forContent = page,
+                properties = new { Target = new { id = int.Parse(start, System.Globalization.CultureInfo.InvariantCulture), workId = int.Parse(v, System.Globalization.CultureInfo.InvariantCulture) } }, dryRun = true });
 
             // The CMS's own text forms aren't looked up, so they aren't taken from an editor at all, whatever they name.
             foreach (var arguments in new object[]

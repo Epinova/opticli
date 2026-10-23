@@ -330,6 +330,60 @@ public class PropertyWriterTests
     }
 
     [Fact]
+    public void A_content_reference_given_as_an_object_gets_the_read_check_for_an_editor()
+    {
+        // The repository finds nothing: to an editor, content they can't read is missing content.
+        LinksBlock WithRelated()
+        {
+            var block = Block();
+            block.Property.Add("Related", new PropertyContentReference { PropertyDefinitionID = 7 });
+            block.Property.Add(nameof(LinksBlock.Teasers), new PropertyTeasers { PropertyDefinitionID = 5 });
+            return block;
+        }
+        var related = Values(new { Related = new { id = 4711 } });
+        var inTeaser = Values(new { Teasers = new[] { new { Text = "Read", Page = new { id = 4711 } } } });
+
+        Assert.Equal(AgentErrorCodes.NotFound, Assert.Throws<AgentException>(() => Writer(CmsCaller.Editor).Writer.Apply(WithRelated(), related)).Code);
+        Assert.Equal(AgentErrorCodes.NotFound, Assert.Throws<AgentException>(() => Writer(CmsCaller.Editor).Writer.Apply(WithRelated(), inTeaser)).Code);
+
+        // What the value named already, the editor has seen there: written back as it was, it isn't looked up.
+        var stored = WithRelated();
+        stored.Property["Related"].Value = new ContentReference(4711);
+        Writer(CmsCaller.Editor).Writer.Apply(stored, related);
+
+        var developer = WithRelated();
+        Writer(CmsCaller.Developer).Writer.Apply(developer, related);
+        Assert.Equal(4711, ((ContentReference)developer.Property["Related"].Value).ID);
+
+        // In a dictionary's values too; an id that names no content (SelfReference) isn't looked up.
+        var byKey = Values(new { Teasers = new[] { new { Text = "Read", ByKey = new Dictionary<string, object> { ["x"] = new { id = 4711 } } } } });
+        Assert.Equal(AgentErrorCodes.NotFound, Assert.Throws<AgentException>(() => Writer(CmsCaller.Editor).Writer.Apply(WithRelated(), byKey)).Code);
+        var pair = Values(new { Teasers = new[] { new { Text = "Read", Pair = new { Key = "x", Value = new { id = 4711 } } } } });
+        Assert.Equal(AgentErrorCodes.NotFound, Assert.Throws<AgentException>(() => Writer(CmsCaller.Editor).Writer.Apply(WithRelated(), pair)).Code);
+        // A provider's version can't be looked up as a ref: refused.
+        var provided = Assert.Throws<AgentException>(() => Writer(CmsCaller.Editor).Writer.Apply(WithRelated(), Values(new { Related = new { id = 5, workId = 7, providerName = "dam" } })));
+        Assert.Contains("content provider", provided.Message);
+        Writer(CmsCaller.Editor).Writer.Apply(WithRelated(), Values(new { Related = new { id = 0, workId = -1 } }));
+    }
+
+    [Fact]
+    public void A_list_items_value_nested_deeper_than_is_read_is_refused_for_an_editor()
+    {
+        LinksBlock WithTeasers()
+        {
+            var block = Block();
+            block.Property.Add(nameof(LinksBlock.Teasers), new PropertyTeasers { PropertyDefinitionID = 5 });
+            return block;
+        }
+        object Chain(int levels) => levels == 0 ? new { Text = "end" } : new { Next = Chain(levels - 1) };
+
+        Writer(CmsCaller.Editor).Writer.Apply(WithTeasers(), Values(new { Teasers = new[] { new { Text = "Read", Deep = Chain(3) } } }));
+        var refused = Assert.Throws<AgentException>(() => Writer(CmsCaller.Editor).Writer.Apply(WithTeasers(), Values(new { Teasers = new[] { new { Text = "Read", Deep = Chain(8) } } })));
+        Assert.Contains("nested more than", refused.Message);
+        Writer(CmsCaller.Developer).Writer.Apply(WithTeasers(), Values(new { Teasers = new[] { new { Text = "Read", Deep = Chain(8) } } }));
+    }
+
+    [Fact]
     public void A_value_in_get_contents_shape_or_one_JSON_cant_make_is_a_usage_error()
     {
         var block = Block();
@@ -378,6 +432,22 @@ public class PropertyWriterTests
         public string? Text { get; set; }
 
         public string? TargetUrl { get; set; }
+
+        public ContentReference? Page { get; set; }
+
+        public Dictionary<string, ContentReference>? ByKey { get; set; }
+
+        public Nested? Deep { get; set; }
+
+        public KeyValuePair<string, ContentReference?> Pair { get; set; }
+    }
+
+    /// <summary>A list item's member that holds more of itself.</summary>
+    public class Nested
+    {
+        public Nested? Next { get; set; }
+
+        public string? Text { get; set; }
     }
 
     /// <summary>A block list property, as CMS 12.20 and later have them.</summary>

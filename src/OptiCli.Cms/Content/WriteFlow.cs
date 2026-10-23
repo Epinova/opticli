@@ -43,6 +43,12 @@ internal sealed class WriteFlow
 
     public IContentRepository Repository => Locator.Repository;
 
+    /// <summary>
+    /// The file an upload attaches to the media it saves: its extension, and its bytes (null for a dry run without
+    /// them). Null for any other write, which keeps the stored file.
+    /// </summary>
+    public (string Extension, byte[]? Data)? NewFile { get; set; }
+
     /// <summary>New content as stored, if a save got that far.</summary>
     public IContent? Saved(IContent writable) =>
         writable.ContentGuid != Guid.Empty && Repository.TryGet<IContent>(writable.ContentGuid, out var stored) ? stored : null;
@@ -148,6 +154,17 @@ internal sealed class WriteFlow
         // checked for a dry run too, so the assistant learns before it tries.
         Call.RequireLanguageAccess(writable);
         Call.RequirePublishing(action, writable);
+        if (!Call.MayWriteScript && writable is MediaData media)
+        {
+            // Media is served by its URL, whose last segment is made from its name: that extension counts as the file's.
+            // Compared with what visitors get unless the save changes it: the version saved over for a draft, the
+            // published one for a save that publishes or schedules (the version saved over may be a draft saved elsewhere).
+            var goesLive = Kind(action) is SaveAction.Publish or SaveAction.Schedule;
+            var unchanged = ContentReference.IsNullOrEmpty(media.ContentLink) ? null
+                : goesLive ? Versions.LoadPublished(media.ContentLink.ToReferenceWithoutVersion()) is { } live && Repository.TryGet<IContent>(live.ContentLink, out var liveVersion) ? liveVersion : null
+                : Repository.TryGet<IContent>(media.ContentLink, out var savedOver) ? savedOver : null;
+            Operations.UploadOperation.RequireServedSafely(Call, media, NewFile, unchanged);
+        }
         var diff = PropertyValues.Diff(before, PropertyValues.Snapshot(writable));
         // What is reported: an editor never sees a hidden property's value, also not in a diff.
         var changes = Call.Properties.Shown(writable, diff);

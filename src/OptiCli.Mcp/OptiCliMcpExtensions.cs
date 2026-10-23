@@ -64,6 +64,8 @@ public static class OptiCliMcpExtensions
         services.AddScoped<EditorGate>();
         // What the CMS edit UI shows an editor of each content item, for the content operations (EditUiProperties).
         services.AddScoped<IEditUiMetadata, CmsUiMetadata>();
+        // What the site serves an uploaded file as, by the extension of its URL (UploadOperation).
+        services.AddSingleton<IServedContentTypes, StaticFileContentTypes>();
         services.AddScoped<AuthorizationServer>();
         services.AddScoped<ConnectionsPage>();
 

@@ -82,6 +82,12 @@ internal static class PublishOperation
         // Outside the try below, whose filter could take the gate's refusal for a site failure after the save (a version
         // already scheduled looks saved).
         call.RequirePublishing(action, writable);
+        if (!call.MayWriteScript && writable is MediaData media)
+        {
+            // A media version saved elsewhere: what it would put live under its name, as WriteFlow.Save checks a save.
+            UploadOperation.RequireServedSafely(call, media, null,
+                previouslyPublished is { } live && flow.Repository.TryGet<IContent>(new ContentReference(version.ContentLink.ID, live, version.ContentLink.ProviderName), out var published) ? published : null);
+        }
         flow.ThrowIfAborted();
         ContentReference saved;
         string? siteError = null;

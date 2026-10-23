@@ -423,7 +423,10 @@ internal sealed class PropertyWriter(
             {
                 continue;
             }
-            throw finding.Link
+            throw finding.Key.StartsWith(UncheckedKey, StringComparison.Ordinal)
+                ? AgentException.Usage($"'{property.Name}' has {finding.Problem}, which can't be checked for an editor.",
+                    "Leave it out, or ask the user to change it in the CMS edit UI. Nothing was saved.")
+                : finding.Link
                 ? AgentException.Usage($"'{property.Name}' has {finding.Problem}.",
                     "Give an http, https, mailto or tel link, a relative one, or a content ref, as {href, text, title, target}. A link the property already had may stay as it is. Nothing was saved.")
                 : AgentException.Usage($"'{property.Name}' has {finding.Problem}, which could run script in the CMS edit UI or on the site.",
@@ -431,18 +434,24 @@ internal sealed class PropertyWriter(
         }
         if (!call.MayReferenceUnchecked)
         {
-            // As the markup names them (the CMS fills in the other form), so content an editor can't read fails exactly as
-            // missing content does; what the stored value already named, the editor has seen there.
+            // As the markup names them (the CMS fills in the other form), and the content references the value holds, so
+            // content an editor can't read fails exactly as missing content does; what the stored value already named, the
+            // editor has seen there.
             foreach (var reference in after.References.Where(r => !before.TakeReference(r)))
             {
-                locator.Resolve(reference, $"embedded block in {property.Name}");
+                // A version must be one of that content's own: the CMS loads another content's version id as that content.
+                if (locator.Resolve(reference, $"content named in {property.Name}") is { WorkID: > 0 } version)
+                {
+                    locator.Version(version, version.WorkID);
+                }
             }
         }
     }
 
     /// <summary>
     /// What a value holds that an editor may not add (<see cref="CheckValue"/>), each as often as it holds it: findings of
-    /// <see cref="MarkupSafety"/> in rich text and links, and the content embedded blocks in rich text name.
+    /// <see cref="MarkupSafety"/> in rich text and links, and the content it names: embedded blocks in rich text, and content
+    /// references (also in a list property's items).
     /// </summary>
     private sealed class Constructs
     {
@@ -516,6 +525,12 @@ internal sealed class PropertyWriter(
         return constructs;
     }
 
+    /// <summary>How deep a list property's item is read (<see cref="Collect(object?, Constructs, int)"/>).</summary>
+    private const int MaxDepth = 6;
+
+    /// <summary>The key prefix of a finding that isn't script but a value the check can't read: refused all the same.</summary>
+    private const string UncheckedKey = "unchecked ";
+
     private static void Collect(object? value, Constructs constructs, int depth)
     {
         switch (value)
@@ -553,6 +568,32 @@ internal sealed class PropertyWriter(
                     constructs.Add("url " + url.OriginalString, urlProblem, link: true);
                 }
                 return;
+            case ContentReference reference:
+                // However it was given (an object, a list item's member): the read check, as for an embedded block. Not
+                // for ids that name no content (SelfReference and the like).
+                if (reference.ID > 0 && reference.ProviderName is { Length: > 0 } provider && reference.WorkID > 0)
+                {
+                    // A provider's content version, which a ref can't name: refused unless the value had it already.
+                    constructs.Add($"{UncheckedKey}provider version {reference}", "a version of a content provider's content", link: false);
+                }
+                else if (reference.ID > 0)
+                {
+                    constructs.AddReference(reference.ProviderName is { Length: > 0 } named ? $"{reference.ID}__{named}"
+                        : reference.WorkID > 0 ? $"{reference.ID}_{reference.WorkID}"
+                        : reference.ID.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                }
+                return;
+            case ContentAreaItem item:
+                // In a list property's item; a ContentArea property itself is checked as it is built (BuildArea).
+                Collect(item.ContentLink, constructs, depth);
+                return;
+            case System.Collections.IDictionary dictionary:
+                // Its values; the keys are text.
+                foreach (var item in dictionary.Values)
+                {
+                    Collect(item, constructs, depth);
+                }
+                return;
             case System.Collections.IEnumerable items:
                 foreach (var item in items)
                 {
@@ -560,12 +601,23 @@ internal sealed class PropertyWriter(
                 }
                 return;
             default:
-                // A list property's item (PropertyList<T>): its links, URLs and rich text, a few levels deep.
-                if (depth < 3 && value.GetType() is { IsPrimitive: false, IsEnum: false } type
+                if (value.GetType() is { IsGenericType: true } pair && pair.GetGenericTypeDefinition() == typeof(KeyValuePair<,>))
+                {
+                    Collect(pair.GetProperty(nameof(KeyValuePair<int, int>.Value))!.GetValue(value), constructs, depth);
+                    return;
+                }
+                // A list property's item (PropertyList<T>): its links, URLs, rich text and references, a few levels deep.
+                if (value.GetType() is { IsPrimitive: false, IsEnum: false } type
                     && type.Namespace?.StartsWith("System", StringComparison.Ordinal) != true && type.Namespace?.StartsWith("EPiServer", StringComparison.Ordinal) != true)
                 {
+                    if (depth >= MaxDepth)
+                    {
+                        // Deeper than is read: refused rather than let through unseen, and never one the value already had.
+                        constructs.Add($"{UncheckedKey}deep {Guid.NewGuid():N}", $"a value nested more than {MaxDepth} levels deep", link: false);
+                        return;
+                    }
                     foreach (var member in type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
-                        .Where(m => m.CanRead && m.GetIndexParameters().Length == 0 && !m.PropertyType.IsValueType))
+                        .Where(m => m.CanRead && m.GetIndexParameters().Length == 0 && !m.PropertyType.IsPrimitive && !m.PropertyType.IsEnum))
                     {
                         object? memberValue;
                         try

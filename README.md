@@ -105,7 +105,7 @@ When stdout is redirected, every command prints a single JSON line:
 
 ```json
 {"ok":true,"data":{"ref":"123","type":"ArticlePage","name":"News","status":"published","url":"/en/news/",
- "properties":{"Heading":{"type":"String","value":"Hello"}}},"meta":{"source":"db","version":"0.23.0"}}
+ "properties":{"Heading":{"type":"String","value":"Hello"}}},"meta":{"source":"db","version":"0.23.1"}}
 ```
 
 ## Using opticli with coding agents
@@ -1412,9 +1412,13 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   live construct moved into one. Set the CMS's own script parser to remove script as well, for every save, the edit
   UI's included (CMS 12.15 or newer): `"EPiServer": {"Cms": {"ScriptParser": {"SavingMode": "Remove"}}}`.
 - **No files that run script.** A file uploaded to the CMS is served from the site's own origin, so one a browser runs
-  script in would run it with the session of whoever opens it. An editor's assistant can't upload HTML, XML, XSLT or
-  JavaScript files (`.html`, `.htm`, `.xhtml`, `.xht`, `.shtml`, `.mht`, `.mhtml`, `.xml`, `.xsl`, `.xslt`, `.js`, `.mjs`)
-  or compressed SVG (`.svgz`); the hint says to upload such a file in the CMS. An SVG file is read: one with
+  script in would run it with the session of whoever opens it. An editor's assistant can't upload a file the site
+  serves as HTML, XML (in any of its types but SVG), XSLT or JavaScript, going by the site's own content types (its
+  static file content types, which serve media, and the CMS's MIME registry), whatever the extension: `.html`, `.htm`,
+  `.xhtml`, `.xml`, `.xsl`, `.js` and the like, but also the legacy `.hxt`, `.stm`, `.xsd`, `.dtd` or `.wsdl` a default
+  site serves as HTML or XML. Nor compressed SVG (`.svgz`). The CMS serves media by a URL made from its name, so a
+  media name (on upload, a rename, a replaced file) that ends in another extension than the file's is checked as that
+  extension. The hint says to upload such a file in the CMS. An SVG file (or a file the site serves as SVG) is read: one with
   `<script>`, `<foreignObject>`, event handler attributes, `javascript:` or non-image `data:` links (also set by an
   animation), entity or attribute list declarations or an `xml-stylesheet` instruction is refused, and an ordinary
   drawing uploads. A file named as a raster image (`.jpg`, `.png`, ...) that starts like markup is refused too. Have the
@@ -1835,7 +1839,7 @@ Set the new version as `<Version>` in [Directory.Build.props](Directory.Build.pr
 [skill/SKILL.md](skill/SKILL.md), and add the release to [CHANGELOG.md](CHANGELOG.md). Commit, then push a matching tag:
 
 ```sh
-git tag v0.23.0 && git push origin v0.23.0
+git tag v0.23.1 && git push origin v0.23.1
 ```
 
 The [release workflow](.github/workflows/release.yml) checks that the tag matches both versions and is on `main`,

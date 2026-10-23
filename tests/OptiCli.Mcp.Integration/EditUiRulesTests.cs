@@ -220,10 +220,54 @@ public sealed class EditUiRulesTests(SharedSessions sessions)
         Assert.Contains(".html files can run script", html.GetProperty("message").GetString());
         var disguised = await editor.ErrorAsync("upload_media", new { fileName = "photo.html.jpg", forContent = start, dryRun = true, data = Data("<html><script>alert(1)</script></html>") });
         Assert.Contains("starts like markup", disguised.GetProperty("message").GetString());
+        // The CMS serves these as HTML and XML; Alloy's GenericMedia takes any file once it is named.
+        foreach (var fileName in new[] { "notes.hxt", "notes.stm", "schema.xsd", "service.wsdl" })
+        {
+            var served = await editor.ErrorAsync("upload_media", new { fileName, type = "GenericMedia", forContent = start, dryRun = true, data = Data("<p>x</p>") });
+            Assert.Contains("files can run script", served.GetProperty("message").GetString());
+        }
+        var text = await editor.OkAsync("upload_media", new { fileName = "notes.txt", type = "GenericMedia", forContent = start, dryRun = true, data = Data("<p>x</p>") });
+        Assert.True(text.GetProperty("valid").GetBoolean());
+        // Media is served by its URL, made from its name: a name that ends otherwise counts as the file's extension, also as
+        // the CMS cleans it up for a URL.
+        foreach (var name in new[] { "notes.html", "notes.html.", "notes.ht<ml" })
+        {
+            var named = await editor.ErrorAsync("upload_media", new { fileName = "notes.txt", name, type = "GenericMedia", forContent = start, dryRun = true, data = Data("<p>x</p>") });
+            Assert.Contains("files can run script", named.GetProperty("message").GetString());
+        }
+        var svgNamed = await editor.ErrorAsync("upload_media", new { fileName = "notes.txt", name = "logo.svg", type = "GenericMedia", forContent = start, dryRun = true,
+            data = Data("<svg xmlns=\"http://www.w3.org/2000/svg\" onload=\"alert(1)\"/>") });
+        Assert.Contains("'onload'", svgNamed.GetProperty("message").GetString());
+        var version = await editor.OkAsync("upload_media", new { fileName = "report.pdf", name = "Annual report v1.2", type = "GenericMedia", forContent = start, dryRun = true, data = Data("%PDF-1.4") });
+        Assert.True(version.GetProperty("valid").GetBoolean());
 
         var drawing = await editor.OkAsync("upload_media", new { fileName = "logo.svg", forContent = start, dryRun = true,
             data = Data("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\"><rect width=\"10\" height=\"10\" fill=\"#c00\"/></svg>") });
         Assert.True(drawing.GetProperty("valid").GetBoolean());
+    }
+
+    [McpSiteFact]
+    public async Task Media_renamed_to_an_extension_the_site_serves_as_html_is_refused_and_other_names_are_kept()
+    {
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var start = WritingTests.Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        var page = WritingTests.Id((await editor.OkAsync("create_content", new { type = "StandardPage", name = $"opticli-mcp-it {Guid.NewGuid():N}", parent = start })).GetProperty("content"));
+        try
+        {
+            var media = WritingTests.Id((await editor.OkAsync("upload_media", new { fileName = "notes.txt", type = "GenericMedia", forContent = page,
+                data = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("<p>x</p>")) })).GetProperty("content"));
+
+            var renamed = await editor.ErrorAsync("update_content", new { reference = media, name = "notes.html", dryRun = true });
+            Assert.Contains("from its name", renamed.GetProperty("message").GetString());
+            // A name without another extension, and a save that leaves the name alone, are no concern.
+            Assert.True((await editor.OkAsync("update_content", new { reference = media, name = "Notes, final", dryRun = true })).GetProperty("valid").GetBoolean());
+            Assert.True((await editor.OkAsync("update_content", new { reference = media, name = "notes.txt", dryRun = true })).GetProperty("valid").GetBoolean());
+            await WritingTests.DeleteAsync(editor, media);
+        }
+        finally
+        {
+            await WritingTests.DeleteAsync(editor, page);
+        }
     }
 
     [McpSiteFact]
