@@ -9,10 +9,11 @@ using OptiCli.Mcp.OAuth;
 
 namespace OptiCli.Mcp.Preview;
 
-/// <summary>What an assistant's preview link stands for: one version, in one language, for one editor's connection.</summary>
+/// <summary>What an assistant's preview link stands for: one version, in one language, for one editor's connection, on one host.</summary>
 /// <param name="Version">The content version, <c>123_456</c> (with the provider's name, if any).</param>
 /// <param name="Language">The version's language; empty for content that has none.</param>
-internal sealed record PreviewLink(string GrantId, string UserName, string Version, string Language, DateTimeOffset Issued, DateTimeOffset Expires);
+/// <param name="Host">The host (and port) the link was issued on: the MCP request's, the only one it opens on.</param>
+internal sealed record PreviewLink(string GrantId, string UserName, string Version, string Language, string Host, DateTimeOffset Issued, DateTimeOffset Expires);
 
 /// <summary>
 /// The assistant's own links to a draft (<see cref="OptiCliMcpOptions.AllowPreviewLinks"/>):
@@ -36,28 +37,43 @@ internal sealed class PreviewLinks(IDataProtectionProvider protection, IOptions<
         [property: JsonPropertyName("u")] string UserName,
         [property: JsonPropertyName("v")] string Version,
         [property: JsonPropertyName("l")] string Language,
+        [property: JsonPropertyName("h")] string Host,
         [property: JsonPropertyName("iat")] long Issued,
         [property: JsonPropertyName("n")] string Nonce);
 
     /// <summary><c>{BasePath}/preview</c>: every link is one segment below it.</summary>
     public static string Path(OptiCliMcpOptions options) => options.BasePath + Segment;
 
-    /// <summary>A link to <paramref name="version"/> for the editor <paramref name="userName"/> of <paramref name="grantId"/>, on the MCP request's origin.</summary>
+    /// <summary>
+    /// A link to <paramref name="version"/> for the editor <paramref name="userName"/> of <paramref name="grantId"/>, on
+    /// the MCP request's origin, and for its host only.
+    /// </summary>
     /// <returns>The link, and when it stops working (<see cref="OptiCliMcpOptions.PreviewLinkLifetime"/> from now).</returns>
     public (string Url, DateTimeOffset Expires) Issue(HttpRequest request, string grantId, string userName, string version, string? language)
     {
         var now = time.GetUtcNow();
         var expires = now.Add(options.Value.PreviewLinkLifetime);
         // The nonce makes every link unique, so one can't be told from another by its look.
-        var payload = new Payload(grantId, userName, version, language ?? "", now.ToUnixTimeSeconds(), Secrets.Base64Url(RandomNumberGenerator.GetBytes(16)));
+        var payload = new Payload(grantId, userName, version, language ?? "", request.Host.ToUriComponent(), now.ToUnixTimeSeconds(), Secrets.Base64Url(RandomNumberGenerator.GetBytes(16)));
         var token = _protector.Protect(JsonSerializer.Serialize(payload), expires);
         return ($"{McpUrls.Origin(request)}{Path(options.Value)}/{token}", expires);
     }
 
+    /// <summary>
+    /// Whether <paramref name="token"/> is spelled as the module spells a payload: base64url, without padding, at most
+    /// <see cref="MaxLength"/> characters. The Data Protection would also take other spellings of the same bytes (<c>+</c>
+    /// for <c>-</c>, <c>/</c> for <c>_</c>, padding); a link is only ever the one the module gave.
+    /// </summary>
+    internal static bool IsWellFormed(string token) =>
+        token.Length is > 0 and <= MaxLength && token.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
+
+    /// <summary>Whether <paramref name="host"/> (the request's, after the site's forwarded headers) is the one <paramref name="link"/> was issued for.</summary>
+    public static bool IsFor(PreviewLink link, HostString host) => string.Equals(link.Host, host.ToUriComponent(), StringComparison.OrdinalIgnoreCase);
+
     /// <returns>What the link's payload stands for; null for one that is malformed, tampered with, expired or not a preview link.</returns>
     public PreviewLink? Read(string token)
     {
-        if (token.Length is 0 or > MaxLength)
+        if (!IsWellFormed(token))
         {
             return null;
         }
@@ -71,11 +87,11 @@ internal sealed class PreviewLinks(IDataProtectionProvider protection, IOptions<
         {
             return null;
         }
-        if (payload is not { GrantId.Length: > 0, UserName.Length: > 0 } || payload.Language is null
+        if (payload is not { GrantId.Length: > 0, UserName.Length: > 0, Host.Length: > 0 } || payload.Language is null
             || !ContentReference.TryParse(payload.Version, out var version) || version.WorkID <= 0)
         {
             return null;
         }
-        return new PreviewLink(payload.GrantId, payload.UserName, payload.Version, payload.Language, DateTimeOffset.FromUnixTimeSeconds(payload.Issued), expires);
+        return new PreviewLink(payload.GrantId, payload.UserName, payload.Version, payload.Language, payload.Host, DateTimeOffset.FromUnixTimeSeconds(payload.Issued), expires);
     }
 }

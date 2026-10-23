@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using OptiCli.Mcp.OAuth;
@@ -39,7 +40,10 @@ public sealed class PreviewLinkTests
         Assert.StartsWith("https://editors.example.com/episerver/opticli/preview/", url, StringComparison.Ordinal);
         Assert.InRange(expires - DateTimeOffset.UtcNow, TimeSpan.FromMinutes(9), TimeSpan.FromMinutes(10));
         var link = links.Read(Token(url))!;
-        Assert.Equal(("grant-1", "editor", Version, "en"), (link.GrantId, link.UserName, link.Version, link.Language));
+        Assert.Equal(("grant-1", "editor", Version, "en", "editors.example.com"), (link.GrantId, link.UserName, link.Version, link.Language, link.Host));
+        Assert.True(PreviewLinks.IsFor(link, new HostString("EDITORS.example.com")));
+        Assert.False(PreviewLinks.IsFor(link, new HostString("evil.example.com")));
+        Assert.False(PreviewLinks.IsFor(link, new HostString("editors.example.com:8443")));
         Assert.Equal(expires.ToUnixTimeSeconds(), link.Expires.ToUnixTimeSeconds());
         // Every link is its own, and none carries anything readable or the CMS's preview token.
         Assert.NotEqual(url, other);
@@ -71,7 +75,7 @@ public sealed class PreviewLinkTests
         Assert.Null(links.Read(Token(Links(past, protection).Issue(request, "grant-1", "editor", Version, "en").Url)));
 
         // The same payload, protected for another purpose (an access token's), or naming content rather than a version.
-        string Payload(string version) => JsonSerializer.Serialize(new { g = "grant-1", u = "editor", v = version, l = "en", iat = 0, n = "x" });
+        string Payload(string version) => JsonSerializer.Serialize(new { g = "grant-1", u = "editor", v = version, l = "en", h = "localhost", iat = 0, n = "x" });
         var later = DateTimeOffset.UtcNow.AddMinutes(5);
         Assert.Null(links.Read(protection.CreateProtector("OptiCli.Mcp.AccessToken.v1").ToTimeLimitedDataProtector().Protect(Payload(Version), later)));
         var ours = protection.CreateProtector("OptiCli.Mcp.PreviewLink.v1").ToTimeLimitedDataProtector();
@@ -381,7 +385,7 @@ public sealed class PreviewLinkTests
     public async Task On_a_site_that_requires_a_host_only_that_host_answers()
     {
         await using var preview = await PreviewSite.StartAsync(o => o.RequireHost = "editors.example.com");
-        var link = new Uri(await preview.LinkAsync()).PathAndQuery;
+        var link = new Uri(await preview.LinkAsync(host: "editors.example.com")).PathAndQuery;
 
         using var other = await preview.Site.Client().GetAsync(link);
         using var editors = await preview.Site.Client("editors.example.com").GetAsync(link);
@@ -402,16 +406,192 @@ public sealed class PreviewLinkTests
         Assert.Equal(matches, PreviewLinkMiddleware.HostMatches(new HostString(actual), required));
 
     [Fact]
-    public async Task Opened_links_are_rate_limited_per_address()
+    public async Task Opened_links_are_rate_limited_per_connection_and_what_isnt_a_link_per_address_apart_from_them()
     {
-        await using var preview = await PreviewSite.StartAsync(limits: new OptiCliMcpRateLimits { PreviewPerMinute = 1 });
-        var link = await preview.LinkAsync();
+        await using var preview = await PreviewSite.StartAsync(limits: new OptiCliMcpRateLimits { PreviewPerMinute = 1, InvalidPreviewPerAddressPerMinute = 2 });
+        var first = await preview.LinkAsync();
+        var second = await preview.LinkAsync();
+        var client = preview.Site.Client();
 
-        Assert.Equal(HttpStatusCode.OK, (await preview.Site.Client().GetAsync(link)).StatusCode);
-        using var limited = await preview.Site.Client().GetAsync(link);
+        // Garbage from the same address (an assistant provider's shared one) uses up its own window, not the links'.
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/episerver/opticli/preview/garbage")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync(first + "x")).StatusCode);
+        using var garbage = await client.GetAsync("/episerver/opticli/preview/garbage");
+        Assert.Equal(HttpStatusCode.TooManyRequests, garbage.StatusCode);
+        Assert.True(garbage.Headers.Contains("Retry-After"));
+        Assert.True(garbage.Headers.CacheControl!.NoStore);
 
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync(first)).StatusCode);
+        using var limited = await client.GetAsync(first);
         Assert.Equal(HttpStatusCode.TooManyRequests, limited.StatusCode);
-        Assert.True(limited.Headers.Contains("Retry-After"));
+        Assert.Contains("for this connection", await limited.Content.ReadAsStringAsync());
+        // Another connection, from the same address, has its own window.
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync(second)).StatusCode);
+    }
+
+    [Fact]
+    public async Task The_sites_own_forwarded_headers_decide_the_address_and_host_before_anything_else()
+    {
+        await using var preview = await PreviewSite.StartAsync(
+            o => o.RequireHost = "editors.example.com",
+            limits: new OptiCliMcpRateLimits { InvalidPreviewPerAddressPerMinute = 1 },
+            forwardedHeaders: f =>
+            {
+                f.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedHost | ForwardedHeaders.XForwardedProto;
+                // The test server has no client address; a site lists its proxies here.
+                f.KnownNetworks.Clear();
+                f.KnownProxies.Clear();
+            });
+        var link = new Uri(await preview.LinkAsync(host: "editors.example.com")).PathAndQuery;
+        HttpRequestMessage Forwarded(string url, string address) => new(HttpMethod.Get, url)
+        {
+            Headers = { { "X-Forwarded-Host", "editors.example.com" }, { "X-Forwarded-For", address }, { "X-Forwarded-Proto", "https" } },
+        };
+
+        // The proxy's own host is localhost: the forwarded one is what RequireHost and the link's host are checked against.
+        using var response = await preview.Site.Client().SendAsync(Forwarded(link, "203.0.113.1"));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var got = preview.Downstream.Got!;
+        Assert.Equal(("editors.example.com", "https"), (got.Host, got.Scheme));
+        Assert.DoesNotContain("X-Forwarded-Host", got.Headers);
+
+        // Each client behind the proxy has its own window for what isn't a link.
+        Assert.Equal(HttpStatusCode.NotFound, (await preview.Site.Client().SendAsync(Forwarded("/episerver/opticli/preview/x", "203.0.113.1"))).StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await preview.Site.Client().SendAsync(Forwarded("/episerver/opticli/preview/x", "203.0.113.1"))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await preview.Site.Client().SendAsync(Forwarded("/episerver/opticli/preview/x", "203.0.113.2"))).StatusCode);
+    }
+
+    [Fact]
+    public void The_sites_own_forwarded_headers_after_the_module_find_nothing_more_to_do()
+    {
+        var options = Options.Create(new ForwardedHeadersOptions { ForwardedHeaders = ForwardedHeaders.All });
+        options.Value.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("10.0.0.0"), 8));
+        var forwarded = new ForwardedHeadersMiddleware(_ => Task.CompletedTask, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance, options);
+        var context = new DefaultHttpContext();
+        context.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.1");
+        context.Request.Host = new HostString("internal:8080");
+        context.Request.Headers["X-Forwarded-For"] = "203.0.113.9";
+        context.Request.Headers["X-Forwarded-Host"] = "editors.example.com";
+        context.Request.Headers["X-Forwarded-Proto"] = "https";
+
+        forwarded.ApplyForwarders(context);
+        var once = (context.Connection.RemoteIpAddress.ToString(), context.Request.Host.Value, context.Request.Scheme);
+        forwarded.ApplyForwarders(context);
+
+        Assert.Equal(("203.0.113.9", "editors.example.com", "https"), once);
+        Assert.Equal(once, (context.Connection.RemoteIpAddress.ToString(), context.Request.Host.Value, context.Request.Scheme));
+        Assert.False(context.Request.Headers.ContainsKey("X-Forwarded-For"));
+        Assert.False(context.Request.Headers.ContainsKey("X-Forwarded-Host"));
+    }
+
+    [Fact]
+    public async Task A_link_opens_only_on_the_host_it_was_issued_on()
+    {
+        await using var preview = await PreviewSite.StartAsync();
+        var link = new Uri(await preview.LinkAsync()).PathAndQuery;
+
+        using var other = await preview.Site.Client("evil.example.com").GetAsync(link);
+        using var otherPort = await preview.Site.Client("localhost:8080").GetAsync(link);
+        using var same = await preview.Site.Client("LOCALHOST").GetAsync(link);
+
+        Assert.Equal(HttpStatusCode.NotFound, other.StatusCode);
+        Assert.Equal(PreviewLinkMiddleware.NotValid, await other.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.NotFound, otherPort.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, same.StatusCode);
+        Assert.Contains("refused: issued for another host", string.Join("\n", preview.Site.Audit.Audit));
+    }
+
+    [Theory]
+    [InlineData("/episerver/opticli/preview/abc-_09XYZ", "abc-_09XYZ")]
+    // Other spellings the Data Protection would decode to the same bytes, and other paths.
+    [InlineData("/episerver/opticli/preview/abc+_09XYZ", null)]
+    [InlineData("/episerver/opticli/preview/abc-/09XYZ", null)]
+    [InlineData("/episerver/opticli/preview/abc-_09XYZ==", null)]
+    [InlineData("/episerver/opticli/PREVIEW/abc-_09XYZ", null)]
+    [InlineData("/EPiServer/opticli/preview/abc-_09XYZ", null)]
+    // Percent-encoding is undone by the server, for this path as for any.
+    [InlineData("/episerver/opticli/preview/abc%2D_09XYZ", "abc-_09XYZ")]
+    [InlineData("/episerver/opticli/preview/", null)]
+    [InlineData("/episerver/opticli/preview", null)]
+    public void A_payload_is_one_segment_in_the_modules_own_spelling(string path, string? token)
+    {
+        var request = new DefaultHttpContext().Request;
+        request.Path = PathString.FromUriComponent(path);
+        Assert.Equal(token, PreviewLinkMiddleware.Token(request, new OptiCliMcpOptions()));
+        request.QueryString = new QueryString("?x=1");
+        Assert.Null(PreviewLinkMiddleware.Token(request, new OptiCliMcpOptions()));
+    }
+
+    [Fact]
+    public async Task Another_spelling_of_a_real_link_is_refused()
+    {
+        await using var preview = await PreviewSite.StartAsync();
+        var link = await preview.LinkAsync();
+        var token = Token(link);
+        var at = link.Length - token.Length;
+        var spellings = new List<string> { link + "==", link[..at].Replace("/preview/", "/PREVIEW/", StringComparison.Ordinal) + token };
+        if (token.IndexOfAny(['-', '_']) is var i and >= 0)
+        {
+            spellings.Add(link[..(at + i)] + (token[i] == '-' ? "+" : "/") + token[(i + 1)..]);
+        }
+
+        foreach (var url in spellings)
+        {
+            using var response = await preview.Site.Client().GetAsync(url);
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        }
+        Assert.Null(preview.Downstream.Got);
+    }
+
+    [Fact]
+    public async Task A_failure_before_the_render_is_the_modules_own_500_never_the_sites_error_page()
+    {
+        await using var preview = await PreviewSite.StartAsync(outerErrorPage: true);
+        preview.Versions.Throw = true;
+
+        using var response = await preview.Site.Client().GetAsync(await preview.LinkAsync());
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(PreviewLinkMiddleware.Failed, await response.Content.ReadAsStringAsync());
+        Assert.False(preview.Outer.AuthenticatedAfter);
+        Assert.Contains("MCP preview 123_456 en: user editor, client mcp_test, failed: InvalidOperationException", string.Join("\n", preview.Site.Audit.Audit));
+        Assert.Contains("Answering an assistant's preview link failed.", preview.Site.Audit.All);
+    }
+
+    [Fact]
+    public async Task The_sites_callbacks_as_the_response_starts_dont_run_as_the_editor()
+    {
+        await using var preview = await PreviewSite.StartAsync(outerErrorPage: true);
+        bool? signedIn = null;
+        preview.Downstream.Respond = async context =>
+        {
+            context.Response.OnStarting(() =>
+            {
+                signedIn = context.User.Identity?.IsAuthenticated;
+                throw new InvalidOperationException("a site's callback failed");
+            });
+            await context.Response.WriteAsync("<h1>The draft</h1>");
+        };
+
+        try
+        {
+            using var response = await preview.Site.Client().GetAsync(await preview.LinkAsync());
+            Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+            Assert.Equal(PreviewLinkMiddleware.Failed, await response.Content.ReadAsStringAsync());
+        }
+        catch (Exception e) when (e is not Xunit.Sdk.XunitException)
+        {
+            // Or, once the response had started, the connection is cut (the test server hands the client the
+            // exception): never the site's error page.
+        }
+        // A cut connection reaches the client before the server is done with the request.
+        for (var wait = 0; wait < 100 && preview.Outer.AuthenticatedAfter is null; wait++)
+        {
+            await Task.Delay(20);
+        }
+        Assert.False(signedIn);
+        Assert.Null(preview.Outer.Escaped);
+        Assert.False(preview.Outer.AuthenticatedAfter);
     }
 
     [Theory]
@@ -467,17 +647,24 @@ public sealed class PreviewLinkTests
     {
         public bool Readable { get; set; } = true;
 
+        /// <summary>When set, the CMS fails (its database, say).</summary>
+        public bool Throw { get; set; }
+
         public List<(ContentReference Version, string? Language, ClaimsPrincipal Editor)> Calls { get; } = [];
 
         public string? PreviewUrl(ContentReference version, string? language, ClaimsPrincipal editor)
         {
             Calls.Add((version, language, editor));
+            if (Throw)
+            {
+                throw new InvalidOperationException("The database is gone.");
+            }
             return Readable ? PreviewPath + "?epieditmode=false" : null;
         }
     }
 
     /// <summary>What reached the site's preview endpoint.</summary>
-    private sealed record Received(string Path, string Query, string? RawTarget, HashSet<string> Headers, int Cookies, bool HasForm, long BodyLength, string? User, string? AuthenticationType, string[] Roles, bool IsMcpEditor);
+    private sealed record Received(string Host, string Scheme, string Path, string Query, string? RawTarget, HashSet<string> Headers, int Cookies, bool HasForm, long BodyLength, string? User, string? AuthenticationType, string[] Roles, bool IsMcpEditor);
 
     /// <summary>The CMS's preview endpoint, faked: it records the request and answers as the test says, setting a cookie.</summary>
     private sealed class Downstream
@@ -502,6 +689,8 @@ public sealed class PreviewLinkTests
             using var body = new MemoryStream();
             await context.Request.Body.CopyToAsync(body);
             Got = new Received(
+                context.Request.Host.Value!,
+                context.Request.Scheme,
                 context.Request.Path.Value!,
                 context.Request.QueryString.Value ?? "",
                 context.Features.Get<IHttpRequestFeature>()?.RawTarget,
@@ -525,12 +714,26 @@ public sealed class PreviewLinkTests
     {
         public bool? AuthenticatedAfter { get; private set; }
 
+        /// <summary>An exception that came out of the module's middleware.</summary>
+        public Exception? Escaped { get; private set; }
+
         public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
         {
             app.Use(async (context, inner) =>
             {
-                await inner(context);
-                AuthenticatedAfter = context.User.Identity?.IsAuthenticated;
+                try
+                {
+                    await inner(context);
+                }
+                catch (Exception e)
+                {
+                    Escaped = e;
+                    throw;
+                }
+                finally
+                {
+                    AuthenticatedAfter = context.User.Identity?.IsAuthenticated;
+                }
             });
             if (errorPage)
             {
@@ -554,7 +757,8 @@ public sealed class PreviewLinkTests
 
         public required Outer Outer { get; init; }
 
-        public static async Task<PreviewSite> StartAsync(Action<OptiCliMcpOptions>? configure = null, OptiCliMcpRateLimits? limits = null, bool statusCodePages = false, bool outerErrorPage = false)
+        public static async Task<PreviewSite> StartAsync(Action<OptiCliMcpOptions>? configure = null, OptiCliMcpRateLimits? limits = null, bool statusCodePages = false, bool outerErrorPage = false,
+            Action<ForwardedHeadersOptions>? forwardedHeaders = null)
         {
             var versions = new FakeVersions();
             var downstream = new Downstream();
@@ -570,6 +774,10 @@ public sealed class PreviewLinkTests
                 {
                     s.AddSingleton<IPreviewVersions>(versions);
                     s.AddSingleton<IStartupFilter>(outer);
+                    if (forwardedHeaders is not null)
+                    {
+                        s.Configure(forwardedHeaders);
+                    }
                 },
                 statusCodePages: statusCodePages,
                 endpoints: app => app.Map("/EPiServer/CMS/Content/{**rest}", downstream.HandleAsync));
@@ -578,8 +786,8 @@ public sealed class PreviewLinkTests
             return new PreviewSite { Site = site, Versions = versions, Downstream = downstream, Outer = outer };
         }
 
-        /// <summary>A connection of <paramref name="user"/>'s, and a link for it that names <paramref name="linkUser"/>.</summary>
-        public async Task<string> LinkAsync(string user = "editor", string? linkUser = null)
+        /// <summary>A connection of <paramref name="user"/>'s, and a link for it that names <paramref name="linkUser"/>, issued on <paramref name="host"/>.</summary>
+        public async Task<string> LinkAsync(string user = "editor", string? linkUser = null, string host = "localhost")
         {
             var now = Site.Time.GetUtcNow();
             var grant = new Grant
@@ -590,7 +798,7 @@ public sealed class PreviewLinkTests
                 Created = now, RefreshIssued = now, Expires = now.AddDays(30),
             };
             await Site.Store.AddGrantAsync(grant, default);
-            var request = new DefaultHttpContext { Request = { Scheme = "http", Host = new HostString("localhost") } }.Request;
+            var request = new DefaultHttpContext { Request = { Scheme = "http", Host = new HostString(host) } }.Request;
             return Site.Services.GetRequiredService<PreviewLinks>().Issue(request, grant.GrantId, linkUser ?? user, Version, "en").Url;
         }
 

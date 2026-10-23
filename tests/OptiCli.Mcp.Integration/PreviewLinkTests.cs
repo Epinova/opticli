@@ -72,7 +72,7 @@ public sealed class PreviewLinkTests(SharedSessions sessions)
                 Assert.False(head.Headers.Contains("Set-Cookie"));
             }
 
-            // Only that link, as it was given: another path, a query of any kind, another method.
+            // Only that link, as it was given: another path, a query of any kind, another spelling, another host, another method.
             var refused = new List<HttpRequestMessage>
             {
                 new(HttpMethod.Get, link + "x"),
@@ -81,6 +81,11 @@ public sealed class PreviewLinkTests(SharedSessions sessions)
                 new(HttpMethod.Get, link + "?preview_token=abc"),
                 new(HttpMethod.Get, link + "?epieditmode=true"),
                 new(HttpMethod.Get, new Uri(site, "episerver/opticli/preview/")),
+                // Other spellings of the same payload, and the same link on another host.
+                new(HttpMethod.Get, link + "=="),
+                new(HttpMethod.Get, link.Replace("/preview/", "/PREVIEW/", StringComparison.Ordinal)),
+                new(HttpMethod.Get, link) { Headers = { Host = "evil.example.com" } },
+                new(HttpMethod.Get, link) { Headers = { Host = "localhost:" + site.Port } },
             };
             foreach (var request in refused)
             {

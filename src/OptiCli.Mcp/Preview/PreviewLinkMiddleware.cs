@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -38,28 +39,31 @@ internal sealed class PreviewLinkStartupFilter : IStartupFilter
 /// </summary>
 /// <remarks>
 /// <para>
-/// The link's payload (a link with a query or another path is refused), its connection and the editor's access to the
-/// version are checked first. Then the request is turned into the CMS's preview of that version, in place: its path and
-/// query are the preview URL's, its body is dropped and so is every header but <c>Host</c>, content negotiation and the
-/// forwarded headers (<see cref="Keeps"/>): no cookie or credential, so no handler signs anyone in from them and the
-/// CMS's preview token can't come along, and nothing else the client chose decides what is rendered. Only then is
-/// <see cref="HttpContext.User"/> the editor: built from the grant as the bearer handler builds it, with the site's
-/// claims transformation (which adds the CMS's virtual roles, such as CmsEditors, that its preview requires), but with
-/// an authentication type of its own (<see cref="AuthenticationType"/>), so it is never an MCP editor
-/// (<see cref="Tools.McpEditor"/>). The site's authentication finds no cookie and leaves it as it is. Once the rest of the
-/// pipeline returns, the request is anonymous again.
+/// The site's own forwarded headers are applied first, so the client's address and host are the real ones. Then the
+/// link's payload (only in the module's own spelling: a link with a query, another path or another host is refused),
+/// its connection and the editor's access to the version are checked. Then the request is turned into the CMS's
+/// preview of that version, in place: its path and query are the preview URL's, its body is dropped and so is every
+/// header but <c>Host</c>, content negotiation and the forwarded headers (<see cref="Keeps"/>): no cookie or
+/// credential, so no handler signs anyone in from them and the CMS's preview token can't come along, and nothing else
+/// the client chose decides what is rendered. Only then is <see cref="HttpContext.User"/> the editor: built from the
+/// grant as the bearer handler builds it, with the site's claims transformation (which adds the CMS's virtual roles,
+/// such as CmsEditors, that its preview requires), but with an authentication type of its own
+/// (<see cref="AuthenticationType"/>), so it is never an MCP editor (<see cref="Tools.McpEditor"/>). The site's
+/// authentication finds no cookie and leaves it as it is. Once the rest of the pipeline returns, the request is
+/// anonymous again, and anything that fails on the way is the module's own plain 500.
 /// </para>
 /// <para>
-/// The rest of the pipeline renders the preview into a buffer (at most <see cref="MaxBytes"/>). Only a success (2xx) is
-/// sent on, without any <c>Set-Cookie</c> or <c>Location</c>; anything else (a redirect, a sign-in challenge, a refusal,
-/// an error or an exception, and the site's own error page for it) becomes a plain 404 (500 for an error), so nothing
-/// points anywhere, no cookie is set and no error details go out. Every response says <c>Cache-Control: no-store</c>,
-/// <c>X-Robots-Tag: noindex, nofollow</c> and <c>Referrer-Policy: no-referrer</c>.
+/// The rest of the pipeline renders the preview into a buffer (at most <see cref="MaxBytes"/>). Only a success (2xx)
+/// is sent on, without any <c>Set-Cookie</c> or <c>Location</c>; anything else (a redirect, a sign-in challenge, a
+/// refusal, an error or an exception, and the site's own error page for it) becomes a plain 404 (500 for an error), so
+/// nothing points anywhere, no cookie is set and no error details go out. Every response says
+/// <c>Cache-Control: no-store</c>, <c>X-Robots-Tag: noindex, nofollow</c> and <c>Referrer-Policy: no-referrer</c>.
 /// </para>
 /// </remarks>
 internal sealed class PreviewLinkMiddleware(
     RequestDelegate next,
     IOptions<OptiCliMcpOptions> options,
+    IOptions<ForwardedHeadersOptions> forwardedHeaders,
     PreviewLinks links,
     OAuthRateLimiter limiter,
     GrantCache cache,
@@ -68,6 +72,9 @@ internal sealed class PreviewLinkMiddleware(
     ILoggerFactory loggers)
 {
     private readonly ILogger _logger = loggers.CreateLogger(ToolErrors.LogCategory);
+
+    /// <summary>The site's own forwarded headers, as it configured them (<see cref="ForwardedHeadersOptions"/>).</summary>
+    private readonly ForwardedHeadersMiddleware _forwarded = new(_ => Task.CompletedTask, loggers, forwardedHeaders);
 
     /// <summary>The preview's principal: not <see cref="TokenService.AuthenticationType"/>, so no tool ever runs as it.</summary>
     public const string AuthenticationType = "OptiCliMcpPreview";
@@ -85,33 +92,108 @@ internal sealed class PreviewLinkMiddleware(
         HeaderNames.Host, HeaderNames.Accept, HeaderNames.AcceptEncoding, HeaderNames.AcceptLanguage, HeaderNames.UserAgent, "Forwarded",
     };
 
+    /// <summary>What a request is once the module is done with it: nobody.</summary>
+    private static ClaimsPrincipal Nobody => new(new ClaimsIdentity());
+
     public async Task InvokeAsync(HttpContext context)
     {
-        if (!Handles(context.Request, out var token))
+        if (!context.Request.Path.StartsWithSegments(PreviewLinks.Path(options.Value), StringComparison.OrdinalIgnoreCase))
         {
             await next(context);
             return;
         }
+        // The site's forwarded headers come after the module in its pipeline, but the client's address (for the rate
+        // limit) and host (RequireHost, the link's own host) are the ones behind its proxy: apply them here, with the
+        // site's own settings and trust (KnownProxies, KnownNetworks). They are consumed, so the site's own pass later
+        // finds nothing more to do.
+        _forwarded.ApplyForwarders(context);
+        if (options.Value.RequireHost is { Length: > 0 } host && !HostMatches(context.Request.Host, host))
+        {
+            await next(context);
+            return;
+        }
+
+        var attempt = new Attempt();
+        try
+        {
+            await HandleAsync(context, attempt);
+        }
+        catch (Exception e) when (!(e is OperationCanceledException && context.RequestAborted.IsCancellationRequested))
+        {
+            // Answered here, never by error handling outside the module (the CMS UI's exception page, or its error page
+            // rendered as the editor), and never as the editor.
+            context.User = Nobody;
+            _logger.LogError(e, "Answering an assistant's preview link failed.");
+            audit.Preview(attempt.Link?.Version ?? "-", attempt.Link?.Language ?? "", attempt.Link?.UserName ?? "-", attempt.ClientId, $"failed: {e.GetType().Name}");
+            await FailAsync(context);
+        }
+        catch (OperationCanceledException)
+        {
+            audit.Preview(attempt.Link?.Version ?? "-", attempt.Link?.Language ?? "", attempt.Link?.UserName ?? "-", attempt.ClientId, "cancelled");
+            throw;
+        }
+        finally
+        {
+            context.User = Nobody;
+        }
+    }
+
+    /// <summary>The module's own 500; or, once the response has started (or can't), the connection cut.</summary>
+    private static async Task FailAsync(HttpContext context)
+    {
+        try
+        {
+            if (!context.Response.HasStarted)
+            {
+                await RespondAsync(context, StatusCodes.Status500InternalServerError, Failed);
+                return;
+            }
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            // A site's callback as the response starts failed again: nothing more can be sent.
+        }
+        context.Abort();
+    }
+
+    /// <summary>What is known of a request so far, for the audit if it fails.</summary>
+    private sealed class Attempt
+    {
+        public PreviewLink? Link { get; set; }
+
+        public string ClientId { get; set; } = "-";
+    }
+
+    private async Task HandleAsync(HttpContext context, Attempt attempt)
+    {
         var request = context.Request;
         if (!HttpMethods.IsGet(request.Method) && !HttpMethods.IsHead(request.Method))
         {
             await RespondAsync(context, StatusCodes.Status405MethodNotAllowed, "A preview link only answers GET and HEAD.");
             return;
         }
-        if (limiter.Check(OAuthRateLimiter.Preview, context) is { } slowDown)
-        {
-            Secure(context.Response);
-            await slowDown.ExecuteAsync(context);
-            return;
-        }
 
-        // A link the module made has no query: one with any (a preview token, epieditmode) isn't one of them.
-        if (request.QueryString.HasValue || links.Read(token) is not { } link)
+        // Read first, which is cheap: what isn't a link counts against the address, apart from the links themselves, so a
+        // flood of them from a shared address (an assistant provider's) can't use up anyone's window.
+        var link = Token(request, options.Value) is { } token ? links.Read(token) : null;
+        if (link is null || !PreviewLinks.IsFor(link, request.Host))
         {
-            audit.Preview("-", "", "-", "-", "refused: not a valid link");
+            if (limiter.Check(OAuthRateLimiter.InvalidPreview, context) is { } tooMany)
+            {
+                await SlowDownAsync(context, tooMany);
+                return;
+            }
+            audit.Preview(link?.Version ?? "-", link?.Language ?? "", link?.UserName ?? "-", "-", link is null ? "refused: not a valid link" : "refused: issued for another host");
             await RespondAsync(context, StatusCodes.Status404NotFound, NotValid);
             return;
         }
+        attempt.Link = link;
+        if (limiter.CheckKey(OAuthRateLimiter.Preview, context, link.GrantId, "Too many preview links opened for this connection; try again shortly.") is { } slowDown)
+        {
+            await SlowDownAsync(context, slowDown);
+            return;
+        }
+
         var grant = await cache.GetAsync(link.GrantId, context.RequestServices.GetRequiredService<IOAuthStore>(), context.RequestAborted);
         var now = time.GetUtcNow();
         if (grant is null || grant.Expires <= now || options.Value.ConnectionEnds(grant.Created) <= now
@@ -121,6 +203,7 @@ internal sealed class PreviewLinkMiddleware(
             await RespondAsync(context, StatusCodes.Status404NotFound, NotValid);
             return;
         }
+        attempt.ClientId = grant.ClientId;
 
         string? target;
         ClaimsPrincipal editor;
@@ -147,39 +230,25 @@ internal sealed class PreviewLinkMiddleware(
             return;
         }
 
-        // Only now, with the request the preview's own and its credentials gone, is it the editor's; and only until the
-        // preview is rendered, so that nothing outside the module (the CMS's own error handling, say) runs as them.
+        // Only now, with the request the preview's own and its credentials gone, is it the editor's; and only while the
+        // rest of the pipeline renders it (RenderAsync).
         context.User = editor;
-        string outcome;
-        try
-        {
-            outcome = await RenderAsync(context);
-        }
-        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
-        {
-            audit.Preview(link.Version, link.Language, link.UserName, grant.ClientId, "cancelled");
-            throw;
-        }
-        finally
-        {
-            context.User = new ClaimsPrincipal(new ClaimsIdentity());
-        }
-        audit.Preview(link.Version, link.Language, link.UserName, grant.ClientId, outcome);
+        audit.Preview(link.Version, link.Language, link.UserName, grant.ClientId, await RenderAsync(context));
     }
 
-    /// <summary>Whether the request is for a preview link, on the host the module answers on; <paramref name="token"/> is the payload.</summary>
-    private bool Handles(HttpRequest request, out string token)
+    /// <summary>
+    /// The payload of a link exactly as the module makes them: <c>{BasePath}/preview/{payload}</c>, in the module's own
+    /// spelling, one segment of base64url (<see cref="PreviewLinks.IsWellFormed"/>), and no query. Null for anything else
+    /// below that path, which is refused: another casing, more segments, a query (a preview token, <c>epieditmode</c>).
+    /// </summary>
+    internal static string? Token(HttpRequest request, OptiCliMcpOptions site)
     {
-        token = "";
-        var site = options.Value;
-        if (!request.Path.StartsWithSegments(PreviewLinks.Path(site), StringComparison.OrdinalIgnoreCase, out var rest)
-            || (site.RequireHost is { Length: > 0 } host && !HostMatches(request.Host, host)))
+        if (request.QueryString.HasValue || !request.Path.StartsWithSegments(PreviewLinks.Path(site), StringComparison.Ordinal, out var rest))
         {
-            return false;
+            return null;
         }
-        // One segment: a payload is base64url, so a link with more segments (or none) is no link at all.
-        token = rest.Value is { Length: > 1 } value ? value[1..] : "";
-        return true;
+        var token = rest.Value is { Length: > 1 } value ? value[1..] : "";
+        return PreviewLinks.IsWellFormed(token) ? token : null;
     }
 
     /// <summary>Whether <paramref name="actual"/> is <paramref name="required"/>, as endpoint routing's RequireHost matches: any port unless one is given.</summary>
@@ -187,6 +256,13 @@ internal sealed class PreviewLinkMiddleware(
     {
         var expected = new HostString(required);
         return string.Equals(actual.Host, expected.Host, StringComparison.OrdinalIgnoreCase) && (expected.Port is null || actual.Port == expected.Port);
+    }
+
+    private static async Task SlowDownAsync(HttpContext context, IResult tooMany)
+    {
+        StatusCodePages.Skip(context);
+        Secure(context.Response);
+        await tooMany.ExecuteAsync(context);
     }
 
     /// <summary>The editor, as the bearer handler and the site's authentication would make them, but not an MCP editor.</summary>
@@ -284,6 +360,8 @@ internal sealed class PreviewLinkMiddleware(
         finally
         {
             context.Features.Set(body);
+            // Rendered: nothing after this (the site's callbacks as the response starts, the copy) runs as the editor.
+            context.User = Nobody;
         }
 
         var status = response.StatusCode;

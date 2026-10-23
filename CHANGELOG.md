@@ -19,11 +19,14 @@ the assistant can look at the draft itself.
 - New option `AllowPreviewLinks` (off by default): the same results also have `assistantPreviewUrl`, a link of the
   assistant's own to that preview, which it opens without a sign-in to check how the draft looks, and
   `assistantPreviewExpires`. The link shows that one version, in its language, as the CMS's preview shows it to the
-  editor, and nothing else: GET only, no cookie, redirect or sign-in comes back, and it stops working after
-  `PreviewLinkLifetime` (10 minutes by default, at most an hour), when the connection is revoked or ends, or when the
-  editor can no longer read the version. It is signed by the module with the site's Data Protection keys and never
-  carries the CMS's preview token. `whoami` reports `allowPreviewLinks`, opened links are audited and rate limited
-  (`RateLimits.PreviewPerMinute`), and the instructions tell the assistant the link is for it alone.
+  editor, and nothing else: GET and HEAD only, on the host it was issued on, no cookie, redirect, sign-in or error page
+  comes back, and it stops working after `PreviewLinkLifetime` (10 minutes by default, at most an hour), when the
+  connection is revoked or ends, or when the editor can no longer read the version. The module changes nothing itself,
+  but the site's own code for the page runs as the editor, as in the CMS's preview. The link is signed by the module
+  with the site's Data Protection keys and never carries the CMS's preview token. `whoami` reports
+  `allowPreviewLinks`, opened links are audited and rate limited per connection (`RateLimits.PreviewPerMinute`, with
+  invalid ones per address, `RateLimits.InvalidPreviewPerAddressPerMinute`), and the instructions tell the assistant
+  the link is for it alone.
 
 ## 0.22.0 (22 October 2026)
 

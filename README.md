@@ -1295,7 +1295,8 @@ the proxy, and everyone shares one window.
 | `TokenPerAddressPerMinute` | 600 | token requests per address, whatever the client |
 | `RegisterPerMinute` | 10 | client registrations per address (clients with a metadata document, as Claude has, don't register) |
 | `AuthorizePerMinute` | 60 | the consent page and its post, per address (the editor's browser) |
-| `PreviewPerMinute` | 60 | opened preview links (`AllowPreviewLinks`), per address |
+| `PreviewPerMinute` | 60 | opened preview links (`AllowPreviewLinks`), per connection |
+| `InvalidPreviewPerAddressPerMinute` | 120 | requests for preview links that aren't valid (malformed, expired, for another host), per address |
 
 Besides the rate limit, registration stops at 5,000 registered apps that have no connection and no sign-in under way:
 `register` then answers 429 until the cleanup has deleted some. An app that registers and doesn't sign in within a day
@@ -1511,25 +1512,41 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
 - **The assistant's own preview links are opt-in** (`AllowPreviewLinks`, off by default). With it on, the same results
   also have `assistantPreviewUrl` (and `assistantPreviewExpires`): `{origin}{BasePath}/preview/{payload}`, on the host
   the editor connected the assistant to, which the assistant fetches itself to check how the draft looks. The payload
-  names the connection, the editor, the version and its language, signed and time-limited with the site's Data
-  Protection keys; it carries no CMS preview token and nothing that works anywhere else. The module renders the CMS's
-  preview of that one version inside the site, as the editor, for that one request: it answers GET and HEAD only,
-  takes the version from the payload alone (a link with another path or any query is refused), drops the request's
-  body and every header but `Host`, content negotiation and the forwarded headers (so its cookies and `Authorization`
-  too), and sends no cookie, no redirect, no sign-in challenge and no error page back (anything but a success is a plain
-  404, or 500 for an error), with `Cache-Control: no-store`, `X-Robots-Tag: noindex, nofollow` and
-  `Referrer-Policy: no-referrer`.
+  names the connection, the editor, the version, its language and the host the link was issued on, signed and
+  time-limited with the site's Data Protection keys; it carries no CMS preview token and nothing that works anywhere
+  else. The module renders the CMS's preview of that one version inside the site, as the editor, for that one request:
+  it answers GET and HEAD only, on the link's own host only, and takes the version from the payload alone. Only the
+  link exactly as the module gave it opens: that path in its casing, one segment of base64url (no other spelling of
+  the same bytes, no padding) and no query; anything else below `{BasePath}/preview` is refused. It drops the request's
+  body and every header but `Host`, `Accept`, `Accept-Encoding`, `Accept-Language`, `User-Agent` and the forwarded
+  headers (so its cookies and `Authorization` too), and sends no cookie, no redirect, no sign-in challenge and no error
+  page back (anything but a success is a plain 404, or 500 for an error or any failure), with `Cache-Control:
+  no-store`, `X-Robots-Tag: noindex, nofollow` and `Referrer-Policy: no-referrer`. The module itself changes nothing,
+  but the site's own code for that page runs as the editor, as when the editor previews the draft in the CMS: code that
+  writes something when a page is viewed does so in the editor's name.
   The link stops working after `PreviewLinkLifetime` (10 minutes), when the connection is revoked or ends, and when the
   editor can no longer read the version (with the roles of the connection's last refresh, as for every tool call).
   Until then, whoever has it sees that draft: the assistant, and anything that keeps the chat or the fetch, such as a
   transcript or a proxy's log. They see it as the editor sees it: a page type whose view shows something for the
-  signed-in user (their account, content filtered by their access, a visitor group by role) shows the editor's. So the server's instructions tell the assistant not to hand it to the user, who reviews
-  the draft through `editUrl` and `previewUrl`. Each opened link is audited (the version, the editor, the client and
-  the outcome; never the link). The module adds a middleware at the start of the site's pipeline for it (only with the
-  option on), since a preview needs routing and the site's own views after it. Call `AddOptiCliMcp()` after `AddCms()`
-  (as above) and after `AddCmsCloudPlatformSupport()` on DXP, so it comes after the CMS's first-request initialization
-  and the forwarded headers (which the rate limit and `RequireHost` need). A base path the site sets with
-  `UsePathBase()` isn't supported for these links (an IIS application's is).
+  signed-in user (their account, content filtered by their access, a visitor group by role) shows the editor's. That
+  includes the editor-only parts a site's layout adds for a signed-in editor, such as the CMS's quick navigator (with
+  links to the dashboard and the edit UI), the edit UI's communication script, a "Log out" link, or an antiforgery
+  token bound to the editor in a form. None of these works for anyone else (no cookie comes with the link, and none is
+  set), but they are in the HTML. So the server's instructions tell the assistant not to hand the link to the user, who
+  reviews the draft through `editUrl` and `previewUrl`. Each opened link is audited (the version, the editor, the
+  client and the outcome; never the link), and rate limited per connection (`RateLimits.PreviewPerMinute`); requests
+  that aren't a valid link have a window of their own per address (`RateLimits.InvalidPreviewPerAddressPerMinute`), so
+  that a flood of them from an assistant provider's shared addresses can't use up anyone's.
+  The module adds a middleware at the start of the site's pipeline for it (only with the option on), since a preview
+  needs routing and the site's own views after it. It applies the site's own forwarded headers settings
+  (`ForwardedHeadersOptions`, with their `KnownProxies` and `KnownNetworks`) to these requests first, so the rate limit,
+  `RequireHost` and the link's host see the client's address and host behind a proxy; the site's own
+  `UseForwardedHeaders()` later finds them already applied. That needs the settings in the services
+  (`services.Configure<ForwardedHeadersOptions>(...)`, or `ASPNETCORE_FORWARDEDHEADERS_ENABLED`), not only passed to
+  `UseForwardedHeaders(options)` in `Configure`, which the module can't see: there, behind a proxy that changes the host,
+  links answer 404. Call `AddOptiCliMcp()` after `AddCms()` (as above) and after `AddCmsCloudPlatformSupport()` on DXP,
+  so it comes after the CMS's first-request initialization. A base path the site sets with `UsePathBase()` isn't
+  supported for these links (an IIS application's is).
 - **Preview tokens never sign anyone in to the module.** A request with a CMS preview token (`preview_token` in the
   query, or an `Authorization: preview_token ...` header) is signed in as the editor the token was made for, by the
   CMS's own handler. The consent page and the connections page refuse such a request, so a preview link (the CMS UI

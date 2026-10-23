@@ -95,17 +95,19 @@ public sealed class OptiCliMcpOptions
     /// Whether write results and <c>get_content</c> give the assistant a link of its own to the draft
     /// (<c>assistantPreviewUrl</c>), which it can open without a sign-in to check how the draft looks. Off by default:
     /// the site owner opts in. The link shows one saved version of one page or block, in one language, as the CMS's
-    /// preview shows it to the editor, and nothing else: it is GET only, read-only, expires after
-    /// <see cref="PreviewLinkLifetime"/>, and stops working when the connection is revoked or ends, or the editor can no
-    /// longer read the version.
+    /// preview shows it to the editor, and nothing else: it answers GET and HEAD only, on the host it was issued for,
+    /// expires after <see cref="PreviewLinkLifetime"/>, and stops working when the connection is revoked or ends, or the
+    /// editor can no longer read the version.
     /// </summary>
     /// <remarks>
     /// The module signs the link itself, with the site's Data Protection keys (as its access tokens), and renders the
-    /// preview inside the site as the editor, for that one request: the request's cookies and credentials are dropped,
-    /// and no cookie, redirect or sign-in leaves it. It never uses the CMS's own preview token, which from CMS 12.22
-    /// signs whoever holds it in as the editor, on any request, for its few minutes. Whoever has the link (the assistant,
-    /// a transcript, a log) sees the draft until it expires. The link is on the host the editor connected the assistant
-    /// to, which must be one the assistant can reach.
+    /// preview inside the site as the editor, for that one request: the request's cookies, credentials and body are
+    /// dropped, and no cookie, redirect or sign-in leaves it. The module itself changes nothing, but the site's own code
+    /// for that page runs as the editor, as it does when the editor previews the draft in the CMS: code that writes
+    /// something when a page is viewed does so in the editor's name. It never uses the CMS's own preview token, which
+    /// from CMS 12.22 signs whoever holds it in as the editor, on any request, for its few minutes. Whoever has the link
+    /// (the assistant, a transcript, a log) sees the draft until it expires. The link is on the host the editor connected
+    /// the assistant to, which must be one the assistant can reach.
     /// </remarks>
     public bool AllowPreviewLinks { get; set; }
 
@@ -172,7 +174,7 @@ public sealed class OptiCliMcpOptions
             return "ConnectionLifetime can't be shorter than AccessTokenLifetime.";
         }
         if (RateLimits is null || RateLimits.RegisterPerMinute <= 0 || RateLimits.TokenPerMinute <= 0 || RateLimits.TokenPerAddressPerMinute <= 0 || RateLimits.AuthorizePerMinute <= 0
-            || RateLimits.PreviewPerMinute <= 0)
+            || RateLimits.PreviewPerMinute <= 0 || RateLimits.InvalidPreviewPerAddressPerMinute <= 0)
         {
             return "RateLimits: every limit must be positive.";
         }
@@ -217,6 +219,15 @@ public sealed class OptiCliMcpRateLimits
     /// <summary>Authorization requests (the consent page and its post) per IP address; these come from editors' browsers.</summary>
     public int AuthorizePerMinute { get; set; } = 60;
 
-    /// <summary>Opened preview links (<see cref="OptiCliMcpOptions.AllowPreviewLinks"/>) per IP address; each renders a page.</summary>
+    /// <summary>
+    /// Opened preview links (<see cref="OptiCliMcpOptions.AllowPreviewLinks"/>) per connection, whatever the address: each
+    /// renders a page. Per connection, because an assistant's fetches come from its provider's shared addresses.
+    /// </summary>
     public int PreviewPerMinute { get; set; } = 60;
+
+    /// <summary>
+    /// Requests for preview links that aren't valid (malformed, tampered with, expired, for another host) per IP address.
+    /// Counted apart from valid links, so that such requests from a shared address can't use up anyone's window.
+    /// </summary>
+    public int InvalidPreviewPerAddressPerMinute { get; set; } = 120;
 }

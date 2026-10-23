@@ -20,8 +20,11 @@ internal sealed record OAuthRateLimits
     /// <summary>Authorization requests (the page and the consent post), which may fetch a client metadata document.</summary>
     public int AuthorizePerMinute { get; init; } = 60;
 
-    /// <summary>Opened preview links, each a page rendered as the editor.</summary>
+    /// <summary>Opened preview links per connection, each a page rendered as the editor.</summary>
     public int PreviewPerMinute { get; init; } = 60;
+
+    /// <summary>Requests for preview links that aren't one (malformed, expired, tampered with) per address.</summary>
+    public int InvalidPreviewPerAddressPerMinute { get; init; } = 120;
 
     public TimeSpan Window { get; init; } = TimeSpan.FromMinutes(1);
 
@@ -32,6 +35,7 @@ internal sealed record OAuthRateLimits
         TokenPerAddressPerMinute = limits.TokenPerAddressPerMinute,
         AuthorizePerMinute = limits.AuthorizePerMinute,
         PreviewPerMinute = limits.PreviewPerMinute,
+        InvalidPreviewPerAddressPerMinute = limits.InvalidPreviewPerAddressPerMinute,
     };
 }
 
@@ -48,6 +52,7 @@ internal sealed class OAuthRateLimiter : IDisposable
     public const string TokenClient = "token-client";
     public const string Authorize = "authorize";
     public const string Preview = "preview";
+    public const string InvalidPreview = "preview-invalid";
 
     private readonly Dictionary<string, PartitionedRateLimiter<string>> _limiters;
     private readonly TimeSpan _window;
@@ -62,6 +67,7 @@ internal sealed class OAuthRateLimiter : IDisposable
             [TokenClient] = Create(limits.TokenPerMinute, limits.Window),
             [Authorize] = Create(limits.AuthorizePerMinute, limits.Window),
             [Preview] = Create(limits.PreviewPerMinute, limits.Window),
+            [InvalidPreview] = Create(limits.InvalidPreviewPerAddressPerMinute, limits.Window),
         };
     }
 
@@ -72,6 +78,16 @@ internal sealed class OAuthRateLimiter : IDisposable
         var address = AddressKey(context.Connection.RemoteIpAddress);
         // A client id is at most a URL's length (RedirectUris.MaxLength) before it is refused anyway; longer ones share a key.
         var key = client is null ? address : $"{address} {(client.Length <= RedirectUris.MaxLength ? client : "(too long)")}";
+        return Acquire(endpoint, key, context,
+            client is null ? "Too many requests from this address; try again shortly." : "Too many token requests for this client; try again shortly.");
+    }
+
+    /// <summary>Counts a request against <paramref name="key"/> alone (a connection, say), whatever its address.</summary>
+    /// <returns>Null when the request may go on; a 429 with <c>Retry-After</c> when the key used up its window.</returns>
+    public IResult? CheckKey(string endpoint, HttpContext context, string key, string description) => Acquire(endpoint, key, context, description);
+
+    private IResult? Acquire(string endpoint, string key, HttpContext context, string description)
+    {
         using var lease = _limiters[endpoint].AttemptAcquire(key);
         if (lease.IsAcquired)
         {
@@ -84,7 +100,7 @@ internal sealed class OAuthRateLimiter : IDisposable
             new Dictionary<string, string>
             {
                 ["error"] = "slow_down",
-                ["error_description"] = client is null ? "Too many requests from this address; try again shortly." : "Too many token requests for this client; try again shortly.",
+                ["error_description"] = description,
             },
             OAuthJson.Options,
             statusCode: StatusCodes.Status429TooManyRequests);
