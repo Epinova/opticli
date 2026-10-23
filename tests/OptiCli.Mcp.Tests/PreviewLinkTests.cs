@@ -367,10 +367,11 @@ public sealed class PreviewLinkTests
     }
 
     [Fact]
-    public async Task Off_by_default_the_path_is_the_sites_like_any_other()
+    public async Task Turned_off_the_path_is_the_sites_like_any_other()
     {
+        // On by default; false turns it off.
+        Assert.True(new OptiCliMcpOptions().AllowPreviewLinks);
         await using var preview = await PreviewSite.StartAsync(o => o.AllowPreviewLinks = false);
-        Assert.False(new OptiCliMcpOptions().AllowPreviewLinks);
 
         // Even a link the module would have made is just a path the site has nothing on.
         using var response = await preview.Site.Client().GetAsync(await preview.LinkAsync());
@@ -696,10 +697,10 @@ public sealed class PreviewLinkTests
 
         await using var site = await TestSite.StartAsync(configuration: new()
         {
-            ["OptiCli:Mcp:AllowPreviewLinks"] = "true",
+            ["OptiCli:Mcp:AllowPreviewLinks"] = "false",
             ["OptiCli:Mcp:PreviewLinkLifetime"] = "00:05:00",
         });
-        Assert.Equal((true, TimeSpan.FromMinutes(5)), (site.Options.AllowPreviewLinks, site.Options.PreviewLinkLifetime));
+        Assert.Equal((false, TimeSpan.FromMinutes(5)), (site.Options.AllowPreviewLinks, site.Options.PreviewLinkLifetime));
     }
 
     private static PreviewLinks Links(TimeProvider time, IDataProtectionProvider? protection = null) =>
@@ -840,11 +841,8 @@ public sealed class PreviewLinkTests
             var downstream = new Downstream();
             var outer = new Outer(outerErrorPage, earlierForwardedHeaders);
             var site = await TestSite.StartAsync(
-                o =>
-                {
-                    o.AllowPreviewLinks = true;
-                    configure?.Invoke(o);
-                },
+                // Preview links are on by default.
+                configure,
                 limits: limits,
                 services: s =>
                 {

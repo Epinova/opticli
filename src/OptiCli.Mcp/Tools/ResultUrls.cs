@@ -37,7 +37,7 @@ namespace OptiCli.Mcp.Tools;
 /// longer exists (a discarded one), and for media and folders, which have no page of their own to preview.
 /// </para>
 /// <para>
-/// Where the site allows it (<see cref="OptiCliMcpOptions.AllowPreviewLinks"/>), the same version also gets
+/// Unless the site turned it off (<see cref="OptiCliMcpOptions.AllowPreviewLinks"/>), the same version also gets
 /// <c>assistantPreviewUrl</c>: a short-lived link of the assistant's own, which opens without a sign-in
 /// (<see cref="PreviewLinks"/>), and <c>assistantPreviewExpires</c>, when it stops working.
 /// </para>
@@ -55,7 +55,7 @@ internal static class ResultUrls
     public const string AssistantPreviewExpires = "assistantPreviewExpires";
 
     /// <summary>What the tool descriptions say about <see cref="AssistantPreview"/>, whether or not the site allows it.</summary>
-    public const string AssistantPreviewNote = "When this site allows it (whoami: allowPreviewLinks), assistantPreviewUrl is a short-lived link to the same preview that you may fetch yourself, without a sign-in.";
+    public const string AssistantPreviewNote = "Unless this site turned them off (whoami: allowPreviewLinks), assistantPreviewUrl is a short-lived link to the same preview that you may fetch yourself, without a sign-in.";
 
     /// <summary>
     /// <paramref name="result"/> as JSON, with <see cref="Public"/>, <see cref="Edit"/> and (with
@@ -153,7 +153,7 @@ internal static class ResultUrls
     /// <summary>
     /// Adds the assistant's own link to the version (<see cref="AssistantPreview"/>, <see cref="PreviewLinks"/>) and when
     /// it expires (<see cref="AssistantPreviewExpires"/>, ISO 8601 UTC), beside its <see cref="Preview"/>, when the site
-    /// allows preview links: for the editor and connection of the MCP request.
+    /// allows preview links (the default): for the editor and connection of the MCP request.
     /// </summary>
     private static void AddAssistantPreview(JsonObject json, string version, string? language, HttpContext context)
     {

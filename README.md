@@ -1267,7 +1267,7 @@ which wins. In configuration, an `AllowedRoles` or `AllowedRedirectHosts` list r
 | `RefreshTokenReuseGrace` | 1 minute | how long after a refresh the refresh token it replaced, sent again by the same client, is only refused; later (or from another client) it revokes the connection |
 | `AllowPublish` | `false` | let assistants publish, unpublish and schedule publishing (the `content:publish` scope) |
 | `AllowDelete` | `false` | let assistants delete content, always to the recycle bin |
-| `AllowPreviewLinks` | `false` | give the assistant a short-lived link of its own to a draft's preview, which it can open without a sign-in (`assistantPreviewUrl`, see below) |
+| `AllowPreviewLinks` | `true` | give the assistant a short-lived link of its own to a draft's preview, which it can open without a sign-in (`assistantPreviewUrl`, see below); `false` turns it off |
 | `PreviewLinkLifetime` | 10 minutes | how long such a link works (1 minute to 1 hour) |
 | `MaxUploadBytes` | 10 MB | the largest media file an assistant may upload (at most 50 MB); the CMS UI's own upload limit applies too, if it is lower (see below) |
 | `RateLimits` | see below | requests a minute the OAuth endpoints take |
@@ -1317,7 +1317,7 @@ With the default `BasePath`, on the site's own host:
 | `/.well-known/oauth-authorization-server/episerver/opticli` | authorization server metadata (RFC 8414), also as `/.well-known/openid-configuration/episerver/opticli` and `/episerver/opticli/.well-known/openid-configuration` |
 | `/episerver/opticli/oauth/register`, `/oauth/authorize`, `/oauth/token` | client registration, sign-in and consent, tokens |
 | `/episerver/opticli/connections` | the editor's connections, with Revoke |
-| `/episerver/opticli/preview/{payload}` | the assistant's preview links, only with `AllowPreviewLinks` on |
+| `/episerver/opticli/preview/{payload}` | the assistant's preview links, unless `AllowPreviewLinks` is turned off |
 
 The site's own `/.well-known` documents at the root are left alone. A request to the MCP endpoint without a token
 gets a 401 that points to the metadata, never a redirect to the login page.
@@ -1509,9 +1509,12 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   nobody the draft. The CMS can add one (CMS 12.21 and later, `UrlResolverArguments.AppendPreviewToken`), but such a
   token isn't a link to one draft: it signs whoever holds it in as the editor, for five minutes, and from CMS 12.22 (and
   on CMS 13) on any request to the site, not only the content it was made for. The module never makes one.
-- **The assistant's own preview links are opt-in** (`AllowPreviewLinks`, off by default). With it on, the same results
-  also have `assistantPreviewUrl` (and `assistantPreviewExpires`): `{origin}{BasePath}/preview/{payload}`, on the host
-  the editor connected the assistant to, which the assistant fetches itself to check how the draft looks. The payload
+- **The assistant's own preview links are on by default** (`AllowPreviewLinks`; `false` turns them off). The page
+  renders as the editor, so what an editor gets and visitors don't (navigation, blocks, user-specific output) reaches
+  whoever holds the link for its lifetime, and the site's own code for that page runs in the editor's name: a site
+  that doesn't want that turns the option off. With it on, the same results also have `assistantPreviewUrl` (and
+  `assistantPreviewExpires`): `{origin}{BasePath}/preview/{payload}`, on the host the editor connected the assistant
+  to, which the assistant fetches itself to check how the draft looks. The payload
   names the connection, the editor, the version, its language and the host the link was issued on, signed and
   time-limited with the site's Data Protection keys; it carries no CMS preview token and nothing that works anywhere
   else. The module renders the CMS's preview of that one version inside the site, as the editor, for that one request:
@@ -1769,7 +1772,7 @@ role gate and CIMD; the module's 401 untouched by the site's error pages, and th
 the module; that hidden content is the same `not_found` as missing content, also when it is named in a reference or
 rich text, and that a search doesn't count it; return addresses only on Claude's hosts or loopback, and metadata that
 isn't cached; drafts in the editor's name, publish refused without Publish rights, approval sequences, `baseVersion`
-conflicts, uploads, images shown (a large one scaled down by the site's image service), `editUrl`, `previewUrl` (a draft shown to the editor signed in, and to nobody else), no `assistantPreviewUrl` and no preview path where the site doesn't allow them, and `resolve_url`; review requests without publishing (none where no sequence applies),
+conflicts, uploads, images shown (a large one scaled down by the site's image service), `editUrl`, `previewUrl` (a draft shown to the editor signed in, and to nobody else), the assistant's preview links (on the default instance; none, and no preview path, where they are turned off), and `resolve_url`; review requests without publishing (none where no sequence applies),
 content type access rights, restores refused, a branch not published before its master, `list_children` paging; script
 in rich text and links refused, properties the edit UI hides or locks (also by an editor descriptor, or a tab only
 administrators see) left out and refused, a language only administrators may edit refused to an editor, live content
@@ -1805,14 +1808,16 @@ OPTICLI_MCP_IT_NO_PUBLISH_URL=http://127.0.0.1:5181 OPTICLI_MCP_IT_URL=... OPTIC
 tests/fixtures/mcp/serve.sh path/to/AlloyMcp --port 5181 --stop
 ```
 
-The tests of the assistant's preview links (a draft's link opened with no cookie, refused with another path, a query
-or another method, still the version after publishing, gone in the recycle bin, after a revocation and once the editor
-can't read the version, and the CMS's redirect to its login never passed on) need a third instance, started with
-`OptiCli__Mcp__AllowPreviewLinks=true` (`serve.sh --preview-links`), and `OPTICLI_MCP_IT_PREVIEW_LINKS_URL`:
+The assistant's preview links are on by default, so the default instance runs their tests (a draft's link opened
+with no cookie, refused with another path, a query, another spelling, another host or another method, still the
+version after publishing, gone in the recycle bin, after a revocation and once the editor can't read the version, and
+the CMS's redirect to its login never passed on). The test for a site that turned them off (no link, no preview path)
+needs a third instance, started with `OptiCli__Mcp__AllowPreviewLinks=false` (`serve.sh --no-preview-links`), and
+`OPTICLI_MCP_IT_NO_PREVIEW_LINKS_URL`:
 
 ```sh
-tests/fixtures/mcp/serve.sh path/to/AlloyMcp --port 5182 --preview-links
-OPTICLI_MCP_IT_PREVIEW_LINKS_URL=http://127.0.0.1:5182 OPTICLI_MCP_IT_URL=... OPTICLI_MCP_IT_USERS=... dotnet test tests/OptiCli.Mcp.Integration
+tests/fixtures/mcp/serve.sh path/to/AlloyMcp --port 5182 --no-preview-links
+OPTICLI_MCP_IT_NO_PREVIEW_LINKS_URL=http://127.0.0.1:5182 OPTICLI_MCP_IT_URL=... OPTICLI_MCP_IT_USERS=... dotnet test tests/OptiCli.Mcp.Integration
 tests/fixtures/mcp/serve.sh path/to/AlloyMcp --port 5182 --stop
 ```
 

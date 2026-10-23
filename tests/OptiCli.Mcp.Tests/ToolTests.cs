@@ -86,9 +86,9 @@ public sealed class ToolTests
     }
 
     [Fact]
-    public async Task The_assistant_is_told_about_its_own_preview_links_only_where_the_site_allows_them()
+    public async Task The_assistant_is_told_about_its_own_preview_links_unless_the_site_turned_them_off()
     {
-        await using var site = await TestSite.StartAsync();
+        await using var site = await TestSite.StartAsync(o => o.AllowPreviewLinks = false);
         await using var client = await Connect(site);
 
         Assert.DoesNotContain("fetch assistantPreviewUrl", client.ServerInstructions);
@@ -101,7 +101,14 @@ public sealed class ToolTests
             name => Assert.Contains("assistantPreviewUrl", tools[name]!));
         Assert.All(new[] { "get_content", "create_content" }, name => Assert.Contains("whoami: allowPreviewLinks", tools[name]!));
 
-        await using var allowing = await TestSite.StartAsync(o => (o.AllowPreviewLinks, o.PreviewLinkLifetime) = (true, TimeSpan.FromMinutes(5)));
+        // On by default.
+        await using var byDefault = await TestSite.StartAsync();
+        await using var defaultClient = await Connect(byDefault);
+        Assert.Contains("fetch assistantPreviewUrl", defaultClient.ServerInstructions);
+        Assert.Contains("for 10 minutes", defaultClient.ServerInstructions);
+        Assert.Equal(600, (await WhoAmISite(defaultClient)).GetProperty("previewLinkLifetimeSeconds").GetInt32());
+
+        await using var allowing = await TestSite.StartAsync(o => o.PreviewLinkLifetime = TimeSpan.FromMinutes(5));
         await using var allowed = await Connect(allowing);
         var instructions = allowed.ServerInstructions!;
         Assert.Contains("fetch assistantPreviewUrl", instructions);

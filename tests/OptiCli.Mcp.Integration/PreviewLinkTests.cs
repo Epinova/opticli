@@ -6,10 +6,10 @@ using OptiCli.Mcp.Integration.Support;
 namespace OptiCli.Mcp.Integration;
 
 /// <summary>
-/// The assistant's own preview links (<c>AllowPreviewLinks</c>): on the third configuration (serve.sh
-/// <c>--preview-links</c>), a draft's link opens for a client with no cookie and no header, shows that one version and
-/// nothing else, and stops working when the connection does or the editor can no longer read the version; on the
-/// default one, off by default, there is no such link and no such path. Never the CMS's preview token, in either.
+/// The assistant's own preview links (<c>AllowPreviewLinks</c>, on by default): a draft's link opens for a client with
+/// no cookie and no header, shows that one version and nothing else, and stops working when the connection does or the
+/// editor can no longer read the version. On the third configuration, with them turned off (serve.sh
+/// <c>--no-preview-links</c>), there is no such link and no such path. Never the CMS's preview token, in either.
 /// </summary>
 [Collection(McpSiteCollection.Name)]
 public sealed class PreviewLinkTests(SharedSessions sessions)
@@ -21,10 +21,10 @@ public sealed class PreviewLinkTests(SharedSessions sessions)
     /// <summary>What an assistant's web fetch is: no cookies, no redirects followed.</summary>
     private static HttpClient Anonymous() => new(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
 
-    [PreviewLinksSiteFact]
+    [McpSiteFact]
     public async Task A_drafts_link_opens_without_a_sign_in_and_shows_that_version_and_nothing_else()
     {
-        var site = McpSiteSettings.PreviewLinksUrl!;
+        var site = McpSiteSettings.Url!;
         await using var editor = await McpSession.ConnectAsync(TestUsers.Editor, new SessionOptions { Site = site });
         var me = (await editor.OkAsync("whoami")).GetProperty("site");
         Assert.True(me.GetProperty("allowPreviewLinks").GetBoolean());
@@ -131,10 +131,10 @@ public sealed class PreviewLinkTests(SharedSessions sessions)
         }
     }
 
-    [PreviewLinksSiteFact]
+    [McpSiteFact]
     public async Task A_block_draft_and_a_translation_have_links_of_their_own()
     {
-        var site = McpSiteSettings.PreviewLinksUrl!;
+        var site = McpSiteSettings.Url!;
         await using var editor = await McpSession.ConnectAsync(TestUsers.Editor, new SessionOptions { Site = site });
         var start = WritingTests.Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
         var name = ScratchName();
@@ -167,10 +167,10 @@ public sealed class PreviewLinkTests(SharedSessions sessions)
         }
     }
 
-    [PreviewLinksSiteFact]
+    [McpSiteFact]
     public async Task A_link_stops_working_when_its_connection_is_revoked()
     {
-        var site = McpSiteSettings.PreviewLinksUrl!;
+        var site = McpSiteSettings.Url!;
         var editor = await McpSession.ConnectAsync(TestUsers.Editor, new SessionOptions { Site = site });
         var start = WritingTests.Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
         var created = await editor.OkAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = start });
@@ -198,11 +198,11 @@ public sealed class PreviewLinkTests(SharedSessions sessions)
         }
     }
 
-    [PreviewLinksSiteFact]
+    [McpSiteFact]
     public async Task A_link_stops_working_when_the_editor_can_no_longer_read_the_version()
     {
         // The administrator may read the hidden page through WebAdmins; with only WebEditors left, they may not.
-        var site = McpSiteSettings.PreviewLinksUrl!;
+        var site = McpSiteSettings.Url!;
         await using var admin = await McpSession.ConnectAsync(TestUsers.Admin, new SessionOptions { Site = site });
         var hidden = WritingTests.Id(await admin.OkAsync("get_content", new { reference = TestUsers.HiddenPage }));
         var draft = await admin.OkAsync("update_content", new { reference = hidden, name = $"Alloy Meet (draft {Guid.NewGuid():N})" });
@@ -236,12 +236,12 @@ public sealed class PreviewLinkTests(SharedSessions sessions)
         }
     }
 
-    [PreviewLinksSiteFact]
+    [McpSiteFact]
     public async Task A_preview_the_cms_refuses_the_editor_is_a_plain_not_found_never_a_redirect()
     {
         // A product editor may read and edit the hidden page, but isn't one of the CMS's preview roles (CmsEditors):
         // the CMS sends them to its login, which a preview link never passes on.
-        var site = McpSiteSettings.PreviewLinksUrl!;
+        var site = McpSiteSettings.Url!;
         await using var product = await McpSession.ConnectAsync(TestUsers.Product, new SessionOptions { Site = site });
         var hidden = WritingTests.Id(await product.OkAsync("get_content", new { reference = TestUsers.HiddenPage }));
         var draft = await product.OkAsync("update_content", new { reference = hidden, name = $"Alloy Meet (draft {Guid.NewGuid():N})" });
@@ -262,10 +262,11 @@ public sealed class PreviewLinkTests(SharedSessions sessions)
         }
     }
 
-    [McpSiteFact]
-    public async Task A_site_that_does_not_allow_preview_links_gives_none_and_has_no_such_path()
+    [NoPreviewLinksSiteFact]
+    public async Task A_site_that_turned_preview_links_off_gives_none_and_has_no_such_path()
     {
-        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var site = McpSiteSettings.NoPreviewLinksUrl!;
+        await using var editor = await McpSession.ConnectAsync(TestUsers.Editor, new SessionOptions { Site = site });
         var me = (await editor.OkAsync("whoami")).GetProperty("site");
         Assert.False(me.GetProperty("allowPreviewLinks").GetBoolean());
         Assert.False(me.TryGetProperty("previewLinkLifetimeSeconds", out _));
@@ -283,14 +284,14 @@ public sealed class PreviewLinkTests(SharedSessions sessions)
 
             // The path is the site's like any other: its own 404 page, not the module's answer.
             using var anonymous = Anonymous();
-            using var response = await anonymous.GetAsync(new Uri(McpSiteSettings.Url!, "episerver/opticli/preview/x"));
+            using var response = await anonymous.GetAsync(new Uri(site, "episerver/opticli/preview/x"));
             Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
             Assert.DoesNotContain(NotValid, await response.Content.ReadAsStringAsync());
             Assert.False(response.Headers.Contains("X-Robots-Tag"));
         }
         finally
         {
-            await WritingTests.DeleteAsync(editor, page);
+            await editor.OkAsync("delete_content", new { reference = page });
         }
     }
 }

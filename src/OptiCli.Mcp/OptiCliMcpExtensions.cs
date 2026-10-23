@@ -57,7 +57,7 @@ public static class OptiCliMcpExtensions
         services.AddSingleton<TokenService>();
         services.AddSingleton<OAuthMaintenance>();
         services.AddSingleton<McpAudit>();
-        // The assistant's preview links: the middleware is only added when the site allows them (PreviewLinkStartupFilter).
+        // The assistant's preview links: the middleware is added unless the site turned them off (PreviewLinkStartupFilter).
         services.AddSingleton<PreviewLinks>();
         services.TryAddScoped<IPreviewVersions, CmsPreviewVersions>();
         services.AddSingleton<IStartupFilter, PreviewLinkStartupFilter>();

@@ -18,15 +18,16 @@ internal static class McpSiteSettings
     public const string NoPublishUrlVariable = "OPTICLI_MCP_IT_NO_PUBLISH_URL";
 
     /// <summary>
-    /// Optional: the same site started a third time with <c>--preview-links</c> (<c>OptiCli__Mcp__AllowPreviewLinks=true</c>).
+    /// Optional: the same site started a third time with <c>--no-preview-links</c>
+    /// (<c>OptiCli__Mcp__AllowPreviewLinks=false</c>).
     /// </summary>
-    public const string PreviewLinksUrlVariable = "OPTICLI_MCP_IT_PREVIEW_LINKS_URL";
+    public const string NoPreviewLinksUrlVariable = "OPTICLI_MCP_IT_NO_PREVIEW_LINKS_URL";
 
     public static Uri? Url => Origin(UrlVariable);
 
     public static Uri? NoPublishUrl => Origin(NoPublishUrlVariable);
 
-    public static Uri? PreviewLinksUrl => Origin(PreviewLinksUrlVariable);
+    public static Uri? NoPreviewLinksUrl => Origin(NoPreviewLinksUrlVariable);
 
     public static string? UsersFile => Variable(UsersVariable);
 
@@ -113,14 +114,14 @@ public sealed class NoPublishSiteFactAttribute : FactAttribute
     }
 }
 
-/// <summary>A fact for the third configuration, preview links on: it also needs <see cref="McpSiteSettings.PreviewLinksUrlVariable"/>.</summary>
-public sealed class PreviewLinksSiteFactAttribute : FactAttribute
+/// <summary>A fact for the third configuration, preview links off: it also needs <see cref="McpSiteSettings.NoPreviewLinksUrlVariable"/>.</summary>
+public sealed class NoPreviewLinksSiteFactAttribute : FactAttribute
 {
-    public PreviewLinksSiteFactAttribute()
+    public NoPreviewLinksSiteFactAttribute()
     {
-        if (McpSiteSettings.PreviewLinksUrl is null || McpSiteSettings.UsersFile is null)
+        if (McpSiteSettings.NoPreviewLinksUrl is null || McpSiteSettings.UsersFile is null)
         {
-            Skip = $"Needs the MCP test site started with preview links on (tests/fixtures/mcp/serve.sh <site> --port 5182 --preview-links): set {McpSiteSettings.PreviewLinksUrlVariable} and {McpSiteSettings.UsersVariable}.";
+            Skip = $"Needs the MCP test site started with preview links off (tests/fixtures/mcp/serve.sh <site> --port 5182 --no-preview-links): set {McpSiteSettings.NoPreviewLinksUrlVariable} and {McpSiteSettings.UsersVariable}.";
         }
     }
 }

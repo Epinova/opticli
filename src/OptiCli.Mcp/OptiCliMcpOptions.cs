@@ -93,8 +93,9 @@ public sealed class OptiCliMcpOptions
 
     /// <summary>
     /// Whether write results and <c>get_content</c> give the assistant a link of its own to the draft
-    /// (<c>assistantPreviewUrl</c>), which it can open without a sign-in to check how the draft looks. Off by default:
-    /// the site owner opts in. The link shows one saved version of one page or block, in one language, as the CMS's
+    /// (<c>assistantPreviewUrl</c>), which it can open without a sign-in to check how the draft looks. On by default;
+    /// <c>false</c> turns it off: results then have no such link, and the module answers no preview path (it is the
+    /// site's like any other). The link shows one saved version of one page or block, in one language, as the CMS's
     /// preview shows it to the editor, and nothing else: it answers GET and HEAD only, on the host it was issued for,
     /// expires after <see cref="PreviewLinkLifetime"/>, and stops working when the connection is revoked or ends, or the
     /// editor can no longer read the version.
@@ -108,8 +109,13 @@ public sealed class OptiCliMcpOptions
     /// from CMS 12.22 signs whoever holds it in as the editor, on any request, for its few minutes. Whoever has the link
     /// (the assistant, a transcript, a log) sees the draft until it expires. The link is on the host the editor connected
     /// the assistant to, which must be one the assistant can reach.
+    /// <para>
+    /// A site turns it off when that is more than it wants to give away: the page renders as the editor, so the
+    /// navigation, blocks and user-specific output an editor gets (and visitors don't) reach whoever holds the link for
+    /// its lifetime, and the site's own code for that page runs in the editor's name.
+    /// </para>
     /// </remarks>
-    public bool AllowPreviewLinks { get; set; }
+    public bool AllowPreviewLinks { get; set; } = true;
 
     /// <summary>How long an assistant's preview link (<see cref="AllowPreviewLinks"/>) works: 10 minutes by default, 1 minute to 1 hour.</summary>
     public TimeSpan PreviewLinkLifetime { get; set; } = TimeSpan.FromMinutes(10);

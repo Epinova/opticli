@@ -2,15 +2,15 @@
 # Starts (or stops) the MCP test site that setup.sh built, on a loopback port, in Development, and waits until the
 # MCP module answers. The site runs in the background; its output goes to App_Data/mcp-site-<port>.log.
 #
-#   serve.sh <site-dir> [--port <port>] [--no-publish] [--preview-links] [--stop]
+#   serve.sh <site-dir> [--port <port>] [--no-publish] [--no-preview-links] [--stop]
 #
-# --port           default 5180 (MCP_PORT)
-# --no-publish     start with OptiCli__Mcp__AllowPublish=false and OptiCli__Mcp__AllowDelete=false (the module's
-#                  defaults): the second configuration the E2E tests check, usually on another port beside the default
-#                  one (all use the same database)
-# --preview-links  start with OptiCli__Mcp__AllowPreviewLinks=true: the third configuration, where results carry the
-#                  assistant's own preview link, usually on a third port
-# --stop           stop the instance on that port
+# --port              default 5180 (MCP_PORT)
+# --no-publish        start with OptiCli__Mcp__AllowPublish=false and OptiCli__Mcp__AllowDelete=false (the module's
+#                     defaults for publishing and deleting): the second configuration the E2E tests check, usually on
+#                     another port beside the default one (all use the same database)
+# --no-preview-links  start with OptiCli__Mcp__AllowPreviewLinks=false (the assistant's preview links, on by default,
+#                     turned off): the third configuration, usually on a third port
+# --stop              stop the instance on that port
 # Other OptiCli__Mcp__* settings in the environment (e.g. OptiCli__Mcp__AccessTokenLifetime=00:00:30) are passed on.
 set -euo pipefail
 
@@ -23,12 +23,12 @@ shift
 PORT=${MCP_PORT:-5180}
 STOP=0
 NO_PUBLISH=0
-PREVIEW_LINKS=0
+NO_PREVIEW_LINKS=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --port) PORT=$2; shift 2 ;;
     --no-publish) NO_PUBLISH=1; shift ;;
-    --preview-links) PREVIEW_LINKS=1; shift ;;
+    --no-preview-links) NO_PREVIEW_LINKS=1; shift ;;
     --stop) STOP=1; shift ;;
     *) echo "Unknown option $1" >&2; exit 1 ;;
   esac
@@ -78,8 +78,8 @@ settings=()
 if [ "$NO_PUBLISH" = 1 ]; then
   settings+=("OptiCli__Mcp__AllowPublish=false" "OptiCli__Mcp__AllowDelete=false")
 fi
-if [ "$PREVIEW_LINKS" = 1 ]; then
-  settings+=("OptiCli__Mcp__AllowPreviewLinks=true")
+if [ "$NO_PREVIEW_LINKS" = 1 ]; then
+  settings+=("OptiCli__Mcp__AllowPreviewLinks=false")
 fi
 cd "$SITE"
 # setsid: the site outlives this shell (and the container session that ran it).

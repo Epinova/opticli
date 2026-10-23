@@ -16,9 +16,10 @@ the assistant can look at the draft itself.
 - `previewUrl` needs the editor's sign-in to the CMS, as `editUrl` does: it carries no preview token, so a link in a
   chat transcript shows nobody the draft. The server's instructions and the tool descriptions say so, and tell the
   assistant to give the links to the user rather than open them.
-- New option `AllowPreviewLinks` (off by default): the same results also have `assistantPreviewUrl`, a link of the
-  assistant's own to that preview, which it opens without a sign-in to check how the draft looks, and
-  `assistantPreviewExpires`. The link shows that one version, in its language, as the CMS's preview shows it to the
+- The same results also have `assistantPreviewUrl`, a link of the assistant's own to that preview, which it opens
+  without a sign-in to check how the draft looks, and `assistantPreviewExpires`. On by default; `AllowPreviewLinks:
+  false` turns it off, for a site that doesn't want the page as the editor sees it (editor-only navigation, blocks and
+  user-specific output) to reach whoever holds the link for its lifetime. The link shows that one version, in its language, as the CMS's preview shows it to the
   editor, and nothing else: GET and HEAD only, on the host it was issued on, no cookie, redirect, sign-in or error page
   comes back, and it stops working after `PreviewLinkLifetime` (10 minutes by default, at most an hour), when the
   connection is revoked or ends, or when the editor can no longer read the version. The module changes nothing itself,

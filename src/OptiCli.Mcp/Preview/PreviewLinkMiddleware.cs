@@ -16,10 +16,10 @@ using OptiCli.Mcp.Tools;
 namespace OptiCli.Mcp.Preview;
 
 /// <summary>
-/// Puts <see cref="PreviewLinkMiddleware"/> first in the site's pipeline when the site allows preview links. A preview
-/// needs everything after it (routing, the CMS's preview, the site's controllers and views), which the module's own
-/// endpoints, mapped after <c>MapContent()</c>, can't give it. With the option off, nothing is added, and the path is
-/// the site's like any other.
+/// Puts <see cref="PreviewLinkMiddleware"/> first in the site's pipeline, unless the site turned preview links off. A
+/// preview needs everything after it (routing, the CMS's preview, the site's controllers and views), which the module's
+/// own endpoints, mapped after <c>MapContent()</c>, can't give it. With the option off, nothing is added, and the path
+/// is the site's like any other.
 /// </summary>
 internal sealed class PreviewLinkStartupFilter : IStartupFilter
 {
