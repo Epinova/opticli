@@ -1548,14 +1548,10 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   only passed to `UseForwardedHeaders(options)` in `Configure`, which the module can't see: there, behind a proxy that
   changes the host, links answer 404. The module also leaves them alone when a proxy sends an `X-Original-Host` (or
   `-For`, `-Proto`) header of its own, as if they had been applied already: behind such a proxy, apply them before the
-  module (`ASPNETCORE_FORWARDEDHEADERS_ENABLED` or a startup filter). Call `AddOptiCliMcp()` after `AddCms()` (as above), so the module comes after the
-  CMS's first-request initialization, and after `AddCmsCloudPlatformSupport()` on DXP, so it comes after its forwarded
-  headers. A base path the site sets with `UsePathBase()` isn't supported for these links (an IIS application's is).
-- **Preview tokens never sign anyone in to the module.** A request with a CMS preview token (`preview_token` in the
-  query, or an `Authorization: preview_token ...` header) is signed in as the editor the token was made for, by the
-  CMS's own handler. The consent page and the connections page refuse such a request, so a preview link (the CMS UI
-  makes them too) can't connect an assistant as the editor or revoke their connections. The MCP endpoint takes only
-  its own access tokens.
+  module (`ASPNETCORE_FORWARDEDHEADERS_ENABLED` or a startup filter). Call `AddOptiCliMcp()` after `AddCms()` (as
+  above), so the module comes after the CMS's first-request initialization, and after `AddCmsCloudPlatformSupport()` on
+  DXP, so it comes after its forwarded headers. A base path the site sets with `UsePathBase()` isn't supported for these
+  links (an IIS application's is).
 
 ### Error pages and security headers
 
