@@ -104,7 +104,7 @@ When stdout is redirected, every command prints a single JSON line:
 
 ```json
 {"ok":true,"data":{"ref":"123","type":"ArticlePage","name":"News","status":"published","url":"/en/news/",
- "properties":{"Heading":{"type":"String","value":"Hello"}}},"meta":{"source":"db","version":"0.22.1"}}
+ "properties":{"Heading":{"type":"String","value":"Hello"}}},"meta":{"source":"db","version":"0.23.0"}}
 ```
 
 ## Using opticli with coding agents
@@ -1546,7 +1546,9 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   `KnownProxies` and `KnownNetworks`) to these requests itself, and the site's own `UseForwardedHeaders()` then finds
   nothing more to do. That needs the settings in the services (`services.Configure<ForwardedHeadersOptions>(...)`), not
   only passed to `UseForwardedHeaders(options)` in `Configure`, which the module can't see: there, behind a proxy that
-  changes the host, links answer 404. Call `AddOptiCliMcp()` after `AddCms()` (as above), so the module comes after the
+  changes the host, links answer 404. The module also leaves them alone when a proxy sends an `X-Original-Host` (or
+  `-For`, `-Proto`) header of its own, as if they had been applied already: behind such a proxy, apply them before the
+  module (`ASPNETCORE_FORWARDEDHEADERS_ENABLED` or a startup filter). Call `AddOptiCliMcp()` after `AddCms()` (as above), so the module comes after the
   CMS's first-request initialization, and after `AddCmsCloudPlatformSupport()` on DXP, so it comes after its forwarded
   headers. A base path the site sets with `UsePathBase()` isn't supported for these links (an IIS application's is).
 - **Preview tokens never sign anyone in to the module.** A request with a CMS preview token (`preview_token` in the
@@ -1831,7 +1833,7 @@ Set the new version as `<Version>` in [Directory.Build.props](Directory.Build.pr
 [skill/SKILL.md](skill/SKILL.md), and add the release to [CHANGELOG.md](CHANGELOG.md). Commit, then push a matching tag:
 
 ```sh
-git tag v0.22.1 && git push origin v0.22.1
+git tag v0.23.0 && git push origin v0.23.0
 ```
 
 The [release workflow](.github/workflows/release.yml) checks that the tag matches both versions and is on `main`,

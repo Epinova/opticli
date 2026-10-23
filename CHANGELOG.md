@@ -3,7 +3,7 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
-## Unreleased
+## 0.23.0 (23 October 2026)
 
 Preview links: the editor sees a draft as visitors will, without the edit UI around it, and where the site allows it,
 the assistant can look at the draft itself.
