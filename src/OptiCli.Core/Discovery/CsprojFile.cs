@@ -21,7 +21,23 @@ public sealed record CsprojFile(
     /// <summary>The CMS meta package, which brings <see cref="CmsPackage"/> in transitively.</summary>
     public const string CmsMetaPackage = "EPiServer.CMS";
 
-    public bool IsCmsProject => PackageReferences.ContainsKey(CmsPackage) || PackageReferences.ContainsKey(CmsMetaPackage);
+    /// <summary>The CMS edit UI, which only a site installs; it brings <see cref="CmsPackage"/> in transitively too.</summary>
+    public const string CmsUiPackage = "EPiServer.CMS.UI";
+
+    /// <summary>The CMS's own packages (<c>EPiServer.Cms.*</c> on CMS 13): a web project referencing any of them is a site.</summary>
+    public const string CmsPackagePrefix = "EPiServer.CMS.";
+
+    /// <summary>
+    /// A CMS 12 or 13 web site: it references the meta package, <see cref="CmsPackage"/> or the edit UI, or it is a web
+    /// project referencing any CMS package (a site that lists the CMS's packages one by one, headless or without the UI).
+    /// A class library with only <c>EPiServer.CMS.Core</c> isn't one.
+    /// </summary>
+    public bool IsCmsProject =>
+        HasCmsSitePackage || (IsWebProject && PackageReferences.Keys.Any(id => id.StartsWith(CmsPackagePrefix, StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>References a package only a CMS site has: the meta package, <see cref="CmsPackage"/> or the edit UI.</summary>
+    public bool HasCmsSitePackage =>
+        PackageReferences.ContainsKey(CmsPackage) || PackageReferences.ContainsKey(CmsMetaPackage) || PackageReferences.ContainsKey(CmsUiPackage);
 
     public bool IsWebProject => Sdk?.Contains("Microsoft.NET.Sdk.Web", StringComparison.OrdinalIgnoreCase) == true;
 

@@ -29,6 +29,15 @@ the draft itself, unless the site turns that off.
   (`RateLimits.PreviewPerMinute`, with invalid ones per address, `RateLimits.InvalidPreviewPerAddressPerMinute`), and
   the instructions tell the assistant the link is for it alone.
 
+### Fixed
+
+- A site that lists the CMS's packages one by one, without `EPiServer.CMS` or `EPiServer.CMS.AspNetCore` (say
+  `EPiServer.CMS.Core`, `EPiServer.Hosting` and `EPiServer.CMS.UI`), is found: a project with the edit UI
+  (`EPiServer.CMS.UI`, `EPiServer.Cms.UI` on CMS 13) is a site, and so is a web project referencing any `EPiServer.CMS.*`
+  package, a headless one included. A class library with `EPiServer.CMS.Core` still isn't, and where another web
+  project references a CMS package for its models, the one with the CMS itself is picked. Before restore, such a site's
+  CMS version is read from its `EPiServer.CMS.Core` reference.
+
 ## 0.22.0 (22 October 2026)
 
 Feedback from an assistant that published an article through the MCP server: searches answer in time, results give

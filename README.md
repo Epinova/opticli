@@ -78,8 +78,9 @@ To run from source without installing: `dotnet run --project src/OptiCli -- <com
 ## Quick start
 
 Run opticli from anywhere inside the site's repository. It walks up to the solution and picks the web project that
-references `EPiServer.CMS.AspNetCore` (or `EPiServer.CMS`). It then finds that project's development database, as
-described under [Which database](#which-database).
+references `EPiServer.CMS.AspNetCore`, `EPiServer.CMS` or `EPiServer.CMS.UI` (or, for a site that lists the CMS's
+packages one by one, any `EPiServer.CMS.*` package). It then finds that project's development database, as described
+under [Which database](#which-database).
 
 ```sh
 opticli doctor                                      # what was found and where; does the database answer?

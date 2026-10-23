@@ -6,14 +6,19 @@ namespace OptiCli.Core.Discovery;
 
 public static class PackageVersions
 {
+    /// <summary>The CMS's core package, versioned with <see cref="CsprojFile.CmsPackage"/>.</summary>
+    public const string CmsCorePackage = "EPiServer.CMS.Core";
+
     /// <summary>
     /// The CMS version the project builds against: as declared on a direct <see cref="CsprojFile.CmsPackage"/> reference,
-    /// else as restore resolved it. The EPiServer.CMS meta package brings the CMS in transitively at a version of its
-    /// own (12.29.0 can mean CMS 12.21.2), so its version is never reported. Null when neither is known, typically
-    /// because the project has not been restored.
+    /// else as restore resolved it, else as declared on a direct <see cref="CmsCorePackage"/> reference (a site that lists
+    /// the CMS's packages one by one, not yet restored; the two share their version). The EPiServer.CMS meta package
+    /// brings the CMS in transitively at a version of its own (12.29.0 can mean CMS 12.21.2), so its version is never
+    /// reported, nor is the edit UI's, which has its own too. Null when none is known, typically because the project has
+    /// not been restored.
     /// </summary>
     public static string? FindCms(CsprojFile project) =>
-        Find(project, CsprojFile.CmsPackage) ?? FindResolved(project, CsprojFile.CmsPackage);
+        Find(project, CsprojFile.CmsPackage) ?? FindResolved(project, CsprojFile.CmsPackage) ?? Find(project, CmsCorePackage);
 
     /// <summary>The major version of a package version (<c>13.3.0</c> → 13); null when there is none or it doesn't parse.</summary>
     public static int? Major(string? version) =>

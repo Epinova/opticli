@@ -84,6 +84,23 @@ public class PackageVersionsTests : IDisposable
     }
 
     [Fact]
+    public void A_site_that_lists_the_cms_packages_one_by_one_reads_the_cms_core_before_restore()
+    {
+        var project = Project("""
+            <Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup>
+              <PackageReference Include="EPiServer.CMS.Core" Version="12.12.1" />
+              <PackageReference Include="EPiServer.CMS.UI" Version="12.16.1" />
+            </ItemGroup></Project>
+            """);
+
+        Assert.Equal("12.12.1", PackageVersions.FindCms(project));
+
+        // Once restored, the CMS package's resolved version wins: something else may have raised it.
+        _root.Write("repo/src/Web/obj/project.assets.json", MetaPackageAssets);
+        Assert.Equal("12.21.2", PackageVersions.FindCms(project));
+    }
+
+    [Fact]
     public void Resolved_version_matches_the_whole_package_id()
     {
         var project = Project();

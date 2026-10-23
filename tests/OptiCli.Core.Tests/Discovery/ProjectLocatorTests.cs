@@ -85,6 +85,52 @@ public class ProjectLocatorTests : IDisposable
     }
 
     [Fact]
+    public void Finds_a_site_that_lists_the_cms_packages_one_by_one()
+    {
+        _root.Write("repo/Example.sln", "");
+        _root.Write("repo/src/Web/Web.csproj", Packages("Microsoft.NET.Sdk.Web", "EPiServer.CMS.Core", "EPiServer.Hosting", "EPiServer.CMS.AspNetCore.HtmlHelpers", "EPiServer.CMS.UI"));
+        _root.Write("repo/src/Models/Models.csproj", Packages("Microsoft.NET.Sdk", "EPiServer.CMS.Core"));
+
+        Assert.Equal(_root.Combine("repo/src/Web/Web.csproj"), ProjectLocator.Locate(null, _root.Combine("repo")).ProjectFile);
+    }
+
+    [Fact]
+    public void Finds_the_cms_13_edit_ui_in_its_own_casing()
+    {
+        _root.Write("repo/src/Web/Web.csproj", Packages("Microsoft.NET.Sdk.Web", "EPiServer.Cms.UI"));
+
+        Assert.True(ProjectLocator.Locate(null, _root.Combine("repo/src/Web")).Project.IsCmsProject);
+    }
+
+    [Fact]
+    public void Finds_a_headless_site_with_the_cms_core_alone()
+    {
+        _root.Write("repo/Example.sln", "");
+        _root.Write("repo/src/Web/Web.csproj", Packages("Microsoft.NET.Sdk.Web", "EPiServer.CMS.Core", "EPiServer.ContentDeliveryApi.Cms"));
+
+        Assert.Equal(_root.Combine("repo/src/Web/Web.csproj"), ProjectLocator.Locate(null, _root.Combine("repo")).ProjectFile);
+    }
+
+    [Fact]
+    public void A_class_library_with_the_cms_core_is_not_a_site()
+    {
+        _root.Write("repo/Example.sln", "");
+        _root.Write("repo/src/Models/Models.csproj", Packages("Microsoft.NET.Sdk", "EPiServer.CMS.Core", "EPiServer.CMS.AspNetCore.TagHelpers"));
+
+        Assert.Throws<NotFoundException>(() => ProjectLocator.Locate(null, _root.Combine("repo")));
+    }
+
+    [Fact]
+    public void Prefers_the_site_over_another_web_project_with_the_cms_core()
+    {
+        _root.Write("repo/Example.sln", "");
+        _root.Write("repo/src/Web/Web.csproj", SiteFixture.Csproj(package: "EPiServer.CMS"));
+        _root.Write("repo/src/Api/Api.csproj", Packages("Microsoft.NET.Sdk.Web", "EPiServer.CMS.Core"));
+
+        Assert.Equal(_root.Combine("repo/src/Web/Web.csproj"), ProjectLocator.Locate(null, _root.Combine("repo")).ProjectFile);
+    }
+
+    [Fact]
     public void Several_cms_projects_is_a_usage_error_asking_for_project()
     {
         _root.Write("repo/Example.sln", "");
@@ -143,4 +189,7 @@ public class ProjectLocatorTests : IDisposable
 
         Assert.Equal("12.9.0", PackageVersions.Find(project.Project, CsprojFile.CmsPackage));
     }
+
+    private static string Packages(string sdk, params string[] packages) =>
+        $"""<Project Sdk="{sdk}"><ItemGroup>{string.Concat(packages.Select(p => $"""<PackageReference Include="{p}" Version="12.12.1" />"""))}</ItemGroup></Project>""";
 }

@@ -81,12 +81,17 @@ public static class ProjectLocator
         {
             cms = cms.Where(p => p.IsWebProject).ToList();
         }
+        // Another web project (an API, say) may reference a CMS package for its models; the site has the CMS itself.
+        if (cms.Count > 1 && cms.Count(p => p.HasCmsSitePackage) == 1)
+        {
+            cms = cms.Where(p => p.HasCmsSitePackage).ToList();
+        }
 
         return cms.Count switch
         {
             1 => Create(cms[0], solution, howFound),
             0 => throw new NotFoundException(
-                $"No Optimizely CMS 12 or 13 project (a .csproj referencing {CsprojFile.CmsMetaPackage} or {CsprojFile.CmsPackage}) found under {root}.",
+                $"No Optimizely CMS 12 or 13 project (a .csproj referencing {CsprojFile.CmsMetaPackage}, {CsprojFile.CmsPackage} or {CsprojFile.CmsUiPackage}, or a web project referencing a CMS package) found under {root}.",
                 "Run opticli from the site's repository, or pass --project <path to the site's .csproj>."),
             _ => throw new UsageException(
                 $"Found {cms.Count} Optimizely CMS projects under {root}: {string.Join(", ", cms.Select(p => Path.GetRelativePath(root, p.Path)))}.",
