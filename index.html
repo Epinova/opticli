@@ -334,7 +334,9 @@ opticli skill install                   <span class="c"># teach Claude Code to u
         sign in with the site's own login, Entra ID or ASP.NET Identity, and approve the connection. Claude then reads and
         changes content as that editor, with their access rights, through the same operations as the CLI's site agent:
         drafts by default, dry runs, validation and approval sequences. Claude also sees the images in the media
-        library.</p>
+        library, and every draft it saves comes with a link to the CMS's preview of it. Claude can also open that
+        preview itself, through a short-lived link of its own, to check how the draft looks; a site can turn that
+        off.</p>
       <p>It is a preview, published as a prerelease, and not yet recommended for production: the options and tools may
         still change. It supports CMS 12 (12.12.1 and CMS UI 12.16.1 or newer), not CMS 13. claude.ai and Claude Desktop
         need the site to be reachable from the internet. See the
@@ -358,6 +360,18 @@ https://your-site.example/episerver/opticli/mcp</pre>
         <code>opticli skill install</code> again to update the skill.</p>
     </div>
     <ol class="changelog">
+      <li><div class="v"><b>0.23.0</b><span>23 October 2026</span></div>
+        <ul>
+          <li><b>Draft previews:</b> when Claude saves a draft through the MCP server, the result links to the CMS's own
+            preview of it, the page as visitors will see it without the edit UI around it, for the editor signed in to
+            the CMS. Claude also gets a link of its own to that one draft, signed by the module and valid for ten minutes,
+            and opens it to check how the draft looks; it never uses the CMS's own preview token. A site can turn that
+            off with <code>AllowPreviewLinks</code>. Update <code>OptiCli.Mcp</code> to
+            <code>0.23.0-preview</code>. Details in the
+            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
+          <li><b>More sites found:</b> a site that references the CMS's packages one by one, without
+            <code>EPiServer.CMS</code> or <code>EPiServer.CMS.AspNetCore</code>, is found too.</li>
+        </ul></li>
       <li><div class="v"><b>0.22.0</b><span>22 October 2026</span></div>
         <ul>
           <li><b>Saves say what the site did:</b> when the site's own code reacts to a save, filing a new article into a
