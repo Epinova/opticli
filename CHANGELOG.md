@@ -5,8 +5,8 @@ again to update the skill.
 
 ## 0.23.0 (23 October 2026)
 
-Preview links: the editor sees a draft as visitors will, without the edit UI around it, and where the site allows it,
-the assistant can look at the draft itself.
+Preview links: the editor sees a draft as visitors will, without the edit UI around it, and the assistant can look at
+the draft itself, unless the site turns that off.
 
 ### MCP server for editors (preview)
 
@@ -19,15 +19,15 @@ the assistant can look at the draft itself.
 - The same results also have `assistantPreviewUrl`, a link of the assistant's own to that preview, which it opens
   without a sign-in to check how the draft looks, and `assistantPreviewExpires`. On by default; `AllowPreviewLinks:
   false` turns it off, for a site that doesn't want the page as the editor sees it (editor-only navigation, blocks and
-  user-specific output) to reach whoever holds the link for its lifetime. The link shows that one version, in its language, as the CMS's preview shows it to the
-  editor, and nothing else: GET and HEAD only, on the host it was issued on, no cookie, redirect, sign-in or error page
-  comes back, and it stops working after `PreviewLinkLifetime` (10 minutes by default, at most an hour), when the
-  connection is revoked or ends, or when the editor can no longer read the version. The module changes nothing itself,
-  but the site's own code for the page runs as the editor, as in the CMS's preview. The link is signed by the module
-  with the site's Data Protection keys and never carries the CMS's preview token. `whoami` reports
-  `allowPreviewLinks`, opened links are audited and rate limited per connection (`RateLimits.PreviewPerMinute`, with
-  invalid ones per address, `RateLimits.InvalidPreviewPerAddressPerMinute`), and the instructions tell the assistant
-  the link is for it alone.
+  user-specific output) to reach whoever holds the link for its lifetime. The link shows that one version, in its
+  language, as the CMS's preview shows it to the editor, and nothing else: GET and HEAD only, on the host it was issued
+  on, no cookie, redirect, sign-in or error page comes back, and it stops working after `PreviewLinkLifetime` (10
+  minutes by default, at most an hour), when the connection is revoked or ends, or when the editor can no longer read
+  the version. The module changes nothing itself, but the site's own code for the page runs as the editor, as in the
+  CMS's preview. The link is signed by the module with the site's Data Protection keys and never carries the CMS's
+  preview token. `whoami` reports `allowPreviewLinks`, opened links are audited and rate limited per connection
+  (`RateLimits.PreviewPerMinute`, with invalid ones per address, `RateLimits.InvalidPreviewPerAddressPerMinute`), and
+  the instructions tell the assistant the link is for it alone.
 
 ## 0.22.0 (22 October 2026)
 
