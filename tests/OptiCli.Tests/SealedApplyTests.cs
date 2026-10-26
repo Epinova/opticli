@@ -185,6 +185,40 @@ public sealed class SealedApplyTests : IDisposable
     }
 
     [Fact]
+    public async Task A_plan_that_uploads_is_refused_at_the_run_when_the_build_has_no_azure_blob_provider()
+    {
+        await AddProd();
+        _site.WriteProjectFile("plans/files/logo.png", "a picture");
+        WritePlan($$$"""{"operations": [{"op": "upload", "id": "logo", "guid": "0d6f3a52-8b1e-4c7a-9e25-5a4c1b7d3f90", "file": "files/logo.png", "parent": "{{{Page}}}"}]}""");
+        var seal = await SealAsync();
+
+        var run = await RunSealed(seal.Id);
+
+        AssertError(run, 3, "refused", SealedPlan.Reason);
+        Assert.Contains("no CMS Azure blob provider", run.Error().GetProperty("hint").GetString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("Type the database's name", _terminal.Output, StringComparison.Ordinal);
+        Assert.False(Used(seal.Id));
+    }
+
+    [Fact]
+    public async Task With_the_azure_blob_provider_the_user_sees_that_files_go_to_productions_blob_storage()
+    {
+        await AddProd();
+        _site.WriteProjectFile("bin/Debug/net8.0/EPiServer.Azure.dll", "the CMS's Azure providers");
+        _site.WriteProjectFile("plans/files/logo.png", "a picture");
+        WritePlan($$$"""{"operations": [{"op": "upload", "id": "logo", "guid": "0d6f3a52-8b1e-4c7a-9e25-5a4c1b7d3f90", "file": "files/logo.png", "parent": "{{{Page}}}"}]}""");
+        var seal = await SealAsync();
+        _terminal.Lines.Enqueue("not-the-name");
+
+        var run = await RunSealed(seal.Id);
+
+        AssertError(run, 1, "usage");
+        Assert.Contains("1 upload a media file: the run asks for production's blob storage", _terminal.Output, StringComparison.Ordinal);
+        Assert.Contains("media files only to production's blob storage, asked next", _terminal.Output, StringComparison.Ordinal);
+        Assert.False(Used(seal.Id));
+    }
+
+    [Fact]
     public void A_hint_about_serve_points_at_the_runs_own_site_instead()
     {
         var hint = SealedApply.SiteHint("Check it with `opticli serve --status` and `opticli serve --logs`; start it with `opticli serve`.", "/state/sealed/x.log");
@@ -259,34 +293,6 @@ public sealed class SealedApplyTests : IDisposable
         if (reason is not null)
         {
             Assert.Equal(reason, error.GetProperty("details").GetProperty("reason").GetString());
-        }
-    }
-
-    /// <summary>The person at the terminal: answers from <see cref="Lines"/>, a password from <see cref="Hidden"/>.</summary>
-    private sealed class FakeTerminal : ITerminal
-    {
-        private readonly System.Text.StringBuilder _output = new();
-
-        public bool Interactive { get; set; } = true;
-
-        public Queue<string> Lines { get; } = new();
-
-        public Queue<string> Hidden { get; } = new();
-
-        public string Output => _output.ToString();
-
-        public bool IsInteractive => Interactive;
-
-        public void WriteLine(string text = "") => _output.AppendLine(text);
-
-        public void Write(string text) => _output.Append(text);
-
-        public string? ReadLine() => Lines.Count > 0 ? Lines.Dequeue() : null;
-
-        public string ReadHidden(string question)
-        {
-            _output.Append(question);
-            return Hidden.Count > 0 ? Hidden.Dequeue() : "";
         }
     }
 }

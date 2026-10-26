@@ -48,6 +48,14 @@ public sealed class AgentClient : IDisposable
     public Task<ShutdownResponse> ShutdownAsync(CancellationToken cancellationToken) =>
         SendAsync<ShutdownResponse>(HttpMethod.Post, AgentRoutes.Shutdown, null, PingTimeout, cancellationToken);
 
+    /// <summary>A sealed apply's site: the event and blob providers in effect.</summary>
+    public Task<SealedStatus> SealedStatusAsync(CancellationToken cancellationToken) =>
+        SendAsync<SealedStatus>(HttpMethod.Get, AgentRoutes.Sealed, null, PingTimeout, cancellationToken);
+
+    /// <summary>A sealed apply's site: sends what its event provider queued, and waits until it is sent (a minute at most).</summary>
+    public Task<EventsFlushResult> FlushEventsAsync(CancellationToken cancellationToken) =>
+        SendAsync<EventsFlushResult>(HttpMethod.Post, AgentRoutes.SealedEventsFlush, null, TimeSpan.FromSeconds(90), cancellationToken);
+
     /// <summary>
     /// What differs between the site's code and its shared database (the first call after a start compares them, which
     /// can take a while on a large site).

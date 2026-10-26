@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using OptiCli.Core.Azure;
 using OptiCli.Core.Configuration;
 using OptiCli.Core.Discovery;
 using OptiCli.Core.Errors;
@@ -15,6 +16,7 @@ namespace OptiCli.Core.Serve;
 /// <param name="DriftFile">What was compared before the start (EF Core migrations, schema), for the agent's drift report.</param>
 /// <param name="LogPath">The site's output for this run (user-only).</param>
 /// <param name="SiteEndpoints">The site's own <c>Kestrel:Endpoints</c>; opticli's address is added as one more, and every address it listens on must be loopback.</param>
+/// <param name="Providers">Production's event bus and blob storage as the user typed them; null for neither.</param>
 public sealed record SealedLaunch(
     ProjectInfo Project,
     ProductionWrite Write,
@@ -26,7 +28,17 @@ public sealed record SealedLaunch(
     TimeSpan Timeout,
     string DriftFile,
     string LogPath,
-    IReadOnlyList<string>? SiteEndpoints = null);
+    IReadOnlyList<string>? SiteEndpoints = null,
+    SealedProviders? Providers = null);
+
+/// <summary>
+/// Production's event bus and blob storage for one sealed run, typed at its terminal: they go to the site on its stdin line
+/// with the write login, and nowhere else.
+/// </summary>
+public sealed record SealedProviders(ServiceBusConnection? Events, string? Topic, BlobConnection? Blobs, string? Container)
+{
+    public override string ToString() => $"events {(Events is null ? "none" : $"{Events}, topic {Topic}")}; blobs {(Blobs is null ? "none" : $"{Blobs}, container {Container}")}";
+}
 
 /// <summary>
 /// Starts the site against production for one sealed apply, and stops it again whatever happens. Not <c>serve</c>: no state
@@ -116,6 +128,8 @@ public static class SealedSite
         var removed = SiteEnvironment.CompetingConnectionVariables(request.ConnectionName, inherited)
             .Append(ConnectionVariables.Name(request.ConnectionName))
             .Concat([AgentProtocol.TokenVariable, AgentProtocol.DatabaseVariable, AgentProtocol.SchedulerVariable, AgentProtocol.ConnectionNameVariable,
+                // Production's event bus and blob storage come from the terminal only.
+                AgentProtocol.EventsConnectionVariable, AgentProtocol.EventsTopicVariable, AgentProtocol.BlobsConnectionVariable, AgentProtocol.BlobsContainerVariable,
                 "ASPNETCORE_HOSTINGSTARTUPASSEMBLIES", "ASPNETCORE_PREVENTHOSTINGSTARTUP", "ASPNETCORE_HTTPS_PORT"])
             .Distinct(StringComparer.Ordinal);
         var variables = new List<KeyValuePair<string, string?>>(removed.Select(name => new KeyValuePair<string, string?>(name, null)))
@@ -139,14 +153,30 @@ public static class SealedSite
         return variables;
     }
 
-    /// <summary>The stdin line: the token, and the write connection as the pin and as the site's connection string.</summary>
-    private static string Secrets(SealedLaunch request, string token) =>
-        JsonSerializer.Serialize(new Dictionary<string, string>
+    /// <summary>
+    /// The stdin line: the token, the write connection as the pin and as the site's connection string, and production's event
+    /// bus and blob storage when the user gave them.
+    /// </summary>
+    internal static string Secrets(SealedLaunch request, string token)
+    {
+        var secrets = new Dictionary<string, string>
         {
             [AgentProtocol.TokenVariable] = token,
             [AgentProtocol.DatabaseVariable] = request.Write.Value,
             [ConnectionVariables.Name(request.ConnectionName)] = request.Write.Value,
-        });
+        };
+        if (request.Providers is { Events: { } events, Topic: { } topic })
+        {
+            secrets[AgentProtocol.EventsConnectionVariable] = events.Value;
+            secrets[AgentProtocol.EventsTopicVariable] = topic;
+        }
+        if (request.Providers is { Blobs: { } blobs, Container: { } container })
+        {
+            secrets[AgentProtocol.BlobsConnectionVariable] = blobs.Value;
+            secrets[AgentProtocol.BlobsContainerVariable] = container;
+        }
+        return JsonSerializer.Serialize(secrets);
+    }
 
     private static async Task WaitUntilReadyAsync(Process process, AgentClient client, SealedLaunch request, ConcurrentQueue<string> listening, Action flush, CancellationToken cancellationToken)
     {

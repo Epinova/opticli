@@ -62,6 +62,15 @@ public sealed class WriteExecutor(
 {
     public bool UpdateExisting => updateExisting;
 
+    /// <summary>
+    /// The plan's files as a sealed run read them once (<see cref="Seals.PlanSnapshot"/>): uploads send these bytes and never
+    /// read the file again. Null: from disk.
+    /// </summary>
+    public Seals.PlanSnapshot? Files { get; init; }
+
+    /// <summary>Whether an uploaded file lands in the project's file blob folder (shown in the result); false when the site writes to production's blob storage.</summary>
+    public bool BlobsOnDisk { get; init; } = true;
+
     public const string AgentSource = "agent";
     public const string DbSource = "db";
 
@@ -466,7 +475,7 @@ public sealed class WriteExecutor(
         {
             throw new UsageException("Give exactly one of --for <ref> (the content's \"For this page\" folder) or --parent <folder>.");
         }
-        var file = MediaFiles.Check(op.File);
+        var (file, bytes) = MediaFile(op.File);
         ContentTypeInfo? type = null;
         if (op.Type is not null)
         {
@@ -486,7 +495,7 @@ public sealed class WriteExecutor(
             Name = op.Name,
             Type = type?.Name,
             Properties = PropertyArguments.ToRequest(op.Properties),
-            Data = dryRun ? null : Convert.ToBase64String(await File.ReadAllBytesAsync(file.FullName, cancellationToken)),
+            Data = dryRun ? null : Convert.ToBase64String(bytes ?? await File.ReadAllBytesAsync(file.FullName, cancellationToken)),
             Publish = op.Publish,
             DryRun = dryRun,
             Guid = op.ContentGuid,
@@ -494,14 +503,16 @@ public sealed class WriteExecutor(
             IncludeDraft = op.IncludeDraft,
             RequestApproval = op.RequestApproval,
             // Existing media gets the file when it differs: a dry run, which sends no bytes, compares this.
-            Sha256 = updateExisting && op.ContentGuid is not null ? await MediaFiles.Sha256Async(file, cancellationToken) : null,
+            Sha256 = updateExisting && op.ContentGuid is not null
+                ? bytes is null ? await MediaFiles.Sha256Async(file, cancellationToken) : Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))
+                : null,
         };
 
         var result = await PublishingPostAsync(AgentRoutes.Media, request, r => r with { IncludeDraft = true }, cancellationToken);
         var output = Created(result, result.MediaType ?? type?.Name, request.Name ?? request.FileName, request.Parent, request.Guid) with
         {
             // The database's file is the published version's: for existing media only shown once the new one is.
-            Upload = new UploadInfo(file.FullName, file.Length, result.Saved && (!result.Existing || result.Published) && result.Content is { } saved ? await BlobAsync(saved.Id, cancellationToken) : null),
+            Upload = new UploadInfo(file.FullName, bytes?.LongLength ?? file.Length, result.Saved && (!result.Existing || result.Published) && result.Content is { } saved ? await BlobAsync(saved.Id, cancellationToken) : null),
         };
         return Outcome(output, CreatedId(result));
     }
@@ -512,7 +523,7 @@ public sealed class WriteExecutor(
         {
             throw new UsageException("--replace replaces the file of existing media; it takes no --for, --parent or --type (the media keeps its type).");
         }
-        var file = MediaFiles.Check(op.File);
+        var (file, bytes) = MediaFile(op.File);
         var target = await EditableAsync(op.Replace!, cancellationToken, "--replace");
         if (session.Model.Kind(target.Header.TypeId) != ContentKind.Media)
         {
@@ -525,7 +536,7 @@ public sealed class WriteExecutor(
             FileName = Path.GetFileName(op.File),
             Name = op.Name,
             Properties = PropertyArguments.ToRequest(op.Properties),
-            Data = dryRun ? null : Convert.ToBase64String(await File.ReadAllBytesAsync(file.FullName, cancellationToken)),
+            Data = dryRun ? null : Convert.ToBase64String(bytes ?? await File.ReadAllBytesAsync(file.FullName, cancellationToken)),
             Publish = op.Publish,
             DryRun = dryRun,
             IncludeDraft = op.IncludeDraft,
@@ -535,11 +546,11 @@ public sealed class WriteExecutor(
         var output = WriteOutput.From(result) with
         {
             // The database's file is the published version's: only shown once the new one is.
-            Upload = new UploadInfo(file.FullName, file.Length, result is { Saved: true, Published: true } && result.Content is { } saved ? await BlobAsync(saved.Id, cancellationToken) : null),
+            Upload = new UploadInfo(file.FullName, bytes?.LongLength ?? file.Length, result is { Saved: true, Published: true } && result.Content is { } saved ? await BlobAsync(saved.Id, cancellationToken) : null),
         };
         var outcome = Outcome(output, null);
         var note = dryRun
-            ? $"The file of {target.Id} would be replaced by {Path.GetFileName(op.File)} ({file.Length} bytes) in a new version{(op.Publish ? ", published" : ", a draft")}; changes lists only properties."
+            ? $"The file of {target.Id} would be replaced by {Path.GetFileName(op.File)} ({bytes?.LongLength ?? file.Length} bytes) in a new version{(op.Publish ? ", published" : ", a draft")}; changes lists only properties."
             : $"{output.Version} has the new file{(output.Published ? "" : "; the published version keeps the old one until it is published")}.";
         return outcome with { Warnings = [note, .. outcome.Warnings.Where(w => !w.StartsWith("Nothing changed", StringComparison.Ordinal))] };
     }
@@ -548,7 +559,19 @@ public sealed class WriteExecutor(
     private async Task<Queries.BlobLocation?> BlobAsync(int id, CancellationToken cancellationToken)
     {
         var header = await ContentHeaderReader.ByIdAsync(session.Db, id, cancellationToken);
-        return header?.LanguageRow(null)?.BlobUri is { } uri ? Queries.BlobLocator.Locate(uri, projectDirectory) : null;
+        return header?.LanguageRow(null)?.BlobUri is { } uri ? Queries.BlobLocator.Locate(uri, BlobsOnDisk ? projectDirectory : null) : null;
+    }
+
+    /// <summary>An upload's file, and its bytes when the plan's files were read once (<see cref="Files"/>).</summary>
+    /// <exception cref="UsageException">A sealed run's file that isn't in what was read.</exception>
+    private (FileInfo File, byte[]? Bytes) MediaFile(string path)
+    {
+        if (Files is null)
+        {
+            return (MediaFiles.Check(path), null);
+        }
+        var bytes = Files.Bytes(path) ?? throw new UsageException($"{path} isn't one of the files the plan read when the run started.");
+        return (new FileInfo(path), bytes);
     }
 
     /// <param name="parent">The parent's header, for the simple address check.</param>

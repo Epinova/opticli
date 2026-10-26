@@ -11,8 +11,9 @@ using OptiCli.Core.Writes;
 namespace OptiCli.Core.Sync;
 
 /// <param name="Plan">The plan file written (<c>plan.json</c> in the folder).</param>
-/// <param name="Media">Media in the selection that production lacks or has otherwise, left out: a sealed apply writes no files.
-/// Media production has as the local database has it (same place, values and stored file) counts as unchanged.</param>
+/// <param name="Media">Media in the selection that production lacks or has otherwise, left out (without <c>--media</c>): a sealed
+/// apply writes files only to production's blob storage, asked at the run. Media production has as the local database has it
+/// (same place, values and stored file) counts as unchanged.</param>
 /// <param name="Drafts">Local branches with a newer draft than the published version the plan writes.</param>
 /// <param name="Unchanged">Items production already has as the local database has them (and where it has them).</param>
 /// <param name="Conflicts">Items production changed since the last pull, or that were never pulled from it: left out, so a push never writes over production's changes.</param>
@@ -35,8 +36,10 @@ public sealed record PushPlan(
 /// <c>sync push</c>: the plan that brings the local database's content into production, written as a folder for a seal. It is
 /// an export of the local database, compared with production over SQL by GUID (read only), with only what differs: content
 /// production lacks is created (or restored from its recycle bin), content that differs updated, content moved locally moved.
-/// Never anything that deletes, and no media: the sealed run writes no files, so media is left out and listed, unless
-/// production already has it as it is locally (in the same place, with the same values and the same stored file). Content
+/// Never anything that deletes. Media is left out and listed, unless production already has it as it is locally (in the same
+/// place, with the same values and the same stored file), or <paramref name="mediaFiles"/> is given (<c>--media</c>): then it
+/// is uploaded like any other content, with its file from the local blob folder, and the sealed run asks for production's
+/// blob storage. Content
 /// production has with someone's unpublished changes is left out too, as publishing over it would put those live (the run
 /// would refuse it anyway). Content only in production is left alone.
 /// <para>
@@ -47,7 +50,8 @@ public sealed record PushPlan(
 /// </summary>
 /// <param name="pulled">The sync state of pulls from production into this local database; push only reads it.</param>
 /// <param name="folder">Where the plan is written (a new or empty folder).</param>
-public sealed class SyncPush(ContentSession local, ContentSession production, SyncState pulled, string folder)
+/// <param name="mediaFiles">Where the local media's files are (<c>--media</c>): media is pushed too, its files copied into the plan's folder. Null leaves media out.</param>
+public sealed class SyncPush(ContentSession local, ContentSession production, SyncState pulled, string folder, BlobSource? mediaFiles = null)
 {
     /// <summary>Why production's side of an item can't be written over; null when the last pull read it as it is now.</summary>
     public static string? ProductionChanged(ExportCandidate there, SyncedItem? synced)
@@ -84,13 +88,13 @@ public sealed class SyncPush(ContentSession local, ContentSession production, Sy
     {
         if (there is null || theirs is null)
         {
-            return "media production doesn't have: a sealed apply writes no files (upload it in production's edit UI)";
+            return "media production doesn't have: --media pushes it (the run then asks for production's blob storage), or upload it in production's edit UI";
         }
         var same = mine is not null
             && mineFile is not null && string.Equals(mineFile, theirFile, StringComparison.OrdinalIgnoreCase)
             && SyncDiff.Place(candidate.Parent, candidate.Owner) == SyncDiff.Place(there.Parent, there.Owner)
             && SyncDiff.Same(ExportPlanBuilder.Comparable(mine, target), ExportPlanBuilder.Comparable(theirs)) is null;
-        return same ? null : "media production has otherwise (another file, other values or another place): a sealed apply writes no files (change it in production's edit UI)";
+        return same ? null : "media production has otherwise (another file, other values or another place): --media pushes it (the run then asks for production's blob storage), or change it in production's edit UI";
     }
 
     public async Task<PushPlan> BuildAsync(IReadOnlyList<ExportRoot> roots, IReadOnlySet<int>? languages, SyncDatabase from, CancellationToken cancellationToken)
@@ -98,8 +102,9 @@ public sealed class SyncPush(ContentSession local, ContentSession production, Sy
         var readAt = DateTime.UtcNow;
         var selection = await new ExportReader(local).SelectAsync(roots, languages, cancellationToken);
         var skipped = selection.Skipped.Select(s => new SyncEntry(s.Guid, null, s.Type, s.Name, s.Reason)).ToList();
-        var mediaCandidates = selection.Items.Where(c => c.Kind == ContentKind.Media).ToList();
-        var candidates = selection.Items.Where(c => c.Kind != ContentKind.Media).ToList();
+        var pushMedia = mediaFiles is not null;
+        var mediaCandidates = pushMedia ? [] : selection.Items.Where(c => c.Kind == ContentKind.Media).ToList();
+        var candidates = selection.Items.Where(c => pushMedia || c.Kind != ContentKind.Media).ToList();
         var bySource = candidates.ToDictionary(c => c.Guid);
 
         // Production's side: what it has (in its recycle bin too) and, for what it has outside it, the values.
@@ -147,7 +152,7 @@ public sealed class SyncPush(ContentSession local, ContentSession production, Sy
         var conflicts = new List<SyncEntry>();
         var unchanged = 0;
 
-        // Media is never pushed: listed, unless production has it as it is here (a copy of the database has all of it).
+        // Without --media, media isn't pushed: listed, unless production has it as it is here (a copy of the database has all of it).
         var media = new List<SyncEntry>();
         var mineMedia = mediaCandidates.Count == 0 ? null : await new ExportReader(local).ReadAsync(mediaCandidates, cancellationToken);
         foreach (var candidate in mediaCandidates)
@@ -190,7 +195,9 @@ public sealed class SyncPush(ContentSession local, ContentSession production, Sy
                 continue;
             }
             var moved = SyncDiff.Place(candidate.Parent, candidate.Owner) != SyncDiff.Place(prodCandidate.Parent, prodCandidate.Owner);
-            var different = SyncDiff.Same(ExportPlanBuilder.Comparable(item, target), ExportPlanBuilder.Comparable(prodItem)) is not null;
+            var different = SyncDiff.Same(ExportPlanBuilder.Comparable(item, target), ExportPlanBuilder.Comparable(prodItem)) is not null
+                // Media with another stored file: production's blobs aren't read here, so it is uploaded, and the run's site keeps the file it has when the bytes are the same.
+                || (item.Kind == ContentKind.Media && !string.Equals(read.BlobUris.GetValueOrDefault(guid), theirRead.BlobUris.GetValueOrDefault(guid), StringComparison.OrdinalIgnoreCase));
             if (!moved && !different)
             {
                 unchanged++;
@@ -216,6 +223,28 @@ public sealed class SyncPush(ContentSession local, ContentSession production, Sy
                 moves.Add(candidate);
             }
             planned.Add((item, different ? "updated" : "moved"));
+        }
+
+        // Media that is pushed takes its file into the plan's folder, from the local blob folder.
+        for (var i = 0; i < planned.Count; i++)
+        {
+            if (planned[i].Item is not { Kind: ContentKind.Media } item)
+            {
+                continue;
+            }
+            var uri = read.BlobUris.GetValueOrDefault(item.Guid);
+            var relative = uri is null ? null : ExportPlanBuilder.FilePath(item.Guid, ExportFiles.FileName((string?)item.Branches[0].Document["name"], uri));
+            var problem = uri is null ? "it has no file (no blob URI)" : await mediaFiles!.CopyAsync(uri, Path.Combine(folder, relative!), cancellationToken);
+            if (problem is null)
+            {
+                planned[i] = (item with { File = relative }, planned[i].Action);
+                continue;
+            }
+            skipped.Add(Entry(bySource[item.Guid], $"media without its file: {problem}"));
+            moves.RemoveAll(m => m.Guid == item.Guid);
+            planned.RemoveAt(i--);
+            // Not created after all: references to it are dropped (and listed), not left pointing at nothing in production.
+            creating.Remove(item.Guid);
         }
 
         var built = ExportPlanBuilder.Build(planned.Select(p => p.Item).ToList(), target: target, now: readAt);

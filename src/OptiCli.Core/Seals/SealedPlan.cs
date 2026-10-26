@@ -6,8 +6,9 @@ using OptiCli.Core.Writes;
 namespace OptiCli.Core.Seals;
 
 /// <summary>
-/// What a plan may do to production through a sealed apply: create, change, move, translate and publish content, nothing
-/// that deletes, takes offline, changes access or writes a file; and only by GUID, as content ids and URLs name other
+/// What a plan may do to production through a sealed apply: create, change, move, translate and publish content, and upload
+/// media files (which the run writes only to production's blob storage, typed at its terminal: <see cref="RequireNoMedia"/>
+/// otherwise), nothing that deletes, takes offline or changes access; and only by GUID, as content ids and URLs name other
 /// content in another database. Checked when sealing and again when the sealed plan runs.
 /// </summary>
 public static class SealedPlan
@@ -22,8 +23,34 @@ public static class SealedPlan
         ["access"] = "changes access rights",
         ["unpublish"] = "takes content offline",
         ["discard"] = "deletes a draft",
-        ["upload"] = "writes a media file, which would land in the local blob folder while production's database points at it (media goes to production through the CMS's edit UI)",
     };
+
+    /// <summary>
+    /// Why an upload can't run without production's blob storage: the run's site would write the file to the local blob folder
+    /// while production's database points at it.
+    /// </summary>
+    public const string MediaWithoutStorage =
+        "writes a media file, which without production's blob storage would land in the local blob folder while production's database points at it";
+
+    /// <summary>The steps that write a media file (<c>upload</c>, also with <c>replace</c>).</summary>
+    public static IReadOnlyList<PlanStep> Uploads(WritePlan plan) => plan.Steps.Where(s => s.Operation is UploadOperation).ToList();
+
+    /// <summary>The run has no blob storage for production (none typed, or the site has no Azure blob provider): uploads are refused, as before.</summary>
+    /// <param name="why">Why there is none, for the hint.</param>
+    /// <exception cref="RefusedException">The plan uploads (<c>details.problems</c> lists the steps).</exception>
+    public static void RequireNoMedia(WritePlan plan, string why)
+    {
+        var problems = Uploads(plan).Select(s => $"operations[{s.Index}] (upload) {MediaWithoutStorage}.").ToList();
+        if (problems.Count > 0)
+        {
+            throw new RefusedException(
+                $"The plan has {problems.Count} upload step(s), and this run has no blob storage for production: {string.Join(" ", problems.Take(5))}{(problems.Count > 5 ? " …" : "")}",
+                $"{why} Upload the files in production's edit UI instead, and seal a plan without them.")
+            {
+                Details = new { reason = Reason, problems },
+            };
+        }
+    }
 
     /// <exception cref="RefusedException">The plan does something a sealed apply doesn't (<c>details.problems</c> lists every one).</exception>
     /// <param name="model">The content model, to find values of reference properties given as ids; null skips that check.</param>
@@ -71,7 +98,7 @@ public static class SealedPlan
             {
                 problems.Add($"{where} names a version by its id, which is another version in production (\"from\": \"published\" works).");
             }
-            if (op is CreateOperation or BlockCreateOperation && op.ContentGuid is null)
+            if ((op is CreateOperation or BlockCreateOperation || op is UploadOperation { Replace: null }) && op.ContentGuid is null)
             {
                 problems.Add($"{where} has no GUID (\"guid\", or the plan's \"guidNamespace\"): run again, it would make a second copy, and the seal couldn't check it.");
             }
@@ -95,6 +122,7 @@ public static class SealedPlan
     public static IReadOnlyList<Guid> Touched(WritePlan plan) =>
         plan.Steps.Select(s => s.Operation).SelectMany(op => op switch
         {
+            UploadOperation { Replace: { } replace } => new[] { GuidOf(replace) },
             CreateOperation or BlockCreateOperation or UploadOperation => new[] { op.ContentGuid },
             SetOperation set => new[] { GuidOf(set.Ref) },
             AreaEdit area => new[] { GuidOf(area.Ref) },

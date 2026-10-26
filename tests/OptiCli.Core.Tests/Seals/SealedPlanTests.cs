@@ -7,9 +7,9 @@ using OptiCli.Core.Writes;
 namespace OptiCli.Core.Tests.Seals;
 
 /// <summary>
-/// What a sealed apply runs: creates, changes, moves, translates and publishes by GUID. Nothing that deletes, takes offline,
-/// changes access or writes a file, no other people's drafts, no skipped concurrency check, and no ids, which name other
-/// content in production.
+/// What a sealed apply runs: creates, changes, moves, translates, publishes and uploads by GUID (files only with production's
+/// blob storage, which the run asks for). Nothing that deletes, takes offline or changes access, no other people's drafts, no
+/// skipped concurrency check, and no ids, which name other content in production.
 /// </summary>
 public class SealedPlanTests
 {
@@ -45,8 +45,8 @@ public class SealedPlanTests
     [InlineData($$$"""{"op": "unpublish", "ref": "{{{Page}}}"}""", "takes content offline")]
     [InlineData($$$"""{"op": "access", "ref": "{{{Page}}}", "grant": {"Everyone": "Read"}}""", "access rights")]
     [InlineData($$$"""{"op": "discard", "ref": "{{{Page}}}"}""", "deletes a draft")]
-    [InlineData($$$"""{"op": "upload", "file": "x.png", "parent": "{{{Start}}}"}""", "writes a media file")]
-    [InlineData($$$"""{"op": "upload", "file": "x.png", "replace": "{{{Page}}}"}""", "writes a media file")]
+    [InlineData($$$"""{"op": "upload", "file": "x.png", "parent": "{{{Start}}}"}""", "has no GUID")]
+    [InlineData("""{"op": "upload", "file": "x.png", "replace": "17"}""", "refers to '17'")]
     [InlineData($$$"""{"op": "translate", "ref": "{{{Page}}}", "lang": "sv", "remove": true, "confirm": true}""", "removes a language branch")]
     [InlineData($$$"""{"op": "set", "ref": "{{{Page}}}", "properties": {"Heading": "x"}, "publish": true, "includeDraft": true}""", "someone else's unpublished changes")]
     [InlineData($$$"""{"op": "set", "ref": "{{{Page}}}", "properties": {"Heading": "x"}, "force": true}""", "skip the check")]
@@ -71,6 +71,28 @@ public class SealedPlanTests
 
         Assert.Equal(SealedPlan.Reason, SealStoreTests.Reason(refused));
         Assert.Contains(SealedPlan.Problems(plan, Model()), p => p.Contains(expected, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Uploads_by_guid_are_sealable_counted_and_refused_by_a_run_without_blob_storage()
+    {
+        var image = "0d6f3a52-8b1e-4c7a-9e25-5a4c1b7d3f90";
+        var plan = Plan(
+            $$$"""{"op": "upload", "id": "logo", "guid": "{{{image}}}", "file": "logo.png", "parent": "{{{Start}}}", "publish": true}""",
+            $$$"""{"op": "upload", "file": "icon.svg", "replace": "{{{Page}}}"}""",
+            $$$"""{"op": "set", "ref": "{{{Page}}}", "properties": {"Heading": "x"}}""");
+        var production = new ProductionState("m", [new SealedItem(Guid.Parse(Page), true, false, null, "ImageFile", "Icon", [])]);
+
+        var summary = SealSummary.Of(plan, new SealOptions(UpdateExisting: false, Publish: false, RequestApproval: false), production);
+        var refused = Assert.Throws<RefusedException>(() => SealedPlan.RequireNoMedia(plan, "No blob storage was given."));
+
+        Assert.Empty(SealedPlan.Problems(plan, Model()));
+        Assert.Equal([Guid.Parse(image), Guid.Parse(Page)], SealedPlan.Touched(plan));
+        Assert.Equal((2, 1, 1), (summary.Media, summary.New, summary.Touched));
+        Assert.Equal(SealedPlan.Reason, SealStoreTests.Reason(refused));
+        Assert.Contains("2 upload step(s)", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("No blob storage was given.", refused.Hint, StringComparison.Ordinal);
+        SealedPlan.RequireNoMedia(Plan($$$"""{"op": "set", "ref": "{{{Page}}}", "properties": {"Heading": "x"}}"""), "none");
     }
 
     [Fact]

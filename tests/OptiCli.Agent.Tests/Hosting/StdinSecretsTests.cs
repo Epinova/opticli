@@ -20,6 +20,14 @@ public class StdinSecretsTests
             variables.Select(v => v.Key).ToList());
     }
 
+    [Fact]
+    public void The_line_may_hold_productions_event_bus_and_blob_storage()
+    {
+        var variables = StdinSecrets.Parse("""{"OPTICLI_TOKEN": "t0k", "OPTICLI_DB": "x", "ConnectionStrings__EPiServerAzureEvents": "e", "OPTICLI_EVENTS_TOPIC": "t", "ConnectionStrings__EPiServerAzureBlobs": "b", "OPTICLI_BLOBS_CONTAINER": "c"}""");
+
+        Assert.Equal(6, variables.Count);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

@@ -14,8 +14,15 @@ internal static class StdinSecrets
     public static bool Expected =>
         string.Equals(Environment.GetEnvironmentVariable(AgentProtocol.SecretsVariable)?.Trim(), AgentProtocol.SecretsFromStdin, StringComparison.Ordinal);
 
-    /// <summary>The names <see cref="Read"/> set, for <see cref="Forget"/>.</summary>
-    private static IReadOnlyList<string> _set = [];
+    /// <summary>What <see cref="Read"/> set, for <see cref="Forget"/> and <see cref="Given"/>.</summary>
+    private static IReadOnlyDictionary<string, string> _set = new Dictionary<string, string>();
+
+    /// <summary>
+    /// A value that came on the stdin line; null for anything else, even when the environment has a variable of that name
+    /// (inherited from the shell): what only the user's terminal may give.
+    /// </summary>
+    public static string? Given(string name) =>
+        Expected && _set.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value) ? value : null;
 
     /// <summary>Reads the line and sets its variables in this process.</summary>
     /// <exception cref="InvalidOperationException">No line, or not the expected shape: the site must not start without them.</exception>
@@ -26,7 +33,7 @@ internal static class StdinSecrets
         {
             Environment.SetEnvironmentVariable(name, value);
         }
-        _set = variables.Select(v => v.Key).ToList();
+        _set = variables.ToDictionary(v => v.Key, v => v.Value, StringComparer.Ordinal);
     }
 
     /// <exception cref="InvalidOperationException">Not a JSON object of strings with the token, the pinned connection and only names the protocol allows.</exception>
@@ -57,7 +64,7 @@ internal static class StdinSecrets
     /// <summary>Removes the variables again, so processes the site starts from now on don't inherit them.</summary>
     public static void Forget()
     {
-        foreach (var name in _set)
+        foreach (var name in _set.Keys)
         {
             Environment.SetEnvironmentVariable(name, null);
         }

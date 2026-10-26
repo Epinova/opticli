@@ -19,7 +19,8 @@ namespace OptiCli.Cli;
 /// <c>apply &lt;plan&gt; --db &lt;prod&gt; --seal &lt;id&gt;</c>: the user's run of a sealed plan against production, the only write
 /// opticli makes there. Needs a person at a terminal, checks the seal against what it sees (target, project, plan and its
 /// files, build, age, then production's model and the content the plan touches), shows what the plan does, asks for the
-/// database's name and the write login, starts the site against production for this run only (<see cref="SealedSite"/>),
+/// database's name and the write login (and, when the site uses the CMS's Azure providers, production's event bus and blob
+/// storage: <see cref="SealedProvidersRun"/>), starts the site against production for this run only (<see cref="SealedSite"/>),
 /// checks production once more right before the first save, applies, and stops the site.
 /// </summary>
 internal static class SealedApply
@@ -33,9 +34,9 @@ internal static class SealedApply
     /// <summary>How long the site gets to answer.</summary>
     private static readonly TimeSpan StartTimeout = TimeSpan.FromMinutes(3);
 
-    /// <summary>Production's servers don't hear about the run's writes (Findings 9 of the content-sync plan).</summary>
+    /// <summary>Production's servers don't hear about the run's writes (Findings 9 of the content-sync plan), unless the run had the event bus and it worked.</summary>
     public const string RestartWarning =
-        "Production's servers keep showing what they have cached: the run's site isn't on production's event bus, so nothing tells them. "
+        "Production's servers keep showing what they have cached: the run's site wasn't on production's event bus (none given at the run, or the cache drops couldn't be confirmed), so nothing told them. "
         + "Changed and moved content stays as it was there (a moved page also keeps answering at its old URL), and new content is missing "
         + "from menus and listings, until the site restarts or an item goes unread for the content cache's sliding expiration (12 hours by "
         + "default; content read more often never refreshes). Content no server had cached shows at once. Restart the site (every instance; "
@@ -76,6 +77,8 @@ internal static class SealedApply
         var build = BuildFingerprint.Of(project, output.Dll, environment);
         var verified = SealCheck.Verify(seal, candidate.Target!, project.Directory, plan, build, DateTimeOffset.UtcNow);
         SealedPlan.Require(plan.Plan, model: null);
+        var outputFolder = Path.GetDirectoryName(output.Dll)!;
+        SealedProvidersRun.RequireMediaPossible(plan.Plan, outputFolder);
         var touched = SealedPlan.Touched(plan.Plan);
         var named = SealedPlan.Referenced(plan.Plan);
 
@@ -124,10 +127,12 @@ internal static class SealedApply
         {
             terminal.WriteLine("warning: that login has none of db_owner, db_datawriter or INSERT/UPDATE on tblContent; the CMS may not be able to save.");
         }
+        // Production's event bus (optional) and blob storage (when the plan uploads), checked before the seal is used.
+        var providers = await SealedProvidersRun.AskAsync(terminal, plan.Plan, project.Directory, outputFolder, write.IsLocal, cancellationToken);
         // From here on the seal is used, whatever happens.
         store.Consume(seal.Id);
 
-        var startup = await StartupDriftCheck.RunAsync(session.Db, Path.GetDirectoryName(output.Dll)!, cancellationToken);
+        var startup = await StartupDriftCheck.RunAsync(session.Db, outputFolder, cancellationToken);
         startup.ThrowIfBlocked(allowPendingMigrations: false);
         var folder = Path.Combine(environment.StateDirectory, "sealed");
         var driftFile = WriteDrift(folder, seal.Id, startup.Drift);
@@ -135,10 +140,11 @@ internal static class SealedApply
         var agentDll = AgentLocator.Locate(AppContext.BaseDirectory, choice.CmsMajor);
         var port = PortSelector.Select(null, null, PortClaims.ForUser.FreeAndClaimed(PortSelector.IsFree));
         var launch = new SealedLaunch(project, write, context.ConnectionRequest.Name, output, agentDll, choice.CmsMajor, port, StartTimeout, driftFile,
-            Path.Combine(folder, $"{seal.Id}.log"), KestrelEndpoints.Configured(project, environment));
+            Path.Combine(folder, $"{seal.Id}.log"), KestrelEndpoints.Configured(project, environment), providers?.Providers);
         var allowedTypes = new AllowedTypesCheck(session.Model, () => CSharpSourceIndex.Build(project.SourceRoot));
 
         PlanRun run;
+        SealedEventsResult? events = null;
         try
         {
             run = await SealedSite.RunAsync(launch,
@@ -149,22 +155,52 @@ internal static class SealedApply
                 },
                 async (client, token) =>
                 {
+                    if (providers is not null)
+                    {
+                        await providers.RequireInEffectAsync(client.SealedStatusAsync, token);
+                    }
                     terminal.WriteLine("The site answers. Checking the plan against production, then writing…");
-                    var executor = new WriteExecutor(session, _ => Task.FromResult(client), site: null, project.Directory, seal.Options.UpdateExisting, sharedDatabase: true);
+                    var executor = new WriteExecutor(session, _ => Task.FromResult(client), site: null, project.Directory, seal.Options.UpdateExisting, sharedDatabase: true)
+                    {
+                        // Uploads send the bytes the run read and hashed, never the file on disk again.
+                        Files = plan,
+                        BlobsOnDisk = providers?.Providers.Blobs is null,
+                    };
                     var runner = new PlanRunner(session, executor, plan.Directory, allowOutside: false, allowedTypes, seal.Options.RequestApproval)
                     {
                         Files = plan,
                         MovesFirst = seal.Options.MovesFirst,
-                        // Production once more, after the site started and the plan passed its checks: right before the first save.
-                        BeforeSaving = async check => SealCheck.RequireUnchanged(verified, await ProductionState.ReadAsync(session, touched, named, check)),
+                        // Right before the first save: the site on production's event bus, then production once more.
+                        BeforeSaving = async check =>
+                        {
+                            if (providers is not null)
+                            {
+                                await providers.BeforeSavingAsync(client.SealedStatusAsync, ProbeName(seal.Id), check);
+                            }
+                            SealCheck.RequireUnchanged(verified, await ProductionState.ReadAsync(session, touched, named, check));
+                        },
                     };
-                    return await runner.RunAsync(plan.Plan, dryRun: false, seal.Options.Publish, token);
+                    try
+                    {
+                        return await runner.RunAsync(plan.Plan, dryRun: false, seal.Options.Publish, token);
+                    }
+                    finally
+                    {
+                        // While the site still runs: what its event provider queued is sent, and the run's messages counted.
+                        events = providers is null ? null : await providers.FinishEventsAsync(client.FlushEventsAsync);
+                    }
                 },
                 cancellationToken);
         }
         catch (OptiCliException ex) when (ex.Details is PlanRun partial && partial.Operations.Any(o => o.Status == PlanStepStatus.Saved))
         {
-            throw OptiCliException.Create(ex.Code, ex.Message, $"{SiteHint(ex.Hint, launch.LogPath)} {PartialHint} {RestartWarning}".Trim(), ex.Details);
+            // What was saved is in production: its files are checked and its events reported, as after a whole run.
+            events = SendFailures(events, launch.LogPath);
+            var files = providers is null ? [] : await providers.CheckMediaAsync(session, partial, CancellationToken.None);
+            var restart = RestartNeeded(events);
+            throw OptiCliException.Create(ex.Code, ex.Message,
+                $"{SiteHint(ex.Hint, launch.LogPath)} {PartialHint} {MediaHint(files)} {(restart ? Restart(events) : EventsSent(events!))}".Trim(),
+                new { partial.DryRun, partial.Operations, partial.Created, partial.Partial, events, media = providers?.Providers.Blobs is null ? null : files, restartNeeded = restart });
         }
         catch (OptiCliException ex) when (ex.Hint?.Contains("opticli serve", StringComparison.Ordinal) == true)
         {
@@ -176,16 +212,77 @@ internal static class SealedApply
             PortClaims.ForUser.ReleaseAll();
         }
 
+        // A cache drop the site's provider couldn't send leaves that content stale in production.
+        events = SendFailures(events, launch.LogPath);
+        // Every uploaded file must be where production's database now points (never throws: what can't be checked is reported).
+        var media = providers is null ? [] : await providers.CheckMediaAsync(session, run, CancellationToken.None);
+        var restartNeeded = RestartNeeded(events);
+        if (media.Where(m => !m.Found).ToList() is { Count: > 0 } missing)
+        {
+            throw new ConflictException(
+                $"The run saved, but {missing.Count} uploaded file(s) aren't confirmed in production's blob storage: {Describe(missing)}. Production's database points at them.",
+                $"{MediaHint(missing)} {(restartNeeded ? Restart(events) : EventsSent(events!))}")
+            {
+                Details = new { reason = SealedProvidersRun.BlobMissingReason, media, events, restartNeeded, run },
+            };
+        }
+
         var result = new
         {
             seal = seal.Id,
             target = new SealedDatabase(write.Server, write.Database, "prod"),
             plan = plan.Path,
             run,
-            restart = RestartWarning,
+            events,
+            media = providers?.Providers.Blobs is null ? null : media,
+            restartNeeded,
+            restart = restartNeeded ? RestartWarning : null,
         };
-        return new CommandResult(result, Text: Text(seal, run), Warnings: [RestartWarning], Source: WriteExecutor.AgentSource);
+        return new CommandResult(result, Text: Text(seal, run, events, media), Warnings: restartNeeded ? [Restart(events)] : [], Source: WriteExecutor.AgentSource);
     }
+
+    /// <summary>
+    /// The CMS's Azure event provider logs a cache drop it couldn't send ("Failed to send event") and goes on: one in the
+    /// run's log means production's servers missed it, however many others were counted on the topic.
+    /// </summary>
+    internal static SealedEventsResult? SendFailures(SealedEventsResult? events, string logPath)
+    {
+        if (events is not { Problem: null })
+        {
+            return events;
+        }
+        try
+        {
+            var failed = File.ReadLines(logPath).Count(l => l.Contains("Failed to send event", StringComparison.Ordinal));
+            return failed == 0 ? events : events with { Problem = $"the site's event provider logged {failed} event(s) it couldn't send (see {logPath})" };
+        }
+        catch (IOException ex)
+        {
+            return events with { Problem = $"the run's log couldn't be read to check for events that weren't sent: {ex.Message}" };
+        }
+    }
+
+    private static string Describe(IEnumerable<SealedMediaResult> media) =>
+        string.Join(", ", media.Select(m => $"{m.Blob ?? "(no file)"} (step {m.Step}, {m.Problem ?? (m.Stored is { } stored ? $"{stored} of {m.Bytes} bytes" : "not found")})"));
+
+    /// <summary>What to do about uploaded files that aren't confirmed in the container; empty when all are.</summary>
+    private static string MediaHint(IEnumerable<SealedMediaResult> media) =>
+        media.Where(m => !m.Found).ToList() is { Count: > 0 } missing
+            ? $"Uploaded file(s) not confirmed in production's blob storage: {Describe(missing)}; check them in production's edit UI and upload them again there where they are missing."
+            : "";
+
+    /// <summary>Whether production's servers still need a restart: no event bus, or the run's cache drops weren't confirmed on it.</summary>
+    internal static bool RestartNeeded(SealedEventsResult? events) => events is not { Problem: null, Sent: > 0 };
+
+    /// <summary>The restart warning, with why the event bus didn't do it when it was given.</summary>
+    private static string Restart(SealedEventsResult? events) =>
+        events?.Problem is { } problem ? $"{RestartWarning} (The event bus was given, but {problem}.)" : RestartWarning;
+
+    private static string EventsSent(SealedEventsResult events) =>
+        $"Production's servers were told over the event bus ({events.Sent} message(s) on topic '{events.Topic}'): no restart is needed.";
+
+    /// <summary>The probe subscription that counts the run's messages (Service Bus allows 50 characters).</summary>
+    internal static string ProbeName(string sealId) => $"opticli-probe-{sealId}";
 
     /// <summary>What the user confirms: the target, the plan (counted from the plan the run read, not from the seal), the build and what isn't done.</summary>
     private static void Show(ITerminal terminal, VerifiedSeal verified, ProductionState state)
@@ -201,16 +298,21 @@ internal static class SealedApply
         terminal.WriteLine($"  options: {(seal.Options.Flags.Count > 0 ? string.Join(' ', seal.Options.Flags) : "(none)")}");
         terminal.WriteLine($"  steps:   {Printable.Of(Sealing.Describe(summary))}");
         terminal.WriteLine("  checks:  production's content model and the versions of the content the plan touches must be as sealed: next, and again right before the first save");
-        terminal.WriteLine("  never:   deletes, unpublish steps, access rights, media files");
+        terminal.WriteLine($"  never:   deletes, unpublish steps, access rights{(summary.Media > 0 ? "; media files only to production's blob storage, asked next" : "")}");
         terminal.WriteLine();
     }
 
-    private static string Text(Seal seal, PlanRun run)
+    private static string Text(Seal seal, PlanRun run, SealedEventsResult? events, IReadOnlyList<SealedMediaResult> media)
     {
         int Count(string status) => run.Operations.Count(o => o.Status == status);
-        return new StringBuilder()
-            .AppendLine(CultureInfo.InvariantCulture, $"Applied sealed plan {seal.Id} to '{seal.Target.Database}' on '{seal.Target.Server}': {run.Operations.Count} step(s), {Count(PlanStepStatus.Saved)} saved, {Count(PlanStepStatus.Unchanged)} unchanged.")
-            .ToString();
+        var text = new StringBuilder()
+            .AppendLine(CultureInfo.InvariantCulture, $"Applied sealed plan {seal.Id} to '{seal.Target.Database}' on '{seal.Target.Server}': {run.Operations.Count} step(s), {Count(PlanStepStatus.Saved)} saved, {Count(PlanStepStatus.Unchanged)} unchanged.");
+        if (media.Count > 0)
+        {
+            text.AppendLine(CultureInfo.InvariantCulture, $"Media: {media.Count} file(s) in production's blob storage, each checked.");
+        }
+        text.AppendLine(RestartNeeded(events) ? "Restart needed: production's servers weren't told (see the warning)." : EventsSent(events!));
+        return text.ToString();
     }
 
     /// <summary>What was compared before the start, for the agent's drift report: user-only, beside the run's log.</summary>

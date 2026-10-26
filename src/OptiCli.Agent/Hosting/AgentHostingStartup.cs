@@ -67,7 +67,7 @@ public sealed class AgentHostingStartup : IHostingStartup
         }
         if (settings.PinnedConnection is { } pinned)
         {
-            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>(SealedAzure.Configuration(settings))
             {
                 [$"ConnectionStrings:{settings.ConnectionName}"] = pinned,
             }));
@@ -97,6 +97,8 @@ public sealed class AgentHostingStartup : IHostingStartup
                 services.PostConfigure<SchedulerOptions>(options => options.Enabled = false);
                 Console.Error.WriteLine(SchedulerOffLine);
             }
+            // A sealed apply's production event bus and blob storage (only ever from its stdin line).
+            SealedAzure.Register(services, settings);
             services.AddSingleton<IValidateOptions<DataAccessOptions>, DataAccessOptionsGuard>();
             services.AddSingleton<DriftCheck>();
             services.AddTransient<IStartupFilter, AgentStartupFilter>();

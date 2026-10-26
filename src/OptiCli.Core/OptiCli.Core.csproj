@@ -12,6 +12,10 @@
     <!-- Microsoft Entra ID authentication (Authentication=Active Directory ...), common for Azure SQL dev databases.
          SqlClient loads it by name when present; nothing compiles against it (or its newer System.Text.Json). -->
     <PackageReference Include="Microsoft.Data.SqlClient.Extensions.Azure" ExcludeAssets="compile" />
+    <!-- A sealed run checks production's event bus and blob storage with these (Core/Azure). They ship in the CLI only:
+         the site agent uses the site's own CMS Azure packages, and a site without Azure needs none of this. -->
+    <PackageReference Include="Azure.Messaging.ServiceBus" />
+    <PackageReference Include="Azure.Storage.Blobs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -51,6 +51,20 @@ public static class AgentRoutes
     public static readonly string DriftOfModel = $"{Prefix}/drift?compare=model";
 
     /// <summary>
+    /// <c>GET /v1/sealed</c>. Response: <see cref="SealedStatus"/>: the event and blob providers in effect in a sealed apply's
+    /// site, which the run checks against what the user typed before anything is written. Only in a sealed run
+    /// (<see cref="AgentProtocol.SecretsVariable"/>); elsewhere <c>not_found</c>.
+    /// </summary>
+    public static readonly string Sealed = $"{Prefix}/sealed";
+
+    /// <summary>
+    /// <c>POST /v1/sealed/events/flush</c>, no body. Response: <see cref="EventsFlushResult"/>. Sends what the CMS's Azure
+    /// event provider still has queued and waits until it is sent (its queue is completed: nothing is sent after it), so the
+    /// run's last cache drops reach production's servers before the site stops. Only in a sealed run with an event bus.
+    /// </summary>
+    public static readonly string SealedEventsFlush = $"{Prefix}/sealed/events/flush";
+
+    /// <summary>
     /// <c>GET /v1/types/{name}</c>, name or GUID. Response: <see cref="ContentTypeModel"/>.
     /// Errors: <c>not_found</c> with close matches in the hint.
     /// </summary>

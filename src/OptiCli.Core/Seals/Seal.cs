@@ -28,14 +28,15 @@ public sealed record SealOptions(bool UpdateExisting, bool Publish, bool Request
 /// <param name="New">Create/block steps whose GUID production doesn't have: new content.</param>
 /// <param name="Touched">Content the plan writes that production has, whose versions the seal checks.</param>
 /// <param name="Expiring">Steps that set an expiry (<c>StopPublish</c>) that has passed: published, that content goes offline.</param>
-public sealed record SealSummary(int Steps, IReadOnlyDictionary<string, int> Operations, IReadOnlyDictionary<string, int> Types, int Publishes, int Existing, int New, int Touched, int Expiring = 0)
+/// <param name="Media">Steps that upload a file (<c>upload</c>, also with <c>replace</c>): the run asks for production's blob storage.</param>
+public sealed record SealSummary(int Steps, IReadOnlyDictionary<string, int> Operations, IReadOnlyDictionary<string, int> Types, int Publishes, int Existing, int New, int Touched, int Expiring = 0, int Media = 0)
 {
     /// <param name="now">What an expiry is compared with; the current time when null.</param>
     public static SealSummary Of(WritePlan plan, SealOptions options, ProductionState production, DateTimeOffset? now = null)
     {
         var there = production.Items.Where(i => i.Exists).Select(i => i.Guid).ToHashSet();
         var operations = plan.Steps.Select(s => s.Operation).ToList();
-        var creating = operations.Where(o => o is CreateOperation or BlockCreateOperation).ToList();
+        var creating = operations.Where(o => o is CreateOperation or BlockCreateOperation or UploadOperation { Replace: null }).ToList();
         var touched = SealedPlan.Touched(plan);
         return new SealSummary(
             operations.Count,
@@ -45,7 +46,8 @@ public sealed record SealSummary(int Steps, IReadOnlyDictionary<string, int> Ope
             creating.Count(o => o.ContentGuid is { } guid && there.Contains(guid)),
             creating.Count(o => o.ContentGuid is not { } guid || !there.Contains(guid)),
             touched.Count(there.Contains),
-            operations.Count(o => SealedPlan.SetsPassedExpiry(o, now ?? DateTimeOffset.UtcNow)));
+            operations.Count(o => SealedPlan.SetsPassedExpiry(o, now ?? DateTimeOffset.UtcNow)),
+            operations.Count(o => o is UploadOperation));
     }
 
     private static IReadOnlyDictionary<string, int> Count(IEnumerable<string> names) =>

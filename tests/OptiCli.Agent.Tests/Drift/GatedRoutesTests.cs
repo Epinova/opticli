@@ -11,8 +11,11 @@ namespace OptiCli.Agent.Tests.Drift;
 /// <summary>Every route that changes content passes the drift gate, so a new one can't skip it.</summary>
 public class GatedRoutesTests
 {
-    /// <summary>Takes no content write, so it isn't gated: stopping the site changes nothing in the database.</summary>
-    private static readonly AgentEndpoint[] UngatedWrites = [AgentEndpoint.Shutdown];
+    /// <summary>
+    /// Take no content write, so they aren't gated: stopping the site changes nothing in the database, and a sealed run's
+    /// flush only sends the cache drops its event provider queued.
+    /// </summary>
+    private static readonly AgentEndpoint[] UngatedWrites = [AgentEndpoint.Shutdown, AgentEndpoint.SealedEventsFlush];
 
     [Fact]
     public void Every_endpoint_has_a_method_and_a_handler()

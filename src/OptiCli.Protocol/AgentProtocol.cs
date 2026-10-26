@@ -69,9 +69,32 @@ public static class AgentProtocol
 
     public const string SecretsFromStdin = "stdin";
 
-    /// <summary>Whether a variable may come from the stdin line (<see cref="SecretsVariable"/>): the token and connection strings only.</summary>
+    /// <summary>
+    /// Whether a variable may come from the stdin line (<see cref="SecretsVariable"/>): the token, connection strings, and the
+    /// topic and container of production's Azure providers (<see cref="EventsTopicVariable"/>, <see cref="BlobsContainerVariable"/>).
+    /// </summary>
     public static bool IsSecret(string name) =>
-        name == TokenVariable || name == DatabaseVariable || name.StartsWith("ConnectionStrings__", StringComparison.Ordinal);
+        name == TokenVariable || name == DatabaseVariable || name == EventsTopicVariable || name == BlobsContainerVariable
+        || name.StartsWith("ConnectionStrings__", StringComparison.Ordinal);
+
+    /// <summary>
+    /// A sealed run's production event bus (Azure Service Bus), typed at the user's terminal: on the stdin line only, never in
+    /// the environment. With <see cref="EventsTopicVariable"/>, the agent registers the CMS's Azure event provider with them,
+    /// whatever the site's own configuration says.
+    /// </summary>
+    public const string EventsConnectionVariable = "ConnectionStrings__EPiServerAzureEvents";
+
+    /// <summary>The topic of <see cref="EventsConnectionVariable"/>; stdin line only.</summary>
+    public const string EventsTopicVariable = "OPTICLI_EVENTS_TOPIC";
+
+    /// <summary>
+    /// A sealed run's production blob storage (Azure), typed at the user's terminal: on the stdin line only. With
+    /// <see cref="BlobsContainerVariable"/>, the agent makes the CMS's Azure blob provider the default with them.
+    /// </summary>
+    public const string BlobsConnectionVariable = "ConnectionStrings__EPiServerAzureBlobs";
+
+    /// <summary>The container of <see cref="BlobsConnectionVariable"/>; stdin line only.</summary>
+    public const string BlobsContainerVariable = "OPTICLI_BLOBS_CONTAINER";
 
     /// <summary>
     /// Request header confirming a write although the build and the shared database differ: the

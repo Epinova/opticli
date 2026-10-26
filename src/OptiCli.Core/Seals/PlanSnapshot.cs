@@ -41,6 +41,10 @@ public sealed class PlanSnapshot
     public string? Text(string fullPath) =>
         _files.TryGetValue(System.IO.Path.GetFullPath(fullPath), out var bytes) ? Decode(bytes) : null;
 
+    /// <summary>A file's bytes as they were read; null when the plan doesn't read that file.</summary>
+    public byte[]? Bytes(string fullPath) =>
+        _files.TryGetValue(System.IO.Path.GetFullPath(fullPath), out var bytes) ? bytes : null;
+
     /// <exception cref="NotFoundException">The plan file doesn't exist.</exception>
     /// <exception cref="UsageException">The plan is malformed, or a file it reads is missing or outside its folder.</exception>
     public static async Task<PlanSnapshot> ReadAsync(string planPath, CancellationToken cancellationToken)

@@ -17,7 +17,10 @@ namespace OptiCli.Agent.Hosting;
 /// IDE mode (<c>opticli ide on</c>): where the agent announces itself once the site listens (<see cref="IdeRun"/>). The
 /// agent then changes nothing about how the site starts, and never stops it from starting.
 /// </param>
-internal sealed record AgentSettings(string ConnectionName, string? PinnedConnection, string? Token, (string Server, string? Database)? ApprovedRemote = null, string? DriftFile = null, bool Scheduler = false, string? IdeFile = null)
+/// <param name="Events">A sealed apply's production event bus, from its stdin line only (<see cref="SealedAzure"/>).</param>
+/// <param name="Blobs">A sealed apply's production blob storage, from its stdin line only.</param>
+internal sealed record AgentSettings(string ConnectionName, string? PinnedConnection, string? Token, (string Server, string? Database)? ApprovedRemote = null, string? DriftFile = null, bool Scheduler = false, string? IdeFile = null,
+    AzureEvents? Events = null, AzureBlobs? Blobs = null)
 {
     /// <summary>The site was started from the IDE with the hook from <c>opticli ide on</c>, not by <c>serve</c> or <c>env</c>.</summary>
     public bool Ide => IdeFile is not null;
@@ -58,7 +61,9 @@ internal sealed record AgentSettings(string ConnectionName, string? PinnedConnec
         NullIfEmpty(Environment.GetEnvironmentVariable(AgentProtocol.TokenVariable)),
         AgentProtocol.ParseRemote(Environment.GetEnvironmentVariable(AgentProtocol.RemoteDatabaseVariable)),
         NullIfEmpty(Environment.GetEnvironmentVariable(AgentProtocol.DriftFileVariable)),
-        string.Equals(Environment.GetEnvironmentVariable(AgentProtocol.SchedulerVariable)?.Trim(), AgentProtocol.SchedulerOn, StringComparison.OrdinalIgnoreCase));
+        string.Equals(Environment.GetEnvironmentVariable(AgentProtocol.SchedulerVariable)?.Trim(), AgentProtocol.SchedulerOn, StringComparison.OrdinalIgnoreCase),
+        Events: StdinSecrets.Given(AgentProtocol.EventsConnectionVariable) is { } events && StdinSecrets.Given(AgentProtocol.EventsTopicVariable) is { } topic ? new AzureEvents(events, topic) : null,
+        Blobs: StdinSecrets.Given(AgentProtocol.BlobsConnectionVariable) is { } blobs && StdinSecrets.Given(AgentProtocol.BlobsContainerVariable) is { } container ? new AzureBlobs(blobs, container) : null);
 
     /// <summary>
     /// Local, or exactly the approved remote server and database (a remote without a database name would be the

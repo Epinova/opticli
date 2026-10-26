@@ -55,9 +55,10 @@ internal static class Sealing
     /// <summary>What a seal doesn't check, said in every result.</summary>
     public static readonly IReadOnlyList<string> NotChecked =
     [
-        "production's servers keep what they have cached: restart the site (every instance) after the run",
+        "production's servers keep what they have cached unless the user gives production's event bus (Azure Service Bus) at the run: without it, restart the site (every instance) after the run; the result's restartNeeded says which",
         "the run starts this build in Development against production: its startup code, event handlers (search indexing, webhooks, emails) and configuration run with it",
-        "media, deletes, unpublish steps and access rights: a sealed apply never does them; an expiry (StopPublish) that has passed, set by the plan, still takes content offline (summary.expiring counts those steps)",
+        "media files only reach production when the user gives its blob storage (Azure) at the run; without it, a plan with upload steps is refused there",
+        "deletes, unpublish steps and access rights: a sealed apply never does them; an expiry (StopPublish) that has passed, set by the plan, still takes content offline (summary.expiring counts those steps)",
     ];
 
     /// <summary>The production database named by <c>--seal-for</c>, <c>--to</c> or the run's <c>--db</c>: like <c>--db</c>, never <c>--connection</c> or <c>OPTICLI_DB</c>.</summary>
@@ -107,6 +108,10 @@ internal static class Sealing
     {
         var project = context.Project;
         SealedPlan.Require(plan.Plan, local.Model);
+        var settings = UserConfig.ForProject(context.Environment.UserConfigFile, project.Directory);
+        var output = OutputLocator.Locate(project, null, settings?.Output, context.Environment.CurrentDirectory);
+        // Files go only to production's blob storage, which the run can only give the CMS's Azure blob provider.
+        SealedProvidersRun.RequireMediaPossible(plan.Plan, Path.GetDirectoryName(output.Dll)!);
 
         // The plan's dry run against the local site, exactly as apply does it (and the sealed run will against production).
         var writes = context.Writes(local, updateExisting: options.UpdateExisting, ask: false);
@@ -118,8 +123,6 @@ internal static class Sealing
         await RequireNoDriftAsync(context, warnings, cancellationToken);
 
         var state = await ProductionState.ReadAsync(productionSession, SealedPlan.Touched(plan.Plan), SealedPlan.Referenced(plan.Plan), cancellationToken);
-        var settings = UserConfig.ForProject(context.Environment.UserConfigFile, project.Directory);
-        var output = OutputLocator.Locate(project, null, settings?.Output, context.Environment.CurrentDirectory);
         RequireNoIdeHook(output.Dll);
         var build = BuildFingerprint.Of(project, output.Dll, context.Environment);
         var summary = SealSummary.Of(plan.Plan, options, state);
@@ -251,7 +254,8 @@ internal static class Sealing
         + (summary.Types.Count > 0 ? $"; content types {string.Join(", ", summary.Types.Select(t => $"{t.Key} {t.Value}"))}" : "")
         + (summary.New + summary.Existing > 0 ? $"; creates {summary.New} new item(s), updates {summary.Existing} production has" : "")
         + $"; {summary.Publishes} publishing; {summary.Touched} item(s) production has, whose versions are checked"
-        + (summary.Expiring > 0 ? $"; {summary.Expiring} set an expiry (StopPublish) that has passed: published, that content goes offline" : "");
+        + (summary.Expiring > 0 ? $"; {summary.Expiring} set an expiry (StopPublish) that has passed: published, that content goes offline" : "")
+        + (summary.Media > 0 ? $"; {summary.Media} upload a media file: the run asks for production's blob storage" : "");
 
     /// <summary>
     /// A build from IDE mode names opticli's copy of the agent in its <c>runtimeconfig.json</c>, which the runtime loads

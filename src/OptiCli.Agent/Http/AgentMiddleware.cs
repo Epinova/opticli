@@ -76,6 +76,9 @@ internal static class AgentMiddleware
         [AgentEndpoint.TypesWithoutCode] = Read(request => TypesWithoutCodeEndpoint.Handle(request)),
         [AgentEndpoint.Read] = Read(request => ReadEndpoint.Handle(request)),
         [AgentEndpoint.RestoreParents] = Read(request => RestoreParentsEndpoint.Handle(request)),
+        // A sealed apply's providers: what the site runs with, and sending what the event provider queued (no content changes).
+        [AgentEndpoint.Sealed] = Read(request => SealedEndpoint.Status(request)),
+        [AgentEndpoint.SealedEventsFlush] = new(false, async request => (200, (object)await SealedEndpoint.FlushAsync(request))),
         [AgentEndpoint.Create] = Write(r => r.ReadBodyAsync<CreateRequest>(), b => b.DryRun, (r, b) => Created(CreateOperation.Run(r.Call, b))),
         [AgentEndpoint.Upload] = Write(r => r.ReadBodyAsync<UploadRequest>(UploadBodyBytes), b => b.DryRun, (r, b) => Created(UploadOperation.Run(r.Call, b))),
         [AgentEndpoint.Draft] = Write(r => r.ReadBodyAsync<DraftRequest>(), b => b.DryRun, (r, b) => Ok(DraftOperation.Run(r.Call, r.Argument, b))),

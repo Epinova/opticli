@@ -33,6 +33,8 @@ internal enum AgentEndpoint
     UserAdd,
     UserRemove,
     UserRoles,
+    Sealed,
+    SealedEventsFlush,
 }
 
 /// <param name="Argument">The <c>{name}</c> or <c>{ref}</c> segment, when the route has one.</param>
@@ -48,7 +50,7 @@ internal static partial class AgentRouter
 
     private static readonly string RouteList =
         $"GET {AgentRoutes.Prefix}/ping, POST {AgentRoutes.Prefix}/shutdown, GET {AgentRoutes.Prefix}/drift, GET {AgentRoutes.Prefix}/restore-parents, GET {AgentRoutes.Prefix}/types/{{name}}, GET {AgentRoutes.Prefix}/types-without-code, POST {AgentRoutes.Prefix}/types/remove, POST {AgentRoutes.Prefix}/content, POST {AgentRoutes.Prefix}/media, " +
-        $"POST {AgentRoutes.Prefix}/content/{{ref}}/draft|languages|remove-language|publish|unpublish|discard|move|restore|access, GET|DELETE {AgentRoutes.Prefix}/content/{{ref}}, POST {AgentRoutes.Prefix}/sites/hosts, POST {AgentRoutes.Prefix}/jobs/run|stop|set, POST {AgentRoutes.Prefix}/users/add|remove, GET {AgentRoutes.Prefix}/users/roles";
+        $"POST {AgentRoutes.Prefix}/content/{{ref}}/draft|languages|remove-language|publish|unpublish|discard|move|restore|access, GET|DELETE {AgentRoutes.Prefix}/content/{{ref}}, POST {AgentRoutes.Prefix}/sites/hosts, POST {AgentRoutes.Prefix}/jobs/run|stop|set, POST {AgentRoutes.Prefix}/users/add|remove, GET {AgentRoutes.Prefix}/users/roles, GET {AgentRoutes.Prefix}/sealed, POST {AgentRoutes.Prefix}/sealed/events/flush";
 
     /// <exception cref="AgentException">No route matches, or it belongs to another protocol version.</exception>
     public static RouteMatch Match(string method, string? path)
@@ -75,6 +77,8 @@ internal static partial class AgentRouter
             ["shutdown"] => (AgentEndpoint.Shutdown, (string?)null),
             ["drift"] => (AgentEndpoint.Drift, (string?)null),
             ["restore-parents"] => (AgentEndpoint.RestoreParents, (string?)null),
+            ["sealed"] => (AgentEndpoint.Sealed, (string?)null),
+            ["sealed", "events", "flush"] => (AgentEndpoint.SealedEventsFlush, (string?)null),
             // Before types/{name}: a type can't be read by the name "remove" with POST, nor removed with GET.
             ["types", "remove"] when IsMethod(method, "POST") => (AgentEndpoint.TypesRemove, (string?)null),
             ["types", var name] => (AgentEndpoint.Type, name),
@@ -117,6 +121,8 @@ internal static partial class AgentRouter
     internal static readonly IReadOnlyDictionary<AgentEndpoint, string> Methods = new Dictionary<AgentEndpoint, string>
     {
         [AgentEndpoint.Ping] = "GET",
+        [AgentEndpoint.Sealed] = "GET",
+        [AgentEndpoint.SealedEventsFlush] = "POST",
         [AgentEndpoint.Shutdown] = "POST",
         [AgentEndpoint.Drift] = "GET",
         [AgentEndpoint.Type] = "GET",
