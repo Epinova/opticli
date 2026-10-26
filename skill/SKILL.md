@@ -113,16 +113,20 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
   site and read production (only read), and print `data.userCommand`: **give the user that command to run in their own
   terminal, with what it does** (`summary`/`push`: created, updated, moved, and `summary.expiring`, steps whose expiry has
   passed, which take that content offline; `conflicts`, `skipped`, `media` and `dropped` left out) **and what it
-  doesn't** (`notChecked`: production's servers need a restart afterwards, the local
-  build's code runs against production, media goes through the edit UI). Never run that command yourself (it is
+  doesn't** (`notChecked`: production's servers need a restart afterwards unless the user gives the run production's
+  event bus, the local build's code runs against production, media needs production's blob storage at the run). Never run
+  that command yourself (it is
   `refused` without a terminal, `details.reason: "sealNeedsTerminal"`, and it asks for a write login only the user
   has), never fake a terminal for it (`script`, `expect`, `unbuffer`), never pass it input, and never edit, copy, write or
   delete anything in the `seals` folder or `seal.key`. A refusal while sealing (`sealedPlan`, `modelDiffers`,
   `sealValidation`) or a `conflict` the user reports from the run (`productionChanged`, `planChanged`, `buildChanged`,
-  `sealExpired`) means: fix the plan, or pull and seal again. A sealed plan never deletes, unpublishes, changes access
-  or uploads media: tell the user to do those in production's edit UI. After the user's run, remind them to restart
-  production's site so its servers show the changes. Don't change code or rebuild between sealing and the user's run (the
-  run refuses a changed build).
+  `sealExpired`) means: fix the plan, or pull and seal again. A sealed plan never deletes, unpublishes or changes access:
+  tell the user to do those in production's edit UI. Media goes in only with `sync push --media` (or `upload` steps by
+  GUID) on a site whose build has the CMS's Azure blob provider; the user's run then asks for production's blob storage.
+  When the site has the CMS's Azure event provider, the run also offers production's event bus, so no restart is
+  needed; never ask the user for those connection strings yourself (the run asks). After the user's run, if the result
+  says `restartNeeded` (or the user didn't give the event bus), remind them to restart production's site so its servers
+  show the changes. Don't change code or rebuild between sealing and the user's run (the run refuses a changed build).
 - **Keep the local database in step with another environment** (only when the user asked): `opticli sync pull --from
   <name> --all` (or refs, or `--site <name>`; needs `serve` on the local database, on the current build). It creates,
   updates, moves and restores what changed in the source, by GUID; `--delete` also moves what the source deleted to

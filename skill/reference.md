@@ -888,19 +888,24 @@ Production (role `prod`) is written to only by a sealed plan that the user runs 
   the local development database, which must have the role `local`, else `refused`, `details.reason: "sealValidation"`;
   `<name>` must have the role `prod`, else `refused`, `details.reason: "sealTarget"`). No plan from stdin,
   `--allow-outside` or `--accept-drift` (`usage`).
-- `opticli sync push --to <name> (<ref>... | --site <name> | --all) [--languages en,sv] [--out <dir>]`: the plan from the local
+- `opticli sync push --to <name> (<ref>... | --site <name> | --all) [--languages en,sv] [--media] [--out <dir>]`: the plan from the local
   database (as `export` writes it, by GUID), with only what differs from production (read over SQL), then sealed as
   above (with `--update-existing`). Output `data.push`: `created[]`, `updated[]`, `moved[]`, `restored[]` (from
   production's recycle bin), `unchanged` (a count), `conflicts[]` (production changed it since the last pull, or it was
   never pulled from there: pull first), `skipped[]` (someone's unpublished changes in production, a parent production
-  lacks, a move into a "For this page" folder), `media[]` (left out: a sealed apply writes no files), `dropped[]`,
+  lacks, a move into a "For this page" folder), `media[]` (left out without `--media`), `dropped[]`,
   `drafts[]`, `steps`, `plan`. No steps: nothing is sealed (`seal` null). `--out` (default `push-<database>-<time>`) must
-  stay until the user ran the command.
+  stay until the user ran the command. `--media` pushes media production lacks or has otherwise too (an `upload` with its
+  GUID, the file copied from the local site's blob folder into `--out`); the user's run then asks for production's blob
+  storage. Only for a site whose build has the CMS's Azure blob provider (else `refused`, `sealedPlan`); use it when the
+  user wants the media in production too.
 
 What a sealed plan may do: `create`, `block`, `set`, `area`, `composition`, `translate`, `publish`, `move` and `restore`,
 with every ref a GUID or `$id` (also `parent`, `for`, `to`, `item`, a blueprint, a ContentArea item's `ref` and the value
-of a reference property), every `create`/`block` with a fixed GUID (`guid`, or `guidNamespace` and `id`). Not `delete`,
-`unpublish`, `access`, `discard`, `upload` (or `replace`), `translate` with `remove`, `includeDraft`, `force`,
+of a reference property), every `create`/`block`/`upload` with a fixed GUID (`guid`, or `guidNamespace` and `id`), and
+`upload` (also `replace` by GUID) only for a site whose build has the CMS's Azure blob provider (`EPiServer.Azure`, or
+`EPiServer.Blobs.Azure` on CMS 13): the run writes files only to production's blob storage, which the user types there.
+Not `delete`, `unpublish`, `access`, `discard`, `translate` with `remove`, `includeDraft`, `force`,
 `baseVersion`, a version in `publish` or `from` (`"from": "published"` is fine): `refused`, exit 3,
 `details.reason: "sealedPlan"`, `details.problems[]` lists each.
 
@@ -910,7 +915,8 @@ the run's site would refuse to write against production): `conflict`, exit 5, `d
 `details.differences[]` (`side`, `type`, `property`, `difference`) or `details.drift`. It reads production's versions of
 everything the plan touches. Output (`data`; `sync push` puts it in `data.seal`): `seal` (the id), `file`, `expires` (24
 hours), `target`, `plan`, `planHash`, `planFiles`, `options`, `summary` (`steps`, `operations`, `types`, `publishes`,
-`existing`, `new`, `touched`, `expiring`: steps that set an expiry that has passed, which takes that content offline),
+`existing`, `new`, `touched`, `expiring`: steps that set an expiry that has passed, which takes that content offline,
+`media`: upload steps),
 `build` (`output`, `built`, `commit`, `uncommitted`), `model`, `validatedOn`,
 **`userCommand`** (`opticli apply <plan> --db <name> --seal <id>`), `notChecked`.
 
@@ -929,8 +935,19 @@ you know what to do next:
 | `refused`, `"sealTampered"`, `"sealTarget"`, `"sealProject"`, `"sealPlan"` | The seal was edited, or run against another database, project or plan file | Seal again; run exactly `userCommand` |
 | `drift` | The site's code differs from production's database | Tell the user; nothing was written, and a sealed run accepts no drift |
 | `login_failed` | The write login was refused; nothing written, the seal unused | The user runs it again |
+| `refused`, `"eventBus"` / `"blobStorage"` | The event bus's topic is missing or has no subscriptions, the container is missing, or the run's site didn't use them (then the seal is used) | The user checks the topic or container production uses, or runs without the event bus (Enter); seal again if it was used |
+| `refused`, `"sealedPlan"` at the run | The plan uploads and the user gave no blob storage (Enter), or the build has no Azure blob provider | Seal a plan without uploads; the files go through production's edit UI |
+| `conflict`, `"blobMissing"` | Saved, but an uploaded file isn't in the container or couldn't be checked (`details.media[]`, `problem`) | Tell the user: production's database points at it; check it and upload it in the edit UI |
 
-After a run, production's servers still show what they had cached: tell the user to restart the site (every instance).
+**Production's event bus and blob storage.** When the site's build has the CMS's Azure providers, the user's run asks
+for them at the terminal (never from an option, variable or setting; never written anywhere): the event bus is optional
+(production's servers then drop their caches at once), blob storage is needed when the plan uploads. You never ask the
+user for these connection strings and never pass them anywhere: the run asks. The result's **`restartNeeded`** says
+whether production's servers still need a restart: false only when the run's cache drops were sent and counted on the
+topic (`events.sent`); otherwise (no event bus, or something uncertain: `events.problem`) tell the user to restart the
+site (every instance). `media[]` lists each uploaded file as found in the container (`blob`, `bytes`, `stored`, or
+`problem` when it couldn't be checked). A run that stopped part way has `events`, `media` and `restartNeeded` in its
+error's `details`, beside `operations`.
 
 ## serve and env
 
