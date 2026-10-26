@@ -19,6 +19,12 @@ that uses the CMS's Azure providers.
   that the site uses them, then that its subscription is on the topic, before the first save. After the saves the site
   sends what its provider still has queued (the CMS would drop it when the site stops), and a probe subscription counts
   the run's messages on the topic.
+- With Microsoft Entra ID, the run's site signs in with the token the run signed in with (handed over on its stdin line)
+  instead of fetching its own, so it writes as the identity the run checked. On a real site, fetching its own token while
+  starting stalled until Azure SQL dropped the login. Sites with SqlClient 7 still fetch their own.
+- The flush waits until the site has raised no cache removal for a few seconds before it sends the queue (a save's own
+  publish handlers keep raising them), and removals raised while the site stops are listed apart
+  (`events.notSentWhileStopping`) rather than counted as the run's.
 - **The result says whether a restart is needed**: `restartNeeded` is false only when the run's cache drops were sent
   and counted (`events.sent`); anything uncertain leaves it true, with the reason in `events.problem`.
 - **Media.** Sealed plans may `upload` (and `replace`) by GUID again, for a site whose build has the CMS's Azure blob
@@ -28,6 +34,11 @@ that uses the CMS's Azure providers.
   provider with those values, uploads send the bytes the run read and hashed (not the file again), and after the run every
   uploaded file is looked up where production's database now points (`media[]`; one missing is a `conflict`,
   `details.reason: "blobMissing"`).
+- Content types and properties only production's database has (classes or properties removed from code, which the CMS
+  keeps for their content) no longer stop a seal or the run. The seal records them by name (`leftovers`), the run shows
+  them before the user types anything, and the run's site may find exactly those and no other difference (`conflict`,
+  `details.reason: "driftNotSealed"` otherwise, before anything is written). Before, a production with such leftovers
+  had to be cleaned up in admin mode first.
 - `sync push --media` pushes media production lacks or has otherwise too, with its files from the local site's blob
   folder. Without it, media is listed and left out, as before.
 - The connection strings are never written to disk, logs, output or the seal, and no option, environment variable or

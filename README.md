@@ -392,9 +392,12 @@ reads production over SQL with its saved read-only login, and writes nothing the
   `upload` (or `replace`) is only sealed for a site whose build has the CMS's Azure blob provider (`EPiServer.Azure`, on
   CMS 13 `EPiServer.Blobs.Azure`): the run writes files only to production's blob storage, which the user gives it;
 - production's content model must be the build's: compared with the local database's (which holds the build's model)
-  both ways, by GUID and name, and the local site's code with its own database (types and properties only in the
-  database, which removed code left, would stop the run's writes too). Otherwise `conflict` (exit 5,
-  `details.reason: "modelDiffers"`);
+  both ways, by GUID and name, and the local site's code with its own database. One kind of difference is accepted:
+  content types and properties only the database has (classes or properties removed from code that the CMS kept for
+  their content, or newer code in production), since a sealed plan doesn't write them. The seal records them by name
+  (`leftovers`), the run shows them before you type anything, and the run's site may find those and nothing else.
+  Any other difference (what only the build has, a property of another type, stores, migrations) is a `conflict`
+  (exit 5, `details.reason: "modelDiffers"`);
 - the seal records the plan's SHA-256 (plan.json and every file it reads), production's server and database (as roles
   key them), the project, a fingerprint of the build output (every file in its folder, the project's `appsettings*.json`
   and user secrets), production's model fingerprint, and the newest and published version (with when it was saved) of
@@ -425,7 +428,10 @@ option (the seal's are used), and:
    `details.reason: "productionChanged"`, `details.changes` says what changed: seal again);
 4. asks for the write login (user, and the password without showing it), used for this run only and never written
    anywhere (not the seal, the log, the output or the environment). It replaces the saved login's user and password; a
-   connection that signs in as the user (integrated security, Microsoft Entra ID) asks for nothing and writes as them;
+   connection that signs in as the user (integrated security, Microsoft Entra ID) asks for nothing and writes as them.
+   With Microsoft Entra ID the run's site gets the access token the run signed in with (on its stdin line, like a write
+   password) instead of fetching its own, so it writes as exactly the identity the run checked (a starting site fetching
+   its own token could stall until Azure SQL dropped the login; on a site with SqlClient 7 it still fetches its own);
 5. when the site's build has the CMS's Azure providers, asks for **production's event bus** (optional) and, when the plan
    uploads, **production's blob storage** (required then; see below), and checks them before the seal is used;
 6. marks the seal used, starts the site against production for this run only and stops it again afterwards (also on a
@@ -459,8 +465,10 @@ nothing.
   machine names) are shown, so check they are production's. Once the site runs, its event
   provider must be the Azure one with that connection and topic, and right before the first save its own subscription must
   be on the topic (otherwise nothing is written). After the run, the site sends what its provider still has queued
-  (the CMS would drop it when the site stops), and a probe subscription counts the run's messages on the topic. Only then,
-  and when the site's log has no "Failed to send event", is `restartNeeded` false (`events.sent` says how many); anything
+  (the CMS would drop it when the site stops), once the site has raised no cache removal for a few seconds (a save's own
+  publish handlers keep raising them for a while), and a probe subscription counts the run's messages on the topic. Only
+  then, and when the site's log has no "Failed to send event" before the queue was sent, is `restartNeeded` false
+  (removals the site raises while it stops are listed apart, `events.notSentWhileStopping`) (`events.sent` says how many); anything
   uncertain leaves it true, with the restart warning and why (`events.problem`). Enter: no event bus, and the restart warning as before. A bus the site can't reach makes it fail to start (nothing
   written; the seal is used).
 - **Blob storage** (when the plan uploads): an Azure Storage connection string (account name and key, or a blob endpoint
@@ -494,8 +502,9 @@ What a seal doesn't cover:
   cache events too and sends its own, as a deployed instance does.
 - Content an editor changes after the last check, while the plan runs, is caught by each step's own checks (a newer
   version is a conflict, someone's draft isn't published), not by the seal.
-- A production database with types or properties its code no longer has is drift, and the run accepts none: clean them
-  up there (admin mode) first.
+- Types and properties only production's database has are accepted as they are, by name, as sealed; the run stops before
+  writing (`conflict`, `details.reason: "driftNotSealed"`) if its site finds any other difference, or a leftover the seal
+  didn't list.
 
 Why an agent can't: the run needs a person at a terminal and the write login, which only the user has (save only a
 read-only login for production, see [Environments](#environments)). The seal ties what the user sees to what runs. An agent
@@ -512,7 +521,7 @@ apply or not: give production a read-only SQL login for reads and a separate log
 | `export` only reads (over SQL, never through a site), so it works on production; it writes nothing but its own folder. | CLI |
 | `sync pull` only reads its source (over SQL, read-only intent for production) and writes only to a database with the role `local` (refused otherwise, exit 3, `details.reason: "syncTarget"`), through its site, as `apply --update-existing` does. It never deletes for good: `--delete` moves content to the recycle bin. A local change to content the source changed too is a conflict, left alone unless `--overwrite-local`. | CLI, then the site agent |
 | A database with the role `prod` is only read, and only when a run picks it: it is never the development database (`db use` and a saved choice that became production are refused), and `serve`, `env` and every write are refused (exit 3, `details.reason: "prodDatabase"`), whether it was picked by name, id, database name, `--connection`, `--profile`, `OPTICLI_DB` or an exported connection string. Roles belong to a server and database, and a weaker one needs a person at a terminal. Reads connect with `ApplicationIntent=ReadOnly`. The only exception is a sealed apply (next row). | CLI before anything is read, again on the way to the site, and when starting it |
-| A sealed apply writes to production only at a terminal (stdin, stdout and stderr), after the user typed the database's name and the write login, once per seal (24 hours), and only if the plan and its files, the build, production's content model and every item the plan touches are as sealed (checked before the login is asked, and again right before the first save). Sealed plans create, change, move, translate, publish and upload by GUID; never delete, unpublish, change access, discard, or include someone else's draft. Files go only to production's blob storage, and the run joins production's event bus only, when the user types them at the run's terminal (never an option, variable or setting); what the site runs with is checked before anything is written. The site for the run listens on loopback only, serves nothing but the agent (its own pages and edit UI answer 404), gets its token and the write login on stdin (not in its environment or a state file), runs in shared mode, accepts no drift, and is stopped afterwards. The write login is never saved. | CLI (seal, terminal, checks), the run's own site launcher, site agent |
+| A sealed apply writes to production only at a terminal (stdin, stdout and stderr), after the user typed the database's name and the write login, once per seal (24 hours), and only if the plan and its files, the build, production's content model and every item the plan touches are as sealed (checked before the login is asked, and again right before the first save). Sealed plans create, change, move, translate, publish and upload by GUID; never delete, unpublish, change access, discard, or include someone else's draft. Files go only to production's blob storage, and the run joins production's event bus only, when the user types them at the run's terminal (never an option, variable or setting); what the site runs with is checked before anything is written. The site for the run listens on loopback only, serves nothing but the agent (its own pages and edit UI answer 404), gets its token and the write login on stdin (not in its environment or a state file), runs in shared mode, accepts no drift but the sealed leftovers (types and properties only in production's database, by name), and is stopped afterwards. The write login is never saved. | CLI (seal, terminal, checks), the run's own site launcher, site agent |
 | The site started by `serve` is pinned to the database the CLI reads. It refuses to start against any remote database except the approved development one. There it runs without scheduler, schema updates, content type sync or store remapping, and `serve` refuses a build with EF Core migrations the database lacks. If the site turns hosting startups off in its code, so the pin can't run, it refuses to start. | CLI + site agent at startup |
 | The site agent answers only loopback callers that send the per-run token, and only in `Development`. The token is kept in a state file only your user can read. | Site agent, per request |
 | Writes create drafts; publishing needs `--publish` (or `publish`). Saves are attributed to the user `opticli`. | CLI + site agent |

@@ -910,14 +910,17 @@ Not `delete`, `unpublish`, `access`, `discard`, `translate` with `remove`, `incl
 `details.reason: "sealedPlan"`, `details.problems[]` lists each.
 
 Sealing dry-runs the plan against the local site, and fails (nothing sealed) when production's content model differs from
-the local database's, or the local site's code differs from its own database (types or properties only in the database:
-the run's site would refuse to write against production): `conflict`, exit 5, `details.reason: "modelDiffers"`,
-`details.differences[]` (`side`, `type`, `property`, `difference`) or `details.drift`. It reads production's versions of
+the local database's, or the local site's code differs from its own database: `conflict`, exit 5,
+`details.reason: "modelDiffers"`, `details.differences[]` (`side`, `type`, `property`, `difference`) or `details.drift`.
+Content types and properties only the database has (removed code; in production, also newer code there) are not such a
+difference: the seal accepts them by name (`leftovers`, also in a warning), as the plan doesn't write them, and the run
+accepts those and nothing else. Mention them to the user; don't ask them to clean them up for the seal's sake. It reads production's versions of
 everything the plan touches. Output (`data`; `sync push` puts it in `data.seal`): `seal` (the id), `file`, `expires` (24
 hours), `target`, `plan`, `planHash`, `planFiles`, `options`, `summary` (`steps`, `operations`, `types`, `publishes`,
 `existing`, `new`, `touched`, `expiring`: steps that set an expiry that has passed, which takes that content offline,
 `media`: upload steps),
-`build` (`output`, `built`, `commit`, `uncommitted`), `model`, `validatedOn`,
+`build` (`output`, `built`, `commit`, `uncommitted`), `model`, `validatedOn`, `leftovers` (types and properties only
+production has, accepted by name),
 **`userCommand`** (`opticli apply <plan> --db <name> --seal <id>`), `notChecked`.
 
 Hand the user `userCommand` with what it will do and `notChecked`. Never run it (without a terminal: `refused`,
@@ -933,7 +936,8 @@ you know what to do next:
 | `refused`, "loads opticli's agent from `opticli ide on`" (also when sealing) | The build is from IDE mode: its runtimeconfig.json names opticli's agent copy | Ask the user to run `opticli ide off` and rebuild (or do it when they agree), then seal again |
 | `refused`, `"sealUsed"` | A seal runs once | Seal again |
 | `refused`, `"sealTampered"`, `"sealTarget"`, `"sealProject"`, `"sealPlan"` | The seal was edited, or run against another database, project or plan file | Seal again; run exactly `userCommand` |
-| `drift` | The site's code differs from production's database | Tell the user; nothing was written, and a sealed run accepts no drift |
+| `conflict`, `"driftNotSealed"` | The run's site found a difference the seal didn't accept (`details.unsealed`): production or the build changed since | Nothing written; seal again |
+| `drift` | The site's code differs from production's database | Tell the user; nothing was written, and a sealed run accepts no drift but its sealed leftovers |
 | `login_failed` | The write login was refused; nothing written, the seal unused | The user runs it again |
 | `refused`, `"eventBus"` / `"blobStorage"` | The event bus's topic is missing or has no subscriptions, the container is missing, or the run's site didn't use them (then the seal is used) | The user checks the topic or container production uses, or runs without the event bus (Enter); seal again if it was used |
 | `refused`, `"sealedPlan"` at the run | The plan uploads and the user gave no blob storage (Enter), or the build has no Azure blob provider | Seal a plan without uploads; the files go through production's edit UI |
@@ -945,7 +949,8 @@ for them at the terminal (never from an option, variable or setting; never writt
 user for these connection strings and never pass them anywhere: the run asks. The result's **`restartNeeded`** says
 whether production's servers still need a restart: false only when the run's cache drops were sent and counted on the
 topic (`events.sent`); otherwise (no event bus, or something uncertain: `events.problem`) tell the user to restart the
-site (every instance). `media[]` lists each uploaded file as found in the container (`blob`, `bytes`, `stored`, or
+site (every instance). `events.notSentWhileStopping` counts cache removals the run's site raised while it stopped, after
+its queue was sent: the site's own, not the plan's, and no reason to restart. `media[]` lists each uploaded file as found in the container (`blob`, `bytes`, `stored`, or
 `problem` when it couldn't be checked). A run that stopped part way has `events`, `media` and `restartNeeded` in its
 error's `details`, beside `operations`.
 
