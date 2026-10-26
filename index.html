@@ -254,7 +254,8 @@ footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--rul
       <li><h3>Changes for production: the agent seals, you run</h3>
         <p>A coding agent can prepare content for production but never write it. <code>sync push</code> seals what changed
           locally; you run the command it prints in your own terminal, see what it does, type the database's name and a
-          write login that is never saved. It runs only if the plan, the build and production are as sealed.</p>
+          write login that is never saved. It runs only if the plan, the build and production are as sealed. On Azure it
+          can join production's event bus, so no restart is needed, and carry media to its blob storage.</p>
         <code class="eg">opticli sync push --to prod /en/campaign/</code></li>
       <li><h3>Scheduled jobs, without surprises</h3>
         <p>See every job's schedule, last run and log, and where its code lives. Run one and wait for its result, stop
@@ -360,6 +361,18 @@ https://your-site.example/episerver/opticli/mcp</pre>
         <code>opticli skill install</code> again to update the skill.</p>
     </div>
     <ol class="changelog">
+      <li><div class="v"><b>0.24.0</b><span>26 October 2026</span></div>
+        <ul>
+          <li><b>Production without a restart:</b> when the site uses the CMS's Azure providers, the sealed run you start
+            in your own terminal can join production's event bus, typed there like the write login and never saved, so
+            production's servers drop what they cached at once. The result says whether a restart is still needed.</li>
+          <li><b>Media to production:</b> sealed plans upload files again, to production's blob storage typed at the run,
+            and each file is looked up in the container afterwards. <code>sync push --media</code> pushes media too.</li>
+          <li><b>Ready for real sites:</b> content types and properties only production's database has (removed code)
+            no longer block a seal, and the run's site signs in to a production that uses Microsoft Entra ID with the
+            run's own token. Details in the
+            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
+        </ul></li>
       <li><div class="v"><b>0.23.1</b><span>23 October 2026</span></div>
         <ul>
           <li><b>MCP hardening:</b> uploads go by what the site serves a file as, by its file name and the media's name,
