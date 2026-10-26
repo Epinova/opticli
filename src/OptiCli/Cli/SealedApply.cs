@@ -77,6 +77,7 @@ internal static class SealedApply
         var build = BuildFingerprint.Of(project, output.Dll, environment);
         var verified = SealCheck.Verify(seal, candidate.Target!, project.Directory, plan, build, DateTimeOffset.UtcNow);
         SealedPlan.Require(plan.Plan, model: null);
+        SealedPlan.RequireNoLeftoverWrites(plan.Plan, verified.Seal.Leftovers, verified.Seal.Production);
         var outputFolder = Path.GetDirectoryName(output.Dll)!;
         SealedProvidersRun.RequireMediaPossible(plan.Plan, outputFolder);
         var touched = SealedPlan.Touched(plan.Plan);
@@ -129,7 +130,9 @@ internal static class SealedApply
         if (credentials is null && ProductionWrite.LastEntraToken() is { } entra)
         {
             sqlToken = new SealedSqlToken(entra.AccessToken, entra.ExpiresOn);
-            terminal.WriteLine($"The run's site signs in to production with this run's Microsoft Entra token (valid until {entra.ExpiresOn.ToLocalTime():HH:mm}).");
+            var left = entra.ExpiresOn - DateTimeOffset.UtcNow;
+            terminal.WriteLine($"The run's site gets this run's Microsoft Entra token to sign in to production with (valid until {entra.ExpiresOn.ToLocalTime():HH:mm}"
+                + (left < TimeSpan.FromMinutes(15) ? $", {Math.Max(0, (int)left.TotalMinutes)} min from now: after that the site fetches its own" : "") + ").");
         }
         if (await WriteAccessReader.ReadAsync(session.Db, cancellationToken) is { Count: 0 })
         {
@@ -263,13 +266,15 @@ internal static class SealedApply
         }
         try
         {
-            // Before the agent's "queue sent" line: the run's own cache removals. After it: what the site raised while it
-            // stopped, once the queue no longer took anything (listed, but not the plan's).
+            // After the host's "Application is shutting down" line: what the site raised while it stopped (listed, not the
+            // plan's). Both lines come through the site's own logger and stream, so their order holds (the agent's
+            // "queue sent" line goes to the other stream, so it can't tell them apart). Without that line, every failure
+            // counts as the run's.
             var lines = File.ReadLines(logPath).ToList();
-            var flushed = lines.FindIndex(l => l.Contains(OptiCli.Protocol.AgentProtocol.EventsFlushedLine, StringComparison.Ordinal));
+            var stopping = lines.FindIndex(l => l.Contains(StoppingLine, StringComparison.Ordinal));
             static bool Failed(string line) => line.Contains("Failed to send event", StringComparison.Ordinal);
-            var before = (flushed < 0 ? lines : lines.Take(flushed)).Count(Failed);
-            var after = flushed < 0 ? 0 : lines.Skip(flushed).Count(Failed);
+            var before = (stopping < 0 ? lines : lines.Take(stopping)).Count(Failed);
+            var after = stopping < 0 ? 0 : lines.Skip(stopping).Count(Failed);
             events = events with { NotSentWhileStopping = after };
             return before == 0 ? events : events with { Problem = $"the site's event provider logged {before} event(s) of the run it couldn't send (see {logPath})" };
         }
@@ -278,6 +283,9 @@ internal static class SealedApply
             return events with { Problem = $"the run's log couldn't be read to check for events that weren't sent: {ex.Message}" };
         }
     }
+
+    /// <summary>What ASP.NET Core's host logs (<c>Microsoft.Hosting.Lifetime</c>) when the site begins to stop.</summary>
+    internal const string StoppingLine = "Application is shutting down";
 
     private static string Describe(IEnumerable<SealedMediaResult> media) =>
         string.Join(", ", media.Select(m => $"{m.Blob ?? "(no file)"} (step {m.Step}, {m.Problem ?? (m.Stored is { } stored ? $"{stored} of {m.Bytes} bytes" : "not found")})"));
@@ -318,7 +326,7 @@ internal static class SealedApply
         terminal.WriteLine("  checks:  production's content model and the versions of the content the plan touches must be as sealed: next, and again right before the first save");
         if (seal.Leftovers is { Count: > 0 } leftovers)
         {
-            terminal.WriteLine($"  accepts: {leftovers.Count} content type(s)/properties only production's database has (removed code), as they are; the plan doesn't write them, and any other difference stops the run: {Printable.Of(string.Join(", ", leftovers))}");
+            terminal.WriteLine($"  accepts: {leftovers.Count} content type(s)/properties only production's database has (code removed, or newer code there than this build), as they are; the plan doesn't write them (checked), and any other difference stops the run: {Printable.Of(string.Join(", ", leftovers))}");
         }
         terminal.WriteLine($"  never:   deletes, unpublish steps, access rights{(summary.Media > 0 ? "; media files only to production's blob storage, asked next" : "")}");
         terminal.WriteLine();

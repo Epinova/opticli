@@ -77,6 +77,17 @@ public class ModelCompatibilityTests
     }
 
     [Fact]
+    public void When_the_sources_build_writes_a_definition_the_targets_code_marks_removed_is_present_but_types_still_count()
+    {
+        // As a sealed run compares (CompareAsync with sourceBuildWrites): the target's ExistsOnModel = 0 isn't asked.
+        var compared = ModelCompatibility.Compare(Source(), new HashSet<int> { 1006 }, Target(), new HashSet<int>());
+
+        var dropped = compared.DroppedProperties(101);
+        Assert.DoesNotContain("AdminOnly", dropped.Keys);
+        Assert.Equal(["NewInSource", "Retyped", "Tags"], dropped.Keys.Order());
+    }
+
+    [Fact]
     public void The_differences_of_the_types_synced_list_missing_types_first()
     {
         var source = Source();

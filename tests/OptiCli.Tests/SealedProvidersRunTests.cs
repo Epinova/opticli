@@ -351,11 +351,15 @@ public sealed class SealedProvidersRunTests : IDisposable
         Assert.True(SealedApply.RestartNeeded(failed));
         Assert.Null(SealedApply.SendFailures(null, log));
 
-        // After the queue was sent, the site stopping: listed, not the run's.
-        File.WriteAllText(log, $"info: started\n{Protocol.AgentProtocol.EventsFlushedLine}\nfail: Failed to send event. EventId=9484e34b. Sequence=50.\nfail: Failed to send event. EventId=9484e34b. Sequence=51.\n");
+        // Once the host logged that it is stopping: listed, not the run's.
+        File.WriteAllText(log, "info: started\nMicrosoft.Hosting.Lifetime  Application is shutting down...\nfail: Failed to send event. EventId=9484e34b. Sequence=50.\nfail: Failed to send event. EventId=9484e34b. Sequence=51.\n");
         var stopping = SealedApply.SendFailures(sent, log)!;
         Assert.Equal((null, 2), (stopping.Problem, stopping.NotSentWhileStopping));
         Assert.False(SealedApply.RestartNeeded(stopping));
+
+        // The agent's own "queue sent" line comes on the other stream, so a failure after it may still be the run's.
+        File.WriteAllText(log, $"info: started\n{Protocol.AgentProtocol.EventsFlushedLine}\nfail: Failed to send event. EventId=9484e34b. Sequence=49.\nMicrosoft.Hosting.Lifetime  Application is shutting down...\n");
+        Assert.True(SealedApply.RestartNeeded(SealedApply.SendFailures(sent, log)));
     }
 
     private static PlanStepResult Upload(int index, Guid guid, string version, long bytes) =>

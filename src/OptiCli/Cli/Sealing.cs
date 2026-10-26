@@ -125,10 +125,11 @@ internal static class Sealing
         var leftovers = SealedLeftovers.Expected(localLeftovers, onlyInProduction, productionSession.Model);
         if (leftovers.Count > 0)
         {
-            warnings.Add($"{leftovers.Count} content type(s) or properties only production's database has (removed code) are accepted as they are, by name: {string.Join(", ", leftovers.Take(8))}{(leftovers.Count > 8 ? ", …" : "")}. The plan doesn't write them; the run refuses any other difference.");
+            warnings.Add($"{leftovers.Count} content type(s) or properties only production's database has (code removed, or newer code in production than this build) are accepted as they are, by name: {Printable.Of(string.Join(", ", leftovers.Take(8)))}{(leftovers.Count > 8 ? ", …" : "")}. The plan may not write them (checked); the run refuses any other difference.");
         }
 
         var state = await ProductionState.ReadAsync(productionSession, SealedPlan.Touched(plan.Plan), SealedPlan.Referenced(plan.Plan), cancellationToken);
+        SealedPlan.RequireNoLeftoverWrites(plan.Plan, leftovers, state);
         RequireNoIdeHook(output.Dll);
         var build = BuildFingerprint.Of(project, output.Dll, context.Environment);
         var summary = SealSummary.Of(plan.Plan, options, state);
@@ -279,7 +280,7 @@ internal static class Sealing
         var text = new StringBuilder()
             .AppendLine(CultureInfo.InvariantCulture, $"Sealed {result.Seal} for '{result.Target.Database}' on '{result.Target.Server}' (role prod), good until {result.Expires:u}.")
             .AppendLine(CultureInfo.InvariantCulture, $"  plan {result.Plan} ({result.PlanFiles} file(s)), {Describe(result.Summary)}")
-            .AppendLine(CultureInfo.InvariantCulture, $"  checked against {result.ValidatedOn}{(result.Leftovers.Count > 0 ? $"; accepts {result.Leftovers.Count} type(s)/properties only production has: {string.Join(", ", result.Leftovers)}" : "")}; build {result.Build.Output}{(result.Build.Commit is { } commit ? $" (git {commit}{(result.Build.Uncommitted == true ? ", uncommitted changes" : "")})" : "")}")
+            .AppendLine(CultureInfo.InvariantCulture, $"  checked against {result.ValidatedOn}{(result.Leftovers.Count > 0 ? $"; accepts {result.Leftovers.Count} type(s)/properties only production has: {Printable.Of(string.Join(", ", result.Leftovers))}" : "")}; build {result.Build.Output}{(result.Build.Commit is { } commit ? $" (git {commit}{(result.Build.Uncommitted == true ? ", uncommitted changes" : "")})" : "")}")
             .AppendLine()
             .AppendLine("The user runs this in their own terminal (an agent hands it over and never runs it):")
             .AppendLine(CultureInfo.InvariantCulture, $"  {result.UserCommand}");

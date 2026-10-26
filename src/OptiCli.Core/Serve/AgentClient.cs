@@ -52,9 +52,9 @@ public sealed class AgentClient : IDisposable
     public Task<SealedStatus> SealedStatusAsync(CancellationToken cancellationToken) =>
         SendAsync<SealedStatus>(HttpMethod.Get, AgentRoutes.Sealed, null, PingTimeout, cancellationToken);
 
-    /// <summary>A sealed apply's site: sends what its event provider queued, and waits until it is sent (a minute at most).</summary>
+    /// <summary>A sealed apply's site: waits for its cache removals to go quiet (30 s at most), sends what its event provider queued and waits until it is sent (45 s at most).</summary>
     public Task<EventsFlushResult> FlushEventsAsync(CancellationToken cancellationToken) =>
-        SendAsync<EventsFlushResult>(HttpMethod.Post, AgentRoutes.SealedEventsFlush, null, TimeSpan.FromSeconds(90), cancellationToken);
+        SendAsync<EventsFlushResult>(HttpMethod.Post, AgentRoutes.SealedEventsFlush, null, TimeSpan.FromMinutes(2), cancellationToken);
 
     /// <summary>
     /// What differs between the site's code and its shared database (the first call after a start compares them, which

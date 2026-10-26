@@ -25,6 +25,23 @@ internal static class HostingFixture
     public const string RemoteApproval = "tcp:dev.example.net,1433|ExampleDb";
 
     /// <summary>Runs <paramref name="action"/> and returns what it wrote to stderr.</summary>
+    public static async Task<string> StderrAsync(Func<Task> action)
+    {
+        var previous = Console.Error;
+        var captured = new StringWriter();
+        Console.SetError(captured);
+        try
+        {
+            await action();
+        }
+        finally
+        {
+            Console.SetError(previous);
+        }
+        return captured.ToString();
+    }
+
+    /// <summary>Runs <paramref name="action"/> and returns what it wrote to stderr.</summary>
     public static string Stderr(Action action)
     {
         var previous = Console.Error;

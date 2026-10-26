@@ -87,8 +87,9 @@ public static class AgentProtocol
     public const string SqlTokenVariable = "OPTICLI_SQL_TOKEN";
 
     /// <summary>
-    /// The line a sealed run's site writes to its output once the event provider's queue was sent (<see cref="AgentRoutes.SealedEventsFlush"/>):
-    /// the run counts "Failed to send event" lines before it (the run's own cache removals) apart from those after it (the site stopping).
+    /// The line a sealed run's site writes to its error output once the event provider's queue was sent
+    /// (<see cref="AgentRoutes.SealedEventsFlush"/>), for whoever reads its log. It goes to another stream than the site's own
+    /// log lines, so their order in the log isn't guaranteed: the run tells failures apart by the host's stopping line instead.
     /// </summary>
     public const string EventsFlushedLine = "[opticli] sealed apply: event queue sent";
 

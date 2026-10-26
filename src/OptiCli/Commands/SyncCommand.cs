@@ -242,7 +242,8 @@ internal static class SyncCommand
             context.Writes(localSession, ask: false);
             await context.ConnectAgentAsync(cancellationToken);
             await using var productionSession = await ContentSession.OpenAsync(await CmsDatabase.OpenAsync(productionConnection, cancellationToken), cancellationToken);
-            await Sealing.RequireComparableAsync(context, localSession, productionSession, [], cancellationToken);
+            var modelWarnings = new List<string>();
+            await Sealing.RequireComparableAsync(context, localSession, productionSession, modelWarnings, cancellationToken);
 
             var reader = new ExportReader(localSession);
             IReadOnlyList<ExportRoot> roots;
@@ -271,7 +272,7 @@ internal static class SyncCommand
             var pulled = SyncState.Load(SyncState.PathFor(context.Environment, project.Directory, production.Target!, localChosen.Target!), project.Directory, production.Target!, localChosen.Target!);
             using var mediaFiles = parse.GetValue(pushMedia) ? LocalMediaFiles(context, project) : null;
             var push = await new SyncPush(localSession, productionSession, pulled, folder, mediaFiles).BuildAsync(roots, languageIds, Database(localChosen), cancellationToken);
-            var warnings = new List<string>();
+            var warnings = new List<string>(modelWarnings);
             if (push.Media.Count > 0)
             {
                 warnings.Add($"{push.Media.Count} media item(s) were left out (media). `--media` pushes them, and the user's run then asks for production's blob storage; or upload them in production's edit UI.");

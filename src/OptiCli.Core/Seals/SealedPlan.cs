@@ -118,21 +118,105 @@ public static class SealedPlan
         return problems;
     }
 
+    /// <summary>
+    /// Steps that would write a leftover (<see cref="SealedLeftovers"/>): content of a type only production's database has,
+    /// or a value of such a property. The seal accepts leftovers because the plan doesn't write them, so it must not.
+    /// </summary>
+    /// <param name="leftovers">The seal's leftovers (<c>Type</c>, <c>Type.Property</c>).</param>
+    /// <param name="production">Production's items the plan touches, for the type of content a step changes.</param>
+    public static IReadOnlyList<string> LeftoverProblems(WritePlan plan, IReadOnlyList<string>? leftovers, ProductionState production)
+    {
+        if (leftovers is not { Count: > 0 })
+        {
+            return [];
+        }
+        var names = new HashSet<string>(leftovers, StringComparer.OrdinalIgnoreCase);
+        var types = production.Items.Where(i => i.Type is not null).GroupBy(i => i.Guid).ToDictionary(g => g.Key, g => g.First().Type!);
+        // Content the plan creates, by its $id: a later step that changes it writes that type too.
+        var created = plan.Steps.Select(s => s.Operation)
+            .Select(op => (op.Id, Type: op switch { CreateOperation c => c.Type, BlockCreateOperation b => b.Type, UploadOperation { Replace: null } u => u.Type, _ => null }))
+            .Where(c => c.Id is not null && !string.IsNullOrEmpty(c.Type))
+            .GroupBy(c => c.Id!, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First().Type!, StringComparer.Ordinal);
+        string? TypeOf(string? reference) => reference is null ? null
+            : reference.StartsWith('$') ? created.GetValueOrDefault(reference[1..])
+            : GuidOf(reference) is { } guid ? types.GetValueOrDefault(guid) : null;
+        var problems = new List<string>();
+        foreach (var step in plan.Steps)
+        {
+            var op = step.Operation;
+            var type = op switch
+            {
+                CreateOperation create => create.Type,
+                BlockCreateOperation block => block.Type,
+                UploadOperation { Replace: null } upload => upload.Type,
+                SetOperation set => TypeOf(set.Ref),
+                TranslateOperation translate => TypeOf(translate.Ref),
+                UploadOperation { Replace: { } replace } => TypeOf(replace),
+                _ => TouchedBy(op) is { } guid ? types.GetValueOrDefault(guid) : null,
+            };
+            if (string.IsNullOrEmpty(type))
+            {
+                continue;
+            }
+            var where = $"operations[{step.Index}] ({op.Kind})";
+            if (names.Contains(type))
+            {
+                problems.Add($"{where} writes content of type {type}, which only production's database has (no code in this build): a sealed apply leaves it as it is.");
+                continue;
+            }
+            var properties = op switch
+            {
+                SetOperation set => set.Properties,
+                CreateOperation create => create.Properties,
+                BlockCreateOperation block => block.Properties,
+                TranslateOperation translate => translate.Properties,
+                UploadOperation upload => upload.Properties,
+                _ => null,
+            };
+            foreach (var key in properties?.Select(p => p.Key) ?? [])
+            {
+                if (names.Contains($"{type}.{key}"))
+                {
+                    problems.Add($"{where} sets {type}.{key}, a property only production's database has (no code in this build): a sealed apply leaves it as it is.");
+                }
+            }
+        }
+        return problems;
+    }
+
+    /// <exception cref="RefusedException">The plan writes a leftover (<see cref="LeftoverProblems"/>).</exception>
+    public static void RequireNoLeftoverWrites(WritePlan plan, IReadOnlyList<string>? leftovers, ProductionState production)
+    {
+        var problems = LeftoverProblems(plan, leftovers, production);
+        if (problems.Count > 0)
+        {
+            throw new RefusedException(
+                $"The plan writes {problems.Count} thing(s) only production's database has: {string.Join(" ", problems.Take(5))}{(problems.Count > 5 ? " …" : "")}",
+                "A sealed apply accepts types and properties without code only because it doesn't write them. Leave those steps or values out, or bring their code back (and deploy it), then seal again.")
+            {
+                Details = new { reason = Reason, problems },
+            };
+        }
+    }
+
     /// <summary>The existing content the plan writes, by GUID: the GUIDs its creating steps give, and the GUID refs of the steps that change content.</summary>
     public static IReadOnlyList<Guid> Touched(WritePlan plan) =>
-        plan.Steps.Select(s => s.Operation).SelectMany(op => op switch
-        {
-            UploadOperation { Replace: { } replace } => new[] { GuidOf(replace) },
-            CreateOperation or BlockCreateOperation or UploadOperation => new[] { op.ContentGuid },
-            SetOperation set => new[] { GuidOf(set.Ref) },
-            AreaEdit area => new[] { GuidOf(area.Ref) },
-            CompositionEdit composition => new[] { GuidOf(composition.Ref) },
-            TranslateOperation translate => new[] { GuidOf(translate.Ref) },
-            PublishOperation publish => new[] { GuidOf(publish.Ref) },
-            MoveOperation move => new[] { GuidOf(move.Ref) },
-            RestoreOperation restore => new[] { GuidOf(restore.Ref) },
-            _ => [],
-        }).OfType<Guid>().Distinct().ToList();
+        plan.Steps.Select(s => TouchedBy(s.Operation)).OfType<Guid>().Distinct().ToList();
+
+    /// <summary>The content one step writes, by GUID; null when it isn't given by GUID.</summary>
+    private static Guid? TouchedBy(WriteOperation op) => op switch
+    {
+        UploadOperation { Replace: { } replace } => GuidOf(replace),
+        CreateOperation or BlockCreateOperation or UploadOperation => op.ContentGuid,
+        SetOperation set => GuidOf(set.Ref),
+        AreaEdit area => GuidOf(area.Ref),
+        CompositionEdit composition => GuidOf(composition.Ref),
+        TranslateOperation translate => GuidOf(translate.Ref),
+        PublishOperation publish => GuidOf(publish.Ref),
+        MoveOperation move => GuidOf(move.Ref),
+        RestoreOperation restore => GuidOf(restore.Ref),
+        _ => null,
+    };
 
     /// <summary>The other content the plan's steps name by GUID (parents, owners, move targets, area items): it must still be there.</summary>
     public static IReadOnlyList<Guid> Referenced(WritePlan plan)

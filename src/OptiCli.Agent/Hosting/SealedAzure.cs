@@ -59,7 +59,8 @@ internal static class SealedAzure
     internal static IReadOnlyList<string> BlobAssemblies { get; set; } = DefaultBlobAssemblies;
 
     /// <summary>How long a flush waits for the provider's queue to be sent.</summary>
-    private static readonly TimeSpan FlushTimeout = TimeSpan.FromSeconds(60);
+    /// <remarks>With <see cref="RaiseQuietMax"/> it stays within the CLI's wait for the flush (2 minutes).</remarks>
+    private static readonly TimeSpan FlushTimeout = TimeSpan.FromSeconds(45);
 
     /// <summary>
     /// How long the site must have raised no cache removal before a flush sends the queue: a save's cache removals keep coming
@@ -69,7 +70,7 @@ internal static class SealedAzure
     internal static TimeSpan RaiseQuiet { get; set; } = TimeSpan.FromSeconds(3);
 
     /// <summary>How long a flush waits for the site to go quiet at most.</summary>
-    internal static TimeSpan RaiseQuietMax { get; set; } = TimeSpan.FromSeconds(60);
+    internal static TimeSpan RaiseQuietMax { get; set; } = TimeSpan.FromSeconds(30);
 
 
     /// <summary>The CMS's cache removal event (<c>RemoteCacheSynchronization.RemoveFromCacheEventId</c>), the same on CMS 12 and 13.</summary>

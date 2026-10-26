@@ -43,6 +43,9 @@ public static class SealedLeftovers
         return Sorted(local.Where(InProduction).Concat(onlyInProduction));
     }
 
+    /// <summary>A name from a database, for a message: no control characters (a terminal could act on them).</summary>
+    private static string Clean(string name) => new(name.Select(c => char.IsControl(c) ? '?' : c).ToArray());
+
     public static IReadOnlyList<string> Sorted(IEnumerable<string> names) =>
         names.Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
 
@@ -59,8 +62,8 @@ public static class SealedLeftovers
         }
         var (leftovers, other) = Split(report);
         var accepted = new HashSet<string>(sealedLeftovers ?? [], StringComparer.OrdinalIgnoreCase);
-        var unsealed = other.Select(o => $"{o.Item.Name} ({o.Item.Difference})")
-            .Concat(leftovers.Where(l => !accepted.Contains(l)).Select(l => $"{l} ({DriftItem.OnlyInDatabase}, not in the seal)"))
+        var unsealed = other.Select(o => $"{Clean(o.Item.Name)} ({o.Item.Difference})")
+            .Concat(leftovers.Where(l => !accepted.Contains(l)).Select(l => $"{Clean(l)} ({DriftItem.OnlyInDatabase}, not in the seal)"))
             .ToList();
         if (unsealed.Count > 0)
         {

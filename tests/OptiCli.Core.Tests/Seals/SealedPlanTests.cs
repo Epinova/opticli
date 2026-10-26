@@ -96,6 +96,37 @@ public class SealedPlanTests
     }
 
     [Fact]
+    public void A_plan_may_not_write_what_the_seal_accepts_as_leftovers()
+    {
+        var footer = "0d6f3a52-8b1e-4c7a-9e25-5a4c1b7d3f90";
+        var production = new ProductionState("m", [
+            new SealedItem(Guid.Parse(Page), true, false, null, "StandardPage", "About us", []),
+            new SealedItem(Guid.Parse(footer), true, false, null, "FooterSettings", "Footer", []),
+        ]);
+        string[] leftovers = ["FooterSettings", "StandardPage.LegacyIntro", "TagFilterBlock"];
+
+        var plan = Plan(
+            $$$"""{"op": "set", "ref": "{{{Page}}}", "properties": {"Heading": "fine", "LegacyIntro": "no"}}""",
+            $$$"""{"op": "set", "ref": "{{{footer}}}", "properties": {"Text": "no"}}""",
+            $$$"""{"op": "block", "id": "filter", "guid": "71f80142-5378-5061-9f34-b49bc3640495", "for": "{{{Page}}}", "type": "TagFilterBlock", "name": "Filter"}""",
+            $$$"""{"op": "create", "id": "page", "guid": "42cfb67a-6c8c-4253-8ff0-366d442a30cc", "parent": "{{{Start}}}", "type": "StandardPage", "name": "New"}""",
+            """{"op": "set", "ref": "$page", "properties": {"LegacyIntro": "no"}}""",
+            """{"op": "set", "ref": "$filter", "properties": {"MaxCount": "no"}}""");
+
+        var problems = SealedPlan.LeftoverProblems(plan, leftovers, production);
+        var refused = Assert.Throws<RefusedException>(() => SealedPlan.RequireNoLeftoverWrites(plan, leftovers, production));
+
+        Assert.Equal(5, problems.Count);
+        Assert.Contains(problems, p => p.StartsWith("operations[0] (set) sets StandardPage.LegacyIntro", StringComparison.Ordinal));
+        Assert.Contains(problems, p => p.StartsWith("operations[1] (set) writes content of type FooterSettings", StringComparison.Ordinal));
+        Assert.Contains(problems, p => p.StartsWith("operations[2] (block) writes content of type TagFilterBlock", StringComparison.Ordinal));
+        Assert.Contains(problems, p => p.StartsWith("operations[4] (set) sets StandardPage.LegacyIntro", StringComparison.Ordinal));
+        Assert.Contains(problems, p => p.StartsWith("operations[5] (set) writes content of type TagFilterBlock", StringComparison.Ordinal));
+        Assert.Equal(SealedPlan.Reason, SealStoreTests.Reason(refused));
+        Assert.Empty(SealedPlan.LeftoverProblems(plan, null, production));
+    }
+
+    [Fact]
     public void An_expiry_that_has_passed_is_counted_for_the_user_to_see()
     {
         var plan = Plan(

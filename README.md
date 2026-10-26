@@ -394,7 +394,8 @@ reads production over SQL with its saved read-only login, and writes nothing the
 - production's content model must be the build's: compared with the local database's (which holds the build's model)
   both ways, by GUID and name, and the local site's code with its own database. One kind of difference is accepted:
   content types and properties only the database has (classes or properties removed from code that the CMS kept for
-  their content, or newer code in production), since a sealed plan doesn't write them. The seal records them by name
+  their content, or newer code in production), since a sealed plan doesn't write them: a step that creates or changes
+  content of such a type, or sets such a property, is refused (`sealedPlan`). The seal records them by name
   (`leftovers`), the run shows them before you type anything, and the run's site may find those and nothing else.
   Any other difference (what only the build has, a property of another type, stores, migrations) is a `conflict`
   (exit 5, `details.reason: "modelDiffers"`);
@@ -431,7 +432,8 @@ option (the seal's are used), and:
    connection that signs in as the user (integrated security, Microsoft Entra ID) asks for nothing and writes as them.
    With Microsoft Entra ID the run's site gets the access token the run signed in with (on its stdin line, like a write
    password) instead of fetching its own, so it writes as exactly the identity the run checked (a starting site fetching
-   its own token could stall until Azure SQL dropped the login; on a site with SqlClient 7 it still fetches its own);
+   its own token could stall until Azure SQL dropped the login). Should the token expire during a long run, the site
+   fetches its own from then on;
 5. when the site's build has the CMS's Azure providers, asks for **production's event bus** (optional) and, when the plan
    uploads, **production's blob storage** (required then; see below), and checks them before the seal is used;
 6. marks the seal used, starts the site against production for this run only and stops it again afterwards (also on a
@@ -467,7 +469,7 @@ nothing.
   be on the topic (otherwise nothing is written). After the run, the site sends what its provider still has queued
   (the CMS would drop it when the site stops), once the site has raised no cache removal for a few seconds (a save's own
   publish handlers keep raising them for a while), and a probe subscription counts the run's messages on the topic. Only
-  then, and when the site's log has no "Failed to send event" before the queue was sent, is `restartNeeded` false
+  then, and when the site's log has no "Failed to send event" before the host began to stop, is `restartNeeded` false
   (removals the site raises while it stops are listed apart, `events.notSentWhileStopping`) (`events.sent` says how many); anything
   uncertain leaves it true, with the restart warning and why (`events.problem`). Enter: no event bus, and the restart warning as before. A bus the site can't reach makes it fail to start (nothing
   written; the seal is used).

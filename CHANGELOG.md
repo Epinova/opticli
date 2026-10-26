@@ -21,12 +21,14 @@ that uses the CMS's Azure providers.
   the run's messages on the topic.
 - With Microsoft Entra ID, the run's site signs in with the token the run signed in with (handed over on its stdin line)
   instead of fetching its own, so it writes as the identity the run checked. On a real site, fetching its own token while
-  starting stalled until Azure SQL dropped the login. Sites with SqlClient 7 still fetch their own.
+  starting stalled until Azure SQL dropped the login. Should the token expire during a long run, the site fetches its own.
 - The flush waits until the site has raised no cache removal for a few seconds before it sends the queue (a save's own
   publish handlers keep raising them), and removals raised while the site stops are listed apart
   (`events.notSentWhileStopping`) rather than counted as the run's.
 - **The result says whether a restart is needed**: `restartNeeded` is false only when the run's cache drops were sent
   and counted (`events.sent`); anything uncertain leaves it true, with the reason in `events.problem`.
+- Leftover types and properties are accepted only as they are: a sealed plan that writes content of such a type, or sets
+  such a property, is refused (`sealedPlan`).
 - **Media.** Sealed plans may `upload` (and `replace`) by GUID again, for a site whose build has the CMS's Azure blob
   provider. The run then asks for production's Azure Storage connection string (an account key or a SAS token) and
   container (offered from the site's `EPiServer:Cms:AzureBlobProvider:ContainerName`); the container must exist before
