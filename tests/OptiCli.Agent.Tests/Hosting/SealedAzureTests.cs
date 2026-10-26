@@ -32,14 +32,14 @@ public sealed class SealedAzureTests : IDisposable
         var here = typeof(SealedAzureTests).Assembly.GetName().Name!;
         SealedAzure.EventAssemblies = ["EPiServer.Events.Azure.NotThere", here];
         SealedAzure.BlobAssemblies = [here];
-        SealedAzure.RaiseDelay = TimeSpan.Zero;
+        SealedAzure.RaiseQuiet = TimeSpan.Zero;
     }
 
     public void Dispose()
     {
         SealedAzure.EventAssemblies = SealedAzure.DefaultEventAssemblies;
         SealedAzure.BlobAssemblies = SealedAzure.DefaultBlobAssemblies;
-        SealedAzure.RaiseDelay = TimeSpan.FromSeconds(1);
+        SealedAzure.RaiseQuiet = TimeSpan.FromSeconds(3);
     }
 
     private static AgentSettings Sealed(bool events = true, bool blobs = true) =>

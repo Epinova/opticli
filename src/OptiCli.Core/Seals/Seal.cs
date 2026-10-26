@@ -64,6 +64,10 @@ public sealed record SealSummary(int Steps, IReadOnlyDictionary<string, int> Ope
 /// <param name="Plan">The plan file's full path.</param>
 /// <param name="PlanHash">SHA-256 of the plan and the files it reads (<see cref="PlanSnapshot.Hash"/>).</param>
 /// <param name="ValidatedOn">The local database the plan's dry run passed against.</param>
+/// <param name="Leftovers">
+/// Content types and properties only production's database has (<see cref="SealedLeftovers"/>), by name: the run's site may
+/// report these and no other difference. Null or empty: none.
+/// </param>
 public sealed record Seal(
     string Id,
     DateTimeOffset Created,
@@ -78,7 +82,8 @@ public sealed record Seal(
     ProductionState Production,
     SealSummary Summary,
     string ValidatedOn,
-    string OptiCliVersion)
+    string OptiCliVersion,
+    IReadOnlyList<string>? Leftovers = null)
 {
     /// <summary>How long a seal can be run: a day. Not configurable, so the command an agent hands over can't stretch it.</summary>
     public static readonly TimeSpan MaxAge = TimeSpan.FromHours(24);

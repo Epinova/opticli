@@ -20,6 +20,9 @@ public sealed record ModelDifference(string Type, string? Property, string Diffe
 /// </summary>
 public sealed class ModelCompatibility
 {
+    /// <summary>How a <see cref="ModelDifference"/> begins when the target has no such type or property at all.</summary>
+    public const string NotInBuild = "not in the target's build";
+
     private readonly IReadOnlyDictionary<int, ContentTypeInfo> _types;
     private readonly IReadOnlyDictionary<int, string> _missingTypes;
     private readonly IReadOnlyDictionary<int, IReadOnlyDictionary<string, string>> _dropped;
@@ -55,8 +58,12 @@ public sealed class ModelCompatibility
     }
 
     /// <summary>Reads which properties each database's code no longer has, and compares the models.</summary>
-    public static async Task<ModelCompatibility> CompareAsync(ContentSession source, ContentSession target, CancellationToken cancellationToken) =>
-        Compare(source.Model, await RemovedAsync(source.Db, cancellationToken), target.Model, await RemovedAsync(target.Db, cancellationToken));
+    /// <param name="sourceBuildWrites">
+    /// The source's build is what writes to the target (a sealed run's site): a target property its own code no longer has
+    /// (<c>ExistsOnModel = 0</c>) still takes values, as its definition is there, so it isn't missing.
+    /// </param>
+    public static async Task<ModelCompatibility> CompareAsync(ContentSession source, ContentSession target, CancellationToken cancellationToken, bool sourceBuildWrites = false) =>
+        Compare(source.Model, await RemovedAsync(source.Db, cancellationToken), target.Model, sourceBuildWrites ? new HashSet<int>() : await RemovedAsync(target.Db, cancellationToken));
 
     /// <param name="sourceRemoved">The source's property definitions with <c>ExistsOnModel = 0</c> (an export leaves those out anyway).</param>
     /// <param name="targetRemoved">The target's, which aren't in its build.</param>
@@ -74,7 +81,7 @@ public sealed class ModelCompatibility
                 : null;
             if (match is null)
             {
-                missing[type.Id] = "not in the target's build (no content type with its GUID or name)";
+                missing[type.Id] = $"{NotInBuild} (no content type with its GUID or name)";
                 continue;
             }
             if (match.Kind != type.Kind && !(match.Kind.IsBlock() && type.Kind.IsBlock()))
@@ -90,11 +97,11 @@ public sealed class ModelCompatibility
             {
                 if (!properties.TryGetValue(property.Name, out var other))
                 {
-                    problems[property.Name] = "not in the target's build";
+                    problems[property.Name] = NotInBuild;
                 }
                 else if (targetRemoved.Contains(other.Id))
                 {
-                    problems[property.Name] = "not in the target's build (only in its database: removed code, or added in admin mode)";
+                    problems[property.Name] = $"{NotInBuild} (only in its database: removed code, or added in admin mode)";
                 }
                 else if (Kind(source, property) != Kind(target, other))
                 {

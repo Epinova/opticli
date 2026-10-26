@@ -342,14 +342,20 @@ public sealed class SealedProvidersRunTests : IDisposable
         var log = Path.Combine(_folder.Path, "run.log");
         var sent = new SealedEventsResult("SiteEvents", Subscription, 2, 12, null);
         File.WriteAllText(log, "info: started\n");
-        Assert.Same(sent, SealedApply.SendFailures(sent, log));
+        Assert.Equal(sent, SealedApply.SendFailures(sent, log));
 
         File.AppendAllText(log, "fail: EPiServer.Azure.Events.AzureEventProvider[182540342]\n      Failed to send event. EventId=9484e34b. Sequence=7, Parameter='x'.\n");
         var failed = SealedApply.SendFailures(sent, log)!;
 
-        Assert.Contains("1 event(s) it couldn't send", failed.Problem, StringComparison.Ordinal);
+        Assert.Contains("1 event(s) of the run it couldn't send", failed.Problem, StringComparison.Ordinal);
         Assert.True(SealedApply.RestartNeeded(failed));
         Assert.Null(SealedApply.SendFailures(null, log));
+
+        // After the queue was sent, the site stopping: listed, not the run's.
+        File.WriteAllText(log, $"info: started\n{Protocol.AgentProtocol.EventsFlushedLine}\nfail: Failed to send event. EventId=9484e34b. Sequence=50.\nfail: Failed to send event. EventId=9484e34b. Sequence=51.\n");
+        var stopping = SealedApply.SendFailures(sent, log)!;
+        Assert.Equal((null, 2), (stopping.Problem, stopping.NotSentWhileStopping));
+        Assert.False(SealedApply.RestartNeeded(stopping));
     }
 
     private static PlanStepResult Upload(int index, Guid guid, string version, long bytes) =>

@@ -62,10 +62,18 @@ internal static class SealedAzure
     private static readonly TimeSpan FlushTimeout = TimeSpan.FromSeconds(60);
 
     /// <summary>
-    /// How long a flush first waits for raised events to reach the provider: the CMS raises a cache removal without waiting
-    /// for it (<c>RemoteCacheSynchronization.RemoveRemote</c>).
+    /// How long the site must have raised no cache removal before a flush sends the queue: a save's cache removals keep coming
+    /// for a few seconds after it (the site's own publish handlers save more), and the CMS raises them without waiting
+    /// (<c>RemoteCacheSynchronization.RemoveRemote</c>). Seen on a real site: six of them 1 to 2 s after a fixed 1 s wait.
     /// </summary>
-    internal static TimeSpan RaiseDelay { get; set; } = TimeSpan.FromSeconds(1);
+    internal static TimeSpan RaiseQuiet { get; set; } = TimeSpan.FromSeconds(3);
+
+    /// <summary>How long a flush waits for the site to go quiet at most.</summary>
+    internal static TimeSpan RaiseQuietMax { get; set; } = TimeSpan.FromSeconds(60);
+
+
+    /// <summary>The CMS's cache removal event (<c>RemoteCacheSynchronization.RemoveFromCacheEventId</c>), the same on CMS 12 and 13.</summary>
+    private static readonly Guid RemoveFromCacheEventId = new("9484e34b-b419-4e59-8fd5-3277668a7fce");
 
     /// <summary>The connection strings, as the last configuration source: for code in the site that reads them itself.</summary>
     public static IEnumerable<KeyValuePair<string, string?>> Configuration(AgentSettings settings)
@@ -173,7 +181,7 @@ internal static class SealedAzure
         {
             return new(false, "The Azure event provider never connected to the bus: what it queued wasn't sent.");
         }
-        await Task.Delay(RaiseDelay, cancellationToken);
+        await QuietAsync(services, cancellationToken);
         var complete = block.GetType().GetMethod("Complete", Type.EmptyTypes);
         if (complete is null || block.GetType().GetProperty("Completion")?.GetValue(block) is not Task completion)
         {
@@ -181,9 +189,29 @@ internal static class SealedAzure
         }
         complete.Invoke(block, null);
         var finished = await Task.WhenAny(completion, Task.Delay(FlushTimeout, cancellationToken));
+        Console.Error.WriteLine(AgentProtocol.EventsFlushedLine);
         return finished == completion
             ? completion.IsCompletedSuccessfully ? new(true) : new(false, "The Azure event provider's send queue stopped with an error; see the site's log.")
             : new(false, $"The Azure event provider hadn't sent its queue after {FlushTimeout.TotalSeconds:0} s.");
+    }
+
+    /// <summary>Waits until the site has raised no cache removal of its own for <see cref="RaiseQuiet"/> (removals from other servers don't count).</summary>
+    private static async Task QuietAsync(IServiceProvider services, CancellationToken cancellationToken)
+    {
+        var cacheEvent = (services.GetService(typeof(EPiServer.Events.Clients.IEventRegistry)) as EPiServer.Events.Clients.IEventRegistry)?.Get(RemoveFromCacheEventId);
+        long Raised() => cacheEvent is null ? 0 : cacheEvent.RaisedCount - cacheEvent.ReceivedCount;
+        var waited = System.Diagnostics.Stopwatch.StartNew();
+        var quiet = System.Diagnostics.Stopwatch.StartNew();
+        var last = Raised();
+        while (quiet.Elapsed < RaiseQuiet && waited.Elapsed < RaiseQuietMax)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken);
+            if (Raised() is var now && now != last)
+            {
+                last = now;
+                quiet.Restart();
+            }
+        }
     }
 
     /// <summary>The event provider the CMS uses: CMS 12 through <c>IEventProviderAccessor</c>, CMS 13 the registered one.</summary>

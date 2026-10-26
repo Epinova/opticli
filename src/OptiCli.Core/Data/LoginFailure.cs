@@ -118,7 +118,7 @@ internal static class LoginFailure
 internal sealed class EntraTokenCapture : SqlAuthenticationProvider
 {
     private static readonly object Gate = new();
-    private static string? s_lastToken;
+    private static SqlAuthenticationToken? s_last;
     private readonly SqlAuthenticationProvider _inner;
 
     private EntraTokenCapture(SqlAuthenticationProvider inner) => _inner = inner;
@@ -144,14 +144,20 @@ internal sealed class EntraTokenCapture : SqlAuthenticationProvider
     }
 
     /// <summary>The last token handed out in this process, if any.</summary>
-    public static string? LastToken => Volatile.Read(ref s_lastToken);
+    public static string? LastToken => Volatile.Read(ref s_last)?.AccessToken;
+
+    /// <summary>
+    /// The last token and when it expires: a sealed run hands it to its site (<see cref="OptiCli.Core.Serve.SealedLaunch.SqlToken"/>), so
+    /// the site signs in as the identity the run checked, without fetching a token of its own.
+    /// </summary>
+    public static (string AccessToken, DateTimeOffset ExpiresOn)? Last => Volatile.Read(ref s_last) is { } token ? (token.AccessToken, token.ExpiresOn) : null;
 
     public override bool IsSupported(SqlAuthenticationMethod authenticationMethod) => _inner.IsSupported(authenticationMethod);
 
     public override async Task<SqlAuthenticationToken> AcquireTokenAsync(SqlAuthenticationParameters parameters)
     {
         var token = await _inner.AcquireTokenAsync(parameters);
-        Volatile.Write(ref s_lastToken, token.AccessToken);
+        Volatile.Write(ref s_last, token);
         return token;
     }
 }

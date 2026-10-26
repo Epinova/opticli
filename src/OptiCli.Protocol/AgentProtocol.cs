@@ -75,7 +75,25 @@ public static class AgentProtocol
     /// </summary>
     public static bool IsSecret(string name) =>
         name == TokenVariable || name == DatabaseVariable || name == EventsTopicVariable || name == BlobsContainerVariable
+        || name == SqlTokenVariable || name == SqlTokenExpiresVariable
         || name.StartsWith("ConnectionStrings__", StringComparison.Ordinal);
+
+    /// <summary>
+    /// A sealed run against a production database that signs in with Microsoft Entra ID (the user's own identity): the access
+    /// token the run signed in with, on the stdin line only. The agent gives the site's SqlClient a provider that returns it,
+    /// so the site writes as the identity the run checked and doesn't fetch a token of its own (which stalled in a starting
+    /// site long enough for Azure SQL to drop the login).
+    /// </summary>
+    public const string SqlTokenVariable = "OPTICLI_SQL_TOKEN";
+
+    /// <summary>
+    /// The line a sealed run's site writes to its output once the event provider's queue was sent (<see cref="AgentRoutes.SealedEventsFlush"/>):
+    /// the run counts "Failed to send event" lines before it (the run's own cache removals) apart from those after it (the site stopping).
+    /// </summary>
+    public const string EventsFlushedLine = "[opticli] sealed apply: event queue sent";
+
+    /// <summary>When <see cref="SqlTokenVariable"/> expires (ISO 8601); stdin line only.</summary>
+    public const string SqlTokenExpiresVariable = "OPTICLI_SQL_TOKEN_EXPIRES";
 
     /// <summary>
     /// A sealed run's production event bus (Azure Service Bus), typed at the user's terminal: on the stdin line only, never in

@@ -28,6 +28,11 @@ public sealed class SealStoreTests : IDisposable
         Assert.Equal(seal.Created, read.Created);
         Assert.Equal(seal.Production.Model, read.Production.Model);
         Assert.Equal(seal.Production.Items.Single().Branches, read.Production.Items.Single().Branches);
+        Assert.Null(read.Leftovers);
+
+        var withLeftovers = SealFixtures.Seal() with { Leftovers = ["FooterSettings", "StartPage.LegacyFooter"] };
+        Store().Save(withLeftovers);
+        Assert.Equal(["FooterSettings", "StartPage.LegacyFooter"], Store().Load(withLeftovers.Id).Leftovers);
         Assert.Empty(ProductionState.Changes(seal.Production, read.Production));
         if (!OperatingSystem.IsWindows())
         {

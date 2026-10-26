@@ -11,6 +11,7 @@ using Microsoft.Extensions.Options;
 using OptiCli.Agent.Drift;
 using OptiCli.Agent.Hosting;
 using OptiCli.Agent.Safety;
+using OptiCli.Protocol;
 
 [assembly: HostingStartup(typeof(AgentHostingStartup))]
 
@@ -97,8 +98,9 @@ public sealed class AgentHostingStartup : IHostingStartup
                 services.PostConfigure<SchedulerOptions>(options => options.Enabled = false);
                 Console.Error.WriteLine(SchedulerOffLine);
             }
-            // A sealed apply's production event bus and blob storage (only ever from its stdin line).
+            // A sealed apply's production event bus and blob storage, and its Microsoft Entra token (only ever from its stdin line).
             SealedAzure.Register(services, settings);
+            SealedSqlToken.Install(StdinSecrets.Given(AgentProtocol.SqlTokenVariable), StdinSecrets.Given(AgentProtocol.SqlTokenExpiresVariable), settings.PinnedConnection);
             services.AddSingleton<IValidateOptions<DataAccessOptions>, DataAccessOptionsGuard>();
             services.AddSingleton<DriftCheck>();
             services.AddTransient<IStartupFilter, AgentStartupFilter>();

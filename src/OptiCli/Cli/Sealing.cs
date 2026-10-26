@@ -18,6 +18,7 @@ namespace OptiCli.Cli;
 internal sealed record SealModelDifference(string Side, string Type, string? Property, string Difference);
 
 /// <param name="UserCommand">The command the user runs in their own terminal; an agent hands it over and never runs it.</param>
+/// <param name="Leftovers">Content types and properties only production's database has, accepted by name (<see cref="SealedLeftovers"/>).</param>
 internal sealed record SealResult(
     string Seal,
     string File,
@@ -32,7 +33,8 @@ internal sealed record SealResult(
     string Model,
     string ValidatedOn,
     string UserCommand,
-    IReadOnlyList<string> NotChecked);
+    IReadOnlyList<string> NotChecked,
+    IReadOnlyList<string> Leftovers);
 
 internal sealed record SealedDatabase(string Server, string? Database, string Role);
 
@@ -119,8 +121,12 @@ internal static class Sealing
         await new PlanRunner(local, writes, plan.Directory, allowOutside: false, allowedTypes, options.RequestApproval) { Files = plan, MovesFirst = options.MovesFirst }
             .RunAsync(plan.Plan, dryRun: true, options.Publish, cancellationToken);
 
-        await RequireSameModelAsync(local, productionSession, cancellationToken);
-        await RequireNoDriftAsync(context, warnings, cancellationToken);
+        var (localLeftovers, onlyInProduction) = await RequireComparableAsync(context, local, productionSession, warnings, cancellationToken);
+        var leftovers = SealedLeftovers.Expected(localLeftovers, onlyInProduction, productionSession.Model);
+        if (leftovers.Count > 0)
+        {
+            warnings.Add($"{leftovers.Count} content type(s) or properties only production's database has (removed code) are accepted as they are, by name: {string.Join(", ", leftovers.Take(8))}{(leftovers.Count > 8 ? ", …" : "")}. The plan doesn't write them; the run refuses any other difference.");
+        }
 
         var state = await ProductionState.ReadAsync(productionSession, SealedPlan.Touched(plan.Plan), SealedPlan.Referenced(plan.Plan), cancellationToken);
         RequireNoIdeHook(output.Dll);
@@ -141,7 +147,8 @@ internal static class Sealing
             state,
             summary,
             $"{local.Db.ConnectionString.Database} on {local.Db.ConnectionString.Server}",
-            ToolInfo.Version);
+            ToolInfo.Version,
+            leftovers.Count > 0 ? leftovers : null);
         var file = SealStore.For(context.Environment).Save(seal);
         return new SealResult(
             seal.Id,
@@ -157,13 +164,38 @@ internal static class Sealing
             ProductionState.Short(state.Model),
             seal.ValidatedOn,
             UserCommand(context, plan.Path, productionName, seal.Id),
-            NotChecked);
+            NotChecked,
+            leftovers);
     }
 
     /// <exception cref="ConflictException">Production's content model and the local build's differ (<see cref="ModelReason"/>, <c>details.differences</c>).</exception>
-    public static async Task RequireSameModelAsync(ContentSession local, ContentSession production, CancellationToken cancellationToken)
+    /// <summary>
+    /// The local site's code against its database (<see cref="RequireNoDriftAsync"/>), then the local database against
+    /// production (<see cref="RequireSameModelAsync"/>), leaving out of the latter what the former found only in the local
+    /// database: those aren't the build's (another branch's types, removed code).
+    /// </summary>
+    /// <returns>The local leftovers, and what only production has.</returns>
+    public static async Task<(IReadOnlyList<string> Local, IReadOnlyList<string> OnlyInProduction)> RequireComparableAsync(
+        CliContext context, ContentSession local, ContentSession production, List<string> warnings, CancellationToken cancellationToken)
     {
-        var differences = await ModelDifferencesAsync(local, production, cancellationToken);
+        var localLeftovers = await RequireNoDriftAsync(context, warnings, cancellationToken);
+        return (localLeftovers, await RequireSameModelAsync(local, production, cancellationToken, localLeftovers));
+    }
+
+    /// <param name="localLeftovers">Types and properties only the local database has (not the build's): no difference on the local side.</param>
+    /// <returns>
+    /// The content types and properties only production has (<c>Type</c>, <c>Type.Property</c>): leftovers of removed code, or
+    /// newer code there. A sealed plan doesn't write them, so the seal accepts them by name (<see cref="SealedLeftovers"/>).
+    /// </returns>
+    public static async Task<IReadOnlyList<string>> RequireSameModelAsync(ContentSession local, ContentSession production, CancellationToken cancellationToken, IReadOnlyCollection<string>? localLeftovers = null)
+    {
+        var notTheBuilds = new HashSet<string>(localLeftovers ?? [], StringComparer.OrdinalIgnoreCase);
+        var all = (await ModelDifferencesAsync(local, production, cancellationToken))
+            .Where(d => d.Side != "local" || !(notTheBuilds.Contains(d.Type) || (d.Property is not null && notTheBuilds.Contains($"{d.Type}.{d.Property}"))))
+            .ToList();
+        static bool OnlyInProduction(SealModelDifference d) =>
+            d.Side == "production" && d.Difference.StartsWith(ModelCompatibility.NotInBuild.Replace("the target's build", "the local build", StringComparison.Ordinal), StringComparison.Ordinal);
+        var differences = all.Where(d => !OnlyInProduction(d)).ToList();
         if (differences.Count > 0)
         {
             throw new ConflictException(
@@ -173,6 +205,7 @@ internal static class Sealing
                 Details = new { reason = ModelReason, differences },
             };
         }
+        return SealedLeftovers.Sorted(all.Where(OnlyInProduction).Select(d => d.Property is null ? d.Type : $"{d.Type}.{d.Property}"));
     }
 
     /// <summary>
@@ -181,29 +214,34 @@ internal static class Sealing
     /// the local database's, and the sealed run's site would find them there and stop writing (it accepts no drift).
     /// </summary>
     /// <exception cref="ConflictException">They differ (<see cref="ModelReason"/>, <c>details.drift</c>).</exception>
-    public static async Task RequireNoDriftAsync(CliContext context, List<string> warnings, CancellationToken cancellationToken)
+    /// <returns>The local database's leftovers (types and properties only it has, from removed code), which the seal accepts.</returns>
+    /// <exception cref="ConflictException">Any other difference between the local site's code and its database.</exception>
+    public static async Task<IReadOnlyList<string>> RequireNoDriftAsync(CliContext context, List<string> warnings, CancellationToken cancellationToken)
     {
         var drift = await (await context.ConnectAgentAsync(cancellationToken)).ModelDriftAsync(cancellationToken);
         if (!drift.Checked)
         {
             warnings.Add("The local site's agent is older than this opticli, so it couldn't compare its code with the database's model; the sealed run's drift check still does. Restart it (`opticli serve --stop`, `opticli serve`) to check now.");
-            return;
+            return [];
         }
-        if (drift.Fingerprint is not null)
+        var (leftovers, other) = SealedLeftovers.Split(drift);
+        if (other.Count > 0)
         {
             throw new ConflictException(
-                $"The build and its database differ: {drift.Describe()}. Production's content model is the local database's, so the sealed run's site would find the same there and stop writing (a sealed apply accepts no drift).",
-                "details.drift lists them. Usually types or properties only in the database, which removed code left (`opticli types --orphaned`): remove them in production's admin UI and locally (`opticli types remove`), or bring their code back; then seal again.")
+                $"The build and its database differ: {string.Join("; ", other.Take(5).Select(o => $"{o.Item.Name} ({o.Item.Difference})"))}{(other.Count > 5 ? "; …" : "")}. Production's content model is the local database's, so the sealed run's site would find the same there and stop writing.",
+                "details.drift lists them. Types and properties only in the database (removed code) are accepted by name; anything else isn't: build what production runs, or deploy this build there, then seal again.")
             {
                 Details = new { reason = ModelReason, drift },
             };
         }
+        return leftovers;
     }
 
     /// <summary>Both ways: what the local build has that production lacks (or has otherwise), and the other way round.</summary>
     private static async Task<IReadOnlyList<SealModelDifference>> ModelDifferencesAsync(ContentSession local, ContentSession production, CancellationToken cancellationToken)
     {
-        var toProduction = await ModelCompatibility.CompareAsync(local, production, cancellationToken);
+        // The run's site writes with the local build: a property production's own code no longer has is still written to.
+        var toProduction = await ModelCompatibility.CompareAsync(local, production, cancellationToken, sourceBuildWrites: true);
         var fromProduction = await ModelCompatibility.CompareAsync(production, local, cancellationToken);
         return toProduction.Differences(local.Model, local.Model.Types.Select(t => t.Id)).Select(d => new SealModelDifference("local", d.Type, d.Property, d.Difference.Replace("the target's build", "production", StringComparison.Ordinal)))
             .Concat(fromProduction.Differences(production.Model, production.Model.Types.Select(t => t.Id)).Select(d => new SealModelDifference("production", d.Type, d.Property, d.Difference.Replace("the target's build", "the local build", StringComparison.Ordinal))))
@@ -241,7 +279,7 @@ internal static class Sealing
         var text = new StringBuilder()
             .AppendLine(CultureInfo.InvariantCulture, $"Sealed {result.Seal} for '{result.Target.Database}' on '{result.Target.Server}' (role prod), good until {result.Expires:u}.")
             .AppendLine(CultureInfo.InvariantCulture, $"  plan {result.Plan} ({result.PlanFiles} file(s)), {Describe(result.Summary)}")
-            .AppendLine(CultureInfo.InvariantCulture, $"  checked against {result.ValidatedOn}; build {result.Build.Output}{(result.Build.Commit is { } commit ? $" (git {commit}{(result.Build.Uncommitted == true ? ", uncommitted changes" : "")})" : "")}")
+            .AppendLine(CultureInfo.InvariantCulture, $"  checked against {result.ValidatedOn}{(result.Leftovers.Count > 0 ? $"; accepts {result.Leftovers.Count} type(s)/properties only production has: {string.Join(", ", result.Leftovers)}" : "")}; build {result.Build.Output}{(result.Build.Commit is { } commit ? $" (git {commit}{(result.Build.Uncommitted == true ? ", uncommitted changes" : "")})" : "")}")
             .AppendLine()
             .AppendLine("The user runs this in their own terminal (an agent hands it over and never runs it):")
             .AppendLine(CultureInfo.InvariantCulture, $"  {result.UserCommand}");

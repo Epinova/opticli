@@ -71,6 +71,21 @@ public sealed class SealedSiteTests : IDisposable
     }
 
     [Fact]
+    public async Task A_microsoft_entra_token_goes_on_the_stdin_line_only()
+    {
+        var launch = await LaunchAsync() with { SqlToken = new SealedSqlToken("entra-token", new DateTimeOffset(2026, 10, 26, 14, 0, 0, TimeSpan.Zero)) };
+
+        var variables = SealedSite.Environment(launch).ToDictionary(v => v.Key, v => v.Value);
+        var line = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(SealedSite.Secrets(launch, "token"))!;
+
+        Assert.Equal("entra-token", line[AgentProtocol.SqlTokenVariable]);
+        Assert.Equal("2026-10-26T14:00:00.0000000+00:00", line[AgentProtocol.SqlTokenExpiresVariable]);
+        Assert.True(variables.TryGetValue(AgentProtocol.SqlTokenVariable, out var inherited) && inherited is null);
+        Assert.DoesNotContain(variables.Values, v => v is not null && v.Contains("entra-token", StringComparison.Ordinal));
+        Assert.DoesNotContain("entra-token", launch.SqlToken!.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Without_them_the_stdin_line_has_the_token_and_the_write_login_only()
     {
         var line = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(SealedSite.Secrets(await LaunchAsync(), "token"))!;

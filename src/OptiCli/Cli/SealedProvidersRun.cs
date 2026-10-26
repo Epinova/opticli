@@ -13,7 +13,8 @@ namespace OptiCli.Cli;
 /// <summary>What the run did about production's servers' caches: sent the cache drops over the event bus, or not (restart).</summary>
 /// <param name="Sent">How many of the run's messages reached the topic (counted on a probe subscription).</param>
 /// <param name="Problem">Why the events can't be trusted to have reached production's servers; null when they did.</param>
-internal sealed record SealedEventsResult(string Topic, string? Subscription, int Subscribers, int Sent, string? Problem);
+/// <param name="NotSentWhileStopping">Cache removals the site raised after its queue was sent (while it stopped), which weren't sent: not the plan's.</param>
+internal sealed record SealedEventsResult(string Topic, string? Subscription, int Subscribers, int Sent, string? Problem, int NotSentWhileStopping = 0);
 
 /// <summary>An uploaded file, looked up in production's blob storage after the run.</summary>
 /// <param name="Blob">Its name in the container (<c>&lt;guid&gt;/&lt;file&gt;</c>); null when the version names no file.</param>

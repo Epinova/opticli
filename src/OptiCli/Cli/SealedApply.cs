@@ -123,6 +123,14 @@ internal static class SealedApply
             throw new LoginFailedException(ex.Message, "The write login typed was refused. Nothing was written and the seal is still unused: run the command again with the right login.") { Details = ex.Details };
         }
         await using var session = await ContentSession.OpenAsync(writeDb, cancellationToken);
+        // Microsoft Entra ID: the site signs in with the token this connection just got (the identity checked here), and
+        // fetches none of its own (in a starting site that could stall until Azure SQL dropped the login).
+        SealedSqlToken? sqlToken = null;
+        if (credentials is null && ProductionWrite.LastEntraToken() is { } entra)
+        {
+            sqlToken = new SealedSqlToken(entra.AccessToken, entra.ExpiresOn);
+            terminal.WriteLine($"The run's site signs in to production with this run's Microsoft Entra token (valid until {entra.ExpiresOn.ToLocalTime():HH:mm}).");
+        }
         if (await WriteAccessReader.ReadAsync(session.Db, cancellationToken) is { Count: 0 })
         {
             terminal.WriteLine("warning: that login has none of db_owner, db_datawriter or INSERT/UPDATE on tblContent; the CMS may not be able to save.");
@@ -140,7 +148,7 @@ internal static class SealedApply
         var agentDll = AgentLocator.Locate(AppContext.BaseDirectory, choice.CmsMajor);
         var port = PortSelector.Select(null, null, PortClaims.ForUser.FreeAndClaimed(PortSelector.IsFree));
         var launch = new SealedLaunch(project, write, context.ConnectionRequest.Name, output, agentDll, choice.CmsMajor, port, StartTimeout, driftFile,
-            Path.Combine(folder, $"{seal.Id}.log"), KestrelEndpoints.Configured(project, environment), providers?.Providers);
+            Path.Combine(folder, $"{seal.Id}.log"), KestrelEndpoints.Configured(project, environment), providers?.Providers, sqlToken);
         var allowedTypes = new AllowedTypesCheck(session.Model, () => CSharpSourceIndex.Build(project.SourceRoot));
 
         PlanRun run;
@@ -159,8 +167,10 @@ internal static class SealedApply
                     {
                         await providers.RequireInEffectAsync(client.SealedStatusAsync, token);
                     }
+                    // What the build and production differ in: the leftovers the seal accepted by name, and nothing else.
+                    var acceptDrift = SealedLeftovers.Accept(await client.DriftAsync(token), seal.Leftovers);
                     terminal.WriteLine("The site answers. Checking the plan against production, then writing…");
-                    var executor = new WriteExecutor(session, _ => Task.FromResult(client), site: null, project.Directory, seal.Options.UpdateExisting, sharedDatabase: true)
+                    var executor = new WriteExecutor(session, _ => Task.FromResult(client), site: null, project.Directory, seal.Options.UpdateExisting, acceptDrift: acceptDrift, sharedDatabase: true)
                     {
                         // Uploads send the bytes the run read and hashed, never the file on disk again.
                         Files = plan,
@@ -253,8 +263,15 @@ internal static class SealedApply
         }
         try
         {
-            var failed = File.ReadLines(logPath).Count(l => l.Contains("Failed to send event", StringComparison.Ordinal));
-            return failed == 0 ? events : events with { Problem = $"the site's event provider logged {failed} event(s) it couldn't send (see {logPath})" };
+            // Before the agent's "queue sent" line: the run's own cache removals. After it: what the site raised while it
+            // stopped, once the queue no longer took anything (listed, but not the plan's).
+            var lines = File.ReadLines(logPath).ToList();
+            var flushed = lines.FindIndex(l => l.Contains(OptiCli.Protocol.AgentProtocol.EventsFlushedLine, StringComparison.Ordinal));
+            static bool Failed(string line) => line.Contains("Failed to send event", StringComparison.Ordinal);
+            var before = (flushed < 0 ? lines : lines.Take(flushed)).Count(Failed);
+            var after = flushed < 0 ? 0 : lines.Skip(flushed).Count(Failed);
+            events = events with { NotSentWhileStopping = after };
+            return before == 0 ? events : events with { Problem = $"the site's event provider logged {before} event(s) of the run it couldn't send (see {logPath})" };
         }
         catch (IOException ex)
         {
@@ -279,7 +296,8 @@ internal static class SealedApply
         events?.Problem is { } problem ? $"{RestartWarning} (The event bus was given, but {problem}.)" : RestartWarning;
 
     private static string EventsSent(SealedEventsResult events) =>
-        $"Production's servers were told over the event bus ({events.Sent} message(s) on topic '{events.Topic}'): no restart is needed.";
+        $"Production's servers were told over the event bus ({events.Sent} message(s) on topic '{events.Topic}'): no restart is needed."
+        + (events.NotSentWhileStopping > 0 ? $" ({events.NotSentWhileStopping} cache removal(s) the run's site raised while it stopped, after its queue was sent, weren't sent: the site's own, not the plan's.)" : "");
 
     /// <summary>The probe subscription that counts the run's messages (Service Bus allows 50 characters).</summary>
     internal static string ProbeName(string sealId) => $"opticli-probe-{sealId}";
@@ -298,6 +316,10 @@ internal static class SealedApply
         terminal.WriteLine($"  options: {(seal.Options.Flags.Count > 0 ? string.Join(' ', seal.Options.Flags) : "(none)")}");
         terminal.WriteLine($"  steps:   {Printable.Of(Sealing.Describe(summary))}");
         terminal.WriteLine("  checks:  production's content model and the versions of the content the plan touches must be as sealed: next, and again right before the first save");
+        if (seal.Leftovers is { Count: > 0 } leftovers)
+        {
+            terminal.WriteLine($"  accepts: {leftovers.Count} content type(s)/properties only production's database has (removed code), as they are; the plan doesn't write them, and any other difference stops the run: {Printable.Of(string.Join(", ", leftovers))}");
+        }
         terminal.WriteLine($"  never:   deletes, unpublish steps, access rights{(summary.Media > 0 ? "; media files only to production's blob storage, asked next" : "")}");
         terminal.WriteLine();
     }

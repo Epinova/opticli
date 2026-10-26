@@ -110,5 +110,8 @@ public sealed class ProductionWrite
         return new ProductionWrite(seal, production.Server, production.Database, production.IsLocal, builder.ConnectionString);
     }
 
+    /// <summary>The Microsoft Entra token the last connection in this process signed in with (a sealed run's write connection), if any.</summary>
+    public static (string AccessToken, DateTimeOffset ExpiresOn)? LastEntraToken() => Data.EntraTokenCapture.Last;
+
     public override string ToString() => $"{Database} on {Server} (write)";
 }

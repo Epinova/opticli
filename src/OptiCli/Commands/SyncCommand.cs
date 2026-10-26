@@ -242,7 +242,7 @@ internal static class SyncCommand
             context.Writes(localSession, ask: false);
             await context.ConnectAgentAsync(cancellationToken);
             await using var productionSession = await ContentSession.OpenAsync(await CmsDatabase.OpenAsync(productionConnection, cancellationToken), cancellationToken);
-            await Sealing.RequireSameModelAsync(localSession, productionSession, cancellationToken);
+            await Sealing.RequireComparableAsync(context, localSession, productionSession, [], cancellationToken);
 
             var reader = new ExportReader(localSession);
             IReadOnlyList<ExportRoot> roots;

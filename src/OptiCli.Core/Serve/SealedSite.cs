@@ -17,6 +17,7 @@ namespace OptiCli.Core.Serve;
 /// <param name="LogPath">The site's output for this run (user-only).</param>
 /// <param name="SiteEndpoints">The site's own <c>Kestrel:Endpoints</c>; opticli's address is added as one more, and every address it listens on must be loopback.</param>
 /// <param name="Providers">Production's event bus and blob storage as the user typed them; null for neither.</param>
+/// <param name="SqlToken">For a production connection that signs in with Microsoft Entra ID: the token the run signed in with, for the site to use.</param>
 public sealed record SealedLaunch(
     ProjectInfo Project,
     ProductionWrite Write,
@@ -29,7 +30,14 @@ public sealed record SealedLaunch(
     string DriftFile,
     string LogPath,
     IReadOnlyList<string>? SiteEndpoints = null,
-    SealedProviders? Providers = null);
+    SealedProviders? Providers = null,
+    SealedSqlToken? SqlToken = null);
+
+/// <summary>A Microsoft Entra access token for production's database, handed to the run's site on its stdin line. Never printed.</summary>
+public sealed record SealedSqlToken(string AccessToken, DateTimeOffset ExpiresOn)
+{
+    public override string ToString() => $"access token (not shown), valid until {ExpiresOn:u}";
+}
 
 /// <summary>
 /// Production's event bus and blob storage for one sealed run, typed at its terminal: they go to the site on its stdin line
@@ -130,6 +138,7 @@ public static class SealedSite
             .Concat([AgentProtocol.TokenVariable, AgentProtocol.DatabaseVariable, AgentProtocol.SchedulerVariable, AgentProtocol.ConnectionNameVariable,
                 // Production's event bus and blob storage come from the terminal only.
                 AgentProtocol.EventsConnectionVariable, AgentProtocol.EventsTopicVariable, AgentProtocol.BlobsConnectionVariable, AgentProtocol.BlobsContainerVariable,
+                AgentProtocol.SqlTokenVariable, AgentProtocol.SqlTokenExpiresVariable,
                 "ASPNETCORE_HOSTINGSTARTUPASSEMBLIES", "ASPNETCORE_PREVENTHOSTINGSTARTUP", "ASPNETCORE_HTTPS_PORT"])
             .Distinct(StringComparer.Ordinal);
         var variables = new List<KeyValuePair<string, string?>>(removed.Select(name => new KeyValuePair<string, string?>(name, null)))
@@ -169,6 +178,11 @@ public static class SealedSite
         {
             secrets[AgentProtocol.EventsConnectionVariable] = events.Value;
             secrets[AgentProtocol.EventsTopicVariable] = topic;
+        }
+        if (request.SqlToken is { } sqlToken)
+        {
+            secrets[AgentProtocol.SqlTokenVariable] = sqlToken.AccessToken;
+            secrets[AgentProtocol.SqlTokenExpiresVariable] = sqlToken.ExpiresOn.ToString("O", System.Globalization.CultureInfo.InvariantCulture);
         }
         if (request.Providers is { Blobs: { } blobs, Container: { } container })
         {
