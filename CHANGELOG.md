@@ -3,6 +3,39 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.24.0 (26 October 2026)
+
+A sealed apply to production can join production's event bus, so no restart is needed afterwards, and can carry media
+to production's blob storage. Both are typed at the user's terminal, like the write login, and only offered to a site
+that uses the CMS's Azure providers.
+
+### Writing to production
+
+- **Event bus.** When the site's build has the CMS's Azure event provider (`EPiServer.Azure` on CMS 12,
+  `EPiServer.Events.Azure` on CMS 13), the run asks for production's Service Bus connection string (with a shared access
+  key) and topic, after the write login. Enter skips it: the restart warning, as before. Before the seal is used, the
+  topic must exist and have subscriptions (production's servers). The site agent registers the CMS's own provider with
+  those values, whatever the site's configuration says (its Key Vault may hold another environment's), and the run checks
+  that the site uses them, then that its subscription is on the topic, before the first save. After the saves the site
+  sends what its provider still has queued (the CMS would drop it when the site stops), and a probe subscription counts
+  the run's messages on the topic.
+- **The result says whether a restart is needed**: `restartNeeded` is false only when the run's cache drops were sent
+  and counted (`events.sent`); anything uncertain leaves it true, with the reason in `events.problem`.
+- **Media.** Sealed plans may `upload` (and `replace`) by GUID again, for a site whose build has the CMS's Azure blob
+  provider. The run then asks for production's Azure Storage connection string (an account key or a SAS token) and
+  container (offered from the site's `EPiServer:Cms:AzureBlobProvider:ContainerName`); the container must exist before
+  the seal is used, and Enter refuses the uploads with the seal unused. The site writes through the CMS's Azure blob
+  provider with those values, uploads send the bytes the run read and hashed (not the file again), and after the run every
+  uploaded file is looked up where production's database now points (`media[]`; one missing is a `conflict`,
+  `details.reason: "blobMissing"`).
+- `sync push --media` pushes media production lacks or has otherwise too, with its files from the local site's blob
+  folder. Without it, media is listed and left out, as before.
+- The connection strings are never written to disk, logs, output or the seal, and no option, environment variable or
+  configuration entry gives them: the agent takes them only from the run's stdin line. The CLI checks Service Bus and
+  Blob Storage with the Azure SDKs (`Azure.Messaging.ServiceBus`, `Azure.Storage.Blobs`; the probe receives over AMQP on
+  WebSockets, port 443). The site agent brings no Azure package into the site: it uses the site's own CMS Azure
+  providers, so sites without Azure are unaffected.
+
 ## 0.23.1 (23 October 2026)
 
 Hardening of the MCP server for editors, from a review of what an assistant's tool calls can reach.
