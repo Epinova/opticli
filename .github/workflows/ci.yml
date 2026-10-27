@@ -55,3 +55,24 @@ jobs:
         run: |
           dotnet pack src/OptiCli/OptiCli.csproj -c Release --no-build -o artifacts
           .github/scripts/check-package.sh artifacts
+
+  # The Claude Desktop extension for the MCP module (mcp-extension/): packs and checks it.
+  extension:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Pack
+        working-directory: mcp-extension
+        run: |
+          npm ci --no-audit --no-fund
+          node build.mjs
+
+      - name: Check
+        run: .github/scripts/check-mcp-extension.sh mcp-extension/dist/opticli-cms.mcpb

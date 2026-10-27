@@ -1,0 +1,17 @@
+{
+  "name": "opticli-cms-mcpb",
+  "version": "0.0.0",
+  "description": "Claude Desktop extension for the opticli MCP module on Optimizely CMS sites",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "mcp-remote": "^0.15.2"
+  },
+  "devDependencies": {
+    "@anthropic-ai/mcpb": "^2.1.2"
+  }
+}

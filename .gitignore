@@ -8,3 +8,5 @@ obj/
 *.nupkg
 TestResults/
 artifacts/
+mcp-extension/node_modules/
+mcp-extension/dist/

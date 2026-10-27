@@ -1,0 +1,38 @@
+{
+  "manifest_version": "0.3",
+  "name": "opticli-cms",
+  "display_name": "Optimizely CMS (opticli)",
+  "version": "0.0.0",
+  "description": "Find, read and edit content in an Optimizely CMS site that runs the opticli MCP module.",
+  "long_description": "Lets Claude find, read, create, update and publish content in an Optimizely CMS site, as you. Fill in the site's address when you install it (ask your developer for it). The first time Claude uses it, a browser window opens where you sign in with your own CMS account and allow the connection. Claude then has exactly your access rights, saves changes as drafts, and only publishes when you ask it to.\n\nYour own computer connects to the site, not Claude's cloud. You can see and revoke the connection on the site at /episerver/opticli/connections.",
+  "author": {
+    "name": "Epinova",
+    "url": "https://www.epinova.no"
+  },
+  "homepage": "https://github.com/epinova/opticli",
+  "documentation": "https://github.com/epinova/opticli#mcp-server-for-editors-preview",
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.js", "${user_config.site_url}"],
+      "env": {}
+    }
+  },
+  "user_config": {
+    "site_url": {
+      "type": "string",
+      "title": "CMS address",
+      "description": "The site's address, like https://www.example.com. A full MCP endpoint URL (…/episerver/opticli/mcp) works too.",
+      "required": true
+    }
+  },
+  "tools_generated": true,
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": { "node": ">=20.0.0" }
+  },
+  "keywords": ["optimizely", "episerver", "cms", "opticli"],
+  "license": "MIT"
+}

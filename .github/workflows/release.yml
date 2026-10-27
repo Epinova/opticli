@@ -1,5 +1,6 @@
 # Publishes the OptiCli tool package and the OptiCli.Mcp site package (a -preview prerelease of the same version) to
-# nuget.org when a version tag (v1.2.3) is pushed.
+# nuget.org when a version tag (v1.2.3) is pushed, then creates the GitHub release with the MCP module's Claude Desktop
+# extension (opticli-cms.mcpb) attached.
 # Authenticates with nuget.org trusted publishing: no API key is stored in the repository.
 name: Release
 
@@ -68,6 +69,26 @@ jobs:
           .github/scripts/check-package.sh artifacts
           .github/scripts/check-mcp-package.sh artifacts "${GITHUB_REF_NAME#v}"
 
+      # Packed and checked before anything is pushed; the release job below attaches it.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Pack the Claude Desktop extension
+        working-directory: mcp-extension
+        run: |
+          npm ci --no-audit --no-fund
+          node build.mjs
+
+      - name: Check the extension
+        run: .github/scripts/check-mcp-extension.sh mcp-extension/dist/opticli-cms.mcpb "${GITHUB_REF_NAME#v}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension
+          path: mcp-extension/dist/opticli-cms.mcpb
+          if-no-files-found: error
+
       - name: Log in to nuget.org
         id: login
         uses: NuGet/login@v1
@@ -80,3 +101,43 @@ jobs:
           --api-key "${{ steps.login.outputs.NUGET_API_KEY }}"
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
+
+  # The GitHub release, after the packages are on nuget.org: the version's CHANGELOG section as notes, and the extension
+  # as an asset (the same name every release, so .../releases/latest/download/opticli-cms.mcpb always has the newest).
+  # A re-run replaces the asset of a release that already exists.
+  github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: extension
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" opticli-cms.mcpb --clobber
+            exit 0
+          fi
+          awk -v v="$version" 'index($0, "## " v " ") == 1 { on = 1; next } on && /^## / { exit } on' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error::CHANGELOG.md has no section for $version."
+            exit 1
+          fi
+          cat >> notes.md <<NOTES
+
+          ---
+
+          Packages: [OptiCli $version](https://www.nuget.org/packages/OptiCli/$version) and
+          [OptiCli.Mcp $version-preview](https://www.nuget.org/packages/OptiCli.Mcp/$version-preview) on nuget.org.
+          **opticli-cms.mcpb** below is the Claude Desktop extension for sites that run OptiCli.Mcp; see
+          [Connecting Claude](https://github.com/epinova/opticli#connecting-claude).
+          NOTES
+          gh release create "$GITHUB_REF_NAME" opticli-cms.mcpb --verify-tag --title "opticli $version" --notes-file notes.md
