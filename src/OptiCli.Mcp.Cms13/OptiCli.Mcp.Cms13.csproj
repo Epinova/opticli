@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The MCP module for CMS 13: OptiCli.Mcp's own sources, built for net10.0 against CMS 13 with CMS13 defined. The same
+    assembly name, namespaces and public API as the CMS 12 package, so a site that upgrades swaps one PackageReference.
+    A separate package, not a second target framework of OptiCli.Mcp: CMS 12 sites on .NET 10 would get this build.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <DefineConstants>$(DefineConstants);CMS13</DefineConstants>
+    <AssemblyName>OptiCli.Mcp</AssemblyName>
+    <RootNamespace>OptiCli.Mcp</RootNamespace>
+    <PackageId>OptiCli.Mcp.Cms13</PackageId>
+    <Description>An MCP server for Optimizely CMS 13: editors connect their AI assistant to the site, sign in with the site's own login, and work with their own access rights.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>optimizely;episerver;cms;cms13;mcp;model-context-protocol;oauth</PackageTags>
+    <PackageLicenseExpression>MPL-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/epinova/opticli</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/epinova/opticli.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <!-- As in OptiCli.Mcp.csproj: IntelliSense for the site developer; the linked sources' comments aren't checked. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>
+    <!-- Audit the packages referenced here, as a net8.0 project does by default: on net10.0 the whole graph would be,
+         and the CMS's own transitive packages (MailKit for 13.0) are the site's to update, not this package's. -->
+    <NuGetAuditMode>direct</NuGetAuditMode>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <!--
+      Built against the oldest CMS 13, never CMS 12 or 14. CMS UI 13 pins its shell packages and EPiServer.CMS.Core to
+      its own version, so 13.0.0 is the oldest set (Directory.Packages.props has the UI's range).
+    -->
+    <PackageReference Include="EPiServer.CMS.Core" VersionOverride="[13.0.0, 14.0.0)" />
+    <!-- IImageService (Compat/CmsImages.cs), part of EPiServer.CMS.Core on CMS 12. -->
+    <PackageReference Include="EPiServer.ImageLibrary" VersionOverride="[13.0.0, 14.0.0)" />
+    <!-- UIRoleProvider: the editor's roles as they are now, for ASP.NET Identity and synchronized external logins alike. -->
+    <PackageReference Include="EPiServer.CMS.UI.Core" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The module itself, as OptiCli.Mcp.csproj compiles it, with the same content operations linked in. -->
+    <Compile Include="..\OptiCli.Mcp\**\*.cs" Exclude="..\OptiCli.Mcp\bin\**;..\OptiCli.Mcp\obj\**" />
+    <Compile Include="..\OptiCli.Cms\**\*.cs" Exclude="..\OptiCli.Cms\bin\**;..\OptiCli.Cms\obj\**" LinkBase="Cms" />
+    <Compile Include="..\OptiCli.Protocol\**\*.cs" Exclude="..\OptiCli.Protocol\bin\**;..\OptiCli.Protocol\obj\**" LinkBase="Protocol" />
+    <Compile Include="..\OptiCli.Core\Text\Suggestions.cs" Link="Shared\Suggestions.cs" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OptiCli.Mcp.Tests" />
+  </ItemGroup>
+
+</Project>

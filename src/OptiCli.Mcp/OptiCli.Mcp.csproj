@@ -25,10 +25,11 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <!--
-      Built against the oldest CMS 12 the MCP SDK can run beside, never CMS 13, whose APIs differ. CMS 12 before 12.11
-      caps Microsoft.Extensions.* below 7.0, and the SDK needs 10.x. CMS UI 12.16.1 is the first whose dependencies
-      resolve cleanly to an uncapped CMS (12.16.0 asks for a CMS 12.12.0 that was never released), and it needs CMS
-      12.12.1, since EPiServer.CMS.Core pins EPiServer.Framework to its own version.
+      Built against the oldest CMS 12 the MCP SDK can run beside, never CMS 13, whose APIs differ (OptiCli.Mcp.Cms13
+      builds these same sources for CMS 13). CMS 12 before 12.11 caps Microsoft.Extensions.* below 7.0, and the SDK
+      needs 10.x. CMS UI 12.16.1 is the first whose dependencies resolve cleanly to an uncapped CMS (12.16.0 asks for a
+      CMS 12.12.0 that was never released), and it needs CMS 12.12.1, since EPiServer.CMS.Core pins EPiServer.Framework
+      to its own version.
     -->
     <PackageReference Include="EPiServer.CMS.Core" VersionOverride="[12.12.1, 13.0.0)" />
     <!-- UIRoleProvider: the editor's roles as they are now, for ASP.NET Identity and synchronized external logins alike. -->

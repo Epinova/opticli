@@ -20,8 +20,8 @@ namespace OptiCli.Cms.Compat;
 /// <c>ICompositionMapper</c>, lets <see cref="CompositionEditor"/> change it, and has the mapper store it again
 /// (<c>Populate</c>), which rebuilds both storage properties (<c>Layout</c>, <c>UnstructuredData</c>) with the keys kept.
 /// New inline blocks come from the CMS's <c>IBlockPropertyFactory</c>, their values are set as a draft's are
-/// (<see cref="PropertyWriter"/>). CMS 12 has no compositions: a request with one is refused there (the MCP module, CMS 12
-/// only, never sends one).
+/// (<see cref="PropertyWriter"/>). CMS 12 has no compositions: a request with one is refused there. The MCP module never
+/// sends one, on either major: editors read compositions but don't change them.
 /// </summary>
 internal static class CmsCompositionWrites
 {

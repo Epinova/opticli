@@ -13,7 +13,7 @@
 # and sa). The database copy is kept on later runs unless FRESH=1. MCP_PORT is the site's port (default 5180).
 #
 # A CMS 13 edge-case site (one tests/fixtures/edge-cases/setup.sh made from tests/fixtures/cms13's Alloy13) gets the
-# module built for net10.0 with CMS13 defined, and McpVisualBuilderFixture.cs as well:
+# module's CMS 13 build (src/OptiCli.Mcp.Cms13), and McpVisualBuilderFixture.cs as well:
 #   MCP_PORT=5200 setup.sh /demo/AlloyEdge13 /demo/AlloyMcp13 alloy-edge13 alloy-mcp13
 set -euo pipefail
 
@@ -68,52 +68,8 @@ project=$(find "$TARGET" -maxdepth 1 -name '*.csproj' | head -n 1)
 cms_major=$(sed -n 's:.*Include="EPiServer\.CMS" Version="\([0-9]*\)\..*:\1:p' "$project" | head -n 1)
 fixtures=("$HERE/McpFixture.cs")
 if [ "${cms_major:-12}" -ge 13 ]; then
-  # Until the OptiCli.Mcp.Cms13 package exists: the module's own sources built for net10.0 against CMS 13, from a
-  # project file made here (artifacts/ is git-ignored). OptiCli.Mcp.csproj stays the CMS 12 build.
-  echo "== CMS $cms_major: the module built for net10.0 (CMS13), with McpVisualBuilderFixture.cs"
-  MODULE="$REPO/artifacts/mcp-cms13/OptiCli.Mcp.csproj"
-  mkdir -p "$(dirname "$MODULE")"
-  cat > "$MODULE" <<'EOF'
-<Project Sdk="Microsoft.NET.Sdk">
-
-  <!-- Made by tests/fixtures/mcp/setup.sh for a CMS 13 MCP test site: src/OptiCli.Mcp's sources built for net10.0
-       against CMS 13, with CMS13 defined. A stand-in for the OptiCli.Mcp.Cms13 project; don't edit it. -->
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <DefineConstants>$(DefineConstants);CMS13</DefineConstants>
-    <AssemblyName>OptiCli.Mcp</AssemblyName>
-    <RootNamespace>OptiCli.Mcp</RootNamespace>
-    <IsPackable>false</IsPackable>
-    <!-- The CMS's own transitive packages have audit warnings (NU1902/NU1903), as for the agent's net10.0 build. -->
-    <NuGetAuditMode>direct</NuGetAuditMode>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>
-    <!-- CMS 13 marks some APIs the module uses obsolete (CS0618): left as warnings, so the test site builds anyway. -->
-    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-  </PropertyGroup>
-
-  <ItemGroup>
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <!-- EPiServer.CMS.Core and EPiServer.ImageLibrary: Directory.Packages.props' CMS 13 versions (net10.0). -->
-    <PackageReference Include="EPiServer.CMS.Core" />
-    <PackageReference Include="EPiServer.ImageLibrary" />
-    <PackageReference Include="EPiServer.CMS.UI.Core" VersionOverride="13.0.0" />
-    <PackageReference Include="ModelContextProtocol.AspNetCore" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Compile Include="..\..\src\OptiCli.Mcp\**\*.cs" Exclude="..\..\src\OptiCli.Mcp\bin\**;..\..\src\OptiCli.Mcp\obj\**" />
-    <Compile Include="..\..\src\OptiCli.Cms\**\*.cs" Exclude="..\..\src\OptiCli.Cms\bin\**;..\..\src\OptiCli.Cms\obj\**" LinkBase="Cms" />
-    <Compile Include="..\..\src\OptiCli.Protocol\**\*.cs" Exclude="..\..\src\OptiCli.Protocol\bin\**;..\..\src\OptiCli.Protocol\obj\**" LinkBase="Protocol" />
-    <Compile Include="..\..\src\OptiCli.Core\Text\Suggestions.cs" Link="Shared\Suggestions.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <InternalsVisibleTo Include="OptiCli.Mcp.Tests" />
-  </ItemGroup>
-
-</Project>
-EOF
+  echo "== CMS $cms_major: the module's CMS 13 build (OptiCli.Mcp.Cms13), with McpVisualBuilderFixture.cs"
+  MODULE="$REPO/src/OptiCli.Mcp.Cms13/OptiCli.Mcp.Cms13.csproj"
   fixtures+=("$HERE/McpVisualBuilderFixture.cs")
 fi
 mkdir -p "$TARGET/McpFixture"
@@ -147,10 +103,10 @@ def patch(path, changes):
 
 project = sorted(glob.glob(f"{target}/*.csproj"))[0]
 patch(project, [(
-    "OptiCli.Mcp.csproj",
+    module,
     "</Project>",
     f"""  <ItemGroup>
-    <!-- opticli MCP test site (tests/fixtures/mcp/setup.sh): a site would reference the OptiCli.Mcp package instead. -->
+    <!-- opticli MCP test site (tests/fixtures/mcp/setup.sh): a site would reference the OptiCli.Mcp package (OptiCli.Mcp.Cms13 on CMS 13) instead. -->
     <ProjectReference Include="{module}" />
   </ItemGroup>
 </Project>""")])

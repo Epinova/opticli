@@ -1,10 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <!-- Both module builds: net8.0 runs OptiCli.Mcp (CMS 12), net10.0 OptiCli.Mcp.Cms13 (CMS 13, CMS13 defined). -->
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <RollForward>Major</RollForward>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <DefineConstants>$(DefineConstants);CMS13</DefineConstants>
+    <!-- As in OptiCli.Mcp.Cms13: audit the direct references, not CMS 13's own transitive packages. -->
+    <NuGetAuditMode>direct</NuGetAuditMode>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,8 +27,12 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' != 'net10.0'">
     <ProjectReference Include="..\..\src\OptiCli.Mcp\OptiCli.Mcp.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <ProjectReference Include="..\..\src\OptiCli.Mcp.Cms13\OptiCli.Mcp.Cms13.csproj" />
   </ItemGroup>
 
 </Project>

@@ -6,7 +6,7 @@
     reach for ASP.NET Core, the agent's HTTP plumbing or MCP types.
   -->
   <PropertyGroup>
-    <!-- Both CMS majors, as the agent builds them; the MCP module compiles these sources for CMS 12 only. -->
+    <!-- Both CMS majors, as the agent and the MCP module (OptiCli.Mcp, OptiCli.Mcp.Cms13) build them. -->
     <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <RootNamespace>OptiCli.Cms</RootNamespace>
     <IsPackable>false</IsPackable>

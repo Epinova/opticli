@@ -15,8 +15,8 @@
 
   <!--
     The agent builds twice: net8.0 against CMS 12, net10.0 against CMS 13 (which needs .NET 10). Compile-time only: the
-    agent binds to the host site's newer assemblies of the same major at runtime. Only the agent, OptiCli.Cms and the
-    agent's tests target net10.0; the MCP module pins its own CMS 12 range.
+    agent binds to the host site's newer assemblies of the same major at runtime. The MCP module is two packages from
+    the same sources, OptiCli.Mcp (net8.0, CMS 12) and OptiCli.Mcp.Cms13 (net10.0, CMS 13), each pinning its own range.
   -->
   <ItemGroup Label="Agent, CMS 12" Condition="'$(TargetFramework)' != 'net10.0'">
     <PackageVersion Include="EPiServer.CMS.Core" Version="12.0.3" />
@@ -36,21 +36,37 @@
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.2" />
   </ItemGroup>
 
-  <ItemGroup Label="MCP module">
+  <ItemGroup Label="MCP module, CMS 12" Condition="'$(TargetFramework)' != 'net10.0'">
     <!-- The oldest CMS UI 12 whose dependencies allow the MCP SDK's Microsoft.Extensions 10.x (see OptiCli.Mcp.csproj). -->
     <PackageVersion Include="EPiServer.CMS.UI.Core" Version="[12.16.1, 13.0.0)" />
+  </ItemGroup>
+
+  <ItemGroup Label="MCP module, CMS 13" Condition="'$(TargetFramework)' == 'net10.0'">
+    <!-- The oldest CMS UI 13: it pins its shell packages and EPiServer.CMS.Core to its own version (see OptiCli.Mcp.Cms13.csproj). -->
+    <PackageVersion Include="EPiServer.CMS.UI.Core" Version="[13.0.0, 14.0.0)" />
+  </ItemGroup>
+
+  <ItemGroup Label="MCP module">
     <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
   </ItemGroup>
 
   <ItemGroup Label="Tests">
     <!-- Real EF Core migrations, for the build scanner's fixture; never run. -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.28" />
-    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="8.0.28" />
     <!-- The MCP module's end-to-end tests connect as Claude does, with the official SDK's client. -->
     <PackageVersion Include="ModelContextProtocol" Version="2.2.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+  </ItemGroup>
+
+  <!-- The MCP module's tests, on the in-memory server of the ASP.NET Core each build runs on. -->
+  <ItemGroup Label="Tests, net8.0" Condition="'$(TargetFramework)' != 'net10.0'">
+    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="8.0.28" />
+  </ItemGroup>
+
+  <ItemGroup Label="Tests, net10.0" Condition="'$(TargetFramework)' == 'net10.0'">
+    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.13" />
   </ItemGroup>
 
 </Project>

@@ -8,9 +8,9 @@ using EPiServer.Validation;
 namespace OptiCli.Cms.Compat;
 
 /// <summary>
-/// The CMS APIs whose shape differs between CMS 12 and CMS 13, for the operations both agent builds (and the MCP module,
-/// CMS 12 only) compile. <c>CMS13</c> is defined for the agent's net10.0 build; the operations themselves have no
-/// <c>#if</c>.
+/// The CMS APIs whose shape differs between CMS 12 and CMS 13, for the operations both agent builds and both MCP module
+/// builds (OptiCli.Mcp, OptiCli.Mcp.Cms13) compile. <c>CMS13</c> is defined for the net10.0 builds; the operations
+/// themselves have no <c>#if</c>.
 /// </summary>
 internal static class CmsApi
 {

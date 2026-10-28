@@ -5,6 +5,7 @@
     <Project Path="src/OptiCli.Agent/OptiCli.Agent.csproj" />
     <Project Path="src/OptiCli.Cms/OptiCli.Cms.csproj" />
     <Project Path="src/OptiCli.Mcp/OptiCli.Mcp.csproj" />
+    <Project Path="src/OptiCli.Mcp.Cms13/OptiCli.Mcp.Cms13.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/OptiCli.Core.Tests/OptiCli.Core.Tests.csproj" />

@@ -440,7 +440,11 @@ public sealed class PreviewLinkTests
             {
                 f.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedHost | ForwardedHeaders.XForwardedProto;
                 // The test server has no client address; a site lists its proxies here.
+#if NET10_0_OR_GREATER
+                f.KnownIPNetworks.Clear();
+#else
                 f.KnownNetworks.Clear();
+#endif
                 f.KnownProxies.Clear();
             });
         var link = new Uri(await preview.LinkAsync(host: "editors.example.com")).PathAndQuery;
@@ -523,7 +527,11 @@ public sealed class PreviewLinkTests
     private static void TrustAnyProxy(ForwardedHeadersOptions options)
     {
         options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedHost | ForwardedHeaders.XForwardedProto;
+#if NET10_0_OR_GREATER
+        options.KnownIPNetworks.Clear();
+#else
         options.KnownNetworks.Clear();
+#endif
         options.KnownProxies.Clear();
     }
 
@@ -531,7 +539,11 @@ public sealed class PreviewLinkTests
     public void The_sites_own_forwarded_headers_after_the_module_find_nothing_more_to_do()
     {
         var options = Options.Create(new ForwardedHeadersOptions { ForwardedHeaders = ForwardedHeaders.All });
+#if NET10_0_OR_GREATER
+        options.Value.KnownIPNetworks.Add(new System.Net.IPNetwork(IPAddress.Parse("10.0.0.0"), 8));
+#else
         options.Value.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("10.0.0.0"), 8));
+#endif
         var forwarded = new ForwardedHeadersMiddleware(_ => Task.CompletedTask, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance, options);
         var context = new DefaultHttpContext();
         context.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.1");
