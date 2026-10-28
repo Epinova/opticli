@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
 using OptiCli.Cms;
 using OptiCli.Mcp.OAuth;
 using OptiCli.Mcp.Tests.Support;
@@ -468,6 +469,8 @@ public sealed class ToolTests
             User = TokenService.Principal(grant),
             RequestServices = new ServiceCollection().BuildServiceProvider(),
         };
+        // The module's own server, as the endpoint's isolation makes it.
+        context.Features.Set(McpServer.Create(new StreamableHttpServerTransport(), McpServerIsolation.Marked(new McpServerOptions())));
         return McpEditor.From(new HttpContextAccessor { HttpContext = context });
     }
 

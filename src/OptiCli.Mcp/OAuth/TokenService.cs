@@ -40,6 +40,16 @@ internal sealed class TokenService(
 
     public const string AuthenticationType = "OptiCliMcp";
 
+    /// <summary>
+    /// The claim the MCP SDK binds a stateful session to: it keeps the first of <c>NameIdentifier</c>, <c>sub</c> and
+    /// <c>upn</c> it finds on the user that made the session, and refuses the session to any request whose user's differs.
+    /// The editor's principal has the grant there (issued by <see cref="AuthenticationType"/>), so a session is its own
+    /// connection's only: never an anonymous request's, another endpoint's or another connection's, the same editor's
+    /// other assistant included. <c>sub</c>, because nothing in the CMS reads it from a request's user (the CMS's ASP.NET
+    /// Identity code reads <c>NameIdentifier</c>), and only on the MCP endpoint's principal, not a preview link's.
+    /// </summary>
+    internal const string SessionSubject = "sub";
+
     /// <summary>A grant's last use is written at most this often per instance: often enough for the connections page.</summary>
     internal static readonly TimeSpan TouchInterval = TimeSpan.FromMinutes(1);
 
@@ -99,7 +109,9 @@ internal sealed class TokenService(
         }
         await TouchAsync(grant, now, cancellationToken);
         // Never more than the grant has now: a site that stopped allowing publishing narrowed it at the last refresh.
-        return Principal(grant, payload.Scope is null ? grant.Scope : Scopes.Intersect(grant.Scope, payload.Scope));
+        var principal = Principal(grant, payload.Scope is null ? grant.Scope : Scopes.Intersect(grant.Scope, payload.Scope));
+        ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim(SessionSubject, grant.GrantId, ClaimValueTypes.String, AuthenticationType));
+        return principal;
     }
 
     private static DateTimeOffset Min(DateTimeOffset a, DateTimeOffset b) => a <= b ? a : b;

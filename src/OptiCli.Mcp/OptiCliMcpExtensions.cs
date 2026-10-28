@@ -6,11 +6,13 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Routing.Patterns;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ModelContextProtocol.AspNetCore;
 using ModelContextProtocol.Server;
 using OptiCli.Cms.Content;
 using OptiCli.Mcp.Connections;
@@ -138,9 +140,16 @@ public static class OptiCliMcpExtensions
         }
         var all = new List<IEndpointConventionBuilder>();
 
+        if (!McpServerIsolation.Installed(endpoints.ServiceProvider.GetRequiredService<IOptions<HttpServerTransportOptions>>().Value))
+        {
+            logger.LogError(McpServerIsolation.NotInstalled);
+        }
         var mcp = endpoints.MapMcp(options.McpPath).RequireAuthorization(Policy).WithMetadata(new McpServerIsolation.ModuleEndpoint());
         // Inside authorization, so an anonymous request still gets its 401 and the way to a token, whatever its size.
         mcp.Add(endpoint => endpoint.RequestDelegate = McpRequestLimit.Wrap(endpoint.RequestDelegate!, McpRequestLimit.Bytes(options), options.MaxUploadBytes));
+        // Only what the module serves, whatever the site's MCP transport settings made MapMcp map.
+        var segments = RoutePatternFactory.Parse(options.McpPath).PathSegments.Count;
+        mcp.Add(endpoint => McpServerIsolation.Guard(endpoint, segments));
         all.Add(mcp);
 
         // Everything else is reached before a token exists: anonymous even on a site whose fallback policy requires a

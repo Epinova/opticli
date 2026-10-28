@@ -23,9 +23,12 @@ internal sealed class McpEditor
         _scopes = (context.User.FindFirst(McpClaims.Scope)?.Value ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).Distinct(StringComparer.Ordinal).ToList();
     }
 
-    /// <exception cref="McpException">There is no request, or it isn't one the bearer handler signed in.</exception>
+    /// <exception cref="McpException">
+    /// There is no request, it isn't one the bearer handler signed in, or its MCP server isn't the module's own (one the
+    /// module's isolation made, <see cref="McpServerIsolation.Serves"/>): the tools never run without it.
+    /// </exception>
     public static McpEditor From(IHttpContextAccessor accessor) =>
-        (accessor.HttpContext is { } context ? Of(context) : null)
+        (accessor.HttpContext is { } context && McpServerIsolation.Serves(context) ? Of(context) : null)
         ?? throw new McpException("This tool only runs on the MCP endpoint, for a signed-in editor.");
 
     /// <returns>The editor of an MCP request the bearer handler signed in; null for any other request.</returns>

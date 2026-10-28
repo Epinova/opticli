@@ -44,7 +44,8 @@ internal sealed class TestSite : IAsyncDisposable
         string environment = "Production",
         Action<IServiceCollection>? services = null,
         bool statusCodePages = false,
-        Action<WebApplication>? endpoints = null)
+        Action<WebApplication>? endpoints = null,
+        Action<IServiceCollection>? after = null)
     {
         var site = new TestSite();
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environment });
@@ -75,6 +76,8 @@ internal sealed class TestSite : IAsyncDisposable
             }
             configure?.Invoke(o);
         });
+        // What the site registers after the module: its options' Configure and PostConfigure then run after the module's.
+        after?.Invoke(builder.Services);
 
         var app = builder.Build();
         if (statusCodePages)
