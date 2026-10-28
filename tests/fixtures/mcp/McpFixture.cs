@@ -163,6 +163,19 @@ public class McpFixture : IInitializableModule
     public const string InertBody = "<p>Example:</p><textarea><img src=x onerror=alert(document.domain)></textarea>";
 
     /// <summary>
+    /// The inert fixture's rich text where the CMS refuses <see cref="InertBody"/>: CMS 13 refuses event handler
+    /// attributes on save and strips them on load (<c>ScriptParserOptions</c>), also inside a <c>&lt;textarea&gt;</c>,
+    /// but keeps an iframe's <c>srcdoc</c>, which runs script just as well.
+    /// </summary>
+    public const string InertBodyKeptByCms = "<p>Example:</p><textarea><iframe srcdoc=\"&lt;script&gt;alert(document.domain)&lt;/script&gt;\"></iframe></textarea>";
+
+    /// <summary>
+    /// What the hidden page's required <c>UniqueSellingPoints</c> holds where the source database left it empty (CMS 13's
+    /// Alloy has none, CMS 12's has these), so a save of the page passes the CMS's validation.
+    /// </summary>
+    public static readonly string[] HiddenPageSellingPoints = ["Online meeting", "distance cooperation", "project calendar", "white board", "online presentations"];
+
+    /// <summary>
     /// A page created with a name that starts with this goes below an <see cref="ArchiveName"/> page of its parent instead,
     /// which the site creates and publishes first when it's missing: what a site that files articles into year folders
     /// does on save, which a dry run can't show (<see cref="FileIntoArchive"/>).
@@ -302,6 +315,7 @@ public class McpFixture : IInitializableModule
                 ("Administrators", AccessLevel.FullAccess),
                 ("WebAdmins", AccessLevel.FullAccess),
                 ("ProductEditors", AccessLevel.Read | AccessLevel.Edit));
+            FillSellingPoints(services.GetRequiredService<IContentRepository>(), hidden.ContentLink.ToReferenceWithoutVersion());
         }
         else
         {
@@ -369,9 +383,31 @@ public class McpFixture : IInitializableModule
             catch (InvalidPropertyValueException e)
             {
                 // CMS 13 refuses script attributes in rich text on save (Cms:ScriptParserOptions, SavingMode), even
-                // inside a <textarea>: no inert fixture there, and the test that reads it fails.
-                Console.Error.WriteLine($"[mcp-fixture] the CMS refused the inert fixture's rich text: {e.Message}");
+                // inside a <textarea>, and would strip them on load: script it keeps instead.
+                block = repository.GetDefault<McpFieldsBlock>(ContentReference.GlobalBlockFolder);
+                content = (IContent)block;
+                content.Name = "opticli inert fixture";
+                content.ContentGuid = InertBlock;
+                block.Body = new XhtmlString(InertBodyKeptByCms);
+                repository.Save(content, SaveAction.Publish, AccessLevel.NoAccess);
+                Console.Error.WriteLine($"[mcp-fixture] created the inert fixture with an iframe's srcdoc (the CMS refused onerror: {e.Message})");
             }
+        }
+    }
+
+    /// <summary>Gives the hidden page's language branches <see cref="HiddenPageSellingPoints"/> where they have none (published).</summary>
+    private static void FillSellingPoints(IContentRepository repository, ContentReference page)
+    {
+        foreach (var branch in repository.GetLanguageBranches<PageData>(page))
+        {
+            if (branch.Property["UniqueSellingPoints"] is not { IsNull: true })
+            {
+                continue;
+            }
+            var writable = branch.CreateWritableClone();
+            writable.Property["UniqueSellingPoints"].Value = HiddenPageSellingPoints.ToList();
+            repository.Save(writable, SaveAction.Publish, AccessLevel.NoAccess);
+            Console.Error.WriteLine($"[mcp-fixture] gave the hidden page ({branch.Language.Name}) its unique selling points");
         }
     }
 

@@ -180,14 +180,22 @@ public sealed class EditUiRulesTests(SharedSessions sessions)
     [McpSiteFact]
     public async Task Script_a_browser_reads_as_text_in_the_stored_value_isnt_written_back_live()
     {
-        // The fixture's Body has <img onerror> inside a <textarea>: inert there.
+        // The fixture's Body has script inside a <textarea>, inert there: <img onerror>, or on CMS 13, which refuses and
+        // strips event handler attributes, an iframe's srcdoc (McpFixture.InertBody, InertBodyKeptByCms).
         var editor = await sessions.ForAsync(TestUsers.Editor);
         var stored = await editor.OkAsync("get_content", new { reference = TestUsers.InertBlock });
         var block = WritingTests.Id(stored);
-        Assert.Contains("<textarea><img", WritingTests.Property(stored, "Body"));
+        var body = WritingTests.Property(stored, "Body")!;
+        var inert = System.Text.RegularExpressions.Regex.Match(body, "<textarea>(.*)</textarea>").Groups[1].Value;
+        var problem = inert.StartsWith("<img", StringComparison.Ordinal) ? "an event handler attribute 'onerror' on <img>"
+            : inert.StartsWith("<iframe srcdoc=", StringComparison.Ordinal) ? "a <iframe> element"
+            : throw new Xunit.Sdk.XunitException($"The inert fixture's Body isn't one McpFixture makes: {body}");
+        Assert.Contains("alert(document.domain)", inert);
 
-        var live = await editor.ErrorAsync("update_content", new { reference = block, properties = new { Body = "<p>hi</p><img src=x onerror=alert(document.domain)>" }, dryRun = true });
-        Assert.Contains("'onerror'", live.GetProperty("message").GetString());
+        // The same construct as stored, live: the module refuses it (a dry run, so the CMS's own script parser never sees it).
+        var live = await editor.ErrorAsync("update_content", new { reference = block, properties = new { Body = $"<p>hi</p>{inert}" }, dryRun = true });
+        Assert.Equal("usage", live.GetProperty("code").GetString());
+        Assert.Contains($"'Body' has {problem}, which could run script", live.GetProperty("message").GetString());
     }
 
     [McpSiteFact]
