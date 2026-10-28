@@ -369,6 +369,39 @@ public sealed class McpServerIsolationTests
         Assert.False(sessions.Owns("old1", "g1"));
     }
 
+    [Fact]
+    public void Sessions_made_in_a_loop_are_kept_to_the_sdks_limit_least_recently_used_first()
+    {
+        var time = new ManualTime();
+#pragma warning disable MCP9006
+        var sessions = new McpSessions(time, Microsoft.Extensions.Options.Options.Create(new HttpServerTransportOptions { MaxIdleSessionCount = 1500 }));
+#pragma warning restore MCP9006
+        // None idle: one a second, for well under the SDK's idle timeout.
+        for (var i = 0; i < 2000; i++)
+        {
+            sessions.Made($"s{i}", "g1");
+            time.Advance(TimeSpan.FromSeconds(1));
+        }
+        Assert.Equal(2000, sessions.Count);
+        Assert.True(sessions.Owns("s0", "g1"));
+
+        sessions.Made("new", "g1");
+
+        Assert.Equal(1501, sessions.Count);
+        Assert.True(sessions.Owns("s0", "g1"));
+        Assert.False(sessions.Owns("s1", "g1"));
+        Assert.False(sessions.Owns("s500", "g1"));
+        Assert.True(sessions.Owns("s501", "g1"));
+        Assert.True(sessions.Owns("new", "g1"));
+
+        // However many are made, never more than twice the limit.
+        for (var i = 0; i < 20_000; i++)
+        {
+            sessions.Made($"loop{i}", "g1");
+            Assert.True(sessions.Count <= 3000);
+        }
+    }
+
     /// <summary>The next server-sent event's data.</summary>
     private static async Task<string> Data(StreamReader reader, CancellationToken cancellationToken)
     {
