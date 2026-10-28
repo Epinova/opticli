@@ -8,7 +8,7 @@ contains, which C# class and view render it, where a block is used, what is unpu
 default.
 
 For editors, the separate `OptiCli.Mcp` package adds an MCP server to the site itself, so they can work on its content
-with Claude (CMS 12 only): see [MCP server for editors](#mcp-server-for-editors-preview).
+with their AI assistant (CMS 12 only): see [MCP server for editors](#mcp-server-for-editors).
 
 opticli is an independent open-source project. It is not affiliated with or endorsed by Optimizely.
 
@@ -1245,21 +1245,20 @@ opticli keeps the file's permissions when it rewrites it, and creates it readabl
 - `serve` runs the existing build output; it doesn't build unless `--build` is given.
 - Output field names may still change before 1.0.
 
-## MCP server for editors (preview)
+## MCP server for editors
 
 `OptiCli.Mcp` is a separate NuGet package for the site itself, not for developers' machines. Installed in a site, it
-lets **editors** connect Claude (claude.ai, Claude Desktop, Claude Code) to that site, in any environment, production
-included. The editor signs in with the site's own login, and Claude then works as that editor, with their access
-rights in the CMS. The tools run the same content operations as the site agent: drafts by default, dry runs with a
+lets **editors** connect an AI assistant that supports MCP servers (Claude, or another MCP client with an OAuth
+sign-in) to that site, in any environment, production included. The editor signs in with the site's own login, and the
+assistant then works as that editor, with their access rights in the CMS. The tools run the same content operations as the site agent: drafts by default, dry runs with a
 list of changes, validation, approval sequences, `baseVersion` conflicts, and errors with a hint.
 
-It is a **preview**, not yet recommended for production: the options and tools may still change, and the package is
-published as a prerelease (a `-preview` version). It supports CMS 12 only (12.12.1 / CMS UI 12.16.1 or newer), not CMS 13.
+It supports CMS 12 only (12.12.1 / CMS UI 12.16.1 or newer), not CMS 13.
 
 ### Install
 
 ```sh
-dotnet add package OptiCli.Mcp --prerelease
+dotnet add package OptiCli.Mcp
 ```
 
 In `Startup.cs`:
@@ -1367,7 +1366,7 @@ With the default `BasePath`, on the site's own host:
 
 | URL | What it is |
 |---|---|
-| `https://www.example.com/episerver/opticli/mcp` | the MCP endpoint (Streamable HTTP): the URL to give Claude |
+| `https://www.example.com/episerver/opticli/mcp` | the MCP endpoint (Streamable HTTP): the URL to give the assistant |
 | `/.well-known/oauth-protected-resource/episerver/opticli/mcp` | protected resource metadata (RFC 9728) |
 | `/.well-known/oauth-authorization-server/episerver/opticli` | authorization server metadata (RFC 8414), also as `/.well-known/openid-configuration/episerver/opticli` and `/episerver/opticli/.well-known/openid-configuration` |
 | `/episerver/opticli/oauth/register`, `/oauth/authorize`, `/oauth/token` | client registration, sign-in and consent, tokens |
@@ -1377,7 +1376,18 @@ With the default `BasePath`, on the site's own host:
 The site's own `/.well-known` documents at the root are left alone. A request to the MCP endpoint without a token
 gets a 401 that points to the metadata, never a redirect to the login page.
 
-### Connecting Claude
+### Connecting an assistant
+
+Any MCP client that speaks Streamable HTTP and signs in with OAuth (authorization code with PKCE, identified by a client
+ID metadata document or registered dynamically) can connect: add a server with the MCP endpoint's URL. The first time it
+connects, the editor's browser opens the site's login page, then the module's consent page.
+
+- **On the editor's own machine** (desktop apps, code editors, command-line agents): the client returns to a loopback
+  address, which is always allowed, and calls the site from that machine. It connects as it is.
+- **Web-based assistants** return to their own host, which must be in `AllowedRedirectHosts` (claude.ai and claude.com
+  by default), and call the site from their own servers, so the site must be reachable from there (below).
+
+#### Connecting Claude
 
 - **Claude Desktop extension (recommended for editors):**
   [opticli-cms.mcpb](https://github.com/epinova/opticli/releases/latest/download/opticli-cms.mcpb), attached to every
@@ -1434,16 +1444,17 @@ NODE_EXTRA_CA_CERTS=$PWD/ca.pem claude
 
 Keep `ca.key` to yourself and delete it when you are done: whoever has it can make certificates your Claude Code trusts.
 
-Nothing needs registering on the site first. Claude identifies itself with a client ID metadata document (CIMD): the
+Nothing needs registering on the site first. A client with a client ID metadata document (CIMD), as Claude has, is identified by it: the
 site fetches the document from the client's own HTTPS URL, which needs outbound HTTPS from the site. Clients without
 CIMD register themselves (dynamic client registration, DCR).
 
-**The site must be publicly reachable for custom connectors** (claude.ai, Claude Desktop and mobile): they call the
-site from Anthropic's cloud, not from the editor's machine, so a site that is only on a VPN, a private network or split
-DNS can't be used. A site that restricts `/episerver` by IP address must allow Anthropic's outbound range,
+**The site must be publicly reachable for web-based assistants.** Claude's custom connectors (claude.ai, Claude Desktop
+and mobile), for one, call the site from Anthropic's cloud, not from the editor's machine, so a site that is only on a
+VPN, a private network or split DNS can't be used with them. A site that restricts `/episerver` by IP address must allow Anthropic's outbound range,
 `160.79.104.0/21`, for the MCP endpoint, the metadata documents and the `register` and `token` endpoints. The login,
-`authorize` and the connections page open in the editor's own browser, so they need what the CMS login needs. Claude
-Desktop with the extension, and Claude Code, connect from the editor's own machine instead.
+`authorize` and the connections page open in the editor's own browser, so they need what the CMS login needs.
+Assistants on the editor's own machine, such as Claude Desktop with the extension and Claude Code, connect from there
+instead.
 
 **Dedicated host mode:** `BasePath = ""` with `RequireHost = "mcp.example.com"` puts the module at the root of a host
 name of its own (which must reach the same site). The issuer then has no path, which suits clients that don't handle
@@ -1452,7 +1463,7 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
 
 ### Security model
 
-- **Claude is the editor.** Every read is checked against the editor's Read access; content they can't read gives
+- **The assistant is the editor.** Every read is checked against the editor's Read access; content they can't read gives
   exactly the same `not_found` as content that doesn't exist, and lists leave it out. Every save, publish, move and
   delete goes through the CMS's own access checks for the editor. The CMS records the editor as the one who saved.
 - **What the CMS leaves to the edit UI is checked too**, since the CMS's repository doesn't check it on save:
@@ -1922,7 +1933,7 @@ git tag v0.23.1 && git push origin v0.23.1
 
 The [release workflow](.github/workflows/release.yml) checks that the tag matches both versions and is on `main`,
 runs the unit tests, checks that the CLI package holds both site agent builds and starts, and publishes it to nuget.org together
-with `OptiCli.Mcp` at the same version plus a `-preview` suffix (set in its project file while it is a preview).
+with `OptiCli.Mcp` at the same version.
 
 ## Licence
 

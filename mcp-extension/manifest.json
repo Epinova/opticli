@@ -10,7 +10,7 @@
     "url": "https://www.epinova.no"
   },
   "homepage": "https://github.com/epinova/opticli",
-  "documentation": "https://github.com/epinova/opticli#mcp-server-for-editors-preview",
+  "documentation": "https://github.com/epinova/opticli#mcp-server-for-editors",
   "server": {
     "type": "node",
     "entry_point": "server/index.js",

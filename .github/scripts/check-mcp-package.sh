@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Checks a packed OptiCli.Mcp .nupkg: it is the -preview prerelease of the release version, has the module assembly,
+# Checks a packed OptiCli.Mcp .nupkg: it has the release version, has the module assembly,
 # and keeps the CMS dependencies within CMS 12. Usage: check-mcp-package.sh <dir with the .nupkg> <version>
 set -euo pipefail
 
-expected="$2-preview"
+expected="$2"
 package="$1/OptiCli.Mcp.$expected.nupkg"
 if [ ! -f "$package" ]; then
   echo "::error::No OptiCli.Mcp.$expected.nupkg in $1 (found: $(cd "$1" && ls OptiCli.Mcp.*.nupkg 2>/dev/null | tr '\n' ' '))."

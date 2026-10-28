@@ -3,6 +3,14 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## Unreleased
+
+### MCP server for editors
+
+- **No longer a preview.** `OptiCli.Mcp` is published as a regular release with the same version as the CLI (no
+  `-preview` suffix), so `dotnet add package OptiCli.Mcp` installs it without `--prerelease`. It still supports CMS 12
+  only (12.12.1 / CMS UI 12.16.1 or newer).
+
 ## 0.24.0 (26 October 2026)
 
 A sealed apply to production can join production's event bus, so no restart is needed afterwards, and can carry media

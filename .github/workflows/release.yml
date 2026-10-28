@@ -1,4 +1,4 @@
-# Publishes the OptiCli tool package and the OptiCli.Mcp site package (a -preview prerelease of the same version) to
+# Publishes the OptiCli tool package and the OptiCli.Mcp site package (the same version) to
 # nuget.org when a version tag (v1.2.3) is pushed, then creates the GitHub release with the MCP module's Claude Desktop
 # extension (opticli-cms.mcpb) attached.
 # Authenticates with nuget.org trusted publishing: no API key is stored in the repository.
@@ -136,7 +136,7 @@ jobs:
           ---
 
           Packages: [OptiCli $version](https://www.nuget.org/packages/OptiCli/$version) and
-          [OptiCli.Mcp $version-preview](https://www.nuget.org/packages/OptiCli.Mcp/$version-preview) on nuget.org.
+          [OptiCli.Mcp $version](https://www.nuget.org/packages/OptiCli.Mcp/$version) on nuget.org.
           **opticli-cms.mcpb** below is the Claude Desktop extension for sites that run OptiCli.Mcp; see
           [Connecting Claude](https://github.com/epinova/opticli#connecting-claude).
           NOTES
