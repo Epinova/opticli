@@ -1,4 +1,4 @@
-using EPiServer.Core;
+using System.Reflection;
 
 namespace OptiCli.Mcp;
 
@@ -24,10 +24,12 @@ internal static class CmsMajor
 #endif
 
     /// <summary>
-    /// The major of the CMS the site loaded, from its <c>EPiServer</c> assembly, whose version is the package's
-    /// (12.24.3.0 in EPiServer.CMS.Core 12.24.3, 13.3.0.0 in EPiServer 13.3.0).
+    /// The major of the CMS the site loaded, from its <c>EPiServer</c> assembly (the one with <c>IContent</c>), whose
+    /// version is the package's (12.24.3.0 in EPiServer.CMS.Core 12.24.3, 13.3.0.0 in EPiServer 13.3.0). Loaded by name,
+    /// not through <c>typeof(IContent)</c>: this build references the assembly at its own major's version, and on an
+    /// older major (OptiCli.Mcp.Cms13 on CMS 12) that reference can't be loaded, so the refusal would never be reached.
     /// </summary>
-    public static int Loaded => typeof(IContent).Assembly.GetName().Version?.Major ?? 0;
+    public static int Loaded => Assembly.Load(new AssemblyName("EPiServer")).GetName().Version?.Major ?? 0;
 
     /// <exception cref="InvalidOperationException">The site runs another CMS major than <see cref="Supported"/>.</exception>
     public static void Check(int major)

@@ -16,6 +16,8 @@ public class CmsMajorTests
         Assert.Equal((12, "OptiCli.Mcp"), (CmsMajor.Supported, CmsMajor.Package));
 #endif
         Assert.Equal(CmsMajor.Supported, CmsMajor.Loaded);
+        // The assembly the guard loads by name is the one with IContent.
+        Assert.Equal(typeof(EPiServer.Core.IContent).Assembly, Assembly.Load(new AssemblyName("EPiServer")));
         Assert.Null(CmsMajor.Refusal(CmsMajor.Loaded));
         CmsMajor.Check(CmsMajor.Loaded);
     }
