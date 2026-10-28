@@ -178,12 +178,18 @@ internal sealed class McpSession : IAsyncDisposable
         return result.Json;
     }
 
-    /// <summary>A JSON-RPC request to the MCP endpoint with this token, outside the SDK.</summary>
+    /// <summary>
+    /// An MCP initialize request to the MCP endpoint with this token, outside the SDK. Initialize, as a client starts:
+    /// the endpoint answers it whatever the site's MCP transport settings, where a stateful one refuses any other request
+    /// without a session (400).
+    /// </summary>
     public async Task<HttpResponseMessage> PostMcpAsync(string? accessToken)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, McpPath)
         {
-            Content = new StringContent("""{"jsonrpc":"2.0","id":1,"method":"ping"}""", Encoding.UTF8, "application/json"),
+            Content = new StringContent(
+                """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"opticli E2E tests","version":"1"}}}""",
+                Encoding.UTF8, "application/json"),
         };
         request.Headers.Accept.ParseAdd("application/json");
         request.Headers.Accept.ParseAdd("text/event-stream");
