@@ -24,6 +24,9 @@ internal static class UploadOperation
         if (!call.MayWriteScript)
         {
             RequireNoScript(call, extension, data);
+#if CMS13
+            RequireCmsSanitized(call, extension, data);
+#endif
         }
         if (body.Replace is { } replaced)
         {
@@ -376,6 +379,55 @@ internal static class UploadOperation
             }
         }
     }
+
+#if CMS13
+    /// <summary>
+    /// For an editor's upload on CMS 13: what the CMS's own edit UI does with the file before it stores it
+    /// (<see cref="IMediaFileValidator.Sanitize"/>): its script parser reads the file types the site lists
+    /// (<c>ScriptParserOptions.MediaExtensionsToParse</c>: .svg, .svgz, .html and .htm by default) and refuses script in
+    /// them (<c>MediaUploadMode</c> ThrowException, the default) or removes it (Remove). <see cref="RequireNoScript(CmsCall, string, byte[])"/>
+    /// already refuses those types or reads them more strictly, but a site may list other types, or block more attributes
+    /// or schemes (<c>ElementAttributes</c>, <c>IllegalUriSchemes</c>): so the CMS's check runs too, and what it would
+    /// refuse or change is refused, never stored stripped (the module refuses rather than strips, as
+    /// <see cref="MarkupSafety"/> does).
+    /// </summary>
+    /// <exception cref="AgentException"><c>usage</c>.</exception>
+    internal static void RequireCmsSanitized(CmsCall call, string extension, byte[]? data)
+    {
+        if (data is null || call.OptionalService<IMediaFileValidator>() is not { } validator)
+        {
+            return;
+        }
+        const string hint = "Upload the file without script, or ask the user to upload it in the CMS edit UI. Nothing was uploaded.";
+        var input = new MemoryStream(data, writable: false);
+        Stream output;
+        try
+        {
+            output = validator.Sanitize(extension, input);
+        }
+        catch (InvalidPropertyValueException ex)
+        {
+            throw AgentException.Usage($"The CMS refuses this {extension} file: {ex.Message}", hint);
+        }
+        using (output)
+        {
+            // Not a type the site's script parser reads, or one it reads to refuse or keep script, not to remove it: as stored.
+            if (ReferenceEquals(output, input)
+                || call.OptionalService<Microsoft.Extensions.Options.IOptions<EPiServer.Core.Html.StringParsing.ScriptParserOptions>>()?.Value.MediaUploadMode
+                    is not EPiServer.Core.Html.StringParsing.ScriptParserMode.Remove)
+            {
+                return;
+            }
+            // Compared as text, as the parser reads and writes it (a byte order mark isn't written back).
+            using var original = new StreamReader(new MemoryStream(data, writable: false));
+            using var sanitized = new StreamReader(output);
+            if (!string.Equals(original.ReadToEnd(), sanitized.ReadToEnd(), StringComparison.Ordinal))
+            {
+                throw AgentException.Usage($"The site removes script from {extension} files that are uploaded, and would remove some from this one.", hint);
+            }
+        }
+    }
+#endif
 
     /// <summary>The most of a stored file read to check it as another type; a larger one isn't checked, and so refused.</summary>
     private const int LargestChecked = 10 * 1024 * 1024;

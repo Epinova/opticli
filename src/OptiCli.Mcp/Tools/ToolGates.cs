@@ -137,7 +137,17 @@ internal sealed record CmsUploadRules(long? FileSizeLimit, IReadOnlyList<string>
     }
 #endif
 
+#if CMS13
+    /// <summary>
+    /// Whether <paramref name="extension"/> (<c>.jpg</c>) is allowed, matched as CMS 13's edit UI matches it
+    /// (<c>IMediaFileValidator.ValidateAllowedExtension</c>): it is one of them, in any case, so one configured without its
+    /// dot (<c>jpg</c>) allows nothing.
+    /// </summary>
+    public bool Allows(string extension) =>
+        AllowedExtensions.Count == 0 || AllowedExtensions.Contains(extension.Trim(), StringComparer.OrdinalIgnoreCase);
+#else
     /// <summary>Whether <paramref name="extension"/> (<c>.jpg</c>) is allowed, matched as the edit UI matches it: it ends with an allowed one.</summary>
     public bool Allows(string extension) =>
         AllowedExtensions.Count == 0 || AllowedExtensions.Any(a => extension.EndsWith(a, StringComparison.OrdinalIgnoreCase));
+#endif
 }

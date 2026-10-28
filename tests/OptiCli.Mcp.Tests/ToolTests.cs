@@ -291,7 +291,13 @@ public sealed class ToolTests
         var rules = new CmsUploadRules(4, [".jpg", "png", ".PDF"]);
 
         ToolGates.Upload("photo.JPG", Convert.ToBase64String(new byte[4]), site, rules);
+#if CMS13
+        // CMS 13's edit UI matches an extension exactly: "png" without its dot allows no file.
+        Assert.Contains(".png", Parse(Assert.ThrowsAny<McpException>(() => ToolGates.Upload("logo.png", null, site, rules))).Message);
+#else
+        // CMS UI 12's matches the end of the extension: "png" allows .png.
         ToolGates.Upload("logo.png", null, site, rules);
+#endif
         ToolGates.Upload("report.pdf", null, site, rules);
         var svg = Parse(Assert.ThrowsAny<McpException>(() => ToolGates.Upload("logo.svg", null, site, rules)));
         Assert.Equal(AgentErrorCodes.Usage, svg.Code);
@@ -320,6 +326,10 @@ public sealed class ToolTests
         Assert.Equal([".jpg", ".png"], rules.AllowedExtensions.Order());
         Assert.True(rules.Allows(".PNG"));
         Assert.False(rules.Allows(".svg"));
+        // As MediaFileValidator.ValidateAllowedExtension matches: the whole extension, so "jpg" and "g" allow nothing.
+        var undotted = CmsUploadRules.From(MediaFileOptions(99, "jpg", "g"))!;
+        Assert.False(undotted.Allows(".jpg"));
+        Assert.False(undotted.Allows(".png"));
         Assert.Empty(CmsUploadRules.From(MediaFileOptions(99, ".jpg", "*"))!.AllowedExtensions);
     }
 
