@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using EPiServer.Web.Routing;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
@@ -30,7 +31,20 @@ public static class OptiCliMcpExtensions
     /// <c>OptiCli:Mcp</c> configuration section and then <paramref name="configure"/>. The site's default
     /// authentication scheme is left as it is: the editor signs in with the site's own login.
     /// </summary>
+    /// <exception cref="InvalidOperationException">The site runs another CMS major than this package is for (the message names the right package), or this was called twice.</exception>
     public static IServiceCollection AddOptiCliMcp(this IServiceCollection services, Action<OptiCliMcpOptions>? configure = null)
+    {
+        CmsMajor.Check(CmsMajor.Loaded);
+        return Register(services, configure);
+    }
+
+    /// <summary>
+    /// <see cref="AddOptiCliMcp"/> once the CMS major is known to be right. A method of its own, never inlined: the JIT
+    /// compiles a whole method before it runs, so on the wrong major a type this one uses could fail to load before a
+    /// check in the same method had said why.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    internal static IServiceCollection Register(IServiceCollection services, Action<OptiCliMcpOptions>? configure)
     {
         if (services.Any(s => s.ServiceType == typeof(Marker)))
         {
