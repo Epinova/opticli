@@ -34,6 +34,23 @@ internal static class McpSiteSettings
     /// <summary>The site's own directory: the users file is in its App_Data.</summary>
     public static string SiteDirectory => Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(UsersFile!)))!;
 
+    /// <summary>
+    /// The CMS major the site runs: the version of the <c>EPiServer</c> assembly in its build output, which follows the
+    /// package's major on CMS 12 and 13 (the MCP module's guard reads the same assembly, <c>CmsMajor.Loaded</c>).
+    /// </summary>
+    public static int CmsMajor => cmsMajor.Value;
+
+    private static readonly Lazy<int> cmsMajor = new(() =>
+    {
+        var assemblies = Directory.GetFiles(Path.Combine(SiteDirectory, "bin"), "EPiServer.dll", SearchOption.AllDirectories);
+        return assemblies.Length > 0
+            ? assemblies.Max(a => System.Reflection.AssemblyName.GetAssemblyName(a).Version!.Major)
+            : throw new InvalidOperationException($"No EPiServer.dll below {SiteDirectory}/bin: build the site with tests/fixtures/mcp/setup.sh.");
+    });
+
+    /// <summary>The CMS edit UI's path, relative to the site: <c>EPiServer/CMS/</c> on CMS 12, <c>Optimizely/CMS/</c> on CMS 13.</summary>
+    public static string EditUiPath => CmsMajor >= 13 ? "Optimizely/CMS/" : "EPiServer/CMS/";
+
     /// <summary>The fixture's test users, by name; their roles are in McpFixture.cs.</summary>
     public static string Password(string user)
     {

@@ -102,7 +102,7 @@ public sealed class WritingTests(SharedSessions sessions)
             var draft = updated.GetProperty("content").GetProperty("ref").GetString()!;
             var previewUrl = updated.GetProperty("previewUrl").GetString()!;
             // The CMS's own preview of that version, on the host the edit link is on; no token, so it needs a sign-in.
-            Assert.StartsWith(new Uri(McpSiteSettings.Url!, "EPiServer/CMS/Content/").ToString(), previewUrl, StringComparison.OrdinalIgnoreCase);
+            Assert.StartsWith(new Uri(McpSiteSettings.Url!, McpSiteSettings.EditUiPath + "Content/").ToString(), previewUrl, StringComparison.OrdinalIgnoreCase);
             Assert.Contains($",,{draft}", previewUrl);
             Assert.DoesNotContain("preview_token", previewUrl);
             Assert.Equal(previewUrl, (await editor.OkAsync("get_content", new { reference = page, version = "latest" })).GetProperty("previewUrl").GetString());
@@ -435,11 +435,14 @@ public sealed class WritingTests(SharedSessions sessions)
     internal static string? Property(JsonElement content, string name) =>
         content.GetProperty("properties").GetProperty(name).TryGetProperty("value", out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
 
-    /// <summary>The result's link into the CMS edit UI, on the site the editor connected to, at the version (or content) it names.</summary>
+    /// <summary>
+    /// The result's link into the CMS edit UI (at the site's major's path, <see cref="McpSiteSettings.EditUiPath"/>), on the
+    /// site the editor connected to, at the version (or content) it names.
+    /// </summary>
     internal static string EditUrl(JsonElement result, string reference, Uri? site = null)
     {
         var url = result.GetProperty("editUrl").GetString()!;
-        Assert.StartsWith(new Uri(site ?? McpSiteSettings.Url!, "EPiServer/CMS/").ToString(), url, StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith(new Uri(site ?? McpSiteSettings.Url!, McpSiteSettings.EditUiPath).ToString(), url, StringComparison.OrdinalIgnoreCase);
         Assert.EndsWith($"#context=epi.cms.contentdata:///{reference}", url);
         return url;
     }
