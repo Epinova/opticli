@@ -1252,7 +1252,7 @@ opticli keeps the file's permissions when it rewrites it, and creates it readabl
 
 ## MCP server for editors
 
-`OptiCli.Mcp` is a separate NuGet package for the site itself, not for developers' machines. Installed in a site, it
+The MCP module is a separate NuGet package for the site itself, not for developers' machines. Installed in a site, it
 lets **editors** connect an AI assistant that supports MCP servers (Claude, or another MCP client with an OAuth
 sign-in) to that site, in any environment, production included. The editor signs in with the site's own login, and the
 assistant then works as that editor, with their access rights in the CMS. The tools run the same content operations as the site agent: drafts by default, dry runs with a
@@ -1318,7 +1318,7 @@ Requirements: `OptiCli.Mcp` needs .NET 8 or newer, `EPiServer.CMS.Core` 12.12.1 
 12.16.1 or newer (the first CMS 12 versions whose dependencies allow the MCP SDK's `Microsoft.Extensions` 10.x
 packages). A CMS 12 site on .NET 10 uses it too: the package goes by the CMS version, not by .NET's.
 `OptiCli.Mcp.Cms13` needs .NET 10, `EPiServer.CMS.Core` and `EPiServer.CMS.UI.Core` 13.0.0 or newer, and brings
-`EPiServer.ImageLibrary` (CMS 13's image service, which `view_media` scales images with). Both bring the official MCP
+`EPiServer.ImageLibrary` (the image service interface `view_media` scales images through). Both bring the official MCP
 C# SDK (`ModelContextProtocol.AspNetCore` 2.2.0).
 
 **The wrong package for the site's CMS** is usually refused by NuGet already, as the CMS packages' versions conflict or
@@ -1585,7 +1585,8 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   into another property. Only what a browser surely reads as live counts as already there: script inside an element it
   reads as text or keeps inert (`<textarea>`, `<style>`, `<template>`, `<svg>`, ...) is never written back live, nor a
   live construct moved into one. Set the CMS's own script parser to remove script as well, for every save, the edit
-  UI's included (CMS 12.15 or newer): `"EPiServer": {"Cms": {"ScriptParser": {"SavingMode": "Remove"}}}`.
+  UI's included (CMS 12.15 or newer): `"EPiServer": {"Cms": {"ScriptParser": {"SavingMode": "Remove"}}}`. CMS 13
+  already refuses such a save by default.
 - **No files that run script.** A file uploaded to the CMS is served from the site's own origin, so one a browser runs
   script in would run it with the session of whoever opens it. An editor's assistant can't upload a file the site
   serves as HTML, XML (in any of its types but SVG), XSLT or JavaScript, going by the site's own content types (its

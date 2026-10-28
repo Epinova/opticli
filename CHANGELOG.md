@@ -26,15 +26,15 @@ another MCP server beside it, on CMS 12 too.
 - **Uploads on CMS 13** follow the CMS's `MediaFileOptions` (`EPiServer:Cms:MediaFile`: its size limit and allowed
   extensions, matched as the edit UI matches them), and go through the CMS's script parser after the module's own
   checks, as an upload in the edit UI does: refused where the parser refuses the file, and otherwise stored as the
-  parser writes it back.
+  parser writes it back, checked again for script.
 
 ### Hardening
 
-From a review of the module beside other MCP servers, and of uploads on CMS 13. All but the last apply to CMS 12 as
-well, and matter for a site that runs another MCP server built on the MCP C# SDK in the same application as the module:
-its own, or a package's (such as Optimizely's `Optimizely.Cms.Opal.Tools` on CMS 13). A CMS 12 site that does should
-update `OptiCli.Mcp` to 0.26.0, all the more if that server turns on sessions (`Stateless = false`) or the legacy SSE
-transport. A site with only the module isn't affected by them.
+From a review of the module beside other MCP servers. They apply to CMS 12 as well, and matter for a site that runs
+another MCP server built on the MCP C# SDK in the same application as the module: its own, or a package's (such as
+Optimizely's `Optimizely.Cms.Opal.Tools` on CMS 13). A CMS 12 site that does should update `OptiCli.Mcp` to 0.26.0, all
+the more if that server turns on sessions (`Stateless = false`) or the legacy SSE transport. A site with only the module
+isn't affected by them.
 
 - **Each MCP endpoint serves only its own server.** The SDK keeps one set of server options for the whole application,
   so the module's endpoint also offered the other server's tools to editors' assistants, and the other endpoint listed
@@ -52,13 +52,11 @@ transport. A site with only the module isn't affected by them.
 - **Fails closed.** If code registered after `AddOptiCliMcp` replaces the SDK hook the module keeps the servers apart
   with, the module's endpoint refuses every request and the site's log says why at startup, rather than serve without
   it.
-- **CMS 13 uploads:** the file as the CMS's script parser writes it back is checked for script again before it is
-  stored, since the parser's rewriting can change what the file holds.
 
 ### Fixed
 
 - `view_media` reports the size of the image it sends. Where the site's image service rounds a scaled side down
-  (`EPiServer.ImageLibrary.ImageSharp` 1.0.6 and later, and CMS 13), it said 1568×784 for an image of 1567×783.
+  (`EPiServer.ImageLibrary.ImageSharp` 1.0.6, as on CMS 12.24, and CMS 13), it said 1568×784 for an image of 1567×783.
 
 ## 0.25.0 (28 October 2026)
 
