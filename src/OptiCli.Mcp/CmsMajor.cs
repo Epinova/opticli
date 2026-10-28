@@ -4,8 +4,9 @@ namespace OptiCli.Mcp;
 
 /// <summary>
 /// The CMS major this build of the module is for, and the refusal of a site that runs another: OptiCli.Mcp is built
-/// against CMS 12, OptiCli.Mcp.Cms13 against CMS 13 (<c>CMS13</c> defined), and NuGet only warns when a site installs
-/// the wrong one. Checked before anything else is registered (<see cref="OptiCliMcpExtensions.AddOptiCliMcp"/>).
+/// against CMS 12, OptiCli.Mcp.Cms13 against CMS 13 (<c>CMS13</c> defined), and NuGet doesn't always refuse the wrong
+/// one (with some CMS 13 packages it only warns, and a site can force it). Checked before anything else is registered
+/// (<see cref="OptiCliMcpExtensions.AddOptiCliMcp"/>).
 /// </summary>
 internal static class CmsMajor
 {

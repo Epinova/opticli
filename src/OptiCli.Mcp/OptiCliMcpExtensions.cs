@@ -22,7 +22,10 @@ using OptiCli.Mcp.Tools;
 
 namespace OptiCli.Mcp;
 
-/// <summary>Adds the opticli MCP module to a CMS 12 site: <c>services.AddOptiCliMcp()</c>, then <c>endpoints.MapOptiCliMcp()</c>.</summary>
+/// <summary>
+/// Adds the opticli MCP module to the site: <c>services.AddOptiCliMcp()</c>, then <c>endpoints.MapOptiCliMcp()</c>. The
+/// same on CMS 12 (the OptiCli.Mcp package) and CMS 13 (OptiCli.Mcp.Cms13).
+/// </summary>
 public static class OptiCliMcpExtensions
 {
     /// <summary>The authorization policy on the MCP endpoint: a valid access token with the <c>content:read</c> scope.</summary>

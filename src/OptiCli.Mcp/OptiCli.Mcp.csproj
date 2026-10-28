@@ -9,7 +9,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>OptiCli.Mcp</RootNamespace>
     <PackageId>OptiCli.Mcp</PackageId>
-    <Description>An MCP server for Optimizely CMS 12: editors connect their AI assistant to the site, sign in with the site's own login, and work with their own access rights.</Description>
+    <Description>An MCP server for Optimizely CMS 12, on .NET 8 or newer (for CMS 13, use OptiCli.Mcp.Cms13): editors connect their AI assistant to the site, sign in with the site's own login, and work with their own access rights.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageTags>optimizely;episerver;cms;mcp;model-context-protocol;oauth</PackageTags>
     <PackageLicenseExpression>MPL-2.0</PackageLicenseExpression>

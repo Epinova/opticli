@@ -7,8 +7,9 @@ contains, which C# class and view render it, where a block is used, what is unpu
 (set properties, add blocks to a ContentArea, build a Visual Builder page, create, translate, publish), as drafts by
 default.
 
-For editors, the separate `OptiCli.Mcp` package adds an MCP server to the site itself, so they can work on its content
-with their AI assistant (CMS 12 only): see [MCP server for editors](#mcp-server-for-editors).
+For editors, a separate package adds an MCP server to the site itself, so they can work on its content with their AI
+assistant: `OptiCli.Mcp` for CMS 12, `OptiCli.Mcp.Cms13` for CMS 13. See
+[MCP server for editors](#mcp-server-for-editors).
 
 opticli is an independent open-source project. It is not affiliated with or endorsed by Optimizely.
 
@@ -1038,6 +1039,8 @@ opticli doesn't make or change blueprints or display templates.
   `code: "unresolvedReference"`). So `apply` refuses up front a plan whose rich text links to content a later step
   creates: reorder it, or add the link in a later `set`.
 - The edit UI is at `/Optimizely/CMS/`.
+- The MCP server for editors is the `OptiCli.Mcp.Cms13` package on CMS 13: see
+  [MCP server for editors](#mcp-server-for-editors).
 
 ## serve and env
 
@@ -1224,7 +1227,9 @@ opticli keeps the file's permissions when it rewrites it, and creates it readabl
 
 - Optimizely CMS 12 (`EPiServer.CMS.AspNetCore` 12.x): reads on any runtime; writes on a site running .NET 8 or newer.
 - Optimizely CMS 13 (`EPiServer.CMS` 13.x, .NET 10), fresh installs and databases upgraded from CMS 12: reads and writes,
-  Visual Builder included (see [CMS 13](#cms-13)). The MCP module is CMS 12 only.
+  Visual Builder included (see [CMS 13](#cms-13)).
+- The MCP server for editors: `OptiCli.Mcp` on CMS 12 (12.12.1 / CMS UI 12.16.1 or newer, .NET 8 or newer),
+  `OptiCli.Mcp.Cms13` on CMS 13 (13.0.0 or newer); see [MCP server for editors](#mcp-server-for-editors).
 - SQL Server on the local machine (including LocalDB and containers), or a remote SQL Server / Azure SQL
   development database.
 - Not supported:
@@ -1253,15 +1258,24 @@ sign-in) to that site, in any environment, production included. The editor signs
 assistant then works as that editor, with their access rights in the CMS. The tools run the same content operations as the site agent: drafts by default, dry runs with a
 list of changes, validation, approval sequences, `baseVersion` conflicts, and errors with a hint.
 
-It supports CMS 12 only (12.12.1 / CMS UI 12.16.1 or newer), not CMS 13.
+It comes as two packages, one for each CMS version, released together with the same version as the CLI:
+
+| The site runs | Package |
+|---|---|
+| CMS 12 (`EPiServer.CMS.Core` 12.12.1 and `EPiServer.CMS.UI.Core` 12.16.1 or newer), on .NET 8 or newer, .NET 10 included | `OptiCli.Mcp` |
+| CMS 13 (13.0.0 or newer) | `OptiCli.Mcp.Cms13` |
+
+Both are built from the same code and set up the same way: the same `AddOptiCliMcp`, `MapOptiCliMcp` and options, the
+same endpoints and tools. What differs on CMS 13 is under [On CMS 13](#on-cms-13).
 
 ### Install
 
 ```sh
-dotnet add package OptiCli.Mcp
+dotnet add package OptiCli.Mcp          # CMS 12
+dotnet add package OptiCli.Mcp.Cms13    # CMS 13
 ```
 
-In `Startup.cs`:
+In `Startup.cs`, the same for both:
 
 ```csharp
 using OptiCli.Mcp;
@@ -1300,9 +1314,55 @@ kept in the Dynamic Data Store, and access tokens (and the assistant's preview l
 protected with the site's Data Protection keys, which every instance of a load-balanced site already shares for its
 login cookies.
 
-Requirements: .NET 8 or newer, `EPiServer.CMS.Core` 12.12.1 or newer and `EPiServer.CMS.UI.Core` 12.16.1 or newer
-(the first CMS 12 versions whose dependencies allow the MCP SDK's `Microsoft.Extensions` 10.x packages), and not CMS
-13. The package brings the official MCP C# SDK (`ModelContextProtocol.AspNetCore` 2.2.0).
+Requirements: `OptiCli.Mcp` needs .NET 8 or newer, `EPiServer.CMS.Core` 12.12.1 or newer and `EPiServer.CMS.UI.Core`
+12.16.1 or newer (the first CMS 12 versions whose dependencies allow the MCP SDK's `Microsoft.Extensions` 10.x
+packages). A CMS 12 site on .NET 10 uses it too: the package goes by the CMS version, not by .NET's.
+`OptiCli.Mcp.Cms13` needs `EPiServer.CMS.Core` and `EPiServer.CMS.UI.Core` 13.0.0 or newer, and brings
+`EPiServer.ImageLibrary` (CMS 13's image service, which `view_media` scales images with). Both bring the official MCP
+C# SDK (`ModelContextProtocol.AspNetCore` 2.2.0).
+
+**The wrong package for the site's CMS** is usually refused by NuGet already, as the CMS packages' versions conflict or
+there is no build for the site's .NET version. Where it isn't, the site stops at startup, in `AddOptiCliMcp`, with an
+error that names the right package:
+
+```
+System.InvalidOperationException: This site runs CMS 13: use the OptiCli.Mcp.Cms13 package instead of OptiCli.Mcp.
+```
+
+(or "This site runs CMS 12: use the OptiCli.Mcp package instead of OptiCli.Mcp.Cms13.").
+
+**Moving a site from CMS 12 to 13** is one package swap: replace `OptiCli.Mcp` with `OptiCli.Mcp.Cms13` at the same
+version, and leave `Startup.cs` and the `OptiCli:Mcp` configuration as they are. Connections are kept in Dynamic Data
+Store stores with the same names on both, so they carry over when the database's store data does; otherwise editors
+connect their assistant once more after the upgrade.
+
+### On CMS 13
+
+Everything in this section holds on CMS 13 too. What is different there:
+
+- **Visual Builder.** `get_content` of an experience gives its composition: sections, rows, columns and elements, with
+  their display templates and settings and the elements' properties. It follows the same rules as every other read:
+  properties the edit UI hides or locks are left out (an element's tabs are shown as the edit UI shows them, as a local
+  block's are), and a shared block or section the editor can't read shows only its place in the composition (`nodeType`,
+  `key` and a `ref` they can't open), never its name, type or values. Dry runs and pending drafts list a composition's
+  changes by the same rules, and leave out a change made only inside content the editor can't read. **Editors can't
+  change compositions through the MCP server yet**: an experience's other properties can be changed, and `Layout` is
+  refused. Developers change compositions with `opticli composition` (see [Visual Builder](#visual-builder)).
+- **Edit links:** `editUrl` and `previewUrl` come from the CMS, so they open CMS 13's edit UI, under `/Optimizely/CMS/`
+  instead of `/EPiServer/CMS/`. The module's own paths (`/episerver/opticli/...`) are the same on both.
+- **Uploads** follow the CMS's `MediaFileOptions` (`EPiServer:Cms:MediaFile`), which CMS 13's edit UI uses in place of
+  the CMS UI's upload settings: its `FileSizeLimit` (30,000,000 bytes by default; the lower of it and `MaxUploadBytes`
+  applies) and its `AllowedFileExtensions`, matched as the edit UI matches them, whole and with the dot (`.jpg`; `jpg`
+  allows nothing). After the module's own checks, a file goes through the CMS's script parser, as an upload in the edit
+  UI does (for the extensions in its `MediaExtensionsToParse`: `.svg`, `.svgz`, `.html` and `.htm` by default): where
+  the parser refuses the file, so does the module, with the parser's message; otherwise the module stores the file as
+  the parser wrote it back, as the edit UI does, once that is checked for script again.
+- **Script in rich text:** CMS 13's script parser refuses event handler attributes and `javascript:` links in rich
+  text, URL and link properties on save by default, and removes them when content is loaded. The module's own checks
+  still answer first, with their own message, and cover what the parser doesn't (`<iframe>`, `srcdoc`, forms, `data:`
+  links and the rest).
+- Optimizely's own MCP server (`Optimizely.Cms.Opal.Tools`) can run in the same site: see
+  [Beside another MCP server](#beside-another-mcp-server).
 
 ### Options
 
@@ -1375,6 +1435,32 @@ With the default `BasePath`, on the site's own host:
 
 The site's own `/.well-known` documents at the root are left alone. A request to the MCP endpoint without a token
 gets a 401 that points to the metadata, never a redirect to the login page.
+
+### Beside another MCP server
+
+A site can run another MCP server built on the official MCP C# SDK next to the module: its own, or a package's, such as
+Optimizely's `Optimizely.Cms.Opal.Tools` on CMS 13. Map it at a path of its own (`endpoints.MapMcp("/mcp")`); its paths
+and its sign-in don't clash with the module's. The SDK keeps one set of server settings for the whole site, so the
+module sees to it that each endpoint serves only its own server:
+
+- The module's endpoint offers the module's tools, name and instructions, and nothing of the other server's. The other
+  endpoint offers none of the module's tools, and keeps its own name and instructions.
+- The module's endpoint serves MCP requests as POST only (and a DELETE that ends one of its own sessions): no GET
+  stream, and no legacy SSE (`/sse`, `/message`), whatever the other server turns on.
+- The module asks the SDK for stateless HTTP. If the other server turns sessions on (`Stateless = false`, registered
+  after `AddOptiCliMcp`, so its setting wins), the module's endpoint has sessions too, but takes only a session it made
+  itself, from the connection that made it: any other session ID gets 404 "Session not found", and the client starts a
+  new session. The module's sessions don't work at the other endpoint either. They are bound to the connection by a
+  `sub` claim with the connection's ID on the module's own sign-in, so site code that runs during a tool call (a
+  content event handler, say) sees that ID as `sub`. The module keeps at most as many sessions as the SDK keeps idle
+  ones (`MaxIdleSessionCount`, at least 1,000), and drops the least recently used first.
+- Registered before `AddOptiCliMcp`, the other server's `Stateless = false` loses to the module's setting, and with
+  legacy SSE the site fails at startup with the SDK's own message: register it after `AddOptiCliMcp`.
+- The module keeps the servers apart with the SDK's `HttpServerTransportOptions.ConfigureSessionOptions` hook, and runs
+  the other server's own hook on that server's endpoints, so set yours in `WithHttpTransport(...)` as usual. If code
+  registered after `AddOptiCliMcp` replaces the hook (a `PostConfigure`), the module's endpoint turns itself off rather
+  than serve without it: it answers every signed-in request with an error ("The site turned this MCP endpoint off…"),
+  and the site's log says why.
 
 ### Connecting an assistant
 
@@ -1579,12 +1665,13 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   much.
 - **Uploads follow the site's own upload rules** as well as `MaxUploadBytes`: the CMS UI's size limit
   (`EPiServer:CmsUI:Upload:FileSizeLimit`, the lower of the two applies) and, from CMS UI 12.33, its list of allowed
-  file extensions (`AllowedFileExtensions`), so a site that keeps SVG out of its uploads keeps it out here too.
+  file extensions (`AllowedFileExtensions`), so a site that keeps SVG out of its uploads keeps it out here too. On CMS
+  13 these are the CMS's `MediaFileOptions`, and the CMS's script parser applies too (see [On CMS 13](#on-cms-13)).
 - **Images:** `view_media` shows the assistant a media item's image, with the editor's read access like every read.
   JPEG, PNG, GIF and WebP files up to 1568 pixels on the longest side and 1 MB are sent as they are stored. Larger ones
   are scaled down with the site's own image service, the one that makes the edit UI's thumbnails (built into CMS 12
-  before 12.17, then `EPiServer.ImageLibrary.ImageSharp`, which `EPiServer.CMS` brings). An image of more than 64
-  million pixels isn't decoded, and other files (PDF and the like) aren't shown. SVG is sent as its markup. Text in an
+  before 12.17, then `EPiServer.ImageLibrary.ImageSharp`, which `EPiServer.CMS` brings, on CMS 13 too). An image of
+  more than 64 million pixels isn't decoded, and other files (PDF and the like) aren't shown. SVG is sent as its markup. Text in an
   image is content like any other, with the same risk of prompt injection.
 - **Host names:** the module builds its issuer, resource and metadata URLs from the request's host, as the site's own
   login does, and its metadata documents are never cached (`Cache-Control: no-store`). Still, limit which hosts the site
@@ -1597,7 +1684,8 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   save reports what it did as `siteChanges` (content it created, published or moved, or a new page it filed elsewhere). Advise editors not to use this connector in the same chat as tools that fetch web pages or read other
   outside content: what such a page says is then one step from the CMS.
 - **Preview links need the editor's sign-in.** `previewUrl`, on a write result that saved a version visitors don't see
-  yet and on `get_content` of such a version, is the CMS's own preview of it (`/EPiServer/CMS/Content/...,,123_456/`),
+  yet and on `get_content` of such a version, is the CMS's own preview of it (`/EPiServer/CMS/Content/...,,123_456/`,
+  under `/Optimizely/CMS/` on CMS 13),
   on the edit link's host: it opens for someone signed in to the CMS with access to the draft, and sends anyone else to
   the login. It carries no preview token, so the assistant can't open it itself, and a link in a chat transcript shows
   nobody the draft. The CMS can add one (CMS 12.21 and later, `UrlResolverArguments.AppendPreviewToken`), but such a
@@ -1682,9 +1770,10 @@ outcome; never tokens, links, secrets or property values. A site that logs Warni
 
 The MCP endpoint takes requests up to `MaxUploadBytes` as base64 plus 1 MB, and refuses larger ones with a 413; a file
 larger than the CMS UI's own upload limit (`EPiServer:CmsUI:Upload:FileSizeLimit`: 4 MB by default up to CMS UI 12.31,
-30,000,000 bytes from 12.33) is refused too, as the edit UI refuses it, so raise that as well for larger uploads. IIS has
-a limit of its own, `maxAllowedContentLength`, 30,000,000 bytes by default, so a site that raises `MaxUploadBytes` past
-about 20 MB must raise that too, in `web.config`:
+30,000,000 bytes from 12.33; on CMS 13 `EPiServer:Cms:MediaFile:FileSizeLimit`, 30,000,000 bytes) is refused too, as
+the edit UI refuses it, so raise that as well for larger uploads. IIS has a limit of its own, `maxAllowedContentLength`,
+30,000,000 bytes by default, so a site that raises `MaxUploadBytes` past about 20 MB must raise that too, in
+`web.config`:
 
 ```xml
 <system.webServer>
@@ -1706,7 +1795,8 @@ dotnet test opticli.slnx
 The EPiServer packages come from Optimizely's public NuGet feed, which [nuget.config](nuget.config) already lists.
 Building needs the .NET 8 and .NET 10 SDKs: the site agent, `OptiCli.Cms` and `OptiCli.Agent.Tests` build twice, for
 CMS 12 (net8.0, `EPiServer.CMS.Core` 12.0.3) and CMS 13 (net10.0, 13.0.0, with `CMS13` defined), and CMS-specific code
-stays in their `Compat/` adapter files.
+stays in their `Compat/` adapter files. The MCP module builds the same way, as two packages (`OptiCli.Mcp` for CMS 12
+from 12.12.1, `OptiCli.Mcp.Cms13` for CMS 13), and `OptiCli.Mcp.Tests` runs against each.
 
 | Project | What it is |
 |---|---|
@@ -1714,10 +1804,11 @@ stays in their `Compat/` adapter files.
 | `src/OptiCli.Core` | everything the CLI does: discovery, connection resolution and safety, SQL readers, decoders, output, `serve` |
 | `src/OptiCli.Agent` | the site agent, loaded into the site process; built for CMS 12 and CMS 13, both copied into the tool package (`agent/cms12/`, `agent/cms13/`) |
 | `src/OptiCli.Cms` | the content operations (read, create, draft, publish, ...) the site agent and the MCP module run, for a developer or a signed-in editor; source-linked into both |
-| `src/OptiCli.Mcp` | the MCP server for editors, the `OptiCli.Mcp` package: OAuth authorization server, tools, connections page |
+| `src/OptiCli.Mcp` | the MCP server for editors, the `OptiCli.Mcp` package (CMS 12): OAuth authorization server, tools, connections page |
+| `src/OptiCli.Mcp.Cms13` | the `OptiCli.Mcp.Cms13` package: the same sources built for CMS 13 (net10.0, `CMS13` defined), with the same assembly name and public API |
 | `src/OptiCli.Protocol` | request and response types shared by the CLI, the site agent and the MCP module (source-linked) |
 | `skill/` | the coding-agent skill, embedded in `opticli.dll` |
-| `tests/` | unit tests for Core, the site agent (on both CMS majors) and the MCP module; `OptiCli.Integration` and `OptiCli.Mcp.Integration`, tests against a real site |
+| `tests/` | unit tests for Core, the site agent and the MCP module (both on both CMS majors); `OptiCli.Integration` and `OptiCli.Mcp.Integration`, tests against a real site |
 
 The unit tests use generic fixtures and need no database or site, also for CMS 13 (one, `LocalDbTests`, needs LocalDB
 and skips itself elsewhere). The integration test is an oracle. It samples content
@@ -1860,6 +1951,16 @@ everyone but administrators and product editors, who may edit it but not publish
 document to `wwwroot` (fetched over http on loopback, which the module allows only in Development), then builds the
 site and starts it with `serve.sh` on `http://127.0.0.1:5180` (`MCP_PORT`).
 
+Run from a CMS 13 edge-case site (`setup.sh` reads the CMS version from its project), it references
+`src/OptiCli.Mcp.Cms13` instead and adds `McpVisualBuilderFixture.cs`: Visual Builder experiences with inline and shared
+sections and elements, some of them readable by administrators only, and an element type with properties the edit UI
+hides or locks. The integration tests take the edit UI's path from the site's CMS version, and their Visual Builder tests
+run only there:
+
+```sh
+SQLCMDPASSWORD=... FRESH=1 MCP_PORT=5200 tests/fixtures/mcp/setup.sh path/to/AlloyEdge13 path/to/AlloyMcp13 alloy-edge13 alloy-mcp13
+```
+
 `tests/OptiCli.Mcp.Integration` connects to it as Claude does, with the official MCP SDK's client: discovery from the
 401, registration, the CMS login form and the consent page (both scripted), then tool calls. It covers sign-in, the
 role gate and CIMD; the module's 401 untouched by the site's error pages, and the site's named route working beside
@@ -1933,7 +2034,7 @@ git tag v0.23.1 && git push origin v0.23.1
 
 The [release workflow](.github/workflows/release.yml) checks that the tag matches both versions and is on `main`,
 runs the unit tests, checks that the CLI package holds both site agent builds and starts, and publishes it to nuget.org together
-with `OptiCli.Mcp` at the same version.
+with `OptiCli.Mcp` and `OptiCli.Mcp.Cms13` at the same version.
 
 ## Licence
 

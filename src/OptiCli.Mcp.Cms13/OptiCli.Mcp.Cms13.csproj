@@ -11,7 +11,7 @@
     <AssemblyName>OptiCli.Mcp</AssemblyName>
     <RootNamespace>OptiCli.Mcp</RootNamespace>
     <PackageId>OptiCli.Mcp.Cms13</PackageId>
-    <Description>An MCP server for Optimizely CMS 13: editors connect their AI assistant to the site, sign in with the site's own login, and work with their own access rights.</Description>
+    <Description>An MCP server for Optimizely CMS 13 (for CMS 12, use OptiCli.Mcp): editors connect their AI assistant to the site, sign in with the site's own login, and work with their own access rights.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageTags>optimizely;episerver;cms;cms13;mcp;model-context-protocol;oauth</PackageTags>
     <PackageLicenseExpression>MPL-2.0</PackageLicenseExpression>
