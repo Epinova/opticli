@@ -361,13 +361,22 @@ public class McpFixture : IInitializableModule
             content.Name = "opticli inert fixture";
             content.ContentGuid = InertBlock;
             block.Body = new XhtmlString(InertBody);
-            repository.Save(content, SaveAction.Publish, AccessLevel.NoAccess);
-            Console.Error.WriteLine("[mcp-fixture] created the inert fixture");
+            try
+            {
+                repository.Save(content, SaveAction.Publish, AccessLevel.NoAccess);
+                Console.Error.WriteLine("[mcp-fixture] created the inert fixture");
+            }
+            catch (InvalidPropertyValueException e)
+            {
+                // CMS 13 refuses script attributes in rich text on save (Cms:ScriptParserOptions, SavingMode), even
+                // inside a <textarea>: no inert fixture there, and the test that reads it fails.
+                Console.Error.WriteLine($"[mcp-fixture] the CMS refused the inert fixture's rich text: {e.Message}");
+            }
         }
     }
 
     /// <summary>The folder of that name below <paramref name="parent"/>, made if it isn't there.</summary>
-    private static ContentReference Folder(IContentRepository repository, ContentReference parent, string name, Guid? guid)
+    internal static ContentReference Folder(IContentRepository repository, ContentReference parent, string name, Guid? guid)
     {
         if (guid is { } known && repository.TryGet<ContentFolder>(known, out var byGuid))
         {
@@ -391,7 +400,7 @@ public class McpFixture : IInitializableModule
     /// Adds the entries; with <paramref name="inherit"/> false, replaces the content's access rights with exactly these
     /// (no longer inherited). Saves only when something differs, so a restart changes nothing.
     /// </summary>
-    private static void Ensure(IContentSecurityRepository security, ContentReference link, bool inherit, params (string Role, AccessLevel Level)[] entries)
+    internal static void Ensure(IContentSecurityRepository security, ContentReference link, bool inherit, params (string Role, AccessLevel Level)[] entries)
     {
         var current = security.Get(link);
         var present = entries.All(e => current.Entries.Any(x => x.Name == e.Role && x.EntityType == SecurityEntityType.Role && x.Access == e.Level));
