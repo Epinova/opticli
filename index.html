@@ -317,12 +317,12 @@ hint: opticli writes to a production database only through a sealed apply, which
 <section class="part wrap" id="editors" aria-labelledby="editors-h">
   <div class="part-head">
     <h2 id="editors-h">For editors</h2>
-    <p>opticli runs on a developer's machine. <code>OptiCli.Mcp</code> is an MCP server installed in the site, so editors can work on its content with their AI assistant in any environment.</p>
+    <p>opticli runs on a developer's machine. <code>OptiCli.Mcp</code> (<code>OptiCli.Mcp.Cms13</code> on CMS 13) is an MCP server installed in the site, so editors can work on its content with their AI assistant in any environment.</p>
   </div>
   <article class="file editors">
     <div>
       <h3>An assistant, signed in as the editor</h3>
-      <p>Editors connect an assistant that supports MCP servers (Claude Desktop has an extension for it) and sign in with the site's own login. The assistant then works as them, with their access rights: drafts by default, dry runs, validation and approval sequences, and a preview link for every draft. CMS 12, from 12.12.1 and CMS UI 12.16.1.</p>
+      <p>Editors connect an assistant that supports MCP servers (Claude Desktop has an extension for it) and sign in with the site's own login. The assistant then works as them, with their access rights: drafts by default, dry runs, validation and approval sequences, and a preview link for every draft. CMS 12 from 12.12.1 (CMS UI 12.16.1), and CMS 13, where the assistant reads Visual Builder pages too.</p>
       <a class="go" href="editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
     </div>
     <div aria-label="An example conversation">
@@ -339,6 +339,21 @@ hint: opticli writes to a production database only through a sealed apply, which
   </div>
   <article class="file">
     <ol class="releases">
+      <li><div class="v"><b>0.26.0</b><span>28 October 2026</span></div>
+        <ul>
+          <li><b>The MCP server on CMS 13:</b> the new <code>OptiCli.Mcp.Cms13</code> package puts it in a CMS 13 site;
+            <code>OptiCli.Mcp</code> stays the one for CMS 12, also on .NET 10. Both are set up the same way, so moving a
+            site to CMS 13 is one package swap. Assistants read Visual Builder pages with the editor's access rights, as
+            everything else; see <a href="editors/">For editors</a>.</li>
+          <li><b>MCP hardening:</b> beside another MCP server in the same site, each endpoint now serves only its own
+            server, and the module's sessions work only for the connection that made them. A CMS 12 site that runs another
+            MCP server should update <code>OptiCli.Mcp</code> to <code>0.26.0</code>. Details in the
+            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
+        </ul></li>
+    </ol>
+    <details class="earlier">
+      <summary><svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg>28 earlier releases <span>back to 0.3.0, 30 September 2026</span></summary>
+      <ol class="releases">
       <li><div class="v"><b>0.25.0</b><span>28 October 2026</span></div>
         <ul>
           <li><b>The MCP server is no longer a preview:</b> <code>OptiCli.Mcp</code> now has the same version as the CLI, so
@@ -348,10 +363,6 @@ hint: opticli writes to a production database only through a sealed apply, which
             Claude Desktop and enter the site's address; it connects from their own machine. Details in the
             <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
         </ul></li>
-    </ol>
-    <details class="earlier">
-      <summary><svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg>27 earlier releases <span>back to 0.3.0, 30 September 2026</span></summary>
-      <ol class="releases">
       <li><div class="v"><b>0.24.0</b><span>26 October 2026</span></div>
         <ul>
           <li><b>Production without a restart:</b> when the site uses the CMS's Azure providers, the sealed run you start

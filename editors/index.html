@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>opticli for editors: your AI assistant in Optimizely CMS</title>
-<meta name="description" content="OptiCli.Mcp is an MCP server for Optimizely CMS 12 sites. Editors connect their AI assistant, which signs in as them, works with their access rights and saves drafts for them to review.">
+<meta name="description" content="OptiCli.Mcp is an MCP server for Optimizely CMS 12 and 13 sites. Editors connect their AI assistant, which signs in as them, works with their access rights and saves drafts for them to review.">
 <meta property="og:title" content="opticli for editors: your AI assistant in Optimizely CMS">
 <meta property="og:description" content="Work on your site's content with your AI assistant, as yourself: your login, your access rights, drafts you review.">
 <meta property="og:type" content="website">
@@ -119,7 +119,7 @@
   </div>
   <article class="file">
     <ul class="ways">
-      <li><b>Find and read content</b><div><p>Find pages, blocks and media by name, by URL or under a page, and read everything on them: every property, the blocks in a content area, links and rich text. It also checks which properties a page type has and which values they allow.</p></div></li>
+      <li><b>Find and read content</b><div><p>Find pages, blocks and media by name, by URL or under a page, and read everything on them: every property, the blocks in a content area, links and rich text, and on CMS 13 the sections and elements of a Visual Builder page. It also checks which properties a page type has and which values they allow.</p></div></li>
       <li><b>See images</b><div><p>An assistant that handles images can look at the ones in the media library itself, so it can write alt text or pick the right image without you describing it.</p></div></li>
       <li><b>Change content, as drafts</b><div><p>Change properties, create pages and blocks, add a language version, upload images and files, and move content. Each change can be a dry run first, listing what would change; a saved change is a draft.</p></div></li>
       <li><b>Show the draft</b><div><p>Every draft it saves comes with a link to the CMS's preview of it, which opens for you when you're signed in. The assistant can also open the preview through a short-lived link of its own to check how the draft looks. The site can turn that off.</p></div></li>
@@ -174,10 +174,12 @@
 
 <section class="part wrap" id="install" aria-labelledby="install-h">
   <article class="file merge">
-    <div class="file-bar"><svg class="icon ok" aria-hidden="true"><use href="#i-ok"/></svg><b id="install-h">For your developer</b><small>Optimizely CMS 12 (12.12.1, CMS UI 12.16.1 or newer) · not CMS 13</small></div>
+    <div class="file-bar"><svg class="icon ok" aria-hidden="true"><use href="#i-ok"/></svg><b id="install-h">For your developer</b><small>Optimizely CMS 12 (12.12.1, CMS UI 12.16.1 or newer) or CMS 13</small></div>
     <div class="merge-body">
-      <pre class="cmd"><span class="c"># in the site's project</span>
+      <pre class="cmd"><span class="c"># in the site's project: CMS 12</span>
 dotnet add package OptiCli.Mcp
+<span class="c"># or CMS 13</span>
+dotnet add package OptiCli.Mcp.Cms13
 
 <span class="c"># Startup.cs</span>
 services.AddOptiCliMcp();    <span class="c"># after the site's own login setup</span>
@@ -186,7 +188,7 @@ endpoints.MapOptiCliMcp();   <span class="c"># after MapContent() and the site's
 <span class="c"># editors then connect their assistant to</span>
 https://<wbr>your-site.example/<wbr>episerver/<wbr>opticli/<wbr>mcp</pre>
       <div>
-        <p><code>OptiCli.Mcp</code> is a NuGet package for the site itself, on any environment, production included. Editors sign in with the site's own login, Entra ID or ASP.NET Identity, and the assistant works through the same operations as opticli's site agent.</p>
+        <p><code>OptiCli.Mcp</code> is a NuGet package for the site itself, on any environment, production included: <code>OptiCli.Mcp.Cms13</code> on CMS 13, set up the same way, so moving a site to CMS 13 is one package swap. Editors sign in with the site's own login, Entra ID or ASP.NET Identity, and the assistant works through the same operations as opticli's site agent.</p>
         <p>The README has every option: publishing and deleting, preview links, the web addresses assistants may connect from (<code>AllowedRedirectHosts</code>) and a dedicated host.</p>
         <div class="links"><a href="https://github.com/epinova/opticli#mcp-server-for-editors">Read the README</a><a href="../">opticli for developers</a></div>
       </div>
