@@ -63,7 +63,9 @@ public sealed record ContentItem
 
     /// <summary>
     /// CMS 13: an experience's or a section's composition as the CMS's <c>ICompositionMapper</c> reads it (unpublished
-    /// shared blocks included); null for other content and on CMS 12.
+    /// shared blocks included); null for other content and on CMS 12. For a signed-in editor (the MCP module) it follows
+    /// the rules of every other read: inline blocks show the properties the edit UI shows them, and shared content they
+    /// can't read is a node with only the kind of its place, its key and its ref.
     /// </summary>
     public ContentItemCompositionNode? Composition { get; init; }
 }

@@ -24,7 +24,7 @@ internal static class ReadOperation
         var content = Load(call, reference, body);
 
         // An editor gets the properties the CMS edit UI shows them, as editable.
-        return new ContentReader(call.Service<IContentTypeRepository>(), call.Service<IContentVersionRepository>(), call.Service<IUrlResolver>(), call.Properties.Shown, call.Services, call.AbsoluteUrls).Describe(content);
+        return new ContentReader(call.Service<IContentTypeRepository>(), call.Service<IContentVersionRepository>(), call.Service<IUrlResolver>(), call.Properties.Shown, call, call.AbsoluteUrls).Describe(content);
     }
 
     /// <summary>The version <paramref name="body"/> asks for, which the caller may read (<see cref="CmsCall.RequireRead{T}"/>).</summary>

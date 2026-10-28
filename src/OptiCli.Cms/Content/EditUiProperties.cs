@@ -116,10 +116,121 @@ internal sealed class EditUiProperties(CmsCall call, bool check)
     /// diff (a draft's changes, what a discard loses) never shows a hidden property's value; also inside a local block or
     /// a block list, whose values a diff shows whole.
     /// </summary>
+    /// <remarks>
+    /// CMS 13: a Visual Builder composition (<see cref="PropertyValues.CompositionKey"/>) is shown as a read shows it
+    /// (<see cref="ShownComposition"/>), and left out when nothing of what changed is the caller's to see.
+    /// </remarks>
     public IReadOnlyList<PropertyChange> Shown(IContentData content, IReadOnlyList<PropertyChange> changes) =>
         !check ? changes : [.. changes
             .Where(c => content.Property[c.Property] is not { } property || Shown(content, property))
-            .Select(c => content.Property[c.Property] is { } property ? c with { Before = Shown(property, c.Before), After = Shown(property, c.After) } : c)];
+            .Select(c => content.Property[c.Property] is { } property ? c with { Before = Shown(property, c.Before), After = Shown(property, c.After) }
+                : c.Property.Equals(PropertyValues.CompositionKey, StringComparison.OrdinalIgnoreCase) ? ShownComposition(content, c)
+                : c)
+            .OfType<PropertyChange>()];
+
+    /// <summary>
+    /// Remembers that <paramref name="block"/>, which isn't content, is part of <paramref name="content"/> as an inline
+    /// block in a ContentArea is (<see cref="TabShown"/>): an inline section or element of a Visual Builder composition,
+    /// which the edit UI edits as part of the experience, or the shared section, it is in.
+    /// </summary>
+    public void Within(IContentData block, IContent content)
+    {
+        if (check && block is not IContent)
+        {
+            _held.TryAdd(block, (content, false));
+        }
+    }
+
+    /// <summary>
+    /// A composition's change as the caller may see it, like a read's composition (<c>CmsCompositions.Read</c>): shared
+    /// content they can't read is only its place, its key and its ref; an inline block's values are those the edit UI
+    /// shows them, each by the inline block with its key (and type) in the composition <paramref name="content"/> has now,
+    /// else by one of its type (or none of its values). Null, so left out, when the two sides are then the same: what changed is
+    /// nothing the caller may see.
+    /// </summary>
+    private PropertyChange? ShownComposition(IContentData content, PropertyChange change)
+    {
+        var blocks = Compat.CmsCompositions.InlineBlocks(call, content);
+        if (content is IContent within)
+        {
+            foreach (var (_, block) in blocks)
+            {
+                Within(block, within);
+            }
+        }
+        var root = Compat.CmsCompositions.Kind(content, null);
+        var readable = new Dictionary<string, bool>(StringComparer.Ordinal);
+        JsonElement? Filtered(JsonElement? value) => value is { ValueKind: JsonValueKind.Object } node ? ShownNode(node, null, root, blocks, readable) : value;
+        var before = Filtered(change.Before);
+        var after = Filtered(change.After);
+        return before?.GetRawText() == after?.GetRawText() ? null : change with { Before = before, After = after };
+    }
+
+    /// <param name="parentNodeType">The node type of the node it is in; null at the root.</param>
+    /// <param name="rootNodeType">The root's node type (a snapshot leaves it out): the content's kind.</param>
+    private JsonElement ShownNode(JsonElement node, string? parentNodeType, string? rootNodeType, IReadOnlyList<(string Key, BlockData Block)> blocks, Dictionary<string, bool> readable)
+    {
+        string? Text(string name) => node.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+        var nodeType = parentNodeType is null ? rootNodeType : Text("nodeType");
+        if (parentNodeType is not null && Text("ref") is { } reference && !Readable(reference, readable))
+        {
+            var place = new Dictionary<string, JsonElement?>(StringComparer.Ordinal)
+            {
+                ["nodeType"] = JsonSerializer.SerializeToElement(Compat.CmsCompositions.UnreadablePlace(parentNodeType)),
+            };
+            foreach (var field in node.EnumerateObject().Where(f => f.Name is "key" or "ref"
+                || (f.Name is "displayTemplate" or "displaySettings" && Compat.CmsCompositions.UnreadableKeepsStyles(nodeType, parentNodeType))))
+            {
+                place[field.Name] = field.Value;
+            }
+            return JsonSerializer.SerializeToElement(place);
+        }
+        var shown = new Dictionary<string, JsonElement?>(StringComparer.Ordinal);
+        foreach (var field in node.EnumerateObject())
+        {
+            switch (field.Name)
+            {
+                case "properties" when field.Value.ValueKind == JsonValueKind.Object:
+                    var key = Text("key");
+                    var type = Text("type");
+                    bool OfType(BlockData block) => type is null || string.Equals(TypeName(block), type, StringComparison.OrdinalIgnoreCase);
+                    var like = blocks.Where(b => string.Equals(b.Key, key, StringComparison.OrdinalIgnoreCase) && OfType(b.Block)).Select(b => b.Block).FirstOrDefault()
+                        ?? blocks.Select(b => b.Block).FirstOrDefault(b => type is not null && OfType(b));
+                    if (like is not null)
+                    {
+                        shown[field.Name] = Shown(like, field.Value);
+                    }
+                    break;
+                case "nodes" when field.Value.ValueKind == JsonValueKind.Array:
+                    shown[field.Name] = JsonSerializer.SerializeToElement(field.Value.EnumerateArray()
+                        .Select(n => n.ValueKind == JsonValueKind.Object ? ShownNode(n, nodeType, rootNodeType, blocks, readable) : n)
+                        .ToList());
+                    break;
+                default:
+                    shown[field.Name] = field.Value;
+                    break;
+            }
+        }
+        return JsonSerializer.SerializeToElement(shown);
+    }
+
+    /// <summary>Whether the caller may read the content <paramref name="reference"/> names; content that isn't there counts as content they can't.</summary>
+    private bool Readable(string reference, Dictionary<string, bool> known)
+    {
+        if (!known.TryGetValue(reference, out var readable))
+        {
+            readable = known[reference] = ContentReference.TryParse(reference, out var link)
+                && call.Service<IContentLoader>().TryGet<IContent>(link, out var content) && call.CanRead(content);
+        }
+        return readable;
+    }
+
+    /// <summary>The content type name of a block that isn't content: an inline block's own, else its model's.</summary>
+    private string? TypeName(BlockData block)
+    {
+        var types = call.Service<IContentTypeRepository>();
+        return (Compat.InlineBlocks.TypeId(block) is var id and > 0 ? types.Load(id) : types.Load(block.GetOriginalType()))?.Name;
+    }
 
     /// <summary>
     /// A block's or a block list's value as a diff shows it, without the properties the caller doesn't see: those of the
@@ -136,8 +247,6 @@ internal sealed class EditUiProperties(CmsCall call, bool check)
                 {
                     return value;
                 }
-                var types = call.Service<IContentTypeRepository>();
-                string? TypeName(BlockData block) => (Compat.InlineBlocks.TypeId(block) is var id and > 0 ? types.Load(id) : types.Load(block.GetOriginalType()))?.Name;
                 return JsonSerializer.SerializeToElement(areaItems.EnumerateArray().Select(item =>
                 {
                     if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty("properties", out var values) || values.ValueKind != JsonValueKind.Object)

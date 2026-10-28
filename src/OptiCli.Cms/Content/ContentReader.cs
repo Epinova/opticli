@@ -10,9 +10,9 @@ namespace OptiCli.Cms.Content;
 
 /// <summary>Describes a loaded content version as <see cref="ContentItem"/>.</summary>
 /// <param name="shown">Which properties to describe (see <see cref="ReadValues"/>); every one when null.</param>
-/// <param name="services">For CMS 13's composition mapper; no composition without it.</param>
+/// <param name="call">For CMS 13's composition, which it reads as the caller may see it; no composition without it.</param>
 /// <param name="absoluteUrl">The URL with the site's host also for the site the request came in on (<see cref="CmsCall.AbsoluteUrls"/>).</param>
-internal sealed class ContentReader(IContentTypeRepository types, IContentVersionRepository versions, IUrlResolver urls, Func<IContentData, PropertyData, bool>? shown = null, IServiceProvider? services = null, bool absoluteUrl = false)
+internal sealed class ContentReader(IContentTypeRepository types, IContentVersionRepository versions, IUrlResolver urls, Func<IContentData, PropertyData, bool>? shown = null, CmsCall? call = null, bool absoluteUrl = false)
 {
     public ContentItem Describe(IContent content)
     {
@@ -44,7 +44,7 @@ internal sealed class ContentReader(IContentTypeRepository types, IContentVersio
             ChangedBy = tracked?.ChangedBy,
             Url = PublicUrls.Of(urls, link, Code(language), absoluteUrl),
             Properties = values.Properties(content),
-            Composition = services is null ? null : Compat.CmsCompositions.Read(services, content, values.Properties),
+            Composition = call is null ? null : Compat.CmsCompositions.Read(call, content, values.Properties),
         };
     }
 
