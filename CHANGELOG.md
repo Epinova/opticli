@@ -3,6 +3,63 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.26.0 (28 October 2026)
+
+The MCP server for editors runs on CMS 13, as the new `OptiCli.Mcp.Cms13` package, and is hardened for sites that run
+another MCP server beside it, on CMS 12 too.
+
+### MCP server for editors
+
+- **CMS 13: `OptiCli.Mcp.Cms13`.** A second package, built from the same sources for CMS 13 (13.0.0 or newer, .NET 10)
+  and released with the same version. `OptiCli.Mcp` stays the package for CMS 12 (12.12.1 / CMS UI 12.16.1 or newer),
+  also for a CMS 12 site on .NET 10: one package with a .NET 10 build would have given such a site the CMS 13 build.
+  Both have the same `AddOptiCliMcp`, `MapOptiCliMcp` and options, so a site that moves to CMS 13 swaps the package and
+  changes nothing else; connections are kept in Dynamic Data Store stores with the same names.
+- **The wrong package stops the site at startup.** NuGet refuses most mismatches; where it doesn't, or a site forces
+  it, `AddOptiCliMcp` throws "This site runs CMS 13: use the OptiCli.Mcp.Cms13 package instead of OptiCli.Mcp." (or
+  the other way round). Before, `OptiCli.Mcp` could start on a CMS 13 site and run its CMS 12 code there.
+- **Visual Builder, read only.** `get_content` of an experience gives its composition (sections, rows, columns and
+  elements, with display templates and settings) under the same rules as every other read: properties the edit UI hides
+  or locks are left out, and a shared block or section the editor can't read shows only its place (`nodeType`, `key`,
+  `ref`), never its name, type or values. Dry runs and pending drafts list composition changes by the same rules.
+  Editors can't change compositions through the MCP server yet.
+- **Uploads on CMS 13** follow the CMS's `MediaFileOptions` (`EPiServer:Cms:MediaFile`: its size limit and allowed
+  extensions, matched as the edit UI matches them), and go through the CMS's script parser after the module's own
+  checks, as an upload in the edit UI does: refused where the parser refuses the file, and otherwise stored as the
+  parser writes it back.
+
+### Hardening
+
+From a review of the module beside other MCP servers, and of uploads on CMS 13. All but the last apply to CMS 12 as
+well, and matter for a site that runs another MCP server built on the MCP C# SDK in the same application as the module:
+its own, or a package's (such as Optimizely's `Optimizely.Cms.Opal.Tools` on CMS 13). A CMS 12 site that does should
+update `OptiCli.Mcp` to 0.26.0, all the more if that server turns on sessions (`Stateless = false`) or the legacy SSE
+transport. A site with only the module isn't affected by them.
+
+- **Each MCP endpoint serves only its own server.** The SDK keeps one set of server options for the whole application,
+  so the module's endpoint also offered the other server's tools to editors' assistants, and the other endpoint listed
+  the module's tools (which refused to run without an editor's sign-in) under the module's name and instructions. Now
+  the module's endpoint has the module's tools only, and the other endpoint keeps its own tools, name and instructions.
+- **Sessions are bound to the editor's connection and to the module's endpoint.** Where the other server turned on
+  sessions or legacy SSE, the SDK found a session by its ID alone, at any endpoint. Now the module's endpoint takes only
+  sessions it made, each only from the connection that made it, and its sessions are refused at other endpoints. It
+  serves POST only (and a DELETE that ends one of its own sessions), never a GET stream or legacy SSE. The module's
+  sign-in carries a `sub` claim with the connection's ID, which the SDK binds a session to; site code that runs during a
+  tool call sees it.
+- **A bounded session registry.** The module keeps at most as many sessions as the SDK keeps idle ones
+  (`MaxIdleSessionCount`, at least 1,000), the least recently used dropped first, so an editor's assistant that makes
+  sessions in a loop costs bounded memory and time.
+- **Fails closed.** If code registered after `AddOptiCliMcp` replaces the SDK hook the module keeps the servers apart
+  with, the module's endpoint refuses every request and the site's log says why at startup, rather than serve without
+  it.
+- **CMS 13 uploads:** the file as the CMS's script parser writes it back is checked for script again before it is
+  stored, since the parser's rewriting can change what the file holds.
+
+### Fixed
+
+- `view_media` reports the size of the image it sends. Where the site's image service rounds a scaled side down
+  (`EPiServer.ImageLibrary.ImageSharp` 1.0.6 and later, and CMS 13), it said 1568×784 for an image of 1567×783.
+
 ## 0.25.0 (28 October 2026)
 
 The MCP server for editors is no longer a preview, and it comes with a Claude Desktop extension.
