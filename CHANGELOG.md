@@ -57,6 +57,10 @@ isn't affected by them.
 
 - `view_media` reports the size of the image it sends. Where the site's image service rounds a scaled side down
   (`EPiServer.ImageLibrary.ImageSharp` 1.0.6, as on CMS 12.24, and CMS 13), it said 1568×784 for an image of 1567×783.
+- The Claude Desktop extension opens the sign-in page on Linux. Claude Desktop starts extensions there with D-Bus
+  turned off, and can start them without the desktop session's display, so the browser never opened (or Firefox said
+  it was already running). The extension now uses the user's own session bus, and fills in a missing display from the
+  desktop session (tested on KDE Plasma with Wayland).
 
 ## 0.25.0 (28 October 2026)
 
