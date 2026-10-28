@@ -164,7 +164,12 @@ internal static class ViewMediaOperation
             }
             if (image.Length <= LargestBytes)
             {
-                return new Shrunk(mimeType, Scaled(header.Width, zoom), Scaled(header.Height, zoom), image);
+                // The size the image service made, which is what the image shows: services round a zoomed side
+                // differently (EPiServer.ImageLibrary.ImageSharp 1.0.1 rounds, 1.0.6 and CMS 13's floor, so 2400 pixels
+                // at 1568/2400 become 1567).
+                return ImageHeaders.Read(image) is { } made
+                    ? new Shrunk(mimeType, made.Width, made.Height, image)
+                    : new Shrunk(mimeType, Scaled(header.Width, zoom), Scaled(header.Height, zoom), image);
             }
             if (mimeType == ImageHeaders.Png)
             {
@@ -183,7 +188,7 @@ internal static class ViewMediaOperation
         }
     }
 
-    /// <summary>As the image services round a zoomed side; never below one pixel.</summary>
+    /// <summary>A zoomed side, rounded, for an image whose header can't be read; never below one pixel.</summary>
     private static int Scaled(int side, float zoom) => Math.Max(1, (int)Math.Round(side * zoom));
 
     private static byte[] Read(EPiServer.Framework.Blobs.Blob blob, IContent content)

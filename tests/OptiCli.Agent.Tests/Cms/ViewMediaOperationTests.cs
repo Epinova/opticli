@@ -118,6 +118,20 @@ public sealed class ViewMediaOperationTests : IDisposable
     }
 
     [Fact]
+    public void The_size_shown_is_the_one_the_image_service_made()
+    {
+        // EPiServer.ImageLibrary.ImageSharp 1.0.6 and newer (and CMS 13's) floor a zoomed side, and 2400 at 1568/2400 is
+        // just below 1568 in float arithmetic: the image is 1567 by 783, and so is what is said about it.
+        AddMedia("gradient.png", ImageHeadersTests.Png(2400, 1200));
+        _images.Made = r => ImageHeadersTests.Png((uint)Math.Floor(2400f * r.ZoomFactor), (uint)Math.Floor(1200f * r.ZoomFactor));
+
+        var view = View();
+
+        Assert.Equal((1567, 783), (view.Width, view.Height));
+        Assert.Equal(new MediaOriginal("image/png", 2400, 1200, ImageHeadersTests.Png(2400, 1200).Length), view.Original);
+    }
+
+    [Fact]
     public void A_png_still_too_large_after_scaling_becomes_a_jpeg_and_then_smaller()
     {
         AddMedia("diagram.png", ImageHeadersTests.Png(3000, 3000));
@@ -232,6 +246,9 @@ public sealed class ViewMediaOperationTests : IDisposable
 
         public Exception? Failure { get; set; }
 
+        /// <summary>The image made for a request; <see cref="Small"/>, which has no header, unless set.</summary>
+        public Func<RenderRequest, byte[]> Made { get; set; } = _ => Small;
+
         public void RenderImage(Stream input, Stream output, RenderRequest request)
         {
             Requests.Add(request);
@@ -239,7 +256,7 @@ public sealed class ViewMediaOperationTests : IDisposable
             {
                 throw Failure;
             }
-            output.Write(TooLarge(request) ? new byte[ViewMediaOperation.LargestBytes + 1] : Small);
+            output.Write(TooLarge(request) ? new byte[ViewMediaOperation.LargestBytes + 1] : Made(request));
         }
     }
 }

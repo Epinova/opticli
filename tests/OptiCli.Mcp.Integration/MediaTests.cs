@@ -24,8 +24,12 @@ public sealed class MediaTests(SharedSessions sessions)
             var media = Id(uploaded.GetProperty("content"));
 
             var (view, image) = await ViewAsync(editor, new { reference = media, version = "latest" });
-            Assert.Equal(("image/png", 1568, 784), (image.MimeType, view.GetProperty("width").GetInt32(), view.GetProperty("height").GetInt32()));
-            Assert.Equal((1568, 784), PngSize(image.DecodedData.Span));
+            // Scaled by 1568/2400, as the site's image service rounds a side: EPiServer.ImageLibrary.ImageSharp 1.0.1
+            // rounds, 1.0.6 and CMS 13's floor, and in float arithmetic 2400 times that is just below 1568.
+            // What view_media says is the size of the image it gives.
+            var size = PngSize(image.DecodedData.Span);
+            Assert.Contains(size, new[] { (1568, 784), (1567, 783) });
+            Assert.Equal(("image/png", size.Width, size.Height), (image.MimeType, view.GetProperty("width").GetInt32(), view.GetProperty("height").GetInt32()));
             var original = view.GetProperty("original");
             Assert.Equal(("image/png", 2400, 1200, png.Length), (original.GetProperty("mimeType").GetString(), original.GetProperty("width").GetInt32(), original.GetProperty("height").GetInt32(), original.GetProperty("bytes").GetInt32()));
 
