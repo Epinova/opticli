@@ -489,7 +489,7 @@ public sealed class ToolTests
     }
 
     /// <summary>A client with a token for <paramref name="scope"/> (the site's default scopes when null).</summary>
-    private static async Task<McpClient> Connect(TestSite site, string? scope = null)
+    internal static async Task<McpClient> Connect(TestSite site, string? scope = null)
     {
         var tokens = await site.ConnectAsync(scope: scope);
         var transport = new HttpClientTransport(new HttpClientTransportOptions

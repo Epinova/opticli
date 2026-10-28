@@ -98,25 +98,16 @@ public static class OptiCliMcpExtensions
             .RequireAuthenticatedUser()
             .RequireAssertion(c => Scopes.Split(c.User.FindFirst(McpClaims.Scope)?.Value).Contains(Scopes.Read))));
 
-        services.AddMcpServer(o => o.ServerInfo = new() { Name = "opticli", Version = Version })
+        // The server's name, instructions, filters and which tools it offers are set per request, on the module's
+        // endpoint only: the SDK's options are shared with any other MCP server the site runs (McpServerIsolation).
+        services.AddMcpServer()
             .WithHttpTransport(t => t.Stateless = true)
-            // The audit outside, so it records the error results the inner filter makes of refusals.
-            .WithRequestFilters(f => f.AddCallToolFilter(ToolAudit.Filter).AddCallToolFilter(ToolErrors.Filter))
             .WithTools<WhoAmITool>()
             .WithTools<ReadTools>()
             .WithTools<WriteTools>()
             .WithTools<PublishTools>()
             .WithTools<DeleteTool>();
-        // What the site allows is only known once its options are: the workflow the model is told, and whether deleting
-        // is offered at all (the tool also checks, should it be called regardless).
-        services.AddOptions<McpServerOptions>().PostConfigure<IOptions<OptiCliMcpOptions>>((mcp, ours) =>
-        {
-            mcp.ServerInstructions = McpInstructions.For(ours.Value);
-            if (!ours.Value.AllowDelete && mcp.ToolCollection?.TryGetPrimitive(DeleteTool.ToolName, out var delete) == true)
-            {
-                mcp.ToolCollection.Remove(delete);
-            }
-        });
+        McpServerIsolation.Register(services);
         return services;
     }
 
@@ -147,7 +138,7 @@ public static class OptiCliMcpExtensions
         }
         var all = new List<IEndpointConventionBuilder>();
 
-        var mcp = endpoints.MapMcp(options.McpPath).RequireAuthorization(Policy);
+        var mcp = endpoints.MapMcp(options.McpPath).RequireAuthorization(Policy).WithMetadata(new McpServerIsolation.ModuleEndpoint());
         // Inside authorization, so an anonymous request still gets its 401 and the way to a token, whatever its size.
         mcp.Add(endpoint => endpoint.RequestDelegate = McpRequestLimit.Wrap(endpoint.RequestDelegate!, McpRequestLimit.Bytes(options), options.MaxUploadBytes));
         all.Add(mcp);
