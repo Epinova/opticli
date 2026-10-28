@@ -1,7 +1,8 @@
 # Builds and runs the unit tests on every push and pull request, on the three operating systems opticli supports.
 # Every project under tests/ runs, the MCP module's included; the integration tests (OptiCli.Integration and
 # OptiCli.Mcp.Integration) skip themselves: they need a running site. OptiCli.Agent.Tests runs twice, for the CMS 12
-# (net8.0) and CMS 13 (net10.0) agent builds. On Windows, LocalDbTests must pass (it skips itself elsewhere).
+# (net8.0) and CMS 13 (net10.0) agent builds, and OptiCli.Mcp.Tests twice, for the MCP module's two packages
+# (OptiCli.Mcp, net8.0; OptiCli.Mcp.Cms13, net10.0). On Windows, LocalDbTests must pass (it skips itself elsewhere).
 name: CI
 
 on:
@@ -50,11 +51,14 @@ jobs:
         shell: pwsh
         run: .github/scripts/report-test-failures.ps1
 
-      - name: Check the package
+      - name: Check the packages
         if: runner.os == 'Linux'
         run: |
           dotnet pack src/OptiCli/OptiCli.csproj -c Release --no-build -o artifacts
           .github/scripts/check-package.sh artifacts
+          dotnet pack src/OptiCli.Mcp/OptiCli.Mcp.csproj -c Release --no-build -o artifacts
+          dotnet pack src/OptiCli.Mcp.Cms13/OptiCli.Mcp.Cms13.csproj -c Release --no-build -o artifacts
+          .github/scripts/check-mcp-package.sh artifacts "$(dotnet msbuild src/OptiCli.Mcp/OptiCli.Mcp.csproj -getProperty:Version)"
 
   # The Claude Desktop extension for the MCP module (mcp-extension/): packs and checks it.
   extension:

@@ -1,6 +1,6 @@
-# Publishes the OptiCli tool package and the OptiCli.Mcp site package (the same version) to
-# nuget.org when a version tag (v1.2.3) is pushed, then creates the GitHub release with the MCP module's Claude Desktop
-# extension (opticli-cms.mcpb) attached.
+# Publishes the OptiCli tool package and the MCP module's site packages, OptiCli.Mcp (CMS 12) and OptiCli.Mcp.Cms13
+# (CMS 13), all with the same version, to nuget.org when a version tag (v1.2.3) is pushed, then creates the GitHub
+# release with the MCP module's Claude Desktop extension (opticli-cms.mcpb) attached.
 # Authenticates with nuget.org trusted publishing: no API key is stored in the repository.
 name: Release
 
@@ -63,6 +63,7 @@ jobs:
         run: |
           dotnet pack src/OptiCli/OptiCli.csproj -c Release -o artifacts
           dotnet pack src/OptiCli.Mcp/OptiCli.Mcp.csproj -c Release -o artifacts
+          dotnet pack src/OptiCli.Mcp.Cms13/OptiCli.Mcp.Cms13.csproj -c Release -o artifacts
 
       - name: Check the packages
         run: |
@@ -135,9 +136,10 @@ jobs:
 
           ---
 
-          Packages: [OptiCli $version](https://www.nuget.org/packages/OptiCli/$version) and
-          [OptiCli.Mcp $version](https://www.nuget.org/packages/OptiCli.Mcp/$version) on nuget.org.
-          **opticli-cms.mcpb** below is the Claude Desktop extension for sites that run OptiCli.Mcp; see
+          Packages on nuget.org: [OptiCli $version](https://www.nuget.org/packages/OptiCli/$version), and the MCP module
+          [OptiCli.Mcp $version](https://www.nuget.org/packages/OptiCli.Mcp/$version) for CMS 12 and
+          [OptiCli.Mcp.Cms13 $version](https://www.nuget.org/packages/OptiCli.Mcp.Cms13/$version) for CMS 13.
+          **opticli-cms.mcpb** below is the Claude Desktop extension for sites that run either; see
           [Connecting Claude](https://github.com/epinova/opticli#connecting-claude).
           NOTES
           gh release create "$GITHUB_REF_NAME" opticli-cms.mcpb --verify-tag --title "opticli $version" --notes-file notes.md
