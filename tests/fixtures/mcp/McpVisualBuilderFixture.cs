@@ -6,7 +6,10 @@
 // section, and a section of its own (a grid section as content: CMS 13.3's edit UI makes these only as blueprints, and
 // its validation refuses them elsewhere, so it is saved without validation, as an API or an older version could have),
 // and one of each only administrators can read (in a folder of their own): an editor sees that something is there,
-// nothing more.
+// nothing more. A second experience holds an element type with properties the edit UI hides or locks (McpVbFieldsElement),
+// inline and in a shared section, and has a draft (saved by nobody, as a job's) that changes its composition: adds the
+// hidden shared content and changes hidden values, for what a write's diff shows an editor.
+using System.ComponentModel.DataAnnotations;
 using EPiServer.Applications;
 using EPiServer.DataAccess;
 using EPiServer.Framework;
@@ -17,6 +20,30 @@ using EPiServer.VisualBuilder.Compositions;
 using OptiCliCms13;
 
 namespace OptiCliMcpFixture;
+
+/// <summary>
+/// An element with properties the edit UI hides or locks, as McpFieldsBlock has them: one it doesn't show, one it shows
+/// locked, one an editor descriptor locks for all but WebAdmins, and one on the tab only administrators see. (CMS 13
+/// allows no local block in an element.)
+/// </summary>
+[ContentType(GUID = "6d2e8b4c-1a3f-4c5d-9e7f-0a1b2c3d4e60", DisplayName = "MCP VB fields element", Description = "opticli MCP fixture: an element whose properties the edit UI hides or locks",
+    CompositionBehaviors = [CompositionBehavior.ElementEnabledKey])]
+public class McpVbFieldsElement : BlockData
+{
+    public virtual string Heading { get; set; }
+
+    [ScaffoldColumn(false)]
+    public virtual string Hidden { get; set; }
+
+    [Editable(false)]
+    public virtual string Locked { get; set; }
+
+    [UIHint(McpAdminOnlyEditorDescriptor.Hint)]
+    public virtual string AdminScripts { get; set; }
+
+    [Display(GroupName = McpFixtureTabs.AdminOnly)]
+    public virtual string AdminTab { get; set; }
+}
 
 [InitializableModule]
 [ModuleDependency(typeof(McpFixture))]
@@ -50,6 +77,24 @@ public class McpVisualBuilderFixture : IInitializableModule
     public const string HiddenSectionName = "MCP VB hidden section";
 
     public const string HiddenBannerName = "MCP VB hidden banner";
+
+    /// <summary>The experience with McpVbFieldsElement, and a draft by nobody that changes its composition.</summary>
+    public static readonly Guid FieldsExperience = Guid.Parse("0b7e1c2d-3f4a-4b5c-8d6e-7f8091a2b308");
+
+    public const string FieldsExperienceName = "MCP Visual Builder fields fixture";
+
+    /// <summary>A shared grid section editors can read, with a McpVbFieldsElement of its own.</summary>
+    public static readonly Guid FieldsSection = Guid.Parse("0b7e1c2d-3f4a-4b5c-8d6e-7f8091a2b309");
+
+    /// <summary>The fields experience's node keys, the same in both its versions.</summary>
+    public const string FieldsSectionKey = "0b7e1c2d-3f4a-4b5c-8d6e-7f8091a2c001";
+    public const string FieldsRowKey = "0b7e1c2d-3f4a-4b5c-8d6e-7f8091a2c002";
+    public const string FieldsColumnKey = "0b7e1c2d-3f4a-4b5c-8d6e-7f8091a2c003";
+    public const string FieldsElementKey = "0b7e1c2d-3f4a-4b5c-8d6e-7f8091a2c004";
+    public const string SharedFieldsKey = "0b7e1c2d-3f4a-4b5c-8d6e-7f8091a2c005";
+    public const string HiddenElementKey = "0b7e1c2d-3f4a-4b5c-8d6e-7f8091a2c006";
+    public const string HiddenBannerKey = "0b7e1c2d-3f4a-4b5c-8d6e-7f8091a2c007";
+    public const string HiddenSectionKey = "0b7e1c2d-3f4a-4b5c-8d6e-7f8091a2c008";
 
     public void Initialize(InitializationEngine context) =>
         context.InitComplete += (_, _) => SetupAtStart(context);
@@ -98,14 +143,15 @@ public class McpVisualBuilderFixture : IInitializableModule
             hiddenElement = repository.Get<VbTextElement>(HiddenElement);
             Console.Error.WriteLine("[mcp-fixture] created the hidden shared element");
         }
+        var start = services.GetRequiredService<IApplicationRepository>().GetDefault()?.EntryPoint
+            ?? throw new InvalidOperationException("The site has no default application.");
+        Fields(repository, blocks, mapper, start, hiddenElement, hiddenBanner, hiddenSection);
         if (repository.TryGet<IContent>(Experience, out _))
         {
             return;
         }
         // The CMS 13 fixture's shared element (VisualBuilderFixture.SharedElement), which every editor can read.
         var sharedElement = repository.Get<VbTextElement>(VisualBuilderFixture.SharedElement);
-        var start = services.GetRequiredService<IApplicationRepository>().GetDefault()?.EntryPoint
-            ?? throw new InvalidOperationException("The site has no default application.");
 
         var page = repository.GetDefault<VbExperience>(start);
         page.Name = ExperienceName;
@@ -152,6 +198,85 @@ public class McpVisualBuilderFixture : IInitializableModule
                 throw new InvalidOperationException($"The experience's composition doesn't refer to the shared content {guid}.");
             }
         }
+    }
+
+    /// <summary>
+    /// The fields experience, made if it isn't there: published with an inline section holding an inline
+    /// McpVbFieldsElement and the shared fields section; then a draft, saved by nobody, whose composition also has the
+    /// hidden shared element (styled) in the same column and the hidden banner and section in the outline, and whose
+    /// inline element has other values, hidden ones included.
+    /// </summary>
+    private static void Fields(IContentRepository repository, IBlockPropertyFactory blocks, ICompositionMapper mapper, ContentReference start,
+        VbTextElement hiddenElement, VbBanner hiddenBanner, VbSection hiddenSection)
+    {
+        if (repository.TryGet<IContent>(FieldsExperience, out _))
+        {
+            return;
+        }
+        var sharedFields = repository.TryGet<VbSection>(FieldsSection, out var existing) ? existing : FieldsSectionContent(repository, blocks, mapper);
+
+        var page = repository.GetDefault<VbExperience>(start);
+        page.Name = FieldsExperienceName;
+        page.ContentGuid = FieldsExperience;
+        page.Summary = "Visual Builder elements whose properties the edit UI hides or locks";
+        mapper.Populate(page, FieldsComposition(blocks, sharedFields, "Fields heading", "", null));
+        var link = repository.Save(page, SaveAction.Publish, AccessLevel.NoAccess);
+
+        var draft = (VbExperience)repository.Get<VbExperience>(link.ToReferenceWithoutVersion()).CreateWritableClone();
+        mapper.Populate(draft, FieldsComposition(blocks, sharedFields, "Fields heading, draft", ", draft", (hiddenElement, hiddenBanner, hiddenSection)));
+        var draftLink = repository.Save(draft, SaveAction.Save | SaveAction.ForceNewVersion, AccessLevel.NoAccess);
+        Console.Error.WriteLine($"[mcp-fixture] created the Visual Builder fields experience {link} and its draft {draftLink}");
+    }
+
+    private static Composition FieldsComposition(IBlockPropertyFactory blocks, VbSection sharedFields, string heading, string suffix,
+        (VbTextElement Element, VbBanner Banner, VbSection Section)? hidden)
+    {
+        var column = new StructureNode { Key = FieldsColumnKey, Name = "Fields column", NodeType = LayoutStructureType.Column };
+        column.Nodes.Add(new ComponentNode { Key = FieldsElementKey, Name = "Fields", NodeType = "component", Component = FieldsElement(blocks, heading, suffix) });
+        if (hidden is { } shown)
+        {
+            column.Nodes.Add(new ComponentNode { Key = HiddenElementKey, Name = "Hidden element", NodeType = "component", Component = shown.Element }
+                .WithStyles(VisualBuilderFixture.ElementTemplate, new Dictionary<string, string> { ["color"] = "accent" }));
+        }
+        var row = new StructureNode { Key = FieldsRowKey, Name = "Fields row", NodeType = LayoutStructureType.Row };
+        row.Nodes.Add(column);
+        var section = new SectionNode { Key = FieldsSectionKey, Name = "Fields section", NodeType = "section", LayoutType = "grid", SectionData = blocks.Create<VbSection>() }
+            .WithStyles(VisualBuilderFixture.SectionTemplate, new Dictionary<string, string> { ["background"] = "light" });
+        section.Nodes.Add(row);
+        var composition = new Composition();
+        composition.Nodes.Add(section);
+        composition.Nodes.Add(new SectionNode { Key = SharedFieldsKey, Name = "Shared fields section", NodeType = "section", LayoutType = "grid", SectionData = sharedFields });
+        if (hidden is { } more)
+        {
+            composition.Nodes.Add(new ComponentNode { Key = HiddenBannerKey, Name = "Hidden banner", NodeType = "component", LayoutType = "section", Component = more.Banner });
+            composition.Nodes.Add(new SectionNode { Key = HiddenSectionKey, Name = "Hidden section", NodeType = "section", LayoutType = "grid", SectionData = more.Section });
+        }
+        return composition;
+    }
+
+    /// <summary>An inline McpVbFieldsElement with a value in every property, the hidden and locked ones included.</summary>
+    private static McpVbFieldsElement FieldsElement(IBlockPropertyFactory blocks, string heading, string suffix) => blocks.Create<McpVbFieldsElement>(e =>
+    {
+        e.Heading = heading;
+        e.Hidden = "Hidden value" + suffix;
+        e.Locked = "Locked value" + suffix;
+        e.AdminScripts = "Admin scripts value" + suffix;
+        e.AdminTab = "Admin tab value" + suffix;
+    });
+
+    /// <summary>The shared fields section: a row, a column and a McpVbFieldsElement of its own.</summary>
+    private static VbSection FieldsSectionContent(IContentRepository repository, IBlockPropertyFactory blocks, ICompositionMapper mapper)
+    {
+        var section = repository.GetDefault<VbSection>(ContentReference.GlobalBlockFolder);
+        ((IContent)section).Name = "MCP VB fields section";
+        ((IContent)section).ContentGuid = FieldsSection;
+        var node = new SectionNode { Name = "MCP VB fields section", NodeType = "section", LayoutType = "grid", SectionData = section, Key = FieldsSection.ToString() };
+        node.AddRow("Row").AddColumn("Column").AddComponent(FieldsElement(blocks, "Shared fields heading", " in the shared section"), "Shared fields");
+        mapper.PopulateSection(section, node);
+        // SharedSectionValidator refuses a grid section outside the blueprints.
+        repository.Save((IContent)section, SaveAction.Publish | SaveAction.SkipValidation, AccessLevel.NoAccess);
+        Console.Error.WriteLine("[mcp-fixture] created the shared fields section");
+        return repository.Get<VbSection>(FieldsSection);
     }
 
     /// <summary>A shared section with a row, a column and a text element of its own, made if it isn't there.</summary>
