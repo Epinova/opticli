@@ -418,7 +418,20 @@ internal static class UploadOperation
             }
             using var copy = new MemoryStream();
             output.CopyTo(copy);
-            return copy.ToArray();
+            var stored = copy.ToArray();
+            // The parser writes the markup back in its own form, which isn't always what was checked: an attribute value
+            // in single quotes that holds double quotes comes back in double quotes, unescaped, so text becomes an
+            // attribute of its own (class='" onload="…' is stored as class="" onload="…"). So the file is checked again,
+            // as it would be stored.
+            try
+            {
+                RequireNoScript(call, extension, stored);
+            }
+            catch (AgentException refused)
+            {
+                throw AgentException.Usage($"The CMS's script parser rewrites this file, and as it would store it: {refused.Message}", refused.Hint);
+            }
+            return stored;
         }
     }
 #endif

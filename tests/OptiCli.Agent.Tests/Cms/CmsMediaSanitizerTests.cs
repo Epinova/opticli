@@ -48,6 +48,22 @@ public sealed class CmsMediaSanitizerTests
     }
 
     [Fact]
+    public void What_the_CMS_would_store_is_checked_again()
+    {
+        // Inert as uploaded (the attribute's value is text), live as CMS 13.3's parser writes it back.
+        var uploaded = Encoding.UTF8.GetBytes("""<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1" class='" onload="alert(1)'/></svg>""");
+        var rewritten = Encoding.UTF8.GetBytes("""<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1" class="" onload="alert(1)" /></svg>""");
+        UploadOperation.RequireNoScript(".svg", uploaded);
+
+        var error = Assert.Throws<AgentException>(() => UploadOperation.CmsSanitized(Call(new Validator(_ => new MemoryStream(rewritten))), ".svg", uploaded));
+
+        Assert.Equal(AgentErrorCodes.Usage, error.Code);
+        Assert.StartsWith("The CMS's script parser rewrites this file, and as it would store it: The SVG file has ", error.Message);
+        Assert.Contains("onload", error.Message);
+        Assert.Contains("Nothing was uploaded", error.Hint);
+    }
+
+    [Fact]
     public void Without_the_CMSs_validator_or_a_file_nothing_is_checked()
     {
         Assert.Same(File, UploadOperation.CmsSanitized(Call(null), ".txt", File));
