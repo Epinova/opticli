@@ -23,8 +23,8 @@ namespace OptiCliMcpFixture;
 
 /// <summary>
 /// An element with properties the edit UI hides or locks, as McpFieldsBlock has them: one it doesn't show, one it shows
-/// locked, one an editor descriptor locks for all but WebAdmins, and one on the tab only administrators see. (CMS 13
-/// allows no local block in an element.)
+/// locked, one an editor descriptor locks for all but WebAdmins, and one on the administrators' tab (which the CMS 13
+/// edit UI shows for an inline element whatever its required access). (CMS 13 allows no local block in an element.)
 /// </summary>
 [ContentType(GUID = "6d2e8b4c-1a3f-4c5d-9e7f-0a1b2c3d4e60", DisplayName = "MCP VB fields element", Description = "opticli MCP fixture: an element whose properties the edit UI hides or locks",
     CompositionBehaviors = [CompositionBehavior.ElementEnabledKey])]

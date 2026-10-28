@@ -60,8 +60,9 @@ public class CmsCompositionReadTests
 
         Assert.Equal(("experience", "Experience", "Exp"), (root.NodeType, root.Name, root.Type));
         var (inline, hiddenElement, readableElement) = Column(root);
-        // The inline element in the experience: by the experience's access rights, which have no Administer.
-        Assert.Equal(["Heading"], inline.Properties!.Keys);
+        // The inline element in the experience: what the edit UI hides is left out; a tab needing Administer, which the
+        // editor lacks on the experience, is shown, as the CMS 13 edit UI shows an inline element's tabs whatever their access.
+        Assert.Equal(["AdminTabbed", "Heading"], inline.Properties!.Keys.Order(StringComparer.Ordinal));
         Assert.Equal(new ContentItemCompositionNode("component") { Key = "k-hidden-element", Ref = "50", DisplayTemplate = "vbElement" },
             hiddenElement with { DisplaySettings = null }, new NodeComparer());
         Assert.Equal("accent", hiddenElement.DisplaySettings!["color"]);
@@ -71,7 +72,7 @@ public class CmsCompositionReadTests
         // In the outline: a section-enabled block and a section alike, without styles, a name, a type or nodes.
         Assert.Equal(new ContentItemCompositionNode("section") { Key = "k-hidden-banner", Ref = "52" }, outline[1], new NodeComparer());
         Assert.Equal(new ContentItemCompositionNode("section") { Key = "k-hidden-section", Ref = "53" }, outline[2], new NodeComparer());
-        // A shared section the editor reads: its own nodes, its element by the section's access rights (Administer there).
+        // A shared section the editor reads: its own nodes, and its element's properties as the edit UI shows them.
         var shared = outline[3];
         Assert.Equal(("Shared section", "54"), (shared.Name, shared.Ref));
         var inShared = shared.Nodes!.Single().Nodes!.Single().Nodes!.Single();
@@ -108,14 +109,14 @@ public class CmsCompositionReadTests
         var shown = Assert.Single(Call(CmsCaller.Editor, fixture).Properties.Shown(fixture.Experience, changes));
         var column = (JsonObject)JsonNode.Parse(shown.After!.Value.GetRawText())!["nodes"]![0]!["nodes"]![0]!["nodes"]![0]!;
         var nodes = column["nodes"]!.AsArray();
-        Assert.Equal("""{"Heading":"New"}""", nodes[0]!["properties"]!.ToJsonString());
+        Assert.Equal("""{"Heading":"New","AdminTabbed":"t2"}""", nodes[0]!["properties"]!.ToJsonString());
         Assert.Equal("""{"nodeType":"component","key":"k-hidden-element","ref":"50","displayTemplate":"vbElement","displaySettings":{"color":"accent"}}""", nodes[1]!.ToJsonString());
         var outline = JsonNode.Parse(shown.After!.Value.GetRawText())!["nodes"]!.AsArray();
         Assert.Equal("""{"nodeType":"section","key":"k-hidden-section","ref":"53"}""", outline[1]!.ToJsonString());
-        Assert.Equal("""{"Heading":"Old"}""", JsonNode.Parse(shown.Before!.Value.GetRawText())!["nodes"]![0]!["nodes"]![0]!["nodes"]![0]!["nodes"]![0]!["properties"]!.ToJsonString());
+        Assert.Equal("""{"Heading":"Old","AdminTabbed":"t1"}""", JsonNode.Parse(shown.Before!.Value.GetRawText())!["nodes"]![0]!["nodes"]![0]!["nodes"]![0]!["nodes"]![0]!["properties"]!.ToJsonString());
 
         // A change to nothing but what the editor doesn't see isn't shown at all.
-        var hiddenOnly = new List<PropertyChange> { new("composition", before, Snapshot(heading: "Old", scaffolded: "s2", tabbed: "t2", hidden: false)) };
+        var hiddenOnly = new List<PropertyChange> { new("composition", before, Snapshot(heading: "Old", scaffolded: "s2", tabbed: "t1", hidden: false)) };
         Assert.Empty(Call(CmsCaller.Editor, fixture).Properties.Shown(fixture.Experience, hiddenOnly));
     }
 

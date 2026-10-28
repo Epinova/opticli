@@ -129,15 +129,19 @@ internal sealed class EditUiProperties(CmsCall call, bool check)
             .OfType<PropertyChange>()];
 
     /// <summary>
-    /// Remembers that <paramref name="block"/>, which isn't content, is part of <paramref name="content"/> as an inline
-    /// block in a ContentArea is (<see cref="TabShown"/>): an inline section or element of a Visual Builder composition,
-    /// which the edit UI edits as part of the experience, or the shared section, it is in.
+    /// Remembers that <paramref name="block"/>, which isn't content, is an inline section or element of the Visual
+    /// Builder composition of <paramref name="content"/> (an experience, or a shared section). Its tabs are shown as a
+    /// local block's are, whatever access they require (<see cref="TabShown"/>): the CMS 13 edit UI (13.3) builds an
+    /// inline element's form from the composition (<c>contentItemLocator</c>) and shows every tab of it, also to an editor
+    /// without the access a tab requires on the experience or the section. What the edit UI hides or locks otherwise
+    /// (its metadata, <c>[ScaffoldColumn(false)]</c>, <c>[Editable(false)]</c>) still applies.
     /// </summary>
     public void Within(IContentData block, IContent content)
     {
         if (check && block is not IContent)
         {
-            _held.TryAdd(block, (content, false));
+            // Also over what reading the content's storage property (Layout) recorded for the same block.
+            _held[block] = (content, true);
         }
     }
 
@@ -348,6 +352,7 @@ internal sealed class EditUiProperties(CmsCall call, bool check)
     /// edited. Its form is built for a new block of its type below that content, which gets the content's access rights.
     /// </item>
     /// <item>A local block: shown, whatever the tab. Its properties are nested in its owner's form, which no access rights go with.</item>
+    /// <item>CMS 13: an inline section or element of a Visual Builder composition (<see cref="Within"/>): shown, whatever the tab, as the edit UI does.</item>
     /// </list>
     /// </summary>
     /// <remarks>

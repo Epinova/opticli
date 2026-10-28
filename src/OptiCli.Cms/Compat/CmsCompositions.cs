@@ -48,7 +48,7 @@ internal static class CmsCompositions
     /// <summary>
     /// The composition the CMS reads for an experience or a section (shared blocks loaded whether published or not); null
     /// for other content. For an editor it follows the rules of every other read: an inline block's properties are those
-    /// the edit UI shows them (<paramref name="properties"/>, by the content the block is in), and shared content they
+    /// the edit UI shows them (<paramref name="properties"/>; see <c>EditUiProperties.Within</c>), and shared content they
     /// can't read is only a place in the composition (<see cref="UnreadablePlace"/>), as a ContentArea shows such an item.
     /// </summary>
     /// <param name="properties">Renders a block's properties.</param>
@@ -150,7 +150,7 @@ internal static class CmsCompositions
         }
         if (block is not null && sharedContent is null)
         {
-            // An inline block is edited as part of the content it is in, which decides what of it the editor sees.
+            // An inline block is edited as part of the content it is in; the edit UI shows its tabs whatever their access.
             call.Properties.Within(block, within);
         }
         return new ContentItemCompositionNode(node.NodeType)

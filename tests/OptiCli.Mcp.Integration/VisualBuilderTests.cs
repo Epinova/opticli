@@ -40,8 +40,11 @@ public sealed class VisualBuilderTests(SharedSessions sessions)
         "Hidden element", "Hidden banner", "Hidden section",
     ];
 
-    /// <summary>The values of McpVbFieldsElement's properties the edit UI hides or locks for an editor, in any version.</summary>
-    private static readonly string[] HiddenValues = ["Hidden value", "Locked value", "Admin scripts value", "Admin tab value"];
+    /// <summary>
+    /// The values of McpVbFieldsElement's properties the edit UI hides or locks for an editor, in any version. Not its
+    /// administrators' tab: the CMS 13 edit UI shows an inline element's tabs whatever access they require.
+    /// </summary>
+    private static readonly string[] HiddenValues = ["Hidden value", "Locked value", "Admin scripts value"];
 
     [McpCms13SiteFact]
     public async Task Shared_content_an_editor_cannot_read_is_only_its_place_in_a_composition()
@@ -104,19 +107,20 @@ public sealed class VisualBuilderTests(SharedSessions sessions)
         {
             var composition = (await editor.OkAsync("get_content", read)).GetProperty("composition");
             AssertNothingHidden(composition, TestUsers.Editor);
-            // The inline element in an inline section: Heading, without what the edit UI hides or locks.
+            // The inline element in an inline section: without what the edit UI hides or locks. The administrators' tab is
+            // shown, as the CMS 13 edit UI shows an inline element's tabs to an editor without the access they require.
             var fields = Fields(composition, FieldsElementKey);
-            Assert.Equal(["Heading"], fields.EnumerateObject().Select(p => p.Name));
-            // The element inside the shared section, by that section's access rights.
+            Assert.Equal(["Heading", "AdminTab"], fields.EnumerateObject().Select(p => p.Name));
+            // The element inside the shared section, likewise.
             var shared = Nodes(composition).Single(n => n.Node.TryGetProperty("name", out var name) && name.GetString() == "Shared fields").Node.GetProperty("properties");
-            Assert.Equal(["Heading"], shared.EnumerateObject().Select(p => p.Name));
+            Assert.Equal(["Heading", "AdminTab"], shared.EnumerateObject().Select(p => p.Name));
         }
 
         // The shared section read on its own.
         var section = (await editor.OkAsync("get_content", new { reference = FieldsSection })).GetProperty("composition");
         AssertNothingHidden(section, TestUsers.Editor);
         var inSection = Nodes(section).Single(n => n.Node.TryGetProperty("properties", out _)).Node.GetProperty("properties");
-        Assert.Equal(["Heading"], inSection.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(["Heading", "AdminTab"], inSection.EnumerateObject().Select(p => p.Name));
     }
 
     [McpCms13SiteFact]
@@ -128,11 +132,11 @@ public sealed class VisualBuilderTests(SharedSessions sessions)
         Assert.Equal("checkedOut", latest.GetProperty("status").GetString());
         var draft = latest.GetProperty("version").GetInt32();
 
-        // The administrator's view of the draft's changes: the hidden shared content and the values behind the admin tab.
+        // The administrator's view of the draft's changes: the hidden shared content and the values the edit UI locks.
         var forAdmin = await admin.OkAsync("discard_draft", new { reference = FieldsExperience, dryRun = true });
         var adminChange = Assert.Single(forAdmin.GetProperty("changes").EnumerateArray(), c => c.GetProperty("property").GetString() == "composition");
         Assert.Contains("Hidden banner", adminChange.GetRawText());
-        Assert.Contains("Admin tab value, draft", adminChange.GetRawText());
+        Assert.Contains("Admin scripts value, draft", adminChange.GetRawText());
 
         // The editor: a discard's dry run, a publish's dry run (the draft by nobody they'd put live), and the publish refused for it.
         var discard = await editor.OkAsync("discard_draft", new { reference = FieldsExperience, dryRun = true });
@@ -149,6 +153,7 @@ public sealed class VisualBuilderTests(SharedSessions sessions)
             // What the editor may see of the change is there: the inline element's new heading, the hidden content's places.
             Assert.Equal("Fields heading", Fields(change.GetProperty("before"), FieldsElementKey).GetProperty("Heading").GetString());
             Assert.Equal("Fields heading, draft", Fields(change.GetProperty("after"), FieldsElementKey).GetProperty("Heading").GetString());
+            Assert.Equal("Admin tab value, draft", Fields(change.GetProperty("after"), FieldsElementKey).GetProperty("AdminTab").GetString());
             AssertNothingHidden(change, TestUsers.Editor);
             var after = Nodes(change.GetProperty("after")).ToList();
             Assert.Equal(3, after.Count(n => n.Node.TryGetProperty("ref", out var r) && !n.Node.TryGetProperty("name", out _)));
