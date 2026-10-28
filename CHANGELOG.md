@@ -38,7 +38,7 @@ transport. A site with only the module isn't affected by them.
 
 - **Each MCP endpoint serves only its own server.** The SDK keeps one set of server options for the whole application,
   so the module's endpoint also offered the other server's tools to editors' assistants, and the other endpoint listed
-  the module's tools (which refused to run without an editor's sign-in) under the module's name and instructions. Now
+  the module's tools (which refused to run there) under the module's name and instructions. Now
   the module's endpoint has the module's tools only, and the other endpoint keeps its own tools, name and instructions.
 - **Sessions are bound to the editor's connection and to the module's endpoint.** Where the other server turned on
   sessions or legacy SSE, the SDK found a session by its ID alone, at any endpoint. Now the module's endpoint takes only
@@ -46,9 +46,9 @@ transport. A site with only the module isn't affected by them.
   serves POST only (and a DELETE that ends one of its own sessions), never a GET stream or legacy SSE. The module's
   sign-in carries a `sub` claim with the connection's ID, which the SDK binds a session to; site code that runs during a
   tool call sees it.
-- **A bounded session registry.** The module keeps at most as many sessions as the SDK keeps idle ones
-  (`MaxIdleSessionCount`, at least 1,000), the least recently used dropped first, so an editor's assistant that makes
-  sessions in a loop costs bounded memory and time.
+- **A bounded session registry.** The module prunes the sessions it keeps to as many as the SDK keeps idle ones
+  (`MaxIdleSessionCount`, at least 1,000), the least recently used first, so an editor's assistant that makes sessions
+  in a loop costs bounded memory and time.
 - **Fails closed.** If code registered after `AddOptiCliMcp` replaces the SDK hook the module keeps the servers apart
   with, the module's endpoint refuses every request and the site's log says why at startup, rather than serve without
   it.

@@ -1317,7 +1317,7 @@ login cookies.
 Requirements: `OptiCli.Mcp` needs .NET 8 or newer, `EPiServer.CMS.Core` 12.12.1 or newer and `EPiServer.CMS.UI.Core`
 12.16.1 or newer (the first CMS 12 versions whose dependencies allow the MCP SDK's `Microsoft.Extensions` 10.x
 packages). A CMS 12 site on .NET 10 uses it too: the package goes by the CMS version, not by .NET's.
-`OptiCli.Mcp.Cms13` needs `EPiServer.CMS.Core` and `EPiServer.CMS.UI.Core` 13.0.0 or newer, and brings
+`OptiCli.Mcp.Cms13` needs .NET 10, `EPiServer.CMS.Core` and `EPiServer.CMS.UI.Core` 13.0.0 or newer, and brings
 `EPiServer.ImageLibrary` (CMS 13's image service, which `view_media` scales images with). Both bring the official MCP
 C# SDK (`ModelContextProtocol.AspNetCore` 2.2.0).
 
@@ -1338,7 +1338,7 @@ connect their assistant once more after the upgrade.
 
 ### On CMS 13
 
-Everything in this section holds on CMS 13 too. What is different there:
+Everything else under [MCP server for editors](#mcp-server-for-editors) holds on CMS 13 too. What is different there:
 
 - **Visual Builder.** `get_content` of an experience gives its composition: sections, rows, columns and elements, with
   their display templates and settings and the elements' properties. It follows the same rules as every other read:
@@ -1452,8 +1452,8 @@ module sees to it that each endpoint serves only its own server:
   itself, from the connection that made it: any other session ID gets 404 "Session not found", and the client starts a
   new session. The module's sessions don't work at the other endpoint either. They are bound to the connection by a
   `sub` claim with the connection's ID on the module's own sign-in, so site code that runs during a tool call (a
-  content event handler, say) sees that ID as `sub`. The module keeps at most as many sessions as the SDK keeps idle
-  ones (`MaxIdleSessionCount`, at least 1,000), and drops the least recently used first.
+  content event handler, say) sees that ID as `sub`. The module forgets sessions the SDK has dropped, and prunes the
+  rest to as many as the SDK keeps idle ones (`MaxIdleSessionCount`, at least 1,000), the least recently used first.
 - Registered before `AddOptiCliMcp`, the other server's `Stateless = false` loses to the module's setting, and with
   legacy SSE the site fails at startup with the SDK's own message: register it after `AddOptiCliMcp`.
 - The module keeps the servers apart with the SDK's `HttpServerTransportOptions.ConfigureSessionOptions` hook, and runs
