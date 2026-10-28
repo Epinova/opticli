@@ -89,7 +89,7 @@ internal sealed class ReadValues(IContentTypeRepository types, Func<IContentData
     };
 
     /// <summary>
-    /// A custom property type's value as the property writes it to the database (<see cref="PropertyData.SaveData"/>):
+    /// A custom property type's value as the property writes it to the database (<see cref="PropertyData.SaveData(PropertyDataCollection)"/>):
     /// its items are the site's own classes, whose serialised shape only the property knows. Properties that store
     /// text (JSON, usually) return it as is; list properties return their items, which the CMS stores as camelCase JSON.
     /// </summary>

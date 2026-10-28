@@ -308,6 +308,31 @@ public sealed class ToolTests
         Assert.ThrowsAny<McpException>(() => ToolGates.Upload("logo.svg", Convert.ToBase64String(new byte[11]), site, new CmsUploadRules(100, [])));
     }
 
+#if CMS13
+    [Fact]
+    public void The_CMSs_media_file_rules_are_what_the_CMS_13_edit_UI_applies()
+    {
+        Assert.Null(CmsUploadRules.From(null));
+        var unset = CmsUploadRules.From(new EPiServer.Core.MediaFileOptions { FileSizeLimit = 1234 })!;
+        Assert.Equal((1234L, 0), (unset.FileSizeLimit, unset.AllowedExtensions.Count));
+
+        var rules = CmsUploadRules.From(MediaFileOptions(99, ".jpg", ".png"))!;
+        Assert.Equal([".jpg", ".png"], rules.AllowedExtensions.Order());
+        Assert.True(rules.Allows(".PNG"));
+        Assert.False(rules.Allows(".svg"));
+        Assert.Empty(CmsUploadRules.From(MediaFileOptions(99, ".jpg", "*"))!.AllowedExtensions);
+    }
+
+    private static EPiServer.Core.MediaFileOptions MediaFileOptions(long limit, params string[] extensions)
+    {
+        var options = new EPiServer.Core.MediaFileOptions { FileSizeLimit = limit };
+        foreach (var extension in extensions)
+        {
+            options.AllowedFileExtensions.Add(extension);
+        }
+        return options;
+    }
+#else
     [Fact]
     public void The_CMS_UIs_upload_rules_are_read_from_its_options_also_the_extensions_only_newer_versions_have()
     {
@@ -321,13 +346,19 @@ public sealed class ToolTests
         Assert.False(newer.Allows(".svg"));
         Assert.Empty(CmsUploadRules.From(new NewerUploadOptions { AllowedFileExtensions = ".jpg,*" })!.AllowedExtensions);
     }
+#endif
 
     [Fact]
     public async Task An_upload_with_an_extension_the_site_doesnt_allow_is_refused_before_it_reaches_the_cms()
     {
+#if CMS13
+        // Registered as the CMS registers its options: the options type itself, too.
+        await using var site = await TestSite.StartAsync(services: s => s.AddSingleton(MediaFileOptions(3, ".jpg", ".png")));
+#else
         // Registered as the CMS UI registers its options: the options type itself.
         await using var site = await TestSite.StartAsync(services: s => s.AddSingleton<EPiServer.Cms.Shell.UI.Configurations.UploadOptions>(
             new NewerUploadOptions { FileSizeLimit = 3, AllowedFileExtensions = ".jpg,.png" }));
+#endif
         await using var client = await Connect(site);
 
         var svg = await CallFailing(client, "upload_media", """{"fileName":"logo.svg","parent":"123","dryRun":true}""");
@@ -337,11 +368,13 @@ public sealed class ToolTests
         Assert.Contains("larger than this site lets assistants upload", large.Message);
     }
 
+#if !CMS13
     /// <summary>The CMS UI's upload options as from version 12.33, with the extension list (the module builds against an older one).</summary>
     private sealed class NewerUploadOptions : EPiServer.Cms.Shell.UI.Configurations.UploadOptions
     {
         public string? AllowedFileExtensions { get; set; }
     }
+#endif
 
     [Fact]
     public void Discarding_what_someone_else_saved_needs_the_site_to_allow_deleting()

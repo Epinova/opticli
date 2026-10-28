@@ -152,7 +152,11 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
             DryRun = dryRun,
         }), editor =>
         {
+#if CMS13
+            ToolGates.Upload(fileName, data, Site, CmsUploadRules.From(RequestService<EPiServer.Core.MediaFileOptions>()));
+#else
             ToolGates.Upload(fileName, data, Site, CmsUploadRules.From(RequestService<UploadOptions>()));
+#endif
             PublishingIf(publish)?.Invoke(editor);
         });
 

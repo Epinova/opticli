@@ -30,7 +30,11 @@ internal sealed class CmsUiMetadata(IServiceProvider services, ILogger<CmsUiMeta
         try
         {
             var all = new Dictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>(ReferenceEqualityComparer.Instance);
+#if CMS13
+            Walk(PropertiesOf(provider.GetExtendedMetadataForType(typeof(ContentData), () => owner)), owner, all);
+#else
             Walk(provider.GetExtendedMetadataForType(typeof(ContentData), () => owner).Properties, owner, all);
+#endif
             return all;
         }
         catch (Exception e) when (e is not OperationCanceledException)
@@ -62,7 +66,11 @@ internal sealed class CmsUiMetadata(IServiceProvider services, ILogger<CmsUiMeta
             }
             var model = services.GetRequiredService<EPiServer.IContentRepository>().GetDefault<IContent>(ContentReference.RootPage, type.ID);
             var all = new Dictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>(ReferenceEqualityComparer.Instance);
+#if CMS13
+            Walk(PropertiesOf(provider.GetExtendedMetadataForType(typeof(ContentData), () => model)), owner, all);
+#else
             Walk(provider.GetExtendedMetadataForType(typeof(ContentData), () => model).Properties, owner, all);
+#endif
             return all;
         }
         catch (Exception e) when (e is not OperationCanceledException)
@@ -97,7 +105,11 @@ internal sealed class CmsUiMetadata(IServiceProvider services, ILogger<CmsUiMeta
             {
                 try
                 {
+#if CMS13
+                    Walk(PropertiesOf(property), block, all);
+#else
                     Walk(property.Properties, block, all);
+#endif
                 }
                 catch (Exception e) when (e is not OperationCanceledException)
                 {
@@ -107,4 +119,13 @@ internal sealed class CmsUiMetadata(IServiceProvider services, ILogger<CmsUiMeta
         }
         all[owner] = restricted;
     }
+#if CMS13
+
+    /// <summary>
+    /// The metadata of <paramref name="metadata"/>'s properties, as CMS 13's edit UI gets them: its sync
+    /// <c>ExtendedMetadata.Properties</c> is empty there, and only this runs the editor descriptors and metadata
+    /// extenders of each property. The content operations are synchronous, as the CMS's own ones are.
+    /// </summary>
+    private static IEnumerable<ExtendedMetadata> PropertiesOf(ExtendedMetadata metadata) => metadata.GetPropertiesAsync().GetAwaiter().GetResult();
+#endif
 }

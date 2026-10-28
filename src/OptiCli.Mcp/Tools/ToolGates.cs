@@ -115,6 +115,14 @@ internal static class ToolGates
 /// <param name="AllowedExtensions">Extensions as configured (<c>.jpg</c> or <c>jpg</c>); empty when any is allowed.</param>
 internal sealed record CmsUploadRules(long? FileSizeLimit, IReadOnlyList<string> AllowedExtensions)
 {
+#if CMS13
+    /// <summary>
+    /// The rules of the CMS's <see cref="EPiServer.Core.MediaFileOptions"/> (<c>EPiServer:Cms:MediaFile</c>), which CMS
+    /// 13's edit UI applies in place of the CMS UI's own; null without them. "*" among the extensions allows any.
+    /// </summary>
+    public static CmsUploadRules? From(EPiServer.Core.MediaFileOptions? options) =>
+        options is null ? null : new CmsUploadRules(options.FileSizeLimit, options.AllowedFileExtensions.Contains("*") ? [] : [.. options.AllowedFileExtensions]);
+#else
     /// <summary>The rules of the CMS UI's <see cref="UploadOptions"/>; null without them.</summary>
     public static CmsUploadRules? From(UploadOptions? options)
     {
@@ -127,6 +135,7 @@ internal sealed record CmsUploadRules(long? FileSizeLimit, IReadOnlyList<string>
         var extensions = (configured ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
         return new CmsUploadRules(options.FileSizeLimit, extensions.Contains("*") ? [] : extensions);
     }
+#endif
 
     /// <summary>Whether <paramref name="extension"/> (<c>.jpg</c>) is allowed, matched as the edit UI matches it: it ends with an allowed one.</summary>
     public bool Allows(string extension) =>
