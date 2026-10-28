@@ -3,13 +3,22 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
-## Unreleased
+## 0.25.0 (28 October 2026)
+
+The MCP server for editors is no longer a preview, and it comes with a Claude Desktop extension.
 
 ### MCP server for editors
 
 - **No longer a preview.** `OptiCli.Mcp` is published as a regular release with the same version as the CLI (no
   `-preview` suffix), so `dotnet add package OptiCli.Mcp` installs it without `--prerelease`. It still supports CMS 12
   only (12.12.1 / CMS UI 12.16.1 or newer).
+- **Claude Desktop extension.** `opticli-cms.mcpb` is attached to every GitHub release. Editors open it in Claude
+  Desktop and enter the site's address; it connects from their own machine through mcp-remote, so nobody has to add a
+  connector for the organization. `mcp-extension/build.mjs` builds one with a site's address built in, named after its
+  host, so test and production install side by side.
+- The README describes the module as an MCP server for any assistant with an OAuth sign-in: clients on the editor's
+  machine connect as they are, web-based ones from `AllowedRedirectHosts`. Claude's own ways in are under
+  "Connecting Claude".
 
 ## 0.24.0 (26 October 2026)
 
