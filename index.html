@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>opticli: Optimizely content for coding agents</title>
-<meta name="description" content="opticli lets your coding agent read and change the content of an Optimizely CMS 12 or 13 site through the CMS's own API, as drafts you review. Production is read-only.">
+<meta name="description" content="opticli lets your coding agent read and edit content in an Optimizely CMS 12 or 13 site through the CMS API, saved as drafts you review. Production is read-only.">
 <meta property="og:title" content="opticli: Optimizely content for coding agents">
-<meta property="og:description" content="Let your coding agent change Optimizely content, as drafts you review. Production is read-only.">
+<meta property="og:description" content="Let your coding agent edit Optimizely content. You review the drafts. Production is read-only.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://epinova.github.io/opticli/">
 <meta name="twitter:card" content="summary">
@@ -37,13 +37,13 @@
 
 <main>
 <section class="change wrap" id="change" data-mode="draft">
-  <h1>Let your coding agent change Optimizely content, <em>as drafts you review</em></h1>
+  <h1>Let your coding agent edit Optimizely content. <em>You review the drafts.</em></h1>
   <div class="change-head">
-    <p class="lead">Your coding agent runs opticli to look up and change pages and blocks. Changes go through the CMS's own API in your running site, so the CMS validates and versions them, and saves them as drafts for you to review. Production is only ever read.</p>
+    <p class="lead">Your coding agent uses opticli to find and edit pages and blocks. Edits go through the CMS API in your running site, so they're validated, versioned and saved as drafts. Production is read-only.</p>
     <aside class="checkout" aria-labelledby="checkout-h">
       <h2 id="checkout-h">Install</h2>
       <div class="copyline"><code id="install">dotnet tool install -g OptiCli</code><button class="copy" type="button" data-copy="install">Copy</button></div>
-      <p>Then run <code>opticli skill install</code> in your site's repository to teach Claude Code to use it. Needs the .NET 8 SDK or newer, for CMS 12 and CMS 13.</p>
+      <p>Then run <code>opticli skill install</code> in your site's repository so Claude Code knows how to use it. Requires the .NET 8 SDK or newer. Works with CMS 12 and 13.</p>
     </aside>
   </div>
 
@@ -93,16 +93,15 @@ hint: opticli writes to a production database only through a sealed apply, which
       <li class="no" data-show="prod"><svg class="icon" aria-hidden="true"><use href="#i-no"/></svg>write refused, dry runs too</li>
     </ul>
   </article>
-  <p class="example">An example on Optimizely's Alloy sample site, using opticli's own output fields and messages. The screencast below shows real runs.</p>
+  <p class="example">An illustration built from opticli's real output, on Optimizely's Alloy sample site. The screencast below shows actual runs.</p>
 </section>
 
 <section class="part wrap" id="commits" aria-labelledby="commits-h">
   <div class="part-head">
     <h2 id="commits-h">Watch it work</h2>
-    <p>Eleven minutes on Optimizely's Alloy sample site, in 14 chapters, with long pauses cut. Pick a chapter to play it, or copy its link to share it.</p>
   </div>
   <div class="term">
-    <div class="term-bar"><b>Screencast</b><span>opticli on the Alloy sample site · CMS 12 · .NET 8</span></div>
+    <div class="term-bar"><b>Screencast</b><span>Alloy sample site · CMS 12 · .NET 8 · 11 min, long pauses cut</span></div>
     <div class="player" id="player"></div>
   </div>
   <nav class="chapters" id="chapters" aria-label="Screencast chapters"><div class="timeline" role="group" aria-label="Chapters on a timeline"><button type="button" data-index="0" data-n="1" data-start="4.016" data-end="28.848" aria-current="false" style="--len: 24.8" title="1 · No setup · 0:04" aria-label="Chapter 1: No setup, at 0:04"><span class="bar"></span></button><button type="button" data-index="1" data-n="2" data-start="28.848" data-end="58.34" aria-current="false" style="--len: 29.5" title="2 · Find the content · 0:28" aria-label="Chapter 2: Find the content, at 0:28"><span class="bar"></span></button><button type="button" data-index="2" data-n="3" data-start="58.34" data-end="75.622" aria-current="false" style="--len: 17.3" title="3 · Find the code · 0:58" aria-label="Chapter 3: Find the code, at 0:58"><span class="bar"></span></button><button type="button" data-index="3" data-n="4" data-start="75.622" data-end="157.749" aria-current="false" style="--len: 82.1" title="4 · Make the change · 1:15" aria-label="Chapter 4: Make the change, at 1:15"><span class="bar"></span></button><button type="button" data-index="4" data-n="5" data-start="157.749" data-end="230.833" aria-current="false" style="--len: 73.1" title="5 · A section as a plan · 2:37" aria-label="Chapter 5: A section as a plan, at 2:37"><span class="bar"></span></button><button type="button" data-index="5" data-n="6" data-start="230.833" data-end="259.49" aria-current="false" style="--len: 28.7" title="6 · Run it again · 3:50" aria-label="Chapter 6: Run it again, at 3:50"><span class="bar"></span></button><button type="button" data-index="6" data-n="7" data-start="259.49" data-end="329.941" aria-current="false" style="--len: 70.5" title="7 · Safety nets · 4:19" aria-label="Chapter 7: Safety nets, at 4:19"><span class="bar"></span></button><button type="button" data-index="7" data-n="8" data-start="329.941" data-end="373.196" aria-current="false" style="--len: 43.3" title="8 · Scheduled jobs · 5:29" aria-label="Chapter 8: Scheduled jobs, at 5:29"><span class="bar"></span></button><button type="button" data-index="8" data-n="9" data-start="373.196" data-end="412.129" aria-current="false" style="--len: 38.9" title="9 · Clean up leftovers · 6:13" aria-label="Chapter 9: Clean up leftovers, at 6:13"><span class="bar"></span></button><button type="button" data-index="9" data-n="10" data-start="412.129" data-end="445.695" aria-current="false" style="--len: 33.6" title="10 · Production is read-only · 6:52" aria-label="Chapter 10: Production is read-only, at 6:52"><span class="bar"></span></button><button type="button" data-index="10" data-n="11" data-start="445.695" data-end="485.684" aria-current="false" style="--len: 40.0" title="11 · Pull from production · 7:25" aria-label="Chapter 11: Pull from production, at 7:25"><span class="bar"></span></button><button type="button" data-index="11" data-n="12" data-start="485.684" data-end="551.253" aria-current="false" style="--len: 65.6" title="12 · Push to production · 8:05" aria-label="Chapter 12: Push to production, at 8:05"><span class="bar"></span></button><button type="button" data-index="12" data-n="13" data-start="551.253" data-end="624.729" aria-current="false" style="--len: 73.5" title="13 · See it while debugging · 9:11" aria-label="Chapter 13: See it while debugging, at 9:11"><span class="bar"></span></button><button type="button" data-index="13" data-n="14" data-start="624.729" data-end="683.648" aria-current="false" style="--len: 58.9" title="14 · Let an agent do it · 10:24" aria-label="Chapter 14: Let an agent do it, at 10:24"><span class="bar"></span></button></div><div class="index"><div class="group" role="group" aria-labelledby="chapters-g0"><p class="label" id="chapters-g0">Find and change</p><ol><li><a href="#chapter-1" data-index="0" data-n="1" data-start="4.016" data-end="28.848" aria-current="false"><span class="n">01</span><span class="t">No setup</span><span class="time">0:04</span><span class="dur">25 s</span></a></li><li><a href="#chapter-2" data-index="1" data-n="2" data-start="28.848" data-end="58.34" aria-current="false"><span class="n">02</span><span class="t">Find the content</span><span class="time">0:28</span><span class="dur">29 s</span></a></li><li><a href="#chapter-3" data-index="2" data-n="3" data-start="58.34" data-end="75.622" aria-current="false"><span class="n">03</span><span class="t">Find the code</span><span class="time">0:58</span><span class="dur">17 s</span></a></li><li><a href="#chapter-4" data-index="3" data-n="4" data-start="75.622" data-end="157.749" aria-current="false"><span class="n">04</span><span class="t">Make the change</span><span class="time">1:15</span><span class="dur">82 s</span></a></li></ol></div><div class="group" role="group" aria-labelledby="chapters-g1"><p class="label" id="chapters-g1">Plans</p><ol><li><a href="#chapter-5" data-index="4" data-n="5" data-start="157.749" data-end="230.833" aria-current="false"><span class="n">05</span><span class="t">A section as a plan</span><span class="time">2:37</span><span class="dur">73 s</span></a></li><li><a href="#chapter-6" data-index="5" data-n="6" data-start="230.833" data-end="259.49" aria-current="false"><span class="n">06</span><span class="t">Run it again</span><span class="time">3:50</span><span class="dur">29 s</span></a></li></ol></div><div class="group" role="group" aria-labelledby="chapters-g2"><p class="label" id="chapters-g2">Safety and operations</p><ol><li><a href="#chapter-7" data-index="6" data-n="7" data-start="259.49" data-end="329.941" aria-current="false"><span class="n">07</span><span class="t">Safety nets</span><span class="time">4:19</span><span class="dur">70 s</span></a></li><li><a href="#chapter-8" data-index="7" data-n="8" data-start="329.941" data-end="373.196" aria-current="false"><span class="n">08</span><span class="t">Scheduled jobs</span><span class="time">5:29</span><span class="dur">43 s</span></a></li><li><a href="#chapter-9" data-index="8" data-n="9" data-start="373.196" data-end="412.129" aria-current="false"><span class="n">09</span><span class="t">Clean up leftovers</span><span class="time">6:13</span><span class="dur">39 s</span></a></li></ol></div><div class="group" role="group" aria-labelledby="chapters-g3"><p class="label" id="chapters-g3">Environments</p><ol><li><a href="#chapter-10" data-index="9" data-n="10" data-start="412.129" data-end="445.695" aria-current="false"><span class="n">10</span><span class="t">Production is read-only</span><span class="time">6:52</span><span class="dur">34 s</span></a></li><li><a href="#chapter-11" data-index="10" data-n="11" data-start="445.695" data-end="485.684" aria-current="false"><span class="n">11</span><span class="t">Pull from production</span><span class="time">7:25</span><span class="dur">40 s</span></a></li><li><a href="#chapter-12" data-index="11" data-n="12" data-start="485.684" data-end="551.253" aria-current="false"><span class="n">12</span><span class="t">Push to production</span><span class="time">8:05</span><span class="dur">66 s</span></a></li></ol></div><div class="group" role="group" aria-labelledby="chapters-g4"><p class="label" id="chapters-g4">Your IDE and your agent</p><ol><li><a href="#chapter-13" data-index="12" data-n="13" data-start="551.253" data-end="624.729" aria-current="false"><span class="n">13</span><span class="t">See it while debugging</span><span class="time">9:11</span><span class="dur">73 s</span></a></li><li><a href="#chapter-14" data-index="13" data-n="14" data-start="624.729" data-end="683.648" aria-current="false"><span class="n">14</span><span class="t">Let an agent do it</span><span class="time">10:24</span><span class="dur">59 s</span></a></li></ol></div></div></nav>
@@ -111,11 +110,10 @@ hint: opticli writes to a production database only through a sealed apply, which
 <section class="part wrap" id="what-its-for" aria-labelledby="files-h">
   <div class="part-head">
     <h2 id="files-h">What it does</h2>
-    <p>Grouped by what you're working on. Each feature shows its command and links to the chapter of the screencast where you can see it.</p>
   </div>
   <div class="files">
     <article class="file">
-      <div class="file-bar"><h3>Read content</h3><small>5 features · chapters 2 and 3</small></div>
+      <div class="file-bar"><h3>Read content</h3></div>
       <div class="change-row">
         <div class="hunk-h"><h4 class="row-h">Answer content questions without SQL</h4><a class="play" href="#chapter-2"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 2 · Find the content</a></div>
         <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">get</span> <span class="tok">123</span> <span class="tok">--fields</span> <span class="tok">MainContentArea</span></code></div>
@@ -132,21 +130,19 @@ hint: opticli writes to a production database only through a sealed apply, which
         <p>Find every page and block that references an item, through nested blocks all the way up to pages. You can also resolve a URL to content, or list the unpublished drafts.</p>
       </div>
       <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">What happened to it?</h4></div>
+        <div class="hunk-h"><h4 class="row-h">Content history</h4></div>
         <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">history</span> <span class="tok">123</span></code></div>
-        <p><code>history</code> reads the change log for one item: moves, deletes, restores and publishes, with who and
-          when.</p>
+        <p>See an item's change log: moves, deletes, restores and publishes, with who did each and when.</p>
       </div>
       <div class="change-row">
         <div class="hunk-h"><h4 class="row-h">CMS 12 and CMS 13</h4></div>
         <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">doctor</span></code></div>
-        <p>The same commands on both, for fresh CMS 13 installs and databases upgraded from CMS 12. Reads follow the
-          database's schema, and <code>serve</code> picks the site agent built for your site's CMS version. On CMS 13,
-          sites are applications, and the template's LocalDB connection string works as it is on Windows.</p>
+        <p>The same commands work on both, including CMS 13 databases upgraded from CMS 12. <code>serve</code> picks the
+          right site agent for your CMS version.</p>
       </div>
     </article>
     <article class="file">
-      <div class="file-bar"><h3>Change content</h3><small>8 features · chapters 4 and 7</small></div>
+      <div class="file-bar"><h3>Change content</h3></div>
       <div class="change-row">
         <div class="hunk-h"><h4 class="row-h">Change content through the CMS API</h4><a class="play" href="#chapter-4"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 4 · Make the change</a></div>
         <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">set</span> <span class="tok">123</span> <span class="tok">Heading="New</span> <span class="tok">title"</span> <span class="tok">--dry-run</span></code></div>
@@ -160,58 +156,57 @@ hint: opticli writes to a production database only through a sealed apply, which
           <code>get</code> printed. Content variations and blueprints work too.</p>
       </div>
       <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">The page settings editors use</h4></div>
+        <div class="hunk-h"><h4 class="row-h">Page settings</h4></div>
         <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">set</span> <span class="tok">123</span> <span class="tok">SimpleAddress=campaign</span></code></div>
-        <p>Shortcuts and external links, simple addresses, categories, child sort order and sort index, and publish dates.
-          <code>get</code> shows them, and diffs name what changed.</p>
+        <p>Read and set shortcuts and external links, simple addresses, categories, sort order and publish dates.</p>
       </div>
       <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Deletes that check first, and come back</h4><a class="play" href="#chapter-7"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 7 · Safety nets</a></div>
+        <div class="hunk-h"><h4 class="row-h">Safe deletes, with restore</h4><a class="play" href="#chapter-7"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 7 · Safety nets</a></div>
         <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">delete</span> <span class="tok">456</span> <span class="tok">--dry-run</span></code></div>
-        <p><code>delete</code> only moves content to the recycle bin, and stops while other pages or blocks still reference
-          it, listing where. <code>trash</code> shows what's in the bin and where it came from, and <code>restore</code>
-          puts it back there.</p>
+        <p><code>delete</code> only moves content to the recycle bin, and refuses while other pages or blocks still
+          reference it, listing where. <code>trash</code> shows what's in the bin, and <code>restore</code> puts it back
+          where it was.</p>
       </div>
       <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Take content offline, and back</h4><a class="play" href="#chapter-7"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 7 · Safety nets</a></div>
+        <div class="hunk-h"><h4 class="row-h">Unpublish and discard</h4><a class="play" href="#chapter-7"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 7 · Safety nets</a></div>
         <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">unpublish</span> <span class="tok">123</span></code></div>
-        <p><code>unpublish</code> takes a page offline as the edit UI's expiry does and names the version that was live, so
-          publishing it puts the page back. <code>discard</code> removes a draft that was never published.</p>
+        <p><code>unpublish</code> takes a page offline, the same way expiring it in the edit UI does, and shows which version
+          was live so you can publish it again. <code>discard</code> removes a draft that was never published.</p>
       </div>
       <div class="change-row">
         <div class="hunk-h"><h4 class="row-h">Approvals and scheduled publishing</h4></div>
         <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">publish</span> <span class="tok">123</span> <span class="tok">--request-approval</span></code></div>
-        <p>Content with an approval sequence is never published past its reviewers: <code>--request-approval</code> sends it
-          for review instead. <code>--publish-at</code> leaves the publish to the CMS's scheduled job.</p>
+        <p>Content with an approval sequence can't skip its reviewers: <code>--request-approval</code> sends it for review
+          instead. <code>--publish-at</code> schedules the publish with the CMS's own scheduled job.</p>
       </div>
       <div class="change-row">
         <div class="hunk-h"><h4 class="row-h">Upload files as media</h4></div>
         <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">upload</span> <span class="tok">price-list.pdf</span> <span class="tok">--for</span> <span class="tok">123</span></code></div>
-        <p>A file becomes a media item of the type the site registers for its extension, in a page's own folder or any other.
-          The output says where the site stored it.</p>
+        <p>Each file becomes a media item of the type your site registers for its extension, in the page's own folder or any
+          folder you choose. The output shows where it was stored.</p>
       </div>
       <div class="change-row">
         <div class="hunk-h"><h4 class="row-h">Read and change access rights</h4><a class="play" href="#chapter-5"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 5 · A section as a plan</a></div>
         <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">access</span> <span class="tok">123</span> <span class="tok">--revoke</span> <span class="tok">Everyone</span></code></div>
-        <p>See who may read and edit an item and where that is inherited from. Changes apply to that one item and never leave
-          the site without an administering role.</p>
+        <p>See who can read and edit an item, and where those rights are inherited from. Changes apply to that item only,
+          and can never leave the site without an administering role.</p>
       </div>
     </article>
     <article class="file">
-      <div class="file-bar"><h3>Plans</h3><small>3 features · chapters 5 and 6</small></div>
+      <div class="file-bar"><h3>Plans</h3></div>
       <div class="change-row">
         <div class="hunk-h"><h4 class="row-h">Plans you can run again</h4><a class="play" href="#chapter-6"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 6 · Run it again</a></div>
         <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">apply</span> <span class="tok">plan.json</span> <span class="tok">--update-existing</span></code></div>
-        <p>With <code>"guidNamespace"</code> every item a plan creates gets the same GUID in every database.
-          <code>--update-existing</code> then updates what is there, restores it from the recycle bin, and leaves finished steps alone.
-          <code>export</code> writes existing content of any database as such a plan.</p>
+        <p>With <code>"guidNamespace"</code>, every item a plan creates gets the same GUID in every database.
+          <code>--update-existing</code> then updates what's already there, restores it from the recycle bin if needed, and
+          skips finished steps. <code>export</code> turns existing content from any database into a plan like this.</p>
       </div>
       <div class="change-row">
         <div class="hunk-h"><h4 class="row-h">Rich text from files</h4><a class="play" href="#chapter-5"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 5 · A section as a plan</a></div>
         <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">"MainBody":</span> <span class="tok">"@body.html"</span></code></div>
-        <p>A plan value of <code>"@body.html"</code> is that file's text, so long rich text stays in reviewable files next to
-          the plan instead of inside its JSON. In it, <code>href="$id"</code> links to content the plan creates, saved as its
-          permanent link.</p>
+        <p>A plan value of <code>"@body.html"</code> reads that file, so long rich text lives in HTML files you can review
+          instead of inside the JSON. Links written as <code>href="$id"</code> point to content the plan creates and are
+          saved as permanent links.</p>
       </div>
       <div class="change-row">
         <div class="hunk-h"><h4 class="row-h">Dry runs that reach every step</h4><a class="play" href="#chapter-5"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 5 · A section as a plan</a></div>
@@ -221,39 +216,40 @@ hint: opticli writes to a production database only through a sealed apply, which
       </div>
     </article>
     <article class="file">
-      <div class="file-bar"><h3>Environments and production</h3><small>3 features · chapters 10 to 12</small></div>
+      <div class="file-bar"><h3>Environments and production</h3></div>
       <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">A production copy, on localhost</h4></div>
+        <div class="hunk-h"><h4 class="row-h">Run a production copy on localhost</h4></div>
         <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">sites</span> <span class="tok">primary</span> <span class="tok">--from-config</span></code></div>
         <p>After restoring a production database, one command makes your local host each site's primary host and moves
-          SiteUrl with it, so links and canonical URLs stay local. The production hosts stay too. Save the mapping once and
-          run it again after every restore. <code>users add</code> gives you a local admin login, its password in a file
-          only you can read.</p>
+          SiteUrl with it, so links and canonical URLs point to localhost. The production hosts are kept. Save the mapping
+          once and rerun it after every restore. <code>users add</code> creates a local admin login and stores its
+          password in a file only you can read.</p>
       </div>
       <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Production's content, without a bacpac</h4><a class="play" href="#chapter-11"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 11 · Pull from production</a></div>
+        <div class="hunk-h"><h4 class="row-h">Pull content from production</h4><a class="play" href="#chapter-11"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 11 · Pull from production</a></div>
         <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">sync</span> <span class="tok">pull</span> <span class="tok">--from</span> <span class="tok">prod</span> <span class="tok">--all</span> <span class="tok">--dry-run</span></code></div>
         <p><code>sync pull</code> brings what editors did in production into your local database: new, changed and moved
           content, matched by GUID and written through your local site. It only reads production, keeps your own local
           changes, lists conflicts instead of overwriting them, and remembers what it synced, so the next pull is quick.</p>
       </div>
       <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Changes for production: the agent seals, you run</h4><a class="play" href="#chapter-12"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 12 · Push to production</a></div>
+        <div class="hunk-h"><h4 class="row-h">Push to production: the agent prepares, you run it</h4><a class="play" href="#chapter-12"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 12 · Push to production</a></div>
         <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">sync</span> <span class="tok">push</span> <span class="tok">--to</span> <span class="tok">prod</span> <span class="tok">/en/campaign/</span></code></div>
-        <p>A coding agent can prepare content for production but never write it. <code>sync push</code> seals what changed
-          locally; you run the command it prints in your own terminal, see what it does, type the database's name and a
-          write login that is never saved. It runs only if the plan, the build and production are as sealed. On Azure it
-          can join production's event bus, so no restart is needed, and carry media to its blob storage.</p>
+        <p>A coding agent can prepare changes for production but can't write them. <code>sync push</code> seals what changed
+          locally. You run the command it prints in your own terminal: it shows what it will do, then asks for the
+          database's name and a write login, which is never saved. It refuses to run if the plan, the build or production
+          changed since the seal. On Azure it can join production's event bus, so no restart is needed, and upload media
+          to its blob storage.</p>
       </div>
     </article>
     <article class="file">
-      <div class="file-bar"><h3>Site operations</h3><small>2 features · chapters 8 and 9</small></div>
+      <div class="file-bar"><h3>Site operations</h3></div>
       <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Scheduled jobs, without surprises</h4><a class="play" href="#chapter-8"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 8 · Scheduled jobs</a></div>
+        <div class="hunk-h"><h4 class="row-h">Scheduled jobs</h4><a class="play" href="#chapter-8"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 8 · Scheduled jobs</a></div>
         <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">jobs</span> <span class="tok">run</span> <span class="tok">"Content</span> <span class="tok">import"</span></code></div>
         <p>See every job's schedule, last run and log, and where its code lives. Run one and wait for its result, stop
-          it, or change when it runs. <code>serve</code> keeps a restored database's overdue jobs from all running at
-          once, and jobs that delete for good need an explicit flag.</p>
+          it, or change when it runs. After a database restore, <code>serve</code> stops overdue jobs from all
+          running at startup, and jobs that delete data permanently need an explicit flag.</p>
       </div>
       <div class="change-row">
         <div class="hunk-h"><h4 class="row-h">Clean up what removed code left behind</h4><a class="play" href="#chapter-9"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 9 · Clean up leftovers</a></div>
@@ -264,7 +260,7 @@ hint: opticli writes to a production database only through a sealed apply, which
       </div>
     </article>
     <article class="file">
-      <div class="file-bar"><h3>Your IDE and your agent</h3><small>3 features · chapters 1, 13 and 14</small></div>
+      <div class="file-bar"><h3>Your IDE and your agent</h3></div>
       <div class="change-row">
         <div class="hunk-h"><h4 class="row-h">Nothing to add to your solution</h4><a class="play" href="#chapter-1"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 1 · No setup</a></div>
         <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">serve</span></code></div>
@@ -274,7 +270,7 @@ hint: opticli writes to a production database only through a sealed apply, which
         <div class="hunk-h"><h4 class="row-h">See changes in the site you're debugging</h4><a class="play" href="#chapter-13"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 13 · See it while debugging</a></div>
         <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">ide</span> <span class="tok">on</span></code></div>
         <p>With <code>ide on</code>, the site you start from Rider or Visual Studio loads the agent from its own build, so
-          opticli writes through that process and a reload shows the change, without a restart. Nothing to set per run,
+          opticli writes through that process and a reload shows the change, without a restart. No per-run setup,
           HTTPS with the development certificate works, and the debugger, hot reload and breakpoints stay as they are.</p>
       </div>
       <div class="change-row">
@@ -297,19 +293,18 @@ hint: opticli writes to a production database only through a sealed apply, which
 <section class="part wrap" id="safety" aria-labelledby="checks-h">
   <div class="part-head">
     <h2 id="checks-h">Safety</h2>
-    <p>The questions to ask before an agent gets near your CMS, and how opticli answers each of them.</p>
   </div>
   <article class="file">
     <ul class="required">
       <li><svg class="icon ok" aria-hidden="true"><use href="#i-ok"/></svg><b>Which database does it use?</b><p>Your local one by default: opticli reads the connection string from the site's Development config. To use a remote database you have to choose it explicitly, and every response then carries a warning.</p><span class="status ok">local by default</span></li>
       <li><svg class="icon ok" aria-hidden="true"><use href="#i-ok"/></svg><b>Can a read change anything?</b><p>No. Reads use fixed queries. <code>opticli sql</code> accepts a single <code>SELECT</code> against the site's own database and runs it in a transaction that is rolled back.</p><span class="status ok">read-only</span></li>
-      <li><svg class="icon ok" aria-hidden="true"><use href="#i-ok"/></svg><b>Can it publish or delete by accident?</b><p>Changes are saved as drafts by the user <code>opticli</code>. Publishing needs <code>--publish</code>, and <code>delete</code> only moves content to the recycle bin, and not while other content still references it.</p><span class="status ok">drafts · recycle bin</span></li>
-      <li><svg class="icon no" aria-hidden="true"><use href="#i-no"/></svg><b>Can it write to production?</b><p>Not on its own. A database with the role <code>prod</code> is only ever read: every response carries a warning, and <code>serve</code> and every write, dry runs included, are refused. The one way in is a sealed apply that you run in your own terminal, with a write login you type and opticli never saves; an agent can prepare and seal it, not run it. <a class="play" href="#chapter-10"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 10 · Production is read-only</a></p><span class="status no">refused · sealed apply only</span></li>
-      <li><svg class="icon off" aria-hidden="true"><use href="#i-off"/></svg><b>Can starting it change a shared database?</b><p>Against a remote development database, the scheduler, schema updates, content type sync and store remapping are off, and <code>serve</code> won't start a build with EF Core migrations the database lacks. The CMS still registers the build's scheduled jobs and add-on content roots there, and the site's own startup code still runs, so use a login without DDL rights where your add-ons allow it.</p><span class="status off">limits stated</span></li>
-      <li><svg class="icon no" aria-hidden="true"><use href="#i-no"/></svg><b>What if my branch isn't what's deployed?</b><p>opticli compares the build with the shared database: content types, properties, migrations. While they differ, writes stop until you confirm with <code>--accept-drift</code>, and it says which side is ahead. Reads keep working.</p><span class="status no">writes stop on drift</span></li>
+      <li><svg class="icon ok" aria-hidden="true"><use href="#i-ok"/></svg><b>Can it publish or delete by accident?</b><p>No. Changes are saved as drafts, under a CMS user named <code>opticli</code>. Publishing needs <code>--publish</code>. <code>delete</code> only moves content to the recycle bin, and refuses while other content still references it.</p><span class="status ok">drafts · recycle bin</span></li>
+      <li><svg class="icon no" aria-hidden="true"><use href="#i-no"/></svg><b>Can it write to production?</b><p>Not on its own. A database with the role <code>prod</code> is read-only: every response carries a warning, and <code>serve</code> and every write, dry runs included, are refused. The only way to write is a sealed apply that you run in your own terminal, with a write login you type and opticli never saves; an agent can prepare and seal it, not run it. <a class="play" href="#chapter-10"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 10 · Production is read-only</a></p><span class="status no">refused · sealed apply only</span></li>
+      <li><svg class="icon off" aria-hidden="true"><use href="#i-off"/></svg><b>Can starting it change a shared database?</b><p>Only in limited ways. Against a remote development database, opticli turns off the scheduler, schema updates, content type sync and store remapping, and <code>serve</code> won't start a build with EF Core migrations the database lacks. Two things still happen: the CMS registers the build's scheduled jobs and add-on content roots, and the site's own startup code runs. Where your add-ons allow it, use a login without DDL rights.</p><span class="status off">limited</span></li>
+      <li><svg class="icon no" aria-hidden="true"><use href="#i-no"/></svg><b>What if my branch isn't what's deployed?</b><p>opticli compares the build with the shared database: content types, properties, migrations. While they differ, writes stop until you confirm with <code>--accept-drift</code>, and opticli tells you whether the code or the database is newer. Reads keep working.</p><span class="status no">writes stop on drift</span></li>
       <li><svg class="icon ok" aria-hidden="true"><use href="#i-ok"/></svg><b>What can the MCP server do to a production site?</b><p>Only what the signed-in editor may do: every read and save is checked against their access rights, and content they can't read looks the same as content that doesn't exist. Changes are drafts, without script. Publishing and deleting are off until the site turns them on, and approval sequences always apply. Only apps on the editor's own machine can connect, and web-based assistants from addresses the site allows (claude.ai by default); editors can see and revoke their connections.</p><span class="status ok">only what the editor may</span></li>
       <li><svg class="icon no" aria-hidden="true"><use href="#i-no"/></svg><b>Can anyone else reach the site agent?</b><p>It answers only to requests from this machine, only in Development, and only with the token of that run, which sits in a file only you can read. Requests that came through a proxy or tunnel are refused.</p><span class="status no">loopback + run token only</span></li>
-      <li><svg class="icon ok" aria-hidden="true"><use href="#i-ok"/></svg><b>Does the site I debug start differently?</b><p>No. With <code>ide on</code>, the agent doesn't pin the database or touch the scheduler, and it never stops the site from starting: against another database, or outside Development, it just stays off for that run and says why.</p><span class="status ok">no</span></li>
+      <li><svg class="icon ok" aria-hidden="true"><use href="#i-ok"/></svg><b>Does the site I debug start differently?</b><p>No. With <code>ide on</code>, the agent doesn't pin the database or touch the scheduler, and it never stops the site from starting: against another database, or outside Development, it stays off for that run and tells you why.</p><span class="status ok">no</span></li>
     </ul>
   </article>
 </section>
@@ -322,7 +317,7 @@ hint: opticli writes to a production database only through a sealed apply, which
   <article class="file editors">
     <div>
       <h3>An assistant, signed in as the editor</h3>
-      <p>Editors connect an assistant that supports MCP servers (Claude Desktop has an extension for it) and sign in with the site's own login. The assistant then works as them, with their access rights: drafts by default, dry runs, validation and approval sequences, and a preview link for every draft. CMS 12 from 12.12.1 (CMS UI 12.16.1), and CMS 13, where the assistant reads Visual Builder pages too.</p>
+      <p>Editors connect an assistant that supports MCP servers (Claude Desktop has an extension for it) and sign in with their usual CMS login. The assistant then works as them, with their access rights: drafts by default, dry runs, validation, approval sequences and a preview link for every draft. Works with CMS 12 from 12.12.1 (CMS UI 12.16.1) and CMS 13, including Visual Builder pages.</p>
       <a class="go" href="editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
     </div>
     <div aria-label="An example conversation">
@@ -341,367 +336,34 @@ hint: opticli writes to a production database only through a sealed apply, which
     <ol class="releases">
       <li><div class="v"><b>0.26.0</b><span>28 October 2026</span></div>
         <ul>
-          <li><b>The MCP server on CMS 13:</b> the new <code>OptiCli.Mcp.Cms13</code> package puts it in a CMS 13 site;
-            <code>OptiCli.Mcp</code> stays the one for CMS 12, also on .NET 10. Both are set up the same way, so moving a
-            site to CMS 13 is one package swap. Assistants read Visual Builder pages with the editor's access rights, as
-            everything else; see <a href="editors/">For editors</a>.</li>
-          <li><b>MCP hardening:</b> beside another MCP server in the same site, each endpoint now serves only its own
-            server, and the module's sessions work only for the connection that made them. A CMS 12 site that runs another
-            MCP server should update <code>OptiCli.Mcp</code> to <code>0.26.0</code>. Details in the
-            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
+          <li><b>The MCP server on CMS 13:</b> install <code>OptiCli.Mcp.Cms13</code> in a CMS 13 site.
+            <code>OptiCli.Mcp</code> stays the package for CMS 12, now also on .NET 10. Both are set up the same way, so
+            upgrading a site to CMS 13 is a package swap. Assistants can read Visual Builder pages too; see
+            <a href="editors/">For editors</a>.</li>
+          <li><b>MCP hardening:</b> when a site runs another MCP server as well, the two no longer share endpoints or
+            sessions. If that's your CMS 12 site, update <code>OptiCli.Mcp</code> to <code>0.26.0</code>.</li>
         </ul></li>
-    </ol>
-    <details class="earlier">
-      <summary><svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg>28 earlier releases <span>back to 0.3.0, 30 September 2026</span></summary>
-      <ol class="releases">
       <li><div class="v"><b>0.25.0</b><span>28 October 2026</span></div>
         <ul>
-          <li><b>The MCP server is no longer a preview:</b> <code>OptiCli.Mcp</code> now has the same version as the CLI, so
-            <code>dotnet add package OptiCli.Mcp</code> installs it without <code>--prerelease</code>. It works with any
-            assistant that supports MCP servers with an OAuth sign-in; see <a href="editors/">For editors</a>.</li>
-          <li><b>Claude Desktop extension:</b> <code>opticli-cms.mcpb</code> comes with every release. Editors open it in
-            Claude Desktop and enter the site's address; it connects from their own machine. Details in the
-            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
+          <li><b>The MCP server is out of preview:</b> <code>dotnet add package OptiCli.Mcp</code> now installs it without
+            <code>--prerelease</code>. It works with any assistant that supports MCP servers with an OAuth sign-in; see
+            <a href="editors/">For editors</a>.</li>
+          <li><b>Claude Desktop extension:</b> every release includes <code>opticli-cms.mcpb</code>. Editors open it in
+            Claude Desktop and enter the site's address.</li>
         </ul></li>
       <li><div class="v"><b>0.24.0</b><span>26 October 2026</span></div>
         <ul>
-          <li><b>Production without a restart:</b> when the site uses the CMS's Azure providers, the sealed run you start
-            in your own terminal can join production's event bus, typed there like the write login and never saved, so
-            production's servers drop what they cached at once. The result says whether a restart is still needed.</li>
-          <li><b>Media to production:</b> sealed plans upload files again, to production's blob storage typed at the run,
-            and each file is looked up in the container afterwards. <code>sync push --media</code> pushes media too.</li>
-          <li><b>Ready for real sites:</b> content types and properties only production's database has (removed code)
-            no longer block a seal, and the run's site signs in to a production that uses Microsoft Entra ID with the
-            run's own token. Details in the
-            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
+          <li><b>No restart after a production push:</b> on sites that use the CMS's Azure providers, a sealed run can join
+            production's event bus, so production's servers clear their caches right away. You enter the event bus
+            connection at the run, like the write login, and it's never saved. The result says if a restart is still
+            needed.</li>
+          <li><b>Media to production:</b> sealed plans can upload files to production's blob storage, and
+            <code>sync push --media</code> pushes media too.</li>
+          <li><b>Fewer blockers:</b> content types and properties that only exist in production's database no longer block
+            a seal, and sealed runs work against production sites that sign in with Microsoft Entra ID.</li>
         </ul></li>
-      <li><div class="v"><b>0.23.1</b><span>23 October 2026</span></div>
-        <ul>
-          <li><b>MCP hardening:</b> uploads go by what the site serves a file as, by its file name and the media's name,
-            so no file it would serve as HTML or XML gets in under a less common extension, and a content reference given
-            as an object gets the same read check as one given as text. Update <code>OptiCli.Mcp</code> to
-            <code>0.23.1-preview</code>. Details in the
-            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
-        </ul></li>
-      <li><div class="v"><b>0.23.0</b><span>23 October 2026</span></div>
-        <ul>
-          <li><b>Draft previews:</b> when Claude saves a draft through the MCP server, the result links to the CMS's own
-            preview of it, the page as visitors will see it without the edit UI around it, for the editor signed in to
-            the CMS. Claude also gets a link of its own to that one draft, signed by the module and valid for ten minutes,
-            and opens it to check how the draft looks; it never uses the CMS's own preview token. A site can turn that
-            off with <code>AllowPreviewLinks</code>. Update <code>OptiCli.Mcp</code> to
-            <code>0.23.0-preview</code>. Details in the
-            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
-          <li><b>More sites found:</b> a site that references the CMS's packages one by one, without
-            <code>EPiServer.CMS</code> or <code>EPiServer.CMS.AspNetCore</code>, is found too.</li>
-        </ul></li>
-      <li><div class="v"><b>0.22.0</b><span>22 October 2026</span></div>
-        <ul>
-          <li><b>Saves say what the site did:</b> when the site's own code reacts to a save, filing a new article into a
-            year folder it creates and publishes, say, the result lists it as <code>siteChanges</code>, in the MCP server
-            and as a warning in the CLI. A dry run can't run that code, and the MCP server's instructions now say so.</li>
-          <li><b>Full addresses, searches in time:</b> the MCP server gives public URLs with the site's host, on reads and
-            on every write next to the edit link, and <code>find_content</code> answers within 20 seconds with what it
-            found so far. Update <code>OptiCli.Mcp</code> to <code>0.22.0-preview</code>. Details in the
-            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
-        </ul></li>
-      <li><div class="v"><b>0.21.0</b><span>22 October 2026</span></div>
-        <ul>
-          <li><b>Claude sees images:</b> the MCP server's new <code>view_media</code> tool shows Claude a media item's image,
-            read as the editor like any other content, drafts included, so it no longer asks the editor to open it.
-            Large images are scaled down by the site's own image service, the one behind the edit UI's thumbnails; SVG
-            comes as its markup. Update <code>OptiCli.Mcp</code> to <code>0.21.0-preview</code>. Details in the
-            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
-        </ul></li>
-      <li><div class="v"><b>0.20.0</b><span>21 October 2026</span></div>
-        <ul>
-          <li><b>IDE mode:</b> <code>opticli ide on</code> makes the site you start from your IDE (Rider's run or debug,
-            Visual Studio, <code>dotnet run</code>, <code>dotnet watch</code>) load the site agent from its own build.
-            Writes go through that process, so they show there at once, instead of in a second site with its own cache
-            that <code>serve</code> started. It adds a block to your <code>.csproj.user</code> (git-ignored, or added to
-            <code>.git/info/exclude</code>), and the agent makes its own token each run.</li>
-          <li><b>HTTPS and breakpoints:</b> opticli reaches the site on its own addresses, including HTTPS-only sites with
-            the development certificate and <code>*.localhost</code> names. A site paused at a breakpoint is reported as
-            such, and <code>serve</code> starts nothing while your IDE's site runs.</li>
-          <li><b>Never in the way:</b> IDE mode doesn't change how the site starts, and against another database or
-            outside Development the agent stays off for the run. Rebuild after <code>ide on</code> (Rider's play button
-            doesn't notice the change). Sealed applies to production refuse a build from IDE mode. Details in the
-            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
-        </ul></li>
-      <li><div class="v"><b>0.19.0</b><span>16 October 2026</span></div>
-        <ul>
-          <li><b>One draft per plan run:</b> an <code>apply</code> plan that changes the same page in many steps no longer
-            leaves a draft per step. Later steps save into the draft the run already made, as the edit UI does, while the
-            database still has it as the latest unpublished draft of opticli's; each step still reports on its own, and
-            its undo points to the step that made the draft. <code>--version-per-step</code> keeps the old way.</li>
-          <li><b>Drift that tells removed code from newer code:</b> a content type or property only the database has is
-            no longer just "newer code there: pull and build". The advice names classes removed from code too
-            (<code>opticli types --orphaned</code>), and where the project is a git repository, drift names the commit that
-            removed the class or property.</li>
-          <li><b>Fixed:</b> changing the access rights of content in a "For this page" folder failed with a cast error.
-            Such content has its owner's access rights, so a change is refused, as in the edit UI, naming the owner; reads
-            show where the rights come from (<code>assetsOf</code>). Details in the
-            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
-        </ul></li>
-      <li><div class="v"><b>0.18.0</b><span>16 October 2026</span></div>
-        <ul>
-          <li><b>Environment roles:</b> <code>db add prod --role prod</code> adds another environment's database by name
-            (asking for the password without showing it), and <code>--db prod</code> reads it for one run. A database with
-            the role <code>prod</code> is only read, from every project: responses carry a warning, and <code>serve</code>,
-            <code>env</code> and every write, dry runs included, are refused. <code>doctor</code> warns when the login saved
-            for it can write.</li>
-          <li><b>Export:</b> <code>export &lt;ref&gt; --descendants</code> (or <code>--site</code>, <code>--all</code>)
-            writes content of any database, production included, as a plan folder with its media and long rich text, and
-            <code>apply --update-existing</code> brings it into another database with the same GUIDs.</li>
-          <li><b>Sync pull:</b> <code>sync pull --from prod --all</code> keeps the local database's content in step with
-            another environment's: what it lacks is created, what differs updated, what was moved moved, matched by GUID
-            and written through the local site. Local changes are kept and conflicts listed, nothing is deleted without
-            <code>--delete</code>, and the next pull only reads what changed since.</li>
-          <li><b>Sealed apply to production:</b> a coding agent prepares and seals a plan (<code>sync push --to prod</code>,
-            or <code>apply --dry-run --seal-for prod</code>) but can't run it. You run the command it prints in your own
-            terminal: it shows what the plan does, asks for the database's name and a write login that is never saved,
-            refuses if the plan, the build or production's content changed since the seal, and writes through your build,
-            started against production for that run only. No deletes, unpublishing, access rights or media; restart
-            production's site afterwards.</li>
-          <li><b>Fixed:</b> a reference written back as <code>get</code> shows it goes by its GUID, so <code>get</code>
-            output from another database can't name other content there by its id. Details, CMS 13 fixes included, in the
-            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
-        </ul></li>
-      <li><div class="v"><b>0.17.0</b><span>14 October 2026</span></div>
-        <ul>
-          <li><b>Refused logins:</b> a database server that answers but refuses the login is now <code>login_failed</code>
-            (still exit 4) instead of <code>unreachable</code>, whose network and firewall hint pointed the wrong way. For
-            Microsoft Entra ID, where the server only says <code>&lt;token-identified principal&gt;</code>, opticli names the
-            identity that signed in and says it has no user in the database.</li>
-          <li><b>Fixed:</b> connection ids from <code>db list</code> are the same in every checkout of a project, a git
-            worktree say; a choice saved with an old id still holds.</li>
-          <li><b>Fixed:</b> a site that crashes while <code>serve</code> starts it is reported with its first exception and
-            its innermost cause, not just the last lines of stack frames. Refusing a remote database that isn't the
-            development database names <code>opticli db use &lt;id&gt;</code>.</li>
-        </ul></li>
-      <li><div class="v"><b>0.16.1</b><span>9 October 2026</span></div>
-        <ul>
-          <li><b>Fixed:</b> a shared block given by its ref alone (<code>{"ref": "37"}</code>) in a ContentArea inside an
-            inline block or a Visual Builder element was refused; it is now taken as in the content's own areas.</li>
-          <li><b>Fixed:</b> the MCP module hides a property on a tab the editor lacks access to in inline blocks and block
-            lists' items too, as the edit UI does; it was only applied to the content's own properties.</li>
-        </ul></li>
-      <li><div class="v"><b>0.16.0</b><span>9 October 2026</span></div>
-        <ul>
-          <li><b>Inline blocks in ContentAreas</b> (CMS 12.20+ and CMS 13), which opticli could only read so far:
-            <code>area 123 MainArea add --type TeaserBlock Heading=Hi</code> adds one, and
-            <code>set 123 'MainArea[2].Heading=New'</code> or <code>area 123 MainArea set 2</code> changes one. The area
-            <code>get</code> printed can be written back as is, also with blocks left out or moved, and <code>area</code>
-            reaches areas inside blocks by their path (<code>'MainArea[0].Items'</code>). Plans and the MCP module take
-            them too, and an editor's write can't drop values they can't see.</li>
-          <li><b>Fixed:</b> the MCP module could refuse every change to a block that isn't content (a block list's item)
-            when its edit UI metadata needed content. Details in the
-            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
-        </ul></li>
-      <li><div class="v"><b>0.15.0</b><span>7 October 2026</span></div>
-        <ul>
-          <li><b>Optimizely CMS 13:</b> one opticli reads and writes CMS 12 and CMS 13 sites, fresh CMS 13 installs and
-            databases upgraded from CMS 12 alike. The package carries a site agent for each (.NET 8 for CMS 12, .NET 10
-            for CMS 13), and <code>serve</code> picks the right one. A CMS 13 build against a CMS 12 database is refused,
-            since starting it would upgrade the database for good. Every existing command works on CMS 13, shared databases
-            and drift included.</li>
-          <li><b>Sites are applications on CMS 13:</b> <code>sites</code>, <code>sites primary</code> and
-            <code>sites host</code> work on them, <code>*</code> moves the default application in one save, local hosts get
-            http, and <code>--type preview|media</code> adds CMS 13's new host types. <code>jobs</code> shows the names
-            admin mode shows.</li>
-          <li><b>Visual Builder:</b> <code>get</code> shows an experience's <code>composition</code> (sections, rows,
-            columns, elements, display templates and settings), <code>search</code> and <code>where-used</code> name the
-            element a match is in, and <code>display-templates</code> lists the templates. <code>composition &lt;ref&gt;
-            add|move|set|remove</code> edits one node, and <code>set 123 composition=@file.json</code> writes back what
-            <code>get</code> printed. <code>get --variation</code> and <code>--variation</code> on writes for content
-            variations, <code>create --blueprint</code> for blueprints.</li>
-          <li><b>LocalDB:</b> the CMS templates' <code>|DataDirectory|</code> connection string works on Windows; on Linux
-            and macOS it gets a clear error.</li>
-          <li><b>Changed:</b> <code>--values</code> also takes a value as <code>get</code> shows it, so
-            <code>get</code>'s output can be edited and written back.</li>
-          <li><b>Fixed:</b> a page list's type filter takes the page type's name; two <code>serve</code>s started at once
-            no longer pick the same port; <code>get</code> shows a scheduled version's publish time. The MCP module is
-            unchanged and still CMS 12 only. Details in the
-            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
-        </ul></li>
-      <li><div class="v"><b>0.14.0</b><span>6 October 2026</span></div>
-        <ul>
-          <li><b>Remove what removed code left behind:</b> <code>types remove</code>, <code>types remove-property</code> and
-            <code>types prune</code>, through the site with the CMS's own API. Only orphans as the running site sees them;
-            a type stays while any content uses it, also in the recycle bin, and stored values need
-            <code>--allow-destructive</code>. Each removal is written to <code>removals.jsonl</code> before it happens.</li>
-          <li><b>Changed:</b> <code>type</code>'s <code>values</code> count content items and versions, including values
-            inside block properties: what removing the property deletes.</li>
-          <li><b>Fixed:</b> a restored block or media file is "published again", not "live at its URL".</li>
-        </ul></li>
-      <li><div class="v"><b>0.13.0</b><span>6 October 2026</span></div>
-        <ul>
-          <li><b>Recycle bin:</b> <code>trash</code> lists what was deleted, by whom and from where, and
-            <code>restore &lt;ref&gt;</code> puts it back below its old parent (or <code>--to</code> another), as the edit UI's
-            Restore does. <code>delete</code>'s undo hint now points to it, and plans get a <code>restore</code> step.</li>
-          <li><b>Local logins:</b> <code>users add &lt;name&gt;</code> makes an admin user through the site's ASP.NET Identity,
-            with the password from stdin, a prompt, or a file only you can read; it is never printed.
-            <code>users remove</code> only removes users opticli made, and <code>users roles</code> shows roles without names.</li>
-          <li><b>Leftovers:</b> <code>types --orphaned</code> lists content types whose code is gone, and <code>type</code>
-            shows properties that aren't in the code with their stored values.</li>
-          <li><b>More reads:</b> <code>history &lt;ref&gt;</code> (the change log: moves, deletes, restores, publishes),
-            <code>find --status scheduled|expired</code>, <code>categories</code> and <code>visitor-groups</code>.</li>
-        </ul></li>
-      <li><div class="v"><b>0.12.0</b><span>6 October 2026</span></div>
-        <ul>
-          <li><b>Changed: <code>serve</code> turns the site's scheduler off.</b> A restored production database has
-            overdue jobs, and they all ran when the site started: imports, syncs, emails, and emptying the recycle bin.
-            <code>serve --scheduler</code> leaves it as the site sets it, and <code>doctor</code> counts the overdue jobs.</li>
-          <li><b>Scheduled jobs:</b> <code>jobs</code> lists them with schedule, last run and status, and their file and
-            line in your code; <code>jobs log</code> shows runs and messages (<code>--failed --since 1d</code>).</li>
-          <li><b>Run, stop and reschedule:</b> <code>jobs run &lt;job&gt;</code> runs a job through the site and waits for
-            it, with exit code 7 when it fails; <code>jobs stop</code>, and <code>jobs set --enabled --every --next</code>.
-            Jobs that delete for good need <code>--allow-destructive</code>, and jobs other than the CMS's own run with a
-            warning.</li>
-        </ul></li>
-      <li><div class="v"><b>0.11.0</b><span>6 October 2026</span></div>
-        <ul>
-          <li><b>MCP server security fixes:</b> update <code>OptiCli.Mcp</code> to <code>0.11.0-preview</code> before
-            using it on a real site. Only apps that return to Claude (<code>AllowedRedirectHosts</code>: claude.ai and
-            claude.com by default) or to the editor's own machine can be connected, so a self-registered app can't collect
-            an editor's approval.</li>
-          <li><b>No script from editors:</b> rich text, links and uploads are checked. Moving live content and discarding a
-            scheduled version need the publish setting, and discarding someone else's draft needs the delete setting.</li>
-          <li><b>The edit UI's rules apply:</b> access rights per language, properties the edit UI hides or locks, and
-            the access a group of content types requires.</li>
-          <li><b>Fixed:</b> a value in <code>get</code>'s <code>{type, value}</code> shape is a usage error, not an
-            internal one.</li>
-        </ul></li>
-      <li><div class="v"><b>0.10.1</b><span>5 October 2026</span></div>
-        <ul>
-          <li><b>Fixed:</b> <code>sites primary "Site A=&lt;host&gt;"</code> with a host that is already one language's
-            primary host, on a site that also has one for every language, moved SiteUrl onto it. It now works as
-            <code>Site A@&lt;lang&gt;=&lt;host&gt;</code> would, and a warning says so.</li>
-        </ul></li>
-      <li><div class="v"><b>0.10.0</b><span>5 October 2026</span></div>
-        <ul>
-          <li><b>sites primary:</b> points a restored copy of a production database at localhost.
-            <code>opticli sites primary "Site A=localhost:5001" "Site B=localhost:5002"</code> makes each host the site's
-            primary host, also on sites whose hosts are all for one language, and moves SiteUrl with it. The production
-            hosts stay, and running it again changes nothing.</li>
-          <li><b>A saved mapping:</b> <code>--save</code> keeps the pairs, so after the next restore
-            <code>sites primary --from-config</code> is all it takes, and <code>doctor</code> says when the database no
-            longer matches.</li>
-          <li><b>sites host add / remove</b> change one host. Against a shared database, only adding a host is allowed.</li>
-          <li><b>Fixed:</b> URLs in every output could use another language's primary host.</li>
-        </ul></li>
-      <li><div class="v"><b>0.9.0</b><span>5 October 2026</span></div>
-        <ul>
-          <li><b>MCP server for editors (preview):</b> the new <code>OptiCli.Mcp</code> package, published as
-            <code>0.9.0-preview</code>, lets editors connect Claude to a CMS 12 site and work as themselves, signed in with
-            the site's own login. Publishing and deleting are off unless the site turns them on.</li>
-          <li><b>Site agent:</b> its content operations moved to a layer the MCP server shares. Nothing changes for the CLI.</li>
-        </ul></li>
-      <li><div class="v"><b>0.8.0</b><span>2 October 2026</span></div>
-        <ul>
-          <li><b>--from:</b> <code>set</code> and <code>area</code> take <code>--from published</code> (or a version) to
-            base a change on the published version, so it can go live without someone else's older draft. Newer versions
-            it leaves out are listed in <code>leftOut</code>.</li>
-          <li><b>Pending drafts</b> are judged by content: a publish asks only about drafts whose changes actually go live.</li>
-          <li><b>Master language first:</b> publishing a language branch before its master branch is refused before
-            anything is saved, also in dry runs, and a plan's dry run names the step to move.</li>
-          <li><b>Skill:</b> agents name content next to its ref instead of giving bare ids.</li>
-        </ul></li>
-      <li><div class="v"><b>0.7.1</b><span>2 October 2026</span></div>
-        <ul>
-          <li><b>Fixed:</b> classes declared without a body (<code>class AboutBlock : SiteBlockData;</code>) were left out
-            of the source scan, so a plan's <code>area add</code> could be refused by <code>[AllowedTypes]</code> although
-            the CMS allowed it, and <code>allowed-in</code> and <code>type</code> missed them.</li>
-        </ul></li>
-      <li><div class="v"><b>0.7.0</b><span>2 October 2026</span></div>
-        <ul>
-          <li><b>Shared databases:</b> writes stop while the build and the remote development database differ (drift),
-            with what differs and which side is ahead. <code>--accept-drift</code> confirms, and <code>opticli drift</code>
-            lists the differences.</li>
-          <li><b>serve</b> won't start a build with EF Core migrations the shared database lacks
-            (<code>--allow-pending-migrations</code>), says when the CMS schema version doesn't fit, and also turns off
-            Dynamic Data Store remapping there.</li>
-        </ul></li>
-      <li><div class="v"><b>0.6.0</b><span>1 October 2026</span></div>
-        <ul>
-          <li><b>Approval sequences</b> are respected: publishing content that has one is refused (exit 3), and
-            <code>--request-approval</code> sends it for review instead. Content in review can't be changed until a
-            reviewer decides.</li>
-          <li><b>delete</b> stops while other content references what it deletes (<code>conflict</code>, with the
-            references listed) and asks on a terminal. <code>--ignore-references</code> deletes all the same.</li>
-          <li><b>unpublish and discard:</b> <code>opticli unpublish</code> takes a published page offline, undone with
-            <code>publish --version</code>; <code>opticli discard</code> deletes a version that was never published.</li>
-          <li><b>Scheduled publishing:</b> <code>--publish-at</code> on <code>set</code>, <code>area</code>,
-            <code>create</code> and <code>publish</code>; <code>drafts</code> and <code>versions</code> show the time.</li>
-          <li><b>Plans:</b> <code>href="$id"</code> in rich text and <code>@file</code> HTML links to content the plan
-            creates, as a permanent link. New ops <code>unpublish</code> and <code>discard</code>.</li>
-          <li><b>More writes:</b> <code>translate --with-blocks</code> and <code>translate --remove</code>,
-            <code>upload --replace</code> for a new file on existing media, and unknown visitor group ids are refused.</li>
-          <li><b>Reads:</b> <code>get</code> shows the approval sequence, visitor group names, personalized rich text and
-            projects; <code>where-used --type</code> lists every instance of a type; <code>opticli projects</code> is new.</li>
-          <li><b>serve:</b> the site agent refuses requests that came through a proxy or tunnel, and a body the web server
-            refuses as too large is reported as such.</li>
-          <li><b>Output changes:</b> <code>get --lang</code> follows the language settings (replacement and fallback
-            languages), a diff's <code>before</code> gives ContentArea items an explicit <code>group</code> and
-            <code>visitorGroups</code>, and any publish clears a stop-publish date that has passed. Details in the
-            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
-        </ul></li>
-      <li><div class="v"><b>0.5.0</b><span>1 October 2026</span></div>
-        <ul>
-          <li><b>Publishing someone else's changes</b> needs confirmation: a publish whose version holds changes another
-            editor saved shows who saved what and asks, or fails with <code>conflict</code> until you pass
-            <code>--include-draft</code>. Undo hints name the version that was live before.</li>
-          <li><b>sql:</b> closed a way around the read-only check (a lone carriage return ending a comment). Server-wide
-            views, logs and traces are refused, and in <code>sys</code> only the database's own schema views are allowed.</li>
-          <li><b>ContentAreas</b> keep each item's visitor groups when written whole; <code>group</code> and
-            <code>visitorGroups</code> can be set, and unknown display options are refused.</li>
-          <li><b>Which database:</b> <code>UserSecretsId</code> is read through <code>Directory.Build.props</code>, and an
-            exported <code>ConnectionStrings__EPiServerDB</code> counts, in ASP.NET Core's order.</li>
-          <li><b>Plans:</b> <code>set</code> then <code>publish</code> (or <code>translate</code> then <code>set</code>) on
-            the same content validates; a failing or interrupted <code>apply</code> still reports what it saved.
-            <code>create</code> and <code>move</code> check where content may go.</li>
-          <li><b>serve:</b> a lock against starting a site twice, a graceful <code>--stop</code> on every OS, sites with
-            <code>Kestrel:Endpoints</code>, one log per run, and more build output layouts.</li>
-          <li><b>Reads:</b> fixes for <code>allowed-in</code> on media, shared values under <code>--lang</code>, fetch-data
-            and nested-site URLs, simple addresses, <code>/globalassets/</code> URLs and <code>PageType</code> values.
-            Faster <code>children</code> and <code>where-used --pages</code> on large sites.</li>
-          <li><b>Output changes:</b> ContentArea items in <code>get</code> have <code>group</code> and
-            <code>visitorGroups</code> as their own fields (they were under <code>personalization</code>), the
-            <code>OPTICLI_DB</code> source is <code>optiCliDb</code>, and an interrupted command exits 130
-            (<code>cancelled</code>). Details in the
-            <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>.</li>
-        </ul></li>
-      <li><div class="v"><b>0.4.1</b><span>30 September 2026</span></div>
-        <ul>
-          <li><b>Fixed:</b> <code>serve --status</code>, <code>--logs</code> and <code>--stop</code>, which 0.4.0 refused, and
-            <code>"https": true</code> in the user config, which 0.4.0 ignored.</li>
-        </ul></li>
-      <li><div class="v"><b>0.4.0</b><span>30 September 2026</span></div>
-        <ul>
-          <li><b>Upload:</b> <code>opticli upload</code> creates media from files up to 50 MB, also as a plan step.</li>
-          <li><b>Access rights:</b> <code>opticli access</code> shows and changes an item's ACL: grants for roles and users,
-            revokes, breaking and restoring inheritance, with a lock-out check.</li>
-          <li><b>Plans:</b> <code>"@file"</code> values, fixed GUIDs with <code>"guidNamespace"</code>,
-            <code>apply --update-existing</code>, and dry runs that check steps on planned content against stand-ins.</li>
-          <li><b>Page settings:</b> Shortcut, SimpleAddress, Category, ChildSortOrder, SortIndex, StartPublish and
-            StopPublish, in <code>get</code> and as values to set. Block list properties can be written.</li>
-          <li><b>Refs:</b> content provider refs (<code>63__provider</code>) work as <code>get</code> prints them.</li>
-          <li><b>serve:</b> <code>--https</code> also binds <code>https://localhost</code> for sites that redirect to HTTPS.</li>
-          <li><b>Skill:</b> <code>skill install</code> replaces a copy it installed when the files are unedited, without <code>--force</code>.</li>
-          <li><b>delete</b> lists the "For this page" folders that stay behind, as in the CMS.</li>
-        </ul></li>
-      <li><div class="v"><b>0.3.0</b><span>30 September 2026</span></div>
-        <ul>
-          <li>First release on nuget.org. Reads straight from the database: <code>doctor</code>, <code>get</code>,
-            <code>tree</code>, <code>find</code>, <code>search</code>, <code>where-used</code>, <code>resolve</code>,
-            <code>type</code>, <code>allowed-in</code>, <code>versions</code>, <code>drafts</code>, <code>sql</code> and more.</li>
-          <li>Writes through the running site with <code>serve</code>: <code>set</code>, <code>create</code>,
-            <code>block</code>, <code>area</code>, <code>publish</code>, <code>translate</code>, <code>move</code>,
-            <code>delete</code> and <code>apply</code>.</li>
-          <li>A Claude Code skill, installed with <code>opticli skill install</code>.</li>
-        </ul></li>
-      </ol>
-    </details>
+    </ol>
+    <p class="earlier"><a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">Older releases are in the changelog</a></p>
   </article>
 </section>
 
@@ -719,7 +381,6 @@ opticli resolve https://example.com/en/about/
 opticli skill install     <span class="c"># teach Claude Code to use it</span></pre>
       <div>
         <p>Install it from <a href="https://www.nuget.org/packages/OptiCli">nuget.org</a> as a global tool and run it from anywhere inside your site's repository. Nothing is added to your solution.</p>
-        <p>Piped output is compact JSON, every item has a ref for the next command, and errors come with a code and a hint, which is what an agent needs to work with it.</p>
         <div class="links"><a href="https://github.com/epinova/opticli">View on GitHub</a><a href="https://github.com/epinova/opticli#readme">Read the README</a></div>
       </div>
     </div>
@@ -729,7 +390,6 @@ opticli skill install     <span class="c"># teach Claude Code to use it</span></
 
 <footer class="wrap">
   <p>opticli is open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. It is an independent project, not affiliated with or endorsed by Optimizely.</p>
-  <p>The screencast was recorded on Optimizely's Alloy sample site, with long pauses shortened.</p>
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/asciinema-player@3.17.0/dist/bundle/asciinema-player.min.js"></script>

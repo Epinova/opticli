@@ -275,6 +275,7 @@ details.earlier summary .icon { transition: transform .2s cubic-bezier(.16, 1, .
 details.earlier[open] summary .icon { transform: rotate(90deg); }
 details.earlier summary span { font-weight: 400; color: var(--muted); }
 details.earlier .releases { border-top: 1px solid var(--rule); }
+p.earlier { border-top: 1px solid var(--rule); padding: 14px 20px 14px 50px; font-weight: 700; }
 @media (max-width: 640px) { .releases > li { grid-template-columns: 1fr; padding-left: 48px; } }
 
 /* The merge box: get started. */

@@ -6,7 +6,7 @@
 <title>opticli for editors: your AI assistant in Optimizely CMS</title>
 <meta name="description" content="OptiCli.Mcp (OptiCli.Mcp.Cms13 on CMS 13) is an MCP server for Optimizely CMS 12 and 13 sites. Editors connect their AI assistant, which signs in as them, works with their access rights and saves drafts for them to review.">
 <meta property="og:title" content="opticli for editors: your AI assistant in Optimizely CMS">
-<meta property="og:description" content="Work on your site's content with your AI assistant, as yourself: your login, your access rights, drafts you review.">
+<meta property="og:description" content="Edit your site's content with your AI assistant. It signs in as you, works with your access rights and saves drafts you review.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://epinova.github.io/opticli/editors/">
 <meta name="twitter:card" content="summary">
@@ -14,7 +14,6 @@
 <link rel="preload" href="../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="../style.css">
 <style>
-.editors-lead { margin-top: 20px; }
 .chat { display: grid; gap: 22px; margin-top: 32px; padding: 28px 28px 22px; background: var(--surface); border: 1px solid var(--rule); border-radius: 16px; }
 .msg.you { justify-self: end; max-width: min(36rem, 80%); padding: 11px 16px; border-radius: 18px 18px 4px 18px; background: var(--hunk); color: var(--ink); font-size: 1.05rem; }
 .msg.claude { display: grid; gap: 10px; justify-items: start; font-size: 1.05rem; }
@@ -69,16 +68,16 @@
 
 <main>
 <section class="change wrap" id="change">
+  <h1>Edit your site's content with your AI assistant. <em>It signs in as you.</em></h1>
   <div class="change-head">
-    <h1>Work on your site's content with your AI assistant, <em>as yourself</em></h1>
+    <p class="lead"><code>OptiCli.Mcp</code> adds an MCP server to your site. Your assistant uses your CMS login and access rights, and everything it saves stays a draft until someone publishes it.</p>
     <aside class="checkout" aria-labelledby="connect-h">
       <h2 id="connect-h">Connect your assistant</h2>
       <p>Add your site's MCP address to any assistant that supports MCP servers:</p>
       <div class="copyline"><code id="mcp-url">https://<wbr>your-site.example/<wbr>episerver/<wbr>opticli/<wbr>mcp</code><button class="copy" type="button" data-copy="mcp-url">Copy</button></div>
-      <p>Your browser then opens the site's own login. Using Claude Desktop? <a href="#claude">Install the extension</a>.</p>
+      <p>You'll sign in with your usual CMS login. Using Claude Desktop? <a href="#claude">Install the extension</a>.</p>
     </aside>
   </div>
-  <p class="lead editors-lead"><code>OptiCli.Mcp</code> puts an MCP server in your site. Your assistant signs in with the site's own login and works with your access rights. What it saves stays a draft until someone publishes it.</p>
 
   <div class="chat" aria-label="An example conversation">
     <div class="msg you"><span class="visually-hidden">You: </span>The Alloy Track teaser should mention reporting, and the page title should say the same.</div>
@@ -109,21 +108,21 @@
     </div>
     <div class="composer" aria-hidden="true">Reply…</div>
   </div>
-  <p class="example">An example conversation on Optimizely's Alloy sample site, written for this page.</p>
+  <p class="example">An illustrative conversation, on Optimizely's Alloy sample site.</p>
 </section>
 
 <section class="part wrap" id="can" aria-labelledby="can-h">
   <div class="part-head">
     <h2 id="can-h">What your assistant can do</h2>
-    <p>The work you'd otherwise do in the CMS's edit view: it finds content, reads it, and changes it for you to check.</p>
+    <p>Most of what you'd do in edit view: find, read and change content.</p>
   </div>
   <article class="file">
     <ul class="ways">
       <li><b>Find and read content</b><div><p>Find pages, blocks and media by name, by URL or under a page, and read everything on them: every property, the blocks in a content area, links and rich text, and on CMS 13 the sections and elements of a Visual Builder page. It also checks which properties a page type has and which values they allow.</p></div></li>
-      <li><b>See images</b><div><p>An assistant that handles images can look at the ones in the media library itself, so it can write alt text or pick the right image without you describing it.</p></div></li>
-      <li><b>Change content, as drafts</b><div><p>Change properties, create pages and blocks, add a language version, upload images and files, and move content. Each change can be a dry run first, listing what would change; a saved change is a draft.</p></div></li>
-      <li><b>Show the draft</b><div><p>Every draft it saves comes with a link to the CMS's preview of it, which opens for you when you're signed in. The assistant can also open the preview through a short-lived link of its own to check how the draft looks. The site can turn that off.</p></div></li>
-      <li><b>Publish, if your site allows it</b><div><p>Publishing, unpublishing and deleting are off until the site turns them on. Where an approval sequence applies, the assistant only ever sends content for review.</p></div></li>
+      <li><b>See images</b><div><p>If your assistant handles images, it can look at the ones in the media library, so it can write alt text or pick an image without you describing it.</p></div></li>
+      <li><b>Change content, as drafts</b><div><p>Change properties, create pages and blocks, add a language version, upload images and files, and move content. Any change can be tried as a dry run first, to see what would change. Saved changes are drafts.</p></div></li>
+      <li><b>Preview every draft</b><div><p>Every draft comes with a link to its preview in the CMS, which opens when you're signed in. The assistant can also check the preview itself, through a short-lived link of its own. Your site can turn that off.</p></div></li>
+      <li><b>Publish, if your site allows it</b><div><p>Publishing, unpublishing and deleting are off until the site turns them on. Where an approval sequence applies, the assistant can only send content for review.</p></div></li>
     </ul>
   </article>
 </section>
@@ -131,7 +130,7 @@
 <section class="part wrap" id="checks" aria-labelledby="checks-h">
   <div class="part-head">
     <h2 id="checks-h">What the site enforces</h2>
-    <p>These hold whatever the assistant is asked to do, and whichever assistant it is.</p>
+    <p>The site enforces these, whichever assistant you use and whatever you ask it.</p>
   </div>
   <article class="file">
     <ul class="required">
@@ -139,7 +138,7 @@
       <li><svg class="icon ok" aria-hidden="true"><use href="#i-ok"/></svg><b>Drafts, without script</b><p>Changes are saved as drafts in your name. Script in rich text and other markup is refused.</p><span class="status ok">drafts</span></li>
       <li><svg class="icon no" aria-hidden="true"><use href="#i-no"/></svg><b>Publishing and deleting</b><p>Off until the site turns them on. Approval sequences always apply.</p><span class="status no">off by default</span></li>
       <li><svg class="icon no" aria-hidden="true"><use href="#i-no"/></svg><b>Who can connect</b><p>Apps on your own machine, and web-based assistants only from addresses the site allows: claude.ai by default. You see your connections and can revoke them.</p><span class="status no">your machine, or allowed sites</span></li>
-      <li><svg class="icon off" aria-hidden="true"><use href="#i-off"/></svg><b>Text in your content</b><p>The assistant is told to treat what it reads in pages, file names and images as content, and to follow no instructions it finds there. This one is an instruction to the assistant, so the site can't enforce it the way it enforces the rules above.</p><span class="status off">an instruction to the assistant</span></li>
+      <li><svg class="icon off" aria-hidden="true"><use href="#i-off"/></svg><b>Instructions hidden in content</b><p>The assistant is told to ignore instructions it finds in pages, file names or images. This is guidance to the assistant, not a rule the site can enforce like the ones above.</p><span class="status off">not enforced</span></li>
     </ul>
   </article>
 </section>
@@ -147,11 +146,11 @@
 <section class="part wrap" id="connect" aria-labelledby="ways-h">
   <div class="part-head">
     <h2 id="ways-h">Connect your assistant</h2>
-    <p>The first time the assistant uses it, your browser opens the site's own login page, then asks you to allow the connection.</p>
+    <p>The first time, your browser opens your CMS login, then asks you to allow the connection.</p>
   </div>
   <article class="file">
     <ul class="ways">
-      <li><b>On your own machine</b><div><p>Desktop apps, code editors and command-line agents that support MCP servers with an OAuth sign-in: add a server with the address <code>https://<wbr>your-site.example/<wbr>episerver/<wbr>opticli/<wbr>mcp</code>. They connect as they are.</p></div></li>
+      <li><b>On your own machine</b><div><p>Desktop apps, code editors and command-line agents that support MCP servers with an OAuth sign-in: add a server with the address <code>https://<wbr>your-site.example/<wbr>episerver/<wbr>opticli/<wbr>mcp</code>. No extra setup.</p></div></li>
       <li><b>In the browser</b><div><p>A web-based assistant reaches your site from its own servers, so the site has to be reachable from the internet, and the site has to allow that assistant's address. claude.ai is allowed by default; for any other, ask your developer.</p></div></li>
     </ul>
   </article>
@@ -160,7 +159,6 @@
 <section class="part wrap" id="claude" aria-labelledby="claude-h">
   <div class="part-head">
     <h2 id="claude-h">With Claude</h2>
-    <p>Claude Desktop has an extension of its own, claude.ai is among the addresses a site allows by default, and Claude Code takes one command.</p>
   </div>
   <article class="file">
     <ul class="ways">
@@ -188,7 +186,7 @@ endpoints.MapOptiCliMcp();   <span class="c"># after MapContent() and the site's
 <span class="c"># editors then connect their assistant to</span>
 https://<wbr>your-site.example/<wbr>episerver/<wbr>opticli/<wbr>mcp</pre>
       <div>
-        <p><code>OptiCli.Mcp</code> is a NuGet package for the site itself, on any environment, production included: <code>OptiCli.Mcp.Cms13</code> on CMS 13, set up the same way, so moving a site to CMS 13 is one package swap. Editors sign in with the site's own login, Entra ID or ASP.NET Identity, and the assistant works through the same operations as opticli's site agent.</p>
+        <p>Install <code>OptiCli.Mcp</code> in the site, in any environment, production included. On CMS 13, use <code>OptiCli.Mcp.Cms13</code>: setup is the same, so upgrading is a package swap. Editors sign in with the site's existing login, Entra ID or ASP.NET Identity, and the assistant uses the same operations as opticli's site agent.</p>
         <p>The README has every option: publishing and deleting, preview links, the web addresses assistants may connect from (<code>AllowedRedirectHosts</code>) and a dedicated host.</p>
         <div class="links"><a href="https://github.com/epinova/opticli#mcp-server-for-editors">Read the README</a><a href="../">opticli for developers</a></div>
       </div>
