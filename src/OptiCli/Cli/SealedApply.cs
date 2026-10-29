@@ -68,6 +68,9 @@ internal static class SealedApply
         }
         var project = context.Project;
         var (candidate, saved) = Sealing.Production(context, database, "--db");
+        // What the user calls it, which the run says rather than "production" (a staging database can have the role prod too).
+        var name = candidate.Name ?? database;
+        var target = Sealing.Quoted(name);
         var store = SealStore.For(environment);
         var seal = store.Load(sealId);
         var plan = await PlanSnapshot.ReadAsync(planFile, cancellationToken);
@@ -84,7 +87,7 @@ internal static class SealedApply
         var named = SealedPlan.Referenced(plan.Plan);
 
         // The plan as the run read it; what production had then is checked right after the confirmation, before the login is asked.
-        Show(terminal, verified, verified.Seal.Production);
+        Show(terminal, verified, verified.Seal.Production, target);
         terminal.Write($"Type the database's name, '{Printable.Of(saved.Database)}', to write this plan to it (Enter cancels): ");
         var typed = terminal.ReadLine();
         if (!string.Equals(typed?.Trim(), saved.Database, StringComparison.OrdinalIgnoreCase))
@@ -98,7 +101,7 @@ internal static class SealedApply
             SealedPlan.Require(plan.Plan, readOnly.Model);
             SealCheck.RequireUnchanged(verified, await ProductionState.ReadAsync(readOnly, touched, named, cancellationToken));
         }
-        terminal.WriteLine("Production's content model and the content the plan touches are as sealed.");
+        terminal.WriteLine($"The content model of {target} and the content the plan touches are as sealed.");
         WriteCredentials? credentials = null;
         if (ProductionWrite.LoginOf(saved) == WriteLogin.Password)
         {
@@ -131,7 +134,7 @@ internal static class SealedApply
         {
             sqlToken = new SealedSqlToken(entra.AccessToken, entra.ExpiresOn);
             var left = entra.ExpiresOn - DateTimeOffset.UtcNow;
-            terminal.WriteLine($"The run's site gets this run's Microsoft Entra token to sign in to production with (valid until {entra.ExpiresOn.ToLocalTime():HH:mm}"
+            terminal.WriteLine($"The run's site gets this run's Microsoft Entra token to sign in to {target} with (valid until {entra.ExpiresOn.ToLocalTime():HH:mm}"
                 + (left < TimeSpan.FromMinutes(15) ? $", {Math.Max(0, (int)left.TotalMinutes)} min from now: after that the site fetches its own" : "") + ").");
         }
         if (await WriteAccessReader.ReadAsync(session.Db, cancellationToken) is { Count: 0 })
@@ -139,7 +142,7 @@ internal static class SealedApply
             terminal.WriteLine("warning: that login has none of db_owner, db_datawriter or INSERT/UPDATE on tblContent; the CMS may not be able to save.");
         }
         // Production's event bus (optional) and blob storage (when the plan uploads), checked before the seal is used.
-        var providers = await SealedProvidersRun.AskAsync(terminal, plan.Plan, project.Directory, outputFolder, write.IsLocal, cancellationToken);
+        var providers = await SealedProvidersRun.AskAsync(terminal, plan.Plan, project.Directory, outputFolder, write.IsLocal, target, cancellationToken);
         // From here on the seal is used, whatever happens.
         store.Consume(seal.Id);
 
@@ -162,7 +165,7 @@ internal static class SealedApply
                 pid =>
                 {
                     PortClaims.ForUser.ReleaseAll();
-                    terminal.WriteLine($"Started the site against production for this run (pid {pid}, http://127.0.0.1:{port}, log {launch.LogPath}); it is stopped when the run ends.");
+                    terminal.WriteLine($"Started the site against {target} (role prod) for this run (pid {pid}, http://127.0.0.1:{port}, log {launch.LogPath}); it is stopped when the run ends.");
                 },
                 async (client, token) =>
                 {
@@ -172,7 +175,7 @@ internal static class SealedApply
                     }
                     // What the build and production differ in: the leftovers the seal accepted by name, and nothing else.
                     var acceptDrift = SealedLeftovers.Accept(await client.DriftAsync(token), seal.Leftovers);
-                    terminal.WriteLine("The site answers. Checking the plan against production, then writing…");
+                    terminal.WriteLine($"The site answers. Checking the plan against {target}, then writing…");
                     var executor = new WriteExecutor(session, _ => Task.FromResult(client), site: null, project.Directory, seal.Options.UpdateExisting, acceptDrift: acceptDrift, sharedDatabase: true)
                     {
                         // Uploads send the bytes the run read and hashed, never the file on disk again.
@@ -243,7 +246,7 @@ internal static class SealedApply
         var result = new
         {
             seal = seal.Id,
-            target = new SealedDatabase(write.Server, write.Database, "prod"),
+            target = new SealedDatabase(name, write.Server, write.Database, "prod"),
             plan = plan.Path,
             run,
             events,
@@ -251,7 +254,7 @@ internal static class SealedApply
             restartNeeded,
             restart = restartNeeded ? RestartWarning : null,
         };
-        return new CommandResult(result, Text: Text(seal, run, events, media), Warnings: restartNeeded ? [Restart(events)] : [], Source: WriteExecutor.AgentSource);
+        return new CommandResult(result, Text: Text(seal, target, run, events, media), Warnings: restartNeeded ? [Restart(events)] : [], Source: WriteExecutor.AgentSource);
     }
 
     /// <summary>
@@ -311,37 +314,38 @@ internal static class SealedApply
     internal static string ProbeName(string sealId) => $"opticli-probe-{sealId}";
 
     /// <summary>What the user confirms: the target, the plan (counted from the plan the run read, not from the seal), the build and what isn't done.</summary>
-    private static void Show(ITerminal terminal, VerifiedSeal verified, ProductionState state)
+    /// <param name="target">The production database, quoted (<see cref="Sealing.Quoted"/>).</param>
+    private static void Show(ITerminal terminal, VerifiedSeal verified, ProductionState state, string target)
     {
         var seal = verified.Seal;
         var summary = SealSummary.Of(verified.Plan.Plan, seal.Options, state);
         var age = DateTimeOffset.UtcNow - seal.Created;
         terminal.WriteLine();
-        terminal.WriteLine($"Sealed apply {seal.Id} to PRODUCTION: '{Printable.Of(seal.Target.Database)}' on '{Printable.Of(seal.Target.Server)}' (role prod)");
+        terminal.WriteLine($"Sealed apply {seal.Id} to {target}, a PRODUCTION database (role prod): '{Printable.Of(seal.Target.Database)}' on '{Printable.Of(seal.Target.Server)}'");
         terminal.WriteLine($"  plan:    {Printable.Of(verified.Plan.Path)} ({verified.Plan.Files.Count} file(s)), unchanged since the seal");
         terminal.WriteLine($"  sealed:  {seal.Created:u} ({(int)age.TotalHours} h {age.Minutes} min ago), checked against {Printable.Of(seal.ValidatedOn)}");
-        terminal.WriteLine($"  build:   {Printable.Of(verified.Build.Output)} (built {verified.Build.Built:u}{(verified.Build.Commit is { } commit ? $", git {commit}{(verified.Build.Uncommitted == true ? " with uncommitted changes" : "")}" : "")}), unchanged since the seal: its code runs against production");
+        terminal.WriteLine($"  build:   {Printable.Of(verified.Build.Output)} (built {verified.Build.Built:u}{(verified.Build.Commit is { } commit ? $", git {commit}{(verified.Build.Uncommitted == true ? " with uncommitted changes" : "")}" : "")}), unchanged since the seal: its code runs against {target}");
         terminal.WriteLine($"  options: {(seal.Options.Flags.Count > 0 ? string.Join(' ', seal.Options.Flags) : "(none)")}");
-        terminal.WriteLine($"  steps:   {Printable.Of(Sealing.Describe(summary))}");
-        terminal.WriteLine("  checks:  production's content model and the versions of the content the plan touches must be as sealed: next, and again right before the first save");
+        terminal.WriteLine($"  steps:   {Printable.Of(Sealing.Describe(summary, target))}");
+        terminal.WriteLine($"  checks:  the content model of {target} and the versions of the content the plan touches must be as sealed: next, and again right before the first save");
         if (seal.Leftovers is { Count: > 0 } leftovers)
         {
-            terminal.WriteLine($"  accepts: {leftovers.Count} content type(s)/properties only production's database has (code removed, or newer code there than this build), as they are; the plan doesn't write them (checked), and any other difference stops the run: {Printable.Of(string.Join(", ", leftovers))}");
+            terminal.WriteLine($"  accepts: {leftovers.Count} content type(s)/properties only the database of {target} has (code removed, or newer code there than this build), as they are; the plan doesn't write them (checked), and any other difference stops the run: {Printable.Of(string.Join(", ", leftovers))}");
         }
-        terminal.WriteLine($"  never:   deletes, unpublish steps, access rights{(summary.Media > 0 ? "; media files only to production's blob storage, asked next" : "")}");
+        terminal.WriteLine($"  never:   deletes, unpublish steps, access rights{(summary.Media > 0 ? $"; media files only to the blob storage of {target}, asked next" : "")}");
         terminal.WriteLine();
     }
 
-    private static string Text(Seal seal, PlanRun run, SealedEventsResult? events, IReadOnlyList<SealedMediaResult> media)
+    private static string Text(Seal seal, string target, PlanRun run, SealedEventsResult? events, IReadOnlyList<SealedMediaResult> media)
     {
         int Count(string status) => run.Operations.Count(o => o.Status == status);
         var text = new StringBuilder()
-            .AppendLine(CultureInfo.InvariantCulture, $"Applied sealed plan {seal.Id} to '{seal.Target.Database}' on '{seal.Target.Server}': {run.Operations.Count} step(s), {Count(PlanStepStatus.Saved)} saved, {Count(PlanStepStatus.Unchanged)} unchanged.");
+            .AppendLine(CultureInfo.InvariantCulture, $"Applied sealed plan {seal.Id} to {target} ('{seal.Target.Database}' on '{seal.Target.Server}'): {run.Operations.Count} step(s), {Count(PlanStepStatus.Saved)} saved, {Count(PlanStepStatus.Unchanged)} unchanged.");
         if (media.Count > 0)
         {
-            text.AppendLine(CultureInfo.InvariantCulture, $"Media: {media.Count} file(s) in production's blob storage, each checked.");
+            text.AppendLine(CultureInfo.InvariantCulture, $"Media: {media.Count} file(s) in the blob storage of {target}, each checked.");
         }
-        text.AppendLine(RestartNeeded(events) ? "Restart needed: production's servers weren't told (see the warning)." : EventsSent(events!));
+        text.AppendLine(RestartNeeded(events) ? $"Restart needed: the servers of {target} weren't told (see the warning)." : EventsSent(events!));
         return text.ToString();
     }
 

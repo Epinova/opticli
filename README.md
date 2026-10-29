@@ -425,7 +425,9 @@ option (the seal's are used), and:
    what runs), the build, and its age. Another target, project or plan file is `refused`; an expired seal, a changed plan
    or build is a `conflict` (exit 5): seal again;
 2. shows what the plan does (counted from the plan it read: steps, types, new and existing content, publishes, and steps
-   that set an expiry that has passed), the target, the build (and its git commit), and asks for the database's name;
+   that set an expiry that has passed), the target, the build (and its git commit), and asks for the database's name.
+   From here on the run names the target as `--db` does (a staging database with the role `prod`, say), not as
+   "production";
 3. reads production again with the saved login: its model and every touched item must be as sealed (`conflict`, exit 5,
    `details.reason: "productionChanged"`, `details.changes` says what changed: seal again);
 4. asks for the write login (user, and the password without showing it), used for this run only and never written

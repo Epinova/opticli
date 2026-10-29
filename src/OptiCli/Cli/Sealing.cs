@@ -36,7 +36,8 @@ internal sealed record SealResult(
     IReadOnlyList<string> NotChecked,
     IReadOnlyList<string> Leftovers);
 
-internal sealed record SealedDatabase(string Server, string? Database, string Role);
+/// <param name="Name">What the user calls it: its <c>--db</c> name, which a run's messages say instead of "production".</param>
+internal sealed record SealedDatabase(string Name, string Server, string? Database, string Role);
 
 internal sealed record SealedBuild(string Output, DateTime Built, string? Commit, bool? Uncommitted);
 
@@ -125,7 +126,7 @@ internal static class Sealing
         var leftovers = SealedLeftovers.Expected(localLeftovers, onlyInProduction, productionSession.Model);
         if (leftovers.Count > 0)
         {
-            warnings.Add($"{leftovers.Count} content type(s) or properties only production's database has (code removed, or newer code in production than this build) are accepted as they are, by name: {Printable.Of(string.Join(", ", leftovers.Take(8)))}{(leftovers.Count > 8 ? ", …" : "")}. The plan may not write them (checked); the run refuses any other difference.");
+            warnings.Add($"{leftovers.Count} content type(s) or properties only the database of {Quoted(production.Name ?? productionName)} has (code removed, or newer code there than this build) are accepted as they are, by name: {Printable.Of(string.Join(", ", leftovers.Take(8)))}{(leftovers.Count > 8 ? ", …" : "")}. The plan may not write them (checked); the run refuses any other difference.");
         }
 
         var state = await ProductionState.ReadAsync(productionSession, SealedPlan.Touched(plan.Plan), SealedPlan.Referenced(plan.Plan), cancellationToken);
@@ -155,7 +156,7 @@ internal static class Sealing
             seal.Id,
             file,
             seal.Expires,
-            new SealedDatabase(production.Server!, production.Database, "prod"),
+            new SealedDatabase(production.Name ?? productionName, production.Server!, production.Database, "prod"),
             plan.Path,
             plan.Hash,
             plan.Files.Count,
@@ -277,24 +278,29 @@ internal static class Sealing
     /// <summary>The seal as text, for a terminal.</summary>
     public static string Text(SealResult result)
     {
+        var target = Quoted(result.Target.Name);
         var text = new StringBuilder()
-            .AppendLine(CultureInfo.InvariantCulture, $"Sealed {result.Seal} for '{result.Target.Database}' on '{result.Target.Server}' (role prod), good until {result.Expires:u}.")
-            .AppendLine(CultureInfo.InvariantCulture, $"  plan {result.Plan} ({result.PlanFiles} file(s)), {Describe(result.Summary)}")
-            .AppendLine(CultureInfo.InvariantCulture, $"  checked against {result.ValidatedOn}{(result.Leftovers.Count > 0 ? $"; accepts {result.Leftovers.Count} type(s)/properties only production has: {Printable.Of(string.Join(", ", result.Leftovers))}" : "")}; build {result.Build.Output}{(result.Build.Commit is { } commit ? $" (git {commit}{(result.Build.Uncommitted == true ? ", uncommitted changes" : "")})" : "")}")
+            .AppendLine(CultureInfo.InvariantCulture, $"Sealed {result.Seal} for {target} (role prod): '{result.Target.Database}' on '{result.Target.Server}', good until {result.Expires:u}.")
+            .AppendLine(CultureInfo.InvariantCulture, $"  plan {result.Plan} ({result.PlanFiles} file(s)), {Describe(result.Summary, target)}")
+            .AppendLine(CultureInfo.InvariantCulture, $"  checked against {result.ValidatedOn}{(result.Leftovers.Count > 0 ? $"; accepts {result.Leftovers.Count} type(s)/properties only {target} has: {Printable.Of(string.Join(", ", result.Leftovers))}" : "")}; build {result.Build.Output}{(result.Build.Commit is { } commit ? $" (git {commit}{(result.Build.Uncommitted == true ? ", uncommitted changes" : "")})" : "")}")
             .AppendLine()
             .AppendLine("The user runs this in their own terminal (an agent hands it over and never runs it):")
             .AppendLine(CultureInfo.InvariantCulture, $"  {result.UserCommand}");
         return text.ToString();
     }
 
+    /// <summary>A production database's <c>--db</c> name as messages quote it: they name the target, not "production".</summary>
+    public static string Quoted(string name) => $"'{Printable.Of(name)}'";
+
     /// <summary>A summary in one line: steps per op, types, what is new and what exists.</summary>
-    public static string Describe(SealSummary summary) =>
+    /// <param name="target">The production database, quoted (<see cref="Quoted"/>).</param>
+    public static string Describe(SealSummary summary, string target) =>
         $"{summary.Steps} step(s): {string.Join(", ", summary.Operations.Select(o => $"{o.Value} {o.Key}"))}"
         + (summary.Types.Count > 0 ? $"; content types {string.Join(", ", summary.Types.Select(t => $"{t.Key} {t.Value}"))}" : "")
-        + (summary.New + summary.Existing > 0 ? $"; creates {summary.New} new item(s), updates {summary.Existing} production has" : "")
-        + $"; {summary.Publishes} publishing; {summary.Touched} item(s) production has, whose versions are checked"
+        + (summary.New + summary.Existing > 0 ? $"; creates {summary.New} new item(s), updates {summary.Existing} {target} has" : "")
+        + $"; {summary.Publishes} publishing; {summary.Touched} item(s) {target} has, whose versions are checked"
         + (summary.Expiring > 0 ? $"; {summary.Expiring} set an expiry (StopPublish) that has passed: published, that content goes offline" : "")
-        + (summary.Media > 0 ? $"; {summary.Media} upload a media file: the run asks for production's blob storage" : "");
+        + (summary.Media > 0 ? $"; {summary.Media} upload a media file: the run asks for the blob storage of {target}" : "");
 
     /// <summary>
     /// A build from IDE mode names opticli's copy of the agent in its <c>runtimeconfig.json</c>, which the runtime loads

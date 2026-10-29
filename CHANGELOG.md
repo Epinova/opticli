@@ -3,6 +3,16 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## Unreleased
+
+### Changed
+
+- **A sealed run names its target.** The run's lines said "production" whatever the database was called, also for a
+  staging database given the role `prod`. They now name it as `--db` does ("Started the site against 'staging' (role
+  prod) for this run", "Checking the plan against 'staging'"), and so do the summary to confirm, the prompts for the
+  event bus and blob storage, the result's text and the seal's. The JSON `target` of a seal and of a run has the name
+  too (`target.name`).
+
 ## 0.26.0 (28 October 2026)
 
 The MCP server for editors runs on CMS 13, as the new `OptiCli.Mcp.Cms13` package, and is hardened for sites that run

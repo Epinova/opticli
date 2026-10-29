@@ -35,7 +35,8 @@ internal sealed record SealedMediaResult(int Step, Guid? Guid, string? Ref, stri
 /// Only what the user types reaches this: no option, environment variable or configuration entry. The connection strings go
 /// to the site on its stdin line (<see cref="SealedSite"/>) and are never printed, logged or written.
 /// </remarks>
-internal sealed class SealedProvidersRun(ITerminal terminal, SealedProviders providers, int subscribers)
+/// <param name="target">The production database, quoted (<see cref="Sealing.Quoted"/>): what the run's lines name.</param>
+internal sealed class SealedProvidersRun(ITerminal terminal, SealedProviders providers, int subscribers, string target)
 {
     /// <summary><c>details.reason</c> when production's event bus can't be used.</summary>
     public const string EventsReason = "eventBus";
@@ -83,10 +84,11 @@ internal sealed class SealedProvidersRun(ITerminal terminal, SealedProviders pro
     /// uploads; required then), and checks both before the seal is used.
     /// </summary>
     /// <param name="localProduction">The production database is on this machine (a test): only then may blob storage be Azurite.</param>
+    /// <param name="target">The production database, quoted (<see cref="Sealing.Quoted"/>): what the prompts name.</param>
     /// <returns>Null when neither was given.</returns>
     /// <exception cref="UsageException">A connection string of the wrong form, or a key the service refused.</exception>
     /// <exception cref="RefusedException">The topic is missing or has no subscriptions; the container is missing; uploads without blob storage.</exception>
-    public static async Task<SealedProvidersRun?> AskAsync(ITerminal terminal, WritePlan plan, string projectDirectory, string outputFolder, bool localProduction, CancellationToken cancellationToken)
+    public static async Task<SealedProvidersRun?> AskAsync(ITerminal terminal, WritePlan plan, string projectDirectory, string outputFolder, bool localProduction, string target, CancellationToken cancellationToken)
     {
         ServiceBusConnection? events = null;
         string? topic = null;
@@ -94,11 +96,11 @@ internal sealed class SealedProvidersRun(ITerminal terminal, SealedProviders pro
         if (SiteAzure.HasEventProvider(outputFolder))
         {
             terminal.WriteLine();
-            terminal.WriteLine("Production's event bus (Azure Service Bus), so production's servers drop what they cached and show the changes at once (used for this run only, never saved):");
+            terminal.WriteLine($"The event bus of {target} (Azure Service Bus), so its servers drop what they cached and show the changes at once (used for this run only, never saved):");
             var value = terminal.ReadHidden("  Connection string (not shown; Enter for none: then restart the site after the run): ");
             if (string.IsNullOrWhiteSpace(value))
             {
-                terminal.WriteLine("  None: production's servers keep what they cached until the site restarts.");
+                terminal.WriteLine($"  None: the servers of {target} keep what they cached until the site restarts.");
             }
             else
             {
@@ -115,7 +117,7 @@ internal sealed class SealedProvidersRun(ITerminal terminal, SealedProviders pro
                 }
                 subscribers = subscriptions.Count;
                 // The servers' names (machine name and 8 random characters) show whose topic it is: check it is production's.
-                terminal.WriteLine($"  Topic '{Printable.Of(topic)}' on {events.Endpoint.Host}: {subscribers} subscription(s), one per server listening: {Printable.Of(string.Join(", ", subscriptions.Take(8)))}{(subscribers > 8 ? ", …" : "")}. Make sure these are production's servers.");
+                terminal.WriteLine($"  Topic '{Printable.Of(topic)}' on {events.Endpoint.Host}: {subscribers} subscription(s), one per server listening: {Printable.Of(string.Join(", ", subscriptions.Take(8)))}{(subscribers > 8 ? ", …" : "")}. Make sure these are the servers of {target}.");
             }
         }
 
@@ -125,7 +127,7 @@ internal sealed class SealedProvidersRun(ITerminal terminal, SealedProviders pro
         if (uploads > 0)
         {
             terminal.WriteLine();
-            terminal.WriteLine($"The plan uploads {uploads} media file(s). Production's blob storage (Azure Storage; used for this run only, never saved):");
+            terminal.WriteLine($"The plan uploads {uploads} media file(s). The blob storage of {target} (Azure Storage; used for this run only, never saved):");
             var value = terminal.ReadHidden("  Connection string (not shown; Enter cancels, the seal stays unused): ");
             if (string.IsNullOrWhiteSpace(value))
             {
@@ -145,7 +147,7 @@ internal sealed class SealedProvidersRun(ITerminal terminal, SealedProviders pro
             }
             terminal.WriteLine($"  Container '{Printable.Of(container)}' on {blobs.Endpoint.Host}: found.");
         }
-        return events is null && blobs is null ? null : new SealedProvidersRun(terminal, new SealedProviders(events, topic, blobs, container), subscribers);
+        return events is null && blobs is null ? null : new SealedProvidersRun(terminal, new SealedProviders(events, topic, blobs, container), subscribers, target);
     }
 
     /// <summary>The site runs with what the user gave, and nothing of its own instead: checked once it answers, before anything is written.</summary>
@@ -258,7 +260,7 @@ internal sealed class SealedProvidersRun(ITerminal terminal, SealedProviders pro
         }
         await bus.CreateProbeAsync(probeName, _subscription, cancellationToken);
         _probe = probeName;
-        terminal.WriteLine($"The site is on production's event bus (subscription '{Printable.Of(_subscription)}' on topic '{Printable.Of(providers.Topic!)}').");
+        terminal.WriteLine($"The site is on the event bus of {target} (subscription '{Printable.Of(_subscription)}' on topic '{Printable.Of(providers.Topic!)}').");
     }
 
     /// <summary>

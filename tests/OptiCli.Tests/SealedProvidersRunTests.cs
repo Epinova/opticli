@@ -61,7 +61,7 @@ public sealed class SealedProvidersRunTests : IDisposable
         : $$$"""{"operations": [{"op": "set", "ref": "{{{Page}}}", "properties": {"Heading": "x"}}]}""");
 
     private Task<SealedProvidersRun?> AskAsync(WritePlan plan, bool localProduction = false) =>
-        SealedProvidersRun.AskAsync(_terminal, plan, _folder.Path, Output, localProduction, CancellationToken.None);
+        SealedProvidersRun.AskAsync(_terminal, plan, _folder.Path, Output, localProduction, "'staging'", CancellationToken.None);
 
     [Fact]
     public async Task A_site_without_the_azure_providers_is_asked_nothing()
@@ -79,7 +79,7 @@ public sealed class SealedProvidersRunTests : IDisposable
         Build("EPiServer.Azure.dll");
 
         Assert.Null(await AskAsync(Plan()));
-        Assert.Contains("Production's event bus (Azure Service Bus)", _terminal.Output, StringComparison.Ordinal);
+        Assert.Contains("The event bus of 'staging' (Azure Service Bus)", _terminal.Output, StringComparison.Ordinal);
         Assert.Contains("until the site restarts", _terminal.Output, StringComparison.Ordinal);
         Assert.Empty(_topic.Calls);
     }
@@ -226,7 +226,7 @@ public sealed class SealedProvidersRunTests : IDisposable
             new("EPiServer.Azure.Events.AzureEventProvider", "SiteEvents", Subscription, Connected: true, true),
         ]);
         _topic.Existing.Add(Subscription);
-        var run = new SealedProvidersRun(_terminal, Providers(events: true), 2);
+        var run = new SealedProvidersRun(_terminal, Providers(events: true), 2, "'staging'");
 
         await run.BeforeSavingAsync(_ => Task.FromResult(new SealedStatus(statuses.Count > 1 ? statuses.Dequeue() : statuses.Peek(), null)), "opticli-probe-x", CancellationToken.None);
 
@@ -238,7 +238,7 @@ public sealed class SealedProvidersRunTests : IDisposable
     public async Task Without_its_subscription_on_the_topic_nothing_is_written()
     {
         SealedProvidersRun.SubscriptionWait = TimeSpan.FromMilliseconds(100);
-        var run = new SealedProvidersRun(_terminal, Providers(events: true), 2);
+        var run = new SealedProvidersRun(_terminal, Providers(events: true), 2, "'staging'");
         var status = new SealedStatus(new SealedEvents("EPiServer.Azure.Events.AzureEventProvider", "SiteEvents", Subscription, true, true), null);
 
         var refused = await Assert.ThrowsAsync<RefusedException>(() => run.BeforeSavingAsync(_ => Task.FromResult(status), "opticli-probe-x", CancellationToken.None));
@@ -288,7 +288,7 @@ public sealed class SealedProvidersRunTests : IDisposable
     [Fact]
     public async Task A_run_that_stopped_before_the_check_or_had_no_bus_needs_a_restart()
     {
-        var run = new SealedProvidersRun(_terminal, Providers(events: true), 2);
+        var run = new SealedProvidersRun(_terminal, Providers(events: true), 2, "'staging'");
 
         var events = await run.FinishEventsAsync(_ => throw new InvalidOperationException("not called"));
 
@@ -300,7 +300,7 @@ public sealed class SealedProvidersRunTests : IDisposable
     [Fact]
     public async Task Each_uploaded_file_is_looked_up_where_its_new_version_points()
     {
-        var run = new SealedProvidersRun(_terminal, Providers(blobs: true), 0);
+        var run = new SealedProvidersRun(_terminal, Providers(blobs: true), 0, "'staging'");
         var other = Guid.NewGuid();
         _container.Blobs["0d6f3a528b1e4c7a9e255a4c1b7d3f90/logo.png"] = 1234;
         var plan = new PlanRun(false, [
@@ -325,7 +325,7 @@ public sealed class SealedProvidersRunTests : IDisposable
     [Fact]
     public async Task A_file_that_cant_be_checked_counts_as_missing_and_nothing_throws()
     {
-        var run = new SealedProvidersRun(_terminal, Providers(blobs: true), 0);
+        var run = new SealedProvidersRun(_terminal, Providers(blobs: true), 0, "'staging'");
         _container.Fail = new UnreachableException("Production's blob storage (prodmedia.blob.core.windows.net) couldn't read blob x (500).");
         var plan = new PlanRun(false, [Upload(0, Guid.Parse(Image), "201_901", 1234), Upload(1, Guid.NewGuid(), "202_902", 5)], new Dictionary<string, string>());
 
@@ -371,7 +371,7 @@ public sealed class SealedProvidersRunTests : IDisposable
     private async Task<SealedProvidersRun> ReadyAsync()
     {
         _topic.Existing.Add(Subscription);
-        var run = new SealedProvidersRun(_terminal, Providers(events: true), 2);
+        var run = new SealedProvidersRun(_terminal, Providers(events: true), 2, "'staging'");
         await run.BeforeSavingAsync(_ => Task.FromResult(new SealedStatus(new SealedEvents("EPiServer.Azure.Events.AzureEventProvider", "SiteEvents", Subscription, true, true), null)), "opticli-probe-x", CancellationToken.None);
         return run;
     }

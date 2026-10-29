@@ -167,7 +167,8 @@ public sealed class SealedApplyTests : IDisposable
 
         AssertError(wrong, 1, "usage");
         Assert.Contains("Not confirmed", wrong.Error().GetProperty("message").GetString(), StringComparison.Ordinal);
-        Assert.Contains("PRODUCTION", _terminal.Output, StringComparison.Ordinal);
+        // The database as the user calls it (its --db name), and that it is production.
+        Assert.Contains("to 'prod', a PRODUCTION database (role prod)", _terminal.Output, StringComparison.Ordinal);
         Assert.Contains($"Type the database's name, '{ProdDatabase}'", _terminal.Output, StringComparison.Ordinal);
         Assert.Contains("1 create", _terminal.Output, StringComparison.Ordinal);
         // Text from the plan can't move the cursor or clear the screen before the user confirms.
@@ -213,8 +214,8 @@ public sealed class SealedApplyTests : IDisposable
         var run = await RunSealed(seal.Id);
 
         AssertError(run, 1, "usage");
-        Assert.Contains("1 upload a media file: the run asks for production's blob storage", _terminal.Output, StringComparison.Ordinal);
-        Assert.Contains("media files only to production's blob storage, asked next", _terminal.Output, StringComparison.Ordinal);
+        Assert.Contains("1 upload a media file: the run asks for the blob storage of 'prod'", _terminal.Output, StringComparison.Ordinal);
+        Assert.Contains("media files only to the blob storage of 'prod', asked next", _terminal.Output, StringComparison.Ordinal);
         Assert.False(Used(seal.Id));
     }
 
