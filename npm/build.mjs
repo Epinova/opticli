@@ -1,7 +1,5 @@
 // Builds the npm package into dist/, which is what gets published (`npm publish ./dist`): the compiled lib/, and a
 // package.json with opticli's version (<Version> in Directory.Build.props) and without what only building needs.
-// While its API may still change, the package is a preview: `-preview` on the version, published under the npm tag
-// `preview`, as OptiCli.Mcp was.
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -10,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const dist = join(here, 'dist');
 const props = readFileSync(join(here, '..', 'Directory.Build.props'), 'utf8');
-const version = `${props.match(/<Version>([^<]+)<\/Version>/)[1]}-preview`;
+const version = props.match(/<Version>([^<]+)<\/Version>/)[1];
 
 rmSync(dist, { recursive: true, force: true });
 execFileSync(process.execPath, [join(here, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', join(here, 'tsconfig.json')], { stdio: 'inherit' });

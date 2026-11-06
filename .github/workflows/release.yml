@@ -107,8 +107,7 @@ jobs:
   # The npm package (npm/), after the CLI is on nuget.org, so the opticli it needs can be installed. npm trusted
   # publishing (this workflow and the environment npm, named in the package's settings on npmjs.com) needs the package to
   # exist, so the first version is published by hand and NPM_PUBLISH set to true after; until then this job is skipped. A
-  # version that is on npm already (that first one) is left as it is. While the package is a preview (npm/build.mjs), it
-  # is published under the npm tag preview, not latest.
+  # version that is on npm already (that first one) is left as it is.
   npm:
     needs: publish
     if: vars.NPM_PUBLISH == 'true'
@@ -140,15 +139,15 @@ jobs:
         working-directory: npm/dist
         run: |
           version="$(node -p "require('./package.json').version")"
-          if [ "$version" != "${GITHUB_REF_NAME#v}-preview" ]; then
-            echo "::error::npm/dist has version $version, not ${GITHUB_REF_NAME#v}-preview."
+          if [ "$version" != "${GITHUB_REF_NAME#v}" ]; then
+            echo "::error::npm/dist has version $version, not ${GITHUB_REF_NAME#v}."
             exit 1
           fi
           if npm view "@epinova/opticli@$version" version >/dev/null 2>&1; then
             echo "@epinova/opticli@$version is on npm already."
             exit 0
           fi
-          npm publish --tag preview --access public
+          npm publish --access public
 
   # The GitHub release, after the packages are on nuget.org: the version's CHANGELOG section as notes, and the extension
   # as an asset (the same name every release, so .../releases/latest/download/opticli-cms.mcpb always has the newest).

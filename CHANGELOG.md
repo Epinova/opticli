@@ -3,6 +3,23 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.28.0 (6 November 2026)
+
+The npm package for Playwright and Node.js is out of preview, and a test can make content that stays on the site.
+
+### npm package
+
+- **Out of preview.** Install it with `npm install -D @epinova/opticli`; its version is opticli's, without `-preview`,
+  under the npm tag `latest`.
+- **Content a test makes to keep.** `cms.page()` and `cms.apply()` take `keep: true` to leave what they create on the
+  site; it needs a parent outside the worker's sandbox. The README says what stays and what goes after a run.
+- **Fixed:** `cms.apply()` with `updateExisting` removed content that was there before the test along with what the
+  test made.
+- **Fixed:** a relative `project` pointed elsewhere for `apply` and the seed plan, which run in the plan's folder.
+- **Fixed:** when setup failed after starting the site (a version check, the seed plan), the site kept running.
+- **Fixed:** when opticli couldn't be started, Node.js kept running for up to 13 minutes after the error. A command that
+  runs too long now fails with `code` `timeout`, not "no JSON on stdout".
+
 ## 0.27.0 (6 November 2026)
 
 opticli in Playwright tests: a new npm package (preview) starts the site, seeds the content the tests need and cleans up
