@@ -27,6 +27,13 @@ public sealed record WriteOutput(
     IReadOnlyList<ValidationIssue>? Validation)
 {
     /// <summary>
+    /// The content's public URL in <see cref="Language"/>, as the site links to it (host-relative on the agent's site, as
+    /// <c>get</c> shows it); for a draft of content never published, where it will be. Null for content without one (a
+    /// block, a folder), a dry-run create, and an agent of opticli 0.26.0 or older.
+    /// </summary>
+    public string? Url { get; init; }
+
+    /// <summary>
     /// CMS 13: what the write changed in a Visual Builder composition, node by node (<see cref="CompositionChanges"/>); the
     /// composition isn't listed in <see cref="Changes"/>. Null when it didn't change one.
     /// </summary>
@@ -108,6 +115,7 @@ public sealed record WriteOutput(
             changes,
             result.Validation)
         {
+            Url = result.Url,
             Composition = composition,
             PendingDraft = result.PendingDraft,
             PreviouslyPublished = content is not null && result.PreviouslyPublished is { } previous ? VersionRef(content.Id, previous) : null,

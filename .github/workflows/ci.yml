@@ -80,3 +80,24 @@ jobs:
 
       - name: Check
         run: .github/scripts/check-mcp-extension.sh mcp-extension/dist/opticli-cms.mcpb
+
+  # The npm package (npm/): type-checks it, builds it and tests it against a stand-in opticli, then lists what a publish
+  # would contain.
+  npm:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Build and test
+        working-directory: npm
+        run: |
+          npm ci --no-audit --no-fund
+          npm run typecheck
+          npm test
+          npm pack --dry-run ./dist

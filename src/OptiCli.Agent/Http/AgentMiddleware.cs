@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using EPiServer.Core;
+using EPiServer.Web.Routing;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using OptiCli.Agent.Drift;
@@ -79,14 +80,14 @@ internal static class AgentMiddleware
         // A sealed apply's providers: what the site runs with, and sending what the event provider queued (no content changes).
         [AgentEndpoint.Sealed] = Read(request => SealedEndpoint.Status(request)),
         [AgentEndpoint.SealedEventsFlush] = new(false, async request => (200, (object)await SealedEndpoint.FlushAsync(request))),
-        [AgentEndpoint.Create] = Write(r => r.ReadBodyAsync<CreateRequest>(), b => b.DryRun, (r, b) => Created(CreateOperation.Run(r.Call, b))),
-        [AgentEndpoint.Upload] = Write(r => r.ReadBodyAsync<UploadRequest>(UploadBodyBytes), b => b.DryRun, (r, b) => Created(UploadOperation.Run(r.Call, b))),
-        [AgentEndpoint.Draft] = Write(r => r.ReadBodyAsync<DraftRequest>(), b => b.DryRun, (r, b) => Ok(DraftOperation.Run(r.Call, r.Argument, b))),
-        [AgentEndpoint.Languages] = Write(r => r.ReadBodyAsync<LanguageBranchRequest>(), b => b.DryRun, (r, b) => Created(LanguagesOperation.Run(r.Call, r.Argument, b))),
-        [AgentEndpoint.Publish] = Write(async r => await r.ReadOptionalBodyAsync<PublishRequest>() ?? new PublishRequest(), _ => false, (r, b) => Ok(PublishOperation.Run(r.Call, r.Argument, b))),
+        [AgentEndpoint.Create] = Write(r => r.ReadBodyAsync<CreateRequest>(), b => b.DryRun, (r, b) => Created(r, CreateOperation.Run(r.Call, b))),
+        [AgentEndpoint.Upload] = Write(r => r.ReadBodyAsync<UploadRequest>(UploadBodyBytes), b => b.DryRun, (r, b) => Created(r, UploadOperation.Run(r.Call, b))),
+        [AgentEndpoint.Draft] = Write(r => r.ReadBodyAsync<DraftRequest>(), b => b.DryRun, (r, b) => Written(r, DraftOperation.Run(r.Call, r.Argument, b))),
+        [AgentEndpoint.Languages] = Write(r => r.ReadBodyAsync<LanguageBranchRequest>(), b => b.DryRun, (r, b) => Created(r, LanguagesOperation.Run(r.Call, r.Argument, b))),
+        [AgentEndpoint.Publish] = Write(async r => await r.ReadOptionalBodyAsync<PublishRequest>() ?? new PublishRequest(), _ => false, (r, b) => Written(r, PublishOperation.Run(r.Call, r.Argument, b))),
         [AgentEndpoint.RemoveLanguage] = Write(r => r.ReadBodyAsync<RemoveLanguageRequest>(), b => b.DryRun, (r, b) => Ok(RemoveLanguageOperation.Run(r.Call, r.Argument, b))),
-        [AgentEndpoint.Unpublish] = Write(async r => await r.ReadOptionalBodyAsync<UnpublishRequest>() ?? new UnpublishRequest(), b => b.DryRun, (r, b) => Ok(UnpublishOperation.Run(r.Call, r.Argument, b))),
-        [AgentEndpoint.Discard] = Write(async r => await r.ReadOptionalBodyAsync<DiscardRequest>() ?? new DiscardRequest(), b => b.DryRun, (r, b) => Ok(DiscardOperation.Run(r.Call, r.Argument, b))),
+        [AgentEndpoint.Unpublish] = Write(async r => await r.ReadOptionalBodyAsync<UnpublishRequest>() ?? new UnpublishRequest(), b => b.DryRun, (r, b) => Written(r, UnpublishOperation.Run(r.Call, r.Argument, b))),
+        [AgentEndpoint.Discard] = Write(async r => await r.ReadOptionalBodyAsync<DiscardRequest>() ?? new DiscardRequest(), b => b.DryRun, (r, b) => Written(r, DiscardOperation.Run(r.Call, r.Argument, b))),
         [AgentEndpoint.Move] = Write(r => r.ReadBodyAsync<MoveRequest>(), b => b.DryRun, (r, b) => Ok(MoveOperation.Run(r.Call, r.Argument, b))),
         [AgentEndpoint.Restore] = Write(r => r.ReadBodyAsync<RestoreRequest>(), b => b.DryRun, (r, b) => Ok(RestoreOperation.Run(r.Call, r.Argument, b))),
         [AgentEndpoint.Access] = Write(r => r.ReadBodyAsync<AccessRequest>(), b => b.DryRun, async (r, b) => Ok(await AccessOperation.RunAsync(r.Call, r.Argument, b))),
@@ -126,7 +127,32 @@ internal static class AgentMiddleware
 
     private static (int, object) Ok(object result) => (200, result);
 
-    private static (int, object) Created(WriteResult result) => (result.Saved ? 201 : 200, result);
+    private static (int, object) Written(AgentRequest request, WriteResult result) => (200, WithUrl(request, result));
+
+    private static (int, object) Created(AgentRequest request, WriteResult result) => (result.Saved ? 201 : 200, WithUrl(request, result));
+
+    /// <summary>
+    /// <paramref name="result"/> with the content's public URL (<see cref="WriteResult.Url"/>), so a caller that goes on
+    /// to open the page needs no second request. The write is done by now: when the site's routing fails to give a URL,
+    /// the result goes without one.
+    /// </summary>
+    internal static WriteResult WithUrl(AgentRequest request, WriteResult result)
+    {
+        if (result.Content is not { } content || !ContentReference.TryParse(content.Ref, out var link)
+            || request.Context.RequestServices.GetService<IUrlResolver>() is not { } urls)
+        {
+            return result;
+        }
+        try
+        {
+            return result with { Url = PublicUrls.Of(urls, link, content.Language, request.Call.AbsoluteUrls) };
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[opticli] No URL for {content.Ref}: {ex}");
+            return result;
+        }
+    }
 
     private static AgentException Translate(Exception ex) => ex switch
     {

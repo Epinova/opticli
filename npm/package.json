@@ -1,0 +1,28 @@
+{
+  "name": "opticli",
+  "version": "0.0.0",
+  "description": "Typed Node API and Playwright fixtures for opticli: start an Optimizely CMS site, seed test content and clean up after the tests",
+  "license": "MPL-2.0",
+  "type": "module",
+  "keywords": ["optimizely", "episerver", "cms", "playwright", "testing", "opticli"],
+  "homepage": "https://github.com/epinova/opticli/tree/main/npm#readme",
+  "repository": { "type": "git", "url": "git+https://github.com/epinova/opticli.git", "directory": "npm" },
+  "bugs": "https://github.com/epinova/opticli/issues",
+  "engines": { "node": ">=18" },
+  "exports": {
+    ".": { "types": "./lib/index.d.ts", "default": "./lib/index.js" },
+    "./playwright": { "types": "./lib/playwright/index.d.ts", "default": "./lib/playwright/index.js" }
+  },
+  "peerDependencies": { "@playwright/test": ">=1.40" },
+  "peerDependenciesMeta": { "@playwright/test": { "optional": true } },
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node build.mjs && node --test \"test/*.test.mjs\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

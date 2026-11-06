@@ -130,7 +130,8 @@ node shows (the CMS ignores both). A section (`kind: section`) or a section blue
 
 All take `--dry-run`. `set`, `create`, `area`, `block create`, `translate` save a draft unless `--publish`.
 `--lang <code>` picks the branch. Output: `ref`, `version` (the new version ref), `baseVersion`, `status`, `saved`,
-`published`, `valid`, `changes[]` (`property`, `before`, `after`), `validation[]`. A saved draft becomes the
+`published`, `valid`, `changes[]` (`property`, `before`, `after`), `validation[]`, `url` (the public URL as `get` shows
+it: for a draft of content never published, where it will be; absent for blocks, folders and a dry-run create). A saved draft becomes the
 primary draft, the version edit mode opens. A write that publishes existing content also has `previouslyPublished`
 (the version live until then; absent after a first publish) and, when it put other people's changes live,
 `pendingDraft` (see [Other people's drafts](#other-peoples-drafts)). Content with an approval sequence isn't published

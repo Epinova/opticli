@@ -136,6 +136,19 @@ The skill sets these rules for agents:
 
 opticli enforces its own safety rules either way (see [Safety model](#safety-model)).
 
+## Tests with Playwright and Node.js
+
+The npm package [`opticli`](npm/README.md) (a preview) runs opticli from Node.js with types for its output, and has
+Playwright fixtures that start the site with `serve`, apply a seed plan before the tests, give each test content of its
+own and remove it after:
+
+```sh
+npm install -D opticli@preview
+```
+
+It runs the opticli CLI, which you install as usual, at the package's version or newer (a local tool manifest pins it
+for CI). See [npm/README.md](npm/README.md).
+
 ## Which database
 
 opticli works with the project's **development database**: the one the site uses when you run it locally in
@@ -721,6 +734,8 @@ stays: newer drafts are left out and stay as they are, and the output lists them
 A publish puts the whole version live. When someone else saved unpublished changes in it, opticli shows them and asks on
 a terminal; elsewhere it fails with `conflict` and `details.reason: "pendingDraft"`, and `--include-draft` confirms.
 `set ... --from published --publish` publishes a change without them.
+Write output has the content's public `url` (host-relative, as `get` shows it; for a draft of content never published,
+where it will be; none for blocks and folders), so a script can open the page without asking for it.
 Output after a publish names `previouslyPublished`, the version to publish again to go back. Content with an approval
 sequence isn't published directly (exit 3); `--request-approval` sends it for review instead, as the edit UI does.
 Against a shared database that differs from the build, writes stop with `drift` (exit 5) until `--accept-drift
@@ -1182,7 +1197,8 @@ the site's own, newer CMS assemblies at runtime. It ships no copies of them.
   `--limit`. There is no total count.
 - Strings over 300 characters are cut (`truncated: true, length: N`); `--full` or `--fields` gives them whole.
   Dates are UTC (`…Z`).
-- Errors look like `{"ok": false, "error": {"code", "message", "hint", "details"}}`. The hint says what to do next.
+- Errors look like `{"ok": false, "error": {"code", "message", "hint", "details"}, "meta": {"version"}}`. The hint says
+  what to do next.
 
 | Exit | Code | Meaning |
 |---|---|---|
@@ -1793,6 +1809,7 @@ the edit UI refuses it, so raise that as well for larger uploads. IIS has a limi
 ```sh
 dotnet build opticli.slnx       # warnings are errors
 dotnet test opticli.slnx
+cd npm && npm ci && npm test    # the npm package, against a stand-in opticli
 ```
 
 The EPiServer packages come from Optimizely's public NuGet feed, which [nuget.config](nuget.config) already lists.
@@ -2038,6 +2055,18 @@ git tag v0.23.1 && git push origin v0.23.1
 The [release workflow](.github/workflows/release.yml) checks that the tag matches both versions and is on `main`,
 runs the unit tests, checks that the CLI package holds both site agent builds and starts, and publishes it to nuget.org together
 with `OptiCli.Mcp` and `OptiCli.Mcp.Cms13` at the same version.
+
+The npm package ([npm/](npm)) follows with the same version plus `-preview`, under the npm tag `preview`, through npm
+trusted publishing, once the repository variable `NPM_PUBLISH` is `true`. Trusted publishing needs the package to
+exist, so the first version is published by hand:
+
+1. Release the version as above. With `NPM_PUBLISH` unset, the workflow skips the npm job.
+2. From the tag: `cd npm && npm ci && npm test`, then `npm login` and `npm publish ./dist --tag preview --access public`
+   (two-factor authentication on).
+3. On npmjs.com, in the package's settings, add a trusted publisher: GitHub Actions, repository `epinova/opticli`,
+   workflow `release.yml`, environment `npm`.
+4. `gh variable set NPM_PUBLISH --body true`. From the next tag on, the workflow publishes the package; a version already
+   on npm is left as it is.
 
 ## Licence
 

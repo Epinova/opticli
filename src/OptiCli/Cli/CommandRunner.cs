@@ -113,6 +113,6 @@ internal static class CommandRunner
             error = ex;
             format = OutputFormat.Json;
         }
-        return new OutputWriter(format, Console.Out, Console.Error);
+        return new OutputWriter(format, Console.Out, Console.Error, ToolInfo.Version);
     }
 }

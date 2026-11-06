@@ -1,7 +1,8 @@
 # Publishes the OptiCli tool package and the MCP module's site packages, OptiCli.Mcp (CMS 12) and OptiCli.Mcp.Cms13
 # (CMS 13), all with the same version, to nuget.org when a version tag (v1.2.3) is pushed, then creates the GitHub
 # release with the MCP module's Claude Desktop extension (opticli-cms.mcpb) attached.
-# Authenticates with nuget.org trusted publishing: no API key is stored in the repository.
+# Authenticates with nuget.org trusted publishing: no API key is stored in the repository. The npm package (npm/) follows,
+# once the repository variable NPM_PUBLISH is true; see the npm job.
 name: Release
 
 on:
@@ -102,6 +103,52 @@ jobs:
           --api-key "${{ steps.login.outputs.NUGET_API_KEY }}"
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
+
+  # The npm package (npm/), after the CLI is on nuget.org, so the opticli it needs can be installed. npm trusted
+  # publishing (this workflow and the environment npm, named in the package's settings on npmjs.com) needs the package to
+  # exist, so the first version is published by hand and NPM_PUBLISH set to true after; until then this job is skipped. A
+  # version that is on npm already (that first one) is left as it is. While the package is a preview (npm/build.mjs), it
+  # is published under the npm tag preview, not latest.
+  npm:
+    needs: publish
+    if: vars.NPM_PUBLISH == 'true'
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write # npm exchanges the workflow's OIDC token for the publish, and signs its provenance
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm 11.5.1 or newer; Node 22 comes with npm 10.
+      - name: Update npm
+        run: npm install -g npm@11
+
+      - name: Build and test
+        working-directory: npm
+        run: |
+          npm ci --no-audit --no-fund
+          npm run typecheck
+          npm test
+
+      - name: Publish
+        working-directory: npm/dist
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "$version" != "${GITHUB_REF_NAME#v}-preview" ]; then
+            echo "::error::npm/dist has version $version, not ${GITHUB_REF_NAME#v}-preview."
+            exit 1
+          fi
+          if npm view "opticli@$version" version >/dev/null 2>&1; then
+            echo "opticli@$version is on npm already."
+            exit 0
+          fi
+          npm publish --tag preview --access public
 
   # The GitHub release, after the packages are on nuget.org: the version's CHANGELOG section as notes, and the extension
   # as an asset (the same name every release, so .../releases/latest/download/opticli-cms.mcpb always has the newest).

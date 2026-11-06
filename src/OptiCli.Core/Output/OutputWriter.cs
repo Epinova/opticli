@@ -13,7 +13,8 @@ namespace OptiCli.Core.Output;
 /// when there is more to know (<c>next</c> or <c>warnings</c>), so a plain list stays a plain stream of items.
 /// An error is the usual one-line error envelope (it has <c>"ok": false</c>, items never do).
 /// </remarks>
-public sealed class OutputWriter(OutputFormat format, TextWriter stdout, TextWriter stderr)
+/// <param name="version">The opticli version for an error's <c>meta</c>; null leaves it out.</param>
+public sealed class OutputWriter(OutputFormat format, TextWriter stdout, TextWriter stderr, string? version = null)
 {
     public OutputFormat Format { get; } = format;
 
@@ -48,7 +49,7 @@ public sealed class OutputWriter(OutputFormat format, TextWriter stdout, TextWri
     {
         if (Format != OutputFormat.Text)
         {
-            stdout.WriteLine(JsonOutput.Serialize(Envelope.Failure(code, message, hint, details)));
+            stdout.WriteLine(JsonOutput.Serialize(Envelope.Failure(code, message, hint, details, version)));
         }
         else
         {

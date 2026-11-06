@@ -136,6 +136,17 @@ public class OutputTests
     }
 
     [Fact]
+    public void Errors_name_the_opticli_version_so_a_caller_can_tell_which_one_failed()
+    {
+        var stdout = new StringWriter();
+        var writer = new OutputWriter(OutputFormat.Json, stdout, new StringWriter(), "1.2.3");
+
+        writer.Failure(new NotFoundException("No content 123."));
+
+        Assert.Equal("""{"ok":false,"meta":{"version":"1.2.3"},"error":{"code":"not_found","message":"No content 123."}}""", stdout.ToString().TrimEnd());
+    }
+
+    [Fact]
     public void Enums_serialise_as_camel_case_strings_and_non_ascii_stays_readable()
     {
         Assert.Equal("""{"colour":"darkBlue","name":"Blåbær <b>"}""", JsonOutput.Serialize(new { Colour = Colour.DarkBlue, Name = "Blåbær <b>" }));
