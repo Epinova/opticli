@@ -3,7 +3,25 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
-## Unreleased
+## 0.27.0 (6 November 2026)
+
+opticli in Playwright tests: a new npm package (preview) starts the site, seeds the content the tests need and cleans up
+after them. Writes return the content's URL, and errors name the opticli version.
+
+### Added
+
+- **Writes return the content's URL.** `create`, `set`, `area`, `composition`, `block create`, `upload`, `translate`,
+  `publish`, `unpublish` and `discard` (and their steps in `apply`) have `url`: the public URL in the result's
+  language, host-relative as `get` shows it; for a draft of content never published, where it will be once it is.
+  Blocks, folders and a dry-run `create` have none. A script that goes on to open the page, such as a Playwright
+  test's setup, no longer needs an `opticli url` call per page. A site started with an older opticli's agent gives
+  no `url` until `serve` starts it again.
+- **Errors name the opticli version.** The JSON error envelope has `meta.version`, as a result's `meta` has, so a
+  program that runs opticli can tell which version failed.
+- **npm package for Playwright and Node.js (preview).** [`opticli`](npm/README.md) on npm runs opticli from Node.js
+  with types for its output, and has Playwright fixtures: `defineSetup()` starts the site with `serve`, checks the
+  versions, and applies a seed plan before the tests; `cms` gives each test content of its own and removes it after;
+  each worker can have a page of its own for that (`opticliSandbox`). Install it with `npm install -D opticli@preview`.
 
 ### Changed
 
