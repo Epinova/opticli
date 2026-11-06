@@ -30,7 +30,7 @@
     <a class="mark" href="#change">opticli<span>.</span></a>
     <a class="now" id="now" href="#commits" aria-live="polite"><svg class="icon"><use href="#i-play"/></svg><span></span></a>
     <nav aria-label="Sections">
-      <a href="#commits">Screencast</a><a href="#what-its-for">Features</a><a href="#safety">Safety</a><a href="#changelog">Releases</a><span class="sep" aria-hidden="true"></span><a class="keep page-link" href="editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep out-link" href="https://github.com/epinova/opticli">GitHub <svg class="icon" aria-hidden="true"><use href="#i-ext"/></svg></a>
+      <a href="#commits">Screencast</a><a href="#what-its-for">Features</a><a href="#safety">Safety</a><a href="#changelog">Releases</a><span class="sep" aria-hidden="true"></span><a class="page-link" href="tests/">For tests <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep page-link" href="editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep out-link" href="https://github.com/epinova/opticli">GitHub <svg class="icon" aria-hidden="true"><use href="#i-ext"/></svg></a>
     </nav>
   </div>
 </header>
@@ -327,6 +327,26 @@ hint: opticli writes to a production database only through a sealed apply, which
   </article>
 </section>
 
+<section class="part wrap" id="tests" aria-labelledby="tests-h">
+  <div class="part-head">
+    <h2 id="tests-h">For tests</h2>
+    <p>The npm package <code>@epinova/opticli</code> (a preview) runs opticli from Playwright: real content for end-to-end tests, made through the CMS.</p>
+  </div>
+  <article class="file editors">
+    <div>
+      <h3>Seeded content, and pages of each test's own</h3>
+      <p>Global setup starts the site with <code>serve</code> and applies a seed plan on every run. Each test can create its own pages, published or as drafts, and they go to the recycle bin when the test ends. Typed from the seed plan's step ids to opticli's error codes.</p>
+      <a class="go" href="tests/">For tests <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
+    </div>
+<div><pre class="cmd"><span class="c">// a test with a page of its own</span>
+const created = await cms.page('StandardPage', 'Hello',
+  { MainBody: '&lt;p&gt;Hi&lt;/p&gt;' });
+await page.goto(created.url);
+await expect(page.getByText('Hi')).toBeVisible();
+<span class="c">// after the test: to the recycle bin</span></pre></div>
+  </article>
+</section>
+
 <section class="part wrap" id="changelog" aria-labelledby="timeline-h">
   <div class="part-head">
     <h2 id="timeline-h">Releases</h2>
@@ -338,7 +358,7 @@ hint: opticli writes to a production database only through a sealed apply, which
         <ul>
           <li><b>opticli in Playwright tests (preview):</b> a new npm package, <code>@epinova/opticli</code>, starts the site,
             seeds the content your tests need with a plan, gives each test content of its own and removes it again. See
-            <a href="https://github.com/epinova/opticli/blob/main/npm/README.md">its README</a>.</li>
+            <a href="tests/">For tests</a>.</li>
           <li><b>Writes return the URL:</b> <code>create</code>, <code>set</code>, <code>publish</code> and the other
             writes now say where the page is, so a script can open it right away.</li>
         </ul></li>

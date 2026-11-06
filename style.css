@@ -65,7 +65,7 @@ p { margin: 0; text-wrap: pretty; }
 .mark span { color: var(--add-ink); }
 .top nav { display: flex; align-items: center; gap: 22px; margin-left: auto; font-weight: 600; font-size: .95rem; }
 .top nav .sep { width: 1px; height: 22px; background: var(--rule); }
-.top nav .page-link { display: inline-flex; align-items: center; gap: 4px; padding: 5px 8px 5px 12px; border: 1.5px solid var(--ink); border-radius: 8px; color: var(--ink); }
+.top nav .page-link { white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; padding: 5px 8px 5px 12px; border: 1.5px solid var(--ink); border-radius: 8px; color: var(--ink); }
 .top nav .page-link:hover { background: var(--ink); color: var(--ground); }
 .top nav .out-link { display: inline-flex; align-items: center; gap: 5px; }
 .top nav .out-link .icon { width: .9em; height: .9em; }
@@ -73,6 +73,9 @@ p { margin: 0; text-wrap: pretty; }
 .top nav a:hover { color: var(--ink); }
 .now { display: none; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 999px; background: var(--hunk); color: var(--hunk-ink); font-size: .85rem; font-weight: 600; text-decoration: none; white-space: nowrap; }
 .now.on { display: inline-flex; }
+/* While a chapter plays, the pill takes the section links' room on narrower screens; the page links stay. */
+@media (max-width: 1260px) { .top .wrap:has(.now.on) nav > a:not([class]), .top .wrap:has(.now.on) nav .sep { display: none; } }
+@media (max-width: 720px) { .now.on { display: none; } }
 @media (max-width: 900px) { .top nav a:not(.keep), .top nav .sep { display: none; } .top .wrap { gap: 16px; } }
 
 /* The change: title, check-out box, the run-as control and the hero diff. */

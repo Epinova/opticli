@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>opticli for tests: real CMS content in Playwright tests</title>
+<meta name="description" content="@epinova/opticli starts your Optimizely CMS 12 or 13 site for Playwright tests, seeds the content they read with a plan, and gives each test pages of its own that are removed after the test. Fully typed.">
+<meta property="og:title" content="opticli for tests: real CMS content in Playwright tests">
+<meta property="og:description" content="Start the site, seed the content your tests read, give each test pages of its own and clean up after. Through the CMS, fully typed.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://epinova.github.io/opticli/tests/">
+<meta name="twitter:card" content="summary">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../style.css">
+<style>
+.run-out { margin-top: 32px; }
+.run-out pre { margin: 0; padding: 16px 18px 18px; overflow-x: auto; color: var(--term-fg); font: .9rem/1.7 var(--mono); }
+.run-out .p { color: #8a949e; }
+.run-out .ok { color: #93dfaa; }
+.run-out .t { color: #8a949e; }
+.run-out .s { color: #f1c54b; }
+@media (max-width: 640px) { .run-out pre { font-size: .78rem; } }
+
+.steps { list-style: none; margin: 0; padding: 0; counter-reset: step; }
+.steps li { display: grid; grid-template-columns: 2.2rem minmax(0, 15rem) minmax(0, 1fr); gap: 8px 22px; padding: 18px 20px; counter-increment: step; }
+.steps li + li { border-top: 1px solid var(--rule); }
+.steps li::before { content: counter(step, decimal-leading-zero); font: .95rem var(--mono); color: var(--muted); padding-top: .15em; }
+.steps b { font-size: 1.1rem; }
+.steps p { color: var(--muted); max-width: 70ch; }
+.steps p + p { margin-top: 8px; }
+@media (max-width: 820px) { .steps li { grid-template-columns: 2.2rem minmax(0, 1fr); } .steps li > div { grid-column: 2; } }
+
+.code-files { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.code-files > .file { display: flex; flex-direction: column; }
+.code-files .file-bar b { font: 1rem var(--mono); }
+.code-files pre.cmd { flex: 1; }
+.checkout .copyline code { font-size: .78rem; }
+@media (max-width: 480px) { .checkout .copyline code { font-size: .72rem; } }
+.code-files pre.cmd { border-radius: 0 0 12px 12px; font-size: .86rem; line-height: 1.65; }
+.code-files .wide { grid-column: 1 / -1; }
+.code-files .note { padding: 12px 20px 14px; color: var(--muted); border-top: 1px solid var(--rule); }
+pre.cmd .s { color: #93dfaa; }
+pre.cmd .k { color: #aec0db; }
+@media (max-width: 900px) { .code-files { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) { .code-files pre.cmd { white-space: pre; font-size: .78rem; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-ok" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="currentColor"/><path d="M5.8 10.4l2.8 2.8 5.6-6.1" fill="none" stroke="var(--surface)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-off" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.2"/></symbol>
+  <symbol id="i-no" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M4.6 15.4L15.4 4.6" stroke="currentColor" stroke-width="2.4"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href="../">opticli<span>.</span></a>
+    <nav aria-label="Sections">
+      <a href="#run">A test run</a><a href="#files">The files</a><a href="#limits">Limits</a><a class="keep" href="#install">Install</a><span class="sep" aria-hidden="true"></span><a class="keep page-link" href="../">For developers <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<section class="change wrap" id="change">
+  <h1>Real CMS content for your Playwright tests. <em>Each test cleans up after itself.</em></h1>
+  <div class="change-head">
+    <p class="lead"><code>@epinova/opticli</code> starts your Optimizely site, seeds the content your tests read, and gives each test pages of its own. They're created through the CMS and removed when the test ends. Fully typed, from your seed plan's step ids to opticli's error codes.</p>
+    <aside class="checkout" aria-labelledby="checkout-h">
+      <h2 id="checkout-h">Install</h2>
+      <div class="copyline"><code id="install-cmd">npm install -D @epinova/opticli@preview</code><button class="copy" type="button" data-copy="install-cmd">Copy</button></div>
+      <p>It runs the opticli CLI, 0.27.0 or newer, so install that too. Works with CMS 12 and 13. A preview: the API may still change.</p>
+    </aside>
+  </div>
+
+  <div class="term run-out">
+    <div class="term-bar"><b>npx playwright test</b><span>Alloy sample site · CMS 13 · 2 workers</span></div>
+<pre><span class="s">opticli: seed plan unchanged</span>
+
+Running 9 tests using 2 workers
+
+  <span class="ok">✓</span>  2 [chromium] › tests/errors.spec.ts › missing content is not_found <span class="t">(518ms)</span>
+  <span class="ok">✓</span>  1 [chromium] › tests/errors.spec.ts › a property typo fails before anything is saved, with the type's properties in the hint <span class="t">(696ms)</span>
+  <span class="ok">✓</span>  3 [chromium] › tests/errors.spec.ts › a required property left out is a validation error <span class="t">(823ms)</span>
+  <span class="ok">✓</span>  4 [chromium] › tests/per-test.spec.ts › a published page shows its body <span class="t">(2.3s)</span>
+  <span class="ok">✓</span>  5 [chromium] › tests/per-test.spec.ts › visitors see a draft only once it is published <span class="t">(3.6s)</span>
+  <span class="ok">✓</span>  6 [chromium] › tests/per-test.spec.ts › an inline teaser block in the content area <span class="t">(2.1s)</span>
+  <span class="ok">✓</span>  8 [chromium] › tests/seeded.spec.ts › the seeded article shows its body and teaser <span class="t">(478ms)</span>
+  <span class="ok">✓</span>  9 [chromium] › tests/seeded.spec.ts › the seeded root stays out of the menu <span class="t">(388ms)</span>
+  <span class="ok">✓</span>  7 [chromium] › tests/per-test.spec.ts › a plan builds a small section in one call <span class="t">(2.3s)</span>
+
+  <span class="ok">9 passed</span> <span class="t">(14.2s)</span></pre>
+  </div>
+  <p class="example">Real output from an example suite on Optimizely's Alloy sample site, with opticli 0.27.0. Line numbers left out.</p>
+</section>
+
+<section class="part wrap" id="run" aria-labelledby="run-h">
+  <div class="part-head">
+    <h2 id="run-h">What happens on a test run</h2>
+    <p>One global setup and a few fixtures. Your tests read content like any other page, and make their own when they need it.</p>
+  </div>
+  <article class="file">
+    <ol class="steps">
+      <li><b>Setup starts the site</b><div><p>With <code>opticli serve</code>, or it uses the site that's already running, including the one your IDE runs in IDE mode. It checks that opticli and the site's agent are at least the package's version, and points <code>baseURL</code> at the site.</p></div></li>
+      <li><b>It seeds the content</b><div><p>Your seed plan is applied on every run. The first run creates the content; later runs report it unchanged, or put back what a test changed. The plan has a fixed GUID namespace, so the content has the same GUIDs on every machine.</p></div></li>
+      <li><b>Each worker gets a sandbox</b><div><p>A hidden page of its own below the seed content. Test pages go there, so parallel workers never touch each other's content.</p></div></li>
+      <li><b>Each test makes its own pages</b><div><p><code>cms.page()</code> creates a page through the CMS, publishes it and returns its URL. Drafts, publishing, inline blocks and whole plans work the same way. Writes go through the CMS API, with versions, cache and events, so the page shows a change at once.</p><p>After the test, what it made goes to the recycle bin, even when the test failed.</p></div></li>
+      <li><b>Teardown</b><div><p>Setup stops the site if it started it, and leaves one that was already running. The seed content stays for the next run.</p></div></li>
+    </ol>
+  </article>
+</section>
+
+<section class="part wrap" id="files" aria-labelledby="files-h">
+  <div class="part-head">
+    <h2 id="files-h">Four files</h2>
+    <p>A seed plan, a global setup, the config and your tests. The plan is an ordinary opticli plan.</p>
+  </div>
+  <div class="code-files">
+    <article class="file">
+      <div class="file-bar"><b>e2e/seed.ts</b><small>content every test can read</small></div>
+<pre class="cmd"><span class="k">import type</span> { Plan } <span class="k">from</span> <span class="s">'@epinova/opticli'</span>;
+
+<span class="k">export const</span> seedPlan = {
+  guidNamespace: <span class="s">'0d6a8a5e-…'</span>, <span class="c">// any GUID; keep it</span>
+  operations: [
+    { op: <span class="s">'create'</span>, id: <span class="s">'root'</span>, parent: <span class="s">'/en/'</span>,
+      type: <span class="s">'StandardPage'</span>, name: <span class="s">'Test fixtures'</span>,
+      properties: { PageVisibleInMenu: <span class="k">false</span> } },
+    { op: <span class="s">'create'</span>, id: <span class="s">'article'</span>, parent: <span class="s">'$root'</span>,
+      type: <span class="s">'ArticlePage'</span>, name: <span class="s">'Seeded article'</span>,
+      properties: { MainBody: <span class="s">'&lt;p&gt;Hello&lt;/p&gt;'</span> } },
+  ],
+} <span class="k">as const satisfies</span> Plan;</pre>
+    </article>
+    <article class="file">
+      <div class="file-bar"><b>e2e/global-setup.ts</b><small>start, seed, stop</small></div>
+<pre class="cmd"><span class="k">import</span> { defineSetup } <span class="k">from</span> <span class="s">'@epinova/opticli/playwright'</span>;
+<span class="k">import</span> { seedPlan } <span class="k">from</span> <span class="s">'./seed.ts'</span>;
+
+<span class="k">export default</span> defineSetup({
+  plan: seedPlan,
+  planDir: <span class="k">import</span>.meta.dirname,
+});</pre>
+    </article>
+    <article class="file">
+      <div class="file-bar"><b>playwright.config.ts</b><small>where test pages go</small></div>
+<pre class="cmd"><span class="k">import</span> { defineConfig } <span class="k">from</span> <span class="s">'@playwright/test'</span>;
+<span class="k">import type</span> { OptiCliWorkerOptions }
+  <span class="k">from</span> <span class="s">'@epinova/opticli/playwright'</span>;
+
+<span class="k">export default</span> defineConfig&lt;{}, OptiCliWorkerOptions&gt;({
+  testDir: <span class="s">'./e2e'</span>,
+  globalSetup: <span class="s">'./e2e/global-setup.ts'</span>,
+  use: {
+    <span class="c">// a hidden page per worker, below the seed's root</span>
+    opticliSandbox: { parent: <span class="s">'$root'</span>, type: <span class="s">'StandardPage'</span>,
+      properties: { PageVisibleInMenu: <span class="k">false</span> } },
+  },
+});</pre>
+    </article>
+    <article class="file">
+      <div class="file-bar"><b>e2e/fixtures.ts</b><small>typed by your plan</small></div>
+<pre class="cmd"><span class="k">import</span> { createTest } <span class="k">from</span> <span class="s">'@epinova/opticli/playwright'</span>;
+<span class="k">import type</span> { seedPlan } <span class="k">from</span> <span class="s">'./seed.ts'</span>;
+
+<span class="k">export const</span> test = createTest&lt;<span class="k">typeof</span> seedPlan&gt;();
+<span class="k">export</span> { expect } <span class="k">from</span> <span class="s">'@epinova/opticli/playwright'</span>;</pre>
+    </article>
+    <article class="file wide">
+      <div class="file-bar"><b>e2e/article.spec.ts</b><small>seeded content, and content of the test's own</small></div>
+<pre class="cmd"><span class="k">import</span> { expect, test } <span class="k">from</span> <span class="s">'./fixtures.ts'</span>;
+
+test(<span class="s">'the seeded article'</span>, <span class="k">async</span> ({ page, seed }) =&gt; {
+  <span class="k">await</span> page.goto(seed.urls.article!);   <span class="c">// 'article' is a step id: a typo doesn't compile</span>
+  <span class="k">await</span> expect(page.getByText(<span class="s">'Hello'</span>)).toBeVisible();
+});
+
+test(<span class="s">'a draft is not visible until it is published'</span>, <span class="k">async</span> ({ page, cms }) =&gt; {
+  <span class="k">const</span> created = <span class="k">await</span> cms.page(<span class="s">'StandardPage'</span>, <span class="s">'Draft test'</span>, { MainBody: <span class="s">'&lt;p&gt;Published text&lt;/p&gt;'</span> });
+  <span class="k">const</span> draft = <span class="k">await</span> cms.set(created.ref, { MainBody: <span class="s">'&lt;p&gt;Draft text&lt;/p&gt;'</span> });
+
+  <span class="k">await</span> page.goto(created.url);
+  <span class="k">await</span> expect(page.getByText(<span class="s">'Draft text'</span>)).toHaveCount(0);
+
+  <span class="k">await</span> cms.publish(draft.version!);
+  <span class="k">await</span> page.reload();
+  <span class="k">await</span> expect(page.getByText(<span class="s">'Draft text'</span>)).toBeVisible();
+});                                       <span class="c">// the page goes to the recycle bin here</span></pre>
+      <p class="note">A failed write throws <code>OptiCliError</code> with opticli's error code (<code>not_found</code>, <code>validation</code>, …) and its hint, such as the type's property names after a typo.</p>
+    </article>
+  </div>
+</section>
+
+<section class="part wrap" id="limits" aria-labelledby="limits-h">
+  <div class="part-head">
+    <h2 id="limits-h">Limits</h2>
+    <p>What to know before you build a suite on it.</p>
+  </div>
+  <article class="file">
+    <ul class="required">
+      <li><svg class="icon no" aria-hidden="true"><use href="#i-no"/></svg><b>Local and development databases</b><p>opticli's own rules apply: the site runs against your local or chosen development database (<code>opticli doctor</code> shows which), and <code>serve</code> and every write are refused on a production database.</p><span class="status no">never production</span></li>
+      <li><svg class="icon off" aria-hidden="true"><use href="#i-off"/></svg><b>About a second per call</b><p>Every call runs opticli once, and most of that second is .NET starting. Reading seeded content costs nothing per test; a page of a test's own costs two calls, create and delete. A plan makes a whole section in one call.</p><span class="status off">~1 s per write</span></li>
+      <li><svg class="icon off" aria-hidden="true"><use href="#i-off"/></svg><b>The recycle bin fills up</b><p>Test content is deleted the way the CMS deletes: to the recycle bin, never for good. On a local database that is usually fine; empty the recycle bin now and then.</p><span class="status off">nothing purged</span></li>
+      <li><svg class="icon off" aria-hidden="true"><use href="#i-off"/></svg><b>Not tried on CI yet</b><p>A CI run needs what a local run needs: the .NET SDK, opticli, the site and a SQL Server with its database. That hasn't been tried in a pipeline yet, so there's no example pipeline.</p><span class="status off">local runs</span></li>
+      <li><svg class="icon off" aria-hidden="true"><use href="#i-off"/></svg><b>A preview</b><p>The API may still change. Its version is the opticli version it was released with, plus <code>-preview</code>; install it with the <code>preview</code> tag.</p><span class="status off">preview</span></li>
+    </ul>
+  </article>
+</section>
+
+<section class="part wrap" id="install" aria-labelledby="install-h">
+  <article class="file merge">
+    <div class="file-bar"><svg class="icon ok" aria-hidden="true"><use href="#i-ok"/></svg><b id="install-h">Get started</b><small>Playwright 1.40 or newer · opticli 0.27.0 or newer · CMS 12 or 13</small></div>
+    <div class="merge-body">
+      <pre class="cmd"><span class="c"># opticli, pinned in the site's repository so CI gets the same</span>
+dotnet new tool-manifest
+dotnet tool install OptiCli
+
+<span class="c"># the package, in your Playwright project</span>
+npm install -D @epinova/opticli@preview
+
+<span class="c"># OPTICLI_PROJECT: the site, if setup can't find it</span>
+npx playwright test</pre>
+      <div>
+        <p>The package runs opticli; it doesn't install it. It finds opticli in a tool manifest above your Playwright project, or on your PATH. A global <code>dotnet tool install -g OptiCli</code> works too.</p>
+        <p>The README has every option and fixture, and the Node.js API for scripts outside Playwright.</p>
+        <div class="links"><a href="https://www.npmjs.com/package/@epinova/opticli">Read the README</a><a href="../">opticli for developers</a></div>
+      </div>
+    </div>
+  </article>
+</section>
+</main>
+
+<footer class="wrap">
+  <p>opticli and @epinova/opticli are open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. They are independent projects, not affiliated with or endorsed by Optimizely.</p>
+</footer>
+<script>
+for (const button of document.querySelectorAll('[data-copy]')) {
+  button.addEventListener('click', async () => {
+    const text = document.getElementById(button.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(text); } catch { getSelection().selectAllChildren(document.getElementById(button.dataset.copy)); return; }
+    button.textContent = 'Copied';
+    button.dataset.done = '';
+    setTimeout(() => { button.textContent = 'Copy'; delete button.dataset.done; }, 1600);
+  });
+}
+</script>
+</body>
+</html>
