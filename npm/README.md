@@ -4,16 +4,14 @@ Typed access to [opticli](https://github.com/epinova/opticli) from Node.js, and 
 an Optimizely CMS 12 or 13 site, seed the content the tests need, give each test content of its own, and clean up
 after. Writes go through the CMS (versions, cache, events), so a page shows a change at once.
 
-**Preview.** The API may still change: install it with the `preview` tag. Its version is the opticli version it was
-released with, plus `-preview`.
-
 ## Install
 
 ```bash
-npm install -D @epinova/opticli@preview
+npm install -D @epinova/opticli
 ```
 
-The package runs the opticli CLI; it doesn't install it. It needs the opticli it was released with, or newer: pin it in
+The package runs the opticli CLI; it doesn't install it. Its version is the opticli version it was released with, and it
+needs that opticli or newer: pin it in
 the site's repository with a [local tool manifest](https://learn.microsoft.com/dotnet/core/tools/local-tools-how-to-use),
 so CI gets the same version:
 
@@ -120,13 +118,27 @@ content stays for the next run.
 | Fixture | Scope | |
 |---|---|---|
 | `seed` | worker | `refs` and `urls` (host-relative) of the plan's steps, by `id`; `baseURL`. |
-| `cms` | test | Writes undone after the test: `page(type, name, properties?, { parent?, publish? })` (published by default; returns `ref`, `version` and `url`), `set`, `publish`, `apply`. What it creates goes to the recycle bin after the test; changes to seeded content are repaired by the next run's seed. |
+| `cms` | test | Content for one test: `page(type, name, properties?, { parent?, publish?, keep? })` (published by default; returns `ref`, `version` and `url`), `set`, `publish`, `apply(plan, { keep?, ... })`. What `page` and `apply` create goes to the recycle bin after the test, unless `keep`. |
 | `sandbox` | worker | With the `opticliSandbox` option: the ref of the worker's own page, where `cms.page()` creates content. It goes to the recycle bin when the worker ends, with anything a failed test left. |
 | `opticli` | worker | The `OptiCli` client, for anything else. |
 | `baseURL` | test | The site `opticli serve` runs. |
 
 `opticliSandbox`: `parent` (a ref, or `$id` of a seed step), `type` (a page type the parent allows and that allows your
 test pages), `properties`. Without it, pass `{ parent }` to `cms.page()`.
+
+### What stays, and what goes
+
+| | After the test run |
+|---|---|
+| The seed plan | Stays. The next run repairs what changed. |
+| `cms.page()`, `cms.apply()` | Go after the test. With `keep: true`, stay. |
+| `cms.set()`, `cms.publish()` | Stay: they change content the test didn't make. On seeded content the next run's seed puts it back, but tests in other workers of the same run see the change. |
+| The sandbox | Goes when the worker ends, with everything below it, whatever made it. |
+| The `opticli` fixture, the Node.js client | Stay: they never remove anything (except below the sandbox, as above). |
+
+`keep: true` needs a parent outside the sandbox and outside content the test made, since that goes with everything
+below it; `cms` refuses it there before saving anything. A step of `cms.apply()` that found its content already there
+(`updateExisting`) leaves it, with or without `keep`.
 
 Deleted content goes to the recycle bin, as in the CMS: nothing is deleted for good. On a local database that is
 usually fine; empty the recycle bin in the CMS now and then.
@@ -147,6 +159,7 @@ try {
 }
 ```
 
+The client changes what you tell it to and removes nothing on its own, so it suits scripts that make content to keep.
 Typed methods: `serve`, `serveStatus`, `serveStop`, `get`, `url`, `create`, `set`, `publish`, `delete`, `apply`.
 `run(args)` runs any other command and returns its JSON envelope. A failure throws `OptiCliError` with opticli's `code`,
 `exitCode`, `hint`, `details` and `version`; see opticli's
@@ -160,7 +173,7 @@ changes in one call.
 | | |
 |---|---|
 | `command` option or `OPTICLI` | The opticli to run: an executable, or a checkout's `opticli.dll` (run with `dotnet`). Otherwise `dotnet tool run opticli` when a tool manifest above the working directory has it, else `opticli` on PATH. |
-| `project` option or `OPTICLI_PROJECT` | The site's `.csproj` or folder. Otherwise opticli finds it from the working directory. |
+| `project` option or `OPTICLI_PROJECT` | The site's `.csproj` or folder, relative to `cwd` (default: the working directory). Otherwise opticli finds it from the working directory. |
 
 `apply` runs in `baseDir` (`planDir` in setup), so a tool manifest must be in or above that folder too.
 

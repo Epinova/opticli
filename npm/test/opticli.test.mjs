@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -93,6 +94,36 @@ test('a missing opticli says how to install it', async () => {
   const error = await new OptiCli({ command: ['opticli-that-does-not-exist'] }).get('1').catch((e) => e);
 
   assert.match(error.message, /dotnet tool install -g OptiCli/);
+});
+
+test('a missing opticli leaves nothing that keeps Node running', () => {
+  const script = `import { OptiCli } from ${JSON.stringify(new URL('../dist/lib/index.js', import.meta.url).href)};
+    await new OptiCli({ command: ['opticli-that-does-not-exist'] }).get('1').catch(() => {});`;
+
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], { timeout: 10_000 });
+
+  assert.equal(child.error, undefined, 'the process should exit on its own');
+  assert.equal(child.status, 0);
+});
+
+test('a command that runs too long is stopped, as a timeout', async () => {
+  fake([{ match: 'get', delayMs: 5_000, envelope: ok({ ref: '1' }) }]);
+
+  const error = await new OptiCli({ command: fakeCommand }).run(['get', '1'], { timeoutMs: 300 }).catch((e) => e);
+
+  assert.ok(error instanceof OptiCliError);
+  assert.equal(error.code, 'timeout');
+  assert.match(error.message, /no answer within 0\.3 s/);
+});
+
+test('a relative project is resolved against cwd, so apply in the plan folder finds the same site', async () => {
+  const { calls, dir } = fake([{ match: 'apply', envelope: ok({ dryRun: false, operations: [], created: {} }) }]);
+  const cli = new OptiCli({ command: fakeCommand, cwd: '/repo/tests', project: '../src/Site' });
+
+  await cli.apply({ operations: [] }, { baseDir: dir });
+
+  assert.equal(cli.project, '/repo/src/Site');
+  assert.deepEqual(calls()[0].args.slice(-2), ['--project', '/repo/src/Site']);
 });
 
 test('the command: OPTICLI first (a dll runs with dotnet), then a tool manifest, then opticli on PATH', () => {

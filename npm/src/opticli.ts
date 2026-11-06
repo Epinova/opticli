@@ -27,7 +27,10 @@ export interface OptiCliOptions {
    * working directory has opticli, else `opticli` on PATH.
    */
   command?: readonly string[];
-  /** The site's project (`--project`): its `.csproj` or folder. Default: `$OPTICLI_PROJECT`, else opticli's discovery from the working directory. */
+  /**
+   * The site's project (`--project`): its `.csproj` or folder, relative to `cwd`. Default: `$OPTICLI_PROJECT`, else
+   * opticli's discovery from the working directory.
+   */
   project?: string;
   /** Working directory for every call (except `apply`'s `baseDir`). Default: the process's. */
   cwd?: string;
@@ -80,7 +83,9 @@ export class OptiCli {
   constructor(options: OptiCliOptions = {}) {
     this.cwd = options.cwd;
     this.command = options.command ?? resolveCommand(options.cwd ?? process.cwd());
-    this.project = options.project ?? (process.env.OPTICLI_PROJECT || undefined);
+    // Absolute: opticli resolves --project against its working directory, and apply runs in the plan's folder.
+    const project = options.project ?? (process.env.OPTICLI_PROJECT || undefined);
+    this.project = project ? resolve(options.cwd ?? process.cwd(), project) : undefined;
     this.onWarnings = options.onWarnings;
   }
 
@@ -184,24 +189,37 @@ export class OptiCli {
 
   private exec(args: readonly string[], options: RunOptions): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
     const [program, ...prefix] = this.command;
+    const timeoutMs = options.timeoutMs ?? 120_000;
     return new Promise((resolvePromise, reject) => {
-      const child = spawn(program, [...prefix, ...args], {
-        cwd: options.cwd ?? this.cwd,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        timeout: options.timeoutMs ?? 120_000,
-      });
+      // The timer is ours, not spawn's `timeout`: spawn's outlives a program that never started, and keeps Node running.
+      let timer: NodeJS.Timeout | undefined;
+      let settled = false;
+      const settle = (done: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        done();
+      };
+      const child = spawn(program, [...prefix, ...args], { cwd: options.cwd ?? this.cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+      timer = setTimeout(() => {
+        child.kill();
+        const message = `no answer within ${timeoutMs / 1000} s; it was stopped`;
+        settle(() => reject(new OptiCliError({ code: 'timeout', message, hint: 'For a command that takes longer, pass a longer timeoutMs to run().' }, null, args)));
+      }, timeoutMs);
       let stdout = '';
       let stderr = '';
       child.stdout.setEncoding('utf8').on('data', (chunk: string) => (stdout += chunk));
       child.stderr.setEncoding('utf8').on('data', (chunk: string) => (stderr += chunk));
       child.on('error', (error: NodeJS.ErrnoException) =>
-        reject(
-          error.code === 'ENOENT'
-            ? new Error(`Couldn't run ${this.command.join(' ')}: install opticli (dotnet tool install -g OptiCli), or set OPTICLI to it.`, { cause: error })
-            : error,
+        settle(() =>
+          reject(
+            error.code === 'ENOENT'
+              ? new Error(`Couldn't run ${this.command.join(' ')}: install opticli (dotnet tool install -g OptiCli), or set OPTICLI to it.`, { cause: error })
+              : error,
+          ),
         ),
       );
-      child.on('close', (exitCode) => resolvePromise({ stdout, stderr, exitCode }));
+      child.on('close', (exitCode) => settle(() => resolvePromise({ stdout, stderr, exitCode })));
       child.stdin.on('error', () => {}); // a CLI that exits before reading stdin
       child.stdin.end(options.input ?? '');
     });

@@ -7,7 +7,7 @@
 // - `baseURL`: the site opticli serves.
 import { test as base } from '@playwright/test';
 import { OptiCli, OptiCliError, type WriteOptions } from '../opticli.ts';
-import type { ApplyResult, ContentRef, Plan, PlanIds, Properties, WriteResult } from '../types.ts';
+import type { ApplyResult, ContentRef, Plan, PlanIds, PlanStep, Properties, WriteResult } from '../types.ts';
 import { readSeedState, type SeedState } from './setup.ts';
 
 /** The `opticliSandbox` option: the page each worker makes for its tests' content. */
@@ -28,7 +28,16 @@ export interface CreatedPage extends WriteResult {
   url: string;
 }
 
-/** Writes that a test's content gets, undone after the test. */
+/** Leave the content on the site after the test: `cms.page(..., { keep: true, parent })`. */
+export interface KeepOption {
+  /**
+   * Don't remove what this call creates after the test. It needs a parent outside the worker's sandbox and outside
+   * content the test made, which both go after the test (or worker) with everything below them.
+   */
+  keep?: boolean;
+}
+
+/** Writes that a test's content gets, undone after the test unless `keep`. */
 export class Cms {
   private readonly created: ContentRef[] = [];
 
@@ -38,12 +47,18 @@ export class Cms {
     readonly parent: ContentRef | undefined,
   ) {}
 
-  /** Creates a page, published unless `publish: false`, and removes it after the test. */
-  async page(type: string, name: string, properties: Properties = {}, options: WriteOptions & { parent?: ContentRef } = {}): Promise<CreatedPage> {
-    const parent = options.parent ?? this.parent;
+  /** Creates a page, published unless `publish: false`, and removes it after the test unless `keep`. */
+  async page(
+    type: string,
+    name: string,
+    properties: Properties = {},
+    { parent: given, keep, ...options }: WriteOptions & KeepOption & { parent?: ContentRef } = {},
+  ): Promise<CreatedPage> {
+    const parent = given ?? this.parent;
     if (!parent) throw new Error('cms.page() needs a parent: pass { parent }, or set the opticliSandbox option in playwright.config.');
+    if (keep) this.checkKeep('cms.page()', [parent]);
     const result = await this.opticli.create(parent, type, name, properties, { ...options, publish: options.publish ?? true });
-    this.track(result.ref, parent);
+    if (!keep) this.track(result.ref, parent);
     if (!result.url) throw new Error(`${type} ${result.ref} has no URL: is ${type} a page type with a template?`);
     return result as CreatedPage;
   }
@@ -58,12 +73,21 @@ export class Cms {
     return this.opticli.publish(ref);
   }
 
-  /** Runs a plan; what it creates below existing content is removed after the test. */
-  async apply(plan: Plan, options: Parameters<OptiCli['apply']>[1] = {}): Promise<ApplyResult> {
+  /**
+   * Runs a plan; what it creates is removed after the test unless `keep`. Content that was there before (a step
+   * that found it with `updateExisting`) stays.
+   */
+  async apply(plan: Plan, { keep, ...options }: Parameters<OptiCli['apply']>[1] & KeepOption = {}): Promise<ApplyResult> {
+    if (keep) {
+      const parents = plan.operations.map((step) => (isCreate(step) ? (step.parent ?? step.for) : undefined));
+      this.checkKeep('cms.apply()', parents.filter((p): p is ContentRef => p !== undefined));
+    }
     const result = await this.opticli.apply(plan, options);
-    for (const step of plan.operations) {
-      if ((step.op === 'create' || step.op === 'block' || step.op === 'upload') && step.id && result.created[step.id]) {
-        this.track(result.created[step.id], step.parent ?? step.for);
+    if (keep) return result;
+    for (const step of result.operations) {
+      const planned = plan.operations[step.index];
+      if (step.id && result.created[step.id] && isCreate(planned) && !step.result?.existing) {
+        this.track(result.created[step.id], planned.parent ?? planned.for);
       }
     }
     return result;
@@ -88,6 +112,22 @@ export class Cms {
     if (parent && (parent.startsWith('$') || this.created.includes(parent))) return;
     this.created.push(ref);
   }
+
+  /** Refuses `keep` below content that goes after the test or worker, before anything is saved. */
+  private checkKeep(call: string, parents: readonly ContentRef[]): void {
+    for (const parent of parents) {
+      if (parent === this.parent) {
+        throw new Error(`${call} with keep: true needs a parent outside the worker's sandbox, which goes when the worker ends.`);
+      }
+      if (this.created.includes(parent)) {
+        throw new Error(`${call} with keep: true can't go below ${parent}, which this test made and which goes after it.`);
+      }
+    }
+  }
+}
+
+function isCreate(step: PlanStep | undefined): step is Extract<PlanStep, { op: 'create' | 'block' | 'upload' }> {
+  return step?.op === 'create' || step?.op === 'block' || step?.op === 'upload';
 }
 
 type TestFixtures = { cms: Cms };

@@ -77,6 +77,31 @@ test('a site that runs an older agent stops setup with how to restart it', async
   await assert.rejects(defineSetup({ opticli: { command: fakeCommand } })(), /site agent of opticli 0\.1\.0.*opticli serve --stop/);
 });
 
+test('a seed plan that fails stops the site setup started', async () => {
+  const { calls, dir } = fake([
+    { match: 'serve --status', envelope: ok({ state: 'stopped', message: '' }, { version: requiredOpticli }) },
+    { match: 'serve --stop', envelope: ok({ stopped: true }, { version: requiredOpticli }) },
+    { match: 'serve', envelope: ok(running, { version: requiredOpticli }) },
+    { match: 'apply', exit: 5, envelope: { ok: false, error: { code: 'validation', message: 'MainBody is required.' } } },
+  ]);
+
+  await assert.rejects(defineSetup({ plan, planDir: dir, opticli: { command: fakeCommand } })(), /validation: MainBody is required/);
+
+  assert.deepEqual(calls().at(-1).args.slice(0, 2), ['serve', '--stop']);
+});
+
+test('a failed setup leaves the site running with keepSite', async () => {
+  const { calls } = fake([
+    { match: 'serve --status', envelope: ok({ state: 'stopped', message: '' }, { version: '0.1.0' }) },
+    { match: 'serve --stop', envelope: ok({ stopped: true }, { version: '0.1.0' }) },
+    { match: 'serve', envelope: ok(running, { version: '0.1.0' }) },
+  ]);
+
+  await assert.rejects(defineSetup({ keepSite: true, opticli: { command: fakeCommand } })(), /needs opticli/);
+
+  assert.ok(!calls().some((c) => c.args.includes('--stop')));
+});
+
 test('workers without setup say what to configure', () => {
   assert.throws(() => readSeedState(), /globalSetup/);
 });

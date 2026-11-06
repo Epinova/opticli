@@ -2,7 +2,7 @@
 import { createTest } from './fixtures.ts';
 
 export { Cms, createTest } from './fixtures.ts';
-export type { CreatedPage, OptiCliWorkerOptions, SandboxOptions } from './fixtures.ts';
+export type { CreatedPage, KeepOption, OptiCliWorkerOptions, SandboxOptions } from './fixtures.ts';
 export { defineSetup, readSeedState, stateVariable } from './setup.ts';
 export type { SeedState, SetupOptions } from './setup.ts';
 export { OptiCliError } from '../opticli.ts';

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Stands in for opticli in the tests. FAKE_OPTICLI_RESPONSES names a JSON file: an array of
-// {"match": "<start of the arguments>", "exit": 0, "envelope": {...}} or {"match", "exit", "raw": "<stdout>", "stderr"};
+// {"match": "<start of the arguments>", "exit": 0, "envelope": {...}} or {"match", "exit", "raw": "<stdout>", "stderr"},
+// with "delayMs" to answer late;
 // the first whose match the arguments (joined by spaces) start with answers. Each call is appended to FAKE_OPTICLI_LOG as
 // a JSON line: {args, cwd, stdin}.
 import { appendFileSync, readFileSync } from 'node:fs';
@@ -16,6 +17,7 @@ if (!response) {
   process.stderr.write(`fake-opticli: no response for ${args.join(' ')}\n`);
   process.exit(99);
 }
+if (response.delayMs) await new Promise((r) => setTimeout(r, response.delayMs));
 if (response.stderr) process.stderr.write(response.stderr);
 process.stdout.write(response.raw ?? `${JSON.stringify(response.envelope)}\n`);
 process.exit(response.exit ?? 0);

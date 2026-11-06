@@ -1,7 +1,7 @@
 // Playwright's globalSetup: start the site, check opticli's version, apply the seed plan, and hand what the workers need
 // to them through the environment. It returns the teardown, which Playwright runs after the tests.
 import { compareVersions, OptiCli, type OptiCliOptions } from '../opticli.ts';
-import type { ContentRef, Plan } from '../types.ts';
+import type { ContentRef, OkEnvelope, Plan, ServeResult } from '../types.ts';
 import { requiredOpticli } from '../version.ts';
 
 export interface SetupOptions {
@@ -16,7 +16,7 @@ export interface SetupOptions {
   publish?: boolean;
   /** Build the site before starting it (`serve --build`). Default: `OPTICLI_BUILD=1`. */
   build?: boolean;
-  /** Leave a site that setup started running after the tests. Default: `OPTICLI_KEEP_SITE=1`. */
+  /** Leave a site that setup started running after the tests, or after setup failed. Default: `OPTICLI_KEEP_SITE=1`. */
   keepSite?: boolean;
   /** How to run opticli, and which project. */
   opticli?: Pick<OptiCliOptions, 'command' | 'project' | 'cwd'>;
@@ -56,37 +56,49 @@ export function defineSetup(options: SetupOptions = {}): () => Promise<() => Pro
     });
 
     const before = await opticli.serveStatus();
-    const served = await opticli.serve({ build: options.build ?? process.env.OPTICLI_BUILD === '1' });
-    checkVersions(served.meta.version, served.data.agent?.version);
-    const baseURL = served.data.browseUrl ?? served.data.url;
-    if (!baseURL) throw new Error(`opticli serve gave no URL: ${JSON.stringify(served.data)}`);
-
-    const state: SeedState = {
-      baseURL,
-      opticli: { command: opticli.command, project: opticli.project, cwd: opticli.cwd },
-      refs: {},
-      urls: {},
-    };
-    if (options.plan) {
-      const applied = await opticli.apply(options.plan, {
-        baseDir: options.planDir,
-        updateExisting: true,
-        publish: options.publish ?? true,
-      });
-      state.refs = applied.created;
-      for (const step of applied.operations) {
-        if (step.id && step.result?.url) state.urls[step.id] = step.result.url;
-      }
-      const changed = applied.operations.filter((o) => o.status !== 'unchanged').length;
-      console.log(`opticli: seed plan ${changed ? `changed ${changed} of ${applied.operations.length} steps` : 'unchanged'}`);
-    }
-    process.env[stateVariable] = JSON.stringify(state);
-
     const startedSite = before.state !== 'running';
-    return async () => {
-      if (startedSite && !(options.keepSite ?? process.env.OPTICLI_KEEP_SITE === '1')) await opticli.serveStop();
+    const keepSite = options.keepSite ?? process.env.OPTICLI_KEEP_SITE === '1';
+    const teardown = async () => {
+      if (startedSite && !keepSite) await opticli.serveStop();
     };
+
+    const served = await opticli.serve({ build: options.build ?? process.env.OPTICLI_BUILD === '1' });
+    try {
+      process.env[stateVariable] = JSON.stringify(await seed(opticli, served, options));
+    } catch (error) {
+      // Playwright runs no teardown when setup fails: stop the site setup started here.
+      await teardown().catch((stopError) => console.warn(`opticli: couldn't stop the site: ${stopError}`));
+      throw error;
+    }
+    return teardown;
   };
+}
+
+async function seed(opticli: OptiCli, served: OkEnvelope<ServeResult>, options: SetupOptions): Promise<SeedState> {
+  checkVersions(served.meta.version, served.data.agent?.version);
+  const baseURL = served.data.browseUrl ?? served.data.url;
+  if (!baseURL) throw new Error(`opticli serve gave no URL: ${JSON.stringify(served.data)}`);
+
+  const state: SeedState = {
+    baseURL,
+    opticli: { command: opticli.command, project: opticli.project, cwd: opticli.cwd },
+    refs: {},
+    urls: {},
+  };
+  if (options.plan) {
+    const applied = await opticli.apply(options.plan, {
+      baseDir: options.planDir,
+      updateExisting: true,
+      publish: options.publish ?? true,
+    });
+    state.refs = applied.created;
+    for (const step of applied.operations) {
+      if (step.id && step.result?.url) state.urls[step.id] = step.result.url;
+    }
+    const changed = applied.operations.filter((o) => o.status !== 'unchanged').length;
+    console.log(`opticli: seed plan ${changed ? `changed ${changed} of ${applied.operations.length} steps` : 'unchanged'}`);
+  }
+  return state;
 }
 
 /** The workers' copy of what setup did. */
