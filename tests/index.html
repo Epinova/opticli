@@ -67,11 +67,11 @@ pre.cmd .k { color: #aec0db; }
 <section class="change wrap" id="change">
   <h1>Real CMS content for your Playwright tests. <em>Each test cleans up after itself.</em></h1>
   <div class="change-head">
-    <p class="lead"><code>@epinova/opticli</code> starts your Optimizely site, seeds the content your tests read, and gives each test pages of its own. They're created through the CMS and removed when the test ends. Fully typed, from your seed plan's step ids to opticli's error codes.</p>
+    <p class="lead"><code>@epinova/opticli</code> starts your Optimizely site, seeds the content your tests read, and gives each test pages of its own. They're created through the CMS and removed when the test ends, unless a test keeps them. Fully typed, from your seed plan's step ids to opticli's error codes.</p>
     <aside class="checkout" aria-labelledby="checkout-h">
       <h2 id="checkout-h">Install</h2>
-      <div class="copyline"><code id="install-cmd">npm install -D @epinova/opticli@preview</code><button class="copy" type="button" data-copy="install-cmd">Copy</button></div>
-      <p>It runs the opticli CLI, 0.27.0 or newer, so install that too. Works with CMS 12 and 13. A preview: the API may still change.</p>
+      <div class="copyline"><code id="install-cmd">npm install -D @epinova/opticli</code><button class="copy" type="button" data-copy="install-cmd">Copy</button></div>
+      <p>It runs the opticli CLI, 0.28.0 or newer, so install that too. Works with CMS 12 and 13.</p>
     </aside>
   </div>
 
@@ -204,21 +204,20 @@ test(<span class="s">'a draft is not visible until it is published'</span>, <spa
       <li><svg class="icon off" aria-hidden="true"><use href="#i-off"/></svg><b>About a second per call</b><p>Every call runs opticli once, and most of that second is .NET starting. Reading seeded content costs nothing per test; a page of a test's own costs two calls, create and delete. A plan makes a whole section in one call.</p><span class="status off">~1 s per write</span></li>
       <li><svg class="icon off" aria-hidden="true"><use href="#i-off"/></svg><b>The recycle bin fills up</b><p>Test content is deleted the way the CMS deletes: to the recycle bin, never for good. On a local database that is usually fine; empty the recycle bin now and then.</p><span class="status off">nothing purged</span></li>
       <li><svg class="icon off" aria-hidden="true"><use href="#i-off"/></svg><b>Not tried on CI yet</b><p>A CI run needs what a local run needs: the .NET SDK, opticli, the site and a SQL Server with its database. That hasn't been tried in a pipeline yet, so there's no example pipeline.</p><span class="status off">local runs</span></li>
-      <li><svg class="icon off" aria-hidden="true"><use href="#i-off"/></svg><b>A preview</b><p>The API may still change. Its version is the opticli version it was released with, plus <code>-preview</code>; install it with the <code>preview</code> tag.</p><span class="status off">preview</span></li>
     </ul>
   </article>
 </section>
 
 <section class="part wrap" id="install" aria-labelledby="install-h">
   <article class="file merge">
-    <div class="file-bar"><svg class="icon ok" aria-hidden="true"><use href="#i-ok"/></svg><b id="install-h">Get started</b><small>Playwright 1.40 or newer · opticli 0.27.0 or newer · CMS 12 or 13</small></div>
+    <div class="file-bar"><svg class="icon ok" aria-hidden="true"><use href="#i-ok"/></svg><b id="install-h">Get started</b><small>Playwright 1.40 or newer · opticli 0.28.0 or newer · CMS 12 or 13</small></div>
     <div class="merge-body">
       <pre class="cmd"><span class="c"># opticli, pinned in the site's repository so CI gets the same</span>
 dotnet new tool-manifest
 dotnet tool install OptiCli
 
 <span class="c"># the package, in your Playwright project</span>
-npm install -D @epinova/opticli@preview
+npm install -D @epinova/opticli
 
 <span class="c"># OPTICLI_PROJECT: the site, if setup can't find it</span>
 npx playwright test</pre>
