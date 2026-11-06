@@ -93,7 +93,7 @@ export function defineSetup(options: SetupOptions = {}): () => Promise<() => Pro
 export function readSeedState<Id extends string = string>(): SeedState<Id> {
   const json = process.env[stateVariable];
   if (!json) {
-    throw new Error("No opticli setup ran: set globalSetup in playwright.config to a file that exports defineSetup() from 'opticli/playwright'.");
+    throw new Error("No opticli setup ran: set globalSetup in playwright.config to a file that exports defineSetup() from '@epinova/opticli/playwright'.");
   }
   return JSON.parse(json) as SeedState<Id>;
 }

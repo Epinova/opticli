@@ -18,10 +18,10 @@ after them. Writes return the content's URL, and errors name the opticli version
   no `url` until `serve` starts it again.
 - **Errors name the opticli version.** The JSON error envelope has `meta.version`, as a result's `meta` has, so a
   program that runs opticli can tell which version failed.
-- **npm package for Playwright and Node.js (preview).** [`opticli`](npm/README.md) on npm runs opticli from Node.js
+- **npm package for Playwright and Node.js (preview).** [`@epinova/opticli`](npm/README.md) on npm runs opticli from Node.js
   with types for its output, and has Playwright fixtures: `defineSetup()` starts the site with `serve`, checks the
   versions, and applies a seed plan before the tests; `cms` gives each test content of its own and removes it after;
-  each worker can have a page of its own for that (`opticliSandbox`). Install it with `npm install -D opticli@preview`.
+  each worker can have a page of its own for that (`opticliSandbox`). Install it with `npm install -D @epinova/opticli@preview`.
 
 ### Changed
 

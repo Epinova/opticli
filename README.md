@@ -138,12 +138,12 @@ opticli enforces its own safety rules either way (see [Safety model](#safety-mod
 
 ## Tests with Playwright and Node.js
 
-The npm package [`opticli`](npm/README.md) (a preview) runs opticli from Node.js with types for its output, and has
+The npm package [`@epinova/opticli`](npm/README.md) (a preview) runs opticli from Node.js with types for its output, and has
 Playwright fixtures that start the site with `serve`, apply a seed plan before the tests, give each test content of its
 own and remove it after:
 
 ```sh
-npm install -D opticli@preview
+npm install -D @epinova/opticli@preview
 ```
 
 It runs the opticli CLI, which you install as usual, at the package's version or newer (a local tool manifest pins it
@@ -2056,13 +2056,13 @@ The [release workflow](.github/workflows/release.yml) checks that the tag matche
 runs the unit tests, checks that the CLI package holds both site agent builds and starts, and publishes it to nuget.org together
 with `OptiCli.Mcp` and `OptiCli.Mcp.Cms13` at the same version.
 
-The npm package ([npm/](npm)) follows with the same version plus `-preview`, under the npm tag `preview`, through npm
-trusted publishing, once the repository variable `NPM_PUBLISH` is `true`. Trusted publishing needs the package to
-exist, so the first version is published by hand:
+The npm package `@epinova/opticli` ([npm/](npm)), in the npm organization `epinova`, follows with the same version
+plus `-preview`, under the npm tag `preview`, through npm trusted publishing, once the repository variable
+`NPM_PUBLISH` is `true`. Trusted publishing needs the package to exist, so the first version is published by hand:
 
 1. Release the version as above. With `NPM_PUBLISH` unset, the workflow skips the npm job.
-2. From the tag: `cd npm && npm ci && npm test`, then `npm login` and `npm publish ./dist --tag preview --access public`
-   (two-factor authentication on).
+2. From the tag: `cd npm && npm ci && npm test`, then `npm login` (as a member of `epinova` who may publish) and
+   `npm publish ./dist --tag preview --access public` (two-factor authentication on).
 3. On npmjs.com, in the package's settings, add a trusted publisher: GitHub Actions, repository `epinova/opticli`,
    workflow `release.yml`, environment `npm`.
 4. `gh variable set NPM_PUBLISH --body true`. From the next tag on, the workflow publishes the package; a version already

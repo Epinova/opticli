@@ -10,7 +10,7 @@ released with, plus `-preview`.
 ## Install
 
 ```bash
-npm install -D opticli@preview
+npm install -D @epinova/opticli@preview
 ```
 
 The package runs the opticli CLI; it doesn't install it. It needs the opticli it was released with, or newer: pin it in
@@ -33,7 +33,7 @@ changed. Give it a fixed `guidNamespace` and an `id` on each step that creates s
 
 ```ts
 // e2e/seed.ts
-import type { Plan } from 'opticli';
+import type { Plan } from '@epinova/opticli';
 
 export const seedPlan = {
   guidNamespace: '0d6a8a5e-2f7b-4c1e-9b0a-5c3f1e7d2a61', // any GUID; keep it
@@ -47,7 +47,7 @@ export const seedPlan = {
 
 ```ts
 // e2e/global-setup.ts
-import { defineSetup } from 'opticli/playwright';
+import { defineSetup } from '@epinova/opticli/playwright';
 import { seedPlan } from './seed.ts';
 
 export default defineSetup({ plan: seedPlan, planDir: import.meta.dirname });
@@ -56,7 +56,7 @@ export default defineSetup({ plan: seedPlan, planDir: import.meta.dirname });
 ```ts
 // playwright.config.ts
 import { defineConfig } from '@playwright/test';
-import type { OptiCliWorkerOptions } from 'opticli/playwright';
+import type { OptiCliWorkerOptions } from '@epinova/opticli/playwright';
 
 export default defineConfig<{}, OptiCliWorkerOptions>({
   testDir: './e2e',
@@ -70,11 +70,11 @@ export default defineConfig<{}, OptiCliWorkerOptions>({
 
 ```ts
 // e2e/fixtures.ts: seed.refs and seed.urls typed by the plan's step ids
-import { createTest } from 'opticli/playwright';
+import { createTest } from '@epinova/opticli/playwright';
 import type { seedPlan } from './seed.ts';
 
 export const test = createTest<typeof seedPlan>();
-export { expect } from 'opticli/playwright';
+export { expect } from '@epinova/opticli/playwright';
 ```
 
 ```ts
@@ -134,7 +134,7 @@ usually fine; empty the recycle bin in the CMS now and then.
 ## Node.js
 
 ```ts
-import { OptiCli, OptiCliError } from 'opticli';
+import { OptiCli, OptiCliError } from '@epinova/opticli';
 
 const cms = new OptiCli({ project: '../src/Site' });
 const page = await cms.create('/en/', 'StandardPage', 'Hello', { MainBody: '<p>Hi</p>' }, { publish: true });

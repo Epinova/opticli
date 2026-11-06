@@ -144,8 +144,8 @@ jobs:
             echo "::error::npm/dist has version $version, not ${GITHUB_REF_NAME#v}-preview."
             exit 1
           fi
-          if npm view "opticli@$version" version >/dev/null 2>&1; then
-            echo "opticli@$version is on npm already."
+          if npm view "@epinova/opticli@$version" version >/dev/null 2>&1; then
+            echo "@epinova/opticli@$version is on npm already."
             exit 0
           fi
           npm publish --tag preview --access public
