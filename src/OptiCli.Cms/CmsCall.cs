@@ -108,7 +108,9 @@ internal sealed class CmsCall(IServiceProvider services, CancellationToken abort
     /// UI's list of types to create offers them, which the CMS doesn't check again on save. That list leaves out a type
     /// whose own access rights (admin mode's, <c>[Access]</c> on its class) don't let the editor create it, and one in a
     /// group of types (<c>[GroupDefinitions]</c>, admin mode's content type groups) whose required access the editor
-    /// lacks on the parent. Where the type may go at all is <c>ContentTypeAvailabilityService.IsAllowed</c>.
+    /// lacks on the parent. Where the type may go at all is <c>ContentTypeAvailabilityService.IsAllowed</c>. The CMS's own
+    /// folder type is the exception: that list never offers it (it isn't available in edit mode), and the edit UI makes
+    /// folders with a command of their own, which needs only Create access on the parent, as the save checks.
     /// </summary>
     /// <param name="parent">
     /// The parent itself, when it is of <paramref name="parentType"/>; null (or a parent of another type: a dry run's
@@ -116,7 +118,7 @@ internal sealed class CmsCall(IServiceProvider services, CancellationToken abort
     /// </param>
     public bool MayCreate(ContentType type, ContentType parentType, IContent? parent = null)
     {
-        if (!Checked)
+        if (!Checked || type.ModelType == typeof(ContentFolder))
         {
             return true;
         }

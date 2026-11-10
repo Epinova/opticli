@@ -179,6 +179,10 @@ public class CmsCallTests
         Assert.True(editor.MayCreate(article, parentType, new Secured(new ContentReference(6), AccessLevel.FullAccess) { ContentTypeID = 99 }));
         Assert.Equal("name", availability.Asked);
         Assert.True(new CmsCall(services, CancellationToken.None, CmsCaller.Developer).MayCreate(article, parentType, parent));
+        // A folder: the edit UI's list never offers the CMS's own folder type; it has a command of its own for it.
+        availability.Asked = null;
+        Assert.True(editor.MayCreate(new ContentType { ID = 8, Name = "SysContentFolder", ModelType = typeof(ContentFolder) }, parentType, parent));
+        Assert.Null(availability.Asked);
     }
 
     [Fact]
@@ -348,7 +352,7 @@ public class CmsCallTests
     /// <summary>The CMS's lists of types to create: by the parent's type name (the type's own access rights), or for the parent itself.</summary>
     private sealed class Availability(IList<ContentType> byName, IList<ContentType> byContent) : ContentTypeAvailabilityService
     {
-        public string? Asked { get; private set; }
+        public string? Asked { get; set; }
 
         public override AvailableSetting GetSetting(string contentTypeName) => new();
 
