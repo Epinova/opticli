@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EPiServer;
 using EPiServer.Core;
+using EPiServer.DataAbstraction;
 using EPiServer.Security;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
@@ -25,6 +26,9 @@ namespace OptiCli.Mcp.Tools;
 /// </remarks>
 internal sealed class CmsPlanSteps(IHttpContextAccessor http, IOptions<OptiCliMcpOptions> options) : IContentPlanSteps
 {
+    /// <summary>What a trash step's dry run says about <c>referencedBy</c>, so an empty list isn't taken for "nothing refers to it".</summary>
+    internal const string ReferencedByNote = "Lists content that refers to it in its published version; references from unpublished drafts aren't included.";
+
     /// <summary>The most descendants of trashed content that are loaded to count those the editor can read.</summary>
     internal const int MaxCountedDescendants = 1000;
 
@@ -86,15 +90,35 @@ internal sealed class CmsPlanSteps(IHttpContextAccessor http, IOptions<OptiCliMc
     }
 
     /// <summary>
-    /// <c>update_content</c>'s dry run, based on the version the tool planned from (none: the latest), and Edit access. The
-    /// version it is based on is what the plan token covers: a newer save changes it.
+    /// <c>update_content</c>'s dry run, based on the version the tool planned from, and Edit access. The version it is
+    /// based on is what the plan token covers: a newer save changes it.
     /// </summary>
+    /// <remarks>
+    /// Content loaded without a version (<c>IContentLoader.Get</c>, <see cref="IOptiCliEditor.Load{T}"/> without
+    /// <c>latest</c>) is the version such a load gives: the published one, or for content never published its primary
+    /// draft (as <c>get_content</c> reads it). A newer draft, anyone's, makes the step a <c>conflict</c>: the tool's values
+    /// were worked out without it, and would replace what that draft changed.
+    /// </remarks>
     private StepOutcome CheckUpdate(UpdateStep update)
     {
         var call = Call;
         var content = new WriteFlow(call).Locator.LoadAnyLanguage(update.Content);
         DraftsOnly(content);
-        var result = DraftOperation.Run(call, Reference(update.Content), Draft(update, update.Content.WorkID > 0 ? update.Content.WorkID : null, dryRun: true));
+        var baseVersion = update.Content.WorkID > 0 ? update.Content.WorkID : PrimaryVersion(call, update.Content, update.Language, content);
+        WriteResult result;
+        try
+        {
+            result = DraftOperation.Run(call, Reference(update.Content), Draft(update, baseVersion, dryRun: true));
+        }
+        catch (AgentException e) when (e.Code == AgentErrorCodes.Conflict && e.CurrentVersion is not null && update.Content.WorkID == 0)
+        {
+            throw new AgentException(AgentErrorCodes.Conflict,
+                $"{e.Message} The tool planned from version {baseVersion}, the one visitors see (or, for content never published, its primary draft).",
+                "Someone saved a newer draft, which this change would overwrite. Tell the user: that draft must be published or discarded in the CMS first, or the site's tool must plan from the latest version. Nothing was changed.")
+            {
+                CurrentVersion = e.CurrentVersion,
+            };
+        }
         call.RequireAccess(content, AccessLevel.Edit);
         return new StepOutcome(Json(ResultUrls.Serialize(result, result.Content, Context)))
         {
@@ -121,8 +145,47 @@ internal sealed class CmsPlanSteps(IHttpContextAccessor http, IOptions<OptiCliMc
             DraftsOnly(flow.Repository.GetDefault<IContent>(parent.ContentLink, type.ID));
         }
         call.RequireAccess(parent, create.InAssets ? AccessLevel.Edit : AccessLevel.Create);
-        return new StepOutcome(Json(ResultUrls.Serialize(result, result.Content, Context))) { Valid = result.Valid };
+        return new StepOutcome(Json(ResultUrls.Serialize(result, result.Content, Context)))
+        {
+            Valid = result.Valid,
+            Facts = new JsonObject { ["siblingsOfType"] = SiblingsOfType(call, create, parent, type) },
+        };
     }
+
+    /// <summary>
+    /// How many items of <paramref name="type"/> the new content's parent has now (all of them, whatever the editor may
+    /// read: the count only goes into the plan token's hash). Once the step has run there is one more, so the token of
+    /// the dry run no longer fits: a retry with it (after a client gave up on the call, say) is refused rather than
+    /// creating everything again.
+    /// </summary>
+    private static int SiblingsOfType(CmsCall call, CreateStep create, IContent parent, ContentType type)
+    {
+        var folder = create.InAssets ? call.Service<ContentAssetHelper>().GetAssetFolder(parent.ContentLink)?.ContentLink : parent.ContentLink;
+        return ContentReference.IsNullOrEmpty(folder)
+            ? 0
+            : call.Service<IContentLoader>().GetChildren<IContent>(folder.ToReferenceWithoutVersion(), new LoaderOptions { LanguageLoaderOption.MasterLanguage() })
+                .Count(c => c.ContentTypeID == type.ID);
+    }
+
+    /// <summary>
+    /// The version a reference without one loads, for <paramref name="language"/>: the published one, or for content
+    /// never published its primary draft (<c>get_content</c>'s rule). None for content without versions.
+    /// </summary>
+    private static int? PrimaryVersion(CmsCall call, ContentReference link, string? language, IContent content)
+    {
+        if (content is not IVersionable)
+        {
+            return null;
+        }
+        var versions = call.Service<IContentVersionRepository>();
+        var plain = link.ToReferenceWithoutVersion();
+        var version = (language is null ? versions.LoadPublished(plain) : versions.LoadPublished(plain, language))
+            ?? versions.LoadCommonDraft(plain, language ?? "");
+        return version?.ContentLink.WorkID is > 0 and var id ? id : null;
+    }
+
+    public IReadOnlySet<int> AncestorIds(ContentReference link) =>
+        Call.Service<IContentLoader>().GetAncestors(link.ToReferenceWithoutVersion()).Select(a => a.ContentLink.ID).ToHashSet();
 
     /// <summary>
     /// <c>move_content</c>'s dry run, Delete on the content and Create below the destination. To planned content, it runs
@@ -195,6 +258,7 @@ internal sealed class CmsPlanSteps(IHttpContextAccessor http, IOptions<OptiCliMc
             MoreDescendants = below.Count > MaxCountedDescendants ? true : null,
             ReferencedBy = referencedBy,
             MoreReferences = moreReferences ? true : null,
+            ReferencedByNote = ReferencedByNote,
         };
         return new StepOutcome(Json(ResultUrls.Serialize(report, summary, Context, wholeContent: true)))
         {
@@ -234,6 +298,8 @@ internal sealed class CmsPlanSteps(IHttpContextAccessor http, IOptions<OptiCliMc
         public required IReadOnlyList<ContentSummary> ReferencedBy { get; init; }
 
         public bool? MoreReferences { get; init; }
+
+        public required string ReferencedByNote { get; init; }
     }
 
     private static DraftRequest Draft(UpdateStep update, int? baseVersion, bool dryRun) => new()

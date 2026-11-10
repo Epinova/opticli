@@ -338,6 +338,56 @@ public sealed class WriteToolTests
         Assert.Equal("step 1", update.Properties["Other"]!.GetValue<string>());
     }
 
+    [Theory]
+    [InlineData("update:6")]
+    [InlineData("updatepublished:6")]
+    [InlineData("create:5")]
+    [InlineData("create:5,create:5")]
+    [InlineData("move:7>8")]
+    [InlineData("trash:7")]
+    [InlineData("updatepublished:6,create:5,move:7>8,trash:8")]
+    public async Task A_token_runs_its_plan_once_a_retry_with_it_is_refused_before_anything_is_saved(string ops)
+    {
+        await using var site = await Site(m => m.WithWriteTool<OpsTool>(), o => o.AllowDelete = true);
+        await using var client = await ToolTests.Connect(site);
+        var arguments = new Dictionary<string, object?> { ["ops"] = ops };
+        var token = await DryRun(client, "test_ops", arguments);
+        Ok(await client.CallToolAsync("test_ops", With(arguments, token)));
+        var ran = _cms.Ran.Count();
+
+        // A client that gave up on the call and tries again with the same token.
+        var retry = Error(await client.CallToolAsync("test_ops", With(arguments, token)));
+
+        Assert.Equal(AgentErrorCodes.Conflict, retry.Code);
+        Assert.Equal(ran, _cms.Ran.Count());
+        // A new dry run shows the plan as it is now.
+        if (!ops.Contains("trash", StringComparison.Ordinal))
+        {
+            await DryRun(client, "test_ops", arguments);
+        }
+    }
+
+    [Fact]
+    public async Task A_step_on_content_below_content_an_earlier_step_trashes_is_refused()
+    {
+        await using var site = await Site(m => m.WithWriteTool<OpsTool>(), o => o.AllowDelete = true);
+        await using var client = await ToolTests.Connect(site);
+        _cms.Parents[9] = 7;
+        _cms.Versions[9] = 90;
+
+        var dry = Ok(await Call(client, "test_ops", new { ops = "trash:7,create:9,update:9,move:6>9,trash:9,create:6", dryRun = true }));
+
+        Assert.False(dry["valid"]!.GetValue<bool>());
+        var steps = dry["steps"]!.AsArray();
+        Assert.Null(steps[0]!["error"]);
+        foreach (var step in steps.Skip(1).Take(4))
+        {
+            Assert.Equal(AgentErrorCodes.Refused, step!["error"]!["code"]!.GetValue<string>());
+            Assert.StartsWith("Step 1 trashes content 7, and content 9, which this step uses, is below it", step["error"]!["message"]!.GetValue<string>());
+        }
+        Assert.Null(steps[5]!["error"]);
+    }
+
     [Fact]
     public async Task Arguments_are_read_strictly()
     {
@@ -743,4 +793,31 @@ internal sealed class MixedTool : IOptiCliWriteTool<NoArgs>
 internal abstract class AbstractWriteTool : IOptiCliWriteTool<NoArgs>
 {
     public Task<ContentPlan> PlanAsync(NoArgs args, CancellationToken cancellationToken) => Task.FromResult(new ContentPlan());
+}
+
+public sealed record OpsArgs([property: Description("Steps: update:6, updatepublished:6, create:5, move:7>8, trash:7, comma-separated.")] string Ops);
+
+[OptiCliWriteTool("test_ops", Kinds = ContentPlanKinds.Update | ContentPlanKinds.Create | ContentPlanKinds.Move | ContentPlanKinds.Trash)]
+[Description("Plans the steps it is given.")]
+internal sealed class OpsTool(FakePlanSteps cms) : IOptiCliWriteTool<OpsArgs>
+{
+    public Task<ContentPlan> PlanAsync(OpsArgs args, CancellationToken cancellationToken)
+    {
+        var plan = new ContentPlan();
+        foreach (var op in args.Ops.Split(','))
+        {
+            var (kind, target) = (op.Split(':')[0], op.Split(':')[1]);
+            var ids = target.Split('>').Select(int.Parse).ToArray();
+            _ = kind switch
+            {
+                "update" => plan.Update(cms.Latest(ids[0]), p => p.Set("Heading", "x")),
+                // Loaded without a version, as IContentLoader.Get gives the published version.
+                "updatepublished" => plan.Update(new TestContent(new ContentReference(ids[0])), p => p.Set("Heading", "x")),
+                "create" => plan.Create(new TestContent(new ContentReference(ids[0])), "ArticlePage", "New").Plan,
+                "move" => plan.Move(new TestContent(new ContentReference(ids[0])), new TestContent(new ContentReference(ids[1]))),
+                _ => plan.Trash(new TestContent(new ContentReference(ids[0]))),
+            };
+        }
+        return Task.FromResult(plan);
+    }
 }

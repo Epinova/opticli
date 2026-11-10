@@ -16,6 +16,14 @@ internal sealed class FakePlanSteps : IContentPlanSteps
     /// <summary>The latest version of each content id; a saved update makes a new one.</summary>
     public Dictionary<int, int> Versions { get; } = new() { [5] = 10, [6] = 20, [7] = 30, [8] = 40 };
 
+    /// <summary>Each content id's parent: 5 below the root (1), 6, 7 and 8 below 5.</summary>
+    public Dictionary<int, int> Parents { get; } = new() { [5] = 1, [6] = 5, [7] = 5, [8] = 5 };
+
+    /// <summary>Each content id's type; <c>StandardPage</c> when not set.</summary>
+    public Dictionary<int, string> Types { get; } = [];
+
+    public HashSet<int> Trashed { get; } = [];
+
     public List<(string Phase, PlanStep Step)> Calls { get; } = [];
 
     public Func<PlanStep, Exception?> RefuseCheck { get; set; } = _ => null;
@@ -53,13 +61,18 @@ internal sealed class FakePlanSteps : IContentPlanSteps
             case CreateStep create:
                 report["checkedBelow"] = create.Parent.Existing!.ToString();
                 report["changes"] = create.Properties.DeepClone();
+                facts = new JsonObject { ["siblingsOfType"] = Parents.Count(p => p.Value == create.Parent.Existing!.ID && TypeOf(p.Key) == create.Type) };
                 break;
             case MoveStep move:
                 report["content"] = new JsonObject { ["ref"] = move.Content.ToString() };
                 report["parent"] = move.Destination.Existing!.ToString();
-                facts = new JsonObject { ["previousParent"] = "1" };
+                facts = new JsonObject { ["previousParent"] = Parents.GetValueOrDefault(move.Content.ID) };
                 break;
             case TrashStep trash:
+                if (Trashed.Contains(trash.Content.ID))
+                {
+                    throw OptiCli.Cms.AgentException.Conflict($"Content {trash.Content.ID} is already in the recycle bin.");
+                }
                 report["content"] = new JsonObject { ["ref"] = trash.Content.ToString() };
                 report["descendants"] = 2;
                 facts = new JsonObject { ["descendants"] = 2 };
@@ -88,16 +101,32 @@ internal sealed class FakePlanSteps : IContentPlanSteps
                     Status = "saved",
                     Content = saved,
                 };
-            case CreateStep:
+            case CreateStep create:
                 var made = new ContentReference(_next++, 1);
                 Versions[made.ID] = 1;
+                Parents[made.ID] = create.Parent.Existing!.ID;
+                Types[made.ID] = create.Type;
                 return new StepOutcome(new JsonObject { ["content"] = new JsonObject { ["ref"] = made.ToString() } }) { Status = "saved", Content = made };
             case MoveStep move:
+                Parents[move.Content.ID] = move.Destination.Existing!.ID;
                 return new StepOutcome(new JsonObject { ["parent"] = move.Destination.Existing!.ToString() }) { Status = "moved", Content = move.Content };
             default:
+                Trashed.Add(((TrashStep)step).Content.ID);
                 return new StepOutcome(new JsonObject()) { Status = "trashed", Content = ((TrashStep)step).Content };
         }
     }
+
+    public IReadOnlySet<int> AncestorIds(ContentReference link)
+    {
+        var ancestors = new HashSet<int>();
+        for (var id = link.ID; Parents.TryGetValue(id, out var parent); id = parent)
+        {
+            ancestors.Add(parent);
+        }
+        return ancestors;
+    }
+
+    private string TypeOf(int id) => Types.GetValueOrDefault(id, "StandardPage");
 }
 
 /// <summary>Content as a tool loaded it: a reference (with its version) and a language. Nothing else is read of it.</summary>

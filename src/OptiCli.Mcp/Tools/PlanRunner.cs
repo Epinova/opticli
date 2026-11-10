@@ -39,6 +39,9 @@ internal interface IContentPlanSteps
     /// <exception cref="Exception">The step would be refused: as the operation refuses it (<see cref="Cms.AgentException"/>, …).</exception>
     StepOutcome Check(PlanStep step);
 
+    /// <summary>The ids of the content <paramref name="link"/> is below, whatever the editor may read (for comparisons only, never shown).</summary>
+    IReadOnlySet<int> AncestorIds(ContentReference link);
+
     /// <summary>Saves the step, its <see cref="PlannedContent"/> replaced by the content the earlier steps made.</summary>
     /// <param name="facts">What <see cref="Check"/> found for it, just before.</param>
     StepOutcome Run(PlanStep step, JsonObject? facts);
@@ -193,12 +196,49 @@ internal sealed class PlanRunner(
         var (checkable, uncheckedValues) = Checkable(plan, step);
         try
         {
-            return new Checked(step, cms.Check(checkable), uncheckedValues, null);
+            var outcome = cms.Check(checkable);
+            return BelowTrashed(plan, checkable) is { } error
+                ? new Checked(step, null, uncheckedValues, error)
+                : new Checked(step, outcome, uncheckedValues, null);
         }
         catch (Exception e) when (Error(e) is { } error)
         {
             return new Checked(step, null, uncheckedValues, error);
         }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="step"/> uses content below content an earlier step trashes (the same content
+    /// <see cref="ContentPlan"/> refuses as it is planned): it would act inside the recycle bin. Asked after the step's own
+    /// check passed, so the content is readable and naming it leaks nothing.
+    /// </summary>
+    /// <returns>The step's error; null when it doesn't.</returns>
+    private AgentError? BelowTrashed(ContentPlan plan, PlanStep step)
+    {
+        var trashed = plan.Steps.Take(step.Number - 1).OfType<TrashStep>().ToList();
+        if (trashed.Count == 0)
+        {
+            return null;
+        }
+        IEnumerable<ContentReference> uses = step switch
+        {
+            UpdateStep update => [update.Content],
+            CreateStep create => [create.Parent.Existing!],
+            MoveStep move => [move.Content, move.Destination.Existing!],
+            TrashStep trash => [trash.Content],
+            _ => [],
+        };
+        foreach (var link in uses)
+        {
+            var ancestors = cms.AncestorIds(link);
+            if (trashed.FirstOrDefault(t => ancestors.Contains(t.Content.ID)) is { } earlier)
+            {
+                return new AgentError(AgentErrorCodes.Refused,
+                    $"Step {earlier.Number} trashes content {earlier.Content.ID}, and content {link.ID}, which this step uses, is below it: no later step can use it.",
+                    "The site's tool planned this; tell the user it can't run as planned. Nothing was changed.");
+            }
+        }
+        return null;
     }
 
     /// <summary>What the assistant is told about a step that failed or was refused; null to let it propagate (cancellation, an MCP error of the SDK's).</summary>

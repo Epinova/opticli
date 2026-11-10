@@ -23,7 +23,8 @@ namespace OptiCli.Mcp;
 /// </para>
 /// <para>
 /// Mistakes in the plan (an empty property name, content updated twice, a step after the content was trashed) throw
-/// here, as faults of the site: the assistant gets an internal error, and the site's log the details.
+/// here, as faults of the site: the assistant gets an internal error, and the site's log the details. A step on content
+/// below content an earlier step trashes is refused by the dry run, which knows where content is.
 /// </para>
 /// </remarks>
 public sealed class ContentPlan
@@ -40,9 +41,11 @@ public sealed class ContentPlan
 
     /// <summary>
     /// A new draft of <paramref name="content"/>, in its language, with the changes <paramref name="change"/> makes, as
-    /// <c>update_content</c> saves one. It is based on the version passed: plan from the latest version
-    /// (<see cref="IOptiCliEditor.Load{T}"/> with <c>latest: true</c>), or the step is refused when someone saved a newer
-    /// one.
+    /// <c>update_content</c> saves one. It is based on the version passed, and refused (<c>conflict</c>) when anyone saved
+    /// a newer one. Content loaded without a version (<c>IContentLoader.Get</c>, <see cref="IOptiCliEditor.Load{T}"/>
+    /// without <c>latest</c>) is the version such a load gives: the published one, or for content never published its
+    /// primary draft. So a page with a newer draft can't be changed from its published version: plan from the latest
+    /// (<see cref="IOptiCliEditor.Load{T}"/> with <c>latest: true</c>) to change it, draft and all.
     /// </summary>
     /// <exception cref="InvalidOperationException">An earlier step updates the same content in the same language, or trashes it.</exception>
     public ContentPlan Update(IContent content, Action<ContentChanges> change)
