@@ -26,7 +26,7 @@ public sealed class CustomToolsTests(SharedSessions sessions)
         var editor = await sessions.ForAsync(TestUsers.Editor);
 
         var tools = (await editor.Client.ListToolsAsync()).ToDictionary(t => t.Name, t => t.ProtocolTool);
-        foreach (var name in new[] { "fixture_find_pages", "fixture_describe", "fixture_describe_unchecked", "fixture_readable", "fixture_set_teaser", "fixture_build_section", "fixture_move", "fixture_trash", "get_content", "delete_content" })
+        foreach (var name in new[] { "fixture_find_pages", "fixture_describe", "fixture_describe_unchecked", "fixture_readable", "fixture_set_teaser", "fixture_build_section", "fixture_create", "fixture_move", "fixture_trash", "get_content", "delete_content" })
         {
             Assert.True(tools.ContainsKey(name), name);
         }
@@ -34,7 +34,7 @@ public sealed class CustomToolsTests(SharedSessions sessions)
         var teaser = tools["fixture_set_teaser"];
         Assert.Equal("Fixture: set teaser text", teaser.Title);
         Assert.StartsWith("Test-only: sets the teaser text of the pages given. It saves drafts only", teaser.Description);
-        Assert.Equal(["ids", "text", "from", "lang", "dryRun", "planToken"], teaser.InputSchema.GetProperty("properties").EnumerateObject().Select(p => p.Name));
+        Assert.Equal(["ids", "text", "from", "lang", "addToArea", "areaItem", "dryRun", "planToken"], teaser.InputSchema.GetProperty("properties").EnumerateObject().Select(p => p.Name));
         Assert.False(teaser.InputSchema.GetProperty("additionalProperties").GetBoolean());
         Assert.Equal((false, false), (teaser.Annotations!.ReadOnlyHint, teaser.Annotations.DestructiveHint));
         Assert.True(tools["fixture_build_section"].Annotations!.DestructiveHint);
@@ -136,6 +136,26 @@ public sealed class CustomToolsTests(SharedSessions sessions)
                 Assert.DoesNotContain("Alloy Meet", dry.GetRawText());
                 Assert.DoesNotContain("ProductPage", dry.GetRawText());
             }
+            // Hidden content as a value of readable content's (an area edit, a ContentArea value): the step is refused
+            // exactly as for content that doesn't exist.
+            foreach (var property in new[] { "addToArea", "areaItem" })
+            {
+                var steps = new List<JsonElement>();
+                foreach (var id in new[] { Missing, hidden })
+                {
+                    var dry = await editor.OkAsync("fixture_set_teaser", new Dictionary<string, object?> { ["ids"] = sandbox, ["text"] = "x", [property] = int.Parse(id), ["dryRun"] = true });
+                    Assert.False(dry.GetProperty("valid").GetBoolean());
+                    Assert.False(dry.TryGetProperty("planToken", out _));
+                    Assert.DoesNotContain("Alloy Meet", dry.GetRawText());
+                    Assert.DoesNotContain("ProductPage", dry.GetRawText());
+                    steps.Add(Assert.Single(dry.GetProperty("steps").EnumerateArray()).GetProperty("error"));
+                }
+                Assert.Equal("not_found", steps[1].GetProperty("code").GetString());
+                Assert.Equal(steps[0].GetProperty("message").GetString()!.Replace(Missing, hidden, StringComparison.Ordinal), steps[1].GetProperty("message").GetString());
+                Assert.Equal(Hint(steps[0]), Hint(steps[1]));
+            }
+            Assert.Null(WritingTests.Property(await editor.OkAsync("get_content", new { reference = sandbox, version = "latest" }), "TeaserText"));
+
             // Loaded through the editor: the whole call is not_found.
             var loaded = await editor.ErrorAsync("fixture_set_teaser", new { ids = hidden, text = "x", dryRun = true });
             Assert.Equal(("not_found", missing), (loaded.GetProperty("code").GetString(), loaded.GetProperty("message").GetString()));
@@ -218,6 +238,49 @@ public sealed class CustomToolsTests(SharedSessions sessions)
             var again = await editor.ErrorAsync("fixture_build_section", With(arguments, token: token));
             Assert.Equal("conflict", again.GetProperty("code").GetString());
             Assert.Equal(made, (await editor.OkAsync("find_content", new { name, root = sandbox })).GetProperty("items").GetArrayLength());
+        }
+        finally
+        {
+            await WritingTests.DeleteAsync(editor, sandbox);
+        }
+    }
+
+    [McpSiteFact]
+    public async Task A_token_of_a_plan_that_only_creates_runs_once()
+    {
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var start = await StartAsync(editor);
+        var sandbox = await CreateAsync(editor, start);
+        try
+        {
+            // Pages below a page: nothing else in the plan changes once it has run, only how many pages the parent has.
+            var pages = new Dictionary<string, object?> { ["parent"] = int.Parse(sandbox), ["name"] = ScratchName(), ["count"] = 2 };
+            var token = await DryRunAsync(editor, "fixture_create", pages);
+            var made = await editor.OkAsync("fixture_create", With(pages, token: token));
+            Assert.Equal(["saved", "saved"], made.GetProperty("steps").EnumerateArray().Select(s => s.GetProperty("status").GetString()));
+            var children = await CountChildrenAsync(editor, sandbox);
+            Assert.Equal(2, children);
+            var again = await editor.ErrorAsync("fixture_create", With(pages, token: token));
+            Assert.Equal("conflict", again.GetProperty("code").GetString());
+            Assert.Contains("isn't the one the dry run showed", again.GetProperty("message").GetString());
+            Assert.Equal(children, await CountChildrenAsync(editor, sandbox));
+
+            // A block in a page's "For this page" folder, which the run makes.
+            var owner = await CreateAsync(editor, sandbox);
+            var blocks = new Dictionary<string, object?> { ["parent"] = int.Parse(owner), ["name"] = ScratchName(), ["forContent"] = true };
+            token = await DryRunAsync(editor, "fixture_create", blocks);
+            var block = Assert.Single((await editor.OkAsync("fixture_create", With(blocks, token: token))).GetProperty("steps").EnumerateArray());
+            var folder = (await editor.OkAsync("get_content", new { reference = WritingTests.Id(block.GetProperty("content")), version = "latest" })).GetProperty("parent").GetString()!;
+            Assert.Equal(1, await CountChildrenAsync(editor, folder));
+            Assert.Equal("conflict", (await editor.ErrorAsync("fixture_create", With(blocks, token: token))).GetProperty("code").GetString());
+            Assert.Equal(1, await CountChildrenAsync(editor, folder));
+
+            // More steps than the site allows (MaxPlanSteps, 100 by default): refused at the dry run, nothing checked.
+            var tooMany = await editor.ErrorAsync("fixture_create", new { parent = int.Parse(sandbox), name = ScratchName(), count = 101, dryRun = true });
+            Assert.Equal(("usage", "This would take 101 steps; the site lets a tool take at most 100 in one run. Nothing was changed."),
+                (tooMany.GetProperty("code").GetString(), tooMany.GetProperty("message").GetString()));
+            Assert.True((await editor.OkAsync("fixture_create", new { parent = int.Parse(sandbox), name = ScratchName(), count = 100, dryRun = true })).GetProperty("valid").GetBoolean());
+            Assert.Equal(children + 1, await CountChildrenAsync(editor, sandbox));
         }
         finally
         {
@@ -548,6 +611,9 @@ public sealed class CustomToolsTests(SharedSessions sessions)
         Assert.True(dry.GetProperty("valid").GetBoolean(), dry.GetRawText());
         return dry.GetProperty("planToken").GetString()!;
     }
+
+    private static async Task<int> CountChildrenAsync(McpSession session, string parent) =>
+        (await session.OkAsync("list_children", new { reference = parent })).GetProperty("items").GetArrayLength();
 
     private static string? Hint(JsonElement error) => error.TryGetProperty("hint", out var hint) ? hint.GetString() : null;
 

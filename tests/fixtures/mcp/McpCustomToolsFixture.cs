@@ -36,6 +36,7 @@ public static class McpCustomToolsFixture
         .WithTools<McpFixtureReadTools>()
         .WithWriteTool<FixtureSetTeaserTool>()
         .WithWriteTool<FixtureBuildSectionTool>()
+        .WithWriteTool<FixtureCreateTool>()
         .WithWriteTool<FixtureMoveTool>()
         .WithWriteTool<FixtureTrashTool>()
         .WithInstructions(Instructions);
@@ -136,7 +137,9 @@ public sealed record SetTeaserArgs(
     [property: Description("Page ids, comma-separated (an id with a version plans from that version).")] string Ids,
     [property: Description("The new teaser text.")] string Text,
     [property: Description("What to plan from: latest (editor.Load, latest), published (editor.Load), or loader (IContentLoader, unchecked).")] string From = "latest",
-    [property: Description("The language branch; the master language when left out.")] string? Lang = null);
+    [property: Description("The language branch; the master language when left out.")] string? Lang = null,
+    [property: Description("Test-only: also add this content id to each page's MainContentArea (an area edit).")] int? AddToArea = null,
+    [property: Description("Test-only: also set each page's MainContentArea to this content id alone (a ContentArea value).")] int? AreaItem = null);
 
 /// <summary>Update steps: the teaser text of pages, planned from the version <see cref="SetTeaserArgs.From"/> says.</summary>
 [OptiCliWriteTool("fixture_set_teaser", Title = "Fixture: set teaser text", Kinds = ContentPlanKinds.Update)]
@@ -155,7 +158,18 @@ public sealed class FixtureSetTeaserTool(IOptiCliEditor editor, IContentLoader l
                 "loader" => args.Lang is null ? loader.Get<IContent>(link) : loader.Get<IContent>(link, new LoaderOptions { LanguageLoaderOption.Specific(CultureInfo.GetCultureInfo(args.Lang)) }),
                 _ => throw new OptiCliToolException("usage", $"from '{args.From}' isn't latest, published or loader."),
             };
-            plan.Update(page, p => p.Set("TeaserText", args.Text));
+            plan.Update(page, p =>
+            {
+                p.Set("TeaserText", args.Text);
+                if (args.AreaItem is { } item)
+                {
+                    p.Set("MainContentArea", new[] { new { @ref = new ContentReference(item) } });
+                }
+                if (args.AddToArea is { } added)
+                {
+                    p.AddToArea("MainContentArea", new ContentReference(added));
+                }
+            });
         }
         return Task.FromResult(plan);
     }
@@ -194,6 +208,32 @@ public sealed class FixtureBuildSectionTool(IOptiCliEditor editor) : IOptiCliWri
         if (args.MovePage is { } move)
         {
             plan.Move(editor.Load<IContent>(new ContentReference(move), latest: true), section);
+        }
+        return Task.FromResult(plan);
+    }
+}
+
+public sealed record CreateArgs(
+    [property: Description("The id of the content to create below, or whose \"For this page\" folder to create in.")] int Parent,
+    [property: Description("The new items' name; a number is added to each.")] string Name,
+    [property: Description("Blocks in the content's \"For this page\" folder rather than pages below it.")] bool ForContent = false,
+    [property: Description("How many items.")] int Count = 1);
+
+/// <summary>Create steps only: pages below a page, or blocks in its "For this page" folder.</summary>
+[OptiCliWriteTool("fixture_create", Title = "Fixture: create", Kinds = ContentPlanKinds.Create)]
+[Description("Test-only: creates pages below a page, or blocks in its \"For this page\" folder.")]
+public sealed class FixtureCreateTool(IOptiCliEditor editor) : IOptiCliWriteTool<CreateArgs>
+{
+    public Task<ContentPlan> PlanAsync(CreateArgs args, CancellationToken cancellationToken)
+    {
+        var parent = editor.Load<IContent>(new ContentReference(args.Parent), latest: true);
+        var plan = new ContentPlan();
+        for (var i = 1; i <= args.Count; i++)
+        {
+            var name = $"{args.Name} {i}";
+            _ = args.ForContent
+                ? plan.CreateFor(parent, "EditorialBlock", name)
+                : plan.Create(parent, "StandardPage", name);
         }
         return Task.FromResult(plan);
     }
