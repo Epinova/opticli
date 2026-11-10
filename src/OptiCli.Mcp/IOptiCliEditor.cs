@@ -46,7 +46,11 @@ public interface IOptiCliEditor
     /// <c>usage</c> when it isn't a <typeparamref name="T"/>. Let it propagate: the assistant gets it as the tool's error.
     /// </exception>
     /// <exception cref="ArgumentException">A version together with <paramref name="latest"/>.</exception>
-    T Load<T>(ContentReference link, string? lang = null, bool latest = false) where T : IContent;
+    /// <typeparam name="T">
+    /// What the content must be, as for the CMS's own <c>IContentLoader.Get&lt;T&gt;</c>: <c>IContent</c>, a page type, or
+    /// a block type (a shared block is <c>IContent</c> as loaded).
+    /// </typeparam>
+    T Load<T>(ContentReference link, string? lang = null, bool latest = false) where T : IContentData;
 
     /// <summary>Whether the editor may read <paramref name="content"/> (Read access to it).</summary>
     bool CanRead(IContent content);

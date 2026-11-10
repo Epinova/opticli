@@ -50,7 +50,7 @@ internal sealed class OptiCliEditor : IOptiCliEditor
 
     public bool HasScope(string scope) => _editor.Scopes.Contains(scope, StringComparer.Ordinal);
 
-    public T Load<T>(ContentReference link, string? lang = null, bool latest = false) where T : IContent
+    public T Load<T>(ContentReference link, string? lang = null, bool latest = false) where T : IContentData
     {
         if (ContentReference.IsNullOrEmpty(link))
         {
