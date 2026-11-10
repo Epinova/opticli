@@ -24,14 +24,35 @@ namespace OptiCli.Mcp.Tools;
 internal sealed class OptiCliEditor : IOptiCliEditor
 {
     private readonly McpEditor _editor;
+    private readonly IHttpContextAccessor _accessor;
     private readonly HttpContext _context;
     private readonly CmsCall _call;
 
-    private OptiCliEditor(McpEditor editor, HttpContext context, OptiCliMcpOptions site)
+    private OptiCliEditor(McpEditor editor, IHttpContextAccessor accessor, OptiCliMcpOptions site)
     {
         _editor = editor;
-        _context = context;
+        _accessor = accessor;
+        _context = accessor.HttpContext!;
         _call = editor.Call(site);
+    }
+
+    /// <summary>
+    /// The content operation as the editor, for the request this was made for only. The CMS checks access with the
+    /// principal of whatever request runs, so a tool that kept this past its call (a singleton, a cache, a background
+    /// task) would read with another request's rights, or none.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Another request than the one this was made for, or none.</exception>
+    private CmsCall Call
+    {
+        get
+        {
+            if (!ReferenceEquals(_accessor.HttpContext, _context))
+            {
+                throw new InvalidOperationException(
+                    "IOptiCliEditor was used outside the MCP tool call it was made for. Take it in the tool class's constructor or the tool method, and use it only during that call: never keep it in a singleton, a cache or a background task.");
+            }
+            return _call;
+        }
     }
 
     /// <exception cref="McpException">Not a request of the module's own MCP server, for a signed-in editor (<see cref="McpEditor.From"/>).</exception>
@@ -39,7 +60,7 @@ internal sealed class OptiCliEditor : IOptiCliEditor
     {
         var accessor = services.GetRequiredService<IHttpContextAccessor>();
         var editor = McpEditor.From(accessor);
-        return new OptiCliEditor(editor, accessor.HttpContext!, services.GetRequiredService<IOptions<OptiCliMcpOptions>>().Value);
+        return new OptiCliEditor(editor, accessor, services.GetRequiredService<IOptions<OptiCliMcpOptions>>().Value);
     }
 
     public string Name => _editor.Name;
@@ -52,6 +73,7 @@ internal sealed class OptiCliEditor : IOptiCliEditor
 
     public T Load<T>(ContentReference link, string? lang = null, bool latest = false) where T : IContentData
     {
+        var call = Call;
         if (ContentReference.IsNullOrEmpty(link))
         {
             throw new OptiCliToolException(AgentErrorCodes.NotFound, "No such content.");
@@ -64,7 +86,7 @@ internal sealed class OptiCliEditor : IOptiCliEditor
         try
         {
             // get_content's own load: the same language rules, the same not_found for what the editor can't read.
-            content = ReadOperation.Load(_call, link.ToString(), new ReadRequest(lang, latest ? ReadQuery.Latest : null));
+            content = ReadOperation.Load(call, link.ToString(), new ReadRequest(lang, latest ? ReadQuery.Latest : null));
         }
         catch (AgentException e)
         {
@@ -82,14 +104,14 @@ internal sealed class OptiCliEditor : IOptiCliEditor
     public bool CanRead(IContent content)
     {
         ArgumentNullException.ThrowIfNull(content);
-        return _call.CanRead(content);
+        return Call.CanRead(content);
     }
 
     public IReadOnlyList<IContent> Readable(IEnumerable<ContentReference> links, string? lang = null)
     {
         ArgumentNullException.ThrowIfNull(links);
-        var loader = _call.Service<IContentLoader>();
-        var versions = _call.Service<IContentVersionRepository>();
+        var loader = Call.Service<IContentLoader>();
+        var versions = Call.Service<IContentVersionRepository>();
         var language = string.IsNullOrWhiteSpace(lang) ? null : Culture(lang.Trim());
         var options = new LoaderOptions { language is null ? LanguageLoaderOption.MasterLanguage() : LanguageLoaderOption.FallbackWithMaster(language) };
         var readable = new List<IContent>();
@@ -114,7 +136,7 @@ internal sealed class OptiCliEditor : IOptiCliEditor
             {
                 content = loader.TryGet(link, options, out IContent found) ? found : null;
             }
-            if (content is not null && _call.CanRead(content))
+            if (content is not null && Call.CanRead(content))
             {
                 readable.Add(content);
             }
@@ -125,18 +147,21 @@ internal sealed class OptiCliEditor : IOptiCliEditor
     public IReadOnlyList<T> Readable<T>(IEnumerable<T> contents) where T : IContent
     {
         ArgumentNullException.ThrowIfNull(contents);
-        return contents.Where(c => c is not null && _call.CanRead(c)).ToList();
+        return contents.Where(c => c is not null && Call.CanRead(c)).ToList();
     }
 
-    public ContentLinkSummary Describe(IContent content)
+    public ContentDescription Describe(IContent content)
     {
         ArgumentNullException.ThrowIfNull(content);
-        if (!_call.CanRead(content))
+        var call = Call;
+        if (!call.CanRead(content))
         {
-            throw new OptiCliToolException(AgentErrorCodes.NotFound, CmsCall.NotFound(content.ContentLink).Message);
+            // Without the id: it came from the site's code (a search index, say), not from the assistant, so naming it
+            // would tell which hidden item matched.
+            throw new OptiCliToolException(AgentErrorCodes.NotFound, "No such content.");
         }
-        var summary = ContentSummaries.Describe(content, _call.Service<IContentTypeRepository>());
-        return new ContentLinkSummary
+        var summary = ContentSummaries.Describe(content, call.Service<IContentTypeRepository>());
+        return new ContentDescription
         {
             Ref = summary.Ref,
             Id = summary.Id,
@@ -152,7 +177,7 @@ internal sealed class OptiCliEditor : IOptiCliEditor
         };
     }
 
-    private string TypeName(IContent content) => _call.Service<IContentTypeRepository>().Load(content.ContentTypeID)?.Name ?? content.GetType().Name;
+    private string TypeName(IContent content) => Call.Service<IContentTypeRepository>().Load(content.ContentTypeID)?.Name ?? content.GetType().Name;
 
     private static CultureInfo Culture(string code)
     {

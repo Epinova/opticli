@@ -23,7 +23,7 @@ namespace OptiCli.Mcp.Tools;
 /// </remarks>
 internal sealed class ModuleTools
 {
-    /// <param name="Custom">The site's, not the module's: its exceptions are mapped by <see cref="ToolErrors.CustomFilter"/>.</param>
+    /// <param name="Custom">The site's, not the module's: its exceptions are mapped by <see cref="ToolErrors.InnerFilter"/>.</param>
     /// <param name="Deletes">Offered only where the site allows deleting (<see cref="OptiCliMcpOptions.AllowDelete"/>).</param>
     internal sealed record Entry(McpServerTool Tool, bool Custom, bool Deletes);
 

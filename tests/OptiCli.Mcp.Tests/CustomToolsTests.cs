@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol;
+using ModelContextProtocol.AspNetCore;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -176,21 +177,41 @@ public sealed class CustomToolsTests
     }
 
     [Theory]
-    [InlineData("withTools")]
-    [InlineData("fromAssembly")]
-    public async Task A_sites_tool_class_never_runs_at_another_mcp_endpoint_even_when_that_server_registers_it_too(string how)
+    [InlineData("withTools", false, false)]
+    [InlineData("withTools", false, true)]
+    [InlineData("withTools", true, false)]
+    [InlineData("withTools", true, true)]
+    [InlineData("fromAssembly", false, false)]
+    [InlineData("fromAssembly", false, true)]
+    [InlineData("fromAssembly", true, false)]
+    [InlineData("fromAssembly", true, true)]
+    public async Task A_sites_tool_class_never_runs_at_another_mcp_endpoint_even_when_that_server_registers_it_too(string how, bool siteFirst, bool stateful)
     {
+        void SiteServer(IServiceCollection services)
+        {
+            var server = services.AddMcpServer().WithHttpTransport(t => t.Stateless = true).WithTools<SiteServerTools>();
+            // The site's own server registers the module's classes as well: by name, or every [McpServerToolType] class.
+            _ = how == "withTools"
+                ? server.WithTools<PlainCustomTools>().WithTools<AttributedCustomTools>()
+                : server.WithToolsFromAssembly(typeof(AttributedCustomTools).Assembly);
+        }
         await using var site = await TestSite.StartAsync(
             module: m => m.WithTools<PlainCustomTools>().WithTools<AttributedCustomTools>(),
+            services: siteFirst ? SiteServer : null,
             after: services =>
             {
-                var server = services.AddMcpServer().WithHttpTransport(t => t.Stateless = true).WithTools<SiteServerTools>();
-                // The site's own server registers the module's classes as well: by name, or every [McpServerToolType] class.
-                _ = how == "withTools"
-                    ? server.WithTools<PlainCustomTools>().WithTools<AttributedCustomTools>()
-                    : server.WithToolsFromAssembly(typeof(AttributedCustomTools).Assembly);
+                if (!siteFirst)
+                {
+                    SiteServer(services);
+                }
+                if (stateful)
+                {
+                    // Last, so it wins over the module's and the site's Stateless = true.
+                    services.Configure<HttpServerTransportOptions>(t => t.Stateless = false);
+                }
             },
             endpoints: app => app.MapMcp("/site-mcp"));
+        Assert.Equal(stateful, !site.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<HttpServerTransportOptions>>().Value.Stateless);
 
         await using (var ours = await ToolTests.Connect(site))
         {
@@ -239,6 +260,34 @@ public sealed class CustomToolsTests
         Assert.DoesNotContain(tools, t => t.Name == "site_only");
         Assert.StartsWith("Who the assistant acts as", Assert.Single(tools, t => t.Name == "whoami").Description);
         Assert.Contains("\"name\":\"editor\"", Text(await ours.CallToolAsync("whoami", new Dictionary<string, object?>())));
+    }
+
+    [Fact]
+    public async Task A_built_in_tool_answers_arguments_that_dont_bind_with_a_usage_error()
+    {
+        await using var site = await TestSite.StartAsync();
+        await using var client = await ToolTests.Connect(site);
+
+        var missing = Error(await Call(client, "get_content", new { lang = "en" }));
+        Assert.Equal((AgentErrorCodes.Usage, "Check the tool's input schema."), (missing.Code, missing.Hint));
+        Assert.Contains("'reference'", missing.Message);
+        var wrongType = Error(await Call(client, "move_content", new { reference = "5", destination = "6", dryRun = "yes" }));
+        Assert.Equal(AgentErrorCodes.Usage, wrongType.Code);
+        Assert.Contains("'dryRun'", wrongType.Message);
+        Assert.Equal(2, site.Audit.Audit.Count(m => m.Contains(" failed: user editor", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task The_editor_works_only_in_the_call_it_was_made_for()
+    {
+        await using var site = await TestSite.StartAsync(module: m => m.WithTools<KeepingTools>());
+        await using var client = await ToolTests.Connect(site);
+
+        // In its own call: the load runs (and finds nothing to load).
+        Assert.Equal(AgentErrorCodes.NotFound, Error(await Call(client, "custom_keep", new { keep = true })).Code);
+        // The same instance in the next call: refused before it touches the CMS, as a failure of the site.
+        Assert.Equal(AgentErrorCodes.Internal, Error(await Call(client, "custom_keep", new { keep = false })).Code);
+        Assert.Contains(site.Audit.Entries, e => e.Message == "The site's MCP tool custom_keep failed.");
     }
 
     [Fact]
@@ -437,4 +486,20 @@ public sealed class OpenGenericTool
 {
     [McpServerTool(Name = "custom_generic", ReadOnly = true)]
     public static string Run<T>() => typeof(T).Name;
+}
+
+/// <summary>Against the docs: keeps the editor of one call for the next.</summary>
+public sealed class KeepingTools(IOptiCliEditor editor)
+{
+    private static IOptiCliEditor? _kept;
+
+    [McpServerTool(Name = "custom_keep", ReadOnly = true), Description("Loads nothing with this call's editor, or the one kept from an earlier call.")]
+    public string Run(bool keep)
+    {
+        if (keep)
+        {
+            _kept = editor;
+        }
+        return (_kept ?? editor).Load<EPiServer.Core.IContent>(EPiServer.Core.ContentReference.EmptyReference).Name;
+    }
 }

@@ -112,15 +112,16 @@ internal static class ToolErrors
     /// What a tool of the site's (<see cref="ModuleTools.IsCustom"/>) throws, as the module's error result: the same
     /// JSON the built-in tools fail with, so the instructions' "follow the hint" holds for the site's tools too. The
     /// built-in tools map their own exceptions (<see cref="ContentToolBase"/>); a site's tool can't, and without this
-    /// the SDK would send its own "An error occurred invoking ..." text.
+    /// the SDK would send its own "An error occurred invoking ..." text. For every tool, the module's own too, arguments
+    /// that don't bind to the tool's parameters are a <c>usage</c> error.
     /// </summary>
     /// <remarks>
     /// <para>
     /// <see cref="OptiCliToolException"/> becomes its code, message and hint. The SDK's own errors for arguments that
     /// don't bind to the tool method's parameters (a required one missing, a value that doesn't convert) become
-    /// <c>usage</c>, as a built-in tool's bad argument is: the assistant can fix them. Everything else is mapped as
-    /// <see cref="Map"/> maps it, so a failure nobody expected is logged with the tool's name and the client only learns
-    /// that the site's log has the details.
+    /// <c>usage</c>, as a built-in tool's bad argument is: the assistant can fix them. Everything else a site's tool
+    /// throws is mapped as <see cref="Map"/> maps it, so a failure nobody expected is logged with the tool's name and the
+    /// client only learns that the site's log has the details. A built-in tool's other exceptions pass through as before.
     /// </para>
     /// <para>
     /// An <see cref="McpException"/> passes through as it is: the SDK sends its message (with its prefix), as for any
@@ -128,18 +129,19 @@ internal static class ToolErrors
     /// "only on the MCP endpoint" refusal is one.
     /// </para>
     /// </remarks>
-    public static McpRequestHandler<CallToolRequestParams, CallToolResult> CustomFilter(McpRequestHandler<CallToolRequestParams, CallToolResult> next) =>
+    public static McpRequestHandler<CallToolRequestParams, CallToolResult> InnerFilter(McpRequestHandler<CallToolRequestParams, CallToolResult> next) =>
         async (context, cancellationToken) =>
         {
-            if (context.MatchedPrimitive is not McpServerTool tool || context.Services?.GetService<ModuleTools>()?.IsCustom(tool) != true)
+            if (context.MatchedPrimitive is not McpServerTool tool)
             {
                 return await next(context, cancellationToken);
             }
+            var custom = context.Services?.GetService<ModuleTools>()?.IsCustom(tool) == true;
             try
             {
                 return await next(context, cancellationToken);
             }
-            catch (Exception e) when (e is not McpException && Custom(e, tool, context) is { } error)
+            catch (Exception e) when (e is not McpException && (custom ? Custom(e, tool, context) : Unbound(e, tool, context)) is { } error)
             {
                 return new CallToolResult { IsError = true, Content = [new TextContentBlock { Text = error.Message }] };
             }
@@ -148,15 +150,24 @@ internal static class ToolErrors
     /// <returns>The error a site's tool failed with; null to let the exception propagate (cancellation).</returns>
     private static Exception? Custom(Exception exception, McpServerTool tool, RequestContext<CallToolRequestParams> context)
     {
-        if (exception is ArgumentException or JsonException
-            && (ArgumentProblem(tool, context.Params?.Arguments)
-                ?? (exception is ArgumentException { ParamName: "arguments" } && exception.TargetSite?.DeclaringType?.Assembly == typeof(AIFunction).Assembly ? exception.Message : null)) is { } problem)
+        if (Unbound(exception, tool, context) is { } usage)
         {
-            return Usage($"The arguments don't fit the tool's schema: {problem}", "Check the tool's input schema.");
+            return usage;
         }
         var logger = (context.Services?.GetService<ILoggerFactory>() ?? NullLoggerFactory.Instance).CreateLogger(LogCategory);
         return Map(exception, logger, tool.ProtocolTool.Name);
     }
+
+    /// <returns>
+    /// A <c>usage</c> error when <paramref name="exception"/> is the SDK's for arguments that don't bind to the tool's
+    /// parameters (<see cref="ArgumentProblem"/>); null for anything else.
+    /// </returns>
+    private static Exception? Unbound(Exception exception, McpServerTool tool, RequestContext<CallToolRequestParams> context) =>
+        exception is ArgumentException or JsonException
+        && (ArgumentProblem(tool, context.Params?.Arguments)
+            ?? (exception is ArgumentException { ParamName: "arguments" } && exception.TargetSite?.DeclaringType?.Assembly == typeof(AIFunction).Assembly ? exception.Message : null)) is { } problem
+            ? Usage($"The arguments don't fit the tool's schema: {problem}", "Check the tool's input schema.")
+            : null;
 
     /// <summary>
     /// Why <paramref name="arguments"/> don't bind to the parameters of the method <paramref name="tool"/> was made

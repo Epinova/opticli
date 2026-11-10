@@ -17,7 +17,9 @@ namespace OptiCli.Mcp;
 /// </para>
 /// <para>
 /// Only there on the module's MCP endpoint, for a signed-in editor: resolving it anywhere else (another MCP server's
-/// tool, a page, a scheduled job) throws.
+/// tool, a page, a scheduled job) throws. It is for the one tool call it was made for: use it during that call only,
+/// never keep it in a singleton, a cache or a background task. Its loads and checks throw
+/// <see cref="InvalidOperationException"/> in any other request, or after the call.
 /// </para>
 /// </remarks>
 public interface IOptiCliEditor
@@ -74,8 +76,9 @@ public interface IOptiCliEditor
     /// to the version: what a tool returns for each item it found.
     /// </summary>
     /// <exception cref="OptiCliToolException">
-    /// <c>not_found</c> for content the editor can't read, as if it didn't exist: filter with <see cref="Readable{T}"/>
-    /// first.
+    /// <c>not_found</c> for content the editor can't read, as if it didn't exist, without its id: filter with
+    /// <see cref="Readable{T}"/> first. Ids a search index found go through <see cref="Readable(IEnumerable{ContentReference}, string?)"/>,
+    /// never <see cref="Load{T}"/>, whose <c>not_found</c> names the id.
     /// </exception>
-    ContentLinkSummary Describe(IContent content);
+    ContentDescription Describe(IContent content);
 }

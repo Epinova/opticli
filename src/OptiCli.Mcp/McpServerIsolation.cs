@@ -214,8 +214,8 @@ internal static class McpServerIsolation
         // The audit outside, so it records the error results the inner filter makes of refusals.
         server.Filters.Request.CallToolFilters.Add(ToolAudit.Filter);
         server.Filters.Request.CallToolFilters.Add(ToolErrors.Filter);
-        // Innermost: the site's tools' exceptions as the module's error JSON (the built-in tools map their own).
-        server.Filters.Request.CallToolFilters.Add(ToolErrors.CustomFilter);
+        // Innermost: the site's tools' exceptions, and any tool's arguments that don't bind, as the module's error JSON.
+        server.Filters.Request.CallToolFilters.Add(ToolErrors.InnerFilter);
         var grant = GrantOf(context.User);
         server.Filters.Message.IncomingFilters.Add(BoundTo(grant));
         // The module's own tools and the site's, made by the module (ModuleTools), never the SDK's copies in the shared

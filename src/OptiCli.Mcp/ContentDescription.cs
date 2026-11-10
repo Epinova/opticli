@@ -11,7 +11,7 @@ namespace OptiCli.Mcp;
 /// Serialized with the MCP SDK's JSON settings, as a tool method's result is: camelCase (<c>ref</c>, <c>name</c>,
 /// <c>url</c>, <c>editUrl</c>, …, the names the module's own results use), and a field without a value left out.
 /// </remarks>
-public sealed record ContentLinkSummary
+public sealed record ContentDescription
 {
     /// <summary>The version's reference (<c>123_456</c>), which the module's tools take wherever they take content.</summary>
     public required string Ref { get; init; }
@@ -23,8 +23,10 @@ public sealed record ContentLinkSummary
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? Version { get; init; }
 
+    /// <summary>The content's GUID, the same in every version and language; the module's tools take it as a reference too.</summary>
     public required Guid Guid { get; init; }
 
+    /// <summary>The content's name in <see cref="Language"/>, as the edit UI shows it.</summary>
     public required string Name { get; init; }
 
     /// <summary>The content type's name, e.g. <c>ArticlePage</c>.</summary>
