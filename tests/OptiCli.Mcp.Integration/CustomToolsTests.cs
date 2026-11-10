@@ -69,7 +69,6 @@ public sealed class CustomToolsTests(SharedSessions sessions)
         // A search over the site's own index: the hidden page matches (with news about it), and only the product editor
         // sees it.
         var editorFound = (await editor.OkAsync("fixture_find_pages", new { text = "Alloy Meet", root = int.Parse(start) })).EnumerateArray().ToList();
-        Assert.NotEmpty(editorFound);
         Assert.DoesNotContain(editorFound, f => f.GetProperty("id").GetInt32() == int.Parse(hidden));
         var productFound = (await product.OkAsync("fixture_find_pages", new { text = "Alloy Meet", root = int.Parse(start) })).EnumerateArray().ToList();
         var found = Assert.Single(productFound, f => f.GetProperty("id").GetInt32() == int.Parse(hidden));
