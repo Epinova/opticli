@@ -6,7 +6,11 @@ namespace OptiCli.Mcp.Tools;
 /// </summary>
 internal static class McpInstructions
 {
-    public static string For(OptiCliMcpOptions site)
+    /// <summary>The heading above the site's own lines (<see cref="OptiCliMcpBuilderExtensions.WithInstructions"/>).</summary>
+    internal const string SiteHeading = "From this site's developers, about its own tools and content:";
+
+    /// <param name="fromSite">The site's own lines, added after the module's under <see cref="SiteHeading"/>.</param>
+    public static string For(OptiCliMcpOptions site, IReadOnlyList<string>? fromSite = null)
     {
         var lines = new List<string>
         {
@@ -27,6 +31,12 @@ internal static class McpInstructions
         if (!site.AllowDelete)
         {
             lines.Add("Deleting is turned off on this site: the editor deletes content in the CMS.");
+        }
+        if (fromSite is { Count: > 0 })
+        {
+            lines.Add("");
+            lines.Add(SiteHeading);
+            lines.AddRange(fromSite);
         }
         return string.Join("\n", lines);
     }

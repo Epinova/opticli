@@ -82,7 +82,7 @@ internal static class McpServerIsolation
             {
                 await others(context, server, cancellationToken);
             }
-            WithoutModule(server);
+            WithoutModule(server, context.RequestServices.GetService<CustomTools>());
         }
     }
 
@@ -202,7 +202,8 @@ internal static class McpServerIsolation
         var services = context.RequestServices;
         var site = services.GetRequiredService<IOptions<OptiCliMcpOptions>>().Value;
         server.ServerInfo = new() { Name = ServerName, Version = OptiCliMcpExtensions.Version };
-        server.ServerInstructions = McpInstructions.For(site);
+        var custom = services.GetService<CustomTools>();
+        server.ServerInstructions = McpInstructions.For(site, custom?.Instructions);
         server.Capabilities = null;
         server.Handlers = new();
         // Another server's handlers for any request method (experimental in the SDK, but what it would run): none here.
@@ -213,17 +214,17 @@ internal static class McpServerIsolation
         // The audit outside, so it records the error results the inner filter makes of refusals.
         server.Filters.Request.CallToolFilters.Add(ToolAudit.Filter);
         server.Filters.Request.CallToolFilters.Add(ToolErrors.Filter);
+        // Innermost: the site's tools' exceptions as the module's error JSON (the built-in tools map their own).
+        server.Filters.Request.CallToolFilters.Add(ToolErrors.CustomFilter);
         var grant = GrantOf(context.User);
         server.Filters.Message.IncomingFilters.Add(BoundTo(grant));
+        // The module's own tools and the site's, made by the module (ModuleTools), never the SDK's copies in the shared
+        // collection. What the site allows is only known once its options are: whether deleting is offered at all (the
+        // tool also checks, should it be called regardless).
         var tools = new McpServerPrimitiveCollection<McpServerTool>();
-        foreach (var tool in services.GetServices<McpServerTool>().Where(IsModules))
+        foreach (var tool in services.GetRequiredService<ModuleTools>().Offered(site))
         {
-            // What the site allows is only known once its options are: whether deleting is offered at all (the tool also
-            // checks, should it be called regardless).
-            if (site.AllowDelete || tool.ProtocolTool.Name != DeleteTool.ToolName)
-            {
-                tools.TryAdd(tool);
-            }
+            tools.TryAdd(tool);
         }
         server.ToolCollection = tools;
         server.PromptCollection = null;
@@ -236,14 +237,19 @@ internal static class McpServerIsolation
         Marked(server);
     }
 
-    /// <summary>Another endpoint's server, without the module's tools.</summary>
-    internal static void WithoutModule(McpServerOptions server)
+    /// <summary>
+    /// Another endpoint's server, without the module's tools and without the site's tools for the module
+    /// (<paramref name="custom"/>): the SDK makes its own copy of a class the site also registers with another server
+    /// (its <c>WithTools&lt;T&gt;()</c>, or <c>WithToolsFromAssembly()</c> for a class with <c>[McpServerToolType]</c>),
+    /// which would run there under that server's sign-in, outside the module's scopes, gates and audit.
+    /// </summary>
+    internal static void WithoutModule(McpServerOptions server, CustomTools? custom = null)
     {
         if (server.ToolCollection is not { } tools)
         {
             return;
         }
-        foreach (var tool in tools.Where(IsModules).ToList())
+        foreach (var tool in tools.Where(t => IsModules(t) || custom?.Has(t) == true).ToList())
         {
             tools.Remove(tool);
         }
@@ -253,7 +259,11 @@ internal static class McpServerIsolation
         }
     }
 
-    /// <summary>Whether <paramref name="tool"/> is one of the module's: made from a method of this assembly (the SDK's metadata names it).</summary>
+    /// <summary>
+    /// Whether <paramref name="tool"/> is one of the module's: made from a method of this assembly (the SDK's metadata
+    /// names it). The module no longer puts its tools in the SDK's shared collection (<see cref="ModuleTools"/>); this
+    /// keeps them off every other endpoint should one ever get there.
+    /// </summary>
     internal static bool IsModules(McpServerTool tool) =>
         tool.Metadata.OfType<MethodInfo>().Any(m => m.DeclaringType?.Assembly == typeof(McpServerIsolation).Assembly);
 }

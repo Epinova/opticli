@@ -45,7 +45,8 @@ internal sealed class TestSite : IAsyncDisposable
         Action<IServiceCollection>? services = null,
         bool statusCodePages = false,
         Action<WebApplication>? endpoints = null,
-        Action<IServiceCollection>? after = null)
+        Action<IServiceCollection>? after = null,
+        Action<IOptiCliMcpBuilder>? module = null)
     {
         var site = new TestSite();
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environment });
@@ -68,7 +69,7 @@ internal sealed class TestSite : IAsyncDisposable
         builder.Services.AddSingleton<IEditorRoles>(site.Roles);
         builder.Services.AddSingleton<TimeProvider>(site.Time);
         services?.Invoke(builder.Services);
-        builder.Services.AddOptiCliMcp(o =>
+        var mcp = builder.Services.AddOptiCliMcp(o =>
         {
             if (limits is not null)
             {
@@ -76,6 +77,8 @@ internal sealed class TestSite : IAsyncDisposable
             }
             configure?.Invoke(o);
         });
+        // The site's own tools and instructions for the module's server.
+        module?.Invoke(mcp);
         // What the site registers after the module: its options' Configure and PostConfigure then run after the module's.
         after?.Invoke(builder.Services);
 

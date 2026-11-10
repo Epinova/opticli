@@ -1,6 +1,10 @@
+using System.Reflection;
 using System.Text.Json;
 using EPiServer.Core;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -50,7 +54,8 @@ internal static class ToolErrors
 
     /// <summary>What the client is told about <paramref name="exception"/>; null to let it propagate as it is (cancellation).</summary>
     /// <param name="logger">Gets what the client isn't told: an unexpected failure's details.</param>
-    public static Exception? Map(Exception exception, ILogger logger)
+    /// <param name="customTool">The name of the site's tool that threw it, for the log; null for the module's own.</param>
+    public static Exception? Map(Exception exception, ILogger logger, string? customTool = null)
     {
         switch (exception)
         {
@@ -60,6 +65,8 @@ internal static class ToolErrors
                 return exception;
             case AgentException agent:
                 return From(agent.ToError());
+            case OptiCliToolException tool:
+                return From(new AgentError(tool.Code, tool.Message, tool.Hint));
             case ContentNotFoundException notFound:
                 // A load the operation didn't guard: the same not_found as for content the editor can't read, so the
                 // two stay indistinguishable. No failure of the site, so not logged as one.
@@ -73,7 +80,14 @@ internal static class ToolErrors
                     "Tell the user they lack that access here. Leave the change as a draft, or ask someone who has the access to do it in the CMS.",
                     McpErrorReasons.AccessDenied);
             default:
-                logger.LogError(exception, "An opticli MCP tool failed.");
+                if (customTool is null)
+                {
+                    logger.LogError(exception, "An opticli MCP tool failed.");
+                }
+                else
+                {
+                    logger.LogError(exception, "The site's MCP tool {Tool} failed.", customTool);
+                }
                 return From(new AgentError(AgentErrorCodes.Internal,
                     "The site failed while running this tool; the details are in the site's log.",
                     exception.GetType().FullName));
@@ -93,6 +107,101 @@ internal static class ToolErrors
                 return new CallToolResult { IsError = true, Content = [new TextContentBlock { Text = error.Message }] };
             }
         };
+
+    /// <summary>
+    /// What a tool of the site's (<see cref="ModuleTools.IsCustom"/>) throws, as the module's error result: the same
+    /// JSON the built-in tools fail with, so the instructions' "follow the hint" holds for the site's tools too. The
+    /// built-in tools map their own exceptions (<see cref="ContentToolBase"/>); a site's tool can't, and without this
+    /// the SDK would send its own "An error occurred invoking ..." text.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="OptiCliToolException"/> becomes its code, message and hint. The SDK's own errors for arguments that
+    /// don't bind to the tool method's parameters (a required one missing, a value that doesn't convert) become
+    /// <c>usage</c>, as a built-in tool's bad argument is: the assistant can fix them. Everything else is mapped as
+    /// <see cref="Map"/> maps it, so a failure nobody expected is logged with the tool's name and the client only learns
+    /// that the site's log has the details.
+    /// </para>
+    /// <para>
+    /// An <see cref="McpException"/> passes through as it is: the SDK sends its message (with its prefix), as for any
+    /// MCP server's tool. It is the SDK's documented way for a tool to send a message of its own, and the module's
+    /// "only on the MCP endpoint" refusal is one.
+    /// </para>
+    /// </remarks>
+    public static McpRequestHandler<CallToolRequestParams, CallToolResult> CustomFilter(McpRequestHandler<CallToolRequestParams, CallToolResult> next) =>
+        async (context, cancellationToken) =>
+        {
+            if (context.MatchedPrimitive is not McpServerTool tool || context.Services?.GetService<ModuleTools>()?.IsCustom(tool) != true)
+            {
+                return await next(context, cancellationToken);
+            }
+            try
+            {
+                return await next(context, cancellationToken);
+            }
+            catch (Exception e) when (e is not McpException && Custom(e, tool, context) is { } error)
+            {
+                return new CallToolResult { IsError = true, Content = [new TextContentBlock { Text = error.Message }] };
+            }
+        };
+
+    /// <returns>The error a site's tool failed with; null to let the exception propagate (cancellation).</returns>
+    private static Exception? Custom(Exception exception, McpServerTool tool, RequestContext<CallToolRequestParams> context)
+    {
+        if (exception is ArgumentException or JsonException
+            && (ArgumentProblem(tool, context.Params?.Arguments)
+                ?? (exception is ArgumentException { ParamName: "arguments" } && exception.TargetSite?.DeclaringType?.Assembly == typeof(AIFunction).Assembly ? exception.Message : null)) is { } problem)
+        {
+            return Usage($"The arguments don't fit the tool's schema: {problem}", "Check the tool's input schema.");
+        }
+        var logger = (context.Services?.GetService<ILoggerFactory>() ?? NullLoggerFactory.Instance).CreateLogger(LogCategory);
+        return Map(exception, logger, tool.ProtocolTool.Name);
+    }
+
+    /// <summary>
+    /// Why <paramref name="arguments"/> don't bind to the parameters of the method <paramref name="tool"/> was made
+    /// from, as the SDK binds them: a required argument missing, or one that doesn't convert to its parameter's type.
+    /// Asked after the call failed with an <see cref="ArgumentException"/> or a <see cref="JsonException"/>, which the
+    /// tool's own code may have thrown as well: the arguments tell the two apart, not the exception.
+    /// </summary>
+    /// <returns>Null when they bind (or the tool wasn't made from a method).</returns>
+    internal static string? ArgumentProblem(McpServerTool tool, IDictionary<string, JsonElement>? arguments)
+    {
+        if (tool.Metadata.OfType<MethodInfo>().FirstOrDefault() is not { } method
+            || tool.ProtocolTool.InputSchema is not { ValueKind: JsonValueKind.Object } schema
+            || !schema.TryGetProperty("properties", out var properties) || properties.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+        var required = schema.TryGetProperty("required", out var list) && list.ValueKind == JsonValueKind.Array
+            ? list.EnumerateArray().Select(r => r.GetString()).ToHashSet(StringComparer.Ordinal)
+            : [];
+        var parameters = method.GetParameters();
+        foreach (var property in properties.EnumerateObject())
+        {
+            if (parameters.FirstOrDefault(p => p.Name == property.Name) is not { } parameter)
+            {
+                continue;
+            }
+            if (arguments is null || !arguments.TryGetValue(property.Name, out var value))
+            {
+                if (required.Contains(property.Name))
+                {
+                    return $"the required argument '{property.Name}' is missing.";
+                }
+                continue;
+            }
+            try
+            {
+                JsonSerializer.Deserialize(value, parameter.ParameterType, McpJsonUtilities.DefaultOptions);
+            }
+            catch (Exception e) when (e is JsonException or NotSupportedException or ArgumentException)
+            {
+                return $"'{property.Name}': {e.Message}";
+            }
+        }
+        return null;
+    }
 
     /// <summary>A failure the tool reports to the assistant: the message is the error JSON.</summary>
     internal sealed class ToolError(string json) : McpException(json);

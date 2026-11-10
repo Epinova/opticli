@@ -36,8 +36,9 @@ public static class OptiCliMcpExtensions
     /// <c>OptiCli:Mcp</c> configuration section and then <paramref name="configure"/>. The site's default
     /// authentication scheme is left as it is: the editor signs in with the site's own login.
     /// </summary>
+    /// <returns>A builder to add the site's own tools and instructions to the module's server with (<see cref="OptiCliMcpBuilderExtensions"/>).</returns>
     /// <exception cref="InvalidOperationException">The site runs another CMS major than this package is for (the message names the right package), or this was called twice.</exception>
-    public static IServiceCollection AddOptiCliMcp(this IServiceCollection services, Action<OptiCliMcpOptions>? configure = null)
+    public static IOptiCliMcpBuilder AddOptiCliMcp(this IServiceCollection services, Action<OptiCliMcpOptions>? configure = null)
     {
         CmsMajor.Check(CmsMajor.Loaded);
         return Register(services, configure);
@@ -49,7 +50,7 @@ public static class OptiCliMcpExtensions
     /// check in the same method had said why.
     /// </summary>
     [MethodImpl(MethodImplOptions.NoInlining)]
-    internal static IServiceCollection Register(IServiceCollection services, Action<OptiCliMcpOptions>? configure)
+    internal static IOptiCliMcpBuilder Register(IServiceCollection services, Action<OptiCliMcpOptions>? configure)
     {
         if (services.Any(s => s.ServiceType == typeof(Marker)))
         {
@@ -105,15 +106,15 @@ public static class OptiCliMcpExtensions
 
         // The server's name, instructions, filters and which tools it offers are set per request, on the module's
         // endpoint only: the SDK's options are shared with any other MCP server the site runs (McpServerIsolation).
-        services.AddMcpServer()
-            .WithHttpTransport(t => t.Stateless = true)
-            .WithTools<WhoAmITool>()
-            .WithTools<ReadTools>()
-            .WithTools<WriteTools>()
-            .WithTools<PublishTools>()
-            .WithTools<DeleteTool>();
+        // The tools, the module's and the site's (IOptiCliMcpBuilder), are made by the module, at startup, and never go
+        // into the SDK's shared tool collection (ModuleTools).
+        services.AddMcpServer().WithHttpTransport(t => t.Stateless = true);
+        var custom = CustomTools.Of(services);
+        services.AddSingleton(sp => new ModuleTools(sp, custom));
+        // The editor a site's tool reads as: only there on the module's endpoint (OptiCliEditor.From throws elsewhere).
+        services.AddScoped<IOptiCliEditor>(OptiCliEditor.From);
         McpServerIsolation.Register(services);
-        return services;
+        return new OptiCliMcpBuilder(services);
     }
 
     /// <summary>
@@ -127,6 +128,7 @@ public static class OptiCliMcpExtensions
     /// and a <c>MapControllers()</c> after it then maps the site's controllers a second time, so that a named route fails
     /// every request with "Duplicate endpoint name". Mapped after everything else, the module changes nothing for the rest.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">A tool the site added (<see cref="OptiCliMcpBuilderExtensions.WithTools{T}"/>) can't be made; the message names its class and method.</exception>
     public static IEndpointRouteBuilder MapOptiCliMcp(this IEndpointRouteBuilder endpoints)
     {
         var options = endpoints.ServiceProvider.GetRequiredService<IOptions<OptiCliMcpOptions>>().Value;
@@ -147,6 +149,8 @@ public static class OptiCliMcpExtensions
         {
             logger.LogError(McpServerIsolation.NotInstalled);
         }
+        // Makes every tool the module's server offers now, so a tool of the site's that can't be made fails the start.
+        endpoints.ServiceProvider.GetRequiredService<ModuleTools>();
         var mcp = endpoints.MapMcp(options.McpPath).RequireAuthorization(Policy).WithMetadata(new McpServerIsolation.ModuleEndpoint());
         // Inside authorization, so an anonymous request still gets its 401 and the way to a token, whatever its size.
         mcp.Add(endpoint => endpoint.RequestDelegate = McpRequestLimit.Wrap(endpoint.RequestDelegate!, McpRequestLimit.Bytes(options), options.MaxUploadBytes));
