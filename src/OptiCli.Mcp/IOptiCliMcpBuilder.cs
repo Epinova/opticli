@@ -52,6 +52,31 @@ public static class OptiCliMcpBuilderExtensions
     }
 
     /// <summary>
+    /// Offers the site's own write tool to editors' assistants on the module's MCP endpoint: <typeparamref name="T"/>
+    /// implements <see cref="IOptiCliWriteTool{TArgs}"/>, which plans the changes, and has
+    /// <see cref="OptiCliWriteToolAttribute"/> (its name, title and kinds of steps) and <c>[Description]</c>. The module
+    /// makes its MCP tool: <c>TArgs</c>' properties as arguments, plus <c>dryRun</c> and <c>planToken</c>; it does the dry
+    /// run and the real run itself, as the editor, saving drafts only (<see cref="ContentPlan"/>).
+    /// </summary>
+    /// <remarks>
+    /// The tool needs the <c>content:write</c> scope, as the module's own changes do. One that may trash content
+    /// (<see cref="ContentPlanKinds.Trash"/>) is offered only where the site allows deleting
+    /// (<see cref="OptiCliMcpOptions.AllowDelete"/>). The class is made for every call from the request's services, as a
+    /// read tool's is; take <see cref="IOptiCliEditor"/> there.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// <typeparamref name="T"/> has no <c>[OptiCliWriteTool]</c> or <c>[Description]</c>, no kinds, a name that is taken
+    /// or isn't a valid MCP tool name, an arguments type the module can't use, or was registered before. The message names
+    /// the class.
+    /// </exception>
+    public static IOptiCliMcpBuilder WithWriteTool<T>(this IOptiCliMcpBuilder builder) where T : class
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        CustomTools.Of(builder.Services).AddWriteTool(typeof(T));
+        return builder;
+    }
+
+    /// <summary>
     /// Adds <paramref name="text"/> to the instructions the module's server gives assistants, after the module's own,
     /// under a heading that says they come from the site: how to work with the site's own tools and content, e.g.
     /// "Product pages live below Products; search them with search_products, not find_content." Each call adds a line.

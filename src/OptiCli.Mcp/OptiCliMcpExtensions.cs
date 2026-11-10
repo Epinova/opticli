@@ -113,6 +113,8 @@ public static class OptiCliMcpExtensions
         services.AddSingleton(sp => new ModuleTools(sp, custom));
         // The editor a site's tool reads as: only there on the module's endpoint (OptiCliEditor.From throws elsewhere).
         services.AddScoped<IOptiCliEditor>(OptiCliEditor.From);
+        // What checks and runs the steps of a site's write tool's plan, as the editor (a test registers its own first).
+        services.TryAddScoped<IContentPlanSteps, CmsPlanSteps>();
         McpServerIsolation.Register(services);
         return new OptiCliMcpBuilder(services);
     }

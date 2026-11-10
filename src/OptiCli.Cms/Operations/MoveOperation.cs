@@ -1,5 +1,6 @@
 using EPiServer;
 using EPiServer.Core;
+using EPiServer.DataAbstraction;
 using EPiServer.DataAccess;
 using EPiServer.Web;
 using OptiCli.Cms.Content;
@@ -13,8 +14,19 @@ namespace OptiCli.Cms.Operations;
 /// </summary>
 internal static class MoveOperation
 {
-    public static MoveResult Run(CmsCall call, string reference, MoveRequest body)
+    public static MoveResult Run(CmsCall call, string reference, MoveRequest body) => Run(call, reference, body, plannedParentType: null);
+
+    /// <param name="plannedParentType">
+    /// Dry run only: for a destination that doesn't exist yet (the MCP module's plans), the type it will have, for the
+    /// "allowed below" check; <c>body.Parent</c> is then the existing content it will be made below, and every other
+    /// check runs against that.
+    /// </param>
+    internal static MoveResult Run(CmsCall call, string reference, MoveRequest body, ContentType? plannedParentType)
     {
+        if (plannedParentType is not null && !body.DryRun)
+        {
+            throw new ArgumentException("A planned destination's type only applies to a dry run.", nameof(plannedParentType));
+        }
         var flow = new WriteFlow(call);
         var link = flow.Locator.ResolveContent(reference);
         var destination = flow.Locator.ResolveContent(body.Parent, "parent");
@@ -38,7 +50,7 @@ internal static class MoveOperation
             throw AgentException.Usage($"Can't move {link.ID} below itself.");
         }
         // The same rule as for new content: the edit UI doesn't let content be moved where it couldn't be created.
-        if (flow.Types.Load(content.ContentTypeID) is { } type && flow.Types.Load(target.ContentTypeID) is { } targetType
+        if (flow.Types.Load(content.ContentTypeID) is { } type && (plannedParentType ?? flow.Types.Load(target.ContentTypeID)) is { } targetType
             && CreateOperation.Placement(call, type, targetType, target.ContentLink.ID, creating: false) is { Count: > 0 } issues)
         {
             throw AgentException.Invalid(issues);

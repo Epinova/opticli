@@ -23,6 +23,7 @@ internal sealed partial class CustomTools
     internal static readonly IReadOnlySet<string> BuiltInNames = BuiltInTypes.SelectMany(ToolMethods).Select(m => m.GetCustomAttribute<McpServerToolAttribute>()!.Name!).ToHashSet(StringComparer.Ordinal);
 
     private readonly List<Type> _readTools = [];
+    private readonly List<WriteToolType> _writeTools = [];
     private readonly HashSet<Type> _types = [];
     private readonly HashSet<Type> _declaring = [];
     private readonly Dictionary<string, string> _names = new(StringComparer.Ordinal);
@@ -30,6 +31,9 @@ internal sealed partial class CustomTools
 
     /// <summary>The read tool classes, in the order the site registered them.</summary>
     public IReadOnlyList<Type> ReadToolTypes => _readTools;
+
+    /// <summary>The write tools, in the order the site registered them.</summary>
+    public IReadOnlyList<WriteToolType> WriteTools => _writeTools;
 
     /// <summary>The site's lines for the server instructions, in order.</summary>
     public IReadOnlyList<string> Instructions => _instructions;
@@ -98,6 +102,20 @@ internal sealed partial class CustomTools
         // A tool method a base class declares is made with the base class's MethodInfo, also by another server.
         _declaring.UnionWith(methods.Select(m => m.DeclaringType!));
         _readTools.Add(type);
+    }
+
+    /// <summary>
+    /// Records a write tool, after checking it (<see cref="WriteToolTypes.Of"/>): its <c>[OptiCliWriteTool]</c> name, kinds
+    /// and <c>[Description]</c>, and its arguments type.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The class isn't a valid write tool; the message says why, naming the class.</exception>
+    public void AddWriteTool(Type type)
+    {
+        RefuseTwice(type);
+        var tool = WriteToolTypes.Of(type, CheckName);
+        _names.Add(tool.Name, type.FullName!);
+        _types.Add(type);
+        _writeTools.Add(tool);
     }
 
     /// <summary>

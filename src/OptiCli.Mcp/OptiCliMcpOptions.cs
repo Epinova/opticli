@@ -127,8 +127,19 @@ public sealed class OptiCliMcpOptions
     /// </summary>
     public long MaxUploadBytes { get; set; } = 10 * 1024 * 1024;
 
+    /// <summary>
+    /// The most steps a site's write tool may take in one run (<see cref="ContentPlan"/>): 100 by default, 1 to 1000. A
+    /// larger plan is refused at the dry run, with a hint to narrow the arguments. The real run checks every step and
+    /// then saves them one by one within the assistant's call, which its client gives up on after a while (often a
+    /// minute): keep it at what the site saves in well under that.
+    /// </summary>
+    public int MaxPlanSteps { get; set; } = 100;
+
     /// <summary>How many requests the OAuth endpoints take a minute (<see cref="OptiCliMcpRateLimits"/>).</summary>
     public OptiCliMcpRateLimits RateLimits { get; set; } = new();
+
+    /// <summary>The most <see cref="MaxPlanSteps"/> may be.</summary>
+    internal const int MaxPlanStepsLimit = 1000;
 
     /// <summary>The <see cref="AllowedRedirectHosts"/> entry that lets any https host through.</summary>
     internal const string AnyRedirectHost = "*";
@@ -187,6 +198,10 @@ public sealed class OptiCliMcpOptions
         if (PreviewLinkLifetime < TimeSpan.FromMinutes(1) || PreviewLinkLifetime > TimeSpan.FromHours(1))
         {
             return "PreviewLinkLifetime must be from 1 minute to 1 hour.";
+        }
+        if (MaxPlanSteps is < 1 or > MaxPlanStepsLimit)
+        {
+            return $"MaxPlanSteps must be from 1 to {MaxPlanStepsLimit}.";
         }
         if (MaxUploadBytes is <= 0 or > Protocol.UploadRequest.MaxBytes)
         {

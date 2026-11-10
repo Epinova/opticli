@@ -49,6 +49,16 @@ internal sealed class McpAudit(ILoggerFactory loggers)
             Clean(tool), outcome, Clean(user), Clean(clientId), contentRefs.Count == 0 ? "-" : Clean(string.Join(", ", contentRefs)));
 
     /// <summary>
+    /// One step of a site's write tool's plan, as the real run ran it (<see cref="Tools.PlanRunner"/>): the content it
+    /// saved, moved or trashed, or the one it failed on. The tool call itself is audited as every call is
+    /// (<see cref="ToolCall"/>); its arguments rarely name the content a plan changes.
+    /// </summary>
+    public void PlanStep(string user, string clientId, string tool, int step, string kind, string content, string outcome) =>
+        _logger.LogInformation(
+            "MCP tool {Tool} step {Step} {Kind} {Outcome}: user {User}, client {ClientId}, content {Content}",
+            Clean(tool), step, kind, outcome, Clean(user), Clean(clientId), Clean(content));
+
+    /// <summary>
     /// A preview link opened (<see cref="Preview.PreviewLinkMiddleware"/>): the version and language it names, the
     /// editor and client of its connection (<c>-</c> for a link that couldn't be read), and the outcome. Never the link.
     /// </summary>

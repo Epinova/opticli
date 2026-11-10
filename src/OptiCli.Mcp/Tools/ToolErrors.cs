@@ -55,30 +55,40 @@ internal static class ToolErrors
     /// <summary>What the client is told about <paramref name="exception"/>; null to let it propagate as it is (cancellation).</summary>
     /// <param name="logger">Gets what the client isn't told: an unexpected failure's details.</param>
     /// <param name="customTool">The name of the site's tool that threw it, for the log; null for the module's own.</param>
-    public static Exception? Map(Exception exception, ILogger logger, string? customTool = null)
+    public static Exception? Map(Exception exception, ILogger logger, string? customTool = null) => exception switch
+    {
+        OperationCanceledException => null,
+        McpException => exception,
+        _ => From(ErrorOf(exception, logger, customTool)),
+    };
+
+    /// <summary>
+    /// The error the client gets for <paramref name="exception"/>, neither a cancellation nor an <see cref="McpException"/>
+    /// (which <see cref="Map"/> lets through): its own for a refusal of the module's or the CMS's, an internal error,
+    /// logged, for anything else.
+    /// </summary>
+    internal static AgentError ErrorOf(Exception exception, ILogger logger, string? customTool = null)
     {
         switch (exception)
         {
-            case OperationCanceledException:
-                return null;
-            case McpException:
-                return exception;
             case AgentException agent:
-                return From(agent.ToError());
+                return agent.ToError();
             case OptiCliToolException tool:
-                return From(new AgentError(tool.Code, tool.Message, tool.Hint));
+                return new AgentError(tool.Code, tool.Message, tool.Hint);
             case ContentNotFoundException notFound:
                 // A load the operation didn't guard: the same not_found as for content the editor can't read, so the
                 // two stay indistinguishable. No failure of the site, so not logged as one.
-                return From((notFound.ContentLink is { } link && !ContentReference.IsNullOrEmpty(link)
+                return (notFound.ContentLink is { } link && !ContentReference.IsNullOrEmpty(link)
                     ? CmsCall.NotFound(link)
-                    : AgentException.NotFound(notFound.ContentGuid != Guid.Empty ? $"No content with GUID {notFound.ContentGuid}." : "No such content.")).ToError());
+                    : AgentException.NotFound(notFound.ContentGuid != Guid.Empty ? $"No content with GUID {notFound.ContentGuid}." : "No such content.")).ToError();
             case AccessDeniedException:
                 // The CMS checks the editor's rights itself on save, move and delete; its message names the access level.
-                return Refused(
+                return new AgentError(AgentErrorCodes.Refused,
                     $"The CMS refused this for your access rights: {exception.Message}",
-                    "Tell the user they lack that access here. Leave the change as a draft, or ask someone who has the access to do it in the CMS.",
-                    McpErrorReasons.AccessDenied);
+                    "Tell the user they lack that access here. Leave the change as a draft, or ask someone who has the access to do it in the CMS.")
+                {
+                    Reason = McpErrorReasons.AccessDenied,
+                };
             default:
                 if (customTool is null)
                 {
@@ -88,9 +98,9 @@ internal static class ToolErrors
                 {
                     logger.LogError(exception, "The site's MCP tool {Tool} failed.", customTool);
                 }
-                return From(new AgentError(AgentErrorCodes.Internal,
+                return new AgentError(AgentErrorCodes.Internal,
                     "The site failed while running this tool; the details are in the site's log.",
-                    exception.GetType().FullName));
+                    exception.GetType().FullName);
         }
     }
 

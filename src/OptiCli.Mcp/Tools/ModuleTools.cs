@@ -6,7 +6,8 @@ namespace OptiCli.Mcp.Tools;
 
 /// <summary>
 /// Every tool the module's server offers: its own and the site's (<see cref="CustomTools"/>), made once, at startup
-/// (<see cref="OptiCliMcpExtensions.MapOptiCliMcp"/>), as the MCP SDK's <c>WithTools&lt;T&gt;()</c> makes them.
+/// (<see cref="OptiCliMcpExtensions.MapOptiCliMcp"/>): read tools as the MCP SDK's <c>WithTools&lt;T&gt;()</c> makes them,
+/// the site's write tools by the module (<see cref="WriteTool{TTool, TArgs}"/>).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -24,7 +25,7 @@ namespace OptiCli.Mcp.Tools;
 internal sealed class ModuleTools
 {
     /// <param name="Custom">The site's, not the module's: its exceptions are mapped by <see cref="ToolErrors.InnerFilter"/>.</param>
-    /// <param name="Deletes">Offered only where the site allows deleting (<see cref="OptiCliMcpOptions.AllowDelete"/>).</param>
+    /// <param name="Deletes">Offered only where the site allows deleting (<see cref="OptiCliMcpOptions.AllowDelete"/>): <c>delete_content</c>, and a write tool that may trash.</param>
     internal sealed record Entry(McpServerTool Tool, bool Custom, bool Deletes);
 
     private readonly HashSet<McpServerTool> _custom = new(ReferenceEqualityComparer.Instance);
@@ -50,6 +51,20 @@ internal sealed class ModuleTools
                 }
                 all.Add(entry);
             }
+        }
+        foreach (var write in site.WriteTools)
+        {
+            McpServerTool tool;
+            try
+            {
+                tool = write.Make();
+            }
+            catch (System.Reflection.TargetInvocationException e) when (e.InnerException is { } inner)
+            {
+                throw new InvalidOperationException($"WithWriteTool<{write.Tool.FullName}>(): the module can't make its tool: {inner.Message}", inner);
+            }
+            // A tool that may trash is offered where deleting is, as delete_content.
+            all.Add(new Entry(tool, Custom: true, Deletes: (write.Kinds & ContentPlanKinds.Trash) != 0));
         }
         if (all.GroupBy(e => e.Tool.ProtocolTool.Name, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1) is { } twice)
         {
@@ -91,5 +106,7 @@ internal sealed class ModuleTools
         services is null ? Activator.CreateInstance(type)! : ActivatorUtilities.CreateInstance(services, type);
 
     private static string Describe(McpServerTool tool) =>
-        tool.Metadata.OfType<MethodInfo>().FirstOrDefault() is { } method ? $"{method.DeclaringType?.FullName}.{method.Name}" : tool.GetType().FullName!;
+        tool.Metadata.OfType<MethodInfo>().FirstOrDefault() is { } method ? $"{method.DeclaringType?.FullName}.{method.Name}"
+        : tool.GetType() is { IsGenericType: true } generic ? generic.GetGenericArguments()[0].FullName!
+        : tool.GetType().FullName!;
 }
