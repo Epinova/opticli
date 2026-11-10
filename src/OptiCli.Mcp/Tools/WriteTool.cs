@@ -30,7 +30,7 @@ internal sealed record WriteToolType(Type Tool, Type Args, string Name, string? 
 
     internal const string DryRunDescription = "Only check and report the changes, saving nothing: do this first and show the user the changes.";
 
-    internal const string PlanTokenDescription = "The planToken the dry run returned; required when dryRun is false.";
+    internal const string PlanTokenDescription = "The planToken the dry run returned (it works for 30 minutes); required when dryRun is false.";
 
     /// <summary>What every write tool's description ends with.</summary>
     internal const string Workflow =
@@ -161,7 +161,7 @@ internal sealed class WriteTool<TTool, TArgs> : McpServerTool where TTool : clas
         var runner = new PlanRunner(
             _type.Name, _type.Kinds, site.MaxPlanSteps, services.GetRequiredService<IContentPlanSteps>(), editor.Name, editor.ClientId,
             services.GetService<McpAudit>(), services.GetRequiredService<ILoggerFactory>().CreateLogger(ToolErrors.LogCategory),
-            services.GetRequiredService<IDataProtectionProvider>());
+            services.GetRequiredService<IDataProtectionProvider>(), services.GetRequiredService<TimeProvider>());
         return dryRun ? runner.DryRun(plan, normalized) : runner.Run(plan, normalized, planToken!, cancellationToken);
     }
 

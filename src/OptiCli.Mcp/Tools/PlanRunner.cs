@@ -63,14 +63,19 @@ internal interface IContentPlanSteps
 /// The plan token is a hash, protected with the site's Data Protection keys, of the tool, the editor, the arguments as
 /// the tool read them, and every step with what its check found (the version an update is based on, a move's current
 /// parent, the number of items a trash takes along). The real run plans and checks again, and runs only when that hash is
-/// the same.
+/// the same. A token works for <see cref="TokenLifetime"/> after its dry run: an older one is a <c>conflict</c> asking for
+/// a new dry run.
 /// </para>
 /// </remarks>
 internal sealed class PlanRunner(
-    string tool, ContentPlanKinds kinds, int maxSteps, IContentPlanSteps cms, string editor, string client, McpAudit? audit, ILogger logger, IDataProtectionProvider protection)
+    string tool, ContentPlanKinds kinds, int maxSteps, IContentPlanSteps cms, string editor, string client, McpAudit? audit, ILogger logger, IDataProtectionProvider protection,
+    TimeProvider time)
 {
     /// <summary>The Data Protection purpose of plan tokens.</summary>
     internal const string TokenPurpose = "OptiCli.Mcp.PlanToken";
+
+    /// <summary>How long a dry run's plan token works.</summary>
+    internal static readonly TimeSpan TokenLifetime = TimeSpan.FromMinutes(30);
 
     private readonly IDataProtector _tokens = protection.CreateProtector(TokenPurpose, tool);
 
@@ -109,7 +114,10 @@ internal sealed class PlanRunner(
         };
         if (runnable)
         {
-            result["planToken"] = _tokens.Protect(Hash(plan, arguments, checks));
+            // Whole seconds, as the token carries it.
+            var expires = DateTimeOffset.FromUnixTimeSeconds(time.GetUtcNow().Add(TokenLifetime).ToUnixTimeSeconds());
+            result["planToken"] = _tokens.Protect(FormattableString.Invariant($"{expires.ToUnixTimeSeconds()}.{Hash(plan, arguments, checks)}"));
+            result["planTokenExpires"] = expires;
         }
         result["steps"] = new JsonArray(checks.Select(c => (JsonNode)Report(plan, c)).ToArray());
         return Text(result, error: false);
@@ -118,15 +126,12 @@ internal sealed class PlanRunner(
     public CallToolResult Run(ContentPlan plan, JsonNode arguments, string planToken, CancellationToken cancellationToken)
     {
         Validate(plan);
-        string expected;
-        try
+        var (expected, expires) = Unprotect(planToken);
+        if (time.GetUtcNow() >= expires)
         {
-            expected = _tokens.Unprotect(planToken);
-        }
-        catch (CryptographicException)
-        {
-            throw ToolErrors.Usage("planToken isn't one this tool's dry run gave. Nothing was changed.",
-                "Run the tool with dryRun: true, show the user the changes, then run it with the planToken that dry run returned.");
+            throw ToolErrors.From(new AgentError(AgentErrorCodes.Conflict,
+                $"The planToken expired: a dry run's token works for {TokenLifetime.TotalMinutes:0} minutes. Nothing was saved.",
+                "Run the tool with dryRun: true again, show the user the changes (the content may have changed since), and run it with the new planToken."));
         }
 
         // Every step checked again before the first is saved.
@@ -189,33 +194,65 @@ internal sealed class PlanRunner(
         }, error: false);
     }
 
-    private List<Checked> CheckAll(ContentPlan plan) => plan.Steps.Select(step => Check(plan, step)).ToList();
-
-    private Checked Check(ContentPlan plan, PlanStep step)
+    /// <summary>The token's hash and when it expires.</summary>
+    /// <exception cref="McpException"><c>usage</c> for a token this tool's dry run didn't give.</exception>
+    private (string Hash, DateTimeOffset Expires) Unprotect(string planToken)
     {
-        var (checkable, uncheckedValues) = Checkable(plan, step);
+        string payload;
         try
         {
-            var outcome = cms.Check(checkable);
-            return BelowTrashed(plan, checkable) is { } error
-                ? new Checked(step, null, uncheckedValues, error)
-                : new Checked(step, outcome, uncheckedValues, null);
+            payload = _tokens.Unprotect(planToken);
         }
-        catch (Exception e) when (Error(e) is { } error)
+        catch (CryptographicException)
         {
-            return new Checked(step, null, uncheckedValues, error);
+            payload = "";
         }
+        var dot = payload.IndexOf('.', StringComparison.Ordinal);
+        if (dot > 0 && long.TryParse(payload.AsSpan(0, dot), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var seconds))
+        {
+            return (payload[(dot + 1)..], DateTimeOffset.FromUnixTimeSeconds(seconds));
+        }
+        throw ToolErrors.Usage("planToken isn't one this tool's dry run gave. Nothing was changed.",
+            "Run the tool with dryRun: true, show the user the changes, then run it with the planToken that dry run returned.");
+    }
+
+    private List<Checked> CheckAll(ContentPlan plan)
+    {
+        var checks = new List<Checked>();
+        // Trash steps whose own check passed: their content is the editor's to read.
+        var trashed = new List<TrashStep>();
+        foreach (var step in plan.Steps)
+        {
+            var (checkable, uncheckedValues) = Checkable(plan, step);
+            try
+            {
+                var outcome = cms.Check(checkable);
+                var below = BelowTrashed(trashed, checkable);
+                if (step is TrashStep trash)
+                {
+                    trashed.Add(trash);
+                }
+                checks.Add(below is { } error
+                    ? new Checked(step, null, uncheckedValues, error)
+                    : new Checked(step, outcome, uncheckedValues, null));
+            }
+            catch (Exception e) when (Error(e) is { } error)
+            {
+                checks.Add(new Checked(step, null, uncheckedValues, error));
+            }
+        }
+        return checks;
     }
 
     /// <summary>
     /// Whether <paramref name="step"/> uses content below content an earlier step trashes (the same content
     /// <see cref="ContentPlan"/> refuses as it is planned): it would act inside the recycle bin. Asked after the step's own
-    /// check passed, so the content is readable and naming it leaks nothing.
+    /// check passed, and only of trash steps whose own check passed, so both are readable and naming them leaks nothing.
     /// </summary>
+    /// <param name="trashed">The earlier trash steps whose own check passed.</param>
     /// <returns>The step's error; null when it doesn't.</returns>
-    private AgentError? BelowTrashed(ContentPlan plan, PlanStep step)
+    private AgentError? BelowTrashed(IReadOnlyList<TrashStep> trashed, PlanStep step)
     {
-        var trashed = plan.Steps.Take(step.Number - 1).OfType<TrashStep>().ToList();
         if (trashed.Count == 0)
         {
             return null;

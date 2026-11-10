@@ -389,6 +389,51 @@ public sealed class WriteToolTests
     }
 
     [Fact]
+    public async Task Only_a_trash_step_whose_own_check_passed_refuses_the_steps_below_its_content()
+    {
+        await using var site = await Site(m => m.WithWriteTool<OpsTool>(), o => o.AllowDelete = true);
+        await using var client = await ToolTests.Connect(site);
+        _cms.Parents[9] = 7;
+        _cms.Versions[9] = 90;
+        // Content 7 is hidden from the editor: the trash step's check refuses it as missing.
+        _cms.RefuseCheck = step => step is TrashStep { Content.ID: 7 } ? CmsCall.NotFound(new ContentReference(7)) : null;
+
+        var dry = Ok(await Call(client, "test_ops", new { ops = "trash:7,update:9", dryRun = true }));
+
+        Assert.False(dry["valid"]!.GetValue<bool>());
+        var steps = dry["steps"]!.AsArray();
+        Assert.Equal(AgentErrorCodes.NotFound, steps[0]!["error"]!["code"]!.GetValue<string>());
+        // Nothing says that 9 is below 7.
+        Assert.Null(steps[1]!["error"]);
+        Assert.DoesNotContain("trashes content", dry.ToJsonString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_token_works_for_30_minutes_then_the_run_asks_for_a_new_dry_run()
+    {
+        await using var site = await Site();
+        await using var client = await ToolTests.Connect(site);
+
+        var dry = Ok(await client.CallToolAsync("test_rename", new Dictionary<string, object?>(RenameBoth) { ["dryRun"] = true }));
+        Assert.Equal(site.Time.GetUtcNow().AddMinutes(30), dry["planTokenExpires"]!.GetValue<DateTimeOffset>());
+        var token = dry["planToken"]!.GetValue<string>();
+
+        site.Time.Advance(TimeSpan.FromMinutes(30));
+        var expired = Error(await client.CallToolAsync("test_rename", With(RenameBoth, token)));
+
+        Assert.Equal(AgentErrorCodes.Conflict, expired.Code);
+        Assert.Equal("The planToken expired: a dry run's token works for 30 minutes. Nothing was saved.", expired.Message);
+        Assert.Contains("dryRun: true again", expired.Hint);
+        Assert.Empty(_cms.Ran);
+
+        // A new dry run's token, used within its time, runs.
+        var fresh = await DryRun(client, "test_rename", RenameBoth);
+        site.Time.Advance(TimeSpan.FromMinutes(29));
+        Ok(await client.CallToolAsync("test_rename", With(RenameBoth, fresh)));
+        Assert.Equal(2, _cms.Ran.Count());
+    }
+
+    [Fact]
     public async Task Arguments_are_read_strictly()
     {
         await using var site = await Site();

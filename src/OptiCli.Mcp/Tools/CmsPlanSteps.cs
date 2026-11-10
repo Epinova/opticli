@@ -114,7 +114,7 @@ internal sealed class CmsPlanSteps(IHttpContextAccessor http, IOptions<OptiCliMc
         {
             throw new AgentException(AgentErrorCodes.Conflict,
                 $"{e.Message} The tool planned from version {baseVersion}, the one visitors see (or, for content never published, its primary draft).",
-                "Someone saved a newer draft, which this change would overwrite. Tell the user: that draft must be published or discarded in the CMS first, or the site's tool must plan from the latest version. Nothing was changed.")
+                "There is a newer draft of it (it may be the user's own, or one this tool saved before), and this change would overwrite it. Read the content's latest version (get_content with version: \"latest\") and tell the user what that draft holds: it must be published or discarded in the CMS before this tool can change the content; then run the dry run again. Nothing was changed.")
             {
                 CurrentVersion = e.CurrentVersion,
             };
