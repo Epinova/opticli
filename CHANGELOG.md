@@ -3,6 +3,48 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.30.0 (11 November 2026)
+
+A site can add tools of its own to the MCP server for editors: read tools, and write tools whose changes the module
+checks with a dry run and saves as drafts. The CLI is unchanged.
+
+### MCP server for editors
+
+- **Custom read tools.** `AddOptiCliMcp()` returns a builder, and `.WithTools<T>()` on it offers a class's MCP SDK tool
+  methods (each with `[McpServerTool(Name = "...", ReadOnly = true)]`; no `[McpServerToolType]` needed) beside the
+  module's tools, on the module's endpoint only, for the signed-in editor, with the module's sign-in, scopes, audit log
+  and errors. `IOptiCliEditor`, taken in the tool class's constructor, reads content as the editor (`Load`, `CanRead`,
+  `Readable`) and describes it as the module's tools do (`Describe`, a `ContentDescription` with `url` and `editUrl`).
+  `OptiCliToolException` fails a call with the module's JSON error (`code`, `message`, `hint`); the CMS's own
+  not-found and access-denied exceptions become `not_found` and `refused`, as for the module's tools, and anything else
+  a tool throws is logged and reaches the assistant as `internal`, without its message. `.WithInstructions("...")` adds the site's own lines to the
+  instructions the server gives assistants. See [Custom tools](https://github.com/epinova/opticli#custom-tools).
+- **Custom write tools.** `.WithWriteTool<T>()` takes a class with `[OptiCliWriteTool("name", Title = ..., Kinds = ...)]`
+  and `[Description]` that implements `IOptiCliWriteTool<TArgs>`: its `PlanAsync` returns a `ContentPlan`, the steps to
+  take (update, create, create in a "For this page" folder, move, move to the recycle bin), where a step can use content
+  an earlier one creates (`PlannedContent`). The module makes the tool the assistant sees (`TArgs`' properties as
+  arguments, plus `dryRun` and `planToken`), checks every step as the editor with its own dry runs, and runs the plan
+  only with the dry run's `planToken` and only if the plan is still the same, saving drafts only. A token runs once and
+  expires after 30 minutes (`planTokenExpires`). An update planned from content loaded without a version counts as
+  based on its published version, so a newer draft makes it a `conflict`: plan from `Load(..., latest: true)`. A run
+  that fails at a step stops there, keeps the steps before it, and reports each step. A write tool needs the
+  `content:write` scope, one that may trash is offered only with `AllowDelete`, and each step a run saves has a line in
+  the audit log.
+- **`MaxPlanSteps`**, a new option (100 by default, 1 to 1000): the most steps a write tool's plan may have. A larger
+  plan is refused at the dry run, with a hint to narrow the arguments.
+- **`AddOptiCliMcp` returns `IOptiCliMcpBuilder`**, no longer the `IServiceCollection`. A site that ignores what it
+  returns needs no change; code that chained other registrations on it goes on through `.Services`:
+  `services.AddOptiCliMcp().Services.AddSingleton<...>()`.
+- **The module's tools answer arguments they can't take with a `usage` error.** A missing argument, or one of the wrong
+  type, gets the JSON error (`code`, `message`, `hint`) the server's instructions promise, instead of the MCP SDK's
+  plain "An error occurred invoking ...".
+- **Fixed:** a site's own MCP server, registered after `AddOptiCliMcp()`, lost its tools that had the name of one of the
+  module's tools (`whoami`, `get_content`, ...). The module now makes its tools itself, outside the SDK's tool list
+  every server shares, so each server keeps its own, in either order.
+- **Fixed:** editors' assistants couldn't create folders (`create_content` with `SysContentFolder`) since 0.9.0: the
+  check against the edit UI's list of content types refused them, as that list never has the CMS's folder type. The
+  editor's Create access on the parent, and where a folder may go, still apply.
+
 ## 0.29.0 (10 November 2026)
 
 Playwright setup for sites that redirect to HTTPS, URLs that open on the served site, and seed plans that run again

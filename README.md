@@ -1332,6 +1332,9 @@ kept in the Dynamic Data Store, and access tokens (and the assistant's preview l
 protected with the site's Data Protection keys, which every instance of a load-balanced site already shares for its
 login cookies.
 
+`AddOptiCliMcp` returns a builder, on which a site can add tools of its own to the module's server: see
+[Custom tools](#custom-tools).
+
 Requirements: `OptiCli.Mcp` needs .NET 8 or newer, `EPiServer.CMS.Core` 12.12.1 or newer and `EPiServer.CMS.UI.Core`
 12.16.1 or newer (the first CMS 12 versions whose dependencies allow the MCP SDK's `Microsoft.Extensions` 10.x
 packages). A CMS 12 site on .NET 10 uses it too: the package goes by the CMS version, not by .NET's.
@@ -1479,6 +1482,184 @@ module sees to it that each endpoint serves only its own server:
   registered after `AddOptiCliMcp` replaces the hook (a `PostConfigure`), the module's endpoint turns itself off rather
   than serve without it: it answers every signed-in request with an error ("The site turned this MCP endpoint off…"),
   and the site's log says why.
+- The site's own tools for the module ([Custom tools](#custom-tools)) are served on the module's endpoint only. If the
+  other server registers the same class too (its `WithTools<T>()`, or `WithToolsFromAssembly()`), the module removes
+  those tools there. A tool of the other server's that has the name of one of the module's tools stays on that server,
+  whichever is registered first.
+
+### Custom tools
+
+A site can offer editors' assistants tools of its own beside the module's: a search in the site's own index, a report,
+a change across many pages. They run on the module's endpoint only, as the signed-in editor, with the same sign-in,
+scopes, audit log and errors as the module's tools. A tool that changes content doesn't save anything itself: it returns
+a plan, and the module checks it with a dry run the assistant shows the user, then runs it through its own content
+operations, as drafts.
+
+`AddOptiCliMcp` returns a builder (`IOptiCliMcpBuilder`) to add them with:
+
+```csharp
+services.AddOptiCliMcp()
+    .WithTools<ArticleSearchTools>()              // read tools: every tool method of the class
+    .WithWriteTool<ReplaceInDescriptionsTool>()   // a write tool, one class each
+    .WithInstructions("Search article pages with search_articles, which searches their text.");
+```
+
+`WithInstructions` adds a line to the instructions the server gives assistants, after the module's own, under a heading
+that says it comes from the site's developers. Before 0.29.0, `AddOptiCliMcp` returned the `IServiceCollection`: a site
+that ignores what it returns compiles as before, and one that chained other registrations on it goes on through
+`.Services` (`services.AddOptiCliMcp().Services.AddSingleton<...>()`).
+
+**Read tools** are MCP SDK tool classes, written as the SDK documents them (parameters with `[Description]`, async,
+`CancellationToken`, image results). Every tool method needs `[McpServerTool]` with a `Name` and `ReadOnly = true`. The
+class needs no `[McpServerToolType]`, and is better off without it: the SDK's `WithToolsFromAssembly()` picks up classes
+that have it for the site's other MCP servers (the module removes them there, but there is no point). The class is made
+for every call from the request's services, so it takes the site's services, and `IOptiCliEditor`, in its constructor:
+
+```csharp
+using System.ComponentModel;
+using EPiServer.Core;
+using ModelContextProtocol.Server;
+using OptiCli.Mcp;
+
+public sealed class ArticleSearchTools(IOptiCliEditor editor, IArticleIndex index)
+{
+    [McpServerTool(Name = "search_articles", Title = "Search articles", ReadOnly = true, OpenWorld = false)]
+    [Description("Finds article pages whose text contains the words, best match first.")]
+    public async Task<IReadOnlyList<ContentDescription>> SearchArticles(
+        [Description("The words to look for.")] string text,
+        CancellationToken cancellationToken)
+    {
+        // The site's own search index (IArticleIndex here), which knows nothing of the editor's access rights.
+        IReadOnlyList<ContentReference> hits = await index.SearchAsync(text, cancellationToken);
+        // Readable keeps what the editor may read, in the same order; Describe gives each as the module's tools do.
+        return editor.Readable(hits).Select(editor.Describe).ToList();
+    }
+}
+```
+
+`IOptiCliEditor` is the editor the call runs for: `Name`, `Roles`, `Scopes` and `HasScope`, and the content as they
+may read it: `Load<T>` (as `get_content` loads it: the published version, or the newest with `latest: true`; `not_found`
+alike for content that doesn't exist and content they can't read), `CanRead`, `Readable`, and `Describe` (a
+`ContentDescription`: the fields the module's tools give for content, with `url` and `editUrl`). A tool fails on
+purpose with `OptiCliToolException(code, message, hint)`, which the assistant gets as the module's own JSON error
+(`usage`, `not_found`, `refused`, `conflict`). The CMS's own not-found and access-denied exceptions become `not_found`
+and `refused`, as for the module's tools. Anything else it throws is logged with the tool's name and reaches the
+assistant as `internal`, without its message. An argument that is missing or of the wrong type is a `usage` error. The
+packages' XML docs have the details of every member.
+
+**Write tools** implement `IOptiCliWriteTool<TArgs>`, whose one method, `PlanAsync`, returns a `ContentPlan`: what to
+change, in order. The class has `[OptiCliWriteTool]`, with its name, title and the kinds of steps its plans may have,
+and a `[Description]`:
+
+```csharp
+using System.ComponentModel;
+using EPiServer;
+using EPiServer.Core;
+using OptiCli.Mcp;
+
+public sealed record ReplaceInDescriptionsArgs(
+    [property: Description("The id of the page below which to change pages.")] int Below,
+    [property: Description("The text to replace, exactly as written.")] string Find,
+    [property: Description("The text to put in its place.")] string Replace);
+
+[OptiCliWriteTool("replace_in_descriptions", Title = "Replace in meta descriptions", Kinds = ContentPlanKinds.Update)]
+[Description("Replaces a text in the meta description of every page below a page.")]
+public sealed class ReplaceInDescriptionsTool(IOptiCliEditor editor, IContentLoader loader)
+    : IOptiCliWriteTool<ReplaceInDescriptionsArgs>
+{
+    public Task<ContentPlan> PlanAsync(ReplaceInDescriptionsArgs args, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(args.Find))
+        {
+            throw new OptiCliToolException("usage", "find is empty.", "Give the text to replace.");
+        }
+        var below = editor.Load<PageData>(new ContentReference(args.Below));
+        var plan = new ContentPlan();
+        // In a fixed order, and only what the editor may read (SitePageData: Alloy's base class for its pages).
+        var links = loader.GetDescendents(below.ContentLink.ToReferenceWithoutVersion()).OrderBy(link => link.ID);
+        foreach (var found in editor.Readable(links).OfType<SitePageData>())
+        {
+            // The newest version, a draft included: what a change is planned from.
+            var page = editor.Load<SitePageData>(found.ContentLink.ToReferenceWithoutVersion(), latest: true);
+            if (page.MetaDescription?.Contains(args.Find, StringComparison.Ordinal) == true)
+            {
+                var text = page.MetaDescription.Replace(args.Find, args.Replace, StringComparison.Ordinal);
+                plan.Update(page, p => p.Set("MetaDescription", text));
+            }
+        }
+        return Task.FromResult(plan);
+    }
+}
+```
+
+The assistant sees a tool with `TArgs`' properties as its arguments, camelCase, plus two the module adds, `dryRun` and
+`planToken`. An argument the type doesn't have, a missing required one, or `null` for one that can't be null is refused
+before the tool runs (in a project without nullable reference types, as Alloy's, a `string` may be `null`, so check).
+With `dryRun: true` the module calls `PlanAsync`, checks every step as the editor with its own dry runs (access rights,
+the edit UI's rules, validation, `baseVersion`, the delete gate), and answers with each step's changes, a `planToken`
+and when it expires (`planTokenExpires`); a plan with a step that would be refused gets no token. With `dryRun: false`
+and the token, the module calls `PlanAsync` again, refuses the run (`conflict`) if the plan isn't the one the dry run
+showed, checks every step again, and saves them in order. The tool's description tells the assistant to do the dry run
+first and show the user the changes.
+
+| Step | What it does |
+|---|---|
+| `Update(content, p => ...)` | a new draft of the content in its language, as `update_content` saves one: `p.Set(property, value)` (in the forms `update_content` takes), `SetName`, `AddToArea`, `RemoveFromArea` |
+| `Create(parent, type, name, v => ..., lang)` | new content, as a draft, as `create_content` makes it; `CreateFor(content, ...)` makes it in the content's "For this page" folder |
+| `Move(content, destination)` | moves the content, and everything below it, as `move_content` does |
+| `Trash(content)` | moves the content, and everything below it, to the recycle bin, as `delete_content` does |
+
+`Create` returns a `PlannedContent`, which later steps of the same plan take as a parent, a destination or a reference
+in a value. When the plan runs, the module puts the new content's reference in its place:
+
+```csharp
+// Kinds = ContentPlanKinds.Create | ContentPlanKinds.Update
+var folder = plan.CreateFor(page, "SysContentFolder", "Spring campaign");
+var teaser = plan.Create(folder, "TeaserBlock", "Spring sale", v => v.Set("Heading", "Spring sale"));
+plan.Update(page, p => p.AddToArea("MainContentArea", teaser));
+```
+
+What a site's tools must allow for:
+
+- **Read as the editor.** The CMS's `IContentLoader` and `IContentRepository` don't check access rights. Load content
+  through `IOptiCliEditor`, and pass ids that a search index or the site's own code found through `Readable` (not
+  `Load`, whose `not_found` names the id), so content the editor can't read doesn't exist for the assistant: not in a
+  result, a count or a message. The module checks every step as the editor all the same. Use the editor during the
+  call only: kept in a singleton, a cache or a background task, it throws.
+- **Plan from the latest version.** An update is based on the version of the content passed, and is a `conflict` when
+  there is a newer one. Content loaded without a version (`IContentLoader.Get`, `Load` without `latest`) counts as its
+  published version, so any newer draft, the editor's own included, makes the step a `conflict` until that draft is
+  published or discarded. Load what a tool changes with `Load<T>(link, latest: true)`.
+- **Plans are deterministic.** The real run plans again and compares, so the same content and arguments must give the
+  same plan: no timestamps, new GUIDs or random order (sort what a search returns).
+- **Drafts only, recycle bin only.** Nothing in a plan publishes, and nothing deletes for good. Content without versions
+  (other than folders) is refused, as a save would put it live at once. A move of content that may be live goes
+  through the publishing gate, as `move_content` does: it needs `AllowPublish` and the `content:publish` scope.
+- **No transaction.** The real run checks every step before saving the first, but a step can still fail as it runs (a
+  value that refers to content an earlier step creates is only checked then). The run stops there, the steps before it
+  stay saved, and the result says, step by step, what was saved, what failed and why, and what didn't run.
+- **A run can't be resumed.** Plan from the content's current state (content that already has the change gets no step),
+  so that after a run that stopped, a new dry run shows what is left.
+- **A token runs once, within 30 minutes.** After a run the same token is a `conflict`, and so is one older than 30
+  minutes: the assistant does a new dry run. A retry after a timeout needs a new dry run too. On a site whose own code
+  files new content elsewhere when it is saved (in a year folder, say), a retry of a create with the same token within
+  those 30 minutes can create it twice. Tokens are protected with the site's Data Protection keys, as access tokens are.
+  The module takes the time from the site's `TimeProvider`, if it registers one before `AddOptiCliMcp()`.
+- **References from drafts.** A trash step's dry run lists how much goes with it (`descendants`) and what refers to it
+  (`referencedBy`), but not references in unpublished drafts; the report says so.
+- **`MaxPlanSteps`** (100 by default, 1 to 1000) caps a plan's steps; a larger plan is refused at the dry run with a
+  hint to narrow the arguments. A run saves its steps within the assistant's call, which its client gives up on after a
+  while (often a minute): keep it at what the site saves in well under that.
+- **Scopes and options.** A write tool needs `content:write`, as the module's own changes do; read tools run with
+  `content:read` (`HasScope` tells a tool what else was approved). A tool whose `Kinds` has `Trash` is offered only with
+  `AllowDelete`. A step of a kind the tool didn't declare, or a mistake in the plan (the same content updated twice, a
+  step on content an earlier step trashes), fails as a fault of the site: `internal`, with the details in its log.
+- **Names.** Every tool needs a name of its own: none of the module's tools' (`delete_content` included, whether it is
+  offered or not), none of the site's others'. Names, attributes and argument types are checked at startup:
+  `WithTools`, `WithWriteTool` or `MapOptiCliMcp()` throws an `InvalidOperationException` that names the class and
+  method.
+- **Audit.** Every call is in the audit log, as the module's own are, and a write tool's real run adds a line per step
+  (its kind, the content and the outcome).
 
 ### Connecting an assistant
 
@@ -1971,6 +2152,13 @@ everyone but administrators and product editors, who may edit it but not publish
 document to `wwwroot` (fetched over http on loopback, which the module allows only in Development), then builds the
 site and starts it with `serve.sh` on `http://127.0.0.1:5180` (`MCP_PORT`).
 
+It also adds `McpCustomToolsFixture.cs`, for the [custom tools](#custom-tools) tests: test-only tools of the site's own,
+all named `fixture_...`, chained on `AddOptiCliMcp(...)` with `WithTools`, `WithWriteTool` and `WithInstructions` (read
+tools that load with `IContentLoader` and filter with the editor, and write tools that update, create, move and trash
+Alloy's pages and blocks); a server of the site's own at `/site-mcp`, which registers the read tools' class too; and a
+clock a request can move forward in Development (header `X-Opticli-Fixture-Clock`), so the plan token's expiry can be
+tested without waiting for it.
+
 Run from a CMS 13 edge-case site (`setup.sh` reads the CMS version from its project), it references
 `src/OptiCli.Mcp.Cms13` instead and adds `McpVisualBuilderFixture.cs`: Visual Builder experiences with inline and shared
 sections and elements, some of them readable by administrators only, and an element type with properties the edit UI
@@ -1995,7 +2183,10 @@ not moved below another approval sequence; links as markup refused, what a prope
 anything new is refused, SVG files with script and HTML files not uploaded, locks inside local blocks and block lists;
 parallel refreshes, refresh token rotation and reuse within and after the grace period, fewer scopes on a refresh,
 revocation on the connections page, and a removed role or a disabled account caught at the next refresh (which changes
-the test site's own database and changes it back). `McpFixture.cs` also adds `RestrictedBlock`, a block type only
+the test site's own database and changes it back). For the site's own tools: hidden content kept out of their results
+and plans, dry runs and runs with planned content, a run that stops midway, a token refused after a change, a replay,
+another editor's or tool's use, or 30 minutes, the published-version rule, `MaxPlanSteps`, the scopes and gates, the
+per-step audit lines, and none of them at `/site-mcp`. `McpFixture.cs` also adds `RestrictedBlock`, a block type only
 WebAdmins may create; `McpFieldsBlock`, with a property not shown in edit mode, a read-only one, one an editor
 descriptor locks for all but WebAdmins and one on a tab that needs Administer, plus rich text, link, URL, ContentArea
 and reference properties, a local block and a block list (`McpInnerBlock`, with a property locked for all but
