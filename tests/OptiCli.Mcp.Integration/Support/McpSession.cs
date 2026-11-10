@@ -78,6 +78,9 @@ internal sealed class McpSession : IAsyncDisposable
 
     public McpClient Client { get; private set; } = null!;
 
+    /// <summary>Headers added to every request the session makes from now on (the test site's clock, McpCustomToolsFixture.cs).</summary>
+    public ConcurrentDictionary<string, string> Headers { get; } = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>When false, a new sign-in (after a refused refresh, say) fails at once instead of signing in again.</summary>
     public bool AllowSignIn { get; set; } = true;
 
@@ -110,8 +113,9 @@ internal sealed class McpSession : IAsyncDisposable
         var site = options?.Site ?? McpSiteSettings.Url!;
         var browser = new Browser(site, user, McpSiteSettings.Password(user)) { Decision = options?.Decision ?? "allow", Allow = options?.Allow };
         var traffic = new Traffic();
-        var http = new HttpClient(new Traffic.Handler(traffic, new HttpClientHandler { AllowAutoRedirect = false })) { BaseAddress = site };
-        var session = new McpSession(site, user, browser, new RecordingTokenCache(), traffic, http);
+        McpSession? session = null;
+        var http = new HttpClient(new HeaderHandler(() => session?.Headers, new Traffic.Handler(traffic, new HttpClientHandler { AllowAutoRedirect = false }))) { BaseAddress = site };
+        session = new McpSession(site, user, browser, new RecordingTokenCache(), traffic, http);
         var transport = new HttpClientTransport(new HttpClientTransportOptions
         {
             Endpoint = session.Endpoint,
@@ -256,6 +260,20 @@ internal sealed class McpSession : IAsyncDisposable
     {
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
     };
+}
+
+/// <summary>Adds the session's <see cref="McpSession.Headers"/> to each request.</summary>
+internal sealed class HeaderHandler(Func<IReadOnlyDictionary<string, string>?> headers, HttpMessageHandler inner) : DelegatingHandler(inner)
+{
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        foreach (var (name, value) in headers() ?? new Dictionary<string, string>())
+        {
+            request.Headers.Remove(name);
+            request.Headers.TryAddWithoutValidation(name, value);
+        }
+        return base.SendAsync(request, cancellationToken);
+    }
 }
 
 /// <summary>Thrown by the authorization callback when the test said a new sign-in isn't expected.</summary>

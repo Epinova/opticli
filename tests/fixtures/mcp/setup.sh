@@ -2,8 +2,10 @@
 # Builds the MCP test site for the MCP module's end-to-end tests (tests/OptiCli.Mcp.Integration): a copy of the
 # edge-case site (tests/fixtures/edge-cases/setup.sh) and of its database, with this repository's src/OptiCli.Mcp
 # added, McpFixture.cs (test users and access rights, content types for the access and edit UI rules, a language only
-# administrators may edit, a search fixture, a named API route, an add-on route, a custom error page), custom error
-# pages and the site's controllers in Startup.cs, and a client ID metadata document. Then starts it with serve.sh.
+# administrators may edit, a search fixture, a named API route, an add-on route, a custom error page),
+# McpCustomToolsFixture.cs (the site's own read and write tools for the module, and a server of the site's own at
+# /site-mcp), custom error pages and the site's controllers in Startup.cs, and a client ID metadata document. Then
+# starts it with serve.sh.
 # The edge-case site and its database are not changed.
 #
 #   setup.sh [<edge-site-dir> [<target-dir> [<source-db> [<target-db>]]]]
@@ -18,7 +20,7 @@
 set -euo pipefail
 
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
-  sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 fi
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -66,7 +68,7 @@ if [ -d "$SOURCE/App_Data/blobs" ]; then
 fi
 project=$(find "$TARGET" -maxdepth 1 -name '*.csproj' | head -n 1)
 cms_major=$(sed -n 's:.*Include="EPiServer\.CMS" Version="\([0-9]*\)\..*:\1:p' "$project" | head -n 1)
-fixtures=("$HERE/McpFixture.cs")
+fixtures=("$HERE/McpFixture.cs" "$HERE/McpCustomToolsFixture.cs")
 if [ "${cms_major:-12}" -ge 13 ]; then
   echo "== CMS $cms_major: the module's CMS 13 build (OptiCli.Mcp.Cms13), with McpVisualBuilderFixture.cs"
   MODULE="$REPO/src/OptiCli.Mcp.Cms13/OptiCli.Mcp.Cms13.csproj"
@@ -119,8 +121,10 @@ with open(project, encoding="utf-8") as f:
 namespace = namespace.group(1) if namespace else os.path.basename(project)[:-len(".csproj")]
 patch(f"{target}/Startup.cs", [
     ("using OptiCli.Mcp;", f"using {namespace}.Extensions;", f"using {namespace}.Extensions;\nusing OptiCli.Mcp;"),
-    ("AddOptiCliMcp(", "        // Required by Wangkanai.Detection", """        // opticli MCP test site (tests/fixtures/mcp/setup.sh): publishing and deleting on, product editors may connect,
-        // high rate limits, a short refresh token reuse grace.
+    ("using OptiCliMcpFixture;", "using OptiCli.Mcp;", "using OptiCli.Mcp;\nusing OptiCliMcpFixture;"),
+    ("AddOptiCliMcp(", "        // Required by Wangkanai.Detection", """        // opticli MCP test site (tests/fixtures/mcp/setup.sh): a clock the tests can move forward for one request.
+        services.AddFixtureClock();
+        // Publishing and deleting on, product editors may connect, high rate limits, a short refresh token reuse grace.
         services.AddOptiCliMcp(o =>
         {
             o.AllowPublish = true;
@@ -130,7 +134,11 @@ patch(f"{target}/Startup.cs", [
             o.RateLimits = new() { RegisterPerMinute = 1000, TokenPerMinute = 1000, TokenPerAddressPerMinute = 5000, AuthorizePerMinute = 1000 };
             // A short grace for a reused refresh token (a minute by default), so the tests needn't wait for it to pass.
             o.RefreshTokenReuseGrace = TimeSpan.FromSeconds(3);
-        });
+        })
+            // The site's own tools on the module's endpoint (McpCustomToolsFixture.cs).
+            .WithFixtureTools();
+        // A server of the site's own, at /site-mcp, after the module's: the module's custom tools must not reach it.
+        services.AddFixtureSiteMcpServer();
         // ...unless the OptiCli:Mcp settings say otherwise (OptiCli__Mcp__AllowPublish=false), for the tests' second configuration.
         services.AddOptions<OptiCliMcpOptions>().PostConfigure<IConfiguration>(OptiCliMcpFixture.McpFixture.ApplyConfiguration);
 
@@ -146,7 +154,9 @@ patch(f"{target}/Startup.cs", [
             endpoints.MapControllers();""") + """
             // After the site's own endpoints: mapped before MapContent(), the module would make the CMS map the
             // controllers twice ("Duplicate endpoint name").
-            endpoints.MapOptiCliMcp();"""),
+            endpoints.MapOptiCliMcp();
+            // opticli MCP test site: the site's own MCP server (McpCustomToolsFixture.cs).
+            endpoints.MapMcp("/site-mcp");"""),
 ])
 PY
 
