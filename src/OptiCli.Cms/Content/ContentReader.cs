@@ -11,7 +11,7 @@ namespace OptiCli.Cms.Content;
 /// <summary>Describes a loaded content version as <see cref="ContentItem"/>.</summary>
 /// <param name="shown">Which properties to describe (see <see cref="ReadValues"/>); every one when null.</param>
 /// <param name="call">For CMS 13's composition, which it reads as the caller may see it; no composition without it.</param>
-/// <param name="absoluteUrl">The URL with the site's host also for the site the request came in on (<see cref="CmsCall.AbsoluteUrls"/>).</param>
+/// <param name="absoluteUrl">The URL with the site's host (<see cref="CmsCall.AbsoluteUrls"/>); host-relative without.</param>
 internal sealed class ContentReader(IContentTypeRepository types, IContentVersionRepository versions, IUrlResolver urls, Func<IContentData, PropertyData, bool>? shown = null, CmsCall? call = null, bool absoluteUrl = false)
 {
     public ContentItem Describe(IContent content)

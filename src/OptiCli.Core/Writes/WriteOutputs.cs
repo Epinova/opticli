@@ -27,8 +27,8 @@ public sealed record WriteOutput(
     IReadOnlyList<ValidationIssue>? Validation)
 {
     /// <summary>
-    /// The content's public URL in <see cref="Language"/>, as the site links to it (host-relative on the agent's site, as
-    /// <c>get</c> shows it); for a draft of content never published, where it will be. Null for content without one (a
+    /// The content's public URL in <see cref="Language"/>, as the site links to it (host-relative, as <c>get</c> shows
+    /// it: an agent of opticli 0.28.0 or older gives the site's primary host when the site runs on another port); for a draft of content never published, where it will be. Null for content without one (a
     /// block, a folder), a dry-run create, and an agent of opticli 0.26.0 or older.
     /// </summary>
     public string? Url { get; init; }

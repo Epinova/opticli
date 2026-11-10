@@ -96,8 +96,9 @@ internal sealed class CmsCall(IServiceProvider services, CancellationToken abort
 
     /// <summary>
     /// Whether public URLs carry the site's host also for the site the request came in on (<see cref="Content.PublicUrls"/>).
-    /// For an editor they do: their assistant can't tell which host a path is on. The developer's agent gives them as
-    /// the CMS does, as the CLI's reads from the database do.
+    /// For an editor they do: their assistant can't tell which host a path is on. The developer's agent gives them
+    /// host-relative, as the CLI's reads from the database do: the site's own hosts don't answer while <c>opticli serve</c>
+    /// runs it on its own port, and the path does on the served address.
     /// </summary>
     public bool AbsoluteUrls => Checked;
 

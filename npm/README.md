@@ -104,11 +104,20 @@ or the site your IDE runs in IDE mode), checks that opticli and the site's agent
 and points `baseURL` at the site. After the tests it stops a site it started, and leaves one that ran before. The seeded
 content stays for the next run.
 
+Setup logs what the seed plan did: `unchanged`, or which steps changed and which of their properties. A step that
+changes on every run has a value the CMS stores differently from how the plan gives it; write it as the CMS stores it
+(the log's step, `opticli get`).
+
+For a site that redirects HTTP to HTTPS, set `https: true`. The address is `https://localhost:<port>` with the ASP.NET
+Core development certificate, which a browser may not trust: add `ignoreHTTPSErrors: true` to `use` in
+playwright.config, or trust it (`dotnet dev-certs https --trust`).
+
 | Option | Default | |
 |---|---|---|
 | `plan` | none | The seed plan. |
 | `planDir` | the working directory | Where the plan's files are (`upload`, `"@file"` values); they must be inside it. |
 | `publish` | `true` | Publish what the plan saves. |
+| `https` | `OPTICLI_HTTPS=1`, else `"https"` in opticli's user config | Also serve the site on `https://localhost:<port>` (`serve --https`) and browse it there, for a site that redirects HTTP to HTTPS. A site that runs already without an HTTPS address fails setup: stop it first. |
 | `build` | `OPTICLI_BUILD=1` | Build the site before starting it (`serve --build`). |
 | `keepSite` | `OPTICLI_KEEP_SITE=1` | Leave a site that setup started running. |
 | `opticli` | see below | `command`, `project`, `cwd`. |
@@ -117,7 +126,7 @@ content stays for the next run.
 
 | Fixture | Scope | |
 |---|---|---|
-| `seed` | worker | `refs` and `urls` (host-relative) of the plan's steps, by `id`; `baseURL`. |
+| `seed` | worker | `refs` and `urls` of the plan's steps, by `id`; `baseURL`. The URLs are paths on `baseURL` (`/en/fixtures/`), never the site's own hosts, which don't answer while `opticli serve` runs it. |
 | `cms` | test | Content for one test: `page(type, name, properties?, { parent?, publish?, keep? })` (published by default; returns `ref`, `version` and `url`), `set`, `publish`, `apply(plan, { keep?, ... })`. What `page` and `apply` create goes to the recycle bin after the test, unless `keep`. |
 | `sandbox` | worker | With the `opticliSandbox` option: the ref of the worker's own page, where `cms.page()` creates content. It goes to the recycle bin when the worker ends, with anything a failed test left. |
 | `opticli` | worker | The `OptiCli` client, for anything else. |

@@ -105,3 +105,52 @@ test('a failed setup leaves the site running with keepSite', async () => {
 test('workers without setup say what to configure', () => {
   assert.throws(() => readSeedState(), /globalSetup/);
 });
+
+test('https: true serves the site with HTTPS and browses it there', async () => {
+  const { calls } = fake([
+    { match: 'serve --status', envelope: ok({ state: 'stopped', message: '' }, { version: requiredOpticli }) },
+    { match: 'serve --stop', envelope: ok({ stopped: true }, { version: requiredOpticli }) },
+    { match: 'serve', envelope: ok({ ...running, mode: 'background', browseUrl: 'https://localhost:5200' }, { version: requiredOpticli }) },
+  ]);
+
+  const teardown = await defineSetup({ https: true, opticli: { command: fakeCommand } })();
+
+  assert.equal(readSeedState().baseURL, 'https://localhost:5200');
+  assert.ok(calls().find((c) => c.args[0] === 'serve' && c.args[1] === '--timeout').args.includes('--https'));
+  await teardown();
+});
+
+test('https: true refuses a site that runs already without an HTTPS address, and leaves it running', async () => {
+  const { calls } = fake([
+    { match: 'serve --status', envelope: ok({ ...running, mode: 'background' }, { version: requiredOpticli }) },
+    { match: 'serve', envelope: ok({ ...running, mode: 'background' }, { version: requiredOpticli }) },
+  ]);
+
+  await assert.rejects(defineSetup({ https: true, opticli: { command: fakeCommand } })(), /no HTTPS address/);
+  assert.ok(!calls().some((c) => c.args.includes('--stop')));
+  assert.equal(process.env[stateVariable], undefined);
+});
+
+test('the log names the steps the seed plan changed', async (t) => {
+  fake([
+    { match: 'serve --status', envelope: ok(running, { version: requiredOpticli }) },
+    { match: 'serve', envelope: ok(running, { version: requiredOpticli }) },
+    {
+      match: 'apply',
+      envelope: ok({
+        dryRun: false,
+        created: { root: '10', teaser: '11' },
+        operations: [
+          { index: 0, op: 'create', id: 'root', status: 'saved', result: { ref: '10', changes: [{ property: 'MainBody' }] } },
+          { index: 1, op: 'block', id: 'teaser', status: 'unchanged', result: { ref: '11' } },
+          { index: 2, op: 'area', status: 'saved', result: { ref: '10', changes: [{ property: 'MainContentArea' }] } },
+        ],
+      }),
+    },
+  ]);
+  const log = t.mock.method(console, 'log', () => {});
+
+  await defineSetup({ plan, opticli: { command: fakeCommand } })();
+
+  assert.equal(log.mock.calls.at(-1).arguments[0], 'opticli: seed plan changed 2 of 3 steps: root (create): MainBody; #2 (area): MainContentArea');
+});

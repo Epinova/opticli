@@ -64,8 +64,8 @@ public sealed record WriteResult
     public bool DryRun { get; init; }
 
     /// <summary>
-    /// The content's public URL in <see cref="Content"/>'s language, as the CMS links to it: host-relative on the site the
-    /// request came in on. For a draft of content that was never published, where it will be once it is. Null for
+    /// The content's public URL in <see cref="Content"/>'s language, as the CMS links to it: host-relative from the
+    /// developer's agent (also when the CMS puts in the site's primary host), absolute from the MCP module. For a draft of content that was never published, where it will be once it is. Null for
     /// content without one (a block, a folder) and a dry-run create. The agent adds it; the MCP module adds its own.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

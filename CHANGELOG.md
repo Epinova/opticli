@@ -3,6 +3,30 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## Unreleased
+
+### Fixed
+
+- **Write results gave the site's primary host.** The `url` of `create`, `set` and the other writes was absolute (the
+  site's primary host, such as `https://site.dev.localhost:9377/en/`) when `opticli serve` ran the site on another port
+  than that host's, or the host was a production name; that host doesn't answer locally. It is now host-relative, as
+  `get` gives it.
+- **`apply --update-existing` changed content that was already as the plan has it.** Rich text whose tags the plan
+  writes otherwise than the CMS stores them (`<img ...>`, `<br>`, `alt='x'`, upper-case tags) was saved again on every
+  run, and so was a `Url` property given as a path (`/en/`), which the CMS stores as a permanent link. Both are
+  unchanged now, and so is the same value written again with `set`.
+- **`area add` of an inline block added another copy on every run** of a plan with `--update-existing` when one of its
+  values was rich text or a `Url` given as a path: the copy already there didn't count as the same block.
+
+### npm package
+
+- **`https` in `defineSetup()`** (or `OPTICLI_HTTPS=1`): serves the site on `https://localhost:<port>` as well and
+  points `baseURL` there, for a site that redirects HTTP to HTTPS. A site that ran before without an HTTPS address fails
+  setup, rather than giving tests an address they can't browse.
+- **`seed.urls` and `cms.page().url` are paths on `baseURL`,** with the opticli of this release: they had the site's
+  primary host (above).
+- **Setup's log names the steps the seed plan changed,** and their properties, not only how many.
+
 ## 0.28.0 (6 November 2026)
 
 The npm package for Playwright and Node.js is out of preview, and a test can make content that stays on the site.

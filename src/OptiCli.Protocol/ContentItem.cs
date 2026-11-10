@@ -50,8 +50,8 @@ public sealed record ContentItem
     public string? ChangedBy { get; init; }
 
     /// <summary>
-    /// What <c>IUrlResolver.GetUrl</c> returns for the item in its language (default context, canonical):
-    /// host-relative for the current site, absolute for another site's host; null when not routable.
+    /// What <c>IUrlResolver.GetUrl</c> returns for the item in its language (default context, canonical): host-relative
+    /// from the developer's agent, absolute (with the site's host) from the MCP module; null when not routable.
     /// </summary>
     public string? Url { get; init; }
 

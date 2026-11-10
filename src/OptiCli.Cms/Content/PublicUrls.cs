@@ -9,8 +9,8 @@ internal static class PublicUrls
 {
     /// <param name="language">The language branch's code; the master language when null.</param>
     /// <param name="absolute">
-    /// With the site's own host even for the site the request came in on (<see cref="CmsCall.AbsoluteUrls"/>), which the
-    /// CMS otherwise leaves out.
+    /// With the site's host (<see cref="CmsCall.AbsoluteUrls"/>), which the CMS otherwise leaves out for the site the request
+    /// came in on. Without it, the URL is host-relative whatever the CMS gives (<see cref="HostRelative"/>).
     /// </param>
     /// <returns>Null for content that has no URL (a block, a folder).</returns>
     public static string? Of(IUrlResolver urls, ContentReference link, string? language, bool absolute)
@@ -19,6 +19,28 @@ internal static class PublicUrls
             link.ToReferenceWithoutVersion(),
             language,
             new UrlResolverArguments { ContextMode = ContextMode.Default, ForceCanonical = true, ForceAbsolute = absolute });
-        return string.IsNullOrEmpty(url) ? null : url;
+        if (string.IsNullOrEmpty(url))
+        {
+            return null;
+        }
+        return absolute ? url : HostRelative(url);
+    }
+
+    /// <summary>
+    /// <paramref name="url"/> without its scheme and host: the path (with query and fragment) as the CLI's reads from the
+    /// database give it. The canonical URL carries the site's primary host whenever the request isn't on it, as when
+    /// <c>opticli serve</c> runs the site on another port than its hosts name, or a site's primary host is a production
+    /// name; that host doesn't answer locally, while the path does on the served address.
+    /// </summary>
+    internal static string HostRelative(string url)
+    {
+        if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            && !url.StartsWith("//", StringComparison.Ordinal))
+        {
+            return url;
+        }
+        var authority = url.IndexOf("//", StringComparison.Ordinal) + 2;
+        var path = url.IndexOfAny(['/', '?', '#'], authority);
+        return path < 0 ? "/" : url[path] == '/' ? url[path..] : "/" + url[path..];
     }
 }

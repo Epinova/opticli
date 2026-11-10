@@ -1,7 +1,7 @@
 // Playwright's globalSetup: start the site, check opticli's version, apply the seed plan, and hand what the workers need
 // to them through the environment. It returns the teardown, which Playwright runs after the tests.
 import { compareVersions, OptiCli, type OptiCliOptions } from '../opticli.ts';
-import type { ContentRef, OkEnvelope, Plan, ServeResult } from '../types.ts';
+import type { ApplyResult, ContentRef, OkEnvelope, Plan, ServeResult } from '../types.ts';
 import { requiredOpticli } from '../version.ts';
 
 export interface SetupOptions {
@@ -14,6 +14,12 @@ export interface SetupOptions {
   planDir?: string;
   /** Publish what the plan saves. Default: true. */
   publish?: boolean;
+  /**
+   * Also serve the site on `https://localhost:<port>` with the ASP.NET Core development certificate (`serve --https`),
+   * and browse it there: for a site that redirects HTTP to HTTPS. Default: `OPTICLI_HTTPS=1`, else `"https"` in
+   * opticli's user config. A site that runs already is used as it is: one without an HTTPS address fails setup.
+   */
+  https?: boolean;
   /** Build the site before starting it (`serve --build`). Default: `OPTICLI_BUILD=1`. */
   build?: boolean;
   /** Leave a site that setup started running after the tests, or after setup failed. Default: `OPTICLI_KEEP_SITE=1`. */
@@ -30,7 +36,7 @@ export interface SeedState<Id extends string = string> {
   opticli: { command: readonly string[]; project?: string; cwd?: string };
   /** The plan's step `id` → content ref. */
   refs: Record<Id, ContentRef>;
-  /** The plan's step `id` → its URL, host-relative, for content that has one (pages, media). */
+  /** The plan's step `id` → its URL, host-relative (a path on {@link baseURL}), for content that has one (pages, media). */
   urls: Partial<Record<Id, string>>;
 }
 
@@ -62,8 +68,15 @@ export function defineSetup(options: SetupOptions = {}): () => Promise<() => Pro
       if (startedSite && !keepSite) await opticli.serveStop();
     };
 
-    const served = await opticli.serve({ build: options.build ?? process.env.OPTICLI_BUILD === '1' });
+    const https = options.https ?? (process.env.OPTICLI_HTTPS ? process.env.OPTICLI_HTTPS === '1' : undefined);
+    const served = await opticli.serve({ build: options.build ?? process.env.OPTICLI_BUILD === '1', https });
     try {
+      if (https && !startedSite && served.data.mode !== 'ide' && !served.data.browseUrl) {
+        throw new Error(
+          `opticli: the site that runs already (${served.data.url}) has no HTTPS address, and setup doesn't stop a site it didn't start. ` +
+            'Stop it (opticli serve --stop) and run the tests again, or start it with opticli serve --https.',
+        );
+      }
       process.env[stateVariable] = JSON.stringify(await seed(opticli, served, options));
     } catch (error) {
       // Playwright runs no teardown when setup fails: stop the site setup started here.
@@ -95,10 +108,21 @@ async function seed(opticli: OptiCli, served: OkEnvelope<ServeResult>, options: 
     for (const step of applied.operations) {
       if (step.id && step.result?.url) state.urls[step.id] = step.result.url;
     }
-    const changed = applied.operations.filter((o) => o.status !== 'unchanged').length;
-    console.log(`opticli: seed plan ${changed ? `changed ${changed} of ${applied.operations.length} steps` : 'unchanged'}`);
+    const changed = applied.operations.filter((o) => o.status !== 'unchanged');
+    console.log(
+      changed.length
+        ? `opticli: seed plan changed ${changed.length} of ${applied.operations.length} steps: ${changed.map(describeStep).join('; ')}`
+        : 'opticli: seed plan unchanged',
+    );
   }
   return state;
+}
+
+/** A step that changed, for the log: what it is, and which properties it changed. */
+function describeStep(step: ApplyResult['operations'][number]): string {
+  const name = `${step.id ?? `#${step.index}`} (${step.op}${step.status === 'saved' ? '' : `, ${step.status}`})`;
+  const properties = step.result?.changes?.map((c) => c.property) ?? [];
+  return properties.length ? `${name}: ${properties.join(', ')}` : name;
 }
 
 /** The workers' copy of what setup did. */

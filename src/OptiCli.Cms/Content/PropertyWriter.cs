@@ -7,6 +7,7 @@ using EPiServer.Filters;
 using EPiServer.SpecializedProperties;
 using EPiServer.ServiceLocation;
 using EPiServer.Web;
+using EPiServer.Web.Routing;
 using OptiCli.Core.Text;
 using OptiCli.Cms.Compat;
 using OptiCli.Protocol;
@@ -919,6 +920,10 @@ internal sealed class PropertyWriter(
                 // clears it through ParseToSelf below, as it always did.
                 property.Value = PageTypeId(property.Name, value);
                 return;
+            case JsonValueKind.String when StoredAlready(property.Value, value.GetString()!):
+                // What the CMS stores for it already, in another spelling: left as it is, so writing it again (a plan
+                // run again with --update-existing) changes nothing.
+                return;
             case JsonValueKind.String:
                 property.ParseToSelf(value.GetString());
                 return;
@@ -1335,7 +1340,33 @@ internal sealed class PropertyWriter(
         var wanted = PropertyValues.Snapshot(block);
         return items.Any(item => InlineBlocks.Of(item) is { } existing && BlockTypeId(existing) == typeId
             && PropertyValues.Snapshot(existing) is var has
-            && (given?.Keys ?? []).All(key => has.GetValueOrDefault(key)?.GetRawText() == wanted.GetValueOrDefault(key)?.GetRawText()));
+            && (given ?? new Dictionary<string, JsonElement>()).All(pair =>
+                has.GetValueOrDefault(pair.Key)?.GetRawText() == wanted.GetValueOrDefault(pair.Key)?.GetRawText()
+                || (pair.Value.ValueKind == JsonValueKind.String && StoredAlready(Value(existing, pair.Key), pair.Value.GetString()!))));
+    }
+
+    private static object? Value(IContentData content, string name) =>
+        content.Property.FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase))?.Value;
+
+    /// <summary>
+    /// Whether <paramref name="given"/>, text for a property that holds <paramref name="stored"/>, is what the CMS stores
+    /// already: rich text that differs only in how its tags are written (<see cref="RichTextMarkup"/>), or a link to the
+    /// same place, which the CMS stores as a permanent link (<c>/en/about/</c> as <c>~/link/{guid}.aspx</c>).
+    /// </summary>
+    private bool StoredAlready(object? stored, string given) => stored switch
+    {
+        ContentArea => false,
+        XhtmlString html => RichTextMarkup.Same(html.ToInternalString(), given),
+        Url url => string.Equals(Permanent(url.OriginalString), Permanent(given), StringComparison.Ordinal),
+        _ => false,
+    };
+
+    /// <summary>A link as the CMS stores it: a permanent link for content of the site, without its leading "~".</summary>
+    private string Permanent(string url)
+    {
+        var mapped = !string.IsNullOrWhiteSpace(url) && call.OptionalService<IUrlResolver>() is { } urls
+            && urls.TryToPermanent(url, out var permanent) && !string.IsNullOrEmpty(permanent) ? permanent : url;
+        return mapped.TrimStart('~');
     }
 
     /// <summary>The content an item shows, without version.</summary>
