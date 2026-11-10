@@ -3,7 +3,10 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
-## Unreleased
+## 0.29.0 (10 November 2026)
+
+Playwright setup for sites that redirect to HTTPS, URLs that open on the served site, and seed plans that run again
+without changes.
 
 ### Fixed
 
