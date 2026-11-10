@@ -2062,7 +2062,7 @@ through npm trusted publishing, once the repository variable `NPM_PUBLISH` is `t
 1. Release the version as above. With `NPM_PUBLISH` unset, the workflow skips the npm job.
 2. From the tag: `cd npm && npm ci && npm test`, then `npm login` (as a member of `epinova` who may publish) and
    `npm publish ./dist --access public` (two-factor authentication on).
-3. On npmjs.com, in the package's settings, add a trusted publisher: GitHub Actions, repository `epinova/opticli`,
+3. On npmjs.com, in the package's settings, add a trusted publisher: GitHub Actions, repository `Epinova/opticli` (as GitHub spells it: npm compares it, and `repository` in npm/package.json, case-sensitively),
    workflow `release.yml`, environment `npm`.
 4. `gh variable set NPM_PUBLISH --body true`. From the next tag on, the workflow publishes the package; a version already
    on npm is left as it is.

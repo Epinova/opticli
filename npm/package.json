@@ -5,9 +5,9 @@
   "license": "MPL-2.0",
   "type": "module",
   "keywords": ["optimizely", "episerver", "cms", "playwright", "testing", "opticli"],
-  "homepage": "https://github.com/epinova/opticli/tree/main/npm#readme",
-  "repository": { "type": "git", "url": "git+https://github.com/epinova/opticli.git", "directory": "npm" },
-  "bugs": "https://github.com/epinova/opticli/issues",
+  "homepage": "https://github.com/Epinova/opticli/tree/main/npm#readme",
+  "repository": { "type": "git", "url": "git+https://github.com/Epinova/opticli.git", "directory": "npm" },
+  "bugs": "https://github.com/Epinova/opticli/issues",
   "engines": { "node": ">=18" },
   "exports": {
     ".": { "types": "./lib/index.d.ts", "default": "./lib/index.js" },
