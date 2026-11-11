@@ -3,7 +3,7 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
-## 0.30.1 (unreleased)
+## 0.30.1 (11 November 2026)
 
 ### MCP server for editors
 
@@ -16,6 +16,13 @@ again to update the skill.
   `publish_content`) still sends the version for review, as the reviewer sees all of it, but the result now has a
   `pendingDraft` with the changes someone else saved that went for review too, and the server instructions tell the
   assistant to say so.
+
+### Documentation
+
+- How-to guides for editors, CLI developers and the MCP module, on the landing page under
+  [Guides](https://epinova.github.io/opticli/guides/). The README stays the reference.
+- The README's MCP options table lists `MaxPlanSteps`, and `sync pull --help` names visitor groups and categories among
+  what isn't synced.
 
 ## 0.30.0 (11 November 2026)
 

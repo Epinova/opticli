@@ -64,7 +64,7 @@ internal static class SyncCommand
             The sync state (user config folder) remembers per item what was synced, so the next pull only reads what changed:
             a local change since then, to content the source also changed, is a conflict (listed, skipped; --overwrite-local
             writes over it). The first pull of a database takes the baseline: everything is compared, what differs is updated.
-            Not synced: access rights, history, authors, Forms submissions, users, the schema (a bacpac copies those).
+            Not synced: access rights, history, authors, Forms submissions, visitor groups, categories, users, the schema (a bacpac copies those).
             Example: opticli sync pull --from prod --all --blobs ../prod-blobs --dry-run
             """);
         command.Options.Add(from);

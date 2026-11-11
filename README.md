@@ -1405,6 +1405,7 @@ which wins. In configuration, an `AllowedRoles` or `AllowedRedirectHosts` list r
 | `AllowPreviewLinks` | `true` | give the assistant a short-lived link of its own to a draft's preview, which it can open without a sign-in (`assistantPreviewUrl`, see below); `false` turns it off |
 | `PreviewLinkLifetime` | 10 minutes | how long such a link works (1 minute to 1 hour) |
 | `MaxUploadBytes` | 10 MB | the largest media file an assistant may upload (at most 50 MB); the CMS UI's own upload limit applies too, if it is lower (see below) |
+| `MaxPlanSteps` | 100 | the most steps a [custom write tool](#custom-tools)'s plan may have (1 to 1000) |
 | `RateLimits` | see below | requests a minute the OAuth endpoints take |
 
 ```json
