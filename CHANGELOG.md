@@ -3,6 +3,47 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.31.0 (11 November 2026)
+
+A test database can now be built from code: the CMS creates the schema in an empty database, and one plan adds the
+languages, the content and the sites, which such a database lacks.
+
+### CLI
+
+- **`sites add`** creates a site definition (CMS 13: an in-process application) with its start page and hosts
+  (`--host name[:port][@lang]`, repeatable; the first host of each language is the primary one). With
+  `--update-existing` a site of that name is made to match instead of being a `conflict`. Refused against a shared
+  database.
+- **`languages enable` and `languages disable`** change which language branches are enabled, adding a branch the
+  database lacks (a fresh database has `en` and `sv` enabled). `disable` warns about content in the language and
+  refuses to disable every one. Refused against a shared database.
+- **Plans take `language` and `site` steps**, so a seed plan builds a database from scratch: steps in a language an
+  earlier step enables are checked when the plan runs, and `apply --update-existing` leaves an unchanged site as it is.
+  Sealed plans never have them.
+- **`serve --https-port <n>`** (or `httpsPort` in the user config) fixes the port of the HTTPS address, so site hosts
+  with that port stay right from run to run. A taken port is an error.
+- **`serve --profile <name>`** gives the site the launch profile's environment variables too, not only its connection
+  string, except those `serve` sets itself. `env --profile` prints them.
+- **Write results have `canonicalUrl`**: the content's URL with the host of its site for that language, which says
+  which of several sites it is on. After a plan whose `site` step saved, every step's `url` and `canonicalUrl` are as the
+  sites have them at the end of the run, also for content saved before its site existed.
+
+### npm package
+
+- `defineSetup()` takes `httpsPort` (`OPTICLI_HTTPS_PORT`), and `OptiCli` a `profile` (`OPTICLI_PROFILE`) that every
+  call and the workers pass on.
+- The plan type has the `language` and `site` steps.
+- **Several sites**: `seed.urls` (and `cms.page()`'s `url`) give content on another site that the served site answers on
+  a `*.localhost` host of its own (on the HTTP port or `httpsPort`) that site's address, and `seed.sites` maps each such
+  site's name to where to open it. Content on the site at `baseURL` keeps its path, as before. `OptiCli.sites()` lists
+  the sites.
+
+### Documentation
+
+- `$id` in a string property stores the content's id as text, for properties that keep ids as strings. This worked
+  before; the README and the plan reference now say so.
+- A new guide: [Build a test database from scratch](https://epinova.github.io/opticli/guides/).
+
 ## 0.30.1 (11 November 2026)
 
 ### MCP server for editors
