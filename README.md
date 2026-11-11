@@ -1505,7 +1505,7 @@ services.AddOptiCliMcp()
 ```
 
 `WithInstructions` adds a line to the instructions the server gives assistants, after the module's own, under a heading
-that says it comes from the site's developers. Before 0.29.0, `AddOptiCliMcp` returned the `IServiceCollection`: a site
+that says it comes from the site's developers. Before 0.30.0, `AddOptiCliMcp` returned the `IServiceCollection`: a site
 that ignores what it returns compiles as before, and one that chained other registrations on it goes on through
 `.Services` (`services.AddOptiCliMcp().Services.AddSingleton<...>()`).
 
