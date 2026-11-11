@@ -354,6 +354,15 @@ await expect(page.getByText('Hi')).toBeVisible();
   </div>
   <article class="file">
     <ol class="releases">
+      <li><div class="v"><b>0.30.0</b><span>11 November 2026</span></div>
+        <ul>
+          <li><b>Your site's own tools for editors' assistants:</b> developers can add tools to the MCP server: a search
+            in the site's own index, a report, or a change across many pages. The module checks such a change as the
+            editor, with a dry run the assistant shows first, and saves it as drafts. See <a href="editors/">For
+            editors</a> and the <a href="https://github.com/epinova/opticli#custom-tools">README</a>.</li>
+          <li><b>Fixes in the MCP server:</b> editors' assistants can now create folders, the built-in tools answer a
+            bad argument with a clear error, and a site's own MCP server keeps its tools named like opticli's.</li>
+        </ul></li>
       <li><div class="v"><b>0.29.0</b><span>10 November 2026</span></div>
         <ul>
           <li><b>Playwright setup with HTTPS:</b> <code>defineSetup({ https: true })</code> serves a site that redirects to
@@ -369,14 +378,6 @@ await expect(page.getByText('Hi')).toBeVisible();
             make content that stays on the site with <code>keep: true</code>; see <a href="tests/">For tests</a>.</li>
           <li><b>Fixes in the package:</b> a relative project path, a site left running when setup failed, and Node.js
             waiting minutes when opticli couldn't be started.</li>
-        </ul></li>
-      <li><div class="v"><b>0.27.0</b><span>6 November 2026</span></div>
-        <ul>
-          <li><b>opticli in Playwright tests:</b> a new npm package, <code>@epinova/opticli</code>, starts the site,
-            seeds the content your tests need with a plan, gives each test content of its own and removes it again. See
-            <a href="tests/">For tests</a>.</li>
-          <li><b>Writes return the URL:</b> <code>create</code>, <code>set</code>, <code>publish</code> and the other
-            writes now say where the page is, so a script can open it right away.</li>
         </ul></li>
     </ol>
     <p class="earlier"><a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">Older releases are in the changelog</a></p>
