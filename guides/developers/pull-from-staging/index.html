@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pull content from staging into your local database · opticli guides</title>
+<meta name="description" content="Register a staging or test database by name, bring its content into your local database with sync pull, and keep it current without another restore.">
+<meta property="og:title" content="Pull content from staging into your local database · opticli guides">
+<meta property="og:description" content="Register a staging or test database by name, bring its content into your local database with sync pull, and keep it current without another restore.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://epinova.github.io/opticli/guides/developers/pull-from-staging/">
+<meta name="twitter:card" content="summary">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="../../../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../../style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chev" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 20 20"><path d="M8 4.5H4.5v11h11V12M11 4.5h4.5V9M15.2 4.8L9 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href="../../../">opticli<span>.</span></a>
+    <nav aria-label="Pages">
+      <a class="keep" href="../../">All guides</a><span class="sep" aria-hidden="true"></span><a class="page-link" href="../../../editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep page-link" href="../../../">For developers <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<div class="wrap guide">
+  <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#developers">For developers</a></p>
+  <h1>Pull content from staging into your local database</h1>
+  <p class="lead">Register a staging or test database by name, bring its content into your local database with sync pull, and keep it current without another restore.</p>
+  <p class="guide-meta">Written for opticli 0.30.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/developers/pull-from-staging.md">Edit on GitHub</a></p>
+  <div class="guide-body">
+    <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#steps">Steps</a></li><li><a href="#what-a-pull-brings-and-what-it-doesn-t">What a pull brings, and what it doesn't</a></li><li><a href="#production">Production</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
+    <article class="prose">
+<p>Your local database drifts away from staging the day you restore it: editors add pages, move things and publish new
+campaigns there. <code>opticli sync pull</code> brings those changes into your local database, matched by GUID, writing only what
+changed and leaving your own local work alone. This guide sets up the staging database as a named, read-only source,
+runs a first pull and the pulls after it, and shows <code>opticli export</code> for a one-off copy of part of the tree. Staging
+is only ever read; everything is written to your local database through your local site.</p>
+<h2 id="before-you-start">Before you start</h2>
+<ul>
+<li>opticli 0.30.0 or newer, run from inside the site's repository.</li>
+<li>A local database with content and the site's schema, usually a restored copy of staging or production (see
+<a href="../../developers/restored-production-database/">Work on a restored production database</a>). <code>sync pull</code> doesn't make an empty
+database usable; a backup or bacpac does that.</li>
+<li>A login to the staging database that can read it. A read-only one is enough.</li>
+<li>The staging site's media: a copy of its <code>App_Data/blobs</code> folder, or a SAS URL for its Azure blob container.</li>
+</ul>
+<h2 id="steps">Steps</h2>
+<h3 id="1-add-staging-by-name-with-a-role">1. Add staging by name, with a role</h3>
+<p>Run this at your own terminal. It asks for the connection string, and the password without showing it:</p>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-1">Copy</button></div><pre><code id="code-1">opticli<span class="t-w"> </span>db<span class="t-w"> </span>add<span class="t-w"> </span>staging<span class="t-w"> </span>--role<span class="t-w"> </span><span class="t-nb">test</span>
+opticli<span class="t-w"> </span>db<span class="t-w"> </span>list
+opticli<span class="t-w"> </span>get<span class="t-w"> </span>/en/<span class="t-w"> </span>--db<span class="t-w"> </span>staging<span class="t-w"> </span>--fields<span class="t-w"> </span>name</code></pre></div>
+<p><code>db list</code> shows <code>staging</code> with the role <code>test</code>, next to your local database with the role <code>local</code>. The roles are
+<code>local</code>, <code>dev</code>, <code>test</code> and <code>prod</code>. A role belongs to the server and database, so it holds in every project. The <code>get</code>
+checks that reads work; its response warns that it isn't the development database. For Microsoft Entra ID
+(<code>Authentication=Active Directory Default</code>), sign in with <code>az login</code> first.</p>
+<h3 id="2-start-the-local-site-on-the-current-build">2. Start the local site on the current build</h3>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-2">Copy</button></div><pre><code id="code-2">git<span class="t-w"> </span>pull<span class="t-w"> </span><span class="t-o">&amp;&amp;</span><span class="t-w"> </span>dotnet<span class="t-w"> </span>build
+opticli<span class="t-w"> </span>serve</code></pre></div>
+<p><code>sync pull</code> writes through the local site, so versions, caches and events behave as in the edit UI. It also compares
+staging's content model with your local database's, which holds your build's model once the site has started on it.
+So build what staging runs, or newer, and restart <code>serve</code> after each build. The local database must have the role
+<code>local</code>: a pull never writes to a shared <code>dev</code> or <code>test</code> database.</p>
+<h3 id="3-dry-run-the-first-pull">3. Dry-run the first pull</h3>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-3">Copy</button></div><pre><code id="code-3">opticli<span class="t-w"> </span>sync<span class="t-w"> </span>pull<span class="t-w"> </span>--from<span class="t-w"> </span>staging<span class="t-w"> </span>--all<span class="t-w"> </span>--blobs<span class="t-w"> </span>../staging-blobs<span class="t-w"> </span>--dry-run</code></pre></div>
+<div class="snippet lang-json"><div class="snippet-bar"><span>JSON</span></div><pre><code id="code-4"><span class="t-p">{</span><span class="t-nt">&quot;dryRun&quot;</span><span class="t-p">:</span><span class="t-kc">true</span><span class="t-p">,</span><span class="t-nt">&quot;baseline&quot;</span><span class="t-p">:</span><span class="t-kc">true</span><span class="t-p">,</span><span class="t-nt">&quot;counts&quot;</span><span class="t-p">:{</span><span class="t-nt">&quot;created&quot;</span><span class="t-p">:</span><span class="t-mi">42</span><span class="t-p">,</span><span class="t-nt">&quot;updated&quot;</span><span class="t-p">:</span><span class="t-mi">7</span><span class="t-p">,</span><span class="t-nt">&quot;moved&quot;</span><span class="t-p">:</span><span class="t-mi">2</span><span class="t-p">,</span><span class="t-nt">&quot;restored&quot;</span><span class="t-p">:</span><span class="t-mi">0</span><span class="t-p">,</span><span class="t-nt">&quot;trashed&quot;</span><span class="t-p">:</span><span class="t-mi">0</span><span class="t-p">,</span>
+<span class="t-w"> </span><span class="t-nt">&quot;unchanged&quot;</span><span class="t-p">:</span><span class="t-mi">311</span><span class="t-p">,</span><span class="t-nt">&quot;kept&quot;</span><span class="t-p">:</span><span class="t-mi">0</span><span class="t-p">,</span><span class="t-nt">&quot;conflicts&quot;</span><span class="t-p">:</span><span class="t-mi">0</span><span class="t-p">,</span><span class="t-nt">&quot;gone&quot;</span><span class="t-p">:</span><span class="t-mi">0</span><span class="t-p">,</span><span class="t-nt">&quot;skipped&quot;</span><span class="t-p">:</span><span class="t-mi">1</span><span class="t-p">}}</span></code></pre></div>
+<p>The first pull of a source takes the baseline: every item is compared, and what differs is updated. A baseline
+can't tell your local change from staging's, so a page you published locally gets staging's content (your version
+stays in the history). Read <code>updated</code> before you go on. Also look at <code>skipped</code> (with reasons), <code>dropped</code> (values that
+point at content, visitor groups or categories your database lacks) and <code>model</code>.</p>
+<p>For an Azure container, pass its URL with a SAS token instead of a folder, quoted:
+<code>--blobs &quot;https://&lt;account&gt;.blob.core.windows.net/mysitemedia?&lt;sas&gt;&quot;</code>. Without <code>--blobs</code>, media whose file can't be
+found is left out and listed.</p>
+<h3 id="4-check-the-content-model">4. Check the content model</h3>
+<p><code>model</code> lists where staging's content types and properties differ from your build's. Content of a type your build
+lacks is skipped, and a property it lacks, or has as another type, is left out of the values. That usually means
+staging runs code you haven't pulled: check out what staging runs, build, <code>opticli serve --stop</code> and <code>opticli serve</code>,
+and dry-run again. <code>--strict</code> turns any difference into a failure (<code>conflict</code>, exit 5, <code>details.reason: &quot;modelDiffers&quot;</code>), which suits a script.</p>
+<h3 id="5-run-it">5. Run it</h3>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-5">Copy</button></div><pre><code id="code-5">opticli<span class="t-w"> </span>sync<span class="t-w"> </span>pull<span class="t-w"> </span>--from<span class="t-w"> </span>staging<span class="t-w"> </span>--all<span class="t-w"> </span>--blobs<span class="t-w"> </span>../staging-blobs</code></pre></div>
+<p>Missing content is created, changed content gets a new version (published when staging's is), moved content is
+moved, and content in your local recycle bin that is live on staging is restored. A newer unpublished draft on staging
+is left out and listed in <code>drafts</code>. Content you made locally and never synced is left alone. Ctrl+C stops it; the next
+pull carries on where it stopped.</p>
+<p>To pull only part of the tree, give refs (each with everything below it) or one site, and optionally languages:</p>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-6">Copy</button></div><pre><code id="code-6">opticli<span class="t-w"> </span>sync<span class="t-w"> </span>pull<span class="t-w"> </span>--from<span class="t-w"> </span>staging<span class="t-w"> </span>/en/alloy-plan/<span class="t-w"> </span>/en/about-us/<span class="t-w"> </span>--languages<span class="t-w"> </span>en,sv
+opticli<span class="t-w"> </span>sync<span class="t-w"> </span>pull<span class="t-w"> </span>--from<span class="t-w"> </span>staging<span class="t-w"> </span>--site<span class="t-w"> </span>Alloy</code></pre></div>
+<h3 id="6-pull-again-later">6. Pull again later</h3>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-7">Copy</button></div><pre><code id="code-7">opticli<span class="t-w"> </span>sync<span class="t-w"> </span>pull<span class="t-w"> </span>--from<span class="t-w"> </span>staging<span class="t-w"> </span>--all<span class="t-w"> </span>--blobs<span class="t-w"> </span>../staging-blobs<span class="t-w"> </span>--dry-run
+opticli<span class="t-w"> </span>sync<span class="t-w"> </span>pull<span class="t-w"> </span>--from<span class="t-w"> </span>staging<span class="t-w"> </span>--all<span class="t-w"> </span>--blobs<span class="t-w"> </span>../staging-blobs<span class="t-w"> </span>--delete</code></pre></div>
+<p>The sync state in your user config remembers what each item was, so later pulls read only what changed and take
+seconds. Content you changed locally since the last pull is listed in <code>kept</code> and stays. Content changed on both
+sides is a conflict: listed in <code>conflicts</code> and left as it is, unless you pass <code>--overwrite-local</code>, which writes
+staging's content over yours (your versions stay in the history). Without <code>--delete</code>, content staging deleted is only
+listed in <code>gone</code>; with it, it goes to your local recycle bin, never deleted for good.</p>
+<blockquote>
+<p><strong>Note:</strong> Don't delete the sync state file to get rid of conflicts. The next pull is then a new baseline, which
+writes over your published local changes.</p>
+</blockquote>
+<h3 id="7-or-export-a-part-as-a-plan">7. Or export a part as a plan</h3>
+<p>For a one-off copy you can keep, review or commit, export instead. <code>export</code> only reads the source and writes a plan
+folder with the content's GUIDs, media files and long texts:</p>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-8">Copy</button></div><pre><code id="code-8">opticli<span class="t-w"> </span><span class="t-nb">export</span><span class="t-w"> </span>/en/about-us/<span class="t-w"> </span>--descendants<span class="t-w"> </span>--db<span class="t-w"> </span>staging<span class="t-w"> </span>--blobs<span class="t-w"> </span>../staging-blobs<span class="t-w"> </span>--out<span class="t-w"> </span>about-us
+opticli<span class="t-w"> </span>apply<span class="t-w"> </span>about-us/plan.json<span class="t-w"> </span>--update-existing<span class="t-w"> </span>--dry-run
+opticli<span class="t-w"> </span>apply<span class="t-w"> </span>about-us/plan.json<span class="t-w"> </span>--update-existing</code></pre></div>
+<p>Check the export's <code>externalRefs</code> (content the plan points at but doesn't create, which your database must have),
+<code>skipped</code>, <code>drafts</code> and <code>dropped</code> before you apply. Running the same plan again updates what changed.</p>
+<h2 id="what-a-pull-brings-and-what-it-doesn-t">What a pull brings, and what it doesn't</h2>
+<table>
+<thead>
+<tr>
+<th>Brings</th>
+<th>Doesn't bring</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Pages, blocks, media and folders, by GUID</td>
+<td>Access rights</td>
+</tr>
+<tr>
+<td>Every language branch, or those you name</td>
+<td>Other versions and who saved them when</td>
+</tr>
+<tr>
+<td>Published state and built-in settings: publish dates, URL segment, menu visibility, sort order, category selections</td>
+<td>Forms submissions, visitor groups, the categories themselves, users</td>
+</tr>
+<tr>
+<td>Moves, and with <code>--delete</code> deletions (to the recycle bin)</td>
+<td>The schema and content types: those come from your build</td>
+</tr>
+</tbody>
+</table>
+<h2 id="production">Production</h2>
+<p><code>--from prod</code> works the same way: a pull only reads its source, over a read-only connection. Everything else about
+production is read-only too: <code>serve</code>, every write and every dry run against it are refused (exit 3,
+<code>details.reason: &quot;prodDatabase&quot;</code>). The one way to get content there is a sealed apply that you run yourself at your
+terminal; see <a href="https://github.com/Epinova/opticli#writing-to-production">Writing to production</a>.</p>
+<h2 id="if-something-goes-wrong">If something goes wrong</h2>
+<table>
+<thead>
+<tr>
+<th>What you see</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>refused</code> (exit 3), <code>details.reason: &quot;syncTarget&quot;</code></td>
+<td>Your development database isn't <code>local</code>. Pull into a local copy; <code>opticli db list</code> shows the roles.</td>
+</tr>
+<tr>
+<td><code>unreachable</code> (exit 4), &quot;Start it with <code>opticli serve</code>&quot;</td>
+<td>The local site isn't running. Start it, on the current build.</td>
+</tr>
+<tr>
+<td><code>login_failed</code> (exit 4)</td>
+<td>Staging refused the login. Run <code>opticli db add staging --role test</code> again with the right one.</td>
+</tr>
+<tr>
+<td><code>conflict</code> (exit 5), <code>modelDiffers</code></td>
+<td>You passed <code>--strict</code> and the models differ. See step 4.</td>
+</tr>
+<tr>
+<td><code>refused</code> (exit 3), <code>roleLowered</code></td>
+<td>You gave a database a weaker role than it has (<code>prod</code> to <code>test</code>). That needs your own terminal, where you confirm by typing the database's name.</td>
+</tr>
+<tr>
+<td>Media missing after the pull</td>
+<td>The files weren't found under <code>--blobs</code>. They are listed in the output; point <code>--blobs</code> at the folder holding the blob containers.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="related">Related</h2>
+<ul>
+<li><a href="https://github.com/Epinova/opticli#environments">Environments</a></li>
+<li><a href="https://github.com/Epinova/opticli#pulling-content-from-another-environment">Pulling content from another environment</a></li>
+<li><a href="https://github.com/Epinova/opticli#exporting-content">Exporting content</a></li>
+<li><a href="https://github.com/Epinova/opticli#writing-to-production">Writing to production</a></li>
+<li><a href="../../developers/restored-production-database/">Work on a restored production database</a></li>
+<li><a href="../../developers/playwright-seed-content/">Seed content for Playwright tests</a></li>
+</ul>
+    </article>
+  </div>
+  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for developers</h2><div class="file"><ol class="guide-list"><li><a href="../../developers/restored-production-database/"><b>Work on a restored production database</b><span>Point opticli at a restored copy of production, make its sites answer on localhost, get a local login and keep its scheduled jobs from running.</span></a></li><li><a href="../../developers/find-content-and-code/"><b>Find content and the code behind it</b><span>Go from a URL or a name to the content item, its C# class and Razor view, and every page that uses it.</span></a></li><li><a href="../../developers/playwright-seed-content/"><b>Seed CMS content for Playwright tests</b><span>Use the @epinova/opticli npm package to start the site, seed the content your Playwright tests read, and give each test pages of its own that are cleaned up afterwards.</span></a></li></ol></div></section>
+</div>
+</main>
+
+<footer class="wrap">
+  <p>opticli and OptiCli.Mcp are open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. They are independent projects, not affiliated with or endorsed by Optimizely.</p>
+</footer>
+<script>
+for (const button of document.querySelectorAll('[data-copy]')) {
+  button.addEventListener('click', async () => {
+    const text = document.getElementById(button.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(text); } catch { getSelection().selectAllChildren(document.getElementById(button.dataset.copy)); return; }
+    button.textContent = 'Copied';
+    button.dataset.done = '';
+    setTimeout(() => { button.textContent = 'Copy'; delete button.dataset.done; }, 1600);
+  });
+}
+</script>
+</body>
+</html>

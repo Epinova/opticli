@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install the MCP module in your site · opticli guides</title>
+<meta name="description" content="Add the opticli MCP module to a CMS 12 or CMS 13 site, decide what assistants may do, and connect a first assistant to check that it works.">
+<meta property="og:title" content="Install the MCP module in your site · opticli guides">
+<meta property="og:description" content="Add the opticli MCP module to a CMS 12 or CMS 13 site, decide what assistants may do, and connect a first assistant to check that it works.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://epinova.github.io/opticli/guides/mcp/install-the-module/">
+<meta name="twitter:card" content="summary">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="../../../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../../style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chev" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 20 20"><path d="M8 4.5H4.5v11h11V12M11 4.5h4.5V9M15.2 4.8L9 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href="../../../">opticli<span>.</span></a>
+    <nav aria-label="Pages">
+      <a class="keep" href="../../">All guides</a><span class="sep" aria-hidden="true"></span><a class="page-link" href="../../../editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep page-link" href="../../../">For developers <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<div class="wrap guide">
+  <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#mcp">For the MCP module</a></p>
+  <h1>Install the MCP module in your site</h1>
+  <p class="lead">Add the opticli MCP module to a CMS 12 or CMS 13 site, decide what assistants may do, and connect a first assistant to check that it works.</p>
+  <p class="guide-meta">Written for opticli 0.30.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/mcp/install-the-module.md">Edit on GitHub</a></p>
+  <div class="guide-body">
+    <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#install-and-connect">Install and connect</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
+    <article class="prose">
+<p>The MCP module turns your Optimizely site into an MCP server with its own OAuth sign-in. Editors connect an AI
+assistant to it, sign in with the site's normal login, and the assistant then works on content as them, with their
+access rights. By the end of this guide the module runs in your site, you have chosen what assistants may do, and an
+assistant on your own machine has read and drafted content on a local Alloy site.</p>
+<h2 id="before-you-start">Before you start</h2>
+<ul>
+<li>A site on CMS 12 (<code>EPiServer.CMS.Core</code> 12.12.1 and <code>EPiServer.CMS.UI.Core</code> 12.16.1 or newer, .NET 8 or newer) or
+CMS 13 (13.0.0 or newer, .NET 10).</li>
+<li>A login that works for editors: ASP.NET Identity, Microsoft Entra ID or Opti ID. The module uses whatever the site
+already has.</li>
+<li>An editor account in one of the default roles (WebEditors, WebAdmins, CmsEditors, CmsAdmins or Administrators).</li>
+<li>An MCP client for testing. This guide uses Claude Code, which connects from your own machine, so a local site works.</li>
+</ul>
+<h2 id="install-and-connect">Install and connect</h2>
+<h3 id="1-add-the-package-for-your-cms-version">1. Add the package for your CMS version</h3>
+<p>There is one package per CMS major. Both are released with the same version as the CLI and set up the same way.</p>
+<table>
+<thead>
+<tr>
+<th>The site runs</th>
+<th>Package</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CMS 12, on .NET 8 or newer (.NET 10 included)</td>
+<td><code>OptiCli.Mcp</code></td>
+</tr>
+<tr>
+<td>CMS 13</td>
+<td><code>OptiCli.Mcp.Cms13</code></td>
+</tr>
+</tbody>
+</table>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-1">Copy</button></div><pre><code id="code-1">dotnet<span class="t-w"> </span>add<span class="t-w"> </span>package<span class="t-w"> </span>OptiCli.Mcp<span class="t-w">          </span><span class="t-c1"># CMS 12</span>
+dotnet<span class="t-w"> </span>add<span class="t-w"> </span>package<span class="t-w"> </span>OptiCli.Mcp.Cms13<span class="t-w">    </span><span class="t-c1"># CMS 13</span></code></pre></div>
+<p>The package goes by the CMS version, not by .NET's: a CMS 12 site on .NET 10 still takes <code>OptiCli.Mcp</code>. If you pick
+the wrong one and NuGet doesn't refuse it already, the site stops at startup with an error that names the right
+package.</p>
+<h3 id="2-register-the-module">2. Register the module</h3>
+<p>In <code>Startup.cs</code>, add the services after <code>AddCms()</code>, and map the module after <code>MapContent()</code> and the site's own
+endpoints. The code is the same on CMS 12 and CMS 13.</p>
+<div class="snippet lang-csharp"><div class="snippet-bar"><span>C#</span></div><pre><code id="code-2"><span class="t-k">using</span><span class="t-w"> </span><span class="t-nn">OptiCli.Mcp</span><span class="t-p">;</span>
+
+<span class="t-k">public</span><span class="t-w"> </span><span class="t-k">void</span><span class="t-w"> </span><span class="t-nf">ConfigureServices</span><span class="t-p">(</span><span class="t-n">IServiceCollection</span><span class="t-w"> </span><span class="t-n">services</span><span class="t-p">)</span>
+<span class="t-p">{</span>
+<span class="t-w">    </span><span class="t-c1">// ... AddCms() and the rest</span>
+<span class="t-w">    </span><span class="t-n">services</span><span class="t-p">.</span><span class="t-n">AddOptiCliMcp</span><span class="t-p">();</span>
+<span class="t-p">}</span>
+
+<span class="t-k">public</span><span class="t-w"> </span><span class="t-k">void</span><span class="t-w"> </span><span class="t-nf">Configure</span><span class="t-p">(</span><span class="t-n">IApplicationBuilder</span><span class="t-w"> </span><span class="t-n">app</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">IWebHostEnvironment</span><span class="t-w"> </span><span class="t-n">env</span><span class="t-p">)</span>
+<span class="t-p">{</span>
+<span class="t-w">    </span><span class="t-c1">// ... UseRouting(), UseAuthentication(), UseAuthorization()</span>
+<span class="t-w">    </span><span class="t-n">app</span><span class="t-p">.</span><span class="t-n">UseEndpoints</span><span class="t-p">(</span><span class="t-n">endpoints</span><span class="t-w"> </span><span class="t-o">=&gt;</span>
+<span class="t-w">    </span><span class="t-p">{</span>
+<span class="t-w">        </span><span class="t-n">endpoints</span><span class="t-p">.</span><span class="t-n">MapContent</span><span class="t-p">();</span>
+<span class="t-w">        </span><span class="t-n">endpoints</span><span class="t-p">.</span><span class="t-n">MapControllers</span><span class="t-p">();</span><span class="t-w">   </span><span class="t-c1">// the site&#39;s own endpoints, if it has them</span>
+<span class="t-w">        </span><span class="t-n">endpoints</span><span class="t-p">.</span><span class="t-n">MapOptiCliMcp</span><span class="t-p">();</span><span class="t-w">    </span><span class="t-c1">// after everything else</span>
+<span class="t-w">    </span><span class="t-p">});</span>
+<span class="t-p">}</span></code></pre></div>
+<p>Order matters in both places. <code>AddOptiCliMcp()</code> after <code>AddCms()</code> (and after <code>AddCmsCloudPlatformSupport()</code> on DXP)
+puts the module's middleware after the CMS's initialization and the platform's forwarded headers. <code>MapOptiCliMcp()</code>
+last keeps the CMS's route registration intact: mapped before <code>MapContent()</code>, it makes a later <code>MapControllers()</code> map
+the site's controllers twice, and a site with a named route then fails with &quot;Duplicate endpoint name&quot;. The module logs
+a warning when it is the first mapping.</p>
+<p>The module adds a bearer scheme of its own for the MCP endpoint and leaves the site's default authentication scheme
+alone. Connections are kept in the Dynamic Data Store, and tokens are protected with the site's Data Protection keys,
+so a load-balanced site needs no extra setup beyond the shared keys it already has for its login cookies.</p>
+<h3 id="3-decide-what-assistants-may-do">3. Decide what assistants may do</h3>
+<p>Out of the box, an assistant can read what the editor can read and save drafts. Everything that changes what
+visitors see is off until you turn it on.</p>
+<table>
+<thead>
+<tr>
+<th>What</th>
+<th>Default</th>
+<th>How a site turns it on or off</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Read, and save drafts</td>
+<td>on</td>
+<td>the editor can untick writing on the consent page</td>
+</tr>
+<tr>
+<td>Publish, unpublish, schedule</td>
+<td>off</td>
+<td><code>AllowPublish = true</code></td>
+</tr>
+<tr>
+<td>Delete (to the recycle bin), discard others' drafts</td>
+<td>off</td>
+<td><code>AllowDelete = true</code></td>
+</tr>
+<tr>
+<td>The assistant's own preview links to a draft</td>
+<td>on</td>
+<td><code>AllowPreviewLinks = false</code></td>
+</tr>
+<tr>
+<td>Script in rich text and links, files that run script</td>
+<td>always refused</td>
+<td>no option; see the note below</td>
+</tr>
+<tr>
+<td>Who may connect at all</td>
+<td>WebEditors, WebAdmins, CmsEditors, CmsAdmins, Administrators</td>
+<td><code>AllowedRoles</code></td>
+</tr>
+</tbody>
+</table>
+<p>Options come from the <code>OptiCli:Mcp</code> configuration section first, then from the delegate you pass to <code>AddOptiCliMcp</code>,
+which wins. Configuration is handy per environment:</p>
+<div class="snippet lang-json"><div class="snippet-bar"><span>JSON</span></div><pre><code id="code-3"><span class="t-p">{</span>
+<span class="t-w">  </span><span class="t-nt">&quot;OptiCli&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">{</span>
+<span class="t-w">    </span><span class="t-nt">&quot;Mcp&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">{</span>
+<span class="t-w">      </span><span class="t-nt">&quot;AllowPublish&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-kc">true</span><span class="t-p">,</span>
+<span class="t-w">      </span><span class="t-nt">&quot;AllowedRoles&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">[</span><span class="t-s2">&quot;WebEditors&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s2">&quot;WebAdmins&quot;</span><span class="t-p">]</span>
+<span class="t-w">    </span><span class="t-p">}</span>
+<span class="t-w">  </span><span class="t-p">}</span>
+<span class="t-p">}</span></code></pre></div>
+<p>The same in code:</p>
+<div class="snippet lang-csharp"><div class="snippet-bar"><span>C#</span></div><pre><code id="code-4"><span class="t-n">services</span><span class="t-p">.</span><span class="t-n">AddOptiCliMcp</span><span class="t-p">(</span><span class="t-n">o</span><span class="t-w"> </span><span class="t-o">=&gt;</span>
+<span class="t-p">{</span>
+<span class="t-w">    </span><span class="t-n">o</span><span class="t-p">.</span><span class="t-n">AllowPublish</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-k">true</span><span class="t-p">;</span>
+<span class="t-w">    </span><span class="t-n">o</span><span class="t-p">.</span><span class="t-n">AllowDelete</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-k">false</span><span class="t-p">;</span>
+<span class="t-p">});</span></code></pre></div>
+<p>A list in configuration (<code>AllowedRoles</code>, <code>AllowedRedirectHosts</code>) replaces the default list rather than adding to it.
+Invalid options stop the site at startup with a message that starts with <code>OptiCli:Mcp:</code> and says what is wrong.</p>
+<p>Even with <code>AllowPublish</code>, the editor still chooses on the consent page whether to grant publishing, their Publish
+rights still apply, and a publish of content under an approval sequence is refused: the assistant sends it for review
+instead, which needs no publishing option at all.</p>
+<blockquote>
+<p><strong>Note:</strong> The module refuses script in rich text and links whatever you configure, but the CMS saves whatever the
+edit UI's TinyMCE or other code gives it. On CMS 12.15 or newer, have the CMS's script parser remove script on every
+save too: <code>&quot;EPiServer&quot;: {&quot;Cms&quot;: {&quot;ScriptParser&quot;: {&quot;SavingMode&quot;: &quot;Remove&quot;}}}</code>. CMS 13 already refuses such saves by
+default.</p>
+</blockquote>
+<p>The full list of options, with token lifetimes and rate limits, is in the README under
+<a href="https://github.com/Epinova/opticli#options">Options</a>.</p>
+<h3 id="4-run-the-site-and-check-the-endpoint">4. Run the site and check the endpoint</h3>
+<p>Start the site as you normally do. With the default <code>BasePath</code>, the MCP endpoint is <code>/episerver/opticli/mcp</code>. A request
+without a token must get a 401 that points to the OAuth metadata, never a redirect to the login page:</p>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-5">Copy</button></div><pre><code id="code-5">curl<span class="t-w"> </span>-i<span class="t-w"> </span>-X<span class="t-w"> </span>POST<span class="t-w"> </span>https://localhost:5001/episerver/opticli/mcp</code></pre></div>
+<div class="snippet lang-text"><div class="snippet-bar"><span>Output</span></div><pre><code id="code-6">HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer resource_metadata=&quot;https://localhost:5001/.well-known/oauth-protected-resource/episerver/opticli/mcp&quot;, scope=&quot;content:read content:write&quot;</code></pre></div>
+<p>The <code>scope</code> list shows <code>content:publish</code> too once you set <code>AllowPublish</code>. Fetch the metadata document it names to see
+that the site answers it:</p>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-7">Copy</button></div><pre><code id="code-7">curl<span class="t-w"> </span>https://localhost:5001/.well-known/oauth-protected-resource/episerver/opticli/mcp</code></pre></div>
+<p>The other paths (authorization server metadata, <code>register</code>, <code>authorize</code>, <code>token</code>, the connections page) are listed in
+the README under <a href="https://github.com/Epinova/opticli#endpoints">Endpoints</a>.</p>
+<h3 id="5-connect-a-first-assistant">5. Connect a first assistant</h3>
+<p>Add the endpoint to Claude Code, then sign in from Claude Code's <code>/mcp</code> menu:</p>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-8">Copy</button></div><pre><code id="code-8">claude<span class="t-w"> </span>mcp<span class="t-w"> </span>add<span class="t-w"> </span>--transport<span class="t-w"> </span>http<span class="t-w"> </span>cms<span class="t-w"> </span>https://localhost:5001/episerver/opticli/mcp</code></pre></div>
+<p>Your browser opens the site's login page and then the module's consent page, which lists what the assistant may do.
+Allow it, and Claude Code has a connection. Claude Code returns to a loopback address, which the module always
+allows, so nothing needs registering on the site first.</p>
+<p>Plain http on a loopback address (<code>http://127.0.0.1:5000/...</code>) works if your site allows it. Over https, Claude Code
+doesn't trust the ASP.NET Core development certificate: the README's
+<a href="https://github.com/Epinova/opticli#connecting-claude">Connecting Claude</a> section shows how to make a localhost
+certificate signed by a test CA of your own.</p>
+<p>Editors don't use Claude Code. Send them the editors' guide, <a href="../../editors/connect-your-assistant/">Connect your assistant</a>,
+which covers the Claude Desktop extension and custom connectors. Web assistants such as claude.ai call the site from
+their own servers, so they need a site they can reach: see <a href="../../mcp/hardening/">Take the MCP module to production</a>.</p>
+<h3 id="6-check-that-it-works">6. Check that it works</h3>
+<p>Ask the assistant who it is on the site. It calls <code>whoami</code>, which reports the editor, their roles, the scopes they
+approved and what the site allows:</p>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-9">Copy</button></div><pre><code id="code-9">Who am I on the CMS, and what does the site let you do?</code></pre></div>
+<p>Then try a read and a dry run on Alloy content:</p>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-10">Copy</button></div><pre><code id="code-10">Find the Alloy Plan product page and show me its teaser text. Then suggest a shorter one, as a dry run only.</code></pre></div>
+<p>The assistant should show you the change its dry run reports and save nothing until you agree. Let it save the draft,
+open the <code>editUrl</code> it gives you, and check the draft in the edit UI: the CMS shows you as the one who saved it.</p>
+<p>Finally, open <code>/episerver/opticli/connections</code> in your browser. You see the connection you just made, with its scopes,
+and can revoke it there.</p>
+<h2 id="if-something-goes-wrong">If something goes wrong</h2>
+<ul>
+<li><strong>&quot;This site runs CMS 13: use the OptiCli.Mcp.Cms13 package&quot;</strong> (or the CMS 12 variant): swap the package, keep the
+code. Moving a site from CMS 12 to 13 later is the same swap.</li>
+<li><strong>&quot;Duplicate endpoint name&quot; on every request:</strong> <code>MapOptiCliMcp()</code> is mapped before <code>MapContent()</code>. Move it last.</li>
+<li><strong>The 401 is a 405, or has no <code>WWW-Authenticate</code>:</strong> something in front of the site rewrites it. The module already
+switches off the site's status code pages for its own requests; check proxies and other middleware.</li>
+<li><strong>&quot;… isn't an editor on this site, so it can't connect an AI assistant&quot;:</strong> the account isn't in <code>AllowedRoles</code>.
+Roles are checked as the CMS knows them now, not from the login cookie.</li>
+<li><strong><code>UNABLE_TO_VERIFY_LEAF_SIGNATURE</code> in Claude Code:</strong> the development certificate. Use plain http on loopback or a
+certificate signed by a test CA.</li>
+<li><strong>Publishing is refused with a hint to save a draft:</strong> <code>AllowPublish</code> is off, or the editor unticked publishing on
+the consent page. Change the option, then have them connect again.</li>
+</ul>
+<h2 id="related">Related</h2>
+<ul>
+<li><a href="../../mcp/custom-tools/">Write your first site-specific tool</a></li>
+<li><a href="../../mcp/hardening/">Take the MCP module to production</a></li>
+<li><a href="../../editors/connect-your-assistant/">Connect your assistant</a>, for editors</li>
+<li>README: <a href="https://github.com/Epinova/opticli#mcp-server-for-editors">MCP server for editors</a>,
+<a href="https://github.com/Epinova/opticli#install-1">Install</a>, <a href="https://github.com/Epinova/opticli#on-cms-13">On CMS 13</a>,
+<a href="https://github.com/Epinova/opticli#security-model">Security model</a></li>
+</ul>
+    </article>
+  </div>
+  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for the MCP module</h2><div class="file"><ol class="guide-list"><li><a href="../../mcp/custom-tools/"><b>Write your first site-specific tool</b><span>Add a read tool and a write tool of your own to the MCP module, so editors&#x27; assistants can find Alloy product pages without a teaser and fill them in as drafts.</span></a></li><li><a href="../../mcp/hardening/"><b>Take the MCP module to production</b><span>Configure the MCP module for a shared or production environment, from which assistants may connect and how the site is reached to error pages, uploads, the audit log and preview links.</span></a></li></ol></div></section>
+</div>
+</main>
+
+<footer class="wrap">
+  <p>opticli and OptiCli.Mcp are open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. They are independent projects, not affiliated with or endorsed by Optimizely.</p>
+</footer>
+<script>
+for (const button of document.querySelectorAll('[data-copy]')) {
+  button.addEventListener('click', async () => {
+    const text = document.getElementById(button.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(text); } catch { getSelection().selectAllChildren(document.getElementById(button.dataset.copy)); return; }
+    button.textContent = 'Copied';
+    button.dataset.done = '';
+    setTimeout(() => { button.textContent = 'Copy'; delete button.dataset.done; }, 1600);
+  });
+}
+</script>
+</body>
+</html>

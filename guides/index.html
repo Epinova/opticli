@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>opticli guides: how-tos for editors and developers</title>
+<meta name="description" content="Task-based guides for opticli: for CMS editors working with an AI assistant, for developers using the CLI, and for the MCP module.">
+<meta property="og:title" content="opticli guides: how-tos for editors and developers">
+<meta property="og:description" content="Task-based guides for opticli: for CMS editors working with an AI assistant, for developers using the CLI, and for the MCP module.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://epinova.github.io/opticli/guides/">
+<meta name="twitter:card" content="summary">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chev" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 20 20"><path d="M8 4.5H4.5v11h11V12M11 4.5h4.5V9M15.2 4.8L9 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href="../">opticli<span>.</span></a>
+    <nav aria-label="Pages">
+      <a href="#editors">Editors</a><a href="#developers">CLI</a><a href="#mcp">MCP module</a><span class="sep" aria-hidden="true"></span><a class="page-link" href="../editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep page-link" href="../">For developers <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<section class="change wrap">
+  <h1>Guides. <em>One task, start to finish.</em></h1>
+  <p class="lead guides-lead">Each guide walks through one thing you'll want to do with opticli, with the commands, prompts and results along the way. For every flag and option, see the <a href="https://github.com/Epinova/opticli#readme">README</a>.</p>
+</section>
+<section class="part wrap" id="editors" aria-labelledby="editors-h">
+  <div class="part-head"><h2 id="editors-h">For editors</h2><p>Work on your site&#x27;s content with your AI assistant: connect it, ask for changes, review the drafts.</p></div>
+  <div class="file"><ol class="guide-list"><li><a href="editors/connect-your-assistant/"><b>Connect your assistant to the CMS</b><span>Connect Claude or another assistant to your Optimizely site, sign in with your own CMS account, and check that it works.</span></a></li><li><a href="editors/translate-a-page/"><b>Translate a page with your assistant</b><span>Have your assistant translate a page into another language, review the translation as a draft, and publish it only when you say so.</span></a></li><li><a href="editors/image-alt-texts/"><b>Fix image alt texts with your assistant</b><span>Have your assistant look at your images, suggest alt texts or descriptions, and save them as drafts you review first.</span></a></li><li><a href="editors/someone-elses-draft/"><b>When someone else has changes on the page</b><span>Understand why your assistant stops before publishing a colleague&#x27;s unpublished changes, decide what goes live, and send pages for review where an approval sequence applies.</span></a></li></ol></div>
+</section>
+<section class="part wrap" id="developers" aria-labelledby="developers-h">
+  <div class="part-head"><h2 id="developers-h">For developers</h2><p>Use the opticli CLI, on your own or with your coding agent, on a site you develop.</p></div>
+  <div class="file"><ol class="guide-list"><li><a href="developers/restored-production-database/"><b>Work on a restored production database</b><span>Point opticli at a restored copy of production, make its sites answer on localhost, get a local login and keep its scheduled jobs from running.</span></a></li><li><a href="developers/find-content-and-code/"><b>Find content and the code behind it</b><span>Go from a URL or a name to the content item, its C# class and Razor view, and every page that uses it.</span></a></li><li><a href="developers/playwright-seed-content/"><b>Seed CMS content for Playwright tests</b><span>Use the @epinova/opticli npm package to start the site, seed the content your Playwright tests read, and give each test pages of its own that are cleaned up afterwards.</span></a></li><li><a href="developers/pull-from-staging/"><b>Pull content from staging into your local database</b><span>Register a staging or test database by name, bring its content into your local database with sync pull, and keep it current without another restore.</span></a></li></ol></div>
+</section>
+<section class="part wrap" id="mcp" aria-labelledby="mcp-h">
+  <div class="part-head"><h2 id="mcp-h">For the MCP module</h2><p>Install the editors&#x27; MCP server in a site, give it tools of your own and get it ready for production.</p></div>
+  <div class="file"><ol class="guide-list"><li><a href="mcp/install-the-module/"><b>Install the MCP module in your site</b><span>Add the opticli MCP module to a CMS 12 or CMS 13 site, decide what assistants may do, and connect a first assistant to check that it works.</span></a></li><li><a href="mcp/custom-tools/"><b>Write your first site-specific tool</b><span>Add a read tool and a write tool of your own to the MCP module, so editors&#x27; assistants can find Alloy product pages without a teaser and fill them in as drafts.</span></a></li><li><a href="mcp/hardening/"><b>Take the MCP module to production</b><span>Configure the MCP module for a shared or production environment, from which assistants may connect and how the site is reached to error pages, uploads, the audit log and preview links.</span></a></li></ol></div>
+</section>
+
+</main>
+
+<footer class="wrap">
+  <p>opticli and OptiCli.Mcp are open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. They are independent projects, not affiliated with or endorsed by Optimizely.</p>
+</footer>
+<script>
+for (const button of document.querySelectorAll('[data-copy]')) {
+  button.addEventListener('click', async () => {
+    const text = document.getElementById(button.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(text); } catch { getSelection().selectAllChildren(document.getElementById(button.dataset.copy)); return; }
+    button.textContent = 'Copied';
+    button.dataset.done = '';
+    setTimeout(() => { button.textContent = 'Copy'; delete button.dataset.done; }, 1600);
+  });
+}
+</script>
+</body>
+</html>

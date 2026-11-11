@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Translate a page with your assistant · opticli guides</title>
+<meta name="description" content="Have your assistant translate a page into another language, review the translation as a draft, and publish it only when you say so.">
+<meta property="og:title" content="Translate a page with your assistant · opticli guides">
+<meta property="og:description" content="Have your assistant translate a page into another language, review the translation as a draft, and publish it only when you say so.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://epinova.github.io/opticli/guides/editors/translate-a-page/">
+<meta name="twitter:card" content="summary">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="../../../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../../style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chev" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 20 20"><path d="M8 4.5H4.5v11h11V12M11 4.5h4.5V9M15.2 4.8L9 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href="../../../">opticli<span>.</span></a>
+    <nav aria-label="Pages">
+      <a class="keep" href="../../">All guides</a><span class="sep" aria-hidden="true"></span><a class="page-link" href="../../../editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep page-link" href="../../../">For developers <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<div class="wrap guide">
+  <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#editors">For editors</a></p>
+  <h1>Translate a page with your assistant</h1>
+  <p class="lead">Have your assistant translate a page into another language, review the translation as a draft, and publish it only when you say so.</p>
+  <p class="guide-meta">Written for opticli 0.30.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/editors/translate-a-page.md">Edit on GitHub</a></p>
+  <div class="guide-body">
+    <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#steps">Steps</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
+    <article class="prose">
+<p>By the end of this guide a page has a new language version, written by your assistant and saved as a draft. You see
+every translated field before anything is saved, you review the draft in the CMS, and it goes live only when you
+publish it, or ask the assistant to. The examples translate the Alloy site's &quot;About us&quot; page from English into
+Swedish.</p>
+<h2 id="before-you-start">Before you start</h2>
+<ul>
+<li>Your assistant is connected to the site (<a href="../../editors/connect-your-assistant/">Connect your assistant to the CMS</a>), and you
+allowed it to create content and change drafts.</li>
+<li>The language you want is turned on for the site. Your CMS administrator turns languages on; the assistant can't.</li>
+<li>You have access to edit that language. The assistant gets no more access than you have.</li>
+</ul>
+<h2 id="steps">Steps</h2>
+<h3 id="1-check-which-languages-the-page-has">1. Check which languages the page has</h3>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-1">Copy</button></div><pre><code id="code-1">Which languages does the &quot;About us&quot; page have, and which languages can I translate it into on this site?</code></pre></div>
+<p>The assistant finds the page and tells you its languages. If you name a language the site hasn't turned on, it is
+told which ones are on and passes that list to you.</p>
+<h3 id="2-ask-for-a-translation-shown-before-anything-is-saved">2. Ask for a translation, shown before anything is saved</h3>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-2">Copy</button></div><pre><code id="code-2">Translate the &quot;About us&quot; page into Swedish. Show me the changes before you save anything.</code></pre></div>
+<p>The assistant reads the page and the fields its page type has, writes the translation, and then does a dry run: the
+site checks the new language version without saving it. You get a list of fields, each with the English text before
+and the Swedish text after, plus any problems the site found, such as a required field left empty.</p>
+<p>Some things to know about what it can translate:</p>
+<ul>
+<li><strong>Only fields that have a value per language can be translated.</strong> Fields that are shared by all languages (often
+images, links to other pages and settings) keep the English version's value. The CMS locks those outside the main
+language, and so does the assistant.</li>
+<li><strong>Fields the assistant leaves out keep the English text.</strong> Ask it to translate every text field, or check the list.</li>
+<li><strong>Blocks that are shared between pages are content of their own.</strong> Translating the page doesn't translate them. Ask
+for them separately; each gets a draft of its own.</li>
+</ul>
+<h3 id="3-adjust-the-wording">3. Adjust the wording</h3>
+<p>Ask for changes until you are happy. Each time, the assistant shows a new dry run.</p>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-3">Copy</button></div><pre><code id="code-3">Use &quot;kontakta oss&quot; instead of &quot;hör av dig&quot; in the introduction, and keep the heading shorter. Show me the changes again.</code></pre></div>
+<h3 id="4-save-it-as-a-draft">4. Save it as a draft</h3>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-4">Copy</button></div><pre><code id="code-4">That looks good. Save the Swedish version as a draft.</code></pre></div>
+<p>The assistant saves the Swedish version as a draft and gives you two links:</p>
+<ul>
+<li><strong>The edit link</strong> opens the draft in the CMS's editing view, in Swedish. Review it there as you would any draft.</li>
+<li><strong>The preview link</strong> shows the draft as visitors will see it, without the editing tools.</li>
+</ul>
+<p>Both open only when you are signed in to the CMS. The assistant also gives you the page's public address, which works
+once the Swedish version is published. It may tell you that the site's own code did something more on save, such as
+creating or moving other content; check that too.</p>
+<blockquote>
+<p><strong>Note:</strong> Your assistant may look at the draft itself, through a short-lived preview link of its own. That link is
+for the assistant. Review the draft through the edit and preview links.</p>
+</blockquote>
+<h3 id="5-publish-only-when-you-say-so">5. Publish only when you say so</h3>
+<p>When the draft is right, publish it in the CMS, or ask the assistant:</p>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-5">Copy</button></div><pre><code id="code-5">Publish the Swedish version of &quot;About us&quot;.</code></pre></div>
+<p>The assistant first tells you what will go live and asks you to confirm. It publishes only after you say yes. What
+happens then depends on the site:</p>
+<ul>
+<li><strong>Publishing is off for assistants</strong> (the default, unless your developer turned it on). The assistant says so and
+leaves the draft for you to publish in the CMS.</li>
+<li><strong>The page has an approval sequence.</strong> The assistant can't publish past the reviewers. It offers to send the draft
+for review instead, as <strong>Ready for Review</strong> does in the CMS. A reviewer then approves it.</li>
+<li><strong>Someone else has unpublished changes on the page.</strong> The assistant stops and asks you first. See
+<a href="../../editors/someone-elses-draft/">When someone else has changes on the page</a>.</li>
+</ul>
+<h2 id="if-something-goes-wrong">If something goes wrong</h2>
+<ul>
+<li><strong>&quot;… already has a 'sv' branch&quot;.</strong> The page is already translated into that language. Ask the assistant to change the
+existing Swedish version instead; that is a new draft too.</li>
+<li><strong>&quot;… is not an enabled language on this site&quot;.</strong> Ask your CMS administrator to turn the language on.</li>
+<li><strong>&quot;… is not culture-specific, so it can only be changed on the master language&quot;.</strong> That field is shared by all
+languages. Change it in the main language, or leave it as it is.</li>
+<li><strong>&quot;The master language branch has never been published&quot;.</strong> The CMS publishes the main language first. Publish the
+English page first, or keep the translation as a draft.</li>
+<li><strong>The assistant isn't allowed to do it.</strong> Your access rights for that language, or for the page, don't allow it. Ask
+your CMS administrator.</li>
+</ul>
+<h2 id="related">Related</h2>
+<ul>
+<li><a href="../../editors/connect-your-assistant/">Connect your assistant to the CMS</a></li>
+<li><a href="../../editors/someone-elses-draft/">When someone else has changes on the page</a></li>
+<li><a href="https://epinova.github.io/opticli/editors/">Opticli for editors</a></li>
+<li>README: <a href="https://github.com/Epinova/opticli#mcp-server-for-editors">MCP server for editors</a> and
+<a href="https://github.com/Epinova/opticli#security-model">Security model</a></li>
+</ul>
+    </article>
+  </div>
+  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for editors</h2><div class="file"><ol class="guide-list"><li><a href="../../editors/connect-your-assistant/"><b>Connect your assistant to the CMS</b><span>Connect Claude or another assistant to your Optimizely site, sign in with your own CMS account, and check that it works.</span></a></li><li><a href="../../editors/image-alt-texts/"><b>Fix image alt texts with your assistant</b><span>Have your assistant look at your images, suggest alt texts or descriptions, and save them as drafts you review first.</span></a></li><li><a href="../../editors/someone-elses-draft/"><b>When someone else has changes on the page</b><span>Understand why your assistant stops before publishing a colleague&#x27;s unpublished changes, decide what goes live, and send pages for review where an approval sequence applies.</span></a></li></ol></div></section>
+</div>
+</main>
+
+<footer class="wrap">
+  <p>opticli and OptiCli.Mcp are open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. They are independent projects, not affiliated with or endorsed by Optimizely.</p>
+</footer>
+<script>
+for (const button of document.querySelectorAll('[data-copy]')) {
+  button.addEventListener('click', async () => {
+    const text = document.getElementById(button.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(text); } catch { getSelection().selectAllChildren(document.getElementById(button.dataset.copy)); return; }
+    button.textContent = 'Copied';
+    button.dataset.done = '';
+    setTimeout(() => { button.textContent = 'Copy'; delete button.dataset.done; }, 1600);
+  });
+}
+</script>
+</body>
+</html>

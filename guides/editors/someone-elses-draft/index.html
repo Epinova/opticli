@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>When someone else has changes on the page · opticli guides</title>
+<meta name="description" content="Understand why your assistant stops before publishing a colleague&#x27;s unpublished changes, decide what goes live, and send pages for review where an approval sequence applies.">
+<meta property="og:title" content="When someone else has changes on the page · opticli guides">
+<meta property="og:description" content="Understand why your assistant stops before publishing a colleague&#x27;s unpublished changes, decide what goes live, and send pages for review where an approval sequence applies.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://epinova.github.io/opticli/guides/editors/someone-elses-draft/">
+<meta name="twitter:card" content="summary">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="../../../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../../style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chev" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 20 20"><path d="M8 4.5H4.5v11h11V12M11 4.5h4.5V9M15.2 4.8L9 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href="../../../">opticli<span>.</span></a>
+    <nav aria-label="Pages">
+      <a class="keep" href="../../">All guides</a><span class="sep" aria-hidden="true"></span><a class="page-link" href="../../../editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep page-link" href="../../../">For developers <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<div class="wrap guide">
+  <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#editors">For editors</a></p>
+  <h1>When someone else has changes on the page</h1>
+  <p class="lead">Understand why your assistant stops before publishing a colleague&#x27;s unpublished changes, decide what goes live, and send pages for review where an approval sequence applies.</p>
+  <p class="guide-meta">Written for opticli 0.30.1 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/editors/someone-elses-draft.md">Edit on GitHub</a></p>
+  <div class="guide-body">
+    <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#steps">Steps</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
+    <article class="prose">
+<p>Publishing in the CMS puts a whole version of a page live, not just the fields you changed. So if a colleague has saved
+changes on a page that aren't published yet, and your change is built on top of them, publishing yours would publish
+theirs too. Your assistant doesn't do that without asking you. By the end of this guide you know what the assistant
+tells you in that case, how to decide, and how review requests work on pages with an approval sequence.</p>
+<h2 id="before-you-start">Before you start</h2>
+<ul>
+<li>Your assistant is connected to the site (<a href="../../editors/connect-your-assistant/">Connect your assistant to the CMS</a>).</li>
+<li>To publish through the assistant, the site must let assistants publish (it doesn't by default), and you must have
+allowed it on the consent page. Otherwise you publish in the CMS, and this guide still explains what you see there.</li>
+<li>Talking to your colleague is often the quickest way out. The assistant tells you who it is.</li>
+</ul>
+<h2 id="steps">Steps</h2>
+<h3 id="1-see-what-is-waiting-on-the-page">1. See what is waiting on the page</h3>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-1">Copy</button></div><pre><code id="code-1">Which versions does the &quot;Alloy Track&quot; page have that aren&#x27;t published yet, and who saved them?</code></pre></div>
+<p>The assistant lists the page's saved versions, newest first: whether each is a draft, published, or waiting for
+review, who saved it and when.</p>
+<h3 id="2-know-that-your-draft-starts-from-the-newest-version">2. Know that your draft starts from the newest version</h3>
+<p>When the assistant changes a page, it saves a new draft based on the newest version, not on the published one. If a
+colleague's draft is the newest version, your draft carries their changes too. Saving that draft changes nothing for
+visitors. It matters only when the draft is published.</p>
+<p>If someone saves the page while your assistant is working on it, the assistant's save is refused rather than
+overwriting their work. The assistant then reads the page again and redoes your change on top of theirs.</p>
+<h3 id="3-ask-to-publish-and-read-what-the-assistant-tells-you">3. Ask to publish, and read what the assistant tells you</h3>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-2">Copy</button></div><pre><code id="code-2">Change the heading of &quot;Alloy Track&quot; to &quot;Track every project in one place&quot; and publish it.</code></pre></div>
+<p>The assistant first shows you a dry run of the change, which may already mention a colleague's unpublished changes.
+If you go ahead and they would go live with yours, the publish is refused, and the assistant tells you:</p>
+<ul>
+<li><strong>whose changes they are</strong>, as the CMS recorded the name. If there is no name, a scheduled job or an import saved
+them;</li>
+<li><strong>when they were saved</strong>;</li>
+<li><strong>which fields differ from the published page</strong>, with the published value and the new one.</li>
+</ul>
+<p>Nothing has gone live at this point. The same happens when you ask for an earlier version by name (&quot;publish the
+version from Tuesday&quot;): if it holds a colleague's changes, the assistant asks you first.</p>
+<h3 id="4-decide-what-to-do">4. Decide what to do</h3>
+<p>You have three choices:</p>
+<ul>
+<li>
+<p><strong>Publish everything.</strong> If you know the colleague's changes are ready, say so. Only then does the assistant
+publish again, confirming that their changes go live with yours.</p>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-3">Copy</button></div><pre><code id="code-3">Yes, those changes are ready too. Publish the page with them.</code></pre></div>
+</li>
+<li>
+<p><strong>Wait.</strong> Leave your change as a draft and talk to your colleague. Either of you can publish later, when both
+changes are ready.</p>
+</li>
+<li>
+<p><strong>Throw their draft away.</strong> Only after agreeing with your colleague. A discarded draft is deleted for good. The
+assistant can only do this if the site lets assistants delete content; otherwise you discard it in the CMS. Your own
+drafts you can always discard.</p>
+</li>
+</ul>
+<p>Your assistant can't publish only your change and leave a colleague's out of a version that holds both.</p>
+<h3 id="5-pages-with-an-approval-sequence">5. Pages with an approval sequence</h3>
+<p>Some pages need a reviewer's approval before they go live. On those, the assistant never publishes. It offers to send
+the page for review instead, as <strong>Ready for Review</strong> does in the CMS:</p>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-4">Copy</button></div><pre><code id="code-4">Send the &quot;Alloy Track&quot; page for review.</code></pre></div>
+<p>A review request never publishes anything, so it works even where assistants may not publish. Things to know:</p>
+<ul>
+<li><strong>The reviewer sees the whole version</strong>, a colleague's unpublished changes included. The assistant doesn't stop for
+those here, but it tells you whose changes went for review with yours, already in the dry run when it changes the
+page first. Check step 1 before you send the page if you'd rather not include them.</li>
+<li><strong>A page in review is locked.</strong> Neither you nor the assistant can change it until a reviewer approves or rejects it
+in the CMS.</li>
+<li><strong>A page without an approval sequence can't be sent for review.</strong> The assistant tells you, and nothing is saved.
+Publish it as usual, or keep it as a draft.</li>
+</ul>
+<h2 id="if-something-goes-wrong">If something goes wrong</h2>
+<ul>
+<li><strong>&quot;This site doesn't let assistants publish&quot;.</strong> Review the draft through the edit link the assistant gives you, and
+publish it in the CMS.</li>
+<li><strong>&quot;… is in review: version … awaits approval&quot;.</strong> A reviewer has to approve or reject it in the CMS first.</li>
+<li><strong>&quot;… is not the latest version&quot;.</strong> Someone saved in the meantime. Ask the assistant to read the page again and redo
+the change.</li>
+<li><strong>&quot;This site doesn't let assistants delete content, or discard what someone else saved&quot;.</strong> Discard the draft in the
+CMS, after talking to your colleague.</li>
+</ul>
+<blockquote>
+<p><strong>Note:</strong> Before anything goes live, ask your assistant to tell you exactly what will be published. The check for
+other people's changes is a safety net, not a replacement for reading what goes live.</p>
+</blockquote>
+<h2 id="related">Related</h2>
+<ul>
+<li><a href="../../editors/connect-your-assistant/">Connect your assistant to the CMS</a></li>
+<li><a href="../../editors/translate-a-page/">Translate a page with your assistant</a></li>
+<li><a href="https://epinova.github.io/opticli/editors/">Opticli for editors</a></li>
+<li>README: <a href="https://github.com/Epinova/opticli#security-model">Security model</a>, on approval sequences and confirming
+other people's changes</li>
+</ul>
+    </article>
+  </div>
+  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for editors</h2><div class="file"><ol class="guide-list"><li><a href="../../editors/connect-your-assistant/"><b>Connect your assistant to the CMS</b><span>Connect Claude or another assistant to your Optimizely site, sign in with your own CMS account, and check that it works.</span></a></li><li><a href="../../editors/translate-a-page/"><b>Translate a page with your assistant</b><span>Have your assistant translate a page into another language, review the translation as a draft, and publish it only when you say so.</span></a></li><li><a href="../../editors/image-alt-texts/"><b>Fix image alt texts with your assistant</b><span>Have your assistant look at your images, suggest alt texts or descriptions, and save them as drafts you review first.</span></a></li></ol></div></section>
+</div>
+</main>
+
+<footer class="wrap">
+  <p>opticli and OptiCli.Mcp are open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. They are independent projects, not affiliated with or endorsed by Optimizely.</p>
+</footer>
+<script>
+for (const button of document.querySelectorAll('[data-copy]')) {
+  button.addEventListener('click', async () => {
+    const text = document.getElementById(button.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(text); } catch { getSelection().selectAllChildren(document.getElementById(button.dataset.copy)); return; }
+    button.textContent = 'Copied';
+    button.dataset.done = '';
+    setTimeout(() => { button.textContent = 'Copy'; delete button.dataset.done; }, 1600);
+  });
+}
+</script>
+</body>
+</html>

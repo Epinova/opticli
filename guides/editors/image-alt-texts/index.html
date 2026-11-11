@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fix image alt texts with your assistant · opticli guides</title>
+<meta name="description" content="Have your assistant look at your images, suggest alt texts or descriptions, and save them as drafts you review first.">
+<meta property="og:title" content="Fix image alt texts with your assistant · opticli guides">
+<meta property="og:description" content="Have your assistant look at your images, suggest alt texts or descriptions, and save them as drafts you review first.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://epinova.github.io/opticli/guides/editors/image-alt-texts/">
+<meta name="twitter:card" content="summary">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="../../../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../../style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chev" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 20 20"><path d="M8 4.5H4.5v11h11V12M11 4.5h4.5V9M15.2 4.8L9 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href="../../../">opticli<span>.</span></a>
+    <nav aria-label="Pages">
+      <a class="keep" href="../../">All guides</a><span class="sep" aria-hidden="true"></span><a class="page-link" href="../../../editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep page-link" href="../../../">For developers <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<div class="wrap guide">
+  <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#editors">For editors</a></p>
+  <h1>Fix image alt texts with your assistant</h1>
+  <p class="lead">Have your assistant look at your images, suggest alt texts or descriptions, and save them as drafts you review first.</p>
+  <p class="guide-meta">Written for opticli 0.30.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/editors/image-alt-texts.md">Edit on GitHub</a></p>
+  <div class="guide-body">
+    <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#steps">Steps</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
+    <article class="prose">
+<p>By the end of this guide your assistant has looked at the images you pointed it to, suggested an alt text (or
+description) for each one, and saved the ones you approved as drafts. You review every change before it is saved, and
+nothing goes live until it is published. Where the alt text is stored depends on how your site is built, so the guide
+starts by finding that out.</p>
+<h2 id="before-you-start">Before you start</h2>
+<ul>
+<li>Your assistant is connected to the site (<a href="../../editors/connect-your-assistant/">Connect your assistant to the CMS</a>), and you
+allowed it to create content and change drafts.</li>
+<li>You know roughly which images to look at: those on one page, in one media folder, or with a name you can search for.</li>
+<li>Your assistant can see images. Most current assistants can.</li>
+</ul>
+<h2 id="steps">Steps</h2>
+<h3 id="1-find-out-where-alt-text-lives-on-your-site">1. Find out where alt text lives on your site</h3>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-1">Copy</button></div><pre><code id="code-1">Look at one of the images used on the &quot;Alloy Plan&quot; page. Which fields does an image have on this site, and is any of them for alt text or a description?</code></pre></div>
+<p>The assistant checks the image's type and tells you its fields. There are two common answers:</p>
+<ul>
+<li><strong>The image itself has a field for it</strong>, such as &quot;Alt text&quot; or &quot;Description&quot;. Then one alt text follows the image
+wherever it is used. Go on with step 2.</li>
+<li><strong>The image has no such field.</strong> The Alloy sample site is like this: its images have a copyright field and nothing
+else, and its SVG drawings have no fields at all. Alt text then lives where the image is placed, such as the alt text of an image inside a page's main text.
+Skip to step 4. If you want a field on the image itself, ask your developer to add one; the assistant can't.</li>
+</ul>
+<h3 id="2-let-the-assistant-look-at-the-images">2. Let the assistant look at the images</h3>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-2">Copy</button></div><pre><code id="code-2">Look at every image in the &quot;Alloy Plan&quot; page&#x27;s folder and suggest a short alt text for each. Don&#x27;t save anything yet.</code></pre></div>
+<p>The assistant opens each image and looks at it. It can see JPEG, PNG, GIF and WebP images (scaled down if they are
+large) and reads SVG drawings as their code. It can't look at PDFs and other files, or at extremely large images. You
+get a list: each image's name, what it shows, its current alt text and the suggestion.</p>
+<blockquote>
+<p><strong>Note:</strong> Text inside an image is content like any other. If an image contains text that tells the assistant to do
+something, it shouldn't follow it, and you shouldn't approve such a change either.</p>
+</blockquote>
+<h3 id="3-review-the-changes-then-save-them-as-drafts">3. Review the changes, then save them as drafts</h3>
+<p>Correct any suggestion you don't like, then ask for a dry run:</p>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-3">Copy</button></div><pre><code id="code-3">Use &quot;Two colleagues planning a project at a whiteboard&quot; for the first one. Show me exactly what you would change.</code></pre></div>
+<p>The assistant does a dry run: the site checks the change without saving it. For each image you see the field, its
+value before and its value after. When you agree:</p>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-4">Copy</button></div><pre><code id="code-4">Save those as drafts.</code></pre></div>
+<p>Each image gets a draft of its own. For each one, the assistant gives you an edit link that opens the draft in the CMS
+(you need to be signed in). Images have no preview link, since they have no page of their own. Go on with step 5.</p>
+<h3 id="4-if-alt-text-lives-in-the-page-s-text">4. If alt text lives in the page's text</h3>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-5">Copy</button></div><pre><code id="code-5">Check the images in the main text of the &quot;Alloy Plan&quot; page. Look at each one and suggest a better alt text where it is missing or just repeats the file name. Show me the changes before you save.</code></pre></div>
+<p>The assistant reads the page's text, looks at each image it finds there, and shows a dry run of the page: the text
+before and after, with only the alt texts changed. When you agree, it saves the page as a draft and gives you its edit
+link and preview link. Review the draft as you would any other.</p>
+<h3 id="5-publish-when-you-are-ready">5. Publish when you are ready</h3>
+<p>A new alt text reaches visitors once the draft is published. Publish it in the CMS, or ask the assistant to publish
+it. The assistant asks you to confirm first, and it can only publish if the site lets assistants publish (it doesn't
+by default). If someone else has unpublished changes on the same page or image, it stops and asks you; see
+<a href="../../editors/someone-elses-draft/">When someone else has changes on the page</a>.</p>
+<h2 id="if-something-goes-wrong">If something goes wrong</h2>
+<ul>
+<li><strong>The image can't be shown.</strong> It may be a PDF or another kind of file, or too large to read. Check it in the CMS.</li>
+<li><strong>The assistant can't find a field for alt text.</strong> The site's images don't have one. Use step 4, or ask your
+developer to add the field.</li>
+<li><strong>The change is refused because a newer version exists.</strong> Someone saved the page or image while you worked. Ask the
+assistant to read it again and redo the change.</li>
+<li><strong>The assistant isn't allowed to change an image.</strong> Your access rights for that media folder don't allow it. Ask
+your CMS administrator.</li>
+</ul>
+<h2 id="related">Related</h2>
+<ul>
+<li><a href="../../editors/connect-your-assistant/">Connect your assistant to the CMS</a></li>
+<li><a href="../../editors/someone-elses-draft/">When someone else has changes on the page</a></li>
+<li><a href="https://epinova.github.io/opticli/editors/">Opticli for editors</a></li>
+<li>README: <a href="https://github.com/Epinova/opticli#security-model">Security model</a>, which describes what the assistant can
+see in images</li>
+</ul>
+    </article>
+  </div>
+  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for editors</h2><div class="file"><ol class="guide-list"><li><a href="../../editors/connect-your-assistant/"><b>Connect your assistant to the CMS</b><span>Connect Claude or another assistant to your Optimizely site, sign in with your own CMS account, and check that it works.</span></a></li><li><a href="../../editors/translate-a-page/"><b>Translate a page with your assistant</b><span>Have your assistant translate a page into another language, review the translation as a draft, and publish it only when you say so.</span></a></li><li><a href="../../editors/someone-elses-draft/"><b>When someone else has changes on the page</b><span>Understand why your assistant stops before publishing a colleague&#x27;s unpublished changes, decide what goes live, and send pages for review where an approval sequence applies.</span></a></li></ol></div></section>
+</div>
+</main>
+
+<footer class="wrap">
+  <p>opticli and OptiCli.Mcp are open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. They are independent projects, not affiliated with or endorsed by Optimizely.</p>
+</footer>
+<script>
+for (const button of document.querySelectorAll('[data-copy]')) {
+  button.addEventListener('click', async () => {
+    const text = document.getElementById(button.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(text); } catch { getSelection().selectAllChildren(document.getElementById(button.dataset.copy)); return; }
+    button.textContent = 'Copied';
+    button.dataset.done = '';
+    setTimeout(() => { button.textContent = 'Copy'; delete button.dataset.done; }, 1600);
+  });
+}
+</script>
+</body>
+</html>

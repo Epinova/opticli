@@ -308,3 +308,62 @@ footer p + p { margin-top: 6px; }
   .file-bar .ref, .result { margin-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+
+/* Guides: the index, and one guide as an article with its outline beside it. */
+.guides-lead { margin-top: 20px; }
+.guide-list { list-style: none; margin: 0; padding: 0; }
+.guide-list li + li { border-top: 1px solid var(--rule); }
+.guide-list a { display: grid; grid-template-columns: minmax(0, 22rem) minmax(0, 1fr); gap: 4px 28px; padding: 16px 20px; text-decoration: none; }
+.guide-list a:hover b { text-decoration: underline; }
+.guide-list b { font-weight: 700; font-size: 1.08rem; }
+.guide-list span { color: var(--muted); max-width: 70ch; }
+@media (max-width: 820px) { .guide-list a { grid-template-columns: minmax(0, 1fr); } }
+
+.guide { padding-top: 36px; }
+.crumbs { font-size: .92rem; font-weight: 600; color: var(--muted); margin-bottom: 18px; }
+.crumbs a { text-decoration: none; }
+.crumbs a:hover { color: var(--ink); text-decoration: underline; }
+.guide h1 { font-size: clamp(2rem, 3.6vw, 3.1rem); max-width: 22ch; }
+.guide .lead { margin-top: 16px; }
+.guide-meta { margin-top: 14px; font-size: .9rem; color: var(--muted); }
+.guide-body { display: grid; grid-template-columns: 15rem minmax(0, 46rem); gap: 0 64px; margin-top: 40px; padding-top: 32px; border-top: 1px solid var(--rule); }
+.toc { position: sticky; top: 84px; align-self: start; font-size: .92rem; }
+.toc p { font-weight: 700; padding-bottom: 8px; border-bottom: 1px solid var(--rule); }
+.toc ol { list-style: none; margin: 0; padding: 0; }
+.toc a { display: block; padding: 7px 0; border-bottom: 1px solid var(--rule); color: var(--muted); text-decoration: none; }
+.toc a:hover { color: var(--ink); }
+@media (max-width: 980px) { .guide-body { grid-template-columns: minmax(0, 1fr); } .toc { position: static; margin-bottom: 28px; } }
+
+.prose > * + * { margin-top: 16px; }
+.prose h2 { font-size: clamp(1.45rem, 2.2vw, 1.85rem); letter-spacing: -.02em; margin-top: 48px; }
+.prose h3 { font-size: 1.2rem; font-weight: 700; margin-top: 32px; }
+.prose h2 + *, .prose h3 + * { margin-top: 10px; }
+.prose ul, .prose ol { padding-left: 1.3em; }
+.prose li + li { margin-top: 6px; }
+.prose li > p + p { margin-top: 8px; }
+.prose code { background: var(--hunk); color: var(--hunk-ink); padding: .05em .3em; border-radius: 4px; font-size: .88em; }
+.prose blockquote { margin: 16px 0 0; padding: 12px 16px; border-left: 3px solid var(--hunk-ink); background: var(--hunk); border-radius: 0 8px 8px 0; color: var(--ink); }
+.prose blockquote > * + * { margin-top: 8px; }
+.prose table { width: 100%; border-collapse: collapse; font-size: .95rem; display: block; overflow-x: auto; }
+.prose th, .prose td { text-align: left; vertical-align: top; padding: 8px 12px; border-bottom: 1px solid var(--rule); }
+.prose th { font-weight: 700; border-bottom-color: var(--muted); }
+.snippet { border-radius: 10px; overflow: hidden; background: var(--term-bg); color: var(--term-fg); }
+.snippet-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 38px; padding: 4px 8px 4px 16px; border-bottom: 1px solid #262c33; font-size: .82rem; font-weight: 600; color: #aeb7bf; }
+.snippet pre { margin: 0; padding: 14px 16px 16px; overflow-x: auto; font: .88rem/1.65 var(--mono); }
+.snippet code { background: none; color: inherit; padding: 0; font-size: inherit; }
+.snippet .copy { padding: 4px 10px; font-size: .8rem; }
+/* What you type to an assistant reads as a message, not a terminal. */
+.snippet.lang-prompt { background: var(--surface); color: var(--ink); border: 1px solid var(--rule); }
+.snippet.lang-prompt .snippet-bar { border-bottom-color: var(--rule); color: var(--muted); }
+.snippet.lang-prompt pre { font: 1rem/1.55 var(--sans); white-space: pre-wrap; }
+.snippet.lang-prompt code { font-family: inherit; }
+.more { padding-top: 64px; }
+.more h2 { font-size: clamp(1.45rem, 2.2vw, 1.85rem); margin-bottom: 18px; }
+/* Highlighted code (Pygments classes, prefixed t-), in the terminal's palette. */
+.snippet [class^="t-c"] { color: #8a949e; }
+.snippet [class^="t-k"], .snippet .t-ow { color: #8fb2ff; }
+.snippet [class^="t-s"] { color: #93dfaa; }
+.snippet [class^="t-m"], .snippet .t-nv, .snippet .t-bp { color: #f1c54b; }
+.snippet .t-nt { color: #aec0db; }
+.snippet .t-nf, .snippet .t-fm, .snippet .t-nb { color: #7fd0d6; }
+.snippet .t-nc, .snippet .t-nd, .snippet .t-nn { color: #d6a3f5; }

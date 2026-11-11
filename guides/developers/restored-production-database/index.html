@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Work on a restored production database · opticli guides</title>
+<meta name="description" content="Point opticli at a restored copy of production, make its sites answer on localhost, get a local login and keep its scheduled jobs from running.">
+<meta property="og:title" content="Work on a restored production database · opticli guides">
+<meta property="og:description" content="Point opticli at a restored copy of production, make its sites answer on localhost, get a local login and keep its scheduled jobs from running.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://epinova.github.io/opticli/guides/developers/restored-production-database/">
+<meta name="twitter:card" content="summary">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="../../../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../../style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chev" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 20 20"><path d="M8 4.5H4.5v11h11V12M11 4.5h4.5V9M15.2 4.8L9 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href="../../../">opticli<span>.</span></a>
+    <nav aria-label="Pages">
+      <a class="keep" href="../../">All guides</a><span class="sep" aria-hidden="true"></span><a class="page-link" href="../../../editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep page-link" href="../../../">For developers <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<div class="wrap guide">
+  <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#developers">For developers</a></p>
+  <h1>Work on a restored production database</h1>
+  <p class="lead">Point opticli at a restored copy of production, make its sites answer on localhost, get a local login and keep its scheduled jobs from running.</p>
+  <p class="guide-meta">Written for opticli 0.30.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/developers/restored-production-database.md">Edit on GitHub</a></p>
+  <div class="guide-body">
+    <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#steps">Steps</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
+    <article class="prose">
+<p>A restored copy of a production database is the closest you get to the real thing on your own machine, but it
+arrives with production's host names, production's users and production's scheduled jobs, all overdue. This guide
+takes you through the first hour: opticli reads the copy, the site answers on <code>localhost</code>, you can sign in to the edit
+UI, and no import, email or recycle-bin purge starts behind your back. Everything here changes only the local copy.</p>
+<h2 id="before-you-start">Before you start</h2>
+<ul>
+<li>opticli 0.30.0 or newer (<code>opticli --version</code>; update with <code>dotnet tool update -g OptiCli</code>).</li>
+<li>The site's repository checked out and built (<code>dotnet build</code>), on a branch close to what production runs.</li>
+<li>The backup restored into SQL Server on your machine: a local instance or a container. LocalDB works on Windows only.</li>
+<li>A coding agent is optional. If you use one, run <code>opticli skill install</code> first so it knows these commands.</li>
+</ul>
+<h2 id="steps">Steps</h2>
+<h3 id="1-point-the-site-at-the-restored-database">1. Point the site at the restored database</h3>
+<p>opticli uses the database the site uses in <code>Development</code>, found in the same order as ASP.NET Core: launch profiles,
+exported <code>ConnectionStrings__EPiServerDB</code>, user secrets, <code>appsettings.Development.json</code>, <code>appsettings.json</code>. Put the
+copy's connection string in one of them, for example user secrets:</p>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-1">Copy</button></div><pre><code id="code-1">dotnet<span class="t-w"> </span>user-secrets<span class="t-w"> </span><span class="t-nb">set</span><span class="t-w"> </span><span class="t-s2">&quot;ConnectionStrings:EPiServerDB&quot;</span><span class="t-w"> </span><span class="t-se">\</span>
+<span class="t-w">  </span><span class="t-s2">&quot;Server=localhost,1433;Database=alloy_restored;User Id=sa;Password=&lt;password&gt;;TrustServerCertificate=True&quot;</span>
+opticli<span class="t-w"> </span>doctor</code></pre></div>
+<p><code>doctor</code> names the database it found and the source it came from. A launch profile that sets the same connection
+string wins over user secrets, so if <code>doctor</code> shows the old database, check <code>Properties/launchSettings.json</code>. A local
+database is used without asking. When several sources disagree, opticli asks once: pick the copy from the list, or
+run <code>opticli db list</code> and then <code>opticli db use &lt;id&gt;</code>.</p>
+<h3 id="2-look-at-what-you-restored">2. Look at what you restored</h3>
+<p>Reads go straight to the database, so nothing needs to run yet:</p>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-2">Copy</button></div><pre><code id="code-2">opticli<span class="t-w"> </span>sites
+opticli<span class="t-w"> </span>languages
+opticli<span class="t-w"> </span><span class="t-nb">jobs</span></code></pre></div>
+<p><code>sites</code> lists each site with its hosts: expect production names such as <code>alloy.example.com</code>. <code>jobs</code> lists every
+scheduled job with <code>enabled</code>, <code>nextRun</code> and <code>overdue</code>. On a fresh restore most enabled jobs are overdue. Note the ones
+that reach other systems (imports, syncs, emails) and the built-in Automatic Emptying of Trash.</p>
+<h3 id="3-start-the-site-with-the-scheduler-off">3. Start the site with the scheduler off</h3>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-3">Copy</button></div><pre><code id="code-3">opticli<span class="t-w"> </span>serve
+opticli<span class="t-w"> </span>serve<span class="t-w"> </span>--status</code></pre></div>
+<p><code>serve</code> runs your build in <code>Development</code> against the copy and returns once the site answers (30 to 60 seconds). It
+turns the site's scheduler off for the run, so the overdue jobs stay put: <code>serve --status</code> says <code>scheduler: off</code>, and
+the site's log (<code>opticli serve --logs</code>) has <code>[opticli] Scheduler is off for this run</code>. Don't pass <code>--scheduler</code> against
+a restored copy. It leaves the scheduler as the site sets it, and every overdue job starts at once.</p>
+<h3 id="4-make-the-sites-answer-on-localhost">4. Make the sites answer on localhost</h3>
+<p>Point each site at the host and port you open it on, usually the one in your launch profile. Dry-run first:</p>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-4">Copy</button></div><pre><code id="code-4">opticli<span class="t-w"> </span>sites<span class="t-w"> </span>primary<span class="t-w"> </span><span class="t-s2">&quot;Alloy=localhost:5000&quot;</span><span class="t-w"> </span>--dry-run
+opticli<span class="t-w"> </span>sites<span class="t-w"> </span>primary<span class="t-w"> </span><span class="t-s2">&quot;Alloy=localhost:5000&quot;</span><span class="t-w"> </span>--save</code></pre></div>
+<p>The dry run shows each site's <code>changes</code>: the new host is added as the primary host, the old primary host and the
+Edit host become undefined, and the site's URL (SiteUrl) moves to the new host, <code>https://</code> unless you pass
+<code>--https false</code> (on CMS 13, where sites are applications without a SiteUrl, the URL follows the hosts). The
+production hosts stay, so <code>opticli resolve https://alloy.example.com/en/</code> still finds content.
+<code>--save</code> keeps the mapping in your user config. After the next restore, one command puts it back:</p>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-5">Copy</button></div><pre><code id="code-5">opticli<span class="t-w"> </span>sites<span class="t-w"> </span>primary<span class="t-w"> </span>--from-config</code></pre></div>
+<p>With several sites, give one pair per site (<code>&quot;Alloy=localhost:5000&quot; &quot;Alloy Intranet=localhost:5001&quot;</code>); all pairs are
+checked before any site is saved. To make one more address answer without changing the primary host, add it as a
+plain host:</p>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-6">Copy</button></div><pre><code id="code-6">opticli<span class="t-w"> </span>sites<span class="t-w"> </span>host<span class="t-w"> </span>add<span class="t-w"> </span><span class="t-s2">&quot;Alloy&quot;</span><span class="t-w"> </span>alloy.localhost:5000<span class="t-w"> </span>--dry-run</code></pre></div>
+<blockquote>
+<p><strong>Note:</strong> A site you also run from your IDE keeps the old hosts until you restart it, unless it runs in
+<a href="https://github.com/Epinova/opticli#running-the-site-from-your-ide-ide-mode">IDE mode</a>.</p>
+</blockquote>
+<h3 id="5-get-a-local-login">5. Get a local login</h3>
+<p>Production's users are there, but you don't know their passwords, or they sign in through another identity provider.
+Add a login of your own to the site's ASP.NET Identity:</p>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-7">Copy</button></div><pre><code id="code-7">opticli<span class="t-w"> </span>users<span class="t-w"> </span>roles
+opticli<span class="t-w"> </span>users<span class="t-w"> </span>add<span class="t-w"> </span>dev<span class="t-w"> </span>--dry-run
+opticli<span class="t-w"> </span>users<span class="t-w"> </span>add<span class="t-w"> </span>dev</code></pre></div>
+<p><code>users roles</code> shows which roles give <code>CmsAdmins</code> and <code>CmsEditors</code> on this site. <code>users add</code> puts the user in
+<code>WebAdmins</code> unless you pass <code>--role</code>, and warns when the roles don't give admin mode. At a terminal it asks for the
+password without showing it; from a script or an agent it generates one and gives you <code>passwordFile</code>, a file only you
+can read. Sign in to the edit UI (<code>/EPiServer/CMS/</code> on CMS 12, <code>/Optimizely/CMS/</code> on CMS 13).
+<code>opticli users remove dev</code> removes it again, and only ever removes users opticli made.</p>
+<h3 id="6-keep-the-jobs-off-when-you-run-the-site-yourself">6. Keep the jobs off when you run the site yourself</h3>
+<p><code>serve</code> keeps the scheduler off, but a site you start from your IDE, with <code>dotnet run</code> or with
+<a href="https://github.com/Epinova/opticli#running-the-site-from-your-ide-ide-mode">IDE mode</a>, runs it as the site sets it.
+Before you do that, disable the jobs you noted in step 2 while <code>serve</code> still runs:</p>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-8">Copy</button></div><pre><code id="code-8">opticli<span class="t-w"> </span><span class="t-nb">jobs</span><span class="t-w"> </span>--enabled
+opticli<span class="t-w"> </span><span class="t-nb">jobs</span><span class="t-w"> </span><span class="t-nb">set</span><span class="t-w"> </span><span class="t-s2">&quot;Automatic Emptying of Trash&quot;</span><span class="t-w"> </span>--enabled<span class="t-w"> </span><span class="t-nb">false</span><span class="t-w"> </span>--dry-run
+opticli<span class="t-w"> </span><span class="t-nb">jobs</span><span class="t-w"> </span><span class="t-nb">set</span><span class="t-w"> </span><span class="t-s2">&quot;Automatic Emptying of Trash&quot;</span><span class="t-w"> </span>--enabled<span class="t-w"> </span><span class="t-nb">false</span></code></pre></div>
+<p>The output shows the schedule before and after; schedules aren't versioned, so keep that output if you want to put a
+job back. To run one job on purpose, use <code>opticli jobs run &quot;&lt;job&gt;&quot;</code>, which waits and ends with the job's status.</p>
+<h3 id="7-check-the-result">7. Check the result</h3>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-9">Copy</button></div><pre><code id="code-9">opticli<span class="t-w"> </span>doctor
+opticli<span class="t-w"> </span>resolve<span class="t-w"> </span>http://localhost:5000/en/
+opticli<span class="t-w"> </span>types<span class="t-w"> </span>--orphaned
+opticli<span class="t-w"> </span>serve<span class="t-w"> </span>--stop</code></pre></div>
+<p><code>doctor</code> should now show no warning about the saved site mapping and count the overdue jobs. <code>resolve</code> on the local
+address should find the start page. <code>types --orphaned</code> lists content types whose class is gone from your code, which
+older production databases tend to collect; see
+<a href="https://github.com/Epinova/opticli#orphaned-content-types-and-properties">Orphaned content types and properties</a> if
+you want to remove them. Stop the site when you are done, or leave it running for writes.</p>
+<h2 id="if-something-goes-wrong">If something goes wrong</h2>
+<table>
+<thead>
+<tr>
+<th>What you see</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>needs_selection</code> (exit 6)</td>
+<td>Several sources name a database. Run <code>opticli db list</code>, then <code>opticli db use &lt;id&gt;</code> for the copy.</td>
+</tr>
+<tr>
+<td><code>refused</code> (exit 3) about LocalDB</td>
+<td>Linux and macOS have no LocalDB. Restore into SQL Server, for example in a container, and point the connection string there.</td>
+</tr>
+<tr>
+<td><code>refused</code> (exit 3) on <code>serve</code>, CMS 13 build and CMS 12 database</td>
+<td>The site would upgrade the copy for good. Check out the CMS 12 branch, or upgrade the copy on purpose by starting the site once yourself.</td>
+</tr>
+<tr>
+<td><code>login_failed</code> (exit 4)</td>
+<td>The server refused the login, or the database name is wrong. When the login has no user in the database, <code>error.details.identity</code> names it.</td>
+</tr>
+<tr>
+<td><code>unreachable</code> (exit 4) on <code>sites primary</code>, <code>users</code> or <code>jobs set</code></td>
+<td>These go through the site. Start it with <code>opticli serve</code>; <code>opticli serve --logs --tail 40</code> shows why it didn't start.</td>
+</tr>
+<tr>
+<td><code>validation</code> (exit 5) on <code>sites primary</code></td>
+<td>Another site already has that host. Give each site its own port or <code>*.localhost</code> name.</td>
+</tr>
+<tr>
+<td><code>not_found</code> (exit 2) on <code>sites primary</code></td>
+<td>The site name doesn't match. Use the name <code>opticli sites</code> shows.</td>
+</tr>
+<tr>
+<td><code>refused</code> (exit 3) on <code>users add</code></td>
+<td>The site signs CMS users in through OpenID Connect or Opti ID, not ASP.NET Identity. Sign in through that provider.</td>
+</tr>
+<tr>
+<td><code>validation</code> (exit 5) on <code>users add</code></td>
+<td>The password breaks the site's password rules. The message says which.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="related">Related</h2>
+<ul>
+<li><a href="https://github.com/Epinova/opticli#which-database">Which database</a></li>
+<li><a href="https://github.com/Epinova/opticli#site-hosts-after-a-database-restore">Site hosts after a database restore</a></li>
+<li><a href="https://github.com/Epinova/opticli#local-users-after-a-database-restore">Local users after a database restore</a></li>
+<li><a href="https://github.com/Epinova/opticli#scheduled-jobs">Scheduled jobs</a></li>
+<li><a href="https://github.com/Epinova/opticli#serve-and-env">serve and env</a></li>
+<li><a href="../../developers/pull-from-staging/">Pull content from staging</a>, to keep the copy current without another restore</li>
+<li><a href="../../developers/find-content-and-code/">Find content and the code behind it</a></li>
+</ul>
+    </article>
+  </div>
+  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for developers</h2><div class="file"><ol class="guide-list"><li><a href="../../developers/find-content-and-code/"><b>Find content and the code behind it</b><span>Go from a URL or a name to the content item, its C# class and Razor view, and every page that uses it.</span></a></li><li><a href="../../developers/playwright-seed-content/"><b>Seed CMS content for Playwright tests</b><span>Use the @epinova/opticli npm package to start the site, seed the content your Playwright tests read, and give each test pages of its own that are cleaned up afterwards.</span></a></li><li><a href="../../developers/pull-from-staging/"><b>Pull content from staging into your local database</b><span>Register a staging or test database by name, bring its content into your local database with sync pull, and keep it current without another restore.</span></a></li></ol></div></section>
+</div>
+</main>
+
+<footer class="wrap">
+  <p>opticli and OptiCli.Mcp are open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. They are independent projects, not affiliated with or endorsed by Optimizely.</p>
+</footer>
+<script>
+for (const button of document.querySelectorAll('[data-copy]')) {
+  button.addEventListener('click', async () => {
+    const text = document.getElementById(button.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(text); } catch { getSelection().selectAllChildren(document.getElementById(button.dataset.copy)); return; }
+    button.textContent = 'Copied';
+    button.dataset.done = '';
+    setTimeout(() => { button.textContent = 'Copy'; delete button.dataset.done; }, 1600);
+  });
+}
+</script>
+</body>
+</html>

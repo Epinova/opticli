@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seed CMS content for Playwright tests · opticli guides</title>
+<meta name="description" content="Use the @epinova/opticli npm package to start the site, seed the content your Playwright tests read, and give each test pages of its own that are cleaned up afterwards.">
+<meta property="og:title" content="Seed CMS content for Playwright tests · opticli guides">
+<meta property="og:description" content="Use the @epinova/opticli npm package to start the site, seed the content your Playwright tests read, and give each test pages of its own that are cleaned up afterwards.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://epinova.github.io/opticli/guides/developers/playwright-seed-content/">
+<meta name="twitter:card" content="summary">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="../../../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../../style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chev" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 20 20"><path d="M8 4.5H4.5v11h11V12M11 4.5h4.5V9M15.2 4.8L9 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href="../../../">opticli<span>.</span></a>
+    <nav aria-label="Pages">
+      <a class="keep" href="../../">All guides</a><span class="sep" aria-hidden="true"></span><a class="page-link" href="../../../editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep page-link" href="../../../">For developers <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<div class="wrap guide">
+  <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#developers">For developers</a></p>
+  <h1>Seed CMS content for Playwright tests</h1>
+  <p class="lead">Use the @epinova/opticli npm package to start the site, seed the content your Playwright tests read, and give each test pages of its own that are cleaned up afterwards.</p>
+  <p class="guide-meta">Written for opticli 0.30.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/developers/playwright-seed-content.md">Edit on GitHub</a></p>
+  <div class="guide-body">
+    <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#steps">Steps</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
+    <article class="prose">
+<p>End-to-end tests on an Optimizely site usually depend on content someone made by hand, and break when an editor
+changes it. With the npm package <code>@epinova/opticli</code>, the tests bring their own content: a global setup starts the
+site with <code>opticli serve</code> and applies a seed plan, each worker gets a hidden sandbox page, and each test creates the
+pages it needs through the CMS and has them moved to the recycle bin when it ends. By the end of this guide you have
+a seed plan, a global setup, a config and typed fixtures, and tests that read seeded content or make their own.</p>
+<h2 id="before-you-start">Before you start</h2>
+<ul>
+<li>opticli at the npm package's version or newer: the package shares its version with the opticli it was released with.</li>
+<li>The site's repository, built, with a local database opticli finds (<code>opticli doctor</code>). The tests write to it.</li>
+<li>Node.js 18 or newer and <code>@playwright/test</code> 1.40 or newer. The examples use the Alloy sample site's types.</li>
+</ul>
+<h2 id="steps">Steps</h2>
+<h3 id="1-install-the-package-and-pin-opticli">1. Install the package and pin opticli</h3>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-1">Copy</button></div><pre><code id="code-1">npm<span class="t-w"> </span>install<span class="t-w"> </span>-D<span class="t-w"> </span>@epinova/opticli
+dotnet<span class="t-w"> </span>new<span class="t-w"> </span>tool-manifest
+dotnet<span class="t-w"> </span>tool<span class="t-w"> </span>install<span class="t-w"> </span>OptiCli</code></pre></div>
+<p>The package runs the opticli CLI but doesn't install it. A local tool manifest pins the version in the repository, so
+CI runs the same one; the package uses <code>dotnet tool run opticli</code> when a manifest above the working directory has it,
+else <code>opticli</code> on your PATH. If the Playwright folder isn't inside the site project, tell it where the site is with
+<code>OPTICLI_PROJECT=../src/Alloy</code> (or the <code>opticli: { project }</code> option in step 3).</p>
+<h3 id="2-write-the-seed-plan">2. Write the seed plan</h3>
+<p>The seed plan is the content every test may read. It is an ordinary opticli plan. A fixed <code>guidNamespace</code> and an <code>id</code>
+on every step that creates something give the content the same GUIDs on every machine, so the plan can run on every
+test run and only repair what changed.</p>
+<div class="snippet lang-ts"><div class="snippet-bar"><span>TypeScript</span></div><pre><code id="code-2"><span class="t-c1">// e2e/seed.ts</span>
+<span class="t-k">import</span><span class="t-w"> </span><span class="t-kr">type</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">Plan</span><span class="t-w"> </span><span class="t-p">}</span><span class="t-w"> </span><span class="t-kr">from</span><span class="t-w"> </span><span class="t-s1">&#39;@epinova/opticli&#39;</span><span class="t-p">;</span>
+
+<span class="t-k">export</span><span class="t-w"> </span><span class="t-kd">const</span><span class="t-w"> </span><span class="t-nx">seedPlan</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-p">{</span>
+<span class="t-w">  </span><span class="t-nx">guidNamespace</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;0d6a8a5e-2f7b-4c1e-9b0a-5c3f1e7d2a61&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-c1">// any GUID; keep it</span>
+<span class="t-w">  </span><span class="t-nx">operations</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-p">[</span>
+<span class="t-w">    </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">op</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;create&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">id</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;root&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">parent</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;/en/&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-kr">type</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;StandardPage&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">name</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;Test fixtures&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">properties</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">PageVisibleInMenu</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-kt">false</span><span class="t-w"> </span><span class="t-p">}</span><span class="t-w"> </span><span class="t-p">},</span>
+<span class="t-w">    </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">op</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;upload&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">id</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;image&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">file</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;files/teaser.png&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-k">for</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;$root&#39;</span><span class="t-w"> </span><span class="t-p">},</span>
+<span class="t-w">    </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">op</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;create&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">id</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;article&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">parent</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;$root&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-kr">type</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;StandardPage&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">name</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;Seeded article&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">properties</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">MainBody</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;&lt;p&gt;Hello&lt;/p&gt;&#39;</span><span class="t-w"> </span><span class="t-p">}</span><span class="t-w"> </span><span class="t-p">},</span>
+<span class="t-w">    </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">op</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;block&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">id</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;teaser&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-kr">type</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;TeaserBlock&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">name</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;Seeded teaser&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-k">for</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;$article&#39;</span><span class="t-p">,</span>
+<span class="t-w">      </span><span class="t-nx">properties</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">Heading</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;Seeded teaser&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">Text</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;A shared block from the seed plan.&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">Image</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;$image&#39;</span><span class="t-w"> </span><span class="t-p">}</span><span class="t-w"> </span><span class="t-p">},</span>
+<span class="t-w">    </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">op</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;area&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">ref</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;$article&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">property</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;MainContentArea&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">action</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;add&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">item</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;$teaser&#39;</span><span class="t-w"> </span><span class="t-p">},</span>
+<span class="t-w">  </span><span class="t-p">],</span>
+<span class="t-p">}</span><span class="t-w"> </span><span class="t-kr">as</span><span class="t-w"> </span><span class="t-kd">const</span><span class="t-w"> </span><span class="t-nx">satisfies</span><span class="t-w"> </span><span class="t-nx">Plan</span><span class="t-p">;</span></code></pre></div>
+<p><code>$root</code> refers to what the step with <code>id: 'root'</code> made. <code>as const satisfies Plan</code> checks the steps against the plan
+type and keeps the ids as literals, which step 4 uses. Files the plan uploads are relative to <code>planDir</code>.</p>
+<h3 id="3-add-the-global-setup-and-the-config">3. Add the global setup and the config</h3>
+<div class="snippet lang-ts"><div class="snippet-bar"><span>TypeScript</span></div><pre><code id="code-3"><span class="t-c1">// e2e/global-setup.ts</span>
+<span class="t-k">import</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">defineSetup</span><span class="t-w"> </span><span class="t-p">}</span><span class="t-w"> </span><span class="t-kr">from</span><span class="t-w"> </span><span class="t-s1">&#39;@epinova/opticli/playwright&#39;</span><span class="t-p">;</span>
+<span class="t-k">import</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">seedPlan</span><span class="t-w"> </span><span class="t-p">}</span><span class="t-w"> </span><span class="t-kr">from</span><span class="t-w"> </span><span class="t-s1">&#39;./seed.ts&#39;</span><span class="t-p">;</span>
+
+<span class="t-k">export</span><span class="t-w"> </span><span class="t-k">default</span><span class="t-w"> </span><span class="t-nx">defineSetup</span><span class="t-p">({</span><span class="t-w"> </span><span class="t-nx">plan</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-kt">seedPlan</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">planDir</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-kt">import.meta.dirname</span><span class="t-w"> </span><span class="t-p">});</span></code></pre></div>
+<div class="snippet lang-ts"><div class="snippet-bar"><span>TypeScript</span></div><pre><code id="code-4"><span class="t-c1">// playwright.config.ts</span>
+<span class="t-k">import</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">defineConfig</span><span class="t-w"> </span><span class="t-p">}</span><span class="t-w"> </span><span class="t-kr">from</span><span class="t-w"> </span><span class="t-s1">&#39;@playwright/test&#39;</span><span class="t-p">;</span>
+<span class="t-k">import</span><span class="t-w"> </span><span class="t-kr">type</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">OptiCliWorkerOptions</span><span class="t-w"> </span><span class="t-p">}</span><span class="t-w"> </span><span class="t-kr">from</span><span class="t-w"> </span><span class="t-s1">&#39;@epinova/opticli/playwright&#39;</span><span class="t-p">;</span>
+
+<span class="t-k">export</span><span class="t-w"> </span><span class="t-k">default</span><span class="t-w"> </span><span class="t-nx">defineConfig</span><span class="t-o">&lt;</span><span class="t-p">{},</span><span class="t-w"> </span><span class="t-nx">OptiCliWorkerOptions</span><span class="t-o">&gt;</span><span class="t-p">({</span>
+<span class="t-w">  </span><span class="t-nx">testDir</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;./e2e&#39;</span><span class="t-p">,</span>
+<span class="t-w">  </span><span class="t-nx">globalSetup</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;./e2e/global-setup.ts&#39;</span><span class="t-p">,</span>
+<span class="t-w">  </span><span class="t-nx">use</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-p">{</span>
+<span class="t-w">    </span><span class="t-c1">// Each worker&#39;s test pages go below a hidden page of its own, below the seed plan&#39;s root.</span>
+<span class="t-w">    </span><span class="t-nx">opticliSandbox</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">parent</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;$root&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-kr">type</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;StandardPage&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">properties</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">PageVisibleInMenu</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-kt">false</span><span class="t-w"> </span><span class="t-p">}</span><span class="t-w"> </span><span class="t-p">},</span>
+<span class="t-w">  </span><span class="t-p">},</span>
+<span class="t-p">});</span></code></pre></div>
+<p><code>defineSetup()</code> starts the site with <code>opticli serve</code>, or reuses one that already runs (also the site your IDE runs in
+IDE mode). It checks that opticli and the site's agent are new enough, applies the seed plan with <code>--update-existing</code>
+(published, unless <code>publish: false</code>) and points <code>baseURL</code> at the site. After the tests it stops a site it started.
+For a site that redirects to HTTPS, pass <code>https: true</code>. <code>import.meta.dirname</code> needs Node.js 20.11 or newer; on older
+versions use <code>dirname(fileURLToPath(import.meta.url))</code>. The other options are in the
+<a href="https://github.com/Epinova/opticli/blob/main/npm/README.md#what-setup-does">package README</a>.</p>
+<h3 id="4-type-the-fixtures-by-your-plan">4. Type the fixtures by your plan</h3>
+<div class="snippet lang-ts"><div class="snippet-bar"><span>TypeScript</span></div><pre><code id="code-5"><span class="t-c1">// e2e/fixtures.ts</span>
+<span class="t-k">import</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">createTest</span><span class="t-w"> </span><span class="t-p">}</span><span class="t-w"> </span><span class="t-kr">from</span><span class="t-w"> </span><span class="t-s1">&#39;@epinova/opticli/playwright&#39;</span><span class="t-p">;</span>
+<span class="t-k">import</span><span class="t-w"> </span><span class="t-kr">type</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">seedPlan</span><span class="t-w"> </span><span class="t-p">}</span><span class="t-w"> </span><span class="t-kr">from</span><span class="t-w"> </span><span class="t-s1">&#39;./seed.ts&#39;</span><span class="t-p">;</span>
+
+<span class="t-k">export</span><span class="t-w"> </span><span class="t-kd">const</span><span class="t-w"> </span><span class="t-nx">test</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-nx">createTest</span><span class="t-o">&lt;</span><span class="t-ow">typeof</span><span class="t-w"> </span><span class="t-nx">seedPlan</span><span class="t-o">&gt;</span><span class="t-p">();</span>
+<span class="t-k">export</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">expect</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">OptiCliError</span><span class="t-w"> </span><span class="t-p">}</span><span class="t-w"> </span><span class="t-kr">from</span><span class="t-w"> </span><span class="t-s1">&#39;@epinova/opticli/playwright&#39;</span><span class="t-p">;</span></code></pre></div>
+<p><code>seed.refs</code> and <code>seed.urls</code> are now keyed by the plan's step ids: <code>seed.urls.article</code> compiles, <code>seed.urls.artcle</code>
+doesn't.</p>
+<h3 id="5-write-the-tests">5. Write the tests</h3>
+<div class="snippet lang-ts"><div class="snippet-bar"><span>TypeScript</span></div><pre><code id="code-6"><span class="t-c1">// e2e/article.spec.ts</span>
+<span class="t-k">import</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">expect</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">test</span><span class="t-w"> </span><span class="t-p">}</span><span class="t-w"> </span><span class="t-kr">from</span><span class="t-w"> </span><span class="t-s1">&#39;./fixtures.ts&#39;</span><span class="t-p">;</span>
+
+<span class="t-nx">test</span><span class="t-p">(</span><span class="t-s1">&#39;the seeded article shows its teaser&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-k">async</span><span class="t-w"> </span><span class="t-p">({</span><span class="t-w"> </span><span class="t-nx">page</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">seed</span><span class="t-w"> </span><span class="t-p">})</span><span class="t-w"> </span><span class="t-p">=&gt;</span><span class="t-w"> </span><span class="t-p">{</span>
+<span class="t-w">  </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-nx">page</span><span class="t-p">.</span><span class="t-kr">goto</span><span class="t-p">(</span><span class="t-nx">seed</span><span class="t-p">.</span><span class="t-nx">urls</span><span class="t-p">.</span><span class="t-nx">article</span><span class="t-o">!</span><span class="t-p">);</span>
+<span class="t-w">  </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-nx">expect</span><span class="t-p">(</span><span class="t-nx">page</span><span class="t-p">.</span><span class="t-nx">getByRole</span><span class="t-p">(</span><span class="t-s1">&#39;heading&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">name</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;Seeded teaser&#39;</span><span class="t-w"> </span><span class="t-p">})).</span><span class="t-nx">toBeVisible</span><span class="t-p">();</span>
+<span class="t-p">});</span>
+
+<span class="t-nx">test</span><span class="t-p">(</span><span class="t-s1">&#39;a draft is not visible until it is published&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-k">async</span><span class="t-w"> </span><span class="t-p">({</span><span class="t-w"> </span><span class="t-nx">page</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">cms</span><span class="t-w"> </span><span class="t-p">})</span><span class="t-w"> </span><span class="t-p">=&gt;</span><span class="t-w"> </span><span class="t-p">{</span>
+<span class="t-w">  </span><span class="t-kd">const</span><span class="t-w"> </span><span class="t-nx">created</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-nx">cms</span><span class="t-p">.</span><span class="t-nx">page</span><span class="t-p">(</span><span class="t-s1">&#39;StandardPage&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s1">&#39;Draft test&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">MainBody</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;&lt;p&gt;Published text&lt;/p&gt;&#39;</span><span class="t-w"> </span><span class="t-p">});</span>
+<span class="t-w">  </span><span class="t-kd">const</span><span class="t-w"> </span><span class="t-nx">draft</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-nx">cms</span><span class="t-p">.</span><span class="t-nx">set</span><span class="t-p">(</span><span class="t-nx">created</span><span class="t-p">.</span><span class="t-nx">ref</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">MainBody</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;&lt;p&gt;Draft text&lt;/p&gt;&#39;</span><span class="t-w"> </span><span class="t-p">});</span>
+
+<span class="t-w">  </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-nx">page</span><span class="t-p">.</span><span class="t-kr">goto</span><span class="t-p">(</span><span class="t-nx">created</span><span class="t-p">.</span><span class="t-nx">url</span><span class="t-p">);</span>
+<span class="t-w">  </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-nx">expect</span><span class="t-p">(</span><span class="t-nx">page</span><span class="t-p">.</span><span class="t-nx">getByText</span><span class="t-p">(</span><span class="t-s1">&#39;Draft text&#39;</span><span class="t-p">)).</span><span class="t-nx">toHaveCount</span><span class="t-p">(</span><span class="t-mf">0</span><span class="t-p">);</span>
+
+<span class="t-w">  </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-nx">cms</span><span class="t-p">.</span><span class="t-nx">publish</span><span class="t-p">(</span><span class="t-nx">draft</span><span class="t-p">.</span><span class="t-nx">version</span><span class="t-o">!</span><span class="t-p">);</span>
+<span class="t-w">  </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-nx">page</span><span class="t-p">.</span><span class="t-nx">reload</span><span class="t-p">();</span>
+<span class="t-w">  </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-nx">expect</span><span class="t-p">(</span><span class="t-nx">page</span><span class="t-p">.</span><span class="t-nx">getByText</span><span class="t-p">(</span><span class="t-s1">&#39;Draft text&#39;</span><span class="t-p">)).</span><span class="t-nx">toBeVisible</span><span class="t-p">();</span>
+<span class="t-p">});</span></code></pre></div>
+<p>Seeded content costs nothing per test. <code>cms.page()</code> creates a published page in the worker's sandbox and returns its
+<code>ref</code>, <code>version</code> and <code>url</code>, a path on <code>baseURL</code>. <code>cms.set()</code> saves a draft unless you pass <code>publish: true</code>, and
+<code>cms.apply()</code> runs a whole plan in one call. What <code>cms.page()</code> and <code>cms.apply()</code> create goes to the recycle bin after
+the test, also when it fails; pass <code>keep: true</code> with a parent outside the sandbox to leave it. <code>cms.set()</code> and
+<code>cms.publish()</code> on seeded content stay until the next run's seed puts them back, and other workers see them meanwhile.</p>
+<h3 id="6-test-the-errors-too">6. Test the errors too</h3>
+<p>A failed write throws <code>OptiCliError</code> with opticli's <code>code</code>, <code>exitCode</code>, <code>hint</code> and <code>details</code>, so a test can tell a
+missing page from values the CMS refused:</p>
+<div class="snippet lang-ts"><div class="snippet-bar"><span>TypeScript</span></div><pre><code id="code-7"><span class="t-nx">test</span><span class="t-p">(</span><span class="t-s1">&#39;a property typo fails before anything is saved&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-k">async</span><span class="t-w"> </span><span class="t-p">({</span><span class="t-w"> </span><span class="t-nx">cms</span><span class="t-w"> </span><span class="t-p">})</span><span class="t-w"> </span><span class="t-p">=&gt;</span><span class="t-w"> </span><span class="t-p">{</span>
+<span class="t-w">  </span><span class="t-kd">const</span><span class="t-w"> </span><span class="t-nx">error</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-nx">cms</span><span class="t-p">.</span><span class="t-nx">page</span><span class="t-p">(</span><span class="t-s1">&#39;StandardPage&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s1">&#39;Typo&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">MainBdy</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;&lt;p&gt;x&lt;/p&gt;&#39;</span><span class="t-w"> </span><span class="t-p">}).</span><span class="t-k">catch</span><span class="t-p">((</span><span class="t-nx">e</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-kt">unknown</span><span class="t-p">)</span><span class="t-w"> </span><span class="t-p">=&gt;</span><span class="t-w"> </span><span class="t-nx">e</span><span class="t-p">);</span>
+<span class="t-w">  </span><span class="t-nx">expect</span><span class="t-p">(</span><span class="t-nx">error</span><span class="t-p">).</span><span class="t-nx">toBeInstanceOf</span><span class="t-p">(</span><span class="t-nx">OptiCliError</span><span class="t-p">);</span>
+<span class="t-w">  </span><span class="t-nx">expect</span><span class="t-p">((</span><span class="t-nx">error</span><span class="t-w"> </span><span class="t-kr">as</span><span class="t-w"> </span><span class="t-nx">OptiCliError</span><span class="t-p">).</span><span class="t-nx">code</span><span class="t-p">).</span><span class="t-nx">toBe</span><span class="t-p">(</span><span class="t-s1">&#39;usage&#39;</span><span class="t-p">);</span>
+<span class="t-w">  </span><span class="t-nx">expect</span><span class="t-p">((</span><span class="t-nx">error</span><span class="t-w"> </span><span class="t-kr">as</span><span class="t-w"> </span><span class="t-nx">OptiCliError</span><span class="t-p">).</span><span class="t-nx">hint</span><span class="t-p">).</span><span class="t-nx">toContain</span><span class="t-p">(</span><span class="t-s1">&#39;MainBody&#39;</span><span class="t-p">);</span>
+<span class="t-p">});</span></code></pre></div>
+<p><code>code</code> is typed (<code>not_found</code>, <code>validation</code>, <code>conflict</code>, ...), with the exit codes from
+<a href="https://github.com/Epinova/opticli#output-and-exit-codes">Output and exit codes</a>.</p>
+<h3 id="7-run-it">7. Run it</h3>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-8">Copy</button></div><pre><code id="code-8">npx<span class="t-w"> </span>playwright<span class="t-w"> </span><span class="t-nb">test</span></code></pre></div>
+<p>Before the tests, setup logs what the seed plan did. The first run lists the steps it saved; later runs print
+<code>opticli: seed plan unchanged</code>, or which steps and properties they put back. <code>OPTICLI_BUILD=1</code> builds the site before starting it, and <code>OPTICLI_KEEP_SITE=1</code> leaves a site setup started
+running for the next run. Each call to opticli takes about a second, most of it .NET starting, so prefer one
+<code>cms.apply()</code> over many single writes.</p>
+<h2 id="if-something-goes-wrong">If something goes wrong</h2>
+<table>
+<thead>
+<tr>
+<th>What you see</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>This package needs opticli X or newer</code></td>
+<td>Update opticli: <code>dotnet tool update OptiCli</code> where the manifest pins it, else <code>dotnet tool update -g OptiCli</code>.</td>
+</tr>
+<tr>
+<td><code>The site runs the site agent of opticli X, older than ...</code></td>
+<td>A site from an older opticli is still running. <code>opticli serve --stop</code>, or restart it in the IDE.</td>
+</tr>
+<tr>
+<td><code>No opticli setup ran</code></td>
+<td><code>globalSetup</code> in playwright.config doesn't point at the file that exports <code>defineSetup()</code>.</td>
+</tr>
+<tr>
+<td><code>needs_selection</code> (exit 6) from setup</td>
+<td>opticli doesn't know the development database yet. Run <code>opticli db use &lt;id&gt;</code> once at your terminal.</td>
+</tr>
+<tr>
+<td>A seed step changes on every run</td>
+<td>The plan gives a value differently from how the CMS stores it. The setup log names the step and property; write it as <code>opticli get</code> shows it.</td>
+</tr>
+<tr>
+<td><code>validation</code> (exit 5)</td>
+<td>The CMS refused the values, for example a required property left out (<code>TeaserBlock</code> needs <code>Heading</code>, <code>Text</code> and <code>Image</code>). <code>details</code> lists every issue.</td>
+</tr>
+<tr>
+<td>Setup fails over HTTPS</td>
+<td>A site that already runs without an HTTPS address can't be switched. <code>opticli serve --stop</code>, then run the tests with <code>https: true</code>.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="related">Related</h2>
+<ul>
+<li><a href="https://github.com/Epinova/opticli/blob/main/npm/README.md">The npm package's README</a></li>
+<li><a href="https://github.com/Epinova/opticli#tests-with-playwright-and-nodejs">Tests with Playwright and Node.js</a></li>
+<li><a href="https://github.com/Epinova/opticli/blob/main/skill/reference.md#plans-apply">Plan format</a></li>
+<li><a href="../../developers/find-content-and-code/">Find content and the code behind it</a></li>
+<li><a href="../../developers/restored-production-database/">Work on a restored production database</a></li>
+</ul>
+    </article>
+  </div>
+  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for developers</h2><div class="file"><ol class="guide-list"><li><a href="../../developers/restored-production-database/"><b>Work on a restored production database</b><span>Point opticli at a restored copy of production, make its sites answer on localhost, get a local login and keep its scheduled jobs from running.</span></a></li><li><a href="../../developers/find-content-and-code/"><b>Find content and the code behind it</b><span>Go from a URL or a name to the content item, its C# class and Razor view, and every page that uses it.</span></a></li><li><a href="../../developers/pull-from-staging/"><b>Pull content from staging into your local database</b><span>Register a staging or test database by name, bring its content into your local database with sync pull, and keep it current without another restore.</span></a></li></ol></div></section>
+</div>
+</main>
+
+<footer class="wrap">
+  <p>opticli and OptiCli.Mcp are open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. They are independent projects, not affiliated with or endorsed by Optimizely.</p>
+</footer>
+<script>
+for (const button of document.querySelectorAll('[data-copy]')) {
+  button.addEventListener('click', async () => {
+    const text = document.getElementById(button.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(text); } catch { getSelection().selectAllChildren(document.getElementById(button.dataset.copy)); return; }
+    button.textContent = 'Copied';
+    button.dataset.done = '';
+    setTimeout(() => { button.textContent = 'Copy'; delete button.dataset.done; }, 1600);
+  });
+}
+</script>
+</body>
+</html>

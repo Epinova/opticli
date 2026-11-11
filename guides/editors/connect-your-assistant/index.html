@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connect your assistant to the CMS · opticli guides</title>
+<meta name="description" content="Connect Claude or another assistant to your Optimizely site, sign in with your own CMS account, and check that it works.">
+<meta property="og:title" content="Connect your assistant to the CMS · opticli guides">
+<meta property="og:description" content="Connect Claude or another assistant to your Optimizely site, sign in with your own CMS account, and check that it works.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://epinova.github.io/opticli/guides/editors/connect-your-assistant/">
+<meta name="twitter:card" content="summary">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="../../../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../../style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chev" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 20 20"><path d="M8 4.5H4.5v11h11V12M11 4.5h4.5V9M15.2 4.8L9 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href="../../../">opticli<span>.</span></a>
+    <nav aria-label="Pages">
+      <a class="keep" href="../../">All guides</a><span class="sep" aria-hidden="true"></span><a class="page-link" href="../../../editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep page-link" href="../../../">For developers <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<div class="wrap guide">
+  <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#editors">For editors</a></p>
+  <h1>Connect your assistant to the CMS</h1>
+  <p class="lead">Connect Claude or another assistant to your Optimizely site, sign in with your own CMS account, and check that it works.</p>
+  <p class="guide-meta">Written for opticli 0.30.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/editors/connect-your-assistant.md">Edit on GitHub</a></p>
+  <div class="guide-body">
+    <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#steps">Steps</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
+    <article class="prose">
+<p>By the end of this guide your AI assistant is connected to your Optimizely CMS site. It works as you: it sees what you
+can see in the CMS, and it can only change what you may change. You sign in with the same login you use for the CMS,
+and you decide on a consent page what the assistant may do. Changes are saved as drafts unless you ask for more.</p>
+<h2 id="before-you-start">Before you start</h2>
+<ul>
+<li>Your developer has installed the opticli module on the site. Ask them for the site's address for assistants.</li>
+<li>You have an editor account on the site. Your developer decides which roles may connect an assistant.</li>
+<li>You have an assistant that can connect to an outside server and sign in through your browser: Claude Desktop,
+Claude on the web (claude.ai) or Claude Code, or another assistant with that kind of connection.</li>
+</ul>
+<h2 id="steps">Steps</h2>
+<h3 id="1-get-the-address-from-your-developer">1. Get the address from your developer</h3>
+<p>There are two forms of the address. Which one you need depends on the assistant:</p>
+<table>
+<thead>
+<tr>
+<th>Address</th>
+<th>Used by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The site itself, such as <code>https://www.example.com</code></td>
+<td>the Claude Desktop extension, which adds the rest</td>
+</tr>
+<tr>
+<td>The full address, such as <code>https://www.example.com/episerver/opticli/mcp</code></td>
+<td>every other assistant</td>
+</tr>
+</tbody>
+</table>
+<p>Your developer may give you an address on a host of its own instead. Use the one they give you.</p>
+<h3 id="2-add-the-site-to-your-assistant">2. Add the site to your assistant</h3>
+<p><strong>Claude Desktop (recommended).</strong> Ask your developer for the extension file, <code>opticli-cms.mcpb</code>. It is also attached
+to every <a href="https://github.com/epinova/opticli/releases">opticli release</a>. Open the file, or drag it into Claude
+Desktop's Settings → Extensions. Fill in <strong>CMS address</strong> with the site's address. Your developer may give you an
+extension made for your site instead: it has the address built in, so you aren't asked for it, and you can install
+one for the test site and one for the live site side by side. The extension connects from your own computer, so it
+also works when the site is only reachable on your company network. You don't need to install anything else.</p>
+<p><strong>Claude on the web, on mobile, or Claude Desktop without the extension.</strong> Add a custom connector with the full
+address. On Team and Enterprise plans, an owner of your organization may have to add it for everyone. A connector
+calls the site from Anthropic's servers, not from your computer, so the site must be reachable from the internet.</p>
+<p><strong>Claude Code.</strong> Run <code>claude mcp add --transport http cms &lt;full address&gt;</code>, then type <code>/mcp</code> in Claude Code to sign in.</p>
+<p><strong>Other assistants.</strong> Add a remote server (sometimes called a connector or an MCP server) with the full address. An
+assistant on your own computer connects as it is. An assistant that runs in the browser, such as ChatGPT on the web,
+is refused until your developer allows it (see &quot;If something goes wrong&quot; below).</p>
+<h3 id="3-sign-in-and-allow-the-connection">3. Sign in and allow the connection</h3>
+<p>The first time the assistant uses the site, your browser opens the site's own login page. Sign in as you always do.
+Then a consent page asks <strong>Connect</strong> followed by the assistant's name. It shows:</p>
+<ul>
+<li>who you are signed in as;</li>
+<li>who published the assistant's description, or a warning that the app named itself and the site can't confirm who
+made it. Only allow it if you added the connection yourself, just now;</li>
+<li>what the assistant may do, with a checkbox each: read the content you have access to (always), create content and
+change drafts, and, only where the site allows it, publish and unpublish content.</li>
+</ul>
+<p>Untick anything you don't want the assistant to do, then choose <strong>Allow</strong>. You are sent back to the assistant.</p>
+<blockquote>
+<p><strong>Note:</strong> If the site doesn't let assistants publish, the consent page says so. Then you publish in the CMS
+yourself, which is the default.</p>
+</blockquote>
+<h3 id="4-check-who-the-assistant-is">4. Check who the assistant is</h3>
+<p>Ask the assistant who it works as:</p>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-1">Copy</button></div><pre><code id="code-1">Who am I on the CMS, and what are you allowed to do there?</code></pre></div>
+<p>The assistant answers with your name and roles in the CMS, the name of the app you connected, what you allowed on the
+consent page, and what the site allows: publishing, deleting, the largest file it may upload, and whether it may open
+short-lived preview links of its own. This proves three things: the connection works, the assistant acts as you, and
+it has no more rights than you have.</p>
+<h3 id="5-try-a-first-read">5. Try a first read</h3>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-2">Copy</button></div><pre><code id="code-2">Find the &quot;About us&quot; page and tell me what&#x27;s on it.</code></pre></div>
+<p>The assistant finds the page, reads it and sums it up. Nothing is changed by reading.</p>
+<h3 id="6-see-or-revoke-your-connections">6. See or revoke your connections</h3>
+<p>Open <code>/episerver/opticli/connections</code> on the site (your developer may have moved it). It lists the assistants you
+connected, what you allowed each one, when it connected and when it was last used. <strong>Revoke</strong> cuts an assistant off
+at once. A connection also ends on its own after a while (30 days unless your developer changed it), and then you sign
+in again the same way.</p>
+<blockquote>
+<p><strong>Note:</strong> Don't use this connection in the same chat as tools that open web pages or read other outside content.
+Text on such a page is then one step away from your CMS.</p>
+</blockquote>
+<h2 id="if-something-goes-wrong">If something goes wrong</h2>
+<ul>
+<li><strong>&quot;Return address not allowed&quot;.</strong> The site doesn't accept connections from this web-based assistant. Only your
+developer can fix that, by adding the assistant's address to the site's allowed list (the <code>AllowedRedirectHosts</code>
+setting). Claude on the web is allowed by default. Until then, use an assistant that runs on your own computer, such
+as the Claude Desktop extension.</li>
+<li><strong>&quot;No access&quot; and &quot;isn't an editor on this site&quot;.</strong> Your account doesn't have a role that may connect an assistant.
+Ask your CMS administrator.</li>
+<li><strong>&quot;Unknown app&quot;.</strong> Remove the connector or server in your assistant and add it again.</li>
+<li><strong>A web-based assistant can't reach the site at all.</strong> The site is probably only on your company network. Use the
+Claude Desktop extension, or ask your developer.</li>
+<li><strong>The assistant says it isn't allowed to change or publish anything.</strong> You may have unticked it on the consent page,
+or the site has it turned off. Revoke the connection and connect again to choose differently.</li>
+<li><strong>&quot;The connection is as old as this site allows; connect again.&quot;</strong> Remove the connection in your assistant, add it
+again and sign in as in step 3.</li>
+</ul>
+<h2 id="related">Related</h2>
+<ul>
+<li><a href="../../editors/translate-a-page/">Translate a page with your assistant</a></li>
+<li><a href="../../editors/image-alt-texts/">Fix image alt texts with your assistant</a></li>
+<li><a href="../../editors/someone-elses-draft/">When someone else has changes on the page</a></li>
+<li><a href="https://epinova.github.io/opticli/editors/">Opticli for editors</a></li>
+<li>README: <a href="https://github.com/Epinova/opticli#connecting-an-assistant">Connecting an assistant</a>,
+<a href="https://github.com/Epinova/opticli#connecting-claude">Connecting Claude</a> and
+<a href="https://github.com/Epinova/opticli#security-model">Security model</a></li>
+</ul>
+    </article>
+  </div>
+  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for editors</h2><div class="file"><ol class="guide-list"><li><a href="../../editors/translate-a-page/"><b>Translate a page with your assistant</b><span>Have your assistant translate a page into another language, review the translation as a draft, and publish it only when you say so.</span></a></li><li><a href="../../editors/image-alt-texts/"><b>Fix image alt texts with your assistant</b><span>Have your assistant look at your images, suggest alt texts or descriptions, and save them as drafts you review first.</span></a></li><li><a href="../../editors/someone-elses-draft/"><b>When someone else has changes on the page</b><span>Understand why your assistant stops before publishing a colleague&#x27;s unpublished changes, decide what goes live, and send pages for review where an approval sequence applies.</span></a></li></ol></div></section>
+</div>
+</main>
+
+<footer class="wrap">
+  <p>opticli and OptiCli.Mcp are open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. They are independent projects, not affiliated with or endorsed by Optimizely.</p>
+</footer>
+<script>
+for (const button of document.querySelectorAll('[data-copy]')) {
+  button.addEventListener('click', async () => {
+    const text = document.getElementById(button.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(text); } catch { getSelection().selectAllChildren(document.getElementById(button.dataset.copy)); return; }
+    button.textContent = 'Copied';
+    button.dataset.done = '';
+    setTimeout(() => { button.textContent = 'Copy'; delete button.dataset.done; }, 1600);
+  });
+}
+</script>
+</body>
+</html>

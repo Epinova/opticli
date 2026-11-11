@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Write your first site-specific tool · opticli guides</title>
+<meta name="description" content="Add a read tool and a write tool of your own to the MCP module, so editors&#x27; assistants can find Alloy product pages without a teaser and fill them in as drafts.">
+<meta property="og:title" content="Write your first site-specific tool · opticli guides">
+<meta property="og:description" content="Add a read tool and a write tool of your own to the MCP module, so editors&#x27; assistants can find Alloy product pages without a teaser and fill them in as drafts.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://epinova.github.io/opticli/guides/mcp/custom-tools/">
+<meta name="twitter:card" content="summary">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="../../../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../../style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chev" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 20 20"><path d="M8 4.5H4.5v11h11V12M11 4.5h4.5V9M15.2 4.8L9 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href="../../../">opticli<span>.</span></a>
+    <nav aria-label="Pages">
+      <a class="keep" href="../../">All guides</a><span class="sep" aria-hidden="true"></span><a class="page-link" href="../../../editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep page-link" href="../../../">For developers <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<div class="wrap guide">
+  <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#mcp">For the MCP module</a></p>
+  <h1>Write your first site-specific tool</h1>
+  <p class="lead">Add a read tool and a write tool of your own to the MCP module, so editors&#x27; assistants can find Alloy product pages without a teaser and fill them in as drafts.</p>
+  <p class="guide-meta">Written for opticli 0.30.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/mcp/custom-tools.md">Edit on GitHub</a></p>
+  <div class="guide-body">
+    <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#build-the-tools">Build the tools</a></li><li><a href="#name-and-describe-them-well">Name and describe them well</a></li><li><a href="#try-the-dry-run-and-confirm-flow">Try the dry run and confirm flow</a></li><li><a href="#test-it">Test it</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
+    <article class="prose">
+<p>The module's own tools work on any content, one item at a time. A tool of your own can know your site: which page
+types matter, where they live, what &quot;done&quot; looks like. In this guide you add two tools to an Alloy site. The read
+tool, <code>list_products_missing_teaser</code>, lists product pages (Alloy Track, Alloy Plan, Alloy Meet) that have no teaser
+text of their own. The write tool, <code>fill_product_teasers</code>, writes the teasers the assistant drafted, as drafts, after a
+dry run the editor has seen. Both run as the signed-in editor, with their access rights and the module's audit log.</p>
+<h2 id="before-you-start">Before you start</h2>
+<ul>
+<li>The module installed and working in your site: see <a href="../../mcp/install-the-module/">Install the MCP module in your site</a>.</li>
+<li>opticli 0.30.0 or newer: <code>AddOptiCliMcp()</code> returns the builder you add tools to from that version on.</li>
+<li>An Alloy site with its product pages, and an editor account you can connect Claude Code with.</li>
+</ul>
+<h2 id="build-the-tools">Build the tools</h2>
+<h3 id="1-write-the-read-tool">1. Write the read tool</h3>
+<p>A read tool is an ordinary MCP C# SDK tool class. Each tool method needs <code>[McpServerTool]</code> with a <code>Name</code> and
+<code>ReadOnly = true</code>. Leave <code>[McpServerToolType]</code> off the class: the SDK's <code>WithToolsFromAssembly()</code> would offer it on
+the site's other MCP servers too.</p>
+<div class="snippet lang-csharp"><div class="snippet-bar"><span>C#</span></div><pre><code id="code-1"><span class="t-k">using</span><span class="t-w"> </span><span class="t-nn">System.ComponentModel</span><span class="t-p">;</span>
+<span class="t-k">using</span><span class="t-w"> </span><span class="t-nn">EPiServer</span><span class="t-p">;</span>
+<span class="t-k">using</span><span class="t-w"> </span><span class="t-nn">EPiServer.Core</span><span class="t-p">;</span>
+<span class="t-k">using</span><span class="t-w"> </span><span class="t-nn">ModelContextProtocol.Server</span><span class="t-p">;</span>
+<span class="t-k">using</span><span class="t-w"> </span><span class="t-nn">OptiCli.Mcp</span><span class="t-p">;</span>
+<span class="t-c1">// plus your Alloy project&#39;s namespace for ProductPage</span>
+
+<span class="t-k">public</span><span class="t-w"> </span><span class="t-k">sealed</span><span class="t-w"> </span><span class="t-k">class</span><span class="t-w"> </span><span class="t-nf">ProductTeaserTools</span><span class="t-p">(</span><span class="t-n">IOptiCliEditor</span><span class="t-w"> </span><span class="t-n">editor</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">IContentLoader</span><span class="t-w"> </span><span class="t-n">loader</span><span class="t-p">)</span>
+<span class="t-p">{</span>
+<span class="t-w">    </span><span class="t-na">[McpServerTool(Name = &quot;list_products_missing_teaser&quot;, Title = &quot;Product pages without a teaser&quot;, ReadOnly = true, OpenWorld = false)]</span>
+<span class="t-w">    </span><span class="t-na">[Description(&quot;Lists the product pages below a page that have no teaser text of their own. Read each one with get_content before writing a teaser for it.&quot;)]</span>
+<span class="t-w">    </span><span class="t-k">public</span><span class="t-w"> </span><span class="t-n">IReadOnlyList</span><span class="t-o">&lt;</span><span class="t-n">ContentDescription</span><span class="t-o">&gt;</span><span class="t-w"> </span><span class="t-n">ListProductsMissingTeaser</span><span class="t-p">(</span>
+<span class="t-w">        </span><span class="t-na">[Description(&quot;The id of the page to look below, e.g. the Products page.&quot;)]</span><span class="t-w"> </span><span class="t-kt">int</span><span class="t-w"> </span><span class="t-n">below</span><span class="t-p">)</span>
+<span class="t-w">    </span><span class="t-p">{</span>
+<span class="t-w">        </span><span class="t-kt">var</span><span class="t-w"> </span><span class="t-n">root</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-n">editor</span><span class="t-p">.</span><span class="t-n">Load</span><span class="t-o">&lt;</span><span class="t-n">PageData</span><span class="t-o">&gt;</span><span class="t-p">(</span><span class="t-k">new</span><span class="t-w"> </span><span class="t-n">ContentReference</span><span class="t-p">(</span><span class="t-n">below</span><span class="t-p">));</span>
+<span class="t-w">        </span><span class="t-c1">// Everything below, as the CMS finds it: no access checks yet. Sorted, so the order is stable.</span>
+<span class="t-w">        </span><span class="t-kt">var</span><span class="t-w"> </span><span class="t-n">links</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-n">loader</span><span class="t-p">.</span><span class="t-n">GetDescendents</span><span class="t-p">(</span><span class="t-n">root</span><span class="t-p">.</span><span class="t-n">ContentLink</span><span class="t-p">.</span><span class="t-n">ToReferenceWithoutVersion</span><span class="t-p">()).</span><span class="t-n">OrderBy</span><span class="t-p">(</span><span class="t-n">link</span><span class="t-w"> </span><span class="t-o">=&gt;</span><span class="t-w"> </span><span class="t-n">link</span><span class="t-p">.</span><span class="t-n">ID</span><span class="t-p">);</span>
+<span class="t-w">        </span><span class="t-kt">var</span><span class="t-w"> </span><span class="t-n">missing</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-k">new</span><span class="t-w"> </span><span class="t-n">List</span><span class="t-o">&lt;</span><span class="t-n">ContentDescription</span><span class="t-o">&gt;</span><span class="t-p">();</span>
+<span class="t-w">        </span><span class="t-k">foreach</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-kt">var</span><span class="t-w"> </span><span class="t-n">found</span><span class="t-w"> </span><span class="t-k">in</span><span class="t-w"> </span><span class="t-n">editor</span><span class="t-p">.</span><span class="t-n">Readable</span><span class="t-p">(</span><span class="t-n">links</span><span class="t-p">).</span><span class="t-n">OfType</span><span class="t-o">&lt;</span><span class="t-n">ProductPage</span><span class="t-o">&gt;</span><span class="t-p">())</span>
+<span class="t-w">        </span><span class="t-p">{</span>
+<span class="t-w">            </span><span class="t-c1">// The newest version, as the write tool sees it: a draft may have a teaser already.</span>
+<span class="t-w">            </span><span class="t-kt">var</span><span class="t-w"> </span><span class="t-n">page</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-n">editor</span><span class="t-p">.</span><span class="t-n">Load</span><span class="t-o">&lt;</span><span class="t-n">ProductPage</span><span class="t-o">&gt;</span><span class="t-p">(</span><span class="t-n">found</span><span class="t-p">.</span><span class="t-n">ContentLink</span><span class="t-p">.</span><span class="t-n">ToReferenceWithoutVersion</span><span class="t-p">(),</span><span class="t-w"> </span><span class="t-n">latest</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-k">true</span><span class="t-p">);</span>
+<span class="t-w">            </span><span class="t-k">if</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-o">!</span><span class="t-n">HasOwnTeaser</span><span class="t-p">(</span><span class="t-n">page</span><span class="t-p">))</span>
+<span class="t-w">            </span><span class="t-p">{</span>
+<span class="t-w">                </span><span class="t-n">missing</span><span class="t-p">.</span><span class="t-n">Add</span><span class="t-p">(</span><span class="t-n">editor</span><span class="t-p">.</span><span class="t-n">Describe</span><span class="t-p">(</span><span class="t-n">page</span><span class="t-p">));</span>
+<span class="t-w">            </span><span class="t-p">}</span>
+<span class="t-w">        </span><span class="t-p">}</span>
+<span class="t-w">        </span><span class="t-k">return</span><span class="t-w"> </span><span class="t-n">missing</span><span class="t-p">;</span>
+<span class="t-w">    </span><span class="t-p">}</span>
+
+<span class="t-w">    </span><span class="t-c1">// Alloy&#39;s TeaserText getter falls back to MetaDescription, so read the stored value instead.</span>
+<span class="t-w">    </span><span class="t-k">internal</span><span class="t-w"> </span><span class="t-k">static</span><span class="t-w"> </span><span class="t-kt">bool</span><span class="t-w"> </span><span class="t-nf">HasOwnTeaser</span><span class="t-p">(</span><span class="t-n">PageData</span><span class="t-w"> </span><span class="t-n">page</span><span class="t-p">)</span><span class="t-w"> </span><span class="t-o">=&gt;</span>
+<span class="t-w">        </span><span class="t-o">!</span><span class="t-kt">string</span><span class="t-p">.</span><span class="t-n">IsNullOrWhiteSpace</span><span class="t-p">(</span><span class="t-n">page</span><span class="t-p">.</span><span class="t-n">Property</span><span class="t-p">[</span><span class="t-s">&quot;TeaserText&quot;</span><span class="t-p">]</span><span class="t-o">?.</span><span class="t-n">Value</span><span class="t-w"> </span><span class="t-k">as</span><span class="t-w"> </span><span class="t-kt">string</span><span class="t-p">);</span>
+<span class="t-p">}</span></code></pre></div>
+<p>Three things make this safe. <code>IContentLoader</code> checks no access rights, so every reference it finds goes through
+<code>editor.Readable</code>, which keeps only what the editor may read. Content they can't read must not show up in a result, a
+count or an error. <code>editor.Load</code> loads as <code>get_content</code> does and answers <code>not_found</code> for content that is missing or
+hidden alike. And <code>editor.Describe</code> gives each page the fields the module's own tools give, with <code>url</code> and <code>editUrl</code>,
+so the assistant can go on with <code>get_content</code> and hand the editor a link.</p>
+<blockquote>
+<p><strong>Note:</strong> <code>GetDescendents</code> reads the whole subtree. That is fine for Alloy's few product pages. On a large site, find
+the candidates with your search index or a narrower query, then pass them through <code>editor.Readable</code> the same way.</p>
+</blockquote>
+<h3 id="2-write-the-write-tool">2. Write the write tool</h3>
+<p>A write tool never saves anything itself. It returns a <code>ContentPlan</code>, and the module checks that plan with a dry run,
+shows it to the user through the assistant, and saves it as drafts. The arguments are a record whose properties the
+assistant sees as the tool's arguments, in camelCase.</p>
+<div class="snippet lang-csharp"><div class="snippet-bar"><span>C#</span></div><pre><code id="code-2"><span class="t-k">using</span><span class="t-w"> </span><span class="t-nn">System.ComponentModel</span><span class="t-p">;</span>
+<span class="t-k">using</span><span class="t-w"> </span><span class="t-nn">EPiServer.Core</span><span class="t-p">;</span>
+<span class="t-k">using</span><span class="t-w"> </span><span class="t-nn">OptiCli.Mcp</span><span class="t-p">;</span>
+<span class="t-c1">// plus your Alloy project&#39;s namespace for ProductPage</span>
+
+<span class="t-k">public</span><span class="t-w"> </span><span class="t-k">sealed</span><span class="t-w"> </span><span class="t-k">record</span><span class="t-w"> </span><span class="t-nf">ProductTeaser</span><span class="t-p">(</span>
+<span class="t-w">    </span><span class="t-na">[property: Description(&quot;The product page&#39;s id, as list_products_missing_teaser gives it.&quot;)]</span><span class="t-w"> </span><span class="t-kt">int</span><span class="t-w"> </span><span class="t-n">Id</span><span class="t-p">,</span>
+<span class="t-w">    </span><span class="t-na">[property: Description(&quot;The teaser text: one or two plain sentences, no markup.&quot;)]</span><span class="t-w"> </span><span class="t-kt">string</span><span class="t-w"> </span><span class="t-n">Text</span><span class="t-p">);</span>
+
+<span class="t-k">public</span><span class="t-w"> </span><span class="t-k">sealed</span><span class="t-w"> </span><span class="t-k">record</span><span class="t-w"> </span><span class="t-nf">FillProductTeasersArgs</span><span class="t-p">(</span>
+<span class="t-w">    </span><span class="t-na">[property: Description(&quot;A teaser for each product page to fill, one per page.&quot;)]</span><span class="t-w"> </span><span class="t-n">IReadOnlyList</span><span class="t-o">&lt;</span><span class="t-n">ProductTeaser</span><span class="t-o">&gt;</span><span class="t-w"> </span><span class="t-n">Teasers</span><span class="t-p">);</span>
+
+<span class="t-na">[OptiCliWriteTool(&quot;fill_product_teasers&quot;, Title = &quot;Fill product teasers&quot;, Kinds = ContentPlanKinds.Update)]</span>
+<span class="t-na">[Description(&quot;Writes a teaser text on product pages that have none of their own. Pages that already have one are left as they are.&quot;)]</span>
+<span class="t-k">public</span><span class="t-w"> </span><span class="t-k">sealed</span><span class="t-w"> </span><span class="t-k">class</span><span class="t-w"> </span><span class="t-nf">FillProductTeasersTool</span><span class="t-p">(</span><span class="t-n">IOptiCliEditor</span><span class="t-w"> </span><span class="t-n">editor</span><span class="t-p">)</span><span class="t-w"> </span><span class="t-p">:</span><span class="t-w"> </span><span class="t-n">IOptiCliWriteTool</span><span class="t-o">&lt;</span><span class="t-n">FillProductTeasersArgs</span><span class="t-o">&gt;</span>
+<span class="t-p">{</span>
+<span class="t-w">    </span><span class="t-k">public</span><span class="t-w"> </span><span class="t-n">Task</span><span class="t-o">&lt;</span><span class="t-n">ContentPlan</span><span class="t-o">&gt;</span><span class="t-w"> </span><span class="t-n">PlanAsync</span><span class="t-p">(</span><span class="t-n">FillProductTeasersArgs</span><span class="t-w"> </span><span class="t-n">args</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">CancellationToken</span><span class="t-w"> </span><span class="t-n">cancellationToken</span><span class="t-p">)</span>
+<span class="t-w">    </span><span class="t-p">{</span>
+<span class="t-w">        </span><span class="t-c1">// Alloy has no nullable reference types, so the list and its texts can still arrive as null.</span>
+<span class="t-w">        </span><span class="t-k">if</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Teasers</span><span class="t-w"> </span><span class="t-k">is</span><span class="t-w"> </span><span class="t-k">null</span><span class="t-w"> </span><span class="t-o">||</span><span class="t-w"> </span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Teasers</span><span class="t-p">.</span><span class="t-n">Count</span><span class="t-w"> </span><span class="t-o">==</span><span class="t-w"> </span><span class="t-mi">0</span><span class="t-w"> </span><span class="t-o">||</span><span class="t-w"> </span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Teasers</span><span class="t-p">.</span><span class="t-n">Any</span><span class="t-p">(</span><span class="t-n">t</span><span class="t-w"> </span><span class="t-o">=&gt;</span><span class="t-w"> </span><span class="t-n">t</span><span class="t-w"> </span><span class="t-k">is</span><span class="t-w"> </span><span class="t-k">null</span><span class="t-w"> </span><span class="t-o">||</span><span class="t-w"> </span><span class="t-kt">string</span><span class="t-p">.</span><span class="t-n">IsNullOrWhiteSpace</span><span class="t-p">(</span><span class="t-n">t</span><span class="t-p">.</span><span class="t-n">Text</span><span class="t-p">)))</span>
+<span class="t-w">        </span><span class="t-p">{</span>
+<span class="t-w">            </span><span class="t-k">throw</span><span class="t-w"> </span><span class="t-k">new</span><span class="t-w"> </span><span class="t-nf">OptiCliToolException</span><span class="t-p">(</span><span class="t-s">&quot;usage&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s">&quot;Every teaser needs a page id and a text.&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s">&quot;Give at least one page with a teaser text.&quot;</span><span class="t-p">);</span>
+<span class="t-w">        </span><span class="t-p">}</span>
+<span class="t-w">        </span><span class="t-k">if</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Teasers</span><span class="t-p">.</span><span class="t-n">GroupBy</span><span class="t-p">(</span><span class="t-n">t</span><span class="t-w"> </span><span class="t-o">=&gt;</span><span class="t-w"> </span><span class="t-n">t</span><span class="t-p">.</span><span class="t-n">Id</span><span class="t-p">).</span><span class="t-n">FirstOrDefault</span><span class="t-p">(</span><span class="t-n">g</span><span class="t-w"> </span><span class="t-o">=&gt;</span><span class="t-w"> </span><span class="t-n">g</span><span class="t-p">.</span><span class="t-n">Count</span><span class="t-p">()</span><span class="t-w"> </span><span class="t-o">&gt;</span><span class="t-w"> </span><span class="t-mi">1</span><span class="t-p">)</span><span class="t-w"> </span><span class="t-k">is</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-p">}</span><span class="t-w"> </span><span class="t-n">twice</span><span class="t-p">)</span>
+<span class="t-w">        </span><span class="t-p">{</span>
+<span class="t-w">            </span><span class="t-k">throw</span><span class="t-w"> </span><span class="t-k">new</span><span class="t-w"> </span><span class="t-nf">OptiCliToolException</span><span class="t-p">(</span><span class="t-s">&quot;usage&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s">$&quot;Page {twice.Key} is in teasers more than once.&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s">&quot;Give each page once.&quot;</span><span class="t-p">);</span>
+<span class="t-w">        </span><span class="t-p">}</span>
+
+<span class="t-w">        </span><span class="t-kt">var</span><span class="t-w"> </span><span class="t-n">plan</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-k">new</span><span class="t-w"> </span><span class="t-n">ContentPlan</span><span class="t-p">();</span>
+<span class="t-w">        </span><span class="t-k">foreach</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-kt">var</span><span class="t-w"> </span><span class="t-n">teaser</span><span class="t-w"> </span><span class="t-k">in</span><span class="t-w"> </span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Teasers</span><span class="t-p">.</span><span class="t-n">OrderBy</span><span class="t-p">(</span><span class="t-n">t</span><span class="t-w"> </span><span class="t-o">=&gt;</span><span class="t-w"> </span><span class="t-n">t</span><span class="t-p">.</span><span class="t-n">Id</span><span class="t-p">))</span>
+<span class="t-w">        </span><span class="t-p">{</span>
+<span class="t-w">            </span><span class="t-c1">// The latest version, draft included: an update based on an older one is a conflict.</span>
+<span class="t-w">            </span><span class="t-kt">var</span><span class="t-w"> </span><span class="t-n">page</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-n">editor</span><span class="t-p">.</span><span class="t-n">Load</span><span class="t-o">&lt;</span><span class="t-n">ProductPage</span><span class="t-o">&gt;</span><span class="t-p">(</span><span class="t-k">new</span><span class="t-w"> </span><span class="t-n">ContentReference</span><span class="t-p">(</span><span class="t-n">teaser</span><span class="t-p">.</span><span class="t-n">Id</span><span class="t-p">),</span><span class="t-w"> </span><span class="t-n">latest</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-k">true</span><span class="t-p">);</span>
+<span class="t-w">            </span><span class="t-k">if</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-n">ProductTeaserTools</span><span class="t-p">.</span><span class="t-n">HasOwnTeaser</span><span class="t-p">(</span><span class="t-n">page</span><span class="t-p">))</span>
+<span class="t-w">            </span><span class="t-p">{</span>
+<span class="t-w">                </span><span class="t-k">continue</span><span class="t-p">;</span><span class="t-w">   </span><span class="t-c1">// already done: no step, so a new dry run after a stopped run shows only what is left</span>
+<span class="t-w">            </span><span class="t-p">}</span>
+<span class="t-w">            </span><span class="t-n">plan</span><span class="t-p">.</span><span class="t-n">Update</span><span class="t-p">(</span><span class="t-n">page</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">p</span><span class="t-w"> </span><span class="t-o">=&gt;</span><span class="t-w"> </span><span class="t-n">p</span><span class="t-p">.</span><span class="t-n">Set</span><span class="t-p">(</span><span class="t-s">&quot;TeaserText&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">teaser</span><span class="t-p">.</span><span class="t-n">Text</span><span class="t-p">.</span><span class="t-n">Trim</span><span class="t-p">()));</span>
+<span class="t-w">        </span><span class="t-p">}</span>
+<span class="t-w">        </span><span class="t-k">return</span><span class="t-w"> </span><span class="t-n">Task</span><span class="t-p">.</span><span class="t-n">FromResult</span><span class="t-p">(</span><span class="t-n">plan</span><span class="t-p">);</span>
+<span class="t-w">    </span><span class="t-p">}</span>
+<span class="t-p">}</span></code></pre></div>
+<p>The ids come from the assistant, which already knows them, so <code>editor.Load</code> is the right call here: it answers
+<code>not_found</code> for a page the editor can't read, and <code>usage</code> for one that isn't a <code>ProductPage</code>. Duplicates are refused
+up front because a plan that updates the same content twice is a fault of the site, which the assistant only sees as
+<code>internal</code>. <code>Kinds</code> declares which steps the plan may have; add <code>ContentPlanKinds.Create</code> before you call
+<code>plan.Create</code>, for example.</p>
+<p>The module calls <code>PlanAsync</code> twice: once for the dry run and once for the real run, and refuses the real run if the
+two plans differ. So plan deterministically. Sort, never add timestamps or new GUIDs, and plan from the content's
+current state.</p>
+<h3 id="3-register-both-tools">3. Register both tools</h3>
+<p>Chain them on the builder <code>AddOptiCliMcp</code> returns, and add a line of instructions that tells the assistant how they fit
+together:</p>
+<div class="snippet lang-csharp"><div class="snippet-bar"><span>C#</span></div><pre><code id="code-3"><span class="t-n">services</span><span class="t-p">.</span><span class="t-n">AddOptiCliMcp</span><span class="t-p">()</span>
+<span class="t-w">    </span><span class="t-p">.</span><span class="t-n">WithTools</span><span class="t-o">&lt;</span><span class="t-n">ProductTeaserTools</span><span class="t-o">&gt;</span><span class="t-p">()</span>
+<span class="t-w">    </span><span class="t-p">.</span><span class="t-n">WithWriteTool</span><span class="t-o">&lt;</span><span class="t-n">FillProductTeasersTool</span><span class="t-o">&gt;</span><span class="t-p">()</span>
+<span class="t-w">    </span><span class="t-p">.</span><span class="t-n">WithInstructions</span><span class="t-p">(</span><span class="t-s">&quot;To fill missing teasers on product pages: list them with list_products_missing_teaser, read each with get_content, write a teaser from its content, and save them with fill_product_teasers.&quot;</span><span class="t-p">);</span></code></pre></div>
+<p>The module checks names, attributes and argument types at startup. A mistake makes <code>WithTools</code>, <code>WithWriteTool</code> or
+<code>MapOptiCliMcp()</code> throw an <code>InvalidOperationException</code> that names the class and method, so run the site once before
+anything else.</p>
+<h2 id="name-and-describe-them-well">Name and describe them well</h2>
+<p>The assistant picks tools by name and description, so these are your user interface.</p>
+<ul>
+<li><strong>Name</strong> a tool for what it does on your site, in the module's style: <code>list_products_missing_teaser</code>, not <code>search</code>
+or <code>products</code>. Names are 1 to 128 letters, digits, <code>_</code>, <code>-</code> and <code>.</code>, and can't be one of the module's own
+(<code>get_content</code>, <code>update_content</code>, <code>delete_content</code> and the rest, whether offered or not).</li>
+<li><strong>Describe</strong> what the tool does and what to do with its result (&quot;read each one with get_content&quot;). Leave out the dry
+run workflow on a write tool: the module appends it to the description itself.</li>
+<li><strong>Describe every argument</strong> and say where its value comes from (&quot;as list_products_missing_teaser gives it&quot;).</li>
+<li><strong>Fail on purpose</strong> with <code>OptiCliToolException(code, message, hint)</code>, using <code>usage</code>, <code>not_found</code>, <code>refused</code> or
+<code>conflict</code>. The assistant follows the hint. Anything else your tool throws is logged and reaches the assistant as
+<code>internal</code>, without its message, so never put content the editor can't read in a message.</li>
+</ul>
+<h2 id="try-the-dry-run-and-confirm-flow">Try the dry run and confirm flow</h2>
+<p>Rebuild, connect Claude Code as an editor, and ask:</p>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-4">Copy</button></div><pre><code id="code-4">Find the product pages below Products that have no teaser text. Read each one and write a teaser of at most two
+sentences. Show me the changes before you save anything.</code></pre></div>
+<p>The assistant calls <code>list_products_missing_teaser</code>, reads each page, and then calls <code>fill_product_teasers</code> with
+<code>dryRun: true</code>. The arguments it sends look like this (the ids are examples):</p>
+<div class="snippet lang-json"><div class="snippet-bar"><span>JSON</span></div><pre><code id="code-5"><span class="t-p">{</span>
+<span class="t-w">  </span><span class="t-nt">&quot;teasers&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">[</span>
+<span class="t-w">    </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nt">&quot;id&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-mi">12</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;text&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;Alloy Plan keeps every project on schedule, from first idea to delivery.&quot;</span><span class="t-w"> </span><span class="t-p">},</span>
+<span class="t-w">    </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nt">&quot;id&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-mi">14</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;text&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;Alloy Meet brings your team together, wherever they work.&quot;</span><span class="t-w"> </span><span class="t-p">}</span>
+<span class="t-w">  </span><span class="t-p">],</span>
+<span class="t-w">  </span><span class="t-nt">&quot;dryRun&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-kc">true</span>
+<span class="t-p">}</span></code></pre></div>
+<p>The dry run checks every step as the editor (access rights, the edit UI's rules, validation, <code>baseVersion</code>) and
+answers with each step's changes, <code>valid</code>, a <code>planToken</code> and <code>planTokenExpires</code>. A plan with a step that would be
+refused gets no token. The assistant shows you the changes. When you agree, it calls the tool again with the same
+arguments, <code>dryRun: false</code> and the token. The module plans again, refuses the run with a <code>conflict</code> if anything
+changed, checks every step again, and saves them in order as drafts, each with an <code>editUrl</code> you can open in the CMS.</p>
+<p>A token runs once and expires after 30 minutes. A run that fails at a step stops there and keeps the steps before it,
+and the result lists what was saved, what failed and why, and what didn't run.</p>
+<h2 id="test-it">Test it</h2>
+<ul>
+<li><strong>As a restricted editor.</strong> Take Read access on Alloy Meet away from your test editor and run the prompt again.
+Alloy Meet must not appear in the list, and the dry run must not mention it.</li>
+<li><strong>Change under the plan.</strong> Do a dry run, then edit the teaser of one listed page in the CMS, then confirm. The run
+must be refused with a <code>conflict</code> and save nothing; a new dry run shows the page gone from the plan.</li>
+<li><strong>Run twice.</strong> Confirm with the same token again. The second run is a <code>conflict</code>.</li>
+<li><strong>Check the audit log.</strong> With <code>OptiCli.Mcp.Audit</code> at Information, each tool call has a line, and the real run has a
+line per step with its kind, the content and the outcome.</li>
+<li><strong>Unit test the planning.</strong> <code>PlanAsync</code> is plain C#: test the argument checks with a stub <code>IOptiCliEditor</code>, and the
+number of steps with <code>plan.Count</code>. The steps' details are internal, so check them through a dry run on a test site.</li>
+</ul>
+<h2 id="if-something-goes-wrong">If something goes wrong</h2>
+<ul>
+<li><strong>The site won't start, with an <code>InvalidOperationException</code> naming your class:</strong> a missing <code>Name</code>, <code>ReadOnly</code>,
+<code>[Description]</code> or <code>Kinds</code>, or a name that is taken. The message says which.</li>
+<li><strong>Every update is a <code>conflict</code>:</strong> the plan loads content without <code>latest: true</code>, so a newer draft, your own included,
+makes it stale. Load what you change with <code>editor.Load&lt;T&gt;(link, latest: true)</code>.</li>
+<li><strong>&quot;The plan isn't the one the dry run showed&quot; on every run:</strong> the plan isn't deterministic. Look for unsorted
+results, timestamps or GUIDs.</li>
+<li><strong>The assistant gets <code>internal</code>:</strong> your tool threw something other than <code>OptiCliToolException</code>, or planned a step
+of a kind it didn't declare. The site's log has the details.</li>
+<li><strong>A plan is refused for too many steps:</strong> <code>MaxPlanSteps</code> (100 by default) caps a plan. Narrow the arguments; the
+hint tells the assistant to do the rest in further runs.</li>
+</ul>
+<h2 id="related">Related</h2>
+<ul>
+<li><a href="../../mcp/install-the-module/">Install the MCP module in your site</a></li>
+<li><a href="../../mcp/hardening/">Take the MCP module to production</a></li>
+<li>README: <a href="https://github.com/Epinova/opticli#custom-tools">Custom tools</a>, with every <code>ContentPlan</code> step (create,
+create in a &quot;For this page&quot; folder, move, trash) and the rules a tool must follow</li>
+<li>README: <a href="https://github.com/Epinova/opticli#beside-another-mcp-server">Beside another MCP server</a>, if the site runs
+one of its own</li>
+</ul>
+    </article>
+  </div>
+  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for the MCP module</h2><div class="file"><ol class="guide-list"><li><a href="../../mcp/install-the-module/"><b>Install the MCP module in your site</b><span>Add the opticli MCP module to a CMS 12 or CMS 13 site, decide what assistants may do, and connect a first assistant to check that it works.</span></a></li><li><a href="../../mcp/hardening/"><b>Take the MCP module to production</b><span>Configure the MCP module for a shared or production environment, from which assistants may connect and how the site is reached to error pages, uploads, the audit log and preview links.</span></a></li></ol></div></section>
+</div>
+</main>
+
+<footer class="wrap">
+  <p>opticli and OptiCli.Mcp are open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. They are independent projects, not affiliated with or endorsed by Optimizely.</p>
+</footer>
+<script>
+for (const button of document.querySelectorAll('[data-copy]')) {
+  button.addEventListener('click', async () => {
+    const text = document.getElementById(button.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(text); } catch { getSelection().selectAllChildren(document.getElementById(button.dataset.copy)); return; }
+    button.textContent = 'Copied';
+    button.dataset.done = '';
+    setTimeout(() => { button.textContent = 'Copy'; delete button.dataset.done; }, 1600);
+  });
+}
+</script>
+</body>
+</html>

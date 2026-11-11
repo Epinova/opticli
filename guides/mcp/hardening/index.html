@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Take the MCP module to production · opticli guides</title>
+<meta name="description" content="Configure the MCP module for a shared or production environment, from which assistants may connect and how the site is reached to error pages, uploads, the audit log and preview links.">
+<meta property="og:title" content="Take the MCP module to production · opticli guides">
+<meta property="og:description" content="Configure the MCP module for a shared or production environment, from which assistants may connect and how the site is reached to error pages, uploads, the audit log and preview links.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://epinova.github.io/opticli/guides/mcp/hardening/">
+<meta name="twitter:card" content="summary">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="../../../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../../style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chev" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 20 20"><path d="M8 4.5H4.5v11h11V12M11 4.5h4.5V9M15.2 4.8L9 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href="../../../">opticli<span>.</span></a>
+    <nav aria-label="Pages">
+      <a class="keep" href="../../">All guides</a><span class="sep" aria-hidden="true"></span><a class="page-link" href="../../../editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep page-link" href="../../../">For developers <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<div class="wrap guide">
+  <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#mcp">For the MCP module</a></p>
+  <h1>Take the MCP module to production</h1>
+  <p class="lead">Configure the MCP module for a shared or production environment, from which assistants may connect and how the site is reached to error pages, uploads, the audit log and preview links.</p>
+  <p class="guide-meta">Written for opticli 0.30.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/mcp/hardening.md">Edit on GitHub</a></p>
+  <div class="guide-body">
+    <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#harden-the-site">Harden the site</a></li><li><a href="#checklist">Checklist</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
+    <article class="prose">
+<p>On your machine the module works with its defaults. A shared test environment or production adds a proxy or load
+balancer, a public host name, web assistants calling from their own cloud, the site's own security middleware and
+people who need to know who did what. This guide goes through each of those. At the end you have a site where only the
+assistants you accept can connect, the module answers on the right host, its errors and pages are left intact, and
+every call is in the log. A checklist sums it up.</p>
+<h2 id="before-you-start">Before you start</h2>
+<ul>
+<li>The module installed and working locally: see <a href="../../mcp/install-the-module/">Install the MCP module in your site</a>.</li>
+<li>You know how the site is hosted: IIS or Kestrel, behind which proxy or load balancer, on DXP or not.</li>
+<li>You know which assistants your editors will use: desktop apps (Claude Desktop with the extension, Claude Code) or
+web assistants (claude.ai, Claude's custom connectors).</li>
+</ul>
+<h2 id="harden-the-site">Harden the site</h2>
+<h3 id="1-choose-which-assistants-may-connect">1. Choose which assistants may connect</h3>
+<p>Anyone can register an app with the module, and an app names itself. What stops a stranger from registering an app
+called &quot;Claude&quot; with a return address of their own is <code>AllowedRedirectHosts</code>: the hosts an app's OAuth redirect URI may
+be on. The default is <code>claude.ai</code> and <code>claude.com</code>. Hosts match exactly, over https only, with no subdomains or
+wildcards, and the module checks the list at registration and again at every sign-in.</p>
+<p>A loopback address on the editor's own machine is always allowed, on any port. That covers desktop apps, Claude Code
+and the Claude Desktop extension, which connect from the editor's machine.</p>
+<p>If your editors only use desktop apps, allow nothing else:</p>
+<div class="snippet lang-csharp"><div class="snippet-bar"><span>C#</span></div><pre><code id="code-1"><span class="t-n">services</span><span class="t-p">.</span><span class="t-n">AddOptiCliMcp</span><span class="t-p">(</span><span class="t-n">o</span><span class="t-w"> </span><span class="t-o">=&gt;</span><span class="t-w"> </span><span class="t-n">o</span><span class="t-p">.</span><span class="t-n">AllowedRedirectHosts</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-p">[]);</span></code></pre></div>
+<p>To accept another web assistant, list its host. In configuration a list replaces the default one, so keep Claude's
+hosts if you still want them:</p>
+<div class="snippet lang-json"><div class="snippet-bar"><span>JSON</span></div><pre><code id="code-2"><span class="t-p">{</span><span class="t-nt">&quot;OptiCli&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-nt">&quot;Mcp&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-nt">&quot;AllowedRedirectHosts&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">[</span><span class="t-s2">&quot;claude.ai&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s2">&quot;claude.com&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s2">&quot;assistant.example.com&quot;</span><span class="t-p">]}}}</span></code></pre></div>
+<p><code>[&quot;*&quot;]</code> lets any https host through and logs a warning at startup. Use it only if the site knowingly accepts any web
+app. While you are at it, narrow <code>AllowedRoles</code> to the roles that should connect an assistant at all.</p>
+<h3 id="2-make-the-site-answer-on-the-right-host">2. Make the site answer on the right host</h3>
+<p>The module builds its OAuth issuer, resource and metadata URLs from the request's host and scheme, as the site's login
+does. Behind a proxy that means ASP.NET Core's forwarded headers must be applied, limited to your known proxies.
+Without them every request seems to come from the proxy: all editors share one rate-limit window, and the assistant's
+preview links answer 404 when the proxy changes the host.</p>
+<p>Put the settings in the services, where the module can read them, not only in a call to <code>UseForwardedHeaders(options)</code>:</p>
+<div class="snippet lang-csharp"><div class="snippet-bar"><span>C#</span></div><pre><code id="code-3"><span class="t-k">using</span><span class="t-w"> </span><span class="t-nn">System.Net</span><span class="t-p">;</span>
+<span class="t-k">using</span><span class="t-w"> </span><span class="t-nn">Microsoft.AspNetCore.HttpOverrides</span><span class="t-p">;</span>
+
+<span class="t-n">services</span><span class="t-p">.</span><span class="t-n">Configure</span><span class="t-o">&lt;</span><span class="t-n">ForwardedHeadersOptions</span><span class="t-o">&gt;</span><span class="t-p">(</span><span class="t-n">o</span><span class="t-w"> </span><span class="t-o">=&gt;</span>
+<span class="t-p">{</span>
+<span class="t-w">    </span><span class="t-n">o</span><span class="t-p">.</span><span class="t-n">ForwardedHeaders</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-n">ForwardedHeaders</span><span class="t-p">.</span><span class="t-n">XForwardedFor</span><span class="t-w"> </span><span class="t-o">|</span><span class="t-w"> </span><span class="t-n">ForwardedHeaders</span><span class="t-p">.</span><span class="t-n">XForwardedProto</span><span class="t-w"> </span><span class="t-o">|</span><span class="t-w"> </span><span class="t-n">ForwardedHeaders</span><span class="t-p">.</span><span class="t-n">XForwardedHost</span><span class="t-p">;</span>
+<span class="t-w">    </span><span class="t-n">o</span><span class="t-p">.</span><span class="t-n">KnownProxies</span><span class="t-p">.</span><span class="t-n">Add</span><span class="t-p">(</span><span class="t-n">IPAddress</span><span class="t-p">.</span><span class="t-n">Parse</span><span class="t-p">(</span><span class="t-s">&quot;10.0.0.10&quot;</span><span class="t-p">));</span><span class="t-w">   </span><span class="t-c1">// your proxy</span>
+<span class="t-p">});</span></code></pre></div>
+<p><code>ASPNETCORE_FORWARDEDHEADERS_ENABLED</code>, or <code>AddCmsCloudPlatformSupport()</code> on DXP called before <code>AddOptiCliMcp()</code>,
+applies them early enough too. Behind a proxy that sends <code>X-Original-Host</code> (or <code>-For</code>, <code>-Proto</code>), apply them before
+the module in one of those two ways.</p>
+<p>Then limit the host names the module answers on. <code>RequireHost</code> keeps it on one host, such as an editors' host; the
+site's own <code>AllowedHosts</code> limits the whole site. For a host of its own, set <code>BasePath = &quot;&quot;</code> together with
+<code>RequireHost = &quot;mcp.example.com&quot;</code>. The issuer then has no path, which suits clients that don't handle one.</p>
+<h3 id="3-open-the-right-doors-for-web-assistants">3. Open the right doors for web assistants</h3>
+<p>Web assistants call the site from their provider's cloud, not from the editor's browser. Claude's custom connectors
+(claude.ai, Claude Desktop without the extension, mobile) need the site to be publicly reachable. A site that is only
+on a VPN or split DNS can't be used with them; its editors use the desktop extension instead.</p>
+<p>If you restrict <code>/episerver</code> by IP address, allow Anthropic's outbound range, <code>160.79.104.0/21</code>, for the MCP endpoint
+(<code>/episerver/opticli/mcp</code>), the <code>/.well-known</code> metadata documents and the <code>register</code> and <code>token</code> endpoints. The login,
+<code>authorize</code> and the connections page open in the editor's own browser, so they need what the CMS login needs.</p>
+<p>The site also needs outbound HTTPS: for a client with a metadata document, as Claude has, the module fetches that
+document from the client's own URL. claude.ai calls <code>register</code> and <code>token</code> from addresses all its users share; if many
+editors hit 429 there, raise <code>RateLimits.TokenPerAddressPerMinute</code>. Rate limits count per instance.</p>
+<h3 id="4-run-it-beside-another-mcp-server">4. Run it beside another MCP server</h3>
+<p>A site can run another MCP server built on the MCP C# SDK, its own or Optimizely's <code>Optimizely.Cms.Opal.Tools</code> on
+CMS 13. Register it after <code>AddOptiCliMcp()</code> and map it at a path of its own:</p>
+<div class="snippet lang-csharp"><div class="snippet-bar"><span>C#</span></div><pre><code id="code-4"><span class="t-n">services</span><span class="t-p">.</span><span class="t-n">AddOptiCliMcp</span><span class="t-p">();</span>
+<span class="t-n">services</span><span class="t-p">.</span><span class="t-n">AddMcpServer</span><span class="t-p">().</span><span class="t-n">WithHttpTransport</span><span class="t-p">();</span><span class="t-w">   </span><span class="t-c1">// the site&#39;s own server, after the module</span>
+<span class="t-c1">// ...</span>
+<span class="t-n">endpoints</span><span class="t-p">.</span><span class="t-n">MapMcp</span><span class="t-p">(</span><span class="t-s">&quot;/mcp&quot;</span><span class="t-p">);</span><span class="t-w">                     </span><span class="t-c1">// its own path</span>
+<span class="t-n">endpoints</span><span class="t-p">.</span><span class="t-n">MapOptiCliMcp</span><span class="t-p">();</span></code></pre></div>
+<p>Each endpoint then serves only its own server's tools, name and instructions. Registered before <code>AddOptiCliMcp()</code>, the
+other server's settings lose to the module's, and with legacy SSE the site fails at startup. Don't replace the SDK's
+<code>ConfigureSessionOptions</code> hook in a <code>PostConfigure</code> after the module: the module's endpoint then turns itself off and
+the log says why. The details are under <a href="https://github.com/Epinova/opticli#beside-another-mcp-server">Beside another MCP server</a>.</p>
+<h3 id="5-leave-error-pages-and-security-headers-to-the-module">5. Leave error pages and security headers to the module</h3>
+<p>The module switches off the site's status code pages for its own requests, so its 401 keeps the <code>WWW-Authenticate</code>
+header that tells the client where to sign in. Check that nothing in front of the site rewrites errors either.</p>
+<p>The consent and connections pages send their own <code>X-Frame-Options: DENY</code>, <code>Content-Security-Policy</code> and
+<code>Referrer-Policy</code>. Middleware that sets the site's security headers as the response starts replaces them, and
+<code>frame-ancestors</code> only works as a header. Have such middleware leave <code>/episerver/opticli</code> alone, or set only what the
+response doesn't have yet:</p>
+<div class="snippet lang-csharp"><div class="snippet-bar"><span>C#</span></div><pre><code id="code-5"><span class="t-n">app</span><span class="t-p">.</span><span class="t-n">Use</span><span class="t-p">(</span><span class="t-k">async</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-n">context</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">next</span><span class="t-p">)</span><span class="t-w"> </span><span class="t-o">=&gt;</span>
+<span class="t-p">{</span>
+<span class="t-w">    </span><span class="t-n">context</span><span class="t-p">.</span><span class="t-n">Response</span><span class="t-p">.</span><span class="t-n">OnStarting</span><span class="t-p">(()</span><span class="t-w"> </span><span class="t-o">=&gt;</span>
+<span class="t-w">    </span><span class="t-p">{</span>
+<span class="t-w">        </span><span class="t-n">context</span><span class="t-p">.</span><span class="t-n">Response</span><span class="t-p">.</span><span class="t-n">Headers</span><span class="t-p">.</span><span class="t-n">TryAdd</span><span class="t-p">(</span><span class="t-s">&quot;X-Frame-Options&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s">&quot;SAMEORIGIN&quot;</span><span class="t-p">);</span>
+<span class="t-w">        </span><span class="t-n">context</span><span class="t-p">.</span><span class="t-n">Response</span><span class="t-p">.</span><span class="t-n">Headers</span><span class="t-p">.</span><span class="t-n">TryAdd</span><span class="t-p">(</span><span class="t-s">&quot;X-Content-Type-Options&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s">&quot;nosniff&quot;</span><span class="t-p">);</span>
+<span class="t-w">        </span><span class="t-k">return</span><span class="t-w"> </span><span class="t-n">Task</span><span class="t-p">.</span><span class="t-n">CompletedTask</span><span class="t-p">;</span>
+<span class="t-w">    </span><span class="t-p">});</span>
+<span class="t-w">    </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-nf">next</span><span class="t-p">();</span>
+<span class="t-p">});</span></code></pre></div>
+<p><code>X-Content-Type-Options: nosniff</code> on media is worth having anyway: a browser then never takes an uploaded file for
+anything but what its content type says. On CMS 12.15 or newer, also have the CMS's script parser remove script on
+every save, the edit UI's included: <code>&quot;EPiServer&quot;: {&quot;Cms&quot;: {&quot;ScriptParser&quot;: {&quot;SavingMode&quot;: &quot;Remove&quot;}}}</code>.</p>
+<h3 id="6-allow-larger-uploads-on-iis">6. Allow larger uploads on IIS</h3>
+<p>Assistants may upload media up to <code>MaxUploadBytes</code>, 10 MB by default and 50 MB at most. The CMS's own upload limit
+applies too, whichever is lower (<code>EPiServer:CmsUI:Upload:FileSizeLimit</code> on CMS 12, <code>EPiServer:Cms:MediaFile:FileSizeLimit</code>
+on CMS 13). Uploads travel as base64, so IIS's <code>maxAllowedContentLength</code> (30,000,000 bytes by default) stops anything
+past about 20 MB. Raise it in <code>web.config</code> when you raise <code>MaxUploadBytes</code>; the README's
+<a href="https://github.com/Epinova/opticli#uploads-on-iis">Uploads on IIS</a> has the snippet.</p>
+<h3 id="7-bound-connections-and-keep-the-audit-log">7. Bound connections and keep the audit log</h3>
+<p>An access token works for <code>AccessTokenLifetime</code> (1 hour), and the editor's roles and account are checked again at
+every refresh. For an external login (Entra ID, Opti ID) the CMS never hears that an account was disabled, so set
+<code>ConnectionLifetime</code> shorter than its 30-day default; 1 to 7 days is a better choice. After it, the editor connects
+again through the site's login, where the identity provider has its say.</p>
+<div class="snippet lang-json"><div class="snippet-bar"><span>JSON</span></div><pre><code id="code-6"><span class="t-p">{</span><span class="t-nt">&quot;OptiCli&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-nt">&quot;Mcp&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-nt">&quot;ConnectionLifetime&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;7.00:00:00&quot;</span><span class="t-p">}}}</span></code></pre></div>
+<p>Every authorization decision, token, revocation, tool call and opened preview link is logged in the
+<code>OptiCli.Mcp.Audit</code> category at Information level, never with tokens, links, secrets or property values. A site that
+logs Warning and up drops them unless you raise that category:</p>
+<div class="snippet lang-json"><div class="snippet-bar"><span>JSON</span></div><pre><code id="code-7"><span class="t-p">{</span><span class="t-nt">&quot;Logging&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-nt">&quot;LogLevel&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-nt">&quot;OptiCli.Mcp.Audit&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;Information&quot;</span><span class="t-p">}}}</span></code></pre></div>
+<p>At <code>/episerver/opticli/connections</code> editors see and revoke their own connections; WebAdmins and CmsAdmins see and
+revoke everyone's. Tell your administrators it is there.</p>
+<h3 id="8-decide-on-preview-links">8. Decide on preview links</h3>
+<p>Every write result gives the editor <code>editUrl</code> and <code>previewUrl</code>, the CMS's own links, which open only for someone signed
+in to the CMS. They carry no CMS preview token, and the module never makes one: from CMS 12.22 such a token signs
+whoever holds it in as the editor, on any request to the site, for its few minutes.</p>
+<p>So that the assistant can check how a draft looks, the module gives it a link of its own, <code>assistantPreviewUrl</code>. It
+shows one version of one item, works for <code>PreviewLinkLifetime</code> (10 minutes), answers GET and HEAD on its own host only,
+and stops when the connection ends. But the page renders as the editor: editor-only output (navigation, a quick
+navigator, user-specific content) is in the HTML for whoever holds the link, and the site's own code for that page
+runs in the editor's name. If that is more than you want to give away, turn it off:</p>
+<div class="snippet lang-json"><div class="snippet-bar"><span>JSON</span></div><pre><code id="code-8"><span class="t-p">{</span><span class="t-nt">&quot;OptiCli&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-nt">&quot;Mcp&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-nt">&quot;AllowPreviewLinks&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-kc">false</span><span class="t-p">}}}</span></code></pre></div>
+<h2 id="checklist">Checklist</h2>
+<ul>
+<li><code>AllowedRedirectHosts</code> lists only the web assistants you accept, or is empty for desktop-only use; never <code>[&quot;*&quot;]</code>
+without a reason.</li>
+<li><code>AllowedRoles</code> names only the roles that should connect an assistant.</li>
+<li><code>AllowPublish</code> and <code>AllowDelete</code> are on only where you decided they should be.</li>
+<li>Forwarded headers are applied for your known proxies, in the services, before the module needs them.</li>
+<li><code>RequireHost</code> or the site's <code>AllowedHosts</code> limits the host names.</li>
+<li>Web assistants can reach the MCP endpoint, metadata, <code>register</code> and <code>token</code>; IP filters allow <code>160.79.104.0/21</code>.</li>
+<li>The site can make outbound HTTPS requests.</li>
+<li>Another MCP server, if any, is registered after <code>AddOptiCliMcp()</code> and mapped at its own path.</li>
+<li>Security header middleware leaves <code>/episerver/opticli</code> alone or only adds missing headers; media gets <code>nosniff</code>.</li>
+<li>The CMS's script parser removes script on save (CMS 12.15 or newer).</li>
+<li><code>maxAllowedContentLength</code> on IIS matches <code>MaxUploadBytes</code>.</li>
+<li><code>ConnectionLifetime</code> is 1 to 7 days on a site with external logins.</li>
+<li><code>OptiCli.Mcp.Audit</code> logs at Information, and the logs are kept somewhere you can search.</li>
+<li><code>AllowPreviewLinks</code> is a decision, not a default you didn't look at.</li>
+<li>Every instance of a load-balanced site shares the Data Protection keys.</li>
+</ul>
+<h2 id="if-something-goes-wrong">If something goes wrong</h2>
+<ul>
+<li><strong>&quot;Return address not allowed&quot; on the consent page:</strong> the app's redirect host isn't in <code>AllowedRedirectHosts</code>. Add
+it only if you accept that app.</li>
+<li><strong>A web assistant can't connect, but Claude Code can:</strong> the site isn't reachable from the provider's cloud, or an IP
+filter blocks <code>160.79.104.0/21</code>.</li>
+<li><strong>Every editor gets 429 at once:</strong> forwarded headers aren't applied, so all requests share the proxy's address.</li>
+<li><strong>Preview links answer 404 behind a proxy:</strong> the forwarded headers are only passed to <code>UseForwardedHeaders(options)</code>.
+Configure them in the services.</li>
+<li><strong>The client gets a 405 instead of a 401:</strong> something outside the module rewrites the error; the module's own
+requests are already exempt from the site's status code pages.</li>
+<li><strong>Uploads past about 20 MB fail on IIS before they reach the site:</strong> raise <code>maxAllowedContentLength</code>. A 413 from the
+module itself means the file is over <code>MaxUploadBytes</code>.</li>
+</ul>
+<h2 id="related">Related</h2>
+<ul>
+<li><a href="../../mcp/install-the-module/">Install the MCP module in your site</a></li>
+<li><a href="../../mcp/custom-tools/">Write your first site-specific tool</a></li>
+<li><a href="../../editors/connect-your-assistant/">Connect your assistant</a>, for editors</li>
+<li>README: <a href="https://github.com/Epinova/opticli#security-model">Security model</a>,
+<a href="https://github.com/Epinova/opticli#options">Options</a>,
+<a href="https://github.com/Epinova/opticli#connecting-an-assistant">Connecting an assistant</a>,
+<a href="https://github.com/Epinova/opticli#error-pages-and-security-headers">Error pages and security headers</a>,
+<a href="https://github.com/Epinova/opticli#connections-and-audit-log">Connections and audit log</a></li>
+</ul>
+    </article>
+  </div>
+  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for the MCP module</h2><div class="file"><ol class="guide-list"><li><a href="../../mcp/install-the-module/"><b>Install the MCP module in your site</b><span>Add the opticli MCP module to a CMS 12 or CMS 13 site, decide what assistants may do, and connect a first assistant to check that it works.</span></a></li><li><a href="../../mcp/custom-tools/"><b>Write your first site-specific tool</b><span>Add a read tool and a write tool of your own to the MCP module, so editors&#x27; assistants can find Alloy product pages without a teaser and fill them in as drafts.</span></a></li></ol></div></section>
+</div>
+</main>
+
+<footer class="wrap">
+  <p>opticli and OptiCli.Mcp are open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. They are independent projects, not affiliated with or endorsed by Optimizely.</p>
+</footer>
+<script>
+for (const button of document.querySelectorAll('[data-copy]')) {
+  button.addEventListener('click', async () => {
+    const text = document.getElementById(button.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(text); } catch { getSelection().selectAllChildren(document.getElementById(button.dataset.copy)); return; }
+    button.textContent = 'Copied';
+    button.dataset.done = '';
+    setTimeout(() => { button.textContent = 'Copy'; delete button.dataset.done; }, 1600);
+  });
+}
+</script>
+</body>
+</html>
