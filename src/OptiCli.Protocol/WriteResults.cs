@@ -141,8 +141,8 @@ public sealed record WriteResult
     /// <summary>
     /// What the site's own code changed while the content was saved (handlers of the CMS's save and publish events):
     /// other content it created, saved, published, moved or deleted, and the saved content itself when it put it
-    /// somewhere else than asked, or published it unasked. A dry run doesn't save, so it never has these. Null when
-    /// there were none.
+    /// somewhere else than asked, published it unasked, or changed values the write set (<see cref="Changes"/> are
+    /// then what was stored). A dry run doesn't save, so it never has these. Null when there were none.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<SiteChange>? SiteChanges { get; init; }
@@ -150,12 +150,25 @@ public sealed record WriteResult
 
 /// <summary>A change the site's own code made while content was saved: <see cref="WriteResult.SiteChanges"/>.</summary>
 /// <param name="Content">The content as it is after the save.</param>
-/// <param name="Actions">What happened to it, in order: <c>created</c>, <c>saved</c>, <c>published</c>, <c>moved</c>, <c>deleted</c> (to the recycle bin or for good).</param>
+/// <param name="Actions">
+/// What happened to it, in order: <c>created</c>, <c>saved</c>, <c>published</c>, <c>moved</c>, <c>deleted</c> (to the
+/// recycle bin or for good); for the saved content itself, <c>changed</c> when the site stored other values than the
+/// write asked for (<paramref name="Properties"/>).
+/// </param>
 /// <param name="PreviousParent">
 /// For <c>moved</c>: where it was; for the saved content itself, the parent it was asked to go below. For <c>deleted</c>,
 /// where it was before the recycle bin.
 /// </param>
-public sealed record SiteChange(ContentSummary Content, IReadOnlyList<string> Actions, string? PreviousParent = null);
+/// <param name="Properties">For <c>changed</c>: the properties the write set that the site's own code changed while it was saved.</param>
+public sealed record SiteChange(ContentSummary Content, IReadOnlyList<string> Actions, string? PreviousParent = null, IReadOnlyList<SiteChangedProperty>? Properties = null);
+
+/// <summary>
+/// A property a write set that the site's own code changed during the save (a handler of the CMS's saving events): what
+/// the write asked for, and what was stored.
+/// </summary>
+/// <param name="Asked">Omitted when the write asked for it to be empty.</param>
+/// <param name="Saved">Omitted when the stored value is empty.</param>
+public sealed record SiteChangedProperty(string Property, JsonElement? Asked, JsonElement? Saved);
 
 /// <summary>
 /// Changes a publish would put live besides its own: versions saved after the published version, in the language, by

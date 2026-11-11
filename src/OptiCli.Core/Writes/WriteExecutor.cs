@@ -1256,11 +1256,21 @@ public sealed class WriteExecutor(
         return new WriteOutcome(output, AgentSource, createdId, warnings);
     }
 
-    /// <summary>"created, published 2026 (123) below 45", "moved Release notes (678) from 45 below 123".</summary>
+    /// <summary>
+    /// "created, published 2026 (123) below 45", "moved Release notes (678) from 45 below 123", "changed Topic (678) below
+    /// 45: FocusTagId saved empty instead of "19"".
+    /// </summary>
     private static string Describe(SiteChange change)
     {
         var from = change.PreviousParent is { } previous ? $" from {previous}" : "";
-        return $"{string.Join(", ", change.Actions)} {change.Content.Name} ({change.Content.Id}){from} below {change.Content.Parent}";
+        var properties = change.Properties is { Count: > 0 } changed
+            ? ": " + string.Join(", ", changed.Select(p => $"{p.Property} saved {Shown(p.Saved)} instead of {Shown(p.Asked)}"))
+            : "";
+        return $"{string.Join(", ", change.Actions)} {change.Content.Name} ({change.Content.Id}){from} below {change.Content.Parent}{properties}";
+
+        static string Shown(System.Text.Json.JsonElement? value) => value?.GetRawText() is { } json
+            ? json.Length > 80 ? json[..77] + "..." : json
+            : "empty";
     }
 
     /// <summary>

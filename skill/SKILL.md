@@ -206,6 +206,9 @@ placed by reference has `content: {ref, ...}` (its values are its own: `set <its
   (`error.details.status`, `message`), `130` interrupted (Ctrl+C). `timeout` (exit 4) from `jobs run --timeout`: the
   job still runs. `login_failed` (exit 4): the database server refused the login (see reference.md).
 - `meta.warnings` means the result is valid but you should know something (e.g. a search was capped).
+- A write's `siteChanges` (with a warning) is what the site's own code did during the save, which a dry run can't show:
+  other content it created, published or moved, and values you set that it changed (`changed`, with `properties`:
+  `asked` and `saved`). `changes` are what was stored. Tell the user; don't set the value again to "fix" it.
 - Statuses: `published`, `checkedOut` (draft), `checkedIn` (ready to publish), `previouslyPublished`,
   `delayedPublish` (scheduled), `awaitingApproval`, `rejected`. Deleted items (in the recycle bin) say `deleted: true`.
 - When something fails oddly, run `opticli doctor` and read its `warnings`.

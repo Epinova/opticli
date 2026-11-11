@@ -185,6 +185,12 @@ public class McpFixture : IInitializableModule
     public const string ArchiveName = "opticli archive";
 
     /// <summary>
+    /// A teaser text the site clears whenever a page is saved with it (<see cref="ClearTeaser"/>): what a site's handler
+    /// that resets a value on save does, so a write's result has to report what was stored, not what it asked for.
+    /// </summary>
+    public const string ClearedTeaser = "opticli: cleared by the site";
+
+    /// <summary>
     /// Settings from the <c>OptiCli:Mcp</c> configuration section beat the ones Startup passes to AddOptiCliMcp, so the
     /// tests can start this site in another configuration (<c>OptiCli__Mcp__AllowPublish=false</c>). The module itself
     /// lets Startup's delegate win, as a site would want.
@@ -208,7 +214,10 @@ public class McpFixture : IInitializableModule
 
     public void Initialize(InitializationEngine context)
     {
-        context.Locate.Advanced.GetRequiredService<IContentEvents>().CreatingContent += FileIntoArchive;
+        var events = context.Locate.Advanced.GetRequiredService<IContentEvents>();
+        events.CreatingContent += FileIntoArchive;
+        events.CreatingContent += ClearTeaser;
+        events.SavingContent += ClearTeaser;
         context.InitComplete += (_, _) => SetupAtStart(context);
     }
 
@@ -227,6 +236,14 @@ public class McpFixture : IInitializableModule
             archive = repository.Save(created, SaveAction.Publish | SaveAction.SkipValidation, AccessLevel.NoAccess);
         }
         e.Content.ParentLink = archive.ToReferenceWithoutVersion();
+    }
+
+    private static void ClearTeaser(object? sender, ContentEventArgs e)
+    {
+        if (e.Content?.Property["TeaserText"] is { Value: ClearedTeaser } teaser)
+        {
+            teaser.Value = null;
+        }
     }
 
     private static void SetupAtStart(InitializationEngine context)

@@ -3,6 +3,16 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## Unreleased
+
+### CLI and MCP module
+
+- **A value the site's own code changes during a save is reported.** When a handler of the CMS's saving events changes
+  a property the write set (it clears a tag id, say), the result's `changes` show what was stored instead of what was
+  asked for, and `siteChanges` lists the content as `changed`, with each such property's `asked` and `saved` value. The
+  CLI warns about it, also for a plan's step. Before, the result showed the asked-for value although something else
+  was stored.
+
 ## 0.31.0 (11 November 2026)
 
 A test database can now be built from code: the CMS creates the schema in an empty database, and one plan adds the

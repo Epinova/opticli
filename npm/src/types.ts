@@ -135,6 +135,19 @@ export interface WriteResult {
   url?: string;
   /** The same URL with the host of the content's site for its language, as the CMS links to it (opticli 0.31 and newer). */
   canonicalUrl?: string;
+  /** What the site's own code did during the save (handlers of the CMS's content events); a dry run never has these. */
+  siteChanges?: SiteChange[];
+}
+
+/** A change the site's own code made while content was saved. */
+export interface SiteChange {
+  content: { ref: string; id: number; version?: number; guid: string; name: string; type?: string; language?: string; status?: string; parent?: string };
+  /** `created`, `saved`, `published`, `moved`, `deleted`; for the saved content itself, `changed` when other values were stored than asked for. */
+  actions: ('created' | 'saved' | 'published' | 'moved' | 'deleted' | 'changed' | (string & {}))[];
+  /** For `moved`: where it was (for the saved content, the parent it was asked to go below). */
+  previousParent?: string;
+  /** For `changed`: the properties the write set that the site changed. An empty value is left out. */
+  properties?: { property: string; asked?: unknown; saved?: unknown }[];
 }
 
 /** A site as `opticli sites` lists it. */

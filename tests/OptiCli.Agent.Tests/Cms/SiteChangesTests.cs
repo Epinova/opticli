@@ -55,6 +55,21 @@ public class SiteChangesTests
     }
 
     [Fact]
+    public void Values_the_site_changed_on_the_saved_content_are_reported_with_where_it_went()
+    {
+        var asked = System.Text.Json.JsonSerializer.SerializeToElement("19");
+        var overridden = new[] { new OptiCli.Protocol.SiteChangedProperty("FocusTagId", asked, null) };
+
+        var changed = Assert.Single(SiteChanges.Report(Call(CmsCaller.Editor), Types(), [], Article, askedParent: Article.ParentLink, published: false, overridden)!);
+        Assert.Equal(["changed"], changed.Actions);
+        Assert.Equal("FocusTagId", Assert.Single(changed.Properties!).Property);
+
+        var filed = Assert.Single(SiteChanges.Report(Call(CmsCaller.Editor), Types(), [], Article, askedParent: Blog, published: false, overridden)!);
+        Assert.Equal((30, "moved,changed", "5"), (filed.Content.Id, string.Join(",", filed.Actions), filed.PreviousParent));
+        Assert.Same(overridden, filed.Properties);
+    }
+
+    [Fact]
     public void Content_the_editor_cant_read_is_left_out()
     {
         var hidden = new CmsCallTests.Secured(new ContentReference(40), AccessLevel.NoAccess) { Name = "Audit log" };

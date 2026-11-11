@@ -82,12 +82,14 @@ internal sealed class SiteChanges : IDisposable
 
     /// <summary>
     /// The changes to report for a save of <paramref name="saved"/>: everything the events say happened to other content,
-    /// and of the saved content itself only what the save didn't ask for (moved, deleted, or published by a save that
-    /// didn't publish). Content the caller can't read is left out.
+    /// and of the saved content itself only what the save didn't ask for (moved, deleted, published by a save that didn't
+    /// publish, or other values stored than it asked for). Content the caller can't read is left out.
     /// </summary>
     /// <param name="askedParent">For new content, the parent it was asked to go below: reported as moved from there when the site put it elsewhere.</param>
+    /// <param name="overridden">Properties the save set that the site's own code changed while it was saved: reported as <c>changed</c>.</param>
     /// <returns>Null when there is nothing to report.</returns>
-    public static IReadOnlyList<SiteChange>? Report(CmsCall call, IContentTypeRepository types, IReadOnlyList<SiteEvent> events, IContent saved, ContentReference? askedParent, bool published)
+    public static IReadOnlyList<SiteChange>? Report(CmsCall call, IContentTypeRepository types, IReadOnlyList<SiteEvent> events, IContent saved, ContentReference? askedParent, bool published,
+        IReadOnlyList<SiteChangedProperty>? overridden = null)
     {
         var id = saved.ContentLink.ID;
         var own = new HashSet<string> { "moved", "deleted" };
@@ -100,6 +102,12 @@ internal sealed class SiteChanges : IDisposable
         if (savedChange is null && askedParent is not null && !askedParent.CompareToIgnoreWorkID(saved.ParentLink) && call.CanRead(saved))
         {
             savedChange = new SiteChange(ContentSummaries.Describe(saved, types), ["moved"], askedParent.ToReferenceWithoutVersion().ToString());
+        }
+        if (overridden is { Count: > 0 } && call.CanRead(saved))
+        {
+            savedChange = savedChange is null
+                ? new SiteChange(ContentSummaries.Describe(saved, types), ["changed"], Properties: overridden)
+                : savedChange with { Actions = [.. savedChange.Actions, "changed"], Properties = overridden };
         }
         if (savedChange is not null)
         {

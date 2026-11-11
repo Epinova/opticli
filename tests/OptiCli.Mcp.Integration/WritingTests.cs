@@ -169,6 +169,45 @@ public sealed class WritingTests(SharedSessions sessions)
     }
 
     [McpSiteFact]
+    public async Task A_value_the_sites_own_code_changes_on_save_is_reported_as_stored()
+    {
+        // The fixture's site clears this teaser text whenever a page is saved with it.
+        const string cleared = "opticli: cleared by the site";
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var start = Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        var created = await editor.OkAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = start, properties = new { TeaserText = cleared, MetaDescription = "kept" } });
+        var page = Id(created.GetProperty("content"));
+        try
+        {
+            AssertCleared(created);
+            // What was saved: the teaser text stayed empty, as it was.
+            Assert.Contains(created.GetProperty("changes").EnumerateArray(), c => c.GetProperty("property").GetString() == "MetaDescription");
+            Assert.DoesNotContain(created.GetProperty("changes").EnumerateArray(), c => c.GetProperty("property").GetString() == "TeaserText");
+
+            var kept = await editor.OkAsync("update_content", new { reference = page, properties = new { TeaserText = "kept" } });
+            Assert.False(kept.TryGetProperty("siteChanges", out _));
+            var updated = await editor.OkAsync("update_content", new { reference = page, properties = new { TeaserText = cleared } });
+            AssertCleared(updated);
+            var change = Assert.Single(updated.GetProperty("changes").EnumerateArray(), c => c.GetProperty("property").GetString() == "TeaserText");
+            Assert.Equal("kept", change.GetProperty("before").GetString());
+            Assert.False(change.TryGetProperty("after", out _));
+        }
+        finally
+        {
+            await DeleteAsync(editor, page);
+        }
+
+        static void AssertCleared(JsonElement result)
+        {
+            var change = Assert.Single(result.GetProperty("siteChanges").EnumerateArray());
+            Assert.Equal("changed", Assert.Single(change.GetProperty("actions").EnumerateArray()).GetString());
+            var property = Assert.Single(change.GetProperty("properties").EnumerateArray());
+            Assert.Equal(("TeaserText", cleared), (property.GetProperty("property").GetString(), property.GetProperty("asked").GetString()));
+            Assert.False(property.TryGetProperty("saved", out _));
+        }
+    }
+
+    [McpSiteFact]
     public async Task A_save_from_an_older_version_than_the_latest_is_refused_as_a_conflict()
     {
         var editor = await sessions.ForAsync(TestUsers.Editor);

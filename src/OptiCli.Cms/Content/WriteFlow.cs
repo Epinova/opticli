@@ -165,7 +165,8 @@ internal sealed class WriteFlow
                 : Repository.TryGet<IContent>(media.ContentLink, out var savedOver) ? savedOver : null;
             Operations.UploadOperation.RequireServedSafely(Call, media, NewFile, unchanged);
         }
-        var diff = PropertyValues.Diff(before, PropertyValues.Snapshot(writable));
+        var asked = PropertyValues.Snapshot(writable);
+        var diff = PropertyValues.Diff(before, asked);
         // What is reported: an editor never sees a hidden property's value, also not in a diff.
         var changes = Call.Properties.Shown(writable, diff);
         var issues = (precheck ?? []).Concat(InlineBlockWarnings()).Concat(Writer.Warnings).Concat(ValidationErrors.Validate(Call, writable, action)).ToList();
@@ -228,7 +229,14 @@ internal sealed class WriteFlow
             siteError = $"{ex.Message} ({ex.GetType().FullName})";
         }
         var result = Repository.Get<IContent>(saved);
-        var siteChanges = SiteChanges.Report(Call, Types, Call.TakeSiteEvents(), result, askedParent, published);
+        var overridden = Overridden(diff, writable, result);
+        if (overridden.Count > 0)
+        {
+            // Report what was stored, not what was asked for.
+            changes = Call.Properties.Shown(writable, Stored(diff, overridden));
+        }
+        var siteChanges = SiteChanges.Report(Call, Types, Call.TakeSiteEvents(), result, askedParent, published,
+            Call.Properties.Shown(result, overridden).Select(c => new SiteChangedProperty(c.Property, c.Before, c.After)).ToList());
         if (!published && writable is IVersionable && saved.WorkID > 0 && Compat.CmsApi.Variation(writable) is null)
         {
             // ForceNewVersion leaves the old primary draft in place, and edit mode would keep opening that one. (Not for a
@@ -250,6 +258,51 @@ internal sealed class WriteFlow
             SiteChanges = siteChanges,
             IntoVersion = intoVersion is { } target && saved.WorkID == target,
         };
+    }
+
+    /// <summary>Properties the CMS fills in on save when they are empty.</summary>
+    private static readonly HashSet<string> FilledByCms = new(StringComparer.OrdinalIgnoreCase) { "PageURLSegment", PropertyWriter.StartPublishKey };
+
+    /// <summary>
+    /// The properties the write changed that the site's own code changed again while it was saved (a handler of the CMS's
+    /// saving events, on the content being saved): <c>Before</c> what the write asked for, <c>After</c> what was stored.
+    /// </summary>
+    /// <remarks>
+    /// Told by the content the save was given, which the CMS hands to those handlers: compared with the stored version,
+    /// rich text and links would differ only in how the CMS stores them. Only properties the write changed: the CMS fills
+    /// in others itself (a new page's URL segment, the publish date), and those it fills in when the write left them empty.
+    /// </remarks>
+    private static List<PropertyChange> Overridden(IReadOnlyList<PropertyChange> diff, IContent saving, IContent stored)
+    {
+        if (diff.Count == 0)
+        {
+            return [];
+        }
+        var now = PropertyValues.Snapshot(saving);
+        Dictionary<string, JsonElement?>? values = null;
+        var overridden = new List<PropertyChange>();
+        // A composition's nodes get their keys as it is saved; an empty URL segment or publish date is filled in by the CMS
+        // (a new language branch's, a publish's).
+        foreach (var change in diff.Where(c => !c.Property.Equals(PropertyValues.CompositionKey, StringComparison.OrdinalIgnoreCase)
+            && !(c.After is null && FilledByCms.Contains(c.Property))))
+        {
+            if (now.GetValueOrDefault(change.Property)?.GetRawText() != change.After?.GetRawText())
+            {
+                values ??= PropertyValues.Snapshot(stored);
+                overridden.Add(new PropertyChange(change.Property, change.After, values.GetValueOrDefault(change.Property)));
+            }
+        }
+        return overridden;
+    }
+
+    /// <summary><paramref name="diff"/> with the stored values of <paramref name="overridden"/>, without those the site set back to what they were.</summary>
+    private static List<PropertyChange> Stored(IReadOnlyList<PropertyChange> diff, IReadOnlyList<PropertyChange> overridden)
+    {
+        var stored = overridden.ToDictionary(c => c.Property, c => c.After, StringComparer.OrdinalIgnoreCase);
+        return diff
+            .Select(c => stored.TryGetValue(c.Property, out var value) ? c with { After = value } : c)
+            .Where(c => c.Before?.GetRawText() != c.After?.GetRawText())
+            .ToList();
     }
 
     /// <summary>
