@@ -1,4 +1,7 @@
+using System.Globalization;
+using EPiServer;
 using EPiServer.Core;
+using EPiServer.ServiceLocation;
 using EPiServer.Web;
 using EPiServer.Web.Routing;
 
@@ -10,7 +13,8 @@ internal static class PublicUrls
     /// <param name="language">The language branch's code; the master language when null.</param>
     /// <param name="absolute">
     /// With the site's host (<see cref="CmsCall.AbsoluteUrls"/>), which the CMS otherwise leaves out for the site the request
-    /// came in on. Without it, the URL is host-relative whatever the CMS gives (<see cref="HostRelative"/>).
+    /// came in on. Without it, the URL is host-relative whatever the CMS gives (<see cref="HostRelative"/>), except a page's
+    /// whose shortcut is an external link: that link is its URL, on another host.
     /// </param>
     /// <returns>Null for content that has no URL (a block, a folder).</returns>
     public static string? Of(IUrlResolver urls, ContentReference link, string? language, bool absolute)
@@ -23,7 +27,34 @@ internal static class PublicUrls
         {
             return null;
         }
-        return absolute ? url : HostRelative(url);
+        if (absolute || HostRelative(url) is var relative && relative == url)
+        {
+            return url;
+        }
+        return IsExternalShortcut(link, language) ? url : relative;
+    }
+
+    /// <summary>Whether the page's shortcut, in <paramref name="language"/>, is an external link.</summary>
+    private static bool IsExternalShortcut(ContentReference link, string? language)
+    {
+        IContentLoader? loader = null;
+        try
+        {
+            ServiceLocator.Current.TryGetExistingInstance(out loader);
+        }
+        catch (InvalidOperationException)
+        {
+            // No service locator (a unit test).
+        }
+        var reference = link.ToReferenceWithoutVersion();
+        PageData? page = null;
+        if (loader is not null)
+        {
+            page = language is null
+                ? loader.TryGet<PageData>(reference, out var master) ? master : null
+                : loader.TryGet<PageData>(reference, CultureInfo.GetCultureInfo(language), out var branch) ? branch : null;
+        }
+        return page?.LinkType == PageShortcutType.External;
     }
 
     /// <summary>

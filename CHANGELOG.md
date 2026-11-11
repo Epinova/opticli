@@ -12,6 +12,9 @@ again to update the skill.
   asked for, and `siteChanges` lists the content as `changed`, with each such property's `asked` and `saved` value. The
   CLI warns about it, also for a plan's step. Before, the result showed the asked-for value although something else
   was stored.
+- **A page whose shortcut is an external link has that link as its `url` again** in write results and
+  `resolve`, as in versions before 0.29.0. Since then the link lost its host (`https://www.example.com/docs` became
+  `/docs`), which pointed at a page of the local site.
 
 ## 0.31.0 (11 November 2026)
 

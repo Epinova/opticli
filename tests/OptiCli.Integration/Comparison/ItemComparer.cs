@@ -126,13 +126,14 @@ internal sealed class ItemComparer(SiteUnderTest site)
         value?.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
 
     /// <summary>
-    /// The CMS answers host-relative URLs for the site the request came in on and absolute ones for the rest (the
-    /// agent is reached on 127.0.0.1, which usually belongs to no site). Absolute URLs are compared with opticli's
-    /// absolute ones; for shared assets, which belong to no one site, only the paths are compared.
+    /// The agent answers host-relative URLs, as <c>get</c> shows them, except an external shortcut's link. Absolute URLs
+    /// are compared with opticli's absolute ones; for shared assets, which belong to no one site, only the paths are
+    /// compared.
     /// </summary>
     private (string? Db, string? Agent) ComparableUrls(ContentDocument db, LanguageBranch? language, string? agentUrl)
     {
-        if (agentUrl is null || !Uri.TryCreate(agentUrl, UriKind.Absolute, out var absolute))
+        // A path parses as an absolute file: URI on Unix (/en/about/ as file:///en/about/).
+        if (agentUrl is null || !Uri.TryCreate(agentUrl, UriKind.Absolute, out var absolute) || absolute.Scheme is not ("http" or "https"))
         {
             return (db.Url, agentUrl);
         }
