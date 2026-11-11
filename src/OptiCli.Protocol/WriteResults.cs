@@ -97,7 +97,8 @@ public sealed record WriteResult
 
     /// <summary>
     /// For a write that publishes: unpublished changes by someone else that it puts live too. A dry run reports them
-    /// without failing; a real write only gets this far with <see cref="DraftRequest.IncludeDraft"/>.
+    /// without failing; a real write only gets this far with <see cref="DraftRequest.IncludeDraft"/>. For an editor's
+    /// review request (the MCP module): those the version sent for review carries, reported and never refused.
     /// </summary>
     public PendingDraft? PendingDraft { get; init; }
 

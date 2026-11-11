@@ -430,6 +430,81 @@ public sealed class WritingTests(SharedSessions sessions)
         EditUrl(deleted, reference);
     }
 
+    [McpSiteFact]
+    public async Task Publishing_a_named_version_with_a_colleagues_changes_needs_includeDraft()
+    {
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var admin = await sessions.ForAsync(TestUsers.Admin);
+        var start = Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        var page = Id((await editor.OkAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = start, publish = true })).GetProperty("content"));
+        try
+        {
+            // A colleague's draft, named by the editor's assistant: as a version id, and as a version reference.
+            var theirs = (await admin.OkAsync("update_content", new { reference = page, name = "Saved by a colleague" })).GetProperty("content").GetProperty("version").GetInt32();
+            foreach (var publish in new object[] { new { reference = page, version = theirs }, new { reference = $"{page}_{theirs}" } })
+            {
+                var refused = await editor.ErrorAsync("publish_content", publish);
+                Assert.Equal(("conflict", "pendingDraft"), (refused.GetProperty("code").GetString(), refused.GetProperty("reason").GetString()));
+                Assert.Equal(TestUsers.Admin, refused.GetProperty("pendingDraft").GetProperty("savedBy").GetString());
+            }
+            Assert.Equal("Saved by a colleague", (await editor.OkAsync("get_content", new { reference = page, version = "latest" })).GetProperty("name").GetString());
+            Assert.NotEqual("Saved by a colleague", (await editor.OkAsync("get_content", new { reference = page })).GetProperty("name").GetString());
+
+            // Once the editor agreed.
+            var confirmed = await editor.OkAsync("publish_content", new { reference = page, version = theirs, includeDraft = true });
+            Assert.True(confirmed.GetProperty("published").GetBoolean());
+            Assert.Equal(TestUsers.Admin, confirmed.GetProperty("pendingDraft").GetProperty("savedBy").GetString());
+
+            // The editor's own version, named, needs no confirmation.
+            var own = (await editor.OkAsync("update_content", new { reference = page, name = "Saved by the editor" })).GetProperty("content").GetProperty("version").GetInt32();
+            var published = await editor.OkAsync("publish_content", new { reference = page, version = own });
+            Assert.True(published.GetProperty("published").GetBoolean());
+            Assert.False(published.TryGetProperty("pendingDraft", out var none) && none.ValueKind != JsonValueKind.Null);
+        }
+        finally
+        {
+            await DeleteAsync(editor, page);
+        }
+    }
+
+    [McpSiteFact]
+    public async Task A_review_request_reports_a_colleagues_changes_it_sends_for_review()
+    {
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var admin = await sessions.ForAsync(TestUsers.Admin);
+        var root = Id(await editor.OkAsync("get_content", new { reference = TestUsers.ApprovalRoot }));
+        var pages = new List<string>();
+        try
+        {
+            // Through update_content (dry run first) and through publish_content: never refused, the colleague named.
+            foreach (var viaPublish in new[] { false, true })
+            {
+                var page = Id((await editor.OkAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = root })).GetProperty("content"));
+                pages.Add(page);
+                await admin.OkAsync("update_content", new { reference = page, name = "Saved by a colleague" });
+
+                if (!viaPublish)
+                {
+                    var dryRun = await editor.OkAsync("update_content", new { reference = page, properties = new { MetaTitle = "For review" }, requestApproval = true, dryRun = true });
+                    Assert.Equal(TestUsers.Admin, dryRun.GetProperty("pendingDraft").GetProperty("savedBy").GetString());
+                }
+                var review = viaPublish
+                    ? await editor.OkAsync("publish_content", new { reference = page, requestApproval = true })
+                    : await editor.OkAsync("update_content", new { reference = page, properties = new { MetaTitle = "For review" }, requestApproval = true });
+                Assert.True(review.GetProperty("approvalRequested").GetBoolean());
+                Assert.False(review.GetProperty("published").GetBoolean());
+                Assert.Equal(TestUsers.Admin, review.GetProperty("pendingDraft").GetProperty("savedBy").GetString());
+            }
+        }
+        finally
+        {
+            foreach (var page in pages)
+            {
+                await DeleteAsync(editor, page);
+            }
+        }
+    }
+
     internal static string Id(JsonElement content) => content.GetProperty("id").GetInt32().ToString(CultureInfo.InvariantCulture);
 
     internal static string? Property(JsonElement content, string name) =>

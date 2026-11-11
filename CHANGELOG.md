@@ -3,6 +3,20 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.30.1 (unreleased)
+
+### MCP server for editors
+
+- **A named version needs `includeDraft` too.** `publish_content` with a `version` (or a `123_456` reference) that
+  carries someone else's unpublished changes is now refused with `pendingDraft`, as publishing the latest version is,
+  until the assistant asked the editor and retries with `includeDraft`. Before, naming the version counted as the
+  confirmation, so an assistant could publish a colleague's draft without asking. An editor's own versions publish as
+  before. The CLI's `publish --version` is unchanged: there, naming the version is the developer's confirmation.
+- **A review request names a colleague's changes.** `requestApproval` (on `update_content`, its dry run, and
+  `publish_content`) still sends the version for review, as the reviewer sees all of it, but the result now has a
+  `pendingDraft` with the changes someone else saved that went for review too, and the server instructions tell the
+  assistant to say so.
+
 ## 0.30.0 (11 November 2026)
 
 A site can add tools of its own to the MCP server for editors: read tools, and write tools whose changes the module

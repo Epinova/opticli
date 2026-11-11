@@ -543,7 +543,7 @@ apply or not: give production a read-only SQL login for reads and a separate log
 | The site started by `serve` is pinned to the database the CLI reads. It refuses to start against any remote database except the approved development one. There it runs without scheduler, schema updates, content type sync or store remapping, and `serve` refuses a build with EF Core migrations the database lacks. If the site turns hosting startups off in its code, so the pin can't run, it refuses to start. | CLI + site agent at startup |
 | The site agent answers only loopback callers that send the per-run token, and only in `Development`. The token is kept in a state file only your user can read. | Site agent, per request |
 | Writes create drafts; publishing needs `--publish` (or `publish`). Saves are attributed to the user `opticli`. | CLI + site agent |
-| A publish that would also put live changes someone else saved after the published version stops: on a terminal it shows who saved what and asks, elsewhere it fails with `conflict` (exit 5) listing them. `--include-draft` (a plan step's `"includeDraft": true`) confirms; `publish --version <id>` publishes that version as it is; `--from published` bases the change on the published version, leaving them out. | Site agent |
+| A publish that would also put live changes someone else saved after the published version stops: on a terminal it shows who saved what and asks, elsewhere it fails with `conflict` (exit 5) listing them. `--include-draft` (a plan step's `"includeDraft": true`) confirms; `publish --version <id>` publishes that version as it is (an editor's assistant naming a version through the MCP module still needs `includeDraft`); `--from published` bases the change on the published version, leaving them out. | Site agent |
 | Against a shared database, writes stop while the build and the database differ (drift): on a terminal it shows the differences and asks, elsewhere it fails with `drift` (exit 5). `--accept-drift <fingerprint>` confirms; the fingerprint stops counting when the differences change. | Site agent, CLI first |
 | Against a shared database, `sites primary` and `sites host remove` are refused (exit 3), and `sites host add` only adds hosts of type undefined: the deployed site uses the same site definitions. There is no override; change those sites in their own admin UI. Site definitions are never reachable from the MCP module. | Site agent, CLI first |
 | `delete` moves content to the recycle bin; nothing empties it, and `restore` brings it back. Site roots, start pages, asset roots and anything above them can't be moved or deleted. The MCP module doesn't restore. | Site agent |
@@ -1832,7 +1832,11 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   discarded.
 - **`includeDraft` is a confirmation, not a boundary.** It stops the assistant from putting live or deleting someone
   else's changes without asking the user, but the assistant sets it itself; what the site allows is decided by
-  `AllowPublish`, `AllowDelete` and the editor's access rights.
+  `AllowPublish`, `AllowDelete` and the editor's access rights. It is needed also when the assistant publishes a
+  version it names (`version`, or a `123_456` reference): unlike the CLI's `publish --version`, where naming the version
+  is the developer's choice, the assistant picks it. A review request (`requestApproval`) is never refused for someone
+  else's changes, as the reviewer sees the whole version, but its result (and an `update_content` dry run's) names them
+  in `pendingDraft`, so the assistant can tell the editor.
 - **The consent page** lists what the app may do, with a checkbox each: reading is required, writing and (where the
   site allows it) publishing can be unticked, and the connection gets only what was left ticked. For an app that
   registered itself, a warning says plainly that it chose its own name and the site can't confirm who made it; an app

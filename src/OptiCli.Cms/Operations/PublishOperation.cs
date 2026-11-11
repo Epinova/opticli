@@ -22,7 +22,8 @@ internal static class PublishOperation
             throw AgentException.Usage($"The ref names version {link.WorkID} but the body says {explicitVersion}.");
         }
 
-        // A named version is the caller's choice of what goes live; the latest one may hold someone else's draft.
+        // A named version is the developer's choice of what goes live (CmsCall.NamedVersionConfirmsDraft); the latest one
+        // may hold someone else's draft.
         var named = body.Version ?? (link.WorkID > 0 ? link.WorkID : (int?)null);
         IReadOnlyList<ContentVersion>? branch = null;
         var versionId = named ?? 0;
@@ -58,8 +59,11 @@ internal static class PublishOperation
             Approvals.RequireNotInReview([.. branch.Where(v => v.ContentLink.WorkID == version.ContentLink.WorkID)], what, versionLanguage?.Name);
         }
         var pending = publishing || scheduling
-            ? PendingDrafts.Require(flow.Locator.PendingDraft(branch, version), body.IncludeDraft || named is not null, dryRun: false, what, versionLanguage?.Name)
-            : null;
+            ? PendingDrafts.Require(flow.Locator.PendingDraft(branch, version),
+                body.IncludeDraft || (named is not null && call.NamedVersionConfirmsDraft), dryRun: false, what, versionLanguage?.Name)
+            : action == SaveAction.RequestApproval && call.ReportsDraftInReview
+                ? flow.Locator.PendingDraft(branch, version)
+                : null;
         var previouslyPublished = ContentLocator.PublishedVersion(branch);
 
         var writable = (IContent)((IReadOnly)version).CreateWritableClone();

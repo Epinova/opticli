@@ -66,7 +66,9 @@ internal static class DraftOperation
         // Read before saving: the publish changes which version is published.
         var pending = action is SaveAction.Publish or SaveAction.Schedule
             ? PendingDrafts.Require(flow.Locator.PendingDraft(branch, current), body.IncludeDraft, body.DryRun, what, language?.Name)
-            : null;
+            : action == SaveAction.RequestApproval && call.ReportsDraftInReview
+                ? flow.Locator.PendingDraft(branch, current)
+                : null;
         var published = ContentLocator.PublishedVersion(branch);
         var leftOut = LeftOut(branch, baseLink);
 

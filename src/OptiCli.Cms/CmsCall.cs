@@ -88,6 +88,23 @@ internal sealed class CmsCall(IServiceProvider services, CancellationToken abort
     public bool RequestApprovalMayPublish => !Checked;
 
     /// <summary>
+    /// Whether naming the version to publish confirms the unpublished changes of others it carries, as
+    /// <c>includeDraft</c> does. For the developer it does: <c>opticli publish --version</c> is their choice of exactly
+    /// what goes live. For an editor it doesn't: their assistant picks the version (from <c>list_versions</c>, or a
+    /// <c>123_456</c> reference), so a colleague's changes in it are refused with <c>pendingDraft</c> until the editor
+    /// agreed and the assistant retries with <c>includeDraft</c>.
+    /// </summary>
+    public bool NamedVersionConfirmsDraft => !Checked;
+
+    /// <summary>
+    /// Whether a review request reports the unpublished changes of others that the version sent for review carries
+    /// (<c>pendingDraft</c> in the result, also on a dry run), without refusing it: the approver reviews the whole version,
+    /// but the editor should know a colleague's changes went with theirs. Only for an editor; the developer's dry-run
+    /// warnings speak of publishing.
+    /// </summary>
+    public bool ReportsDraftInReview => Checked;
+
+    /// <summary>
     /// Whether content in the recycle bin may be moved out of it (a restore). Not for an editor: a restore can put
     /// content that was published live again, with neither a publish nor the publish gate, so an editor restores in
     /// the CMS edit UI, where they see what comes back.

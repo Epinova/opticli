@@ -24,7 +24,7 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
 
     internal const string Publish = "Publish now instead of saving a draft: only when the user asked for it, after confirming with them.";
 
-    internal const string RequestApproval = "Send it for review where an approval sequence applies (the CMS's Ready for Review); refused where none does.";
+    internal const string RequestApproval = "Send it for review where an approval sequence applies (the CMS's Ready for Review); refused where none does. If the result has a pendingDraft, someone else's unpublished changes went for review too: tell the user whose.";
 
     internal const string PublishAt = "Schedule publishing for this time (ISO 8601 with offset, e.g. 2026-10-05T08:00:00+02:00): only when the user asked for it.";
 
