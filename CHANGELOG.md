@@ -3,17 +3,17 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
-## Unreleased
+## 0.31.1 (11 November 2026)
 
-### CLI and MCP module
+### CLI, MCP module and npm package
 
 - **A value the site's own code changes during a save is reported.** When a handler of the CMS's saving events changes
   a property the write set (it clears a tag id, say), the result's `changes` show what was stored instead of what was
   asked for, and `siteChanges` lists the content as `changed`, with each such property's `asked` and `saved` value. The
   CLI warns about it, also for a plan's step. Before, the result showed the asked-for value although something else
   was stored.
-- **A page whose shortcut is an external link has that link as its `url` again** in write results and
-  `resolve`, as in versions before 0.29.0. Since then the link lost its host (`https://www.example.com/docs` became
+- **A page whose shortcut is an external link has that link as its `url` again** in write results, as in versions
+  before 0.29.0. Since then the link lost its host (`https://www.example.com/docs` became
   `/docs`), which pointed at a page of the local site.
 
 ## 0.31.0 (11 November 2026)
