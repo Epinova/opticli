@@ -545,7 +545,7 @@ apply or not: give production a read-only SQL login for reads and a separate log
 | Writes create drafts; publishing needs `--publish` (or `publish`). Saves are attributed to the user `opticli`. | CLI + site agent |
 | A publish that would also put live changes someone else saved after the published version stops: on a terminal it shows who saved what and asks, elsewhere it fails with `conflict` (exit 5) listing them. `--include-draft` (a plan step's `"includeDraft": true`) confirms; `publish --version <id>` publishes that version as it is (an editor's assistant naming a version through the MCP module still needs `includeDraft`); `--from published` bases the change on the published version, leaving them out. | Site agent |
 | Against a shared database, writes stop while the build and the database differ (drift): on a terminal it shows the differences and asks, elsewhere it fails with `drift` (exit 5). `--accept-drift <fingerprint>` confirms; the fingerprint stops counting when the differences change. | Site agent, CLI first |
-| Against a shared database, `sites primary` and `sites host remove` are refused (exit 3), and `sites host add` only adds hosts of type undefined: the deployed site uses the same site definitions. There is no override; change those sites in their own admin UI. Site definitions are never reachable from the MCP module. | Site agent, CLI first |
+| Against a shared database, `sites add`, `sites primary`, `sites host remove` and `languages enable\|disable` are refused (exit 3), and `sites host add` only adds hosts of type undefined: the deployed site uses the same site definitions and language branches. Sealed plans never have `site` or `language` steps. There is no override; change those sites in their own admin UI. Site definitions are never reachable from the MCP module. | Site agent, CLI first |
 | `delete` moves content to the recycle bin; nothing empties it, and `restore` brings it back. Site roots, start pages, asset roots and anything above them can't be moved or deleted. The MCP module doesn't restore. | Site agent |
 | `serve` turns the site's scheduler off, so a restored database's overdue jobs don't all start (`--scheduler` leaves it on). `jobs run` refuses jobs that delete for good (emptying the recycle bin, trimming versions, truncating the change log, Commerce's expired carts and archived items, ...) or move content across the site, and `jobs set` refuses to let the scheduler run one (sooner), without `--allow-destructive`. Against a shared database jobs aren't run, stopped or changed, and the scheduler stays off. | Site agent, CLI first |
 | `users add` only adds users to the site's ASP.NET Identity, tagged as made by opticli, and `users remove` only removes those: an existing account's password, address and roles are never touched. A generated password is written to a file only you can read and never printed. No command lists users; `users roles` counts them per role. Refused against a shared database, and on a site whose CMS users come from elsewhere (OpenID Connect). | Site agent, CLI first |
@@ -636,7 +636,7 @@ add-ons need first.
 | `doctor` | project, connection string candidates, database, schema version, site agent, drift (against a shared database), sites whose primary host differs from the saved `sites primary` mapping, installed skill |
 | `db list`, `db use`, `db forget` | the development database (see [Which database](#which-database)) |
 | `db add <name> --role R`, `db remove <name>`, `db role <id\|name> R` | other environments' databases by name, and roles: `prod` is only read (see [Environments](#environments)) |
-| `sites`, `languages` | site definitions (CMS 13: applications) and hosts; language branches |
+| `sites`, `languages` | site definitions (CMS 13: applications) and hosts; language branches (`--all` with the disabled ones) |
 | `types [--kind] [--unused] [--orphaned] [--sort]` | content types with instance counts and kinds (page, block, media, folder, other; on CMS 13 also experience, section, element, contract); `--orphaned`: types whose class is gone from the code, which the CMS keeps while content uses them (the running site checks every class, `meta.source: agent`; otherwise the site's sources are scanned for its own types, with a warning saying why); see [Orphaned content types](#orphaned-content-types-and-properties) for removing them |
 | `type <name>` | properties (type, culture-specific, required, tab, order, source line, `[AllowedTypes]`; one that isn't in the code with how many values it has stored), C# class file, views |
 | `allowed-in <type>` | which ContentArea/reference properties accept a type, from `[AllowedTypes]` in code |
@@ -696,6 +696,9 @@ with [IDE mode](#running-the-site-from-your-ide-ide-mode) on.
   and `--variation` writes a content variation. See [Visual Builder](#visual-builder).
 - `sites primary` and `sites host add|remove` change site definitions' host names; see
   [Site hosts after a database restore](#site-hosts-after-a-database-restore).
+- `sites add` creates a site definition (CMS 13: an application), and `languages enable|disable` changes which language
+  branches are enabled, for a database the CMS created from scratch; see
+  [A database built from scratch](#a-database-built-from-scratch).
 - `jobs run`, `jobs stop` and `jobs set` run, stop and reschedule scheduled jobs; see [Scheduled jobs](#scheduled-jobs).
 - `users add` and `users remove` make and remove a local login for a restored database; see
   [Local users](#local-users-after-a-database-restore).
@@ -707,7 +710,10 @@ with [IDE mode](#running-the-site-from-your-ide-ide-mode) on.
   the user runs it, with `apply <plan> --db <prod> --seal <id>` in their own terminal. See
   [Writing to production](#writing-to-production).
 - `apply plan.json` runs several operations validated together. Later operations can refer to an item an earlier
-  one created as `$id`. A property value `"@texts/body.html"` is that file's text, as `Prop=@file` is on the command
+  one created as `$id`, in ref fields and as a whole property value: a reference property gets the content, a string
+  property its id as text (`"TagId": "$tag"` stores `"456"`). Besides content steps, a plan can enable languages
+  and create sites (`language` and `site`; see [A database built from scratch](#a-database-built-from-scratch)). A
+  property value `"@texts/body.html"` is that file's text, as `Prop=@file` is on the command
   line. Files in a plan are relative to the plan file and must stay inside its folder. With `"guidNamespace"`, what a
   plan creates gets the same GUIDs in every database, and `apply --update-existing` runs it again: existing content is
   updated (and moved back out of the recycle bin; an upload's file replaced when the bytes differ), and steps that are
@@ -735,7 +741,11 @@ A publish puts the whole version live. When someone else saved unpublished chang
 a terminal; elsewhere it fails with `conflict` and `details.reason: "pendingDraft"`, and `--include-draft` confirms.
 `set ... --from published --publish` publishes a change without them.
 Write output has the content's public `url` (host-relative, as `get` shows it; for a draft of content never published,
-where it will be; none for blocks and folders), so a script can open the page without asking for it.
+where it will be; none for blocks and folders), so a script can open the page without asking for it, and
+`canonicalUrl`, the same URL with the host of the content's site for that language, as the CMS links to it: on a
+solution with several sites, which site the content is on (a production host name doesn't answer locally). After a plan
+whose `site` step saved, every step's URLs are as the sites have them at the end of the run, also those of content saved
+before the site existed.
 Output after a publish names `previouslyPublished`, the version to publish again to go back. Content with an approval
 sequence isn't published directly (exit 3); `--request-approval` sends it for review instead, as the edit UI does.
 Against a shared database that differs from the build, writes stop with `drift` (exit 5) until `--accept-drift
@@ -817,6 +827,59 @@ Saving through the site clears its site definition cache, so the site `serve` ru
 process running the site against the same database (your IDE's) keeps the old ones until it restarts, unless remote
 events are set up, or unless it is the site that saved ([IDE mode](#running-the-site-from-your-ide-ide-mode)). Site
 definitions aren't versioned: the output lists every change and the hosts after it.
+
+### A database built from scratch
+
+A database the CMS created itself, from an empty database (`CreateDatabaseSchema`, on by default), has no sites, so no
+URL renders, and only `en` and `sv` enabled. A test or demo database built from code needs both before its content.
+Both go through the running site (`opticli serve`), which clears the CMS's caches:
+
+```sh
+opticli languages enable no --dry-run
+opticli sites add "Alloy" --start-page 5 --host alloy.localhost:5000 --host alloy-sv.localhost:5000@sv --dry-run
+```
+
+`languages enable <code>...` enables language branches. A code the database has no branch for (a fresh one has a
+dozen, most disabled) gets one, which Everyone may edit, as admin mode's Add does. A branch that is enabled already is
+`unchanged`. `languages disable <code>...` warns about content in the language and about a site whose start page has it
+as master language, and refuses to disable every enabled language (exit 3).
+
+`sites add <name> --start-page <ref> --host <host>...` creates a site definition (CMS 13: an application) with that
+start page and hosts:
+
+| Option | |
+|---|---|
+| `--start-page <ref>` | the start page: an id, GUID or URL (CMS 12: a page) |
+| `--host <host>` | `name[:port][@lang]`, with an optional scheme (`https://alloy.localhost:5001`), or `*` for host names no other site has. Repeatable. In each language (and among the hosts for every language) the first is the primary host and the rest are undefined |
+| `--https true\|false` | the https setting of hosts without a scheme. Default: unset on CMS 12 (links use SiteUrl's scheme); on CMS 13 http for `localhost`, `*.localhost` and loopback addresses, else https |
+| `--update-existing` | a site of that name is made to match: the start page set, the hosts added or given the type, language and https setting asked for (a new primary or edit host makes the old one undefined), its other hosts kept. Without it, a site of that name is a `conflict` (exit 5) |
+| `--dry-run` | what would be created or changed |
+
+SiteUrl (CMS 12) is the site's primary host for every language, over http for `localhost`, `*.localhost` and
+loopback addresses unless the host says https. A host another site has, a language that isn't enabled and a host type
+the CMS version lacks are `validation` errors (exit 5), all of them listed. The site uses the global assets folder;
+site-specific assets are set up in admin mode. opticli doesn't delete sites: admin mode does.
+
+In a plan they are the steps `language` and `site`, so one seed plan builds the whole database:
+
+```json
+{"guidNamespace": "3f6d2a9e-6c1b-4f7e-9a51-0d2b8c4e7f10", "operations": [
+  {"op": "language", "lang": "no"},
+  {"op": "create", "id": "home", "parent": "1", "type": "StartPage", "name": "Hjem", "lang": "no", "publish": true},
+  {"op": "translate", "ref": "$home", "lang": "en", "name": "Home", "publish": true},
+  {"op": "site", "name": "Alloy", "startPage": "$home",
+   "hosts": ["alloy.localhost:5000", "alloy-en.localhost:5000@en", {"name": "edit.alloy.localhost:5000", "type": "edit"}]}]}
+```
+
+`lang` is one code or an array, `"enabled": false` disables. A host in `hosts` is a string as `--host` takes it, or
+an object with `name`, `type`, `lang` and `https`. Steps in a language that an earlier `language` step enables are
+checked when the plan runs (`deferred` in a dry run), since the database doesn't have it enabled yet. With
+`apply --update-existing` the `site` step updates the site of that name, so the plan runs again without changes. Once a
+`site` step saved, the plan's results give every step's `url` and `canonicalUrl` as the sites have them at the end.
+Neither step is allowed against a shared database or in a sealed plan.
+
+Hosts with a port need the site on that port every run: `serve --port 5000 --https-port 5001`, or `port` and
+`httpsPort` in the [user config](#files).
 
 ### Scheduled jobs
 
@@ -953,6 +1016,8 @@ its name, id or application name.
   language; preview hosts only on a headless application). CMS 12 refuses them.
 - A request's host matches only with its port. CMS 13 refuses an application whose start page is below another's, so
   there are no nested sites.
+- `sites add` creates an in-process application, named from the site's name (`Alloy Site` is `AlloySite`, with a
+  number when that is taken), which becomes its display name. `*` among its hosts makes it the default application.
 
 ### Scheduled jobs on CMS 13
 
@@ -1072,6 +1137,8 @@ agent injected, and returns once the site agent answers.
 | `--timeout <s>` | 180 seconds to wait for the site to answer |
 | `--foreground` | off: the site runs in the background; with it, the site's output streams until Ctrl+C (to stderr when stdout is redirected, so stdout stays one JSON envelope) |
 | `--https` | off (or `"https": true` in the user config, which `--https false` overrides): also listen on `https://localhost:<next free port>` with the development certificate, printed as `browseUrl`, for sites that redirect to HTTPS. `serve` warns when a site does |
+| `--https-port <n>` | `httpsPort` from the user config, else the next free port: the HTTPS address's port, which turns `--https` on. A taken port is a `usage` error, never another one, so site hosts with that port (`alloy.localhost:5001`) stay right from run to run |
+| `--profile <name>` | (the global option, which picks the launch profile's connection string) also gives the site the profile's other `environmentVariables`, as `dotnet run --launch-profile` would. Those `serve` sets itself are left out: the address (`ASPNETCORE_URLS`, `ASPNETCORE_HTTP(S)_PORTS`, `Kestrel__Endpoints__*`), `ASPNETCORE_ENVIRONMENT`/`DOTNET_ENVIRONMENT`, `DOTNET_STARTUP_HOOKS`, `OPTICLI_*` and the pinned connection string. A warning names what was applied and left out, never the values. `applicationUrl` and `commandLineArgs` are ignored |
 | `--scheduler` | off (or `"scheduler": true` in the user config, which `--scheduler false` overrides): the site's scheduler stays as the site sets it, so jobs run on their schedule and overdue ones start at once. Without it the scheduler is off for the run. A `usage` error against a shared database, where it stays off |
 | `--allow-pending-migrations` | off: against a shared database, `serve` refuses a build with EF Core migrations the database lacks |
 
@@ -1093,6 +1160,8 @@ agent injected, and returns once the site agent answers.
 To run the site yourself (IDE, `dotnet run`, hot reload), `opticli env` prints the variables `serve` would set:
 - `--format shell|powershell|dotenv|json|launchSettings` picks the format. `--json` is the same as `--format json`.
 - `--port` picks the port.
+- `--profile <name>` adds that launch profile's variables, as `serve --profile` gives them to the site (not with
+  `--format launchSettings`, whose profile has them already).
 - The site's scheduler stays as the site sets it (`OPTICLI_SCHEDULER=on`): that run is yours.
 - `OPTICLI_*` variables that this run leaves out but the shell still exports (from an earlier `opticli env`) are set
   to empty, so they can't pin or approve another database.
@@ -1227,14 +1296,14 @@ the site's own, newer CMS assemblies at runtime. It ships no copies of them.
 | Seals for production, their key, and the mark that one was run | `$XDG_CONFIG_HOME/opticli/seals/<id>.json` and `<id>.used`, `$XDG_CONFIG_HOME/opticli/seal.key`, readable by you only | `%APPDATA%\opticli\seals\`, `%APPDATA%\opticli\seal.key` |
 | A sealed apply's site log and what was compared before it started | `$XDG_STATE_HOME/opticli/sealed/<id>.log`, `<id>.drift.json`, readable by you only | `%LOCALAPPDATA%\opticli\sealed\` |
 
-You can set per-project defaults in the user config (`output`, `port`, `https` and `scheduler` for `serve`).
+You can set per-project defaults in the user config (`output`, `port`, `https`, `httpsPort` and `scheduler` for `serve`).
 `opticli db use` adds the chosen `database` there, `opticli db add` an entry to `databases` (and its role to `roles`,
 which holds the roles of every project's databases), and `opticli sites primary --save` the `sites.primary` mapping.
 opticli keeps the file's permissions when it rewrites it, and creates it readable by you only on Linux and macOS. A
 `roles` entry opticli can't read stops it from using any database until it is fixed.
 
 ```json
-{"projects": {"/abs/path/to/Site": {"connection": "...", "output": "bin/Debug/net8.0/Site.dll", "port": 5199, "https": true,
+{"projects": {"/abs/path/to/Site": {"connection": "...", "output": "bin/Debug/net8.0/Site.dll", "port": 5199, "https": true, "httpsPort": 5443,
   "databases": {"prod": {"connection": "Server=...;Database=...;User Id=reader;Password=..."}},
   "sites": {"primary": {"Site A": "localhost:5001", "Site A@nb": "https://localhost:5004",
     "Site B": {"host": "localhost:5002", "keepEdit": true}}}}},

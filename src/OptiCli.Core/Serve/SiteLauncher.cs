@@ -26,7 +26,11 @@ public sealed record LaunchRequest(
     IReadOnlyList<string>? SiteEndpoints = null,
     string? DriftFile = null,
     bool Scheduler = false,
-    int AgentCmsMajor = 12);
+    int AgentCmsMajor = 12)
+{
+    /// <summary>A launch profile's variables (<c>serve --profile</c>), which the site gets before <c>serve</c>'s own.</summary>
+    public IReadOnlyList<KeyValuePair<string, string>>? ProfileVariables { get; init; }
+}
 
 /// <summary>Starts the site with the agent injected, waits until the agent answers and checks it uses the pinned database.</summary>
 public static partial class SiteLauncher
@@ -211,9 +215,12 @@ public static partial class SiteLauncher
         // (removed, not blanked: an empty one would still be read). Then blank what this run doesn't set, so a stale export
         // from `opticli env` can't approve another remote database or pin another connection name.
         var competing = SiteEnvironment.CompetingConnectionVariables(request.ConnectionName, System.Environment.GetEnvironmentVariables().Keys.OfType<string>());
+        var own = variables.Select(v => v.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
         return
         [
             .. competing.Select(name => new KeyValuePair<string, string?>(name, null)),
+            // A launch profile's (serve --profile); never one serve sets itself, which LaunchProfile left out already.
+            .. (request.ProfileVariables ?? []).Where(v => !own.Contains(v.Key)).Select(v => new KeyValuePair<string, string?>(v.Key, v.Value)),
             .. variables.Select(v => new KeyValuePair<string, string?>(v.Key, v.Value)),
             .. SiteEnvironment.NotSet(variables).Select(name => new KeyValuePair<string, string?>(name, "")),
         ];

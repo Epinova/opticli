@@ -72,6 +72,15 @@ public sealed record WriteResult
     public string? Url { get; init; }
 
     /// <summary>
+    /// The developer's agent only: the same URL with the host of the content's site for that language, as the CMS links
+    /// to it from elsewhere (its canonical URL). On a site with several hosts, it says which one the content is on; a
+    /// production host name doesn't answer locally. Null where <see cref="Url"/> is, and from an agent of opticli 0.30
+    /// or older.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CanonicalUrl { get; init; }
+
+    /// <summary>
     /// False only for a dry run that would fail validation (see <see cref="Validation"/>). A real
     /// write that fails validation returns a <c>validation</c> error (422) instead.
     /// </summary>

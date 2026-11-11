@@ -37,7 +37,7 @@ internal sealed class GlobalOptions
 
     public Option<string?> Profile { get; } = new("--profile")
     {
-        Description = "Launch profile in Properties/launchSettings.json whose connection string to use.",
+        Description = "Launch profile in Properties/launchSettings.json whose connection string to use; `serve` (and `env`) also give the site its other environment variables.",
         HelpName = "name",
         Recursive = true,
     };

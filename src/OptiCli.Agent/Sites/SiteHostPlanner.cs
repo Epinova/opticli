@@ -32,6 +32,9 @@ internal sealed record SiteState(string Key, string Name, string? SiteUrl, IRead
     /// one (<c>InProcessWebsite</c>, which renders itself) takes any but preview.
     /// </summary>
     public bool Headless { get; init; }
+
+    /// <summary>The start page's content id (CMS 13: the entry point's); null where it isn't read.</summary>
+    public int? StartPage { get; init; }
 }
 
 /// <param name="Changes">What changed, one line each; empty when the site ends as it began.</param>

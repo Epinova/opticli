@@ -1,7 +1,7 @@
 ---
 name: opticli
 description: Inspect and change content of an Optimizely CMS 12 or 13 (EPiServer) site the user develops locally (against its local or development database) with the opticli CLI instead of hand-written SQL or guessing from code. Use when you need to know what CMS content exists (pages, blocks, media, folders), what a page or block contains (properties, ContentArea items, rich text, a CMS 13 Visual Builder experience's sections and elements), which page type or block type something is and which C# class and Razor view render it, where a block or page is used, which content a URL shows, what drafts and versions exist, or when the user asks you to create or edit CMS content (set properties, add a block to a ContentArea or an element to a Visual Builder section, create a page or block, translate, publish) in their development site, or to point the sites of a restored database at localhost (their host names). Also for scheduled jobs: which exist, whether a job (an import, a sync) ran and how it ended, and running or rescheduling one. And for the recycle bin: what was deleted, by whom, and bringing it back; a local login for a restored database; and content types and properties that removed code left in the database.
-opticli-version: 0.30.1
+opticli-version: 0.31.0
 ---
 
 # opticli: Optimizely CMS content from the command line
@@ -16,7 +16,7 @@ The database says what *does* exist (content items, their values, where blocks a
 opticli for the second kind of question, and to find the code: `opticli type <Name>` gives the class file, views and
 per-property `allowedTypes`; `opticli allowed-in <Type>` answers "where may this block go" across all types.
 
-This file was written for opticli 0.30.1 (`opticli --version`). Longer material (every command and option, value
+This file was written for opticli 0.31.0 (`opticli --version`). Longer material (every command and option, value
 syntax, plan files, output fields, troubleshooting) is in [reference.md](reference.md): read it when you write, or
 when a command below doesn't cover your question.
 
@@ -50,6 +50,7 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
 | Is opticli set up, which DB, is the site running? | `opticli doctor` |
 | Which sites, hosts and start pages exist? | `opticli sites` |
 | Point a restored database's sites at localhost (only when asked) | `opticli sites primary "Site A=localhost:5001" --dry-run` (needs `serve`) |
+| A database built from scratch: enable a language, create a site (only when asked) | `opticli languages enable no --dry-run`; `opticli sites add "Alloy" --start-page 5 --host alloy.localhost:5000 --dry-run` (needs `serve`; plan steps `language` and `site`) |
 | Which page/block types exist, how many items each? | `opticli types --kind block --sort instances` (`page`, `media`, `folder`; CMS 13 also `experience`, `section`, `element`, `contract`) |
 | A type's properties, C# class file and views | `opticli type ArticlePage` |
 | Types or properties left behind by removed code | `opticli types --orphaned`; `opticli type <Name>` (`existsOnModel: false`, `values`) |
@@ -304,6 +305,9 @@ order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a cod
   `opticli sites primary --from-config`; `--forget <site>` drops a saved site that is gone). Site definitions aren't
   versioned: report the `changes` from the output. Tell the user to restart the site if it also runs elsewhere (their
   IDE), as `meta.warnings` says; not when the IDE's site is the one that saved (IDE mode). Against a shared database they are refused (exit 3): don't work around it.
+- Never create sites or enable or disable languages (`sites add`, `languages enable|disable`, a plan's `site` and
+  `language` steps) unless the user asked to build or seed a database that lacks them, and dry-run first. Which host
+  and start page go with which site is the user's call. Disabling a language hides its content: report the warnings.
 - Never run, stop or reschedule a scheduled job (`jobs run`, `jobs stop`, `jobs set`) unless the user asked for it. Jobs
   that aren't the CMS's own (the site's, add-ons') may reach external systems (imports, syncs, emails): `jobs run`
   warns that opticli doesn't know what they do. When "an import didn't run", start with `opticli jobs log "<job>"` (status, message, trigger) and

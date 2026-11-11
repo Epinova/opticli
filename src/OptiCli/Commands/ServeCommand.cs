@@ -42,6 +42,11 @@ internal static class ServeCommand
         {
             Description = "Also listen on https://localhost:<next free port> with the ASP.NET Core development certificate, to browse a site that redirects to HTTPS. Default: \"https\" in the user config; --https false turns it off.",
         };
+        var httpsPort = new Option<int?>("--https-port")
+        {
+            Description = "The port of the HTTPS address (implies --https), so site hosts with that port stay right from run to run; taken is an error. Default: \"httpsPort\" in the user config, else the next free port.",
+            HelpName = "n",
+        };
 
         var command = new Command("serve", """
             Start, inspect or stop the local site with the opticli agent injected; write commands need it running.
@@ -51,7 +56,9 @@ internal static class ServeCommand
             in the background and returns once the agent answers (30-60 s is normal); state (pid, port, a fresh token) is kept
             in a user-only file.
             Warns when source files are newer than the build output (--build rebuilds first). A site that redirects to HTTPS
-            can't be browsed on that address: --https adds https://localhost:<port> (browseUrl), while opticli keeps using HTTP.
+            can't be browsed on that address: --https adds https://localhost:<port> (browseUrl), while opticli keeps using HTTP;
+            --https-port fixes that port. --profile <name> runs the site with that launch profile's environment variables too
+            (and its connection string), except those serve sets itself.
             Against a shared (remote) development database it turns off what would change that database at startup, refuses
             to start a build with EF Core migrations the database lacks, and reports what differs between this build and the
             database (drift; `opticli drift`): writes then stop until the user confirms. Stop it when done.
@@ -59,7 +66,7 @@ internal static class ServeCommand
             emails, emptying the recycle bin); `opticli jobs run` still runs a job, and --scheduler leaves it on.
             Example: opticli serve    then: opticli serve --status | opticli serve --logs --tail 40 | opticli serve --stop
             """);
-        foreach (var option in new Option[] { build, port, foreground, output, timeout, https, scheduler, allowPendingMigrations, status, logs, tail, stop })
+        foreach (var option in new Option[] { build, port, foreground, output, timeout, https, httpsPort, scheduler, allowPendingMigrations, status, logs, tail, stop })
         {
             command.Options.Add(option);
         }
@@ -68,7 +75,7 @@ internal static class ServeCommand
         {
             var parse = context.Parse;
             var modes = new[] { parse.GetValue(status), parse.GetValue(logs), parse.GetValue(stop) }.Count(m => m);
-            var starting = parse.GetValue(build) || parse.GetValue(port) is not null || parse.GetValue(foreground) || parse.GetValue(output) is not null || parse.GetResult(https) is { Implicit: false } || parse.GetResult(scheduler) is { Implicit: false } || parse.GetValue(allowPendingMigrations);
+            var starting = parse.GetValue(build) || parse.GetValue(port) is not null || parse.GetValue(foreground) || parse.GetValue(output) is not null || parse.GetResult(https) is { Implicit: false } || parse.GetValue(httpsPort) is not null || parse.GetResult(scheduler) is { Implicit: false } || parse.GetValue(allowPendingMigrations);
             if (modes > 1 || (modes == 1 && starting))
             {
                 throw new UsageException("--status, --logs and --stop are separate actions; don't combine them with each other or with start options.");
@@ -113,18 +120,29 @@ internal static class ServeCommand
             {
                 throw new UsageException("--timeout must be a positive number of seconds.");
             }
+            if (parse.GetValue(httpsPort) is not null && parse.GetResult(https) is { Implicit: false } && !parse.GetValue(https))
+            {
+                throw new UsageException("--https-port turns HTTPS on; it can't go with --https false.");
+            }
             return await StartAsync(context, parse.GetValue(build), parse.GetValue(port), parse.GetValue(foreground), parse.GetValue(output), parse.GetResult(https) is { Implicit: false } ? parse.GetValue(https) : null,
-                parse.GetResult(scheduler) is { Implicit: false } ? parse.GetValue(scheduler) : null, parse.GetValue(allowPendingMigrations), TimeSpan.FromSeconds(seconds), cancellationToken);
+                parse.GetResult(scheduler) is { Implicit: false } ? parse.GetValue(scheduler) : null, parse.GetValue(allowPendingMigrations), TimeSpan.FromSeconds(seconds), cancellationToken,
+                parse.GetValue(httpsPort));
         });
         return command;
     }
 
     /// <param name="scheduler">--scheduler as given; null to take the user config's.</param>
-    private static async Task<CommandResult> StartAsync(CliContext context, bool build, int? port, bool foreground, string? output, bool? https, bool? scheduler, bool allowPendingMigrations, TimeSpan timeout, CancellationToken cancellationToken)
+    /// <param name="httpsPort">--https-port as given; null to take the user config's (with --https, else the next free port).</param>
+    private static async Task<CommandResult> StartAsync(CliContext context, bool build, int? port, bool foreground, string? output, bool? https, bool? scheduler, bool allowPendingMigrations, TimeSpan timeout, CancellationToken cancellationToken,
+        int? httpsPort = null)
     {
         var project = context.Project;
         // The database check comes before anything is started or even looked for.
         var connection = RequireServable(context);
+        // Read before anything starts, so a missing profile fails fast; --profile picked the connection string already.
+        var profile = context.ConnectionRequest.Profile is { } profileName
+            ? LaunchProfile.Read(project.Directory, profileName, context.ConnectionRequest.Name)
+            : null;
         if (scheduler == true && !connection.IsLocal)
         {
             throw new UsageException(
@@ -145,7 +163,10 @@ internal static class ServeCommand
                 // A second site would keep its own cache, and the IDE's would still win once it answers.
                 throw new UsageException($"The site your IDE started runs with the agent (opticli ide on) but can't be used: {existing.Message}", existing.Hint ?? "Fix it or stop it in the IDE, then try again.");
             case AgentState.Running when existing.Mode != ServeMode.External:
-                return new CommandResult(existing, Warnings: ["The site was already running; nothing was started.", .. DriftWarning(store, started: false) is { } drifted ? [drifted] : Array.Empty<string>()],
+                return new CommandResult(existing, Warnings: [
+                        "The site was already running; nothing was started.",
+                        .. profile is null ? Array.Empty<string>() : [$"--profile '{profile.Name}' applies when serve starts the site; this one runs with whatever it was started with (`opticli serve --stop` first)."],
+                        .. DriftWarning(store, started: false) is { } drifted ? [drifted] : Array.Empty<string>()],
                     Source: WriteExecutor.AgentSource);
             case AgentState.Stopped:
                 break;
@@ -224,6 +245,23 @@ internal static class ServeCommand
         // Claimed, so another serve starting at the same moment doesn't pick the same port before this site listens on it.
         var free = PortClaims.ForUser.FreeAndClaimed(PortSelector.IsFree);
         var httpPort = PortSelector.Select(port, settings?.Port, free);
+        // A fixed HTTPS port (--https-port, "httpsPort") is taken as given, never another: site hosts carry it.
+        var fixedHttps = httpsPort ?? (https == false ? null : settings?.HttpsPort);
+        if (fixedHttps == httpPort)
+        {
+            throw new UsageException($"The HTTPS port {fixedHttps} is the HTTP port too.", "Give --port and --https-port different ports.");
+        }
+        if (fixedHttps is { } wanted && (wanted is < 1 or > 65535 || !free(wanted)))
+        {
+            throw new UsageException(
+                wanted is < 1 or > 65535 ? $"HTTPS port {wanted} is not a valid port." : $"HTTPS port {wanted} is already in use.",
+                $"Stop what listens there, or give another --https-port{(httpsPort is null ? " (the user config's \"httpsPort\" asked for this one)" : "")}.");
+        }
+        int? httpsListen = fixedHttps ?? ((https ?? settings?.Https == true) ? PortSelector.Select(null, null, p => p != httpPort && free(p)) : null);
+        if (profile is not null)
+        {
+            warnings.Add(profile.Describe());
+        }
         var request = new LaunchRequest(
             project,
             connection,
@@ -232,11 +270,14 @@ internal static class ServeCommand
             agentDll,
             httpPort,
             timeout,
-            (https ?? settings?.Https == true) ? PortSelector.Select(null, null, p => p != httpPort && free(p)) : null,
+            httpsListen,
             siteEndpoints,
             driftFile,
             schedulerOn,
-            agent.Choice.CmsMajor);
+            agent.Choice.CmsMajor)
+        {
+            ProfileVariables = profile?.Applied,
+        };
 
         if (!foreground)
         {

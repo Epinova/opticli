@@ -3,7 +3,7 @@ title: Seed CMS content for Playwright tests
 summary: Use the @epinova/opticli npm package to start the site, seed the content your Playwright tests read, and give each test pages of its own that are cleaned up afterwards.
 audience: developers
 order: 3
-written-for: 0.30.0
+written-for: 0.31.0
 ---
 
 End-to-end tests on an Optimizely site usually depend on content someone made by hand, and break when an editor
@@ -56,7 +56,8 @@ export const seedPlan = {
 } as const satisfies Plan;
 ```
 
-`$root` refers to what the step with `id: 'root'` made. `as const satisfies Plan` checks the steps against the plan
+A database the CMS created from scratch has no sites and few languages; the plan can add them first, see
+[Build a test database from scratch](build-a-test-database.md). `$root` refers to what the step with `id: 'root'` made. `as const satisfies Plan` checks the steps against the plan
 type and keeps the ids as literals, which step 4 uses. Files the plan uploads are relative to `planDir`.
 
 ### 3. Add the global setup and the config
@@ -87,7 +88,8 @@ export default defineConfig<{}, OptiCliWorkerOptions>({
 `defineSetup()` starts the site with `opticli serve`, or reuses one that already runs (also the site your IDE runs in
 IDE mode). It checks that opticli and the site's agent are new enough, applies the seed plan with `--update-existing`
 (published, unless `publish: false`) and points `baseURL` at the site. After the tests it stops a site it started.
-For a site that redirects to HTTPS, pass `https: true`. `import.meta.dirname` needs Node.js 20.11 or newer; on older
+For a site that redirects to HTTPS, pass `https: true`, or `httpsPort: 5443` for a fixed port (site hosts carry it).
+To run against a launch profile's database and variables, pass `opticli: { profile: 'E2E' }`. `import.meta.dirname` needs Node.js 20.11 or newer; on older
 versions use `dirname(fileURLToPath(import.meta.url))`. The other options are in the
 [package README](https://github.com/Epinova/opticli/blob/main/npm/README.md#what-setup-does).
 
@@ -130,7 +132,8 @@ test('a draft is not visible until it is published', async ({ page, cms }) => {
 ```
 
 Seeded content costs nothing per test. `cms.page()` creates a published page in the worker's sandbox and returns its
-`ref`, `version` and `url`, a path on `baseURL`. `cms.set()` saves a draft unless you pass `publish: true`, and
+`ref`, `version` and `url`, a path on `baseURL` (on a solution with several sites, a page on another site's own
+`*.localhost` host gets that site's address, as `seed.urls` does, and `seed.sites` names each site's address). `cms.set()` saves a draft unless you pass `publish: true`, and
 `cms.apply()` runs a whole plan in one call. What `cms.page()` and `cms.apply()` create goes to the recycle bin after
 the test, also when it fails; pass `keep: true` with a parent outside the sandbox to leave it. `cms.set()` and
 `cms.publish()` on seeded content stay until the next run's seed puts them back, and other workers see them meanwhile.
@@ -180,5 +183,6 @@ running for the next run. Each call to opticli takes about a second, most of it 
 - [The npm package's README](https://github.com/Epinova/opticli/blob/main/npm/README.md)
 - [Tests with Playwright and Node.js](https://github.com/Epinova/opticli#tests-with-playwright-and-nodejs)
 - [Plan format](https://github.com/Epinova/opticli/blob/main/skill/reference.md#plans-apply)
+- [Build a test database from scratch](build-a-test-database.md)
 - [Find content and the code behind it](find-content-and-code.md)
 - [Work on a restored production database](restored-production-database.md)

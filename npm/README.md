@@ -118,16 +118,17 @@ playwright.config, or trust it (`dotnet dev-certs https --trust`).
 | `planDir` | the working directory | Where the plan's files are (`upload`, `"@file"` values); they must be inside it. |
 | `publish` | `true` | Publish what the plan saves. |
 | `https` | `OPTICLI_HTTPS=1`, else `"https"` in opticli's user config | Also serve the site on `https://localhost:<port>` (`serve --https`) and browse it there, for a site that redirects HTTP to HTTPS. A site that runs already without an HTTPS address fails setup: stop it first. |
+| `httpsPort` | `OPTICLI_HTTPS_PORT`, else `"httpsPort"` in opticli's user config | That HTTPS address's port (`serve --https-port`, implies `https`): fixed, so site hosts with the port (`alloy.localhost:5001`) are right on every run. A taken port fails setup. |
 | `build` | `OPTICLI_BUILD=1` | Build the site before starting it (`serve --build`). |
 | `keepSite` | `OPTICLI_KEEP_SITE=1` | Leave a site that setup started running. |
-| `opticli` | see below | `command`, `project`, `cwd`. |
+| `opticli` | see below | `command`, `project`, `cwd`, `profile`. |
 
 ### Fixtures
 
 | Fixture | Scope | |
 |---|---|---|
-| `seed` | worker | `refs` and `urls` of the plan's steps, by `id`; `baseURL`. The URLs are paths on `baseURL` (`/en/fixtures/`), never the site's own hosts, which don't answer while `opticli serve` runs it. |
-| `cms` | test | Content for one test: `page(type, name, properties?, { parent?, publish?, keep? })` (published by default; returns `ref`, `version` and `url`), `set`, `publish`, `apply(plan, { keep?, ... })`. What `page` and `apply` create goes to the recycle bin after the test, unless `keep`. |
+| `seed` | worker | `refs` and `urls` of the plan's steps, by `id`; `baseURL`; `sites`. A URL is a path on `baseURL` (`/en/fixtures/`), except for content on another site that the served site answers on a host of its own: then that site's address (`http://alloy-sv.localhost:5199/sv/news/`, see [Several sites](#several-sites)). `sites` maps each such site's name to where to open it. |
+| `cms` | test | Content for one test: `page(type, name, properties?, { parent?, publish?, keep? })` (published by default; returns `ref`, `version` and `url`, as `seed.urls` gives it), `set`, `publish`, `apply(plan, { keep?, ... })`. What `page` and `apply` create goes to the recycle bin after the test, unless `keep`. |
 | `sandbox` | worker | With the `opticliSandbox` option: the ref of the worker's own page, where `cms.page()` creates content. It goes to the recycle bin when the worker ends, with anything a failed test left. |
 | `opticli` | worker | The `OptiCli` client, for anything else. |
 | `baseURL` | test | The site `opticli serve` runs. |
@@ -152,6 +153,45 @@ below it; `cms` refuses it there before saving anything. A step of `cms.apply()`
 Deleted content goes to the recycle bin, as in the CMS: nothing is deleted for good. On a local database that is
 usually fine; empty the recycle bin in the CMS now and then.
 
+### A database built from scratch
+
+A database the CMS created itself has no sites and only `en` and `sv` enabled. The seed plan can add both: a
+`language` step before the content in that language, and a `site` step after its start page (setup applies with
+`updateExisting`, so later runs leave the site as it is). Give the hosts the ports the site runs on, fixed with
+`opticli serve`'s port and `httpsPort`:
+
+```ts
+export const seedPlan = {
+  guidNamespace: '3f6d2a9e-6c1b-4f7e-9a51-0d2b8c4e7f10',
+  operations: [
+    { op: 'language', lang: 'no' },
+    { op: 'create', id: 'home', parent: '1', type: 'StartPage', name: 'Hjem', lang: 'no' },
+    { op: 'site', name: 'Alloy', startPage: '$home', hosts: ['localhost:5199', 'alloy-en.localhost:5199@en', 'https://localhost:5443'] },
+  ],
+} as const satisfies Plan;
+```
+
+See opticli's [A database built from scratch](https://github.com/epinova/opticli#a-database-built-from-scratch).
+
+### Several sites
+
+`opticli serve` runs the site on one address, and `baseURL` is that address: a path on it opens the site that answers
+it, the one with the host `localhost:<port>` (or `*`). Another site answers on a host of its own. Browsers send
+`*.localhost` names to this machine, so a site with the host `alloy-sv.localhost:5199`, on a port `serve` listens on
+(its HTTP port, or `httpsPort`), needs no hosts file. Setup gives content on such a site its own address:
+
+```ts
+test('the Swedish site has its own start page', async ({ page, seed }) => {
+  await page.goto(seed.urls.svArticle!); // http://alloy-sv.localhost:5199/sv/nyheter/
+  await page.goto(seed.sites['Alloy Sverige']!); // http://alloy-sv.localhost:5199/
+});
+```
+
+Content on the site at `baseURL` keeps its path, and so does content whose site has only hosts that don't answer here
+(a production name, another port). A plan that creates its sites after their content still gives the content its own
+site's address: after a `site` step, opticli reports every step's URL as the sites have it at the end. Each site is a
+separate origin for the browser, with cookies of its own.
+
 ## Node.js
 
 ```ts
@@ -169,7 +209,7 @@ try {
 ```
 
 The client changes what you tell it to and removes nothing on its own, so it suits scripts that make content to keep.
-Typed methods: `serve`, `serveStatus`, `serveStop`, `get`, `url`, `create`, `set`, `publish`, `delete`, `apply`.
+Typed methods: `serve`, `serveStatus`, `serveStop`, `sites`, `get`, `url`, `create`, `set`, `publish`, `delete`, `apply`.
 `run(args)` runs any other command and returns its JSON envelope. A failure throws `OptiCliError` with opticli's `code`,
 `exitCode`, `hint`, `details` and `version`; see opticli's
 [exit codes](https://github.com/epinova/opticli#output-and-exit-codes).
@@ -183,6 +223,7 @@ changes in one call.
 |---|---|
 | `command` option or `OPTICLI` | The opticli to run: an executable, or a checkout's `opticli.dll` (run with `dotnet`). Otherwise `dotnet tool run opticli` when a tool manifest above the working directory has it, else `opticli` on PATH. |
 | `project` option or `OPTICLI_PROJECT` | The site's `.csproj` or folder, relative to `cwd` (default: the working directory). Otherwise opticli finds it from the working directory. |
+| `profile` option or `OPTICLI_PROFILE` | A launch profile (`--profile`), passed to every call: it picks the database, and `serve` runs the site with the profile's environment variables too (except those `serve` sets itself). The workers use the same. |
 
 `apply` runs in `baseDir` (`planDir` in setup), so a tool manifest must be in or above that folder too.
 

@@ -3,6 +3,7 @@
 import { compareVersions, OptiCli, type OptiCliOptions } from '../opticli.ts';
 import type { ApplyResult, ContentRef, OkEnvelope, Plan, ServeResult } from '../types.ts';
 import { requiredOpticli } from '../version.ts';
+import { browseUrl, siteUrl } from './urls.ts';
 
 export interface SetupOptions {
   /**
@@ -20,12 +21,17 @@ export interface SetupOptions {
    * opticli's user config. A site that runs already is used as it is: one without an HTTPS address fails setup.
    */
   https?: boolean;
+  /**
+   * The port of that HTTPS address (`serve --https-port`, implies `https`), so site hosts with the port stay right from run
+   * to run. Default: `OPTICLI_HTTPS_PORT`, else `"httpsPort"` in opticli's user config, else the next free port.
+   */
+  httpsPort?: number;
   /** Build the site before starting it (`serve --build`). Default: `OPTICLI_BUILD=1`. */
   build?: boolean;
   /** Leave a site that setup started running after the tests, or after setup failed. Default: `OPTICLI_KEEP_SITE=1`. */
   keepSite?: boolean;
   /** How to run opticli, and which project. */
-  opticli?: Pick<OptiCliOptions, 'command' | 'project' | 'cwd'>;
+  opticli?: Pick<OptiCliOptions, 'command' | 'project' | 'cwd' | 'profile'>;
 }
 
 /** What setup hands the workers, in {@link stateVariable}. */
@@ -33,11 +39,22 @@ export interface SeedState<Id extends string = string> {
   /** Where the browser reaches the site. */
   baseURL: string;
   /** How setup ran opticli, so the workers run the same. */
-  opticli: { command: readonly string[]; project?: string; cwd?: string };
+  opticli: { command: readonly string[]; project?: string; cwd?: string; profile?: string };
   /** The plan's step `id` → content ref. */
   refs: Record<Id, ContentRef>;
-  /** The plan's step `id` → its URL, host-relative (a path on {@link baseURL}), for content that has one (pages, media). */
+  /**
+   * The plan's step `id` → its URL, for content that has one (pages, media): a path on {@link baseURL}, or, for content
+   * on another site that the served site answers on a host of its own (`alloy-sv.localhost:5199`), that site's address.
+   */
   urls: Partial<Record<Id, string>>;
+  /**
+   * Each site's name (`opticli sites`) → where to open it: {@link baseURL} for the site on the served address itself, its
+   * own address for a site on another `*.localhost` host on a port `opticli serve` listens on. Sites whose hosts don't
+   * answer here (production names, other ports) are left out.
+   */
+  sites: Record<string, string>;
+  /** The addresses the served site listens on (HTTP, and HTTPS with `https`), to tell which hosts it answers. */
+  addresses: string[];
 }
 
 /** The environment variable that carries the {@link SeedState} from setup to the workers. */
@@ -68,8 +85,12 @@ export function defineSetup(options: SetupOptions = {}): () => Promise<() => Pro
       if (startedSite && !keepSite) await opticli.serveStop();
     };
 
-    const https = options.https ?? (process.env.OPTICLI_HTTPS ? process.env.OPTICLI_HTTPS === '1' : undefined);
-    const served = await opticli.serve({ build: options.build ?? process.env.OPTICLI_BUILD === '1', https });
+    const httpsPort = options.httpsPort ?? (process.env.OPTICLI_HTTPS_PORT ? Number(process.env.OPTICLI_HTTPS_PORT) : undefined);
+    if (httpsPort !== undefined && !(Number.isInteger(httpsPort) && httpsPort > 0 && httpsPort < 65536)) {
+      throw new Error(`opticli: httpsPort (OPTICLI_HTTPS_PORT) must be a port number, not ${process.env.OPTICLI_HTTPS_PORT ?? httpsPort}.`);
+    }
+    const https = httpsPort !== undefined || (options.https ?? (process.env.OPTICLI_HTTPS ? process.env.OPTICLI_HTTPS === '1' : undefined));
+    const served = await opticli.serve({ build: options.build ?? process.env.OPTICLI_BUILD === '1', https, httpsPort });
     try {
       if (https && !startedSite && served.data.mode !== 'ide' && !served.data.browseUrl) {
         throw new Error(
@@ -94,9 +115,11 @@ async function seed(opticli: OptiCli, served: OkEnvelope<ServeResult>, options: 
 
   const state: SeedState = {
     baseURL,
-    opticli: { command: opticli.command, project: opticli.project, cwd: opticli.cwd },
+    opticli: { command: opticli.command, project: opticli.project, cwd: opticli.cwd, profile: opticli.profile },
     refs: {},
     urls: {},
+    sites: {},
+    addresses: [served.data.url, served.data.browseUrl].filter((a): a is string => !!a),
   };
   if (options.plan) {
     const applied = await opticli.apply(options.plan, {
@@ -106,7 +129,8 @@ async function seed(opticli: OptiCli, served: OkEnvelope<ServeResult>, options: 
     });
     state.refs = applied.created;
     for (const step of applied.operations) {
-      if (step.id && step.result?.url) state.urls[step.id] = step.result.url;
+      const url = browseUrl(step.result?.url, step.result?.canonicalUrl, state.addresses);
+      if (step.id && url) state.urls[step.id] = url;
     }
     const changed = applied.operations.filter((o) => o.status !== 'unchanged');
     console.log(
@@ -115,13 +139,31 @@ async function seed(opticli: OptiCli, served: OkEnvelope<ServeResult>, options: 
         : 'opticli: seed plan unchanged',
     );
   }
+  state.sites = await sites(opticli, baseURL, state.addresses);
   return state;
+}
+
+/** Where to open each site; none when opticli can't list them (an older one says why in a warning). */
+async function sites(opticli: OptiCli, baseURL: string, addresses: readonly string[]): Promise<Record<string, string>> {
+  try {
+    const listed = await opticli.sites();
+    const result: Record<string, string> = {};
+    for (const site of listed) {
+      const url = siteUrl(site.url, baseURL, addresses);
+      if (url) result[site.name] = url;
+    }
+    return result;
+  } catch (error) {
+    console.warn(`opticli: couldn't list the sites, so seed.sites is empty: ${error instanceof Error ? error.message : error}`);
+    return {};
+  }
 }
 
 /** A step that changed, for the log: what it is, and which properties it changed. */
 function describeStep(step: ApplyResult['operations'][number]): string {
   const name = `${step.id ?? `#${step.index}`} (${step.op}${step.status === 'saved' ? '' : `, ${step.status}`})`;
-  const properties = step.result?.changes?.map((c) => c.property) ?? [];
+  // A site step's changes are lines of text; a content step's are properties.
+  const properties = (step.result?.changes ?? []).map((c) => (typeof c === 'string' ? c : c.property)).filter(Boolean);
   return properties.length ? `${name}: ${properties.join(', ')}` : name;
 }
 

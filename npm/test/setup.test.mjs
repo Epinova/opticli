@@ -154,3 +154,82 @@ test('the log names the steps the seed plan changed', async (t) => {
 
   assert.equal(log.mock.calls.at(-1).arguments[0], 'opticli: seed plan changed 2 of 3 steps: root (create): MainBody; #2 (area): MainContentArea');
 });
+
+test('httpsPort serves HTTPS on that port, and the profile goes to every call and to the workers', async () => {
+  const { calls } = fake([
+    { match: 'serve --status', envelope: ok({ state: 'stopped', message: '' }, { version: requiredOpticli }) },
+    { match: 'serve --stop', envelope: ok({ stopped: true }, { version: requiredOpticli }) },
+    { match: 'serve', envelope: ok({ ...running, mode: 'background', browseUrl: 'https://localhost:5443' }, { version: requiredOpticli }) },
+  ]);
+
+  const teardown = await defineSetup({ httpsPort: 5443, opticli: { command: fakeCommand, profile: 'Alloy.E2E' } })();
+
+  const serve = calls().find((c) => c.args[0] === 'serve' && c.args[1] === '--timeout').args;
+  assert.deepEqual(serve.slice(serve.indexOf('--https-port'), serve.indexOf('--https-port') + 2), ['--https-port', '5443']);
+  assert.ok(!serve.includes('--https'));
+  assert.ok(calls().every((c) => c.args.slice(-2).join(' ') === '--profile Alloy.E2E'));
+  assert.equal(readSeedState().opticli.profile, 'Alloy.E2E');
+  await teardown();
+});
+
+test('OPTICLI_HTTPS_PORT must be a port', async (t) => {
+  fake([{ match: 'serve --status', envelope: ok({ state: 'stopped', message: '' }, { version: requiredOpticli }) }]);
+  process.env.OPTICLI_HTTPS_PORT = 'https';
+  t.after(() => delete process.env.OPTICLI_HTTPS_PORT);
+
+  await assert.rejects(defineSetup({ opticli: { command: fakeCommand } })(), /must be a port number/);
+});
+
+test('on several sites, content on another site the served one answers gets that site address, and seed.sites lists them', async () => {
+  const served = { ...running, mode: 'background', browseUrl: 'https://localhost:5443' };
+  const { dir } = fake([
+    { match: 'serve --status', envelope: ok({ state: 'stopped', message: '' }, { version: requiredOpticli }) },
+    { match: 'serve --stop', envelope: ok({ stopped: true }, { version: requiredOpticli }) },
+    { match: 'serve', envelope: ok(served, { version: requiredOpticli }) },
+    {
+      match: 'apply',
+      envelope: ok({
+        dryRun: false,
+        created: { home: '5', svHome: '6', article: '7', live: '8', other: '9' },
+        operations: [
+          // On the site the served address answers: the path, as before.
+          { index: 0, op: 'create', id: 'home', status: 'saved', result: { ref: '5', url: '/no/', canonicalUrl: 'http://localhost:5199/no/' } },
+          // On another site, on a *.localhost host on the served port: that site's address.
+          { index: 1, op: 'create', id: 'svHome', status: 'saved', result: { ref: '6', url: '/', canonicalUrl: 'http://alloy-sv.localhost:5199/' } },
+          { index: 2, op: 'create', id: 'article', status: 'saved', result: { ref: '7', url: '/en/news/', canonicalUrl: 'https://alloy-en.localhost:5443/en/news/' } },
+          // A production host, or a port nothing listens on: the path, as before.
+          { index: 3, op: 'create', id: 'live', status: 'saved', result: { ref: '8', url: '/live/', canonicalUrl: 'https://www.alloy.example.com/live/' } },
+          { index: 4, op: 'create', id: 'other', status: 'saved', result: { ref: '9', url: '/other/', canonicalUrl: 'http://alloy-da.localhost:6000/other/' } },
+        ],
+      }),
+    },
+    {
+      match: 'sites',
+      envelope: ok([
+        { id: 1, name: 'Alloy', url: 'http://localhost:5199/', hosts: [] },
+        { id: 2, name: 'Alloy Sverige', url: 'http://alloy-sv.localhost:5199/', hosts: [] },
+        { id: 3, name: 'Alloy English', url: 'https://alloy-en.localhost:5443/', hosts: [] },
+        { id: 4, name: 'Alloy live', url: 'https://www.alloy.example.com/', hosts: [] },
+      ], { source: 'db' }),
+    },
+  ]);
+
+  const teardown = await defineSetup({ plan: { operations: [] }, planDir: dir, https: true, opticli: { command: fakeCommand } })();
+
+  const state = readSeedState();
+  assert.equal(state.baseURL, 'https://localhost:5443');
+  assert.deepEqual(state.addresses, ['http://127.0.0.1:5199', 'https://localhost:5443']);
+  assert.deepEqual(state.urls, {
+    home: '/no/',
+    svHome: 'http://alloy-sv.localhost:5199/',
+    article: 'https://alloy-en.localhost:5443/en/news/',
+    live: '/live/',
+    other: '/other/',
+  });
+  assert.deepEqual(state.sites, {
+    Alloy: 'https://localhost:5443',
+    'Alloy Sverige': 'http://alloy-sv.localhost:5199/',
+    'Alloy English': 'https://alloy-en.localhost:5443/',
+  });
+  await teardown();
+});

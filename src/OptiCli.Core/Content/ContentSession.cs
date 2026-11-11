@@ -16,9 +16,19 @@ public sealed class ContentSession : IAsyncDisposable
 
     public CmsDatabase Db { get; }
 
-    public CmsModel Model { get; }
+    public CmsModel Model { get; private set; }
 
-    public IdentityResolver Identities { get; }
+    public IdentityResolver Identities { get; private set; }
+
+    /// <summary>
+    /// Reads the content model again, after a write that changed it through the site (<c>sites add</c>, <c>languages
+    /// enable</c>), so the steps after it see the change.
+    /// </summary>
+    public async Task ReloadModelAsync(CancellationToken cancellationToken)
+    {
+        Model = await CmsModel.LoadAsync(Db, cancellationToken);
+        Identities = new IdentityResolver(Db, Model);
+    }
 
     public static async Task<ContentSession> OpenAsync(CmsDatabase db, CancellationToken cancellationToken) =>
         new(db, await CmsModel.LoadAsync(db, cancellationToken));

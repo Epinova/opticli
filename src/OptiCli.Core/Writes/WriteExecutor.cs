@@ -124,6 +124,8 @@ public sealed class WriteExecutor(
             DeleteOperation delete => await DeleteAsync(delete, dryRun, cancellationToken),
             RestoreOperation restore => await RestoreAsync(restore, dryRun, cancellationToken),
             AccessOperation access => await AccessAsync(access, dryRun, cancellationToken),
+            SiteOperation site => await SiteAsync(site, dryRun, cancellationToken),
+            LanguageOperation language => await LanguagesAsync(language, dryRun, cancellationToken),
             _ => throw new InvalidOperationException($"Unknown operation {operation.GetType().Name}."),
         };
 
@@ -1071,6 +1073,84 @@ public sealed class WriteExecutor(
         (false, true) => $"{id} has a published version: once restored it is published again, and shows wherever it is used.",
         (false, false) => $"{id} has a published version, so it is published again, and shows wherever it is used.",
     };
+
+    /// <summary>
+    /// <c>sites add</c>, a plan's <c>site</c>: through the site (the CMS's site definitions or applications), never against a
+    /// shared database. After a save the content model is read again, so later steps see the site.
+    /// </summary>
+    private async Task<WriteOutcome> SiteAsync(SiteOperation op, bool dryRun, CancellationToken cancellationToken)
+    {
+        RequireLocal(Protocol.SiteAddRequest.SharedRefusal, Protocol.SiteAddRequest.SharedHint);
+        if (string.IsNullOrWhiteSpace(op.Name))
+        {
+            throw new UsageException("The site needs a name.");
+        }
+        if (op.Hosts.Count == 0)
+        {
+            throw new UsageException($"{op.Name} needs at least one host.", $"Hosts are {Sites.SiteHostSpecs.Syntax}.");
+        }
+        var start = await EditableAsync(op.StartPage, cancellationToken, "start page");
+        var result = await PostAsync<SiteAddResult>(AgentRoutes.SiteAdd, new SiteAddRequest
+        {
+            Name = op.Name.Trim(),
+            StartPage = start.Id,
+            Hosts = op.Hosts,
+            Https = op.Https,
+            UpdateExisting = updateExisting,
+            DryRun = dryRun,
+        }, cancellationToken);
+        if (result.Saved)
+        {
+            await session.ReloadModelAsync(cancellationToken);
+        }
+        var view = Sites.SiteHostsRunner.Views(new SiteHostsResult { Sites = [result.Site], DryRun = result.DryRun, Saved = result.Saved }, session.Model.Sites.All)[0];
+        return new WriteOutcome(view, AgentSource, null, result.Warnings ?? []);
+    }
+
+    /// <summary>
+    /// <c>languages enable|disable</c>, a plan's <c>language</c>: through the site, never against a shared database. After a
+    /// save the content model is read again, so later steps (and their checks) see the languages.
+    /// </summary>
+    private async Task<WriteOutcome> LanguagesAsync(LanguageOperation op, bool dryRun, CancellationToken cancellationToken)
+    {
+        RequireLocal(LanguageBranchesRequest.SharedRefusal, LanguageBranchesRequest.SharedHint);
+        var codes = op.Langs.Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
+        if (codes.Count == 0)
+        {
+            throw new UsageException("Give at least one language code.", "Such as no, nb, sv or en-GB.");
+        }
+        var result = await PostAsync<LanguageBranchesResult>(AgentRoutes.LanguageBranches, new LanguageBranchesRequest { Codes = codes, Enabled = op.Enabled, DryRun = dryRun }, cancellationToken);
+        var warnings = (result.Warnings ?? []).ToList();
+        if (!op.Enabled)
+        {
+            var disabled = result.Languages.Where(l => l.Status == LanguageBranchStatus.Disabled).Select(l => l.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var language in (await LanguageReader.ListAsync(session.Db, cancellationToken)).Where(l => disabled.Contains(l.Code)))
+            {
+                if (language.MasterOf.Count > 0)
+                {
+                    warnings.Add($"{language.Code} is the master language of {string.Join(", ", language.MasterOf)}'s start page.");
+                }
+                if (language.ContentItems > 0)
+                {
+                    warnings.Add($"{language.Code} has {language.ContentItems} content item(s): they stay in the database, but the site doesn't show or edit that language while it is disabled.");
+                }
+            }
+        }
+        if (result.Saved)
+        {
+            await session.ReloadModelAsync(cancellationToken);
+        }
+        return new WriteOutcome(new LanguagesOutput(result.Languages, result.Saved, result.DryRun ? true : null), AgentSource, null, warnings);
+    }
+
+    /// <exception cref="RefusedException">The database is shared: what the deployed site uses too.</exception>
+    private void RequireLocal(string refusal, string hint)
+    {
+        if (sharedDatabase ?? !session.Db.ConnectionString.IsLocal)
+        {
+            throw new RefusedException(refusal, hint);
+        }
+    }
 
     private async Task<WriteOutcome> AccessAsync(AccessOperation op, bool dryRun, CancellationToken cancellationToken)
     {

@@ -16,16 +16,21 @@ public class WriteUrlTests
     [Fact]
     public void A_write_gets_the_contents_url_in_its_language_without_the_version()
     {
-        var urls = new StubUrlResolver(_ => "/sv/news/");
+        var urls = new StubUrlResolver(arguments => arguments.ForceAbsolute ? "http://alloy-sv.localhost:5199/sv/news/" : "/sv/news/");
 
         var result = AgentMiddleware.WithUrl(Request(urls), new WriteResult { Content = Page, Saved = true });
 
         Assert.Equal("/sv/news/", result.Url);
-        var (link, language, arguments) = Assert.Single(urls.Calls);
-        Assert.Equal(new ContentReference(12), link);
-        Assert.Equal("sv", language);
-        Assert.False(arguments.ForceAbsolute);
-        Assert.True(arguments.ForceCanonical);
+        // With the site's host too: which site of several the content is on.
+        Assert.Equal("http://alloy-sv.localhost:5199/sv/news/", result.CanonicalUrl);
+        Assert.Equal(2, urls.Calls.Count);
+        foreach (var (link, language, arguments) in urls.Calls)
+        {
+            Assert.Equal(new ContentReference(12), link);
+            Assert.Equal("sv", language);
+            Assert.True(arguments.ForceCanonical);
+        }
+        Assert.Equal([false, true], urls.Calls.Select(c => c.Arguments.ForceAbsolute));
     }
 
     [Fact]
@@ -51,14 +56,14 @@ public class WriteUrlTests
     private static AgentRequest Request(IUrlResolver urls) =>
         new(new DefaultHttpContext { RequestServices = new ServiceCollection().AddSingleton(urls).BuildServiceProvider() }, null);
 
-    private sealed class StubUrlResolver(Func<ContentReference, string> url) : IUrlResolver
+    private sealed class StubUrlResolver(Func<UrlResolverArguments, string> url) : IUrlResolver
     {
         public List<(ContentReference Link, string Language, UrlResolverArguments Arguments)> Calls { get; } = [];
 
         public string GetUrl(ContentReference contentLink, string language, UrlResolverArguments urlResolverArguments)
         {
             Calls.Add((contentLink, language, urlResolverArguments));
-            return url(contentLink);
+            return url(urlResolverArguments);
         }
 
         public string GetUrl(UrlBuilder urlBuilderWithInternalUrl, UrlResolverArguments arguments) => throw new NotSupportedException();

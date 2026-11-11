@@ -96,3 +96,16 @@ test('apply with keep removes nothing', async () => {
 
   assert.deepEqual(deletes(calls), []);
 });
+
+test('a page on another site the served one answers gets that site address, one on the served address its path', async () => {
+  fake([
+    { match: 'create 100', envelope: ok({ ref: '7', url: '/en/sandbox/a/', canonicalUrl: 'http://localhost:5199/en/sandbox/a/' }) },
+    { match: 'create 50', envelope: ok({ ref: '8', url: '/sv/b/', canonicalUrl: 'http://alloy-sv.localhost:5199/sv/b/' }) },
+    { match: 'delete', envelope: ok({ ref: '7' }) },
+  ]);
+  const c = new Cms(new OptiCli({ command: fakeCommand }), sandbox, ['http://127.0.0.1:5199']);
+
+  assert.equal((await c.page('StandardPage', 'A')).url, '/en/sandbox/a/');
+  assert.equal((await c.page('StandardPage', 'B', {}, { parent: '50' })).url, 'http://alloy-sv.localhost:5199/sv/b/');
+  await c.cleanup();
+});

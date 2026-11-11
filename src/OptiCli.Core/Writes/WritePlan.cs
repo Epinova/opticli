@@ -40,6 +40,8 @@ public sealed partial class WritePlan
         ["delete"] = ["ref*", "ignoreReferences"],
         ["restore"] = ["ref*", "to"],
         ["access"] = ["ref*", "grant", "grantUsers", "revoke", "breakInheritance", "inherit", "allowUnknownRole"],
+        ["site"] = ["name*", "startPage*", "hosts*", "https"],
+        ["language"] = ["lang*", "enabled"],
     };
 
     /// <summary>
@@ -352,6 +354,9 @@ public sealed partial class WritePlan
             "restore" => new RestoreOperation(reader.Ref("ref"), reader.OptionalRef("to")),
             "access" => new AccessOperation(reader.Ref("ref"), reader.Levels("grant"), reader.Levels("grantUsers"), reader.Strings("revoke"),
                 reader.Bool("breakInheritance"), reader.Bool("inherit"), reader.Bool("allowUnknownRole")),
+            "site" => new SiteOperation(reader.String("name") ?? "", reader.Ref("startPage"),
+                step["hosts"] is null ? [] : Sites.SiteHostSpecs.FromJson(step["hosts"], reader.Where, problems), reader.OptionalBool("https")),
+            "language" => new LanguageOperation(reader.Strings("lang") ?? [], reader.OptionalBool("enabled") ?? true),
             _ => new DeleteOperation(reader.Ref("ref"), reader.Bool("ignoreReferences")),
         };
 
@@ -516,6 +521,13 @@ public sealed partial class WritePlan
             null => false,
             JsonValue value when value.TryGetValue<bool>(out var flag) => flag,
             _ => Problem<bool>(name, "true or false"),
+        };
+
+        public bool? OptionalBool(string name) => step[name] switch
+        {
+            null => null,
+            JsonValue value when value.TryGetValue<bool>(out var flag) => flag,
+            _ => Problem<bool?>(name, "true or false"),
         };
 
         /// <summary>Name to levels: <c>{"Authenticated": "Read"}</c>, or the levels as an array (<c>["Read", "Edit"]</c>).</summary>

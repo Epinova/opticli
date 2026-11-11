@@ -131,7 +131,9 @@ node shows (the CMS ignores both). A section (`kind: section`) or a section blue
 All take `--dry-run`. `set`, `create`, `area`, `block create`, `translate` save a draft unless `--publish`.
 `--lang <code>` picks the branch. Output: `ref`, `version` (the new version ref), `baseVersion`, `status`, `saved`,
 `published`, `valid`, `changes[]` (`property`, `before`, `after`), `validation[]`, `url` (the public URL as `get` shows
-it: for a draft of content never published, where it will be; absent for blocks, folders and a dry-run create). A saved draft becomes the
+it: for a draft of content never published, where it will be; absent for blocks, folders and a dry-run create),
+`canonicalUrl` (the same with the host of the content's site for that language: which site of several it is on; after a
+plan's `site` step saved, both are as the sites have them at the end of the run). A saved draft becomes the
 primary draft, the version edit mode opens. A write that publishes existing content also has `previouslyPublished`
 (the version live until then; absent after a first publish) and, when it put other people's changes live,
 `pendingDraft` (see [Other people's drafts](#other-peoples-drafts)). Content with an approval sequence isn't published
@@ -485,6 +487,31 @@ For a restored copy of a production database, whose sites still have the product
   host). `--type preview|media`: one each per application (preview only on a headless one), refused on CMS 12. No site
   whose start page is below another's.
 
+### Sites and languages from scratch
+
+A database the CMS created itself (an empty database; `CreateDatabaseSchema` is on by default) has no sites, so no
+URL renders, and only `en` and `sv` enabled. Through the site (`serve`); refused against a shared database (exit 3),
+never in a sealed plan. Only when the user asked to build or seed such a database; dry-run first.
+- `languages enable <code>...` / `languages disable <code>...`: per code `created` (the database had no branch: one is
+  added, enabled, Everyone may edit), `enabled`, `disabled` or `unchanged`. A code .NET doesn't know is `usage`.
+  `disable` warns about content in the language and a site whose start page has it as master language, and refuses
+  to disable every enabled language (exit 3). Undo: the other one.
+- `sites add <name> --start-page <ref> --host <host> [--host ...] [--https true|false] [--update-existing]`: a host is
+  `name[:port][@lang]`, with an optional scheme (`https://alloy.localhost:5001@sv`), or `*`. Per language (and among
+  the hosts for every language) the first host is primary, the rest undefined; in a plan an object
+  `{"name", "type", "lang", "https"}` sets the type. SiteUrl (CMS 12) is the primary host for every language, http on
+  `localhost`, `*.localhost` and loopback addresses unless https. `--https`: hosts without a scheme (default unset on
+  CMS 12; CMS 13 http on those loopback names, else https). The start page must exist (CMS 12: a page, not the root).
+- Errors: a site of that name is `conflict` (exit 5) unless `--update-existing`, which sets the start page, adds the
+  hosts or gives them the type, language and https asked for (a new primary or edit host makes the old one
+  undefined; SiteUrl follows a primary host for every language) and keeps the site's other hosts; `validation`
+  (exit 5, `details.reason: "siteHosts"`, every host listed) for a host another site has, a language that isn't
+  enabled (the message says `opticli languages enable <code>`), a type the CMS version lacks, a host given twice.
+- Output: as `sites primary`'s per site, with `status` `created`, `changed` or `unchanged`. Undo: none in opticli (a
+  site is deleted in admin mode; `sites host remove` takes hosts off).
+- CMS 13: an in-process application named from the site's name (`Alloy Site` is `AlloySite`; a number when taken),
+  with the name as display name; `*` makes it the default application.
+
 ### Scheduled jobs
 
 `jobs` and `jobs log` read the database; `jobs run|stop|set` go through the site (`serve`), and are refused against a
@@ -676,8 +703,10 @@ step by step. `get` and `access` show it as `approval`: `definedOn`, `inherited`
 ```
 
 Ops: `set`, `create`, `area`, `block`, `upload`, `translate`, `publish`, `unpublish`, `discard`, `move`, `delete`,
-`restore`, `access`, with the same fields as the commands (`opticli apply --help` lists them). `"$id"` refers to what an earlier
-`create`, `block` or `upload` with that `id` made. A top-level `"source"` (what `export` writes) is accepted and not read.
+`restore`, `access`, `language`, `site`, with the same fields as the commands (`opticli apply --help` lists them). `"$id"` refers to what an earlier
+`create`, `block` or `upload` with that `id` made, in ref fields and as a whole string value in `properties` (also in
+arrays): a reference property gets the content, a string property its id as text (`"TagId": "$tag"` stores
+`"456"`). A top-level `"source"` (what `export` writes) is accepted and not read.
 - In rich text (and `@file` HTML), `href="$id"` (or `"$id#anchor"`, `"$id?epslanguage=sv"`) links to planned content,
   and `src="$id"` shows a planned image: it is stored as its permanent link, `~/link/<guid>.aspx`, as the CMS does. A block in the text takes `data-contentguid="$id"` (or
   `data-contentlink="$id"`, its id). A link to content a later step creates (or the same step) needs its GUID up front:
@@ -692,6 +721,12 @@ Ops: `set`, `create`, `area`, `block`, `upload`, `translate`, `publish`, `unpubl
   stay inside its folder, also through symlinks, unless `apply --allow-outside`.
 - `{"op": "access", "ref": "$page", "grant": {"Authenticated": "Read"}, "revoke": ["Everyone"], "breakInheritance": true}`
   (also `grantUsers`, `inherit`, `allowUnknownRole`).
+- A database built from scratch (see [Sites and languages from scratch](#sites-and-languages-from-scratch)):
+  `{"op": "language", "lang": "no"}` (an array of codes too; `"enabled": false` disables) before the steps in that
+  language, which a dry run then reports as `deferred`; `{"op": "site", "name": "Alloy", "startPage": "$home",
+  "hosts": ["alloy.localhost:5000", "alloy-sv.localhost:5000@sv", {"name": "edit.alloy.localhost:5000", "type": "edit"}],
+  "https": false}` after the start page. With `apply --update-existing` the site of that name is updated instead of
+  being a `conflict`.
 - An inline block in a ContentArea: `{"op": "area", "ref": "$page", "property": "MainArea", "action": "add", "type": "TeaserBlock", "values": {"Heading": "Hi"}}`
   (`name` too); see [Inline blocks](#inline-blocks-in-contentareas) for `--update-existing`.
 - CMS 13: `"composition"` in a `create`'s or `set`'s `properties` is the whole composition (`"@file.json"` reads it);
@@ -957,7 +992,7 @@ error's `details`, beside `operations`.
 
 ## serve and env
 
-- `opticli serve [--build] [--port N] [--https] [--scheduler] [--foreground] [--output <dll>] [--timeout s] [--allow-pending-migrations]`: runs the existing build
+- `opticli serve [--build] [--port N] [--https] [--https-port N] [--profile <name>] [--scheduler] [--foreground] [--output <dll>] [--timeout s] [--allow-pending-migrations]`: runs the existing build
   output (`bin/Debug/<tfm>/<Site>.dll`) with the site agent injected through `DOTNET_STARTUP_HOOKS`, in Development, on
   `http://127.0.0.1:<port>` (default 5199, else the first free port up to 5299), waiting up to `--timeout`
   (default 180 s) for it to answer. A warning says when sources are newer than the
@@ -968,6 +1003,12 @@ error's `details`, beside `operations`.
 - A site that redirects HTTP to HTTPS can't be browsed on the agent's address (`serve` warns). `--https` also binds
   `https://localhost:<port>` with the ASP.NET Core development certificate and prints it as `browseUrl`; opticli keeps
   talking to the agent over HTTP. Without a certificate the site fails to start: `dotnet dev-certs https --trust`.
+  `--https-port N` (or `httpsPort` in the user config) fixes that port and turns `--https` on; a taken port is `usage`,
+  never another one, so site hosts with the port stay right.
+- `--profile <name>` (global: it picks the launch profile's connection string) also gives the site the profile's
+  `environmentVariables`, except those `serve` sets itself (the address, `ASPNETCORE_ENVIRONMENT`, the startup hook,
+  `OPTICLI_*`, the pinned connection string); a warning names what was applied and left out. Give the same
+  `--profile` to every command of the run, or they may pick another database. `env --profile` prints them too.
 - The agent refuses to start if the site would use a different database, or a remote one other than the development
   database (exit 3). It answers only loopback callers with the per-run token, and only in Development. `serve`
   refuses a remote database that isn't the development one. A string from `--connection`/`OPTICLI_DB` can't be

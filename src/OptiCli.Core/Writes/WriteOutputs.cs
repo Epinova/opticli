@@ -34,6 +34,13 @@ public sealed record WriteOutput(
     public string? Url { get; init; }
 
     /// <summary>
+    /// <see cref="Url"/> with the host of the content's site for its language, as the CMS links to it (its canonical URL):
+    /// on a solution with several sites, which site the content is on. A production host name doesn't answer locally. Null
+    /// where <see cref="Url"/> is, and from an agent of opticli 0.30 or older.
+    /// </summary>
+    public string? CanonicalUrl { get; init; }
+
+    /// <summary>
     /// CMS 13: what the write changed in a Visual Builder composition, node by node (<see cref="CompositionChanges"/>); the
     /// composition isn't listed in <see cref="Changes"/>. Null when it didn't change one.
     /// </summary>
@@ -116,6 +123,7 @@ public sealed record WriteOutput(
             result.Validation)
         {
             Url = result.Url,
+            CanonicalUrl = result.CanonicalUrl,
             Composition = composition,
             PendingDraft = result.PendingDraft,
             PreviouslyPublished = content is not null && result.PreviouslyPublished is { } previous ? VersionRef(content.Id, previous) : null,
@@ -224,3 +232,6 @@ public sealed record AccessOutput(
 /// <param name="Source"><c>agent</c> when the site did the work, <c>db</c> for dry runs opticli checks itself.</param>
 /// <param name="CreatedId">Content id of what a create made (for plans' <c>$id</c>).</param>
 public sealed record WriteOutcome(object Output, string Source, int? CreatedId, IReadOnlyList<string> Warnings);
+
+/// <summary>What <c>languages enable|disable</c> (a plan's <c>language</c> step) did to each language branch.</summary>
+public sealed record LanguagesOutput(IReadOnlyList<LanguageBranchChange> Languages, bool Saved, bool? DryRun = null);

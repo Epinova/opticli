@@ -27,6 +27,8 @@ internal enum AgentEndpoint
     RemoveLanguage,
     Drift,
     SiteHosts,
+    SiteAdd,
+    LanguageBranches,
     JobRun,
     JobStop,
     JobSet,
@@ -50,7 +52,7 @@ internal static partial class AgentRouter
 
     private static readonly string RouteList =
         $"GET {AgentRoutes.Prefix}/ping, POST {AgentRoutes.Prefix}/shutdown, GET {AgentRoutes.Prefix}/drift, GET {AgentRoutes.Prefix}/restore-parents, GET {AgentRoutes.Prefix}/types/{{name}}, GET {AgentRoutes.Prefix}/types-without-code, POST {AgentRoutes.Prefix}/types/remove, POST {AgentRoutes.Prefix}/content, POST {AgentRoutes.Prefix}/media, " +
-        $"POST {AgentRoutes.Prefix}/content/{{ref}}/draft|languages|remove-language|publish|unpublish|discard|move|restore|access, GET|DELETE {AgentRoutes.Prefix}/content/{{ref}}, POST {AgentRoutes.Prefix}/sites/hosts, POST {AgentRoutes.Prefix}/jobs/run|stop|set, POST {AgentRoutes.Prefix}/users/add|remove, GET {AgentRoutes.Prefix}/users/roles, GET {AgentRoutes.Prefix}/sealed, POST {AgentRoutes.Prefix}/sealed/events/flush";
+        $"POST {AgentRoutes.Prefix}/content/{{ref}}/draft|languages|remove-language|publish|unpublish|discard|move|restore|access, GET|DELETE {AgentRoutes.Prefix}/content/{{ref}}, POST {AgentRoutes.Prefix}/sites/hosts|add, POST {AgentRoutes.Prefix}/languages, POST {AgentRoutes.Prefix}/jobs/run|stop|set, POST {AgentRoutes.Prefix}/users/add|remove, GET {AgentRoutes.Prefix}/users/roles, GET {AgentRoutes.Prefix}/sealed, POST {AgentRoutes.Prefix}/sealed/events/flush";
 
     /// <exception cref="AgentException">No route matches, or it belongs to another protocol version.</exception>
     public static RouteMatch Match(string method, string? path)
@@ -86,6 +88,8 @@ internal static partial class AgentRouter
             ["content"] => (AgentEndpoint.Create, (string?)null),
             ["media"] => (AgentEndpoint.Upload, (string?)null),
             ["sites", "hosts"] => (AgentEndpoint.SiteHosts, (string?)null),
+            ["sites", "add"] => (AgentEndpoint.SiteAdd, (string?)null),
+            ["languages"] => (AgentEndpoint.LanguageBranches, (string?)null),
             ["jobs", "run"] => (AgentEndpoint.JobRun, (string?)null),
             ["jobs", "stop"] => (AgentEndpoint.JobStop, (string?)null),
             ["jobs", "set"] => (AgentEndpoint.JobSet, (string?)null),
@@ -143,6 +147,8 @@ internal static partial class AgentRouter
         [AgentEndpoint.RestoreParents] = "GET",
         [AgentEndpoint.Access] = "POST",
         [AgentEndpoint.SiteHosts] = "POST",
+        [AgentEndpoint.SiteAdd] = "POST",
+        [AgentEndpoint.LanguageBranches] = "POST",
         [AgentEndpoint.JobRun] = "POST",
         [AgentEndpoint.JobStop] = "POST",
         [AgentEndpoint.JobSet] = "POST",

@@ -9,6 +9,7 @@ import { test as base } from '@playwright/test';
 import { OptiCli, OptiCliError, type WriteOptions } from '../opticli.ts';
 import type { ApplyResult, ContentRef, Plan, PlanIds, PlanStep, Properties, WriteResult } from '../types.ts';
 import { readSeedState, type SeedState } from './setup.ts';
+import { browseUrl } from './urls.ts';
 
 /** The `opticliSandbox` option: the page each worker makes for its tests' content. */
 export interface SandboxOptions {
@@ -24,7 +25,10 @@ export interface SandboxOptions {
 export type OptiCliWorkerOptions = { opticliSandbox?: SandboxOptions };
 
 export interface CreatedPage extends WriteResult {
-  /** The page's URL (host-relative), for `page.goto`; for a draft, where it will be once published. */
+  /**
+   * The page's URL, for `page.goto`: a path on `baseURL`, or, below another site the served site answers on a host of
+   * its own, that site's address (as `seed.urls`). For a draft, where it will be once published.
+   */
   url: string;
 }
 
@@ -45,6 +49,8 @@ export class Cms {
     readonly opticli: OptiCli,
     /** Where {@link page} creates content unless given a parent: the worker's sandbox. */
     readonly parent: ContentRef | undefined,
+    /** The addresses the served site listens on (`seed.addresses`), to open a page on its own site's host. */
+    readonly addresses: readonly string[] = [],
   ) {}
 
   /** Creates a page, published unless `publish: false`, and removes it after the test unless `keep`. */
@@ -60,7 +66,7 @@ export class Cms {
     const result = await this.opticli.create(parent, type, name, properties, { ...options, publish: options.publish ?? true });
     if (!keep) this.track(result.ref, parent);
     if (!result.url) throw new Error(`${type} ${result.ref} has no URL: is ${type} a page type with a template?`);
-    return result as CreatedPage;
+    return { ...result, url: browseUrl(result.url, result.canonicalUrl, this.addresses)! };
   }
 
   /** Saves a draft of the change unless `publish`. On seeded content, the next run's seed puts it back. */
@@ -169,8 +175,8 @@ export function createTest<P extends Plan = Plan>() {
 
     baseURL: async ({ seed }, use) => use(seed.baseURL),
 
-    cms: async ({ opticli, sandbox }, use) => {
-      const cms = new Cms(opticli, sandbox);
+    cms: async ({ opticli, sandbox, seed }, use) => {
+      const cms = new Cms(opticli, sandbox, seed.addresses ?? []);
       await use(cms);
       await cms.cleanup();
     },

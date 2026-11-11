@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using OptiCli.Protocol;
 
 namespace OptiCli.Core.Writes;
 
@@ -479,4 +480,33 @@ public sealed record AccessOperation(
 
     // Role and user names are never refs, so only the target is mapped.
     public override WriteOperation MapRefs(Func<string, string> map) => this with { Ref = map(Ref) };
+}
+
+/// <summary>
+/// A site definition (CMS 13: an in-process application) with its start page and hosts (<c>sites add</c>, a plan's
+/// <c>site</c>). With <see cref="WriteExecutor.UpdateExisting"/> a site of that name is made to match instead of being a
+/// <c>conflict</c>. Local databases only: refused against a shared one.
+/// </summary>
+/// <param name="StartPage">A ref, or a plan's <c>$id</c>.</param>
+/// <param name="Https">The https setting of hosts whose text has no scheme; null: none given.</param>
+public sealed record SiteOperation(string Name, string StartPage, IReadOnlyList<SiteAddHost> Hosts, bool? Https = null) : WriteOperation
+{
+    public override string Kind => "site";
+
+    public override IEnumerable<string?> Refs => [StartPage];
+
+    public override WriteOperation MapRefs(Func<string, string> map) => this with { StartPage = map(StartPage) };
+}
+
+/// <summary>
+/// Enables (or disables) language branches (<c>languages enable|disable</c>, a plan's <c>language</c>), adding a branch the
+/// database lacks. Local databases only: refused against a shared one.
+/// </summary>
+public sealed record LanguageOperation(IReadOnlyList<string> Langs, bool Enabled = true) : WriteOperation
+{
+    public override string Kind => "language";
+
+    public override IEnumerable<string?> Refs => [];
+
+    public override WriteOperation MapRefs(Func<string, string> map) => this;
 }

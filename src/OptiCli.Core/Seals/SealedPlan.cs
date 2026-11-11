@@ -23,6 +23,8 @@ public static class SealedPlan
         ["access"] = "changes access rights",
         ["unpublish"] = "takes content offline",
         ["discard"] = "deletes a draft",
+        ["site"] = "changes site definitions",
+        ["language"] = "changes language branches",
     };
 
     /// <summary>

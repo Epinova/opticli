@@ -16,6 +16,7 @@ import type {
   Plan,
   Properties,
   ServeResult,
+  SiteInfo,
   UrlResult,
   WriteResult,
 } from './types.ts';
@@ -34,6 +35,11 @@ export interface OptiCliOptions {
   project?: string;
   /** Working directory for every call (except `apply`'s `baseDir`). Default: the process's. */
   cwd?: string;
+  /**
+   * The launch profile (`--profile`) every call passes: it picks the database, and `serve` runs the site with the
+   * profile's environment variables too. Default: `$OPTICLI_PROFILE`, else none.
+   */
+  profile?: string;
   /** Called with `meta.warnings` of every successful command. */
   onWarnings?: (warnings: string[], args: readonly string[]) => void;
 }
@@ -78,6 +84,7 @@ export class OptiCli {
   readonly command: readonly string[];
   readonly project?: string;
   readonly cwd?: string;
+  readonly profile?: string;
   private readonly onWarnings?: OptiCliOptions['onWarnings'];
 
   constructor(options: OptiCliOptions = {}) {
@@ -86,12 +93,13 @@ export class OptiCli {
     // Absolute: opticli resolves --project against its working directory, and apply runs in the plan's folder.
     const project = options.project ?? (process.env.OPTICLI_PROJECT || undefined);
     this.project = project ? resolve(options.cwd ?? process.cwd(), project) : undefined;
+    this.profile = options.profile ?? (process.env.OPTICLI_PROFILE || undefined);
     this.onWarnings = options.onWarnings;
   }
 
   /** Runs any opticli command with `--json` and returns its envelope; throws OptiCliError when `ok` is false. */
   async run<T>(args: readonly string[], options: RunOptions = {}): Promise<OkEnvelope<T>> {
-    const full = [...args, '--json', ...(this.project ? ['--project', this.project] : [])];
+    const full = [...args, '--json', ...(this.project ? ['--project', this.project] : []), ...(this.profile ? ['--profile', this.profile] : [])];
     const { stdout, stderr, exitCode } = await this.exec(full, options);
     let envelope: Envelope<T>;
     try {
@@ -112,14 +120,20 @@ export class OptiCli {
   // serve
 
   /** Starts the site with the site agent in the background (`serve`), or returns the one that runs. */
-  serve(options: { build?: boolean; port?: number; https?: boolean; timeoutSeconds?: number } = {}): Promise<OkEnvelope<ServeResult>> {
+  serve(options: { build?: boolean; port?: number; https?: boolean; httpsPort?: number; timeoutSeconds?: number } = {}): Promise<OkEnvelope<ServeResult>> {
     const timeout = options.timeoutSeconds ?? 180;
     const args = ['serve', '--timeout', String(timeout)];
     if (options.build) args.push('--build');
     if (options.port) args.push('--port', String(options.port));
-    if (options.https) args.push('--https');
+    if (options.httpsPort) args.push('--https-port', String(options.httpsPort));
+    else if (options.https) args.push('--https');
     // A build comes first, and may take minutes.
     return this.run(args, { timeoutMs: (timeout + 600) * 1000 });
+  }
+
+  /** The site definitions (CMS 13: applications), as `opticli sites` lists them. */
+  sites(): Promise<SiteInfo[]> {
+    return this.data(['sites']);
   }
 
   serveStatus(): Promise<ServeResult> {

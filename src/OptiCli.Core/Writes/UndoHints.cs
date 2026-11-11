@@ -16,6 +16,14 @@ public static class UndoHints
         (UnpublishOperation, WriteOutput { Unpublished: true } offline) =>
             $"{offline.Ref} is offline{In(offline)}; to put it back, publish the version that was live: opticli publish {offline.Ref} --version {VersionId(offline.PreviouslyPublished)}",
         (AccessOperation, AccessOutput access) => Access(access),
+        (SiteOperation, Sites.SiteHostsView { Status: Protocol.SiteHostStatus.Created } site) =>
+            $"None in opticli: delete the site {site.Site} in admin mode (Settings > {(site.Application is null ? "Websites" : "Applications")}).",
+        (SiteOperation, Sites.SiteHostsView { Status: Protocol.SiteHostStatus.Changed } site) =>
+            $"None in opticli: the site's changes were {string.Join("; ", site.Changes)}; `opticli sites primary` and `opticli sites host remove` change its hosts back.",
+        (SiteOperation, _) => null,
+        (LanguageOperation { Enabled: var enabled }, LanguagesOutput { Saved: true } languages) =>
+            $"opticli languages {(enabled ? "disable" : "enable")} {string.Join(" ", languages.Languages.Where(l => l.Status != Protocol.LanguageBranchStatus.Unchanged).Select(l => l.Code))}",
+        (LanguageOperation, _) => null,
         (UploadOperation { Replace: not null }, WriteOutput replaced) => Version(replaced),
         (CreateOperation or BlockCreateOperation or UploadOperation, WriteOutput { Existing: not true } created) =>
             $"opticli delete {created.Ref} (moves it to the recycle bin)",

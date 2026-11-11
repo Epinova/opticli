@@ -85,13 +85,23 @@ internal static class EnvCommand
             // Blank what this run leaves out but an earlier `opticli env` exported in this shell, as `serve` does for its
             // site: a stale OPTICLI_DB would still pin the site, a stale OPTICLI_REMOTE_DB still approve that database.
             var stale = SiteEnvironment.NotSet(built).Where(name => context.Environment.Variable(name) is not null).ToList();
-            IReadOnlyList<KeyValuePair<string, string>> variables = [.. built, .. stale.Select(name => KeyValuePair.Create(name, ""))];
+            // --profile: that launch profile's variables too, for `dotnet run --no-launch-profile` (a launchSettings profile has them already).
+            var profile = context.ConnectionRequest.Profile is { } profileName && chosen != EnvFormat.LaunchSettings
+                ? LaunchProfile.Read(project.Directory, profileName, context.ConnectionRequest.Name)
+                : null;
+            var own = built.Select(v => v.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            IReadOnlyList<KeyValuePair<string, string>> variables =
+                [.. (profile?.Applied ?? []).Where(v => !own.Contains(v.Key)), .. built, .. stale.Select(name => KeyValuePair.Create(name, ""))];
 
             store.Write(new ServeState(ServeMode.External, store.ProjectDirectory, selectedPort, token, DateTimeOffset.UtcNow, store.LogPath,
                 connection.Server, connection.Database, AgentDll: agentDll));
             startLock.Dispose();
 
             var warnings = new List<string>();
+            if (profile is not null)
+            {
+                warnings.Add(profile.Describe());
+            }
             if (!connection.IsLocal)
             {
                 warnings.Add(ServeCommand.SharedDatabaseWarning(connection));

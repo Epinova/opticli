@@ -191,8 +191,39 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                     new PlanRun(false, results, Refs(created)) { Partial = true });
             }
         }
+        // A site the plan made (or changed) moves the content below its start page to its hosts: the URLs taken when that
+        // content was saved, before the site existed, are wrong now.
+        if (results.Any(r => r.Op == "site" && r.Status == PlanStepStatus.Saved))
+        {
+            results = await WithSiteUrlsAsync(results, cancellationToken);
+        }
         return new PlanRun(false, results, Refs(created));
     }
+
+    /// <summary>
+    /// The steps' results with each content's URL as the sites have it now: <see cref="WriteOutput.Url"/> host-relative on
+    /// its site's host and <see cref="WriteOutput.CanonicalUrl"/> with that host, read from the database as <c>opticli
+    /// url</c> does. A result whose content has no URL there keeps the one it had.
+    /// </summary>
+    private async Task<List<PlanStepResult>> WithSiteUrlsAsync(List<PlanStepResult> results, CancellationToken cancellationToken)
+    {
+        // Fresh caches: the content steps after the site step saved isn't in the ones read then.
+        await session.ReloadModelAsync(cancellationToken);
+        var ids = results.Select(r => r.Result is WriteOutput { Url: not null } output ? ContentId(output.Ref) : null).OfType<int>().Distinct().ToList();
+        if (ids.Count == 0)
+        {
+            return results;
+        }
+        await session.Identities.LoadAsync(ids, [], cancellationToken);
+        return results.Select(r =>
+            r.Result is WriteOutput { Url: not null } output && ContentId(output.Ref) is { } id && session.Identities.Header(id) is { } header
+            && session.Identities.Urls.UrlOf(header, output.Language is { } code ? session.Model.LanguageByCode(code) : null) is { } url
+                ? r with { Result = output with { Url = url.Path, CanonicalUrl = url.Absolute } }
+                : r).ToList();
+    }
+
+    private static int? ContentId(string? reference) =>
+        int.TryParse(reference, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var id) ? id : null;
 
     /// <summary>What stopped a running step, as the error the plan reports it with.</summary>
     internal static OptiCliException Stopped(Exception ex, CancellationToken cancellationToken) => ex switch
@@ -336,6 +367,8 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         MoveOutput move => move.Moved,
         RestoreOutput restore => restore.Restored,
         AccessOutput access => access.Saved,
+        Sites.SiteHostsView site => site.Status != Protocol.SiteHostStatus.Unchanged,
+        LanguagesOutput languages => languages.Saved,
         RemoveLanguageOutput removed => removed.Removed,
         _ => true,
     };
@@ -348,6 +381,12 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     private async Task<(PlanStepResult Result, OptiCliException? Failure)> ValidateAsync(PlanStep step, IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing,
         IReadOnlyList<PlanStep> resolved, IReadOnlyDictionary<int, PlanTarget> targets, IReadOnlyDictionary<string, string> masters, CancellationToken cancellationToken)
     {
+        if (EnabledEarlier(step, steps) is { } language)
+        {
+            return (new PlanStepResult(step.Index, step.Operation.Kind, step.Operation.Id, PlanStepStatus.Deferred,
+                Warnings: [$"An earlier operation enables the language '{language}', which the database doesn't have enabled yet, so the site checks this one when the plan runs."],
+                Guid: step.Operation.ContentGuid), null);
+        }
         MasterOrder? order;
         try
         {
@@ -461,6 +500,42 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         {
             return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Invalid, ex.Details, Error(ex), Guid: op.ContentGuid), ex);
         }
+    }
+
+    /// <summary>
+    /// A language this step writes (or a host of a <c>site</c> step is for) that an earlier <c>language</c> step enables and
+    /// the database doesn't have enabled yet: the step can only be checked once that one ran.
+    /// </summary>
+    private string? EnabledEarlier(PlanStep step, IReadOnlyList<PlanStep> steps)
+    {
+        var languages = LanguagesOf(step.Operation);
+        if (languages.Count == 0)
+        {
+            return null;
+        }
+        return steps
+            .Where(s => s.Index < step.Index && s.Operation is LanguageOperation { Enabled: true })
+            .SelectMany(s => ((LanguageOperation)s.Operation).Langs)
+            .FirstOrDefault(code => languages.Contains(code.Trim(), StringComparer.OrdinalIgnoreCase) && session.Model.LanguageByCode(code) is not { Enabled: true });
+    }
+
+    private static IReadOnlyList<string> LanguagesOf(WriteOperation op)
+    {
+        IEnumerable<string?> languages = op switch
+        {
+            SetOperation set => [set.Lang],
+            CreateOperation create => [create.Lang],
+            AreaEdit area => [area.Lang],
+            CompositionEdit composition => [composition.Lang],
+            BlockCreateOperation block => [block.Lang],
+            TranslateOperation translate => [translate.Lang],
+            PublishOperation publish => [publish.Lang],
+            UnpublishOperation unpublish => [unpublish.Lang],
+            DiscardOperation discard => [discard.Lang],
+            SiteOperation site => site.Hosts.Select(h => h.Language),
+            _ => [],
+        };
+        return languages.OfType<string>().Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
     }
 
     /// <summary>The first move step of each content GUID a plan moves by its GUID.</summary>

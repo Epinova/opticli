@@ -133,6 +133,24 @@ export interface WriteResult {
    * it will be. None for blocks, folders and a dry-run create.
    */
   url?: string;
+  /** The same URL with the host of the content's site for its language, as the CMS links to it (opticli 0.31 and newer). */
+  canonicalUrl?: string;
+}
+
+/** A site as `opticli sites` lists it. */
+export interface SiteInfo {
+  id: number;
+  /** CMS 12 only. */
+  guid?: string;
+  name: string;
+  /** SiteUrl (CMS 12), or the application's URL (CMS 13). */
+  url?: string;
+  startPage?: ContentRef;
+  masterLanguage?: string;
+  hosts: { name: string; type: string; language?: string; https?: boolean }[];
+  /** CMS 13: the application's name. */
+  application?: string;
+  isDefault?: boolean;
 }
 
 export interface DeleteResult {
@@ -209,7 +227,30 @@ export type PlanStep =
   | (StepBase & { readonly op: 'move'; readonly ref: ContentRef; readonly to: ContentRef })
   | (StepBase & { readonly op: 'delete'; readonly ref: ContentRef; readonly ignoreReferences?: boolean })
   | (StepBase & { readonly op: 'restore'; readonly ref: ContentRef; readonly to?: ContentRef })
-  | (StepBase & { readonly op: 'translate'; readonly ref: ContentRef; readonly lang: string; readonly name?: string; readonly properties?: Properties });
+  | (StepBase & { readonly op: 'translate'; readonly ref: ContentRef; readonly lang: string; readonly name?: string; readonly properties?: Properties })
+  | {
+      /** A site definition (CMS 13: an application); with `--update-existing` (as setup applies) one of that name is made to match. */
+      readonly op: 'site';
+      readonly name: string;
+      readonly startPage: ContentRef;
+      /** `name[:port][@lang]`, optionally with a scheme, or `*`; in each language the first is the primary host. */
+      readonly hosts: readonly (string | SiteHostSpec)[];
+      readonly https?: boolean;
+    }
+  | {
+      /** Enables (or, with `enabled: false`, disables) a language branch, before the steps that use it. */
+      readonly op: 'language';
+      readonly lang: string | readonly string[];
+      readonly enabled?: boolean;
+    };
+
+/** A host of a `site` step, as an object. */
+export interface SiteHostSpec {
+  readonly name: string;
+  readonly type?: 'undefined' | 'primary' | 'edit' | 'redirect-permanent' | 'redirect-temporary' | 'preview' | 'media';
+  readonly lang?: string;
+  readonly https?: boolean;
+}
 
 export interface Plan {
   /** Gives every create, block and upload a GUID derived from its `id`, so the plan can run again. */

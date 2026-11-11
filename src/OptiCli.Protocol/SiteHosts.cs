@@ -262,6 +262,9 @@ public sealed record SiteHost(string Name, string Type, string? Language, bool? 
 /// <summary>Values of <see cref="SiteHostsSite.Status"/>.</summary>
 public static class SiteHostStatus
 {
+    /// <summary>A site <c>sites add</c> made (<see cref="AgentRoutes.SiteAdd"/>).</summary>
+    public const string Created = "created";
+
     public const string Changed = "changed";
 
     public const string Unchanged = "unchanged";

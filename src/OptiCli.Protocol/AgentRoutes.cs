@@ -102,6 +102,24 @@ public static class AgentRoutes
     public static readonly string SiteHosts = $"{Prefix}/sites/hosts";
 
     /// <summary>
+    /// <c>POST /v1/sites/add</c>. Body: <see cref="SiteAddRequest"/>. Response: <see cref="SiteAddResult"/>. Creates a site
+    /// definition through <c>ISiteDefinitionRepository</c> (CMS 13: an <c>InProcessWebsite</c> through
+    /// <c>IApplicationRepository</c>), or with <see cref="SiteAddRequest.UpdateExisting"/> makes the site of that name match.
+    /// Errors: <c>not_found</c> (start page), <c>conflict</c> (a site of that name, without UpdateExisting),
+    /// <c>validation</c> 422 (a host another site has, a language that isn't enabled, what the CMS refuses), <c>refused</c>
+    /// (shared mode). Developer-only: the MCP module has no such tool.
+    /// </summary>
+    public static readonly string SiteAdd = $"{Prefix}/sites/add";
+
+    /// <summary>
+    /// <c>POST /v1/languages</c>. Body: <see cref="LanguageBranchesRequest"/>. Response: <see cref="LanguageBranchesResult"/>.
+    /// Enables or disables language branches through <c>ILanguageBranchRepository</c>, adding a branch the database lacks.
+    /// Errors: <c>usage</c> (not a culture), <c>refused</c> (disabling every enabled language; shared mode).
+    /// Developer-only: the MCP module has no such tool.
+    /// </summary>
+    public static readonly string LanguageBranches = $"{Prefix}/languages";
+
+    /// <summary>
     /// <c>POST /v1/jobs/run</c>. Body: <see cref="JobRunRequest"/>. Response: <see cref="JobRunResult"/>. Starts the job
     /// through <c>IScheduledJobExecutor</c> with a user trigger, as the admin UI's "Start manually" does, also while the
     /// scheduler is off, and returns once it has started. The job runs as <see cref="AgentProtocol.PrincipalName"/>.

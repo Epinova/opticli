@@ -153,6 +153,94 @@ internal sealed class SiteStore(IServiceProvider services)
         return messages.Where(m => !string.IsNullOrWhiteSpace(m)).Distinct();
     }
 
+    /// <summary>The application of that name or display name; null when there is none.</summary>
+    public SiteState? Find(string name) => _repository.List()
+        .Where(a => a is IRoutableApplication)
+        .FirstOrDefault(a => string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase) || string.Equals(a.DisplayName, name, StringComparison.OrdinalIgnoreCase)) is { } found
+        ? ToState(found)
+        : null;
+
+    /// <summary>
+    /// An application name (letters, digits and <c>_</c>, starting with a letter, as the CMS requires) made from a site's
+    /// name, which is its display name: <c>Alloy Site</c> is <c>AlloySite</c>. A name another application has gets a number.
+    /// </summary>
+    public string ApplicationName(string displayName)
+    {
+        var words = new string(displayName.Select(c => char.IsAsciiLetterOrDigit(c) || c == '_' ? c : ' ').ToArray())
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Select(w => char.ToUpperInvariant(w[0]) + w[1..]);
+        var name = string.Concat(words);
+        if (name.Length == 0 || !char.IsAsciiLetter(name[0]))
+        {
+            name = "Site" + name;
+        }
+        var taken = _repository.List().Select(a => a.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var candidate = name;
+        for (var i = 2; taken.Contains(candidate); i++)
+        {
+            candidate = $"{name}{i}";
+        }
+        return candidate;
+    }
+
+    /// <summary>
+    /// Saves a new in-process application (<paramref name="existing"/> null) or the one that exists, with
+    /// <paramref name="after"/>'s hosts (<c>*</c>: the default application) and the entry point. A new one is named
+    /// <paramref name="after"/>'s <see cref="SiteState.Key"/>, with its <see cref="SiteState.Name"/> as display name.
+    /// </summary>
+    /// <returns>The application as the repository has it after the save.</returns>
+    /// <exception cref="SiteRefusedException">The CMS's validation refused it.</exception>
+    public async Task<SiteState> SaveSiteAsync(SiteState? existing, SiteState after, int startPage, CancellationToken cancellationToken)
+    {
+        Application application;
+        if (existing is null)
+        {
+            application = new InProcessWebsite(after.Key, new EPiServer.Core.ContentReference(startPage)) { DisplayName = after.Name };
+        }
+        else
+        {
+            application = (_repository.Get(existing.Key) ?? throw AgentException.NotFound($"The application {existing.Name} was deleted meanwhile; nothing was saved.")).CreateWritableClone();
+            if (application is InProcessWebsite website)
+            {
+                website.EntryPoint = new EPiServer.Core.ContentReference(startPage);
+            }
+            else if (startPage != existing.StartPage)
+            {
+                throw AgentException.Refused($"{existing.Name} is a headless application, whose entry point opticli doesn't change.", "Change it in admin mode (Settings > Applications).");
+            }
+        }
+        var routable = (IRoutableApplication)application;
+        var makeDefault = after.Hosts.Any(SiteHostPlanner.IsDefaultApplication);
+        try
+        {
+            routable.Hosts.Clear();
+            foreach (var host in after.Hosts.Where(h => !SiteHostPlanner.IsDefaultApplication(h)))
+            {
+                routable.Hosts.Add(new ApplicationHost(host.Name)
+                {
+                    Type = ToType(host.Type),
+                    Locale = host.Language is null ? null : CultureInfo.GetCultureInfo(host.Language),
+                    PreferredUrlScheme = host.Https == true ? UrlScheme.Https : UrlScheme.Http,
+                });
+            }
+            await _repository.SaveAsync(application, cancellationToken);
+            if (makeDefault && _repository.Get(application.Name) is IRoutableApplication { IsDefault: false } and Application saved)
+            {
+                // IsDefault has no public setter: this saves it as the default and takes that from the one that was.
+                await _repository.MakeDefaultAsync((IRoutableApplication)saved.CreateWritableClone(), true, cancellationToken);
+            }
+        }
+        catch (ValidationException ex)
+        {
+            throw new SiteRefusedException(string.Join(" ", Errors(ex, application)), ex);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new SiteRefusedException(ex.Message, ex);
+        }
+        return ToState(_repository.Get(application.Name) ?? application);
+    }
+
     internal static SiteState ToState(Application application)
     {
         var routable = (IRoutableApplication)application;
@@ -172,6 +260,7 @@ internal sealed class SiteStore(IServiceProvider services)
             hosts)
         {
             Headless = application is Website,
+            StartPage = routable.EntryPoint?.ID,
         };
     }
 
@@ -249,7 +338,47 @@ internal sealed class SiteStore(IServiceProvider services)
             h.Name,
             HostTypes.FromValue((int)h.Type),
             h.Language is { Name.Length: > 0 } language ? language.Name : null,
-            h.UseSecureConnection)).ToList());
+            h.UseSecureConnection)).ToList())
+    {
+        StartPage = site.StartPage?.ID,
+    };
+
+    /// <summary>CMS 13's applications only: a site definition is named as given.</summary>
+    public string ApplicationName(string displayName) => displayName;
+
+    /// <summary>The site of that name; null when there is none.</summary>
+    public SiteState? Find(string name) =>
+        _repository.List().FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase)) is { } site ? ToState(site) : null;
+
+    /// <summary>
+    /// Saves a new site definition (<paramref name="existing"/> null) or the one that exists, with <paramref name="after"/>'s
+    /// name, hosts and SiteUrl and the start page.
+    /// </summary>
+    /// <returns>The site as the repository has it after the save.</returns>
+    /// <exception cref="SiteRefusedException">The CMS refused it (<c>ISiteDefinitionRepository.Save</c>'s checks).</exception>
+    public Task<SiteState> SaveSiteAsync(SiteState? existing, SiteState after, int startPage, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        var definition = existing is null
+            ? new SiteDefinition()
+            : (_repository.Get(existing.Id!.Value) ?? throw AgentException.NotFound($"The site {existing.Name} was deleted meanwhile; nothing was saved.")).CreateWritableClone();
+        try
+        {
+            definition.Name = after.Name;
+            definition.StartPage = new EPiServer.Core.ContentReference(startPage);
+            definition.Hosts = after.Hosts.Select(ToDefinition).ToList();
+            if (after.SiteUrl is { } url)
+            {
+                definition.SiteUrl = new Uri(url);
+            }
+            _repository.Save(definition);
+        }
+        catch (Exception ex) when (ex is ArgumentException or UriFormatException)
+        {
+            throw new SiteRefusedException(ex.Message, ex);
+        }
+        return Task.FromResult(ToState(_repository.Get(definition.Id) ?? definition));
+    }
 
     private static HostDefinition ToDefinition(SiteHost host) => new()
     {

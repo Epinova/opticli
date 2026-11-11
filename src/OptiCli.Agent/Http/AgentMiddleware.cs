@@ -8,6 +8,7 @@ using OptiCli.Agent.Drift;
 using OptiCli.Agent.Endpoints;
 using OptiCli.Agent.Hosting;
 using OptiCli.Agent.Jobs;
+using OptiCli.Agent.Languages;
 using OptiCli.Agent.Orphans;
 using OptiCli.Agent.Safety;
 using OptiCli.Agent.Sites;
@@ -93,6 +94,9 @@ internal static class AgentMiddleware
         [AgentEndpoint.Access] = Write(r => r.ReadBodyAsync<AccessRequest>(), b => b.DryRun, async (r, b) => Ok(await AccessOperation.RunAsync(r.Call, r.Argument, b))),
         // Not a content operation: site definitions are the developer's only, so this one isn't in OptiCli.Cms.
         [AgentEndpoint.SiteHosts] = Write(r => r.ReadBodyAsync<SiteHostsRequest>(), b => b.DryRun, async (r, b) => Ok(await SiteHostsOperation.RunAsync(r, b))),
+        [AgentEndpoint.SiteAdd] = Write(r => r.ReadBodyAsync<SiteAddRequest>(), b => b.DryRun, async (r, b) => Ok(await SiteAddOperation.RunAsync(r, b))),
+        // Language branches are the developer's only too: admin mode's Manage Website Languages.
+        [AgentEndpoint.LanguageBranches] = Write(r => r.ReadBodyAsync<LanguageBranchesRequest>(), b => b.DryRun, (r, b) => Ok(LanguageBranchesOperation.Run(r, b))),
         // Scheduled jobs are the developer's only too. A job writes whatever its code writes, so a run is a write.
         [AgentEndpoint.JobRun] = Write(r => r.ReadBodyAsync<JobRunRequest>(), b => b.DryRun, (r, b) => Ok(JobsOperation.Run(r, b))),
         [AgentEndpoint.JobStop] = Write(r => r.ReadBodyAsync<JobStopRequest>(), b => b.DryRun, (r, b) => Ok(JobsOperation.Stop(r, b))),
@@ -145,7 +149,13 @@ internal static class AgentMiddleware
         }
         try
         {
-            return result with { Url = PublicUrls.Of(urls, link, content.Language, request.Call.AbsoluteUrls) };
+            var url = PublicUrls.Of(urls, link, content.Language, request.Call.AbsoluteUrls);
+            return result with
+            {
+                Url = url,
+                // Which site's host the content is on: what a test on a multi-site solution browses (the npm package).
+                CanonicalUrl = url is null || request.Call.AbsoluteUrls ? null : PublicUrls.Of(urls, link, content.Language, absolute: true),
+            };
         }
         catch (Exception ex)
         {

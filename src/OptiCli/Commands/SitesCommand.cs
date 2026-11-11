@@ -23,11 +23,13 @@ internal static class SitesCommand
         var list = new ListOptions(options);
         var command = new Command("sites", """
             List site definitions (CMS 13: applications): name, URL, start page, master language and host names.
-            `sites primary` and `sites host add|remove` change the hosts through the site (needs `opticli serve`), for a
-            restored copy of a production database whose sites still have the production host names.
+            `sites add` creates one (a database built from scratch has none), and `sites primary` and `sites host add|remove`
+            change the hosts, through the site (needs `opticli serve`), e.g. for a restored copy of a production database
+            whose sites still have the production host names.
             Example: opticli sites
             """);
         list.AddTo(command);
+        command.Subcommands.Add(Add(options));
         command.Subcommands.Add(Primary(options));
         command.Subcommands.Add(Host(options));
 
@@ -36,6 +38,66 @@ internal static class SitesCommand
             await using var db = await context.OpenDatabaseAsync(cancellationToken);
             var sites = await SiteReader.ListAsync(db, cancellationToken);
             return CommandResult.From(list.Apply(context.Parse, sites));
+        });
+        return command;
+    }
+
+    private static Command Add(GlobalOptions options)
+    {
+        var name = new Argument<string>("name") { Description = "The site's name (CMS 13: its display name; the application name is made from it: Alloy Site is AlloySite)." };
+        var startPage = new Option<string>("--start-page")
+        {
+            Description = "The start page: an id, GUID or URL (CMS 13: the application's entry point).",
+            HelpName = "ref",
+            Required = true,
+        };
+        var hosts = new Option<string[]>("--host")
+        {
+            Description = $"A host: {SiteHostSpecs.Syntax}. Repeatable. In each language (and among those for every language) the first host is the primary one, the rest undefined.",
+            HelpName = "host",
+            Required = true,
+            AllowMultipleArgumentsPerToken = false,
+        };
+        var https = new Option<bool?>("--https")
+        {
+            Description = "Whether the CMS links to hosts without a scheme with https. Default: a host's scheme, else unset on CMS 12 (the site URL's scheme, which is http for localhost, *.localhost and loopback addresses, else https), and on CMS 13 http for those and https for others.",
+            HelpName = "true|false",
+        };
+        var updateExisting = new Option<bool>("--update-existing")
+        {
+            Description = "A site of that name is made to match (its start page set, the hosts added or given their type) instead of being a conflict. Its other hosts stay.",
+        };
+        var write = new WriteOptions();
+        var command = new Command("add", """
+            Create a site definition (CMS 13: an in-process application) with its start page and hosts, through the site
+            (needs `opticli serve`): a database the CMS created from scratch has none, so no URL renders. The site's URL
+            (SiteUrl, CMS 12) is its primary host for every language. A host another site has is a validation error (exit 5),
+            and so is a language that isn't enabled (`opticli languages enable`). A site of that name is a conflict (exit 5)
+            unless --update-existing. Refused against a shared database (exit 3). In a plan: {"op": "site", "name": ...,
+            "startPage": "$home", "hosts": ["alloy.localhost:5000", "alloy.localhost:5000@sv"]}.
+            Example: opticli sites add "Alloy" --start-page 5 --host localhost:5000 --dry-run
+            Example: opticli sites add "Alloy Sweden" --start-page /sv/ --host alloy-sv.localhost:5000@sv --host "*"
+            """);
+        command.Arguments.Add(name);
+        command.Options.Add(startPage);
+        command.Options.Add(hosts);
+        command.Options.Add(https);
+        command.Options.Add(updateExisting);
+        command.Options.Add(write.DryRun);
+        WriteCommands.Mark(command);
+
+        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        {
+            var parse = context.Parse;
+            var operation = new SiteOperation(
+                parse.GetValue(name)!,
+                parse.GetValue(startPage)!,
+                (parse.GetValue(hosts) ?? []).Select(SiteHostSpecs.Parse).ToList(),
+                parse.GetValue(https));
+            await using var session = await context.OpenContentAsync(cancellationToken);
+            var outcome = await context.Writes(session, updateExisting: parse.GetValue(updateExisting)).RunAsync(operation, parse.GetValue(write.DryRun), cancellationToken);
+            var view = (SiteHostsView)outcome.Output;
+            return new CommandResult(view, Text: Render([view]), Warnings: outcome.Warnings, Source: WriteExecutor.AgentSource);
         });
         return command;
     }
