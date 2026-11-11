@@ -34,7 +34,7 @@
   <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#developers">For developers</a></p>
   <h1>Seed CMS content for Playwright tests</h1>
   <p class="lead">Use the @epinova/opticli npm package to start the site, seed the content your Playwright tests read, and give each test pages of its own that are cleaned up afterwards.</p>
-  <p class="guide-meta">Written for opticli 0.30.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/developers/playwright-seed-content.md">Edit on GitHub</a></p>
+  <p class="guide-meta">Written for opticli 0.31.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/developers/playwright-seed-content.md">Edit on GitHub</a></p>
   <div class="guide-body">
     <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#steps">Steps</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
     <article class="prose">
@@ -76,7 +76,8 @@ test run and only repair what changed.</p>
 <span class="t-w">    </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">op</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;area&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">ref</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;$article&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">property</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;MainContentArea&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">action</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;add&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">item</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;$teaser&#39;</span><span class="t-w"> </span><span class="t-p">},</span>
 <span class="t-w">  </span><span class="t-p">],</span>
 <span class="t-p">}</span><span class="t-w"> </span><span class="t-kr">as</span><span class="t-w"> </span><span class="t-kd">const</span><span class="t-w"> </span><span class="t-nx">satisfies</span><span class="t-w"> </span><span class="t-nx">Plan</span><span class="t-p">;</span></code></pre></div>
-<p><code>$root</code> refers to what the step with <code>id: 'root'</code> made. <code>as const satisfies Plan</code> checks the steps against the plan
+<p>A database the CMS created from scratch has no sites and few languages; the plan can add them first, see
+<a href="../../developers/build-a-test-database/">Build a test database from scratch</a>. <code>$root</code> refers to what the step with <code>id: 'root'</code> made. <code>as const satisfies Plan</code> checks the steps against the plan
 type and keeps the ids as literals, which step 4 uses. Files the plan uploads are relative to <code>planDir</code>.</p>
 <h3 id="3-add-the-global-setup-and-the-config">3. Add the global setup and the config</h3>
 <div class="snippet lang-ts"><div class="snippet-bar"><span>TypeScript</span></div><pre><code id="code-3"><span class="t-c1">// e2e/global-setup.ts</span>
@@ -99,7 +100,8 @@ type and keeps the ids as literals, which step 4 uses. Files the plan uploads ar
 <p><code>defineSetup()</code> starts the site with <code>opticli serve</code>, or reuses one that already runs (also the site your IDE runs in
 IDE mode). It checks that opticli and the site's agent are new enough, applies the seed plan with <code>--update-existing</code>
 (published, unless <code>publish: false</code>) and points <code>baseURL</code> at the site. After the tests it stops a site it started.
-For a site that redirects to HTTPS, pass <code>https: true</code>. <code>import.meta.dirname</code> needs Node.js 20.11 or newer; on older
+For a site that redirects to HTTPS, pass <code>https: true</code>, or <code>httpsPort: 5443</code> for a fixed port (site hosts carry it).
+To run against a launch profile's database and variables, pass <code>opticli: { profile: 'E2E' }</code>. <code>import.meta.dirname</code> needs Node.js 20.11 or newer; on older
 versions use <code>dirname(fileURLToPath(import.meta.url))</code>. The other options are in the
 <a href="https://github.com/Epinova/opticli/blob/main/npm/README.md#what-setup-does">package README</a>.</p>
 <h3 id="4-type-the-fixtures-by-your-plan">4. Type the fixtures by your plan</h3>
@@ -132,7 +134,8 @@ doesn't.</p>
 <span class="t-w">  </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-nx">expect</span><span class="t-p">(</span><span class="t-nx">page</span><span class="t-p">.</span><span class="t-nx">getByText</span><span class="t-p">(</span><span class="t-s1">&#39;Draft text&#39;</span><span class="t-p">)).</span><span class="t-nx">toBeVisible</span><span class="t-p">();</span>
 <span class="t-p">});</span></code></pre></div>
 <p>Seeded content costs nothing per test. <code>cms.page()</code> creates a published page in the worker's sandbox and returns its
-<code>ref</code>, <code>version</code> and <code>url</code>, a path on <code>baseURL</code>. <code>cms.set()</code> saves a draft unless you pass <code>publish: true</code>, and
+<code>ref</code>, <code>version</code> and <code>url</code>, a path on <code>baseURL</code> (on a solution with several sites, a page on another site's own
+<code>*.localhost</code> host gets that site's address, as <code>seed.urls</code> does, and <code>seed.sites</code> names each site's address). <code>cms.set()</code> saves a draft unless you pass <code>publish: true</code>, and
 <code>cms.apply()</code> runs a whole plan in one call. What <code>cms.page()</code> and <code>cms.apply()</code> create goes to the recycle bin after
 the test, also when it fails; pass <code>keep: true</code> with a parent outside the sandbox to leave it. <code>cms.set()</code> and
 <code>cms.publish()</code> on seeded content stay until the next run's seed puts them back, and other workers see them meanwhile.</p>
@@ -197,12 +200,13 @@ running for the next run. Each call to opticli takes about a second, most of it 
 <li><a href="https://github.com/Epinova/opticli/blob/main/npm/README.md">The npm package's README</a></li>
 <li><a href="https://github.com/Epinova/opticli#tests-with-playwright-and-nodejs">Tests with Playwright and Node.js</a></li>
 <li><a href="https://github.com/Epinova/opticli/blob/main/skill/reference.md#plans-apply">Plan format</a></li>
+<li><a href="../../developers/build-a-test-database/">Build a test database from scratch</a></li>
 <li><a href="../../developers/find-content-and-code/">Find content and the code behind it</a></li>
 <li><a href="../../developers/restored-production-database/">Work on a restored production database</a></li>
 </ul>
     </article>
   </div>
-  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for developers</h2><div class="file"><ol class="guide-list"><li><a href="../../developers/restored-production-database/"><b>Work on a restored production database</b><span>Point opticli at a restored copy of production, make its sites answer on localhost, get a local login and keep its scheduled jobs from running.</span></a></li><li><a href="../../developers/find-content-and-code/"><b>Find content and the code behind it</b><span>Go from a URL or a name to the content item, its C# class and Razor view, and every page that uses it.</span></a></li><li><a href="../../developers/pull-from-staging/"><b>Pull content from staging into your local database</b><span>Register a staging or test database by name, bring its content into your local database with sync pull, and keep it current without another restore.</span></a></li></ol></div></section>
+  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for developers</h2><div class="file"><ol class="guide-list"><li><a href="../../developers/restored-production-database/"><b>Work on a restored production database</b><span>Point opticli at a restored copy of production, make its sites answer on localhost, get a local login and keep its scheduled jobs from running.</span></a></li><li><a href="../../developers/find-content-and-code/"><b>Find content and the code behind it</b><span>Go from a URL or a name to the content item, its C# class and Razor view, and every page that uses it.</span></a></li><li><a href="../../developers/pull-from-staging/"><b>Pull content from staging into your local database</b><span>Register a staging or test database by name, bring its content into your local database with sync pull, and keep it current without another restore.</span></a></li><li><a href="../../developers/build-a-test-database/"><b>Build a test database from scratch</b><span>Start from an empty database, and let one seed plan add the languages, the content and the sites, so end-to-end tests run on a database that code builds the same way every time.</span></a></li></ol></div></section>
 </div>
 </main>
 

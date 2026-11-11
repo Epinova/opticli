@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Build a test database from scratch · opticli guides</title>
+<meta name="description" content="Start from an empty database, and let one seed plan add the languages, the content and the sites, so end-to-end tests run on a database that code builds the same way every time.">
+<meta property="og:title" content="Build a test database from scratch · opticli guides">
+<meta property="og:description" content="Start from an empty database, and let one seed plan add the languages, the content and the sites, so end-to-end tests run on a database that code builds the same way every time.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://epinova.github.io/opticli/guides/developers/build-a-test-database/">
+<meta name="twitter:card" content="summary">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="../../../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../../style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chev" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 20 20"><path d="M8 4.5H4.5v11h11V12M11 4.5h4.5V9M15.2 4.8L9 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href="../../../">opticli<span>.</span></a>
+    <nav aria-label="Pages">
+      <a class="keep" href="../../">All guides</a><span class="sep" aria-hidden="true"></span><a class="page-link" href="../../../editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep page-link" href="../../../">For developers <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<div class="wrap guide">
+  <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#developers">For developers</a></p>
+  <h1>Build a test database from scratch</h1>
+  <p class="lead">Start from an empty database, and let one seed plan add the languages, the content and the sites, so end-to-end tests run on a database that code builds the same way every time.</p>
+  <p class="guide-meta">Written for opticli 0.31.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/developers/build-a-test-database.md">Edit on GitHub</a></p>
+  <div class="guide-body">
+    <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#steps">Steps</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
+    <article class="prose">
+<p>A copy of a shared database drifts, holds data you may not want in tests, and is slow to restore. A database built
+from code doesn't: the CMS creates its schema in an empty database, and an opticli plan adds what the tests need. The
+CMS leaves out two things a site can't render without, sites and the languages beyond <code>en</code> and <code>sv</code>, and opticli adds
+those as plan steps too. By the end of this guide you have a launch profile for the test database, a seed plan that
+builds it, and a site that answers on fixed ports.</p>
+<h2 id="before-you-start">Before you start</h2>
+<ul>
+<li>opticli 0.31.0 or newer, and a SQL Server you can create databases on (a container is fine).</li>
+<li>The site's repository, built (<code>opticli serve --build</code> builds it too).</li>
+<li>To run the plan from Playwright, the npm package: see <a href="../../developers/playwright-seed-content/">Seed CMS content for Playwright tests</a>.</li>
+</ul>
+<h2 id="steps">Steps</h2>
+<h3 id="1-create-an-empty-database-and-a-launch-profile-for-it">1. Create an empty database and a launch profile for it</h3>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-1">Copy</button></div><pre><code id="code-1">sqlcmd<span class="t-w"> </span>-S<span class="t-w"> </span>localhost<span class="t-w"> </span>-U<span class="t-w"> </span>sa<span class="t-w"> </span>-Q<span class="t-w"> </span><span class="t-s2">&quot;CREATE DATABASE [alloy-e2e]&quot;</span></code></pre></div>
+<p>Give the test database a launch profile of its own in <code>Properties/launchSettings.json</code>, with the connection string and
+whatever else the site needs in tests:</p>
+<div class="snippet lang-json"><div class="snippet-bar"><span>JSON</span></div><pre><code id="code-2"><span class="t-p">{</span>
+<span class="t-w">  </span><span class="t-nt">&quot;profiles&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">{</span>
+<span class="t-w">    </span><span class="t-nt">&quot;E2E&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">{</span>
+<span class="t-w">      </span><span class="t-nt">&quot;commandName&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;Project&quot;</span><span class="t-p">,</span>
+<span class="t-w">      </span><span class="t-nt">&quot;environmentVariables&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">{</span>
+<span class="t-w">        </span><span class="t-nt">&quot;ASPNETCORE_ENVIRONMENT&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;Development&quot;</span><span class="t-p">,</span>
+<span class="t-w">        </span><span class="t-nt">&quot;ConnectionStrings__EPiServerDB&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;Server=localhost;Database=alloy-e2e;User Id=sa;Password=...;TrustServerCertificate=True&quot;</span><span class="t-p">,</span>
+<span class="t-w">        </span><span class="t-nt">&quot;Search__IndexName&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;alloy-e2e&quot;</span>
+<span class="t-w">      </span><span class="t-p">}</span>
+<span class="t-w">    </span><span class="t-p">}</span>
+<span class="t-w">  </span><span class="t-p">}</span>
+<span class="t-p">}</span></code></pre></div>
+<p>Mind the password in a committed file. <code>--profile E2E</code> makes opticli use that database, and <code>serve --profile E2E</code>
+gives the site the profile's other variables too, as <code>dotnet run --launch-profile E2E</code> would. Variables <code>serve</code> sets
+itself are left out, such as the address and the environment, and its output names what it applied.</p>
+<h3 id="2-start-the-site-on-fixed-ports">2. Start the site on fixed ports</h3>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-3">Copy</button></div><pre><code id="code-3">opticli<span class="t-w"> </span>serve<span class="t-w"> </span>--profile<span class="t-w"> </span>E2E<span class="t-w"> </span>--port<span class="t-w"> </span><span class="t-m">5199</span><span class="t-w"> </span>--https-port<span class="t-w"> </span><span class="t-m">5443</span></code></pre></div>
+<p>On the first start the CMS creates its schema in the empty database (<code>CreateDatabaseSchema</code> is on by default). Site
+hosts carry a port, so the site must listen on the same ports every run: <code>--https-port</code> fixes the HTTPS port as
+<code>--port</code> fixes the HTTP one, and a port that is taken is an error rather than another port. To set them once, put
+<code>port</code> and <code>httpsPort</code> in opticli's user config (<a href="https://github.com/Epinova/opticli#files">Files</a>).</p>
+<p><code>opticli sites</code> now prints <code>[]</code>, and <code>opticli languages</code> lists <code>en</code> and <code>sv</code>.</p>
+<h3 id="3-write-the-seed-plan">3. Write the seed plan</h3>
+<div class="snippet lang-json"><div class="snippet-bar"><span>JSON</span></div><pre><code id="code-4"><span class="t-p">{</span>
+<span class="t-w">  </span><span class="t-nt">&quot;guidNamespace&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;3f6d2a9e-6c1b-4f7e-9a51-0d2b8c4e7f10&quot;</span><span class="t-p">,</span>
+<span class="t-w">  </span><span class="t-nt">&quot;operations&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">[</span>
+<span class="t-w">    </span><span class="t-p">{</span><span class="t-nt">&quot;op&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;language&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;lang&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;no&quot;</span><span class="t-p">},</span>
+<span class="t-w">    </span><span class="t-p">{</span><span class="t-nt">&quot;op&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;create&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;id&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;home&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;parent&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;1&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;type&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;StartPage&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;name&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;Hjem&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;lang&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;no&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;publish&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-kc">true</span><span class="t-p">},</span>
+<span class="t-w">    </span><span class="t-p">{</span><span class="t-nt">&quot;op&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;translate&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;ref&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;$home&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;lang&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;en&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;name&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;Home&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;publish&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-kc">true</span><span class="t-p">},</span>
+<span class="t-w">    </span><span class="t-p">{</span><span class="t-nt">&quot;op&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;create&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;id&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;tag&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;parent&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;$home&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;type&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;StandardPage&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;name&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;Fokus&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;lang&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;no&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;publish&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-kc">true</span><span class="t-p">},</span>
+<span class="t-w">    </span><span class="t-p">{</span><span class="t-nt">&quot;op&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;create&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;id&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;article&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;parent&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;$home&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;type&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;ArticlePage&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;name&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;Artikkel&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;lang&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;no&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;publish&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-kc">true</span><span class="t-p">,</span>
+<span class="t-w">     </span><span class="t-nt">&quot;properties&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-nt">&quot;TagId&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;$tag&quot;</span><span class="t-p">}},</span>
+<span class="t-w">    </span><span class="t-p">{</span><span class="t-nt">&quot;op&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;site&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;name&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;Alloy&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;startPage&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;$home&quot;</span><span class="t-p">,</span>
+<span class="t-w">     </span><span class="t-nt">&quot;hosts&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">[</span><span class="t-s2">&quot;localhost:5199&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s2">&quot;alloy-en.localhost:5199@en&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s2">&quot;https://localhost:5443&quot;</span><span class="t-p">]}</span>
+<span class="t-w">  </span><span class="t-p">]</span>
+<span class="t-p">}</span></code></pre></div>
+<ul>
+<li>The <code>language</code> step comes before the content in that language.</li>
+<li>The <code>site</code> step comes after its start page. In each language the first host is the primary one: here
+<code>localhost:5199</code> for every language and <code>alloy-en.localhost:5199</code> for English. Browsers send <code>*.localhost</code> to your
+machine, so a site per host name needs no hosts file. Add a step per site for a multi-site solution.</li>
+<li><code>&quot;$tag&quot;</code> in a string property stores the tag page's id as text (<code>&quot;456&quot;</code>): <code>TagId</code> stands for a property of your own
+that keeps a content id as a string. In a reference property <code>&quot;$tag&quot;</code> is the content itself.</li>
+<li><code>guidNamespace</code> gives everything the plan creates the same GUIDs in every database, so the plan can run again.</li>
+</ul>
+<h3 id="4-dry-run-it-then-apply-it">4. Dry-run it, then apply it</h3>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-5">Copy</button></div><pre><code id="code-5">opticli<span class="t-w"> </span>apply<span class="t-w"> </span>seed.plan.json<span class="t-w"> </span>--update-existing<span class="t-w"> </span>--profile<span class="t-w"> </span>E2E<span class="t-w"> </span>--dry-run
+opticli<span class="t-w"> </span>apply<span class="t-w"> </span>seed.plan.json<span class="t-w"> </span>--update-existing<span class="t-w"> </span>--profile<span class="t-w"> </span>E2E</code></pre></div>
+<p>In the dry run the <code>language</code> step is <code>valid</code>, and the steps in Norwegian are <code>deferred</code>, since the database doesn't
+have the language enabled until the plan runs. The <code>site</code> step is <code>deferred</code> too: its start page doesn't exist yet. The
+real run saves every step. Run it again and every step is <code>unchanged</code>: with <code>--update-existing</code> the <code>site</code> step makes
+the site of that name match instead of failing.</p>
+<h3 id="5-check-the-site">5. Check the site</h3>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-6">Copy</button></div><pre><code id="code-6">opticli<span class="t-w"> </span>sites<span class="t-w"> </span>--profile<span class="t-w"> </span>E2E
+curl<span class="t-w"> </span>-k<span class="t-w"> </span>https://localhost:5443/</code></pre></div>
+<p>The site has its hosts and start page, and its URLs render. From Playwright, <code>defineSetup()</code> takes the same plan, the
+profile (<code>opticli: { profile: 'E2E' }</code>) and <code>httpsPort: 5443</code>.</p>
+<h3 id="6-add-a-second-site">6. Add a second site</h3>
+<p>A second <code>site</code> step with a start page of its own and a <code>*.localhost</code> host on the same port gives a second site that
+the same <code>serve</code> answers:</p>
+<div class="snippet lang-json"><div class="snippet-bar"><span>JSON</span></div><pre><code id="code-7"><span class="t-p">{</span><span class="t-nt">&quot;op&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;create&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;id&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;svHome&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;parent&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;1&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;type&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;StartPage&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;name&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;Hem&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;lang&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;sv&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;publish&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-kc">true</span><span class="t-p">},</span>
+<span class="t-p">{</span><span class="t-nt">&quot;op&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;site&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;name&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;Alloy Sverige&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;startPage&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;$svHome&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;hosts&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">[</span><span class="t-s2">&quot;alloy-sv.localhost:5199&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s2">&quot;https://alloy-sv.localhost:5443&quot;</span><span class="t-p">]}</span></code></pre></div>
+<p>The plan's results give content on that site its address there (<code>canonicalUrl</code>), and in Playwright <code>seed.urls</code> and
+<code>seed.sites</code> open it on <code>http://alloy-sv.localhost:5199/</code>, with no hosts file: browsers send <code>*.localhost</code> to your
+machine.</p>
+<h2 id="if-something-goes-wrong">If something goes wrong</h2>
+<table>
+<thead>
+<tr>
+<th>What you see</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>'no' is not an enabled language</code> on a <code>site</code> step</td>
+<td>Put the <code>language</code> step before it. Outside a plan: <code>opticli languages enable no</code>.</td>
+</tr>
+<tr>
+<td><code>There is already a site named Alloy</code> (<code>conflict</code>)</td>
+<td>Run with <code>--update-existing</code>, which updates that site.</td>
+</tr>
+<tr>
+<td><code>... has this host already</code> (<code>validation</code>)</td>
+<td>Another site has the host. Every site needs host names of its own; <code>opticli sites</code> lists them.</td>
+</tr>
+<tr>
+<td><code>HTTPS port 5443 is already in use</code></td>
+<td>Another site or a stopped site's leftover holds the port. <code>opticli serve --status</code> in that project, or pick another port everywhere it appears.</td>
+</tr>
+<tr>
+<td><code>Launch profile 'E2E' does not set ConnectionStrings:EPiServerDB</code></td>
+<td><code>--profile</code> picks the database from the profile, so the profile needs the connection string.</td>
+</tr>
+<tr>
+<td>A page answers 404 on a host</td>
+<td>The host's port isn't the one the site listens on. Use fixed ports (step 2).</td>
+</tr>
+<tr>
+<td>Requests to <code>/</code> redirect to a registration page</td>
+<td>The Alloy template asks for a first administrator when there are no users: <code>opticli users add</code> makes one, on a site with ASP.NET Identity.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="related">Related</h2>
+<ul>
+<li><a href="https://github.com/Epinova/opticli#a-database-built-from-scratch">A database built from scratch</a> in the README</li>
+<li><a href="https://github.com/Epinova/opticli#serve-and-env">serve and env</a></li>
+<li><a href="https://github.com/Epinova/opticli/blob/main/skill/reference.md#plans-apply">Plan format</a></li>
+<li><a href="../../developers/playwright-seed-content/">Seed CMS content for Playwright tests</a></li>
+</ul>
+    </article>
+  </div>
+  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for developers</h2><div class="file"><ol class="guide-list"><li><a href="../../developers/restored-production-database/"><b>Work on a restored production database</b><span>Point opticli at a restored copy of production, make its sites answer on localhost, get a local login and keep its scheduled jobs from running.</span></a></li><li><a href="../../developers/find-content-and-code/"><b>Find content and the code behind it</b><span>Go from a URL or a name to the content item, its C# class and Razor view, and every page that uses it.</span></a></li><li><a href="../../developers/playwright-seed-content/"><b>Seed CMS content for Playwright tests</b><span>Use the @epinova/opticli npm package to start the site, seed the content your Playwright tests read, and give each test pages of its own that are cleaned up afterwards.</span></a></li><li><a href="../../developers/pull-from-staging/"><b>Pull content from staging into your local database</b><span>Register a staging or test database by name, bring its content into your local database with sync pull, and keep it current without another restore.</span></a></li></ol></div></section>
+</div>
+</main>
+
+<footer class="wrap">
+  <p>opticli and OptiCli.Mcp are open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. They are independent projects, not affiliated with or endorsed by Optimizely.</p>
+</footer>
+<script>
+for (const button of document.querySelectorAll('[data-copy]')) {
+  button.addEventListener('click', async () => {
+    const text = document.getElementById(button.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(text); } catch { getSelection().selectAllChildren(document.getElementById(button.dataset.copy)); return; }
+    button.textContent = 'Copied';
+    button.dataset.done = '';
+    setTimeout(() => { button.textContent = 'Copy'; delete button.dataset.done; }, 1600);
+  });
+}
+</script>
+</body>
+</html>

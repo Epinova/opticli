@@ -354,6 +354,16 @@ await expect(page.getByText('Hi')).toBeVisible();
   </div>
   <article class="file">
     <ol class="releases">
+      <li><div class="v"><b>0.31.0</b><span>11 November 2026</span></div>
+        <ul>
+          <li><b>A test database built from code:</b> a plan can now enable languages and create sites, which a database
+            the CMS creates from scratch lacks, so one seed plan builds the whole database. <code>opticli sites add</code>
+            and <code>opticli languages enable</code> do the same on the command line. See the guide
+            <a href="guides/developers/build-a-test-database/">Build a test database from scratch</a>.</li>
+          <li><b>Tests across several sites:</b> pages on another site open on that site's own
+            <code>*.localhost</code> host, <code>serve --https-port</code> keeps the HTTPS port the same on every run, and
+            <code>serve --profile</code> runs the site with a launch profile's settings. See <a href="tests/">For tests</a>.</li>
+        </ul></li>
       <li><div class="v"><b>0.30.1</b><span>11 November 2026</span></div>
         <ul>
           <li><b>Safer publishing for editors' assistants:</b> publishing an earlier version that holds a colleague's
@@ -370,15 +380,6 @@ await expect(page.getByText('Hi')).toBeVisible();
             editors</a> and the <a href="https://github.com/epinova/opticli#custom-tools">README</a>.</li>
           <li><b>Fixes in the MCP server:</b> editors' assistants can now create folders, the built-in tools answer a
             bad argument with a clear error, and a site's own MCP server keeps its tools named like opticli's.</li>
-        </ul></li>
-      <li><div class="v"><b>0.29.0</b><span>10 November 2026</span></div>
-        <ul>
-          <li><b>Playwright setup with HTTPS:</b> <code>defineSetup({ https: true })</code> serves a site that redirects to
-            HTTPS on <code>https://localhost</code> and points the tests there. Seeded pages' URLs are now paths that open
-            on the served site; see <a href="tests/">For tests</a>.</li>
-          <li><b>Plans run again without changes:</b> <code>apply --update-existing</code> no longer saves rich text again
-            because of how its tags are written, or a link given as a path, and no longer adds a copy of an inline block
-            on every run. Writes return URLs without the site's own host.</li>
         </ul></li>
     </ol>
     <p class="earlier"><a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">Older releases are in the changelog</a></p>
