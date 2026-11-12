@@ -40,7 +40,7 @@ public sealed partial class WritePlan
         ["delete"] = ["ref*", "ignoreReferences"],
         ["restore"] = ["ref*", "to"],
         ["access"] = ["ref*", "grant", "grantUsers", "revoke", "breakInheritance", "inherit", "allowUnknownRole"],
-        ["site"] = ["name*", "startPage*", "hosts*", "https"],
+        ["site"] = ["name*", "startPage*", "hosts*", "https", "siteAssets"],
         ["language"] = ["lang*", "enabled"],
     };
 
@@ -355,7 +355,8 @@ public sealed partial class WritePlan
             "access" => new AccessOperation(reader.Ref("ref"), reader.Levels("grant"), reader.Levels("grantUsers"), reader.Strings("revoke"),
                 reader.Bool("breakInheritance"), reader.Bool("inherit"), reader.Bool("allowUnknownRole")),
             "site" => new SiteOperation(reader.String("name") ?? "", reader.Ref("startPage"),
-                step["hosts"] is null ? [] : Sites.SiteHostSpecs.FromJson(step["hosts"], reader.Where, problems), reader.OptionalBool("https")),
+                step["hosts"] is null ? [] : Sites.SiteHostSpecs.FromJson(step["hosts"], reader.Where, problems), reader.OptionalBool("https"),
+                SiteAssets(reader.String("siteAssets"), reader.Where, problems)),
             "language" => new LanguageOperation(reader.Strings("lang") ?? [], reader.OptionalBool("enabled") ?? true),
             _ => new DeleteOperation(reader.Ref("ref"), reader.Bool("ignoreReferences")),
         };
@@ -436,6 +437,21 @@ public sealed partial class WritePlan
             RequestApproval = reader.Bool("requestApproval"),
             PublishAt = reader.Time("publishAt"),
         };
+    }
+
+    /// <summary>A <c>site</c> step's <c>siteAssets</c>, lower case; a problem when it is neither own nor global.</summary>
+    private static string? SiteAssets(string? value, string where, List<string> problems)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+        if (SiteAssetsModes.Parse(value) is { } mode)
+        {
+            return mode;
+        }
+        problems.Add($"{where}: \"siteAssets\" must be {SiteAssetsModes.Own} or {SiteAssetsModes.Global}, not '{value}'.");
+        return null;
     }
 
     /// <summary>The step's <c>guid</c>, else one derived from the plan's namespace and the step's id.</summary>

@@ -1097,6 +1097,7 @@ public sealed class WriteExecutor(
             Hosts = op.Hosts,
             Https = op.Https,
             UpdateExisting = updateExisting,
+            SiteAssets = op.SiteAssets,
             DryRun = dryRun,
         }, cancellationToken);
         if (result.Saved)
@@ -1104,7 +1105,13 @@ public sealed class WriteExecutor(
             await session.ReloadModelAsync(cancellationToken);
         }
         var view = Sites.SiteHostsRunner.Views(new SiteHostsResult { Sites = [result.Site], DryRun = result.DryRun, Saved = result.Saved }, session.Model.Sites.All)[0];
-        return new WriteOutcome(view, AgentSource, null, result.Warnings ?? []);
+        var warnings = (result.Warnings ?? []).ToList();
+        if (op.SiteAssets is not null && result.Site.SiteAssets is null)
+        {
+            // An agent from before siteAssets ignores it.
+            warnings.Add($"The site's opticli agent is older than this CLI and ignored siteAssets: {op.SiteAssets} wasn't applied. Run the site with this version's `opticli serve`, which loads its own agent.");
+        }
+        return new WriteOutcome(view, AgentSource, null, warnings);
     }
 
     /// <summary>

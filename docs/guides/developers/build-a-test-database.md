@@ -3,7 +3,7 @@ title: Build a test database from scratch
 summary: Start from an empty database, and let one seed plan add the languages, the content and the sites, so end-to-end tests run on a database that code builds the same way every time.
 audience: developers
 order: 5
-written-for: 0.31.0
+written-for: 0.32.0
 ---
 
 A copy of a shared database drifts, holds data you may not want in tests, and is slow to restore. A database built
@@ -83,6 +83,10 @@ hosts carry a port, so the site must listen on the same ports every run: `--http
 - The `site` step comes after its start page. In each language the first host is the primary one: here
   `localhost:5199` for every language and `alloy-en.localhost:5199` for English. Browsers send `*.localhost` to your
   machine, so a site per host name needs no hosts file. Add a step per site for a multi-site solution.
+- The site gets an assets folder of its own, as a site made in admin mode does: a `SysSiteAssets` folder below the
+  start page, at `/siteassets/`. Upload a step's media there with its URL as the parent
+  (`"parent": "http://localhost:5199/siteassets/"`). `"siteAssets": "global"` keeps the site on the global assets
+  folder instead.
 - `"$tag"` in a string property stores the tag page's id as text (`"456"`): `TagId` stands for a property of your own
   that keeps a content id as a string. In a reference property `"$tag"` is the content itself.
 - `guidNamespace` gives everything the plan creates the same GUIDs in every database, so the plan can run again.
@@ -95,8 +99,8 @@ opticli apply seed.plan.json --update-existing --profile E2E
 ```
 
 In the dry run the `language` step is `valid`, and the steps in Norwegian are `deferred`, since the database doesn't
-have the language enabled until the plan runs. The `site` step is `deferred` too: its start page doesn't exist yet. The
-real run saves every step. Run it again and every step is `unchanged`: with `--update-existing` the `site` step makes
+have the language enabled until the plan runs. The `site` step is `deferred` too: its start page doesn't exist yet.
+So is a step whose parent is a URL on one of the site's hosts, such as an upload to `/siteassets/`. The real run saves every step. Run it again and every step is `unchanged`: with `--update-existing` the `site` step makes
 the site of that name match instead of failing.
 
 ### 5. Check the site

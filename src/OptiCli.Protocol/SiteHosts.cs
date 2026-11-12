@@ -252,6 +252,9 @@ public sealed record SiteHostsSite(Guid? Id, string Name, string Status, IReadOn
 
     /// <summary>CMS 13: whether it is the default application (what the <c>*</c> host is on CMS 12); null on CMS 12.</summary>
     public bool? IsDefault { get; init; }
+
+    /// <summary>The site's assets root; set by <see cref="AgentRoutes.SiteAdd"/> only.</summary>
+    public SiteAssetsInfo? SiteAssets { get; init; }
 }
 
 /// <param name="Type">One of <see cref="HostTypes"/>.</param>

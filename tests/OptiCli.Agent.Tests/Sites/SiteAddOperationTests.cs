@@ -115,4 +115,61 @@ public class SiteAddOperationTests
         Assert.Empty(changes);
         Assert.Equal(existing.Hosts, after.Hosts);
     }
+
+    private static SiteState Site(string name, int? assetsRoot) =>
+        new(Guid.NewGuid(), name, "http://alloy.localhost:5000/", [new SiteHost("alloy.localhost:5000", HostTypes.Primary, null, false)]) { StartPage = 5, AssetsRoot = assetsRoot };
+
+    [Fact]
+    public void A_new_site_gets_a_folder_of_its_own_by_default()
+    {
+        var created = SiteAddOperation.PlanAssets(null, null, folderBelowStart: null, others: []);
+        Assert.Equal((SiteAssetsModes.Own, null, true, null), (created.Mode, created.Folder, created.Create, created.Issue));
+        Assert.Contains("created below the start page", created.Change);
+
+        // The start page has one already (a site that was deleted, say): it is used, as the CMS does.
+        var reused = SiteAddOperation.PlanAssets(null, null, folderBelowStart: 40, others: [Site("Other", 30)]);
+        Assert.Equal((SiteAssetsModes.Own, 40, false, null), (reused.Mode, reused.Folder, reused.Create, reused.Issue));
+    }
+
+    [Fact]
+    public void A_new_site_can_use_the_global_assets_folder()
+    {
+        var plan = SiteAddOperation.PlanAssets(null, SiteAssetsModes.Global, folderBelowStart: 40, others: []);
+
+        Assert.Equal((SiteAssetsModes.Global, null, false, null), (plan.Mode, plan.Folder, plan.Create, plan.Issue));
+        Assert.Equal("site assets: global (/globalassets/)", plan.Change);
+    }
+
+    [Fact]
+    public void An_existing_site_keeps_its_assets_root_unless_one_is_asked_for()
+    {
+        foreach (var root in new int?[] { null, 40 })
+        {
+            var plan = SiteAddOperation.PlanAssets(Site("Alloy", root), null, folderBelowStart: null, others: []);
+            Assert.Null(plan.Change);
+            Assert.False(plan.Create);
+            Assert.Equal(root, plan.Folder);
+        }
+        Assert.Null(SiteAddOperation.PlanAssets(Site("Alloy", 40), SiteAssetsModes.Own, folderBelowStart: 40, others: []).Change);
+        Assert.Null(SiteAddOperation.PlanAssets(Site("Alloy", null), SiteAssetsModes.Global, folderBelowStart: null, others: []).Change);
+    }
+
+    [Fact]
+    public void An_existing_site_changes_its_assets_root_when_asked()
+    {
+        var own = SiteAddOperation.PlanAssets(Site("Alloy", null), SiteAssetsModes.Own, folderBelowStart: null, others: []);
+        Assert.True(own.Create);
+        Assert.StartsWith("site assets: global -> own", own.Change);
+
+        var global = SiteAddOperation.PlanAssets(Site("Alloy", 40), SiteAssetsModes.Global, folderBelowStart: 40, others: []);
+        Assert.Equal("site assets: own -> global (/globalassets/)", global.Change);
+    }
+
+    [Fact]
+    public void A_folder_another_site_has_is_an_issue()
+    {
+        var plan = SiteAddOperation.PlanAssets(null, null, folderBelowStart: 40, others: [Site("Alloy", 40)]);
+
+        Assert.Contains("Alloy's assets folder already", plan.Issue);
+    }
 }

@@ -1,4 +1,6 @@
 using System.Globalization;
+using EPiServer;
+using EPiServer.Core;
 using OptiCli.Agent.Sites;
 using OptiCli.Cms;
 using OptiCli.Protocol;
@@ -9,6 +11,8 @@ using EPiServer.Applications;
 using EPiServer.Validation;
 using OptiCli.Core.Text;
 #else
+using EPiServer.DataAbstraction;
+using EPiServer.Security;
 using EPiServer.Web;
 #endif
 
@@ -40,6 +44,14 @@ internal sealed class SiteStore(IServiceProvider services)
 
     /// <summary>What the sites are called in messages: site definitions, or applications.</summary>
     public static string What => Applications ? "applications" : "site definitions";
+
+    /// <summary>
+    /// The start page's own assets folder, as the CMS finds one: a content folder directly below it with the URL segment
+    /// <c>SysSiteAssets</c>; null when it has none.
+    /// </summary>
+    public int? AssetsFolderBelow(int startPage) =>
+        services.GetRequiredService<IContentLoader>().GetChildren<ContentFolder>(new ContentReference(startPage))
+            .FirstOrDefault(f => string.Equals(f.RouteSegment, SiteAssetsModes.FolderName, StringComparison.OrdinalIgnoreCase))?.ContentLink.ID;
 
 #if CMS13
     private readonly IApplicationRepository _repository = services.GetRequiredService<IApplicationRepository>();
@@ -190,7 +202,7 @@ internal sealed class SiteStore(IServiceProvider services)
     /// </summary>
     /// <returns>The application as the repository has it after the save.</returns>
     /// <exception cref="SiteRefusedException">The CMS's validation refused it.</exception>
-    public async Task<SiteState> SaveSiteAsync(SiteState? existing, SiteState after, int startPage, CancellationToken cancellationToken)
+    public async Task<SiteState> SaveSiteAsync(SiteState? existing, SiteState after, int startPage, SiteAssetsPlan assets, CancellationToken cancellationToken)
     {
         Application application;
         if (existing is null)
@@ -238,6 +250,22 @@ internal sealed class SiteStore(IServiceProvider services)
         {
             throw new SiteRefusedException(ex.Message, ex);
         }
+        var enable = assets.Mode == SiteAssetsModes.Own;
+        if ((existing is null ? enable : assets.Change is not null) && _repository.Get(application.Name) is IResourceableApplication resourceable)
+        {
+            // AssetsRoot has no public setter: the CMS's own call, as admin mode's "Use application-specific assets", finds or
+            // creates the SysSiteAssets folder below the entry point (letting a folder go there for the save) and saves it.
+            try
+            {
+                await _repository.EnableAssetsAsync(resourceable, enable, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                throw AgentException.Refused(
+                    $"{after.Name} was saved, but its assets root wasn't set to {assets.Mode}: {ex.Message}",
+                    $"Run it again with --update-existing --site-assets {assets.Mode} (\"siteAssets\" in a plan), or set it in admin mode (Settings > Applications).");
+            }
+        }
         return ToState(_repository.Get(application.Name) ?? application);
     }
 
@@ -261,6 +289,7 @@ internal sealed class SiteStore(IServiceProvider services)
         {
             Headless = application is Website,
             StartPage = routable.EntryPoint?.ID,
+            AssetsRoot = application is IResourceableApplication { AssetsRoot: { ID: > 0 } assets } ? assets.ID : null,
         };
     }
 
@@ -341,6 +370,8 @@ internal sealed class SiteStore(IServiceProvider services)
             h.UseSecureConnection)).ToList())
     {
         StartPage = site.StartPage?.ID,
+        // Unset, SiteAssetsRoot is the global assets folder; admin mode sets it to that for a site without its own.
+        AssetsRoot = site.SiteAssetsRoot is { ID: > 0 } assets && !assets.CompareToIgnoreWorkID(site.GlobalAssetsRoot) ? assets.ID : null,
     };
 
     /// <summary>CMS 13's applications only: a site definition is named as given.</summary>
@@ -352,32 +383,86 @@ internal sealed class SiteStore(IServiceProvider services)
 
     /// <summary>
     /// Saves a new site definition (<paramref name="existing"/> null) or the one that exists, with <paramref name="after"/>'s
-    /// name, hosts and SiteUrl and the start page.
+    /// name, hosts and SiteUrl, the start page, and the assets root <paramref name="assets"/> plans, as admin mode does: the
+    /// start page's <c>SysSiteAssets</c> folder, created first when it has none (and deleted again when the CMS refuses the
+    /// site), or the global assets folder.
     /// </summary>
     /// <returns>The site as the repository has it after the save.</returns>
     /// <exception cref="SiteRefusedException">The CMS refused it (<c>ISiteDefinitionRepository.Save</c>'s checks).</exception>
-    public Task<SiteState> SaveSiteAsync(SiteState? existing, SiteState after, int startPage, CancellationToken cancellationToken)
+    public Task<SiteState> SaveSiteAsync(SiteState? existing, SiteState after, int startPage, SiteAssetsPlan assets, CancellationToken cancellationToken)
     {
         _ = cancellationToken;
         var definition = existing is null
             ? new SiteDefinition()
             : (_repository.Get(existing.Id!.Value) ?? throw AgentException.NotFound($"The site {existing.Name} was deleted meanwhile; nothing was saved.")).CreateWritableClone();
+        ContentReference? created = null;
         try
         {
             definition.Name = after.Name;
-            definition.StartPage = new EPiServer.Core.ContentReference(startPage);
+            definition.StartPage = new ContentReference(startPage);
             definition.Hosts = after.Hosts.Select(ToDefinition).ToList();
             if (after.SiteUrl is { } url)
             {
                 definition.SiteUrl = new Uri(url);
             }
+            if (existing is null || assets.Change is not null)
+            {
+                definition.SiteAssetsRoot = assets.Mode == SiteAssetsModes.Global
+                    ? definition.GlobalAssetsRoot
+                    : assets.Folder is { } folder ? new ContentReference(folder) : created = CreateAssetsFolder(definition.StartPage);
+            }
             _repository.Save(definition);
         }
         catch (Exception ex) when (ex is ArgumentException or UriFormatException)
         {
+            if (created is not null)
+            {
+                services.GetRequiredService<IContentRepository>().Delete(created, true, AccessLevel.NoAccess);
+            }
             throw new SiteRefusedException(ex.Message, ex);
         }
         return Task.FromResult(ToState(_repository.Get(definition.Id) ?? definition));
+    }
+
+    /// <summary>
+    /// A published <c>SysSiteAssets</c> content folder below the start page, as admin mode and CMS 13's
+    /// <c>EnableAssetsAsync</c> make it. Where the start page's type doesn't allow folders below it, they are allowed for the
+    /// save only (as CMS 13 does; admin mode on CMS 12 allows them for good).
+    /// </summary>
+    private ContentReference CreateAssetsFolder(ContentReference startPage)
+    {
+        var contents = services.GetRequiredService<IContentRepository>();
+        var types = services.GetRequiredService<IContentTypeRepository>();
+        var availability = services.GetRequiredService<ContentTypeAvailabilityService>();
+        var pageType = types.Load(contents.Get<IContent>(startPage, CultureInfo.InvariantCulture).ContentTypeID);
+        var folderType = types.Load(typeof(ContentFolder));
+
+        ContentReference Create()
+        {
+            var folder = contents.GetDefault<ContentFolder>(startPage, CultureInfo.InvariantCulture);
+            folder.Name = SiteAssetsModes.FolderName;
+            folder.RouteSegment = SiteAssetsModes.FolderName;
+            return contents.Save(folder, EPiServer.DataAccess.SaveAction.Publish | EPiServer.DataAccess.SaveAction.SkipValidation, AccessLevel.NoAccess);
+        }
+
+        if (availability.IsAllowed(pageType.Name, folderType.Name))
+        {
+            return Create();
+        }
+        var settings = services.GetRequiredService<IAvailableSettingsRepository>();
+        var setting = availability.GetSetting(pageType.Name);
+        var allowing = setting.Copy();
+        allowing.Availability = Availability.Specific;
+        allowing.AllowedContentTypeNames.Add(folderType.Name);
+        try
+        {
+            settings.RegisterSetting(pageType, allowing);
+            return Create();
+        }
+        finally
+        {
+            settings.RegisterSetting(pageType, setting);
+        }
     }
 
     private static HostDefinition ToDefinition(SiteHost host) => new()

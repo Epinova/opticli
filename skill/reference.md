@@ -496,12 +496,15 @@ never in a sealed plan. Only when the user asked to build or seed such a databas
   added, enabled, Everyone may edit), `enabled`, `disabled` or `unchanged`. A code .NET doesn't know is `usage`.
   `disable` warns about content in the language and a site whose start page has it as master language, and refuses
   to disable every enabled language (exit 3). Undo: the other one.
-- `sites add <name> --start-page <ref> --host <host> [--host ...] [--https true|false] [--update-existing]`: a host is
+- `sites add <name> --start-page <ref> --host <host> [--host ...] [--https true|false] [--site-assets own|global] [--update-existing]`: a host is
   `name[:port][@lang]`, with an optional scheme (`https://alloy.localhost:5001@sv`), or `*`. Per language (and among
   the hosts for every language) the first host is primary, the rest undefined; in a plan an object
   `{"name", "type", "lang", "https"}` sets the type. SiteUrl (CMS 12) is the primary host for every language, http on
   `localhost`, `*.localhost` and loopback addresses unless https. `--https`: hosts without a scheme (default unset on
   CMS 12; CMS 13 http on those loopback names, else https). The start page must exist (CMS 12: a page, not the root).
+  `--site-assets`: `own` (default for a new site) uses the start page's `SysSiteAssets` folder as the site's assets
+  root (`/siteassets/`), created when it has none; `global` the global assets folder. An existing site's root changes
+  only when it is given. Output `siteAssets`: `{mode, folder, created}`.
 - Errors: a site of that name is `conflict` (exit 5) unless `--update-existing`, which sets the start page, adds the
   hosts or gives them the type, language and https asked for (a new primary or edit host makes the old one
   undefined; SiteUrl follows a primary host for every language) and keeps the site's other hosts; `validation`
@@ -725,8 +728,10 @@ arrays): a reference property gets the content, a string property its id as text
   `{"op": "language", "lang": "no"}` (an array of codes too; `"enabled": false` disables) before the steps in that
   language, which a dry run then reports as `deferred`; `{"op": "site", "name": "Alloy", "startPage": "$home",
   "hosts": ["alloy.localhost:5000", "alloy-sv.localhost:5000@sv", {"name": "edit.alloy.localhost:5000", "type": "edit"}],
-  "https": false}` after the start page. With `apply --update-existing` the site of that name is updated instead of
-  being a `conflict`.
+  "https": false, "siteAssets": "own"}` after the start page (`siteAssets` as `--site-assets`; a later step uploads
+  into the folder with its URL as parent, `http://alloy.localhost:5000/siteassets/`, which a dry run reports as `deferred`
+until the site has that host). With `apply --update-existing`
+  the site of that name is updated instead of being a `conflict`.
 - An inline block in a ContentArea: `{"op": "area", "ref": "$page", "property": "MainArea", "action": "add", "type": "TeaserBlock", "values": {"Heading": "Hi"}}`
   (`name` too); see [Inline blocks](#inline-blocks-in-contentareas) for `--update-existing`.
 - CMS 13: `"composition"` in a `create`'s or `set`'s `properties` is the whole composition (`"@file.json"` reads it);

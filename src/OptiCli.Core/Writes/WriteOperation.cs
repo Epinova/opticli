@@ -489,7 +489,10 @@ public sealed record AccessOperation(
 /// </summary>
 /// <param name="StartPage">A ref, or a plan's <c>$id</c>.</param>
 /// <param name="Https">The https setting of hosts whose text has no scheme; null: none given.</param>
-public sealed record SiteOperation(string Name, string StartPage, IReadOnlyList<SiteAddHost> Hosts, bool? Https = null) : WriteOperation
+/// <param name="SiteAssets">
+/// <see cref="SiteAssetsModes"/>; null: <c>own</c> for a new site, an existing site's assets root left as it is.
+/// </param>
+public sealed record SiteOperation(string Name, string StartPage, IReadOnlyList<SiteAddHost> Hosts, bool? Https = null, string? SiteAssets = null) : WriteOperation
 {
     public override string Kind => "site";
 

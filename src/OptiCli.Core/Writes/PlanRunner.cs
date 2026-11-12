@@ -118,7 +118,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         OptiCliException? firstFailure = null;
         foreach (var step in steps)
         {
-            var (result, failure) = await ValidateAsync(step, steps, existing, resolved, targets, masters, cancellationToken);
+            var (result, failure) = await ValidateAsync(step, steps, existing, resolved, targets, masters, checks, cancellationToken);
             checks.Add(result);
             firstFailure ??= failure;
             Progress?.Invoke("checking", checks.Count, steps.Count);
@@ -203,24 +203,33 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     /// <summary>
     /// The steps' results with each content's URL as the sites have it now: <see cref="WriteOutput.Url"/> host-relative on
     /// its site's host and <see cref="WriteOutput.CanonicalUrl"/> with that host, read from the database as <c>opticli
-    /// url</c> does. A result whose content has no URL there keeps the one it had.
+    /// url</c> does. A result whose content has no URL there keeps the one it had, and so does a page whose shortcut is an
+    /// external link (<see cref="ExternalLink"/>): the database's rows don't say that, and the link is its URL whatever the sites are.
     /// </summary>
     private async Task<List<PlanStepResult>> WithSiteUrlsAsync(List<PlanStepResult> results, CancellationToken cancellationToken)
     {
         // Fresh caches: the content steps after the site step saved isn't in the ones read then.
         await session.ReloadModelAsync(cancellationToken);
-        var ids = results.Select(r => r.Result is WriteOutput { Url: not null } output ? ContentId(output.Ref) : null).OfType<int>().Distinct().ToList();
+        var ids = results.Select(r => r.Result is WriteOutput { Url: { } link } output && !ExternalLink(link) ? ContentId(output.Ref) : null).OfType<int>().Distinct().ToList();
         if (ids.Count == 0)
         {
             return results;
         }
         await session.Identities.LoadAsync(ids, [], cancellationToken);
         return results.Select(r =>
-            r.Result is WriteOutput { Url: not null } output && ContentId(output.Ref) is { } id && session.Identities.Header(id) is { } header
+            r.Result is WriteOutput { Url: { } link } output && !ExternalLink(link) && ContentId(output.Ref) is { } id && session.Identities.Header(id) is { } header
             && session.Identities.Urls.UrlOf(header, output.Language is { } code ? session.Model.LanguageByCode(code) : null) is { } url
                 ? r with { Result = output with { Url = url.Path, CanonicalUrl = url.Absolute } }
                 : r).ToList();
     }
+
+    /// <summary>
+    /// A URL with a scheme or host, as the site's agent gives a page whose shortcut is an external link
+    /// (<c>https://www.example.com/docs</c>); every other URL it gives is host-relative (<c>/en/about/</c>).
+    /// </summary>
+    internal static bool ExternalLink(string url) =>
+        url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+        || url.StartsWith("//", StringComparison.Ordinal);
 
     private static int? ContentId(string? reference) =>
         int.TryParse(reference, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var id) ? id : null;
@@ -378,9 +387,21 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     /// before its master is invalid, and one whose master an earlier step publishes is dry-run as passing that rule.
     /// </summary>
     /// <param name="masters">Planned content's master language (<see cref="PlannedMastersAsync"/>).</param>
+    /// <param name="checks">The earlier steps' checks, for <see cref="OnPlannedSite"/>.</param>
     private async Task<(PlanStepResult Result, OptiCliException? Failure)> ValidateAsync(PlanStep step, IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing,
-        IReadOnlyList<PlanStep> resolved, IReadOnlyDictionary<int, PlanTarget> targets, IReadOnlyDictionary<string, string> masters, CancellationToken cancellationToken)
+        IReadOnlyList<PlanStep> resolved, IReadOnlyDictionary<int, PlanTarget> targets, IReadOnlyDictionary<string, string> masters, IReadOnlyList<PlanStepResult> checks,
+        CancellationToken cancellationToken)
     {
+        if (OnPlannedSite(step.Operation, steps.Where(s => s.Index < step.Index), checks) is { } planned)
+        {
+            if (step.Operation is UploadOperation upload)
+            {
+                MediaFiles.Check(upload.File);
+            }
+            return (new PlanStepResult(step.Index, step.Operation.Kind, step.Operation.Id, PlanStepStatus.Deferred,
+                Warnings: [$"{planned.Url} is on the host {planned.Host}, which operation {planned.Index} gives the site '{planned.Site}': the database doesn't have it there yet, so the site checks this one when the plan runs."],
+                Guid: step.Operation.ContentGuid), null);
+        }
         if (EnabledEarlier(step, steps) is { } language)
         {
             return (new PlanStepResult(step.Index, step.Operation.Kind, step.Operation.Id, PlanStepStatus.Deferred,
@@ -500,6 +521,51 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         {
             return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Invalid, ex.Details, Error(ex), Guid: op.ContentGuid), ex);
         }
+    }
+
+    /// <summary>
+    /// A URL this step refers to (<c>http://alloy.localhost:5000/siteassets/</c>) on a host that an earlier <c>site</c> step
+    /// gives its site, where that step's check didn't find the site as it wants it: the database's sites answer that URL
+    /// differently (or not at all) until the step ran, so this one can only be checked then.
+    /// </summary>
+    /// <param name="earlier">The steps before this one.</param>
+    /// <param name="checks">Their checks: a site step found unchanged leaves the database's sites as they are.</param>
+    internal static (string Url, string Host, int Index, string Site)? OnPlannedSite(WriteOperation op, IEnumerable<PlanStep> earlier, IReadOnlyList<PlanStepResult> checks)
+    {
+        var sites = earlier
+            .Where(s => s.Operation is SiteOperation
+                && checks.FirstOrDefault(c => c.Index == s.Index) is not { Status: PlanStepStatus.Valid, Result: Sites.SiteHostsView { Status: Protocol.SiteHostStatus.Unchanged } })
+            .ToList();
+        if (sites.Count == 0)
+        {
+            return null;
+        }
+        foreach (var reference in op.Refs.OfType<string>())
+        {
+            if (!Uri.TryCreate(reference.Trim(), UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            {
+                continue;
+            }
+            var authority = uri.IsDefaultPort ? uri.Host : $"{uri.Host}:{uri.Port.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+            foreach (var step in sites)
+            {
+                var site = (SiteOperation)step.Operation;
+                if (site.Hosts.Select(h => HostName(h.Name)).FirstOrDefault(h =>
+                        string.Equals(h, authority, StringComparison.OrdinalIgnoreCase) || string.Equals(h, uri.Host, StringComparison.OrdinalIgnoreCase)) is { } host)
+                {
+                    return (reference.Trim(), host, step.Index, site.Name.Trim());
+                }
+            }
+        }
+        return null;
+    }
+
+    /// <summary>A site step's host as the site gets it: without a scheme (<c>https://localhost:5443</c> is <c>localhost:5443</c>) or a trailing slash.</summary>
+    private static string HostName(string name)
+    {
+        var trimmed = name.Trim();
+        var scheme = trimmed.IndexOf("://", StringComparison.Ordinal);
+        return (scheme >= 0 ? trimmed[(scheme + 3)..] : trimmed).TrimEnd('/');
     }
 
     /// <summary>

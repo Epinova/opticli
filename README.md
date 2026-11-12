@@ -858,12 +858,23 @@ start page and hosts:
 | `--host <host>` | `name[:port][@lang]`, with an optional scheme (`https://alloy.localhost:5001`), or `*` for host names no other site has. Repeatable. In each language (and among the hosts for every language) the first is the primary host and the rest are undefined |
 | `--https true\|false` | the https setting of hosts without a scheme. Default: unset on CMS 12 (links use SiteUrl's scheme); on CMS 13 http for `localhost`, `*.localhost` and loopback addresses, else https |
 | `--update-existing` | a site of that name is made to match: the start page set, the hosts added or given the type, language and https setting asked for (a new primary or edit host makes the old one undefined), its other hosts kept. Without it, a site of that name is a `conflict` (exit 5) |
+| `--site-assets own\|global` | the site's assets root. `own` (the default for a new site): a folder of its own, at `/siteassets/`, as admin mode makes it: the start page's `SysSiteAssets` folder, created below it when it has none. `global`: the global assets folder every site shares. An existing site's assets root changes only when this is given |
 | `--dry-run` | what would be created or changed |
 
 SiteUrl (CMS 12) is the site's primary host for every language, over http for `localhost`, `*.localhost` and
 loopback addresses unless the host says https. A host another site has, a language that isn't enabled and a host type
-the CMS version lacks are `validation` errors (exit 5), all of them listed. The site uses the global assets folder;
-site-specific assets are set up in admin mode. opticli doesn't delete sites: admin mode does.
+the CMS version lacks are `validation` errors (exit 5), all of them listed. So is a `SysSiteAssets` folder that
+another site has as its assets root already (two sites on the start page), since the CMS doesn't start with that.
+
+A new site gets its own assets folder, as one made in admin mode does, so add-ons that keep data in a site's assets
+folder find one, and its media is at `/siteassets/`. The folder is a published content folder named `SysSiteAssets`;
+where the start page's type doesn't allow folders below it, they are allowed for that save only. The result's
+`siteAssets` says which root the site has (`mode`: `own` or `global`), the folder's id (`folder`) and whether it was
+created (`created`; on a dry run: would be). Changing an existing site's assets root (`--update-existing
+--site-assets ...`) moves none of its media: the site's `/siteassets/` URLs then lead to the other folder, and a
+warning says so. On CMS 13 the application's assets root is set through the CMS's own call, as admin mode's "Use
+site-specific assets" does. opticli doesn't delete sites: admin mode does, and the folder stays (in a plan's
+results the step's `undo` gives the command that deletes it).
 
 In a plan they are the steps `language` and `site`, so one seed plan builds the whole database:
 
@@ -877,10 +888,13 @@ In a plan they are the steps `language` and `site`, so one seed plan builds the 
 ```
 
 `lang` is one code or an array, `"enabled": false` disables. A host in `hosts` is a string as `--host` takes it, or
-an object with `name`, `type`, `lang` and `https`. Steps in a language that an earlier `language` step enables are
-checked when the plan runs (`deferred` in a dry run), since the database doesn't have it enabled yet. With
+an object with `name`, `type`, `lang` and `https`. `"siteAssets": "own"` or `"global"` is `--site-assets`. A later
+step reaches the site's own assets folder by its URL, such as `"parent": "http://alloy.localhost:5000/siteassets/"`. Steps in a language that an earlier `language` step enables are
+checked when the plan runs (`deferred` in a dry run), since the database doesn't have it enabled yet, and so are steps
+with a URL on a host that an earlier `site` step adds or changes. With
 `apply --update-existing` the `site` step updates the site of that name, so the plan runs again without changes. Once a
-`site` step saved, the plan's results give every step's `url` and `canonicalUrl` as the sites have them at the end.
+`site` step saved, the plan's results give every step's `url` and `canonicalUrl` as the sites have them at the end
+(a page whose shortcut is an external link keeps that link).
 Neither step is allowed against a shared database or in a sealed plan.
 
 Hosts with a port need the site on that port every run: `serve --port 5000 --https-port 5001`, or `port` and

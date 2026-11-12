@@ -249,6 +249,8 @@ export type PlanStep =
       /** `name[:port][@lang]`, optionally with a scheme, or `*`; in each language the first is the primary host. */
       readonly hosts: readonly (string | SiteHostSpec)[];
       readonly https?: boolean;
+      /** The site's assets root: `own` (the default for a new site), a `SysSiteAssets` folder below the start page, at `/siteassets/`; `global`, the global assets folder. An existing site's changes only when given (opticli 0.32 and newer). */
+      readonly siteAssets?: 'own' | 'global';
     }
   | {
       /** Enables (or, with `enabled: false`, disables) a language branch, before the steps that use it. */

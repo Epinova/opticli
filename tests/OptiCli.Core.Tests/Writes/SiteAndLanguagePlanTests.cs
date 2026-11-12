@@ -30,6 +30,7 @@ public class SiteAndLanguagePlanTests
 
         var site = Assert.IsType<SiteOperation>(plan.Steps[3].Operation);
         Assert.Equal(("Alloy", "$home", true), (site.Name, site.StartPage, site.Https));
+        Assert.Null(site.SiteAssets);
         Assert.Equal(["home"], plan.Steps[3].DependsOn);
         Assert.Equal(
             [
@@ -45,7 +46,18 @@ public class SiteAndLanguagePlanTests
     }
 
     [Theory]
+    [InlineData("own", SiteAssetsModes.Own)]
+    [InlineData("Global", SiteAssetsModes.Global)]
+    public void A_site_step_takes_its_assets_root(string value, string mode)
+    {
+        var plan = WritePlan.Parse($$"""{"operations": [{"op": "site", "name": "Alloy", "startPage": "5", "hosts": ["a.localhost"], "siteAssets": "{{value}}"}]}""");
+
+        Assert.Equal(mode, Assert.IsType<SiteOperation>(plan.Steps[0].Operation).SiteAssets);
+    }
+
+    [Theory]
     [InlineData("""{"op": "site", "name": "Alloy", "startPage": "5", "hosts": []}""", "\"hosts\" must be a non-empty array")]
+    [InlineData("""{"op": "site", "name": "Alloy", "startPage": "5", "hosts": ["a.localhost"], "siteAssets": "$folder"}""", "\"siteAssets\" must be own or global")]
     [InlineData("""{"op": "site", "name": "Alloy", "startPage": "5", "hosts": [{"name": "a.localhost", "port": 1}]}""", "unknown field \"port\"")]
     [InlineData("""{"op": "site", "name": "Alloy", "startPage": "5", "hosts": [{"name": "a.localhost", "https": "yes"}]}""", ".https must be true or false")]
     [InlineData("""{"op": "site", "name": "Alloy", "hosts": ["a.localhost"]}""", "\"startPage\" is required")]
@@ -109,5 +121,61 @@ public class SiteAndLanguagePlanTests
 
         var created = new SiteHostsView("Alloy", null, Guid.NewGuid(), SiteHostStatus.Created, ["created, start page 5"], "http://alloy.localhost:5000/", []);
         Assert.Contains("admin mode (Settings > Websites)", UndoHints.For(new SiteOperation("Alloy", "5", [new SiteAddHost("alloy.localhost:5000")]), created));
+    }
+
+    private static readonly WritePlan HostsPlan = WritePlan.Parse("""
+        {"operations": [
+          {"op": "create", "id": "home", "parent": "1", "type": "StartPage", "name": "Home"},
+          {"op": "site", "name": "Alloy", "startPage": "$home", "hosts": ["alloy.localhost:5000", "https://alloy-sv.localhost:5001@sv", "alloy.example.com"]},
+          {"op": "upload", "file": "logo.png", "parent": "http://alloy.localhost:5000/siteassets/"}
+        ]}
+        """);
+
+    [Theory]
+    [InlineData("http://alloy.localhost:5000/siteassets/", "alloy.localhost:5000")]
+    [InlineData("HTTP://Alloy.Localhost:5000/en/", "alloy.localhost:5000")]
+    [InlineData("https://alloy-sv.localhost:5001/sv/", "alloy-sv.localhost:5001")]
+    [InlineData("http://alloy.example.com:8080/", "alloy.example.com")]
+    public void A_url_on_a_host_an_earlier_site_step_adds_waits_for_that_step(string url, string host)
+    {
+        var op = new UploadOperation("logo.png", Parent: url);
+        var deferredSite = new PlanStepResult(1, "site", null, PlanStepStatus.Deferred);
+
+        var planned = PlanRunner.OnPlannedSite(op, HostsPlan.Steps.Take(2), [new PlanStepResult(0, "create", "home", PlanStepStatus.Deferred), deferredSite]);
+
+        Assert.Equal((url, host, 1, "Alloy"), planned);
+    }
+
+    [Theory]
+    [InlineData("http://alloy.localhost:5001/siteassets/")]
+    [InlineData("http://other.localhost:5000/")]
+    [InlineData("/siteassets/")]
+    [InlineData("$home")]
+    [InlineData("5")]
+    public void Other_refs_are_checked_as_they_are(string reference)
+    {
+        Assert.Null(PlanRunner.OnPlannedSite(new UploadOperation("logo.png", Parent: reference), HostsPlan.Steps.Take(2), [new PlanStepResult(1, "site", null, PlanStepStatus.Deferred)]));
+    }
+
+    [Fact]
+    public void A_site_step_that_changes_nothing_leaves_its_hosts_to_the_database()
+    {
+        var unchanged = new SiteHostsView("Alloy", 1, Guid.NewGuid(), SiteHostStatus.Unchanged, [], "http://alloy.localhost:5000/", []);
+        var changed = unchanged with { Status = SiteHostStatus.Changed };
+        var op = new UploadOperation("logo.png", Parent: "http://alloy.localhost:5000/siteassets/");
+
+        Assert.Null(PlanRunner.OnPlannedSite(op, HostsPlan.Steps.Take(2), [new PlanStepResult(1, "site", null, PlanStepStatus.Valid, unchanged)]));
+        Assert.NotNull(PlanRunner.OnPlannedSite(op, HostsPlan.Steps.Take(2), [new PlanStepResult(1, "site", null, PlanStepStatus.Valid, changed)]));
+    }
+
+    [Theory]
+    [InlineData("https://www.example.com/docs", true)]
+    [InlineData("HTTP://www.example.com/", true)]
+    [InlineData("//cdn.example.com/a", true)]
+    [InlineData("/en/about/", false)]
+    [InlineData("/", false)]
+    public void Only_an_external_shortcut_has_a_url_with_a_host(string url, bool external)
+    {
+        Assert.Equal(external, PlanRunner.ExternalLink(url));
     }
 }

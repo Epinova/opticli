@@ -16,7 +16,8 @@ namespace OptiCli.Core.Sites;
 /// <param name="DryRun">True for a dry run; omitted otherwise.</param>
 /// <param name="Application">CMS 13: the application's name, as <c>opticli sites</c> prints it; omitted on CMS 12.</param>
 /// <param name="IsDefault">CMS 13: whether it is the default application (CMS 12's <c>*</c> host); omitted on CMS 12.</param>
-public sealed record SiteHostsView(string Site, int? Id, Guid? Guid, string Status, IReadOnlyList<string> Changes, string? Url, IReadOnlyList<HostInfo> Hosts, bool? DryRun = null, string? Application = null, bool? IsDefault = null);
+/// <param name="SiteAssets">The site's assets root, from <c>sites add</c> (a plan's <c>site</c>) only.</param>
+public sealed record SiteHostsView(string Site, int? Id, Guid? Guid, string Status, IReadOnlyList<string> Changes, string? Url, IReadOnlyList<HostInfo> Hosts, bool? DryRun = null, string? Application = null, bool? IsDefault = null, SiteAssetsInfo? SiteAssets = null);
 
 public sealed record SiteHostsOutcome(IReadOnlyList<SiteHostsView> Sites, IReadOnlyList<string> Warnings, bool Saved);
 
@@ -54,7 +55,8 @@ public static class SiteHostsRunner
             s.Hosts.Select(ToHostInfo).ToList(),
             result.DryRun ? true : null,
             s.Application,
-            s.IsDefault)).ToList();
+            s.IsDefault,
+            s.SiteAssets)).ToList();
 
     /// <exception cref="RefusedException">See <see cref="SiteHostsRequest.AllowedOnSharedDatabase"/>.</exception>
     public static void RequireAllowed(IReadOnlyList<SiteHostChange> changes, IReadOnlyList<SiteInfo> sites, bool sharedDatabase)

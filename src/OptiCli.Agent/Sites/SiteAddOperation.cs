@@ -36,6 +36,9 @@ internal static class SiteAddOperation
             throw AgentException.Usage($"{name} needs at least one host.", "Give a host such as localhost:5000, or * to answer every host name no other site has.");
         }
 
+        var requestedAssets = body.SiteAssets is null
+            ? null
+            : SiteAssetsModes.Parse(body.SiteAssets) ?? throw AgentException.Usage($"siteAssets '{body.SiteAssets}' is not {SiteAssetsModes.Own} or {SiteAssetsModes.Global}.");
         var applications = SiteStore.Applications;
         var store = new SiteStore(request.Context.RequestServices);
         var startPage = RequireStartPage(request, body.StartPage, applications);
@@ -70,6 +73,14 @@ internal static class SiteAddOperation
                 issues.Add(new ValidationIssue(null, $"{host.Name}: {other.Name} has this host already."));
             }
         }
+        var assets = PlanAssets(existing, requestedAssets, store.AssetsFolderBelow(startPage), others);
+        if (assets.Issue is { } assetsIssue)
+        {
+            throw AgentException.Invalid(
+                [.. issues, new ValidationIssue(null, assetsIssue)],
+                issues.Count > 0 ? ValidationHint : "Nothing was saved. `opticli sites` lists every site's start page and assetsRoot.",
+                AgentErrorReasons.SiteHosts);
+        }
         if (issues.Count > 0)
         {
             throw AgentException.Invalid(issues, ValidationHint, AgentErrorReasons.SiteHosts);
@@ -78,13 +89,24 @@ internal static class SiteAddOperation
         var (after, changes) = existing is null
             ? New(name, requested, startPage, applications, store)
             : Merge(existing, requested, startPage, applications);
+        if (assets.Change is { } assetsChange)
+        {
+            changes = [.. changes, assetsChange];
+        }
+        if (existing is not null && assets.Change is not null)
+        {
+            warnings.Add(assets.Mode == SiteAssetsModes.Own
+                ? $"{name}'s /siteassets/ URLs now lead to its own folder: media it had in the global assets folder stays there, at /globalassets/."
+                : $"{name}'s /siteassets/ URLs now lead to the global assets folder: what its own folder ({existing.AssetsRoot}) holds stays there, but no longer at /siteassets/.");
+        }
         var status = existing is null ? SiteHostStatus.Created : changes.Count > 0 ? SiteHostStatus.Changed : SiteHostStatus.Unchanged;
         var saved = false;
+        var assetsInfo = new SiteAssetsInfo(assets.Mode, assets.Folder, assets.Create ? true : null);
         if (!body.DryRun && status != SiteHostStatus.Unchanged)
         {
             try
             {
-                after = await store.SaveSiteAsync(existing, after, startPage, CancellationToken.None);
+                after = await store.SaveSiteAsync(existing, after, startPage, assets, CancellationToken.None);
             }
             catch (SiteRefusedException ex)
             {
@@ -92,6 +114,7 @@ internal static class SiteAddOperation
             }
             saved = true;
             warnings.Add(SiteHostsOperation.RestartWarning);
+            assetsInfo = new SiteAssetsInfo(after.AssetsRoot is null ? SiteAssetsModes.Global : SiteAssetsModes.Own, after.AssetsRoot, assetsInfo.Created);
         }
 
         var site = applications
@@ -99,8 +122,9 @@ internal static class SiteAddOperation
             {
                 Application = after.Key,
                 IsDefault = after.Hosts.Any(SiteHostPlanner.IsDefaultApplication),
+                SiteAssets = assetsInfo,
             }
-            : new SiteHostsSite(after.Id, after.Name, status, changes, after.Hosts, after.SiteUrl);
+            : new SiteHostsSite(after.Id, after.Name, status, changes, after.Hosts, after.SiteUrl) { SiteAssets = assetsInfo };
         return new SiteAddResult { Site = site, DryRun = body.DryRun, Saved = saved, Warnings = warnings.Count > 0 ? warnings : null };
     }
 
@@ -284,6 +308,45 @@ internal static class SiteAddOperation
         return (existing with { Hosts = hosts, SiteUrl = siteUrl, StartPage = startPage }, changes);
     }
 
+    /// <summary>
+    /// What happens to the site's assets root. <paramref name="requested"/> null: <c>own</c> for a new site, an existing
+    /// site's left as it is. <c>own</c> uses the start page's <c>SysSiteAssets</c> folder where it has one (as the CMS does),
+    /// else creates one; a folder another site has as its root is an issue, since the CMS won't start with two such sites.
+    /// </summary>
+    /// <param name="existing">The site of that name (<c>--update-existing</c>); null for a new one.</param>
+    /// <param name="folderBelowStart">The start page's <c>SysSiteAssets</c> folder; null when it has none.</param>
+    /// <param name="others">The other sites.</param>
+    internal static SiteAssetsPlan PlanAssets(SiteState? existing, string? requested, int? folderBelowStart, IReadOnlyList<SiteState> others)
+    {
+        var current = existing is null ? null : existing.AssetsRoot is null ? SiteAssetsModes.Global : SiteAssetsModes.Own;
+        var wanted = requested ?? current ?? SiteAssetsModes.Own;
+        if (wanted == current)
+        {
+            return new SiteAssetsPlan(wanted, existing!.AssetsRoot, Create: false, Change: null, Issue: null);
+        }
+        var prefix = current is null ? "site assets: " : $"site assets: {current} -> ";
+        if (wanted == SiteAssetsModes.Global)
+        {
+            return new SiteAssetsPlan(wanted, null, Create: false, Change: $"{prefix}global (/globalassets/)", Issue: null);
+        }
+        if (folderBelowStart is { } folder)
+        {
+            var issue = others.FirstOrDefault(o => o.AssetsRoot == folder) is { } other
+                ? $"{SiteAssetsModes.FolderName} ({folder}) below the start page is {other.Name}'s assets folder already, and the CMS doesn't start with two sites on one folder: use the global assets folder (--site-assets global, \"siteAssets\": \"global\" in a plan), or a start page of its own."
+                : null;
+            return new SiteAssetsPlan(wanted, folder, Create: false, Change: $"{prefix}own, the start page's {SiteAssetsModes.FolderName} folder ({folder})", issue);
+        }
+        return new SiteAssetsPlan(wanted, null, Create: true, Change: $"{prefix}own, a {SiteAssetsModes.FolderName} folder created below the start page", Issue: null);
+    }
+
     private static string Describe(SiteHost host) =>
         $"{host.Name} ({HostTypes.Display(host.Type)}{(host.Language is null ? "" : $", {host.Language}")}{host.Https switch { true => ", https", false => ", http", null => "" }})";
 }
+
+/// <summary>What <c>sites add</c> does to a site's assets root (<see cref="SiteAddOperation.PlanAssets"/>).</summary>
+/// <param name="Mode"><see cref="SiteAssetsModes"/>, as the site ends.</param>
+/// <param name="Folder"><c>own</c>: the folder to use; null when one is to be created (or for <c>global</c>).</param>
+/// <param name="Create">A <c>SysSiteAssets</c> folder is created below the start page.</param>
+/// <param name="Change">The line for the site's changes; null when the root stays as it is.</param>
+/// <param name="Issue">Why it can't be done; null when it can.</param>
+internal sealed record SiteAssetsPlan(string Mode, int? Folder, bool Create, string? Change, string? Issue);

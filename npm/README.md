@@ -171,6 +171,9 @@ export const seedPlan = {
 } as const satisfies Plan;
 ```
 
+The site gets an assets folder of its own (`SysSiteAssets` below the start page, at `/siteassets/`), as one made in
+admin mode does; `siteAssets: 'global'` keeps it on the global assets folder.
+
 See opticli's [A database built from scratch](https://github.com/epinova/opticli#a-database-built-from-scratch).
 
 ### Several sites

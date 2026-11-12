@@ -3,6 +3,27 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.32.0 (unreleased)
+
+### CLI and npm package
+
+- **A site that `sites add` (or a plan's `site` step) creates gets an assets folder of its own**, as one made in admin
+  mode does: the start page's `SysSiteAssets` folder, created when it has none, as the site's assets root. Add-ons
+  that keep data in a site's assets folder now find one, and the site's media is at `/siteassets/`. Before, every such
+  site used the global assets folder. `--site-assets global` (`"siteAssets": "global"` in a plan) keeps a new site on
+  the global assets folder. With `--update-existing` an existing site's assets root changes only when
+  `--site-assets` is given. The result's `siteAssets` gives the root and the folder; a dry run says whether the folder
+  would be created. A `SysSiteAssets` folder that another site already has as its assets root is a `validation`
+  error, since the CMS doesn't start with two sites on one folder.
+- **A plan step with a URL on a host that an earlier `site` step adds is checked when the plan runs** (`deferred` in a
+  dry run), as steps in a language an earlier `language` step enables are. Before, a plan that uploaded to
+  `http://alloy.localhost:5000/siteassets/` after the `site` step that adds that host failed validation on a database
+  without sites ("No site answers host"), and on one with a `*` site its dry run checked the step against that site's
+  folders.
+- **A page whose shortcut is an external link keeps that link as its `url` in a plan with a `site` step**, which
+  0.31.1 fixed for other writes. Before, the URLs given after the `site` step saved replaced it with the page's own
+  path, so the first run of a seed plan gave the npm package's `seed.urls` another URL than later runs.
+
 ## 0.31.1 (11 November 2026)
 
 ### CLI, MCP module and npm package

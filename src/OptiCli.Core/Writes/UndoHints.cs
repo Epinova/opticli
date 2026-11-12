@@ -17,7 +17,8 @@ public static class UndoHints
             $"{offline.Ref} is offline{In(offline)}; to put it back, publish the version that was live: opticli publish {offline.Ref} --version {VersionId(offline.PreviouslyPublished)}",
         (AccessOperation, AccessOutput access) => Access(access),
         (SiteOperation, Sites.SiteHostsView { Status: Protocol.SiteHostStatus.Created } site) =>
-            $"None in opticli: delete the site {site.Site} in admin mode (Settings > {(site.Application is null ? "Websites" : "Applications")}).",
+            $"None in opticli: delete the site {site.Site} in admin mode (Settings > {(site.Application is null ? "Websites" : "Applications")})"
+            + (site.SiteAssets is { Created: true, Folder: { } folder } ? $", then its assets folder: opticli delete {folder}." : "."),
         (SiteOperation, Sites.SiteHostsView { Status: Protocol.SiteHostStatus.Changed } site) =>
             $"None in opticli: the site's changes were {string.Join("; ", site.Changes)}; `opticli sites primary` and `opticli sites host remove` change its hosts back.",
         (SiteOperation, _) => null,

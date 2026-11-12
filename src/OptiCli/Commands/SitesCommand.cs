@@ -67,11 +67,18 @@ internal static class SitesCommand
         {
             Description = "A site of that name is made to match (its start page set, the hosts added or given their type) instead of being a conflict. Its other hosts stay.",
         };
+        var siteAssets = new Option<string?>("--site-assets")
+        {
+            Description = "The site's assets root: own, a SysSiteAssets folder below the start page (/siteassets/), as admin mode makes one; global, the global assets folder every site shares (/globalassets/). Default: own for a new site; an existing site's is left as it is.",
+            HelpName = SiteAssetsModes.Syntax,
+        };
+        siteAssets.AcceptOnlyFromAmong(SiteAssetsModes.Own, SiteAssetsModes.Global);
         var write = new WriteOptions();
         var command = new Command("add", """
             Create a site definition (CMS 13: an in-process application) with its start page and hosts, through the site
             (needs `opticli serve`): a database the CMS created from scratch has none, so no URL renders. The site's URL
-            (SiteUrl, CMS 12) is its primary host for every language. A host another site has is a validation error (exit 5),
+            (SiteUrl, CMS 12) is its primary host for every language. A new site gets an assets folder of its own
+            (SysSiteAssets below the start page, at /siteassets/) unless --site-assets global. A host another site has is a validation error (exit 5),
             and so is a language that isn't enabled (`opticli languages enable`). A site of that name is a conflict (exit 5)
             unless --update-existing. Refused against a shared database (exit 3). In a plan: {"op": "site", "name": ...,
             "startPage": "$home", "hosts": ["alloy.localhost:5000", "alloy.localhost:5000@sv"]}.
@@ -83,6 +90,7 @@ internal static class SitesCommand
         command.Options.Add(hosts);
         command.Options.Add(https);
         command.Options.Add(updateExisting);
+        command.Options.Add(siteAssets);
         command.Options.Add(write.DryRun);
         WriteCommands.Mark(command);
 
@@ -93,7 +101,8 @@ internal static class SitesCommand
                 parse.GetValue(name)!,
                 parse.GetValue(startPage)!,
                 (parse.GetValue(hosts) ?? []).Select(SiteHostSpecs.Parse).ToList(),
-                parse.GetValue(https));
+                parse.GetValue(https),
+                SiteAssetsModes.Parse(parse.GetValue(siteAssets)));
             await using var session = await context.OpenContentAsync(cancellationToken);
             var outcome = await context.Writes(session, updateExisting: parse.GetValue(updateExisting)).RunAsync(operation, parse.GetValue(write.DryRun), cancellationToken);
             var view = (SiteHostsView)outcome.Output;
