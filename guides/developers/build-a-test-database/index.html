@@ -34,7 +34,7 @@
   <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#developers">For developers</a></p>
   <h1>Build a test database from scratch</h1>
   <p class="lead">Start from an empty database, and let one seed plan add the languages, the content and the sites, so end-to-end tests run on a database that code builds the same way every time.</p>
-  <p class="guide-meta">Written for opticli 0.31.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/developers/build-a-test-database.md">Edit on GitHub</a></p>
+  <p class="guide-meta">Written for opticli 0.32.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/developers/build-a-test-database.md">Edit on GitHub</a></p>
   <div class="guide-body">
     <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#steps">Steps</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
     <article class="prose">
@@ -95,6 +95,10 @@ hosts carry a port, so the site must listen on the same ports every run: <code>-
 <li>The <code>site</code> step comes after its start page. In each language the first host is the primary one: here
 <code>localhost:5199</code> for every language and <code>alloy-en.localhost:5199</code> for English. Browsers send <code>*.localhost</code> to your
 machine, so a site per host name needs no hosts file. Add a step per site for a multi-site solution.</li>
+<li>The site gets an assets folder of its own, as a site made in admin mode does: a <code>SysSiteAssets</code> folder below the
+start page, at <code>/siteassets/</code>. Upload a step's media there with its URL as the parent
+(<code>&quot;parent&quot;: &quot;http://localhost:5199/siteassets/&quot;</code>). <code>&quot;siteAssets&quot;: &quot;global&quot;</code> keeps the site on the global assets
+folder instead.</li>
 <li><code>&quot;$tag&quot;</code> in a string property stores the tag page's id as text (<code>&quot;456&quot;</code>): <code>TagId</code> stands for a property of your own
 that keeps a content id as a string. In a reference property <code>&quot;$tag&quot;</code> is the content itself.</li>
 <li><code>guidNamespace</code> gives everything the plan creates the same GUIDs in every database, so the plan can run again.</li>
@@ -103,8 +107,8 @@ that keeps a content id as a string. In a reference property <code>&quot;$tag&qu
 <div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-5">Copy</button></div><pre><code id="code-5">opticli<span class="t-w"> </span>apply<span class="t-w"> </span>seed.plan.json<span class="t-w"> </span>--update-existing<span class="t-w"> </span>--profile<span class="t-w"> </span>E2E<span class="t-w"> </span>--dry-run
 opticli<span class="t-w"> </span>apply<span class="t-w"> </span>seed.plan.json<span class="t-w"> </span>--update-existing<span class="t-w"> </span>--profile<span class="t-w"> </span>E2E</code></pre></div>
 <p>In the dry run the <code>language</code> step is <code>valid</code>, and the steps in Norwegian are <code>deferred</code>, since the database doesn't
-have the language enabled until the plan runs. The <code>site</code> step is <code>deferred</code> too: its start page doesn't exist yet. The
-real run saves every step. Run it again and every step is <code>unchanged</code>: with <code>--update-existing</code> the <code>site</code> step makes
+have the language enabled until the plan runs. The <code>site</code> step is <code>deferred</code> too: its start page doesn't exist yet.
+So is a step whose parent is a URL on one of the site's hosts, such as an upload to <code>/siteassets/</code>. The real run saves every step. Run it again and every step is <code>unchanged</code>: with <code>--update-existing</code> the <code>site</code> step makes
 the site of that name match instead of failing.</p>
 <h3 id="5-check-the-site">5. Check the site</h3>
 <div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-6">Copy</button></div><pre><code id="code-6">opticli<span class="t-w"> </span>sites<span class="t-w"> </span>--profile<span class="t-w"> </span>E2E
