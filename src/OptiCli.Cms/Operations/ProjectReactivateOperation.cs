@@ -1,5 +1,6 @@
 using System.Globalization;
 using EPiServer.DataAbstraction;
+using EPiServer.Security;
 using Microsoft.Extensions.Logging;
 using OptiCli.Cms.Projects;
 using OptiCli.Protocol;
@@ -12,6 +13,11 @@ namespace OptiCli.Cms.Operations;
 /// items are drafts (<c>checkedOut</c>, the same versions), not ready: publishing the project again needs them marked
 /// ready first.
 /// </summary>
+/// <remarks>
+/// For an editor every scheduled item is checked first (read, language and Publish access), as a publish checks its
+/// ready items: the CMS checks Publish per item as it goes, so an item the editor may not publish would otherwise leave
+/// the items before it unscheduled and the project still scheduled, to go live with only the rest.
+/// </remarks>
 internal static class ProjectReactivateOperation
 {
     public static async Task<ProjectResult> RunAsync(CmsCall call, string reference, ProjectReactivateRequest body)
@@ -23,7 +29,14 @@ internal static class ProjectReactivateOperation
         call.RequirePublishing(EPiServer.DataAccess.SaveAction.Publish);
 
         var all = projects.Items(project);
-        var scheduled = all.Where(i => i.State == ProjectItemState.Scheduled && call.CanRead(i.Version!)).ToList();
+        var hidden = all.Count(i => i.State == ProjectItemState.Scheduled && !call.CanRead(i.Version!));
+        if (hidden > 0)
+        {
+            throw AgentException.Refused(
+                $"{hidden} scheduled item(s) of project {ProjectLookup.Describe(project)} are content you can't read, so you can't reactivate the project.",
+                "Ask someone with access to that content to reactivate the project. Nothing was changed.");
+        }
+        var scheduled = all.Where(i => i.State == ProjectItemState.Scheduled).ToList();
         var next = new ValidationIssue(null,
             call.ForCaller(
                 $"Its scheduled items are drafts again, not ready: mark them ready (opticli projects ready {Id(project)} --all) before publishing the project again.",
@@ -34,9 +47,15 @@ internal static class ProjectReactivateOperation
             Project = projects.Describe(project, all),
             EditorUi = ui,
             DryRun = body.DryRun,
-            Items = scheduled.Select(i => new ProjectItemResult { Content = projects.Summary(i), Outcome = ProjectItemOutcomes.Unscheduled }).ToList(),
+            Items = scheduled.Select(i => Check(call, projects, i)).ToList(),
             Validation = [next],
         };
+        if (result.Items!.Any(i => i.Problem is not null))
+        {
+            return body.DryRun
+                ? result with { Valid = false }
+                : throw ProjectRules.Refusal("reactivate", ProjectLookup.Describe(project), result, result.Items!);
+        }
         if (body.DryRun)
         {
             return result;
@@ -72,6 +91,22 @@ internal static class ProjectReactivateOperation
             Items = items,
             SiteError = error,
         };
+    }
+
+    /// <summary>The scheduled item to unschedule, or (for an editor) its problem: no Publish access to its content or its language.</summary>
+    private static ProjectItemResult Check(CmsCall call, ProjectContext projects, LoadedItem item)
+    {
+        var unscheduled = new ProjectItemResult { Content = projects.Summary(item), Outcome = ProjectItemOutcomes.Unscheduled };
+        try
+        {
+            call.RequireLanguageAccess(item.Version!);
+            call.RequireAccess(item.Version!, AccessLevel.Publish);
+            return unscheduled;
+        }
+        catch (AgentException ex)
+        {
+            return unscheduled with { Outcome = null, Problem = ProjectRules.Problem(ex, ProjectContext.What(item)) };
+        }
     }
 
     private static string Id(Project project) => project.ID.ToString(CultureInfo.InvariantCulture);

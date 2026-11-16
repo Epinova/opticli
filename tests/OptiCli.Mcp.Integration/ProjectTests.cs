@@ -302,6 +302,51 @@ public sealed class ProjectTests(SharedSessions sessions)
     }
 
     [McpSiteFact]
+    public async Task Reactivating_needs_publish_access_to_every_scheduled_item_and_changes_nothing_otherwise()
+    {
+        var admin = await sessions.ForAsync(TestUsers.Admin);
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var product = await sessions.ForAsync(TestUsers.Product);
+        var start = Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        var hidden = Id(await admin.OkAsync("get_content", new { reference = TestUsers.HiddenPage }));
+        var name = ScratchName();
+        await admin.OkAsync("create_project", new { name });
+        var page = Id((await editor.OkAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = start, project = name, ready = true })).GetProperty("content"));
+        var version = (await admin.OkAsync("update_content", new { reference = hidden, properties = new { TeaserText = "scheduled" }, project = name, ready = true }))
+            .GetProperty("content").GetProperty("version").GetInt32();
+        try
+        {
+            await admin.OkAsync("publish_project", new { project = name, publishAt = DateTimeOffset.Now.AddDays(3), includeDraft = true });
+
+            // The editor can't read the hidden page: refused up front, its name and id untold, dry run too.
+            foreach (var dryRun in new[] { true, false })
+            {
+                var blind = await editor.ErrorAsync("reactivate_project", new { project = name, dryRun });
+                Assert.Equal("refused", blind.GetProperty("code").GetString());
+                Assert.DoesNotContain("Alloy Meet", blind.GetRawText());
+                Assert.DoesNotContain($"{hidden}_", blind.GetRawText());
+            }
+
+            // Product editors read both pages but may publish neither: each item's problem, and nothing unscheduled.
+            var check = await product.OkAsync("reactivate_project", new { project = name, dryRun = true });
+            Assert.False(check.GetProperty("valid").GetBoolean());
+            Assert.All(check.GetProperty("items").EnumerateArray(), i => Assert.Contains("Publish access", i.GetProperty("problem").GetProperty("message").GetString()));
+            Assert.Equal("refused", (await product.ErrorAsync("reactivate_project", new { project = name })).GetProperty("code").GetString());
+
+            var after = await admin.OkAsync("get_project", new { project = name });
+            Assert.Equal("delayedPublished", after.GetProperty("project").GetProperty("status").GetString());
+            Assert.All(after.GetProperty("items").EnumerateArray(), i => Assert.Equal("scheduled", i.GetProperty("state").GetString()));
+        }
+        finally
+        {
+            await admin.CallAsync("reactivate_project", new { project = name });
+            await admin.CallAsync("remove_from_project", new { project = name, items = new[] { $"{hidden}_{version}" } });
+            await admin.CallAsync("discard_draft", new { reference = $"{hidden}_{version}", includeDraft = true });
+            await DeleteAsync(editor, page);
+        }
+    }
+
+    [McpSiteFact]
     public async Task A_connection_without_the_publish_scope_makes_and_fills_projects_but_publishes_none()
     {
         await using var writer = await McpSession.ConnectAsync(TestUsers.Editor, new SessionOptions { Allow = ["content:write"] });
