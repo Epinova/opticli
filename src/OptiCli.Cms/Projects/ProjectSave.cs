@@ -245,9 +245,18 @@ internal sealed class ProjectSave
         }
         var (item, project) = holding[0];
         var id = project.ID.ToString(CultureInfo.InvariantCulture);
+        // Only an active project takes the new version; a scheduled one is reactivated first.
+        var next = project.Status switch
+        {
+            _ when ProjectRules.IsActive(project.Status) =>
+                call.ForCaller($"To put it there instead, save with project {id} (--project {id}).", $"To put it there instead, save with project {id}."),
+            ProjectStatus.DelayedPublished => call.ForCaller(
+                $"The project is scheduled to be published: to put the new version there instead, reactivate it (opticli projects reactivate {id}) and save with project {id} (--project {id}).",
+                $"The project is scheduled to be published: to put the new version there instead, it must be reactivated first (reactivate_project {id}), then saved with project {id}."),
+            _ => "",
+        };
         return new ValidationIssue(null,
-            $"{What(writable)} is in project {ProjectLookup.Describe(project)}, which holds version {item.ContentLink}: the new version isn't in it. "
-            + call.ForCaller($"To put it there instead, save with project {id} (--project {id}).", $"To put it there instead, save with project {id}."),
+            $"{What(writable)} is in project {ProjectLookup.Describe(project)}, which holds version {item.ContentLink}: the new version isn't in it. {next}".TrimEnd(),
             "warning");
     }
 

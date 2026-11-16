@@ -180,6 +180,11 @@ public class ProjectRulesTests
         Assert.Equal((AgentErrorCodes.Refused, AgentErrorReasons.ApprovalSequence), (error.Code, error.Reason));
         Assert.Contains("requestApproval", error.Hint);
         Assert.NotNull(error.Project);
+
+        // A publish takes no requestApproval: it gives its own hint.
+        var publish = ProjectRules.Refusal("publish", "3", Result,
+            [Item(1, new ProjectItemProblem(AgentErrorCodes.Refused, "1 has an approval sequence", AgentErrorReasons.ApprovalSequence))], "Send them for review.");
+        Assert.Equal("Send them for review.", publish.Hint);
     }
 
     [Fact]

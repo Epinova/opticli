@@ -209,6 +209,18 @@ public class ProjectSaveTests
     }
 
     [Fact]
+    public void The_warning_for_a_scheduled_project_says_to_reactivate_it_first()
+    {
+        _projects.Add(2, "Later", ProjectStatus.DelayedPublished);
+        _projects.AddItem(2, new ContentReference(10, 100), "en");
+
+        var warning = ProjectSave.NotInProject(_call, Version(10, 101), intoVersion: null);
+
+        Assert.Contains("2 ('Later', delayedPublished), which holds version 10_100", warning!.Message);
+        Assert.Contains("opticli projects reactivate 2", warning.Message);
+    }
+
+    [Fact]
     public void A_write_that_changed_nothing_puts_a_draft_in_but_not_a_published_version()
     {
         var save = Save();

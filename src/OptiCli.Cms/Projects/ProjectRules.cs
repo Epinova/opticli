@@ -159,7 +159,11 @@ internal static class ProjectRules
     /// </summary>
     /// <param name="action">What was asked, for the message: "publish", "mark items ready in".</param>
     /// <param name="project">The project, for the message.</param>
-    public static AgentException Refusal(string action, string project, ProjectResult result, IReadOnlyList<ProjectItemResult> items)
+    /// <param name="approvalHint">
+    /// The hint when every problem is an approval sequence, for a request that takes no <c>requestApproval</c> (a
+    /// publish, whose items were marked ready past their reviewers); null: retry with <c>requestApproval</c>.
+    /// </param>
+    public static AgentException Refusal(string action, string project, ProjectResult result, IReadOnlyList<ProjectItemResult> items, string? approvalHint = null)
     {
         var problems = items.Where(i => i.Problem is not null).ToList();
         var codes = problems.Select(p => p.Problem!.Code).ToHashSet();
@@ -175,7 +179,7 @@ internal static class ProjectRules
         var hint = pendingOnly
             ? "Ask whether those changes should go live too; if so, retry with includeDraft. Nothing was changed."
             : shared == AgentErrorReasons.ApprovalSequence
-                ? "Retry with requestApproval to send those items for review instead (their reviewers then approve them). Nothing was changed."
+                ? approvalHint ?? "Retry with requestApproval to send those items for review instead (their reviewers then approve them). Nothing was changed."
                 : "Each item's problem is in error.project; fix them (or leave those items out) and retry. Nothing was changed.";
         return new AgentException(code, message, hint)
         {

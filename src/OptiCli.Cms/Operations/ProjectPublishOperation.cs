@@ -84,7 +84,11 @@ internal static class ProjectPublishOperation
         {
             return body.DryRun
                 ? result with { Valid = false }
-                : throw ProjectRules.Refusal("publish", ProjectLookup.Describe(project), result, ready.Select(p => p.Result).ToList());
+                : throw ProjectRules.Refusal("publish", ProjectLookup.Describe(project), result, ready.Select(p => p.Result).ToList(),
+                    // Marking them ready again can't send them for review: they are ready already.
+                    call.ForCaller(
+                        "Those items were marked ready without their reviewers' approval: send each for review by saving it into the project with ready and requestApproval (--project, --ready, --request-approval), and publish the project once they are approved. Nothing was published.",
+                        "Those items were marked ready without their reviewers' approval: send each for review by saving it into the project with ready and requestApproval, and publish the project once they are approved. Nothing was published."));
         }
         if (body.DryRun)
         {
@@ -153,6 +157,14 @@ internal static class ProjectPublishOperation
         {
             call.RequireLanguageAccess(version);
             call.RequireAccess(version, AccessLevel.Publish);
+            // Before validation: CMS 13's own validator refuses an unapproved version too ("Content must be approved"),
+            // which would make the same item a validation problem there and an approval one on CMS 12.
+            if (Approvals.Applying(call, version.ContentLink) is not null && !Approved(call, version.ContentLink))
+            {
+                return Problem(new ProjectItemProblem(AgentErrorCodes.Refused,
+                    $"{what} has an approval sequence, and its reviewers haven't approved version {version.ContentLink}: publishing it would skip them.",
+                    AgentErrorReasons.ApprovalSequence));
+            }
             var writable = (IContent)((IReadOnly)version).CreateWritableClone();
             var issues = ValidationErrors.Validate(call, writable, action);
             if (ValidationErrors.HasErrors(issues))
@@ -163,12 +175,6 @@ internal static class ProjectPublishOperation
             {
                 UploadOperation.RequireServedSafely(call, media, null,
                     previouslyPublished is { } live && flow.Repository.TryGet<IContent>(new ContentReference(version.ContentLink.ID, live, version.ContentLink.ProviderName), out var published) ? published : null);
-            }
-            if (Approvals.Applying(call, version.ContentLink) is not null && !Approved(call, version.ContentLink))
-            {
-                return Problem(new ProjectItemProblem(AgentErrorCodes.Refused,
-                    $"{what} has an approval sequence, and its reviewers haven't approved version {version.ContentLink}: publishing it would skip them.",
-                    AgentErrorReasons.ApprovalSequence));
             }
             var pending = flow.Locator.PendingDraft(branch, version);
             if (pending is not null && !includeDraft)
