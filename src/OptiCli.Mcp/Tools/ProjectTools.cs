@@ -55,7 +55,7 @@ internal sealed class ProjectTools(IHttpContextAccessor http, IOptions<OptiCliMc
         [Description("Only items in this language, e.g. en.")] string? lang = null,
         [Description("Send items that have an approval sequence for review instead (the CMS's Ready for Review).")] bool requestApproval = false,
         [Description("With requestApproval: a comment for the reviewers, required where the sequence asks for one.")] string? comment = null,
-        [Description("Only check, and report what each item would get.")] bool dryRun = false) =>
+        [Description("Only check, and report what each item would get; valid: false, with each item's problem, when one can't be marked.")] bool dryRun = false) =>
         Run(Scopes.Write, call => ProjectReadyOperation.Run(call, project, new ProjectReadyRequest
         {
             Items = items,
@@ -72,7 +72,7 @@ internal sealed class ProjectTools(IHttpContextAccessor http, IOptions<OptiCliMc
         [Description(Project)] string project,
         [Description(Items)] string[] items,
         [Description("Only items in this language, e.g. en.")] string? lang = null,
-        [Description("Only check, and report what would be taken out.")] bool dryRun = false) =>
+        [Description("Only check, and report what would be taken out; valid: false, with each item's problem, when one can't be.")] bool dryRun = false) =>
         Run(Scopes.Write, call => ProjectRemoveOperation.Run(call, project, new ProjectRemoveRequest { Items = items, Lang = lang, DryRun = dryRun }), ResultUrls.SerializeProject);
 }
 
@@ -96,7 +96,7 @@ internal sealed class ProjectPublishTools(IHttpContextAccessor http, IOptions<Op
         [Description(ProjectTools.Project)] string project,
         [Description("Schedule the publish for this time instead (ISO 8601 with offset, e.g. 2026-10-05T08:00:00+02:00): only when the user asked for it.")] DateTime? publishAt = null,
         [Description("Also put live the unpublished changes someone else saved that ready items carry (their pendingDraft): only after asking the user.")] bool includeDraft = false,
-        [Description("Only check, and report what would go live and what would stay behind.")] bool dryRun = false) =>
+        [Description("Only check, and report what would go live and what would stay behind; valid: false, with each ready item's problem, when the publish would be refused.")] bool dryRun = false) =>
         RunAsync(Scopes.Write, call => ProjectPublishOperation.RunAsync(call, project, new ProjectPublishRequest
         {
             PublishAt = publishAt,
@@ -105,9 +105,9 @@ internal sealed class ProjectPublishTools(IHttpContextAccessor http, IOptions<Op
         }), ResultUrls.SerializeProject, PublishingIf(true));
 
     [McpServerTool(Name = "reactivate_project", Title = "Reactivate project", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-    [Description("Cancels a scheduled project's publish: the project is active again, and its scheduled items are drafts again, not ready (mark them ready again before the project is published). Only when the user asked for it, after confirming; dryRun checks it.")]
+    [Description("Cancels a scheduled project's publish: the project is active again, and its scheduled items are drafts again, not ready (mark them ready again before the project is published). Needs publish access to each scheduled item. Only when the user asked for it, after confirming; dryRun checks it.")]
     public Task<string> ReactivateProject(
         [Description(ProjectTools.Project)] string project,
-        [Description("Only check that it can be reactivated, and which items it would unschedule.")] bool dryRun = false) =>
+        [Description("Only check that it can be reactivated, and which items it would unschedule; valid: false, with each item's problem, when one can't be.")] bool dryRun = false) =>
         RunAsync(Scopes.Write, call => ProjectReactivateOperation.RunAsync(call, project, new ProjectReactivateRequest { DryRun = dryRun }), ResultUrls.SerializeProject, PublishingIf(true));
 }
