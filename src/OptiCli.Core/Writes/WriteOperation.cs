@@ -42,6 +42,25 @@ public abstract record WriteOperation
     public DateTimeOffset? PublishAt { get; init; }
 
     /// <summary>
+    /// set, create, area, composition, block, upload and translate: put the saved version in this project (its id, or its
+    /// exact name), in place of the content's earlier version there in the same language (<c>--in-project</c>, a plan's
+    /// <c>project</c>). Not with a publish: the project's own publish puts its ready items live together.
+    /// </summary>
+    public string? Project { get; init; }
+
+    /// <summary>With <see cref="Project"/>: also mark the saved version Ready to publish (<c>--ready</c>, a plan's <c>ready</c>).</summary>
+    public bool Ready { get; init; }
+
+    /// <summary>
+    /// <see cref="Project"/> came from the plan's own <c>project</c>, not the step's: a folder a create step makes is then
+    /// saved without it (folders can't be in a project), instead of being refused.
+    /// </summary>
+    public bool ProjectFromPlan { get; init; }
+
+    /// <summary>The ops a <see cref="Project"/> applies to: the ones that save a version of content.</summary>
+    public static readonly IReadOnlySet<string> ProjectOps = new HashSet<string>(StringComparer.Ordinal) { "set", "create", "area", "composition", "block", "upload", "translate" };
+
+    /// <summary>
     /// Dry run only: the plan step that publishes the content's master language branch before this step publishes another
     /// branch (<see cref="PlanSimulation.MasterFirst"/>). The database doesn't have that publish yet, so the check that the
     /// master branch is published (<see cref="MasterLanguageRule"/>) passes.
@@ -59,6 +78,30 @@ public abstract record WriteOperation
 
     /// <summary>A copy that publishes, for ops that can (<c>apply --publish</c>).</summary>
     public virtual WriteOperation WithPublish() => this;
+
+    /// <summary>
+    /// What is wrong with the operation's <see cref="Project"/> and <see cref="Ready"/> (the site refuses the same); null
+    /// when nothing is.
+    /// </summary>
+    /// <param name="publish">How a publish is named where it was asked for: <c>--publish</c>, <c>"publish": true</c>.</param>
+    public string? ProjectProblem(string publish = "--publish, --publish-at")
+    {
+        if (Project is null)
+        {
+            return Ready ? "marking the saved version Ready to publish (ready) is for a save into a project: give the project too." : null;
+        }
+        if (string.IsNullOrWhiteSpace(Project))
+        {
+            return "the project is empty: give its id or its name.";
+        }
+        if (!ProjectOps.Contains(Kind) || this is TranslateOperation { Remove: true })
+        {
+            return $"{Kind}{(this is TranslateOperation { Remove: true } ? " with remove" : "")} saves no version, so it takes no project.";
+        }
+        return Publishes
+            ? $"a save into a project isn't published or scheduled by itself ({publish}): the project's publish puts its ready items live together (opticli projects publish)."
+            : null;
+    }
 
     /// <summary>A copy that requests approval where it publishes (<c>apply --request-approval</c>).</summary>
     public WriteOperation WithRequestApproval() => Publishes ? this with { RequestApproval = true } : this;

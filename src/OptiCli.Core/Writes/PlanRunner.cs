@@ -50,6 +50,9 @@ public sealed record PlanRun(bool DryRun, IReadOnlyList<PlanStepResult> Operatio
 {
     /// <summary>True when the plan stopped before its last operation; <see cref="Operations"/> says which were saved.</summary>
     public bool? Partial { get; init; }
+
+    /// <summary>The projects the plan's steps save into (<c>project</c>): which exist, which the run made (or would make).</summary>
+    public IReadOnlyList<PlanProject>? Projects { get; init; }
 }
 
 /// <summary>
@@ -100,10 +103,20 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     /// </exception>
     public async Task<PlanRun> RunAsync(WritePlan plan, bool dryRun, bool publishAll, CancellationToken cancellationToken)
     {
+        if (publishAll && plan.Steps.Any(s => s.Operation.Project is not null))
+        {
+            throw new UsageException(
+                "--publish publishes every operation, and a save into a project isn't published by itself: the project's publish puts its ready items live together.",
+                "Leave out --publish, and publish the project once the plan ran (opticli projects publish <project>); or leave the project out of the plan. Nothing was changed.");
+        }
+        // The projects the plan names: by id, or by name, made when the plan runs if no unpublished project has the name.
+        var projects = await PlanProjects.ResolveAsync(session, plan.Steps, cancellationToken);
         // Rich text from @file values only has its $ids once the files are read.
-        var steps = WritePlan.LinkText(PlanFiles.Resolve(plan.Steps
+        var planned = WritePlan.LinkText(PlanFiles.Resolve(plan.Steps
             .Select(s => publishAll ? s with { Operation = s.Operation.WithPublish() } : s)
             .Select(s => requestApproval ? s with { Operation = s.Operation.WithRequestApproval() } : s), planDirectory, allowOutside, Files));
+        // Checked with the project's id; a project to be made doesn't exist yet, so those steps are checked without it.
+        var steps = planned.Select(s => s with { Operation = projects.ForCheck(s.Operation) }).ToList();
         var guids = WritePlan.FixedGuids(steps);
 
         var existing = executor.UpdateExisting ? await ExistingAsync(steps, cancellationToken) : new Dictionary<string, int>();
@@ -119,7 +132,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         foreach (var step in steps)
         {
             var (result, failure) = await ValidateAsync(step, steps, existing, resolved, targets, masters, checks, cancellationToken);
-            checks.Add(result);
+            checks.Add(projects.Note(planned.First(p => p.Index == step.Index).Operation, result));
             firstFailure ??= failure;
             Progress?.Invoke("checking", checks.Count, steps.Count);
         }
@@ -134,7 +147,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         }
         if (dryRun)
         {
-            return new PlanRun(true, checks, new Dictionary<string, string>());
+            return new PlanRun(true, checks, new Dictionary<string, string>()) { Projects = projects.Report() };
         }
 
         // Drift is confirmed once for the whole plan (apply --accept-drift), before its first step saves anything.
@@ -145,6 +158,23 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         }
         var created = new Dictionary<string, int>(StringComparer.Ordinal);
         var results = new List<PlanStepResult>();
+        try
+        {
+            // Before the first step saves anything: a project the site won't make stops the plan with nothing saved.
+            await projects.CreateAsync(new ProjectWrites(executor), cancellationToken);
+        }
+        catch (Exception caught)
+        {
+            var ex = Stopped(caught, cancellationToken);
+            throw OptiCliException.Create(ex.Code, $"The plan's project couldn't be made: {ex.Message.TrimEnd('.')}. Nothing was saved.", ex.Hint,
+                new PlanRun(false, steps.Select(s => new PlanStepResult(s.Index, s.Operation.Kind, s.Operation.Id, PlanStepStatus.NotRun, Guid: s.Operation.ContentGuid)).ToList(), Refs(created))
+                {
+                    Projects = projects.Report(),
+                });
+        }
+        // Each step in its project by id; a step marked ready whose content a later step changes again is marked ready
+        // once the plan ran (PlanProjects.ReadyAsync), so the later change doesn't leave a second version behind.
+        steps = PlanProjects.DeferReady(planned.Select(s => s with { Operation = projects.ForRun(s.Operation) }).ToList());
         var drafts = VersionPerStep ? null : new PlanDrafts();
         foreach (var step in steps)
         {
@@ -188,7 +218,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                     ex.Code,
                     $"Operation {step.Index} ({operation.Kind}) failed: {ex.Message.TrimEnd('.')}. {saved} earlier operation(s) were saved; details lists them with undo hints.",
                     ex.Hint,
-                    new PlanRun(false, results, Refs(created)) { Partial = true });
+                    new PlanRun(false, results, Refs(created)) { Partial = true, Projects = projects.Report() });
             }
         }
         // A site the plan made (or changed) moves the content below its start page to its hosts: the URLs taken when that
@@ -197,7 +227,19 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         {
             results = await WithSiteUrlsAsync(results, cancellationToken);
         }
-        return new PlanRun(false, results, Refs(created));
+        try
+        {
+            await projects.ReadyAsync(new ProjectWrites(executor), planned, results, cancellationToken);
+        }
+        catch (Exception caught)
+        {
+            var ex = Stopped(caught, cancellationToken);
+            throw OptiCliException.Create(ex.Code,
+                $"Every operation was saved, but marking the drafts ready in their project failed: {ex.Message.TrimEnd('.')}.",
+                $"Mark them with `opticli projects ready <project> <ref>...` once the problem is fixed ({ex.Hint ?? "see the message"}). details lists what was saved.",
+                new PlanRun(false, results, Refs(created)) { Projects = projects.Report() });
+        }
+        return new PlanRun(false, results, Refs(created)) { Projects = projects.Report() };
     }
 
     /// <summary>
@@ -755,7 +797,10 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         try
         {
             // What the plan knows about the step's master branch holds for what it is dry-run as.
-            outcome = await executor.RunAsync(simulation.Operation with { MasterPublishedBy = op.MasterPublishedBy }, dryRun: true, cancellationToken);
+            // The step's project goes with what it is dry-run as, where that saves a version without publishing it.
+            var simulated = simulation.Operation with { MasterPublishedBy = op.MasterPublishedBy };
+            var inProject = simulated with { Project = op.Project, Ready = op.Ready, ProjectFromPlan = op.ProjectFromPlan };
+            outcome = await executor.RunAsync(op.Project is not null && inProject.ProjectProblem() is null ? inProject : simulated, dryRun: true, cancellationToken);
         }
         catch (ContentValidationException ex) when (ex.Details is WriteOutput invalid)
         {
@@ -874,7 +919,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     private async Task CheckPlannedApprovalAsync(PlanStep step, IReadOnlyList<PlanStep> steps, CancellationToken cancellationToken)
     {
         var op = step.Operation;
-        if (!op.Publishes && !op.RequestApproval)
+        if (!op.Publishes && !op.RequestApproval && !op.Ready)
         {
             return;
         }
@@ -905,7 +950,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                 var header = await session.HeaderAsync(located.Id, cancellationToken);
                 _approvals[reference] = sequence = await Queries.ApprovalReader.ResolveAsync(session.Db, session.Model, header, cancellationToken);
             }
-            ApprovalRules.Check(sequence, op, $"The content operations[{step.Index}] publishes");
+            ApprovalRules.Check(sequence, op, $"The content operations[{step.Index}] {(op.Publishes || !op.Ready ? "publishes" : "marks Ready to publish")}");
         }
         catch (NotFoundException)
         {

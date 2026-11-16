@@ -62,6 +62,7 @@ internal static class CompositionCommand
             command.Options.Add(option);
         }
         write.AddCommon(command);
+        write.AddProject(command);
         write.AddPublishAt(command);
         write.AddIncludeDraft(command);
         write.AddConcurrency(command);
@@ -126,8 +127,10 @@ internal static class CompositionCommand
                 From = write.ParseFrom(context),
                 Variation = parse.GetValue(variation),
             };
+            // Before the database is opened: --in-project and --ready are checked with the other options.
+            var applied = write.WithApproval(operation, parse);
             await using var session = await context.OpenContentAsync(cancellationToken);
-            return WriteOptions.Result(await context.Writes(session, parse.GetValue(content.Site)).RunAsync(write.WithApproval(operation, parse), parse.GetValue(write.DryRun), cancellationToken));
+            return WriteOptions.Result(await context.Writes(session, parse.GetValue(content.Site)).RunAsync(applied, parse.GetValue(write.DryRun), cancellationToken));
         });
         return command;
     }

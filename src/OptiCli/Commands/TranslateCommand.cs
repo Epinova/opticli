@@ -32,6 +32,7 @@ internal static class TranslateCommand
         command.Options.Add(remove);
         command.Options.Add(confirm);
         write.AddCommon(command);
+        write.AddProject(command);
 
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
         {
@@ -42,8 +43,10 @@ internal static class TranslateCommand
                 Remove = parse.GetValue(remove),
                 Confirm = parse.GetValue(confirm),
             };
+            // Before the database is opened: --in-project and --ready are checked with the other options.
+            var applied = write.WithApproval(operation, parse);
             await using var session = await context.OpenContentAsync(cancellationToken);
-            return WriteOptions.Result(await context.Writes(session, parse.GetValue(content.Site)).RunAsync(write.WithApproval(operation, parse), parse.GetValue(write.DryRun), cancellationToken));
+            return WriteOptions.Result(await context.Writes(session, parse.GetValue(content.Site)).RunAsync(applied, parse.GetValue(write.DryRun), cancellationToken));
         });
         return command;
     }

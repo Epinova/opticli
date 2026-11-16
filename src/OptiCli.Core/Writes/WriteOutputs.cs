@@ -100,6 +100,13 @@ public sealed record WriteOutput(
     /// </summary>
     public bool? IntoVersion { get; init; }
 
+    /// <summary>
+    /// For a save into a project (<see cref="WriteOperation.Project"/>): what it did to the project (would do, for a dry
+    /// run): <c>item</c> added, replaced (with the version it replaced) or unchanged, whether the version is ready, and an
+    /// error when putting it there failed after the save. Null for a save without a project.
+    /// </summary>
+    public ProjectSaveResult? Project { get; init; }
+
     /// <param name="type">Shown when the agent returns no content (a dry-run create).</param>
     public static WriteOutput From(WriteResult result, string? type = null, string? name = null, string? parent = null)
     {
@@ -135,6 +142,7 @@ public sealed record WriteOutput(
             Discarded = result.Discarded ? true : null,
             LeftOut = result.LeftOut is { Count: > 0 } leftOut ? leftOut : null,
             IntoVersion = result.IntoVersion ? true : null,
+            Project = result.Project,
         };
     }
 

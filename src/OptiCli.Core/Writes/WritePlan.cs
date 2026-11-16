@@ -26,13 +26,13 @@ public sealed partial class WritePlan
     /// <summary>Allowed fields per op; required ones end with <c>*</c>.</summary>
     public static readonly IReadOnlyDictionary<string, string[]> Fields = new Dictionary<string, string[]>
     {
-        ["set"] = ["ref*", "properties", "name", "lang", "variation", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force"],
-        ["create"] = ["parent", "for", "type", "blueprint", "name*", "properties", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "id", "guid"],
-        ["area"] = ["ref*", "property*", "action*", "item", "type", "values", "name", "index", "at", "to", "display", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force"],
-        ["composition"] = ["ref*", "action*", "node", "nodeType", "in", "at", "value", "lang", "variation", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force"],
-        ["block"] = ["type*", "name*", "for", "parent", "properties", "lang", "publish", "includeDraft", "requestApproval", "id", "guid"],
-        ["upload"] = ["file*", "for", "parent", "replace", "name", "type", "properties", "publish", "includeDraft", "requestApproval", "id", "guid"],
-        ["translate"] = ["ref*", "lang*", "name", "properties", "publish", "includeDraft", "requestApproval", "withBlocks", "remove", "confirm"],
+        ["set"] = ["ref*", "properties", "name", "lang", "variation", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force", "project", "ready"],
+        ["create"] = ["parent", "for", "type", "blueprint", "name*", "properties", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "id", "guid", "project", "ready"],
+        ["area"] = ["ref*", "property*", "action*", "item", "type", "values", "name", "index", "at", "to", "display", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force", "project", "ready"],
+        ["composition"] = ["ref*", "action*", "node", "nodeType", "in", "at", "value", "lang", "variation", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force", "project", "ready"],
+        ["block"] = ["type*", "name*", "for", "parent", "properties", "lang", "publish", "includeDraft", "requestApproval", "id", "guid", "project", "ready"],
+        ["upload"] = ["file*", "for", "parent", "replace", "name", "type", "properties", "publish", "includeDraft", "requestApproval", "id", "guid", "project", "ready"],
+        ["translate"] = ["ref*", "lang*", "name", "properties", "publish", "includeDraft", "requestApproval", "withBlocks", "remove", "confirm", "project", "ready"],
         ["publish"] = ["ref*", "version", "lang", "publishAt", "includeDraft", "requestApproval"],
         ["unpublish"] = ["ref*", "lang"],
         ["discard"] = ["ref*", "version", "lang", "includeDraft"],
@@ -53,16 +53,27 @@ public sealed partial class WritePlan
     /// <summary>Ops that create content, and so can have an <c>id</c> and a <c>guid</c>.</summary>
     public static readonly IReadOnlySet<string> CreatingOps = new HashSet<string>(StringComparer.Ordinal) { "create", "block", "upload" };
 
-    private WritePlan(IReadOnlyList<PlanStep> steps, Guid? guidNamespace)
+    /// <summary>The plan's own field that puts every save step's draft in a project (<see cref="Project"/>).</summary>
+    public const string ProjectField = "project";
+
+    private WritePlan(IReadOnlyList<PlanStep> steps, Guid? guidNamespace, string? project)
     {
         Steps = steps;
         GuidNamespace = guidNamespace;
+        Project = project;
     }
 
     public IReadOnlyList<PlanStep> Steps { get; }
 
     /// <summary>The plan's <c>guidNamespace</c>: every creating step's GUID is derived from it and the step's <c>id</c>.</summary>
     public Guid? GuidNamespace { get; }
+
+    /// <summary>
+    /// The plan's <c>project</c> (an id or a name): every set, create, area, composition, block, upload and translate step
+    /// saves its draft in it, unless the step names another (its own <c>project</c>) or none (<c>"project": null</c>). A
+    /// name no unpublished project has is created when the plan runs. Plans never publish a project.
+    /// </summary>
+    public string? Project { get; }
 
     /// <exception cref="UsageException">The plan is malformed; <c>details.problems</c> lists every problem.</exception>
     public static WritePlan Parse(string json)
@@ -77,9 +88,9 @@ public sealed partial class WritePlan
             throw new UsageException($"The plan is not valid JSON: {ex.Message}");
         }
         if (root is not JsonObject { } plan || plan["operations"] is not JsonArray { Count: > 0 } operations
-            || plan.Any(p => p.Key is not ("operations" or "guidNamespace" or SourceField)))
+            || plan.Any(p => p.Key is not ("operations" or "guidNamespace" or ProjectField or SourceField)))
         {
-            throw new UsageException("""A plan is an object with "operations", a non-empty array, and optionally "guidNamespace" (and "source", which `export` writes).""", PlanHint);
+            throw new UsageException("""A plan is an object with "operations", a non-empty array, and optionally "guidNamespace", "project" (and "source", which `export` writes).""", PlanHint);
         }
 
         var problems = new List<string>();
@@ -98,10 +109,19 @@ public sealed partial class WritePlan
                 problems.Add("\"guidNamespace\" must be a GUID (make one with `uuidgen`, once per plan, and keep it).");
             }
         }
+        string? planProject = null;
+        if (plan.ContainsKey(ProjectField))
+        {
+            planProject = ProjectName(plan[ProjectField]);
+            if (planProject is null)
+            {
+                problems.Add("\"project\" must be a project's name, or its id (a string or a number).");
+            }
+        }
         var parsed = new List<(WriteOperation? Op, int Index)>();
         for (var i = 0; i < operations.Count; i++)
         {
-            parsed.Add((ParseStep(operations[i], i, guidNamespace, problems), i));
+            parsed.Add((ParseStep(operations[i], i, guidNamespace, planProject, problems), i));
         }
 
         foreach (var duplicate in parsed.Where(p => p.Op?.ContentGuid is not null).GroupBy(p => p.Op!.ContentGuid).Where(g => g.Count() > 1))
@@ -133,8 +153,16 @@ public sealed partial class WritePlan
         {
             throw new UsageException($"The plan has {problems.Count} problem(s): {string.Join(" ", problems)}", PlanHint) { Details = new { problems } };
         }
-        return new WritePlan(steps, guidNamespace);
+        return new WritePlan(steps, guidNamespace, planProject);
     }
+
+    /// <summary>A <c>project</c> value: a name, or an id as a number; null when it is neither (or empty).</summary>
+    private static string? ProjectName(JsonNode? node) => node switch
+    {
+        JsonValue value when value.TryGetValue<string>(out var text) && !string.IsNullOrWhiteSpace(text) => text.Trim(),
+        JsonValue value when value.TryGetValue<int>(out var id) && id > 0 => id.ToString(CultureInfo.InvariantCulture),
+        _ => null,
+    };
 
     public const string PlanHint =
         """Example: {"operations": [{"op": "create", "id": "page", "parent": "123", "type": "ArticlePage", "name": "News"}, {"op": "set", "ref": "$page", "properties": {"Heading": "Hello"}}]}. Run `opticli apply --help` for every op's fields.""";
@@ -277,7 +305,7 @@ public sealed partial class WritePlan
         return dependsOn;
     }
 
-    private static WriteOperation? ParseStep(JsonNode? node, int index, Guid? guidNamespace, List<string> problems)
+    private static WriteOperation? ParseStep(JsonNode? node, int index, Guid? guidNamespace, string? planProject, List<string> problems)
     {
         var where = $"operations[{index}]";
         if (node is not JsonObject step)
@@ -429,14 +457,41 @@ public sealed partial class WritePlan
         {
             problems.Add($"{reader.Where}: give exactly one of \"for\" and \"parent\" (or, for an upload, \"replace\").");
         }
-        return operation with
+        // The step's own project, none ("project": null), or the plan's for the ops that save a version.
+        string? project;
+        var fromPlan = false;
+        if (step.ContainsKey(ProjectField))
+        {
+            project = step[ProjectField] is null ? null : ProjectName(step[ProjectField]);
+            if (step[ProjectField] is not null && project is null)
+            {
+                problems.Add($"{reader.Where}: \"project\" must be a project's name, its id (a string or a number), or null for none.");
+            }
+        }
+        else
+        {
+            fromPlan = planProject is not null && WriteOperation.ProjectOps.Contains(op) && operation is not TranslateOperation { Remove: true };
+            project = fromPlan ? planProject : null;
+        }
+        operation = operation with
         {
             Id = id,
             ContentGuid = ContentGuid(reader, op, id, guidNamespace),
             IncludeDraft = reader.Bool("includeDraft"),
             RequestApproval = reader.Bool("requestApproval"),
             PublishAt = reader.Time("publishAt"),
+            Project = project,
+            Ready = reader.Bool("ready"),
+            ProjectFromPlan = fromPlan,
         };
+        if (step[ProjectField] is not null || fromPlan || operation.Ready)
+        {
+            if (operation.ProjectProblem("\"publish\", \"publishAt\"") is { } projectProblem)
+            {
+                problems.Add($"{reader.Where}: {projectProblem}{(fromPlan ? " (The plan's \"project\" applies to this step: give it \"project\": null to save it without one.)" : "")}");
+            }
+        }
+        return operation;
     }
 
     /// <summary>A <c>site</c> step's <c>siteAssets</c>, lower case; a problem when it is neither own nor global.</summary>

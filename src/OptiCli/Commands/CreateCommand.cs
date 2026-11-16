@@ -34,6 +34,7 @@ internal static class CreateCommand
         command.Options.Add(guid);
         write.AddProperties(command);
         write.AddCommon(command);
+        write.AddProject(command);
         write.AddPublishAt(command);
 
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
@@ -48,8 +49,10 @@ internal static class CreateCommand
                 ContentGuid = parse.GetValue(guid),
                 Blueprint = parse.GetValue(blueprint),
             };
+            // Before the database is opened: --in-project and --ready are checked with the other options.
+            var applied = write.WithApproval(operation, parse);
             await using var session = await context.OpenContentAsync(cancellationToken);
-            return WriteOptions.Result(await context.Writes(session).RunAsync(write.WithApproval(operation, parse), parse.GetValue(write.DryRun), cancellationToken));
+            return WriteOptions.Result(await context.Writes(session).RunAsync(applied, parse.GetValue(write.DryRun), cancellationToken));
         });
         return command;
     }

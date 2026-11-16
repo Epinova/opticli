@@ -67,6 +67,8 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
 | Text anywhere in names or text properties | `opticli search "opening hours" --in strings` |
 | Who may read or edit an item (access rights) | `opticli access 123` (`inherited`, `from`: where they come from; `assetsOf`: the owner, for "For this page" content) |
 | Version history / unpublished work | `opticli versions 123` / `opticli drafts --since 2024-06-01 --kind page` |
+| Which projects exist, what is in one, how much is ready | `opticli projects` (`items`, `ready`) / `opticli projects "<name or id>"` |
+| Collect many drafts for one review and publish them together (only when asked) | `--in-project "<name>"` on the writes (`--ready`), or `"project"` in a plan; `opticli projects publish <project> --dry-run` (needs `serve`; see Projects below) |
 | Who moved, deleted or published an item, and when | `opticli history 123` (`--since 30d`) |
 | Content waiting to go live / expired | `opticli find --type ArticlePage --status scheduled` (`expired`) |
 | Which categories / visitor groups exist | `opticli categories` / `opticli visitor-groups` |
@@ -253,9 +255,47 @@ Besides the content type's properties, writes take a few built-in settings: `Nam
 `SimpleAddress` and `Shortcut` (a menu item that links elsewhere). A list page that shows its children in the wrong
 order usually needs its `ChildSortOrder` (e.g. `PublishedDescending`), not a code change.
 
+## Projects (many related changes reviewed and published together)
+
+A CMS project collects drafts of many items so an editor reviews them in the edit UI and they go live in one go, now or
+at a set time. Suggest one when the user wants several related changes (a campaign, a restructure, thirty pages) reviewed
+or published together; ask before making one, and use the name they give.
+
+- `opticli projects create "<name>"` makes it (a name an unpublished project has already is a `conflict`). A write joins
+  a project only when it says so, every time: `--in-project <id|name>` on `set`, `create`, `area`, `composition`,
+  `block create`, `upload` and `translate` (note: `--in-project`, not `--project`, which picks the site's .csproj). The
+  draft takes the place of the content's earlier version in the project; `project` in the result says `added`,
+  `replaced` or `unchanged`. Content in another unpublished project is refused (`conflict`,
+  `details.reason: "inOtherProject"`): tell the user which project has it. A save without `--in-project` of content that is in a project
+  warns that the new version isn't in it.
+- `--ready` (with `--in-project`) marks the draft Ready to publish; later, `opticli projects ready <project> <ref>...`
+  (or `--all` for every draft in it). Under an approval sequence that is refused (exit 3): ask the user, then
+  `--request-approval` sends it for review instead (`--comment` for the reviewers on `projects ready`); once approved
+  it counts as ready.
+- In a plan, `"project": "<name>"` next to `"operations"` puts every save step's draft in that project (the run makes it
+  first if no unpublished project has the name; folders are left out); a step's own `"project"` overrides it,
+  `"project": null` leaves it out; `"ready": true` per step. `data.projects` says which project was made
+  (`status: "created"`, with an `undo`) and what was marked ready at the end. Plans never publish a project, and a step
+  with a project never publishes (`"publish"`, `--publish` are refused). Sealed production runs refuse `"project"`.
+- `opticli projects <project>` shows each item's `status` (`checkedIn` = ready, `checkedOut` = draft,
+  `awaitingApproval` = in review). Tell the user the project's name and id so they can open it in the CMS: with project
+  mode the project bar, else (CMS 13's default, `editorUi: "gadget"`) the Projects gadget.
+- Publishing a project (`opticli projects publish <project>`, `--at <time>` to schedule) puts **only the items marked
+  Ready to publish** live; the rest stay drafts (`notReady`). Only when the user asks for it to go live: dry-run first
+  and show them `published` (or `scheduled`) and `notReady`. Note for gadget sites (`editorUi: "gadget"`): the gadget's
+  own Publish button puts every unpublished item live, ready or not, so the same project behaves differently there;
+  say so if the user will publish from the CMS. Other people's unpublished changes in a ready item stop it
+  (`pendingDraft`, per item in `details.project`): ask, and only then `--include-draft`. One problem item stops the
+  whole publish with nothing published (`details.project` lists each item's `problem`); nothing ready is a `conflict`
+  (`nothingReady`).
+- `opticli projects reactivate <project>` cancels a scheduled publish (its items become drafts again: mark them ready
+  again). `projects remove <project> <ref>` takes items out (their versions stay); `projects delete <project>` deletes
+  the project, not its drafts (only when asked).
+
 ## Rules
 
-- Never pass `--publish` and never run `publish` unless the user explicitly asked for the change to go live.
+- Never pass `--publish` and never run `publish` or `projects publish` unless the user explicitly asked for the change
+  to go live.
 - On a CMS 13 site, `serve` refuses a CMS 13 build against a CMS 12 database (it would upgrade the database for good):
   tell the user; never work around it.
 - A publish puts the whole version live, including changes someone else saved since the published version. When

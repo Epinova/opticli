@@ -29,6 +29,19 @@ public class ApprovalRulesTests
     }
 
     [Fact]
+    public void Ready_in_a_project_is_held_to_the_sequence_as_the_site_holds_it()
+    {
+        var ready = new SetOperation("123", Name: "x") { Project = "Spring", Ready = true };
+
+        var refused = Assert.Throws<RefusedException>(() => ApprovalRules.Check(Sequence, ready, "123"));
+        Assert.Contains("isn't marked Ready to publish", refused.Message);
+        Assert.Contains("--request-approval", refused.Hint);
+        Assert.True(ApprovalRules.Check(Sequence, ready with { RequestApproval = true }, "123"));
+        // Without a sequence a review request with ready is no error: the version is marked ready.
+        Assert.False(ApprovalRules.Check(null, ready with { RequestApproval = true }, "123"));
+    }
+
+    [Fact]
     public void Apply_request_approval_only_marks_the_steps_that_publish()
     {
         Assert.True(new SetOperation("123", Publish: true).WithRequestApproval().RequestApproval);

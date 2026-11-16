@@ -75,6 +75,13 @@ internal static class ApplyCommand
             (nodeType, in, at, value: the node as get's composition shows one), remove (node), move (node, in, at) or set
             (node, value: name, displayTemplate, displaySettings, properties); a node is its key, or its name if unique.
             "variation" on set and composition changes that content variation.
+            Projects: "project": "<name or id>" next to "operations" saves the draft of every set, create, area, composition,
+            block, upload and translate operation in that project, which the run makes (before its first operation) if no
+            unpublished project has the name; a folder is left out. An operation's own "project" overrides it, and
+            "project": null leaves it out. "ready": true marks the operation's draft Ready to publish (where a later
+            operation changes the same content, its last version is marked once the plan ran: data.projects lists those).
+            Operations with a project don't publish ("publish", "publishAt", --publish are refused): a plan never publishes
+            a project; `opticli projects publish` does that separately. A sealed run refuses "project".
             Example: opticli apply plan.json --dry-run
               {"operations": [
                 {"op": "create", "id": "page", "parent": "123", "type": "ArticlePage", "name": "News", "properties": {"Heading": "Hi"}},

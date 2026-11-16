@@ -41,12 +41,13 @@ public static class AgentErrors
         {
             return new DriftException(error.Message, hint) { Details = drift };
         }
-        object? details = error.Validation is not null || error.CurrentVersion is not null || error.PendingDraft is not null || error.Reason is not null || error.Removal is not null
+        object? details = error.Validation is not null || error.CurrentVersion is not null || error.PendingDraft is not null || error.Reason is not null || error.Removal is not null || error.Project is not null
             ? new AgentErrorDetails(error.Validation, error.CurrentVersion)
             {
                 Reason = error.Reason ?? (error.PendingDraft is null ? null : PendingDraft.Reason),
                 Draft = error.PendingDraft,
                 Removed = error.Removal,
+                Project = error.Project,
             }
             : null;
         return OptiCliException.Create(CodeFor(error.Code), error.Message, hint, details);
@@ -67,4 +68,10 @@ public sealed record AgentErrorDetails(IReadOnlyList<ValidationIssue>? Validatio
     /// be restored (also in the record file it names).
     /// </summary>
     public OrphanRemovalResult? Removed { get; init; }
+
+    /// <summary>
+    /// A project operation refused over its items: the project and every item, each with its <c>problem</c> (what stops it)
+    /// and, for a publish, its <c>pendingDraft</c>; nothing was changed.
+    /// </summary>
+    public ProjectResult? Project { get; init; }
 }

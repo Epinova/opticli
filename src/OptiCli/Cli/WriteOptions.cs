@@ -97,11 +97,41 @@ internal sealed class WriteOptions
     /// <summary>For publish, which has no --publish.</summary>
     public void AddRequestApproval(Command command) => command.Options.Add(RequestApproval);
 
-    /// <summary>The operation with <c>--request-approval</c> applied.</summary>
+    /// <summary>
+    /// The operation with <c>--request-approval</c>, <c>--publish-at</c>, <c>--in-project</c> and <c>--ready</c> applied, on
+    /// the commands that have them.
+    /// </summary>
+    /// <exception cref="UsageException">--ready without --in-project, or --in-project with --publish or --publish-at.</exception>
     public T WithApproval<T>(T operation, ParseResult parse) where T : WriteOperation
     {
         var scheduled = WithSchedule(operation, parse);
-        return parse.GetValue(RequestApproval) ? (T)(scheduled with { RequestApproval = true }) : scheduled;
+        var applied = parse.GetValue(RequestApproval) ? (T)(scheduled with { RequestApproval = true }) : scheduled;
+        if (!parse.CommandResult.Command.Options.Contains(Project))
+        {
+            return applied;
+        }
+        applied = (T)(applied with { Project = parse.GetValue(Project), Ready = parse.GetValue(Ready) });
+        return applied.ProjectProblem() is { } problem
+            ? throw new UsageException(char.ToUpperInvariant(problem[0]) + problem[1..], WriteExecutor.ProjectUsageHint)
+            : applied;
+    }
+
+    public Option<string?> Project { get; } = new("--in-project")
+    {
+        Description = "Put the new version in this project (its id or exact name; `opticli projects` lists them), as a draft for review: it takes the place of the content's earlier version in the project, in the same language. Content in another unpublished project is refused (exit 5). Not with --publish or --publish-at: publish or schedule the project's ready items together with `opticli projects publish`.",
+        HelpName = "id|name",
+    };
+
+    public Option<bool> Ready { get; } = new("--ready")
+    {
+        Description = "With --in-project: also mark the new version Ready to publish, so the project's publish puts it live. Where an approval sequence applies that is refused (exit 3); with --request-approval it goes for review instead (and counts as ready once approved).",
+    };
+
+    /// <summary>For the commands that save a version (set, create, area, composition, block create, upload, translate).</summary>
+    public void AddProject(Command command)
+    {
+        command.Options.Add(Project);
+        command.Options.Add(Ready);
     }
 
     /// <summary>For commands that publish existing content, which may hold someone else's draft.</summary>

@@ -81,6 +81,10 @@ public sealed class WriteExecutor(
     public const string PendingDraftHint =
         "details.draft lists the unpublished changes and who saved them. Ask the user whether they should go live too, and only if so run again with --include-draft (in a plan: \"includeDraft\": true on the step). Without --publish the change is saved as a draft and nothing goes live; `opticli publish <ref> --version <id>` publishes one version as it is.";
 
+    /// <summary>What to do about a write whose <c>--project</c> or <c>--ready</c> doesn't fit (<see cref="WriteOperation.ProjectProblem"/>).</summary>
+    public const string ProjectUsageHint =
+        "A save goes into a project as a draft (--in-project <id|name>), marked Ready to publish with --ready; publish or schedule the project's ready items together with `opticli projects publish <project>` (--at for later). Nothing was saved.";
+
     private AgentClient? _agent;
 
     /// <summary>The drift check passed for this run (nothing differs, or the user confirmed it).</summary>
@@ -103,6 +107,10 @@ public sealed class WriteExecutor(
             {
                 throw new UsageException("A review request can't be scheduled: the reviewers decide when it is published.", "Give --publish-at or --request-approval, not both.");
             }
+        }
+        if (operation.ProjectProblem() is { } projectProblem)
+        {
+            throw new UsageException(char.ToUpperInvariant(projectProblem[0]) + projectProblem[1..], ProjectUsageHint);
         }
         if (!dryRun)
         {
@@ -182,6 +190,8 @@ public sealed class WriteExecutor(
             IncludeDraft = op.IncludeDraft,
             RequestApproval = op.RequestApproval,
             PublishAt = op.PublishAt?.UtcDateTime,
+            Project = op.Project,
+            Ready = op.Ready,
             DryRun = dryRun,
             BaseVersion = baseVersion,
             From = op.From?.Request,
@@ -210,6 +220,8 @@ public sealed class WriteExecutor(
             IncludeDraft = op.IncludeDraft,
             RequestApproval = op.RequestApproval,
             PublishAt = op.PublishAt?.UtcDateTime,
+            Project = op.Project,
+            Ready = op.Ready,
             DryRun = dryRun,
             BaseVersion = baseVersion,
             From = op.From?.Request,
@@ -236,6 +248,8 @@ public sealed class WriteExecutor(
             IncludeDraft = op.IncludeDraft,
             RequestApproval = op.RequestApproval,
             PublishAt = op.PublishAt?.UtcDateTime,
+            Project = op.Project,
+            Ready = op.Ready,
             DryRun = dryRun,
             BaseVersion = baseVersion,
             From = op.From?.Request,
@@ -433,6 +447,9 @@ public sealed class WriteExecutor(
             RequestApproval = op.RequestApproval,
             PublishAt = op.PublishAt?.UtcDateTime,
             ParentType = dryRun ? op.PlannedParentType : null,
+            // A folder can't be in a project: the plan's project leaves it out (a step's own is refused by the site).
+            Project = op.ProjectFromPlan && type.Kind == ContentKind.Folder ? null : op.Project,
+            Ready = !(op.ProjectFromPlan && type.Kind == ContentKind.Folder) && op.Ready,
         };
         return await CreatedAsync(request, type.Name, cancellationToken, op.Parent is null ? null : parent.Stored);
     }
@@ -463,6 +480,8 @@ public sealed class WriteExecutor(
             UpdateExisting = updateExisting,
             IncludeDraft = op.IncludeDraft,
             RequestApproval = op.RequestApproval,
+            Project = op.Project,
+            Ready = op.Ready,
         };
         return await CreatedAsync(request, type.Name, cancellationToken);
     }
@@ -504,6 +523,8 @@ public sealed class WriteExecutor(
             UpdateExisting = updateExisting,
             IncludeDraft = op.IncludeDraft,
             RequestApproval = op.RequestApproval,
+            Project = op.Project,
+            Ready = op.Ready,
             // Existing media gets the file when it differs: a dry run, which sends no bytes, compares this.
             Sha256 = updateExisting && op.ContentGuid is not null
                 ? bytes is null ? await MediaFiles.Sha256Async(file, cancellationToken) : Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))
@@ -543,6 +564,8 @@ public sealed class WriteExecutor(
             DryRun = dryRun,
             IncludeDraft = op.IncludeDraft,
             RequestApproval = op.RequestApproval,
+            Project = op.Project,
+            Ready = op.Ready,
         };
         var result = await PublishingPostAsync(AgentRoutes.Media, request, r => r with { IncludeDraft = true }, cancellationToken);
         var output = WriteOutput.From(result) with
@@ -623,8 +646,9 @@ public sealed class WriteExecutor(
         if (updateExisting && target.Header.Languages.ContainsKey(language.Id))
         {
             var existing = op.Properties is not null || op.Name is not null
-                ? await SetAsync(new SetOperation(op.Ref, op.Properties, op.Name, language.Code, op.Publish, Force: true) { IncludeDraft = op.IncludeDraft, RequestApproval = op.RequestApproval }, dryRun, cancellationToken)
-                : op.Publish || op.RequestApproval
+                ? await SetAsync(new SetOperation(op.Ref, op.Properties, op.Name, language.Code, op.Publish, Force: true) { IncludeDraft = op.IncludeDraft, RequestApproval = op.RequestApproval, Project = op.Project, Ready = op.Ready }, dryRun, cancellationToken)
+                // A review request with a project is the save's (above); with nothing to save there is none to send.
+                : op.Publish || (op.RequestApproval && op.Project is null)
                     ? await PublishAsync(new PublishOperation(op.Ref, Lang: language.Code) { IncludeDraft = op.IncludeDraft, RequestApproval = op.RequestApproval }, dryRun, cancellationToken)
                     : await LatestUnchangedAsync(target, language, dryRun, $"The {language.Code} branch already exists; nothing to do.", cancellationToken);
             outcome = existing with { Output = ((WriteOutput)existing.Output) with { Existing = true } };
@@ -639,6 +663,8 @@ public sealed class WriteExecutor(
                 Properties = PropertyArguments.ToRequest(properties),
                 Publish = op.Publish,
                 RequestApproval = op.RequestApproval,
+                Project = op.Project,
+                Ready = op.Ready,
                 DryRun = dryRun,
             };
             var result = await PostAsync<WriteResult>(AgentRoutes.Languages(target.ContentRef), request, cancellationToken);
@@ -684,7 +710,16 @@ public sealed class WriteExecutor(
             try
             {
                 var result = await PostAsync<WriteResult>(AgentRoutes.Languages(reference),
-                    new LanguageBranchRequest { Lang = language.Code, Publish = op.Publish, RequestApproval = op.RequestApproval && op.Publish, DryRun = dryRun }, cancellationToken);
+                    new LanguageBranchRequest
+                    {
+                        Lang = language.Code,
+                        Publish = op.Publish,
+                        // A review where the page goes for one; with a project, ready (or a review under a sequence) as the page.
+                        RequestApproval = op.RequestApproval && (op.Publish || op.Ready),
+                        Project = op.Project,
+                        Ready = op.Ready,
+                        DryRun = dryRun,
+                    }, cancellationToken);
                 if (dryRun && op.Publish && !op.RequestApproval)
                 {
                     // Once the block turned out to be localizable. A real run dry-runs every block first, so this is
@@ -1260,6 +1295,10 @@ public sealed class WriteExecutor(
         {
             warnings.Add($"The site's own code changed content while {output.Version ?? output.Ref} was saved: {string.Join("; ", siteChanges.Select(Describe))}.");
         }
+        if (output.Project is { Error: { } projectError } project)
+        {
+            warnings.Add($"{output.Version ?? output.Ref} was saved, but putting it in project {project.Id} ('{project.Name}'){(project.Item is ProjectSaveItems.Added or ProjectSaveItems.Replaced ? " worked and marking it ready" : "")} failed: {projectError}. The save stands; `opticli projects {project.Id}` shows what the project holds, and `opticli projects ready {project.Id} {output.Ref}` marks it ready.");
+        }
         return new WriteOutcome(output, AgentSource, createdId, warnings);
     }
 
@@ -1422,13 +1461,33 @@ public sealed class WriteExecutor(
         {
             return await agent.SendAsync<T>(HttpMethod.Post, route, body, cancellationToken);
         }
-        catch (OptiCliException ex) when (ApprovalRules.Translate(ex) is { } translated)
+        catch (OptiCliException ex) when (ApprovalRules.Translate(ex, body is DraftRequest { Ready: true } or CreateRequest { Ready: true } or UploadRequest { Ready: true } or LanguageBranchRequest { Ready: true }) is { } translated)
         {
             throw translated;
         }
     }
 
     private async Task<AgentClient> AgentAsync(CancellationToken cancellationToken) => _agent ??= await connect(cancellationToken);
+
+    /// <summary>
+    /// A project route (<see cref="ProjectWrites"/>): the drift check first unless <paramref name="dryRun"/>, as for every
+    /// write, then the agent's <see cref="ProjectResult"/>.
+    /// </summary>
+    internal async Task<ProjectResult> ProjectAsync(HttpMethod method, string route, object? body, bool dryRun, CancellationToken cancellationToken)
+    {
+        if (!dryRun)
+        {
+            await RequireDriftAcceptedAsync(cancellationToken);
+        }
+        var agent = await AgentAsync(cancellationToken);
+        return await agent.SendAsync<ProjectResult>(method, route, body, cancellationToken);
+    }
+
+    /// <summary>The database session the writes run against.</summary>
+    internal ContentSession Session => session;
+
+    /// <summary>A person at a terminal confirms (the message, then the question); null when there is none to ask.</summary>
+    internal Func<string, string, bool>? Confirm => confirm;
 
     /// <summary>
     /// Before the first write that isn't a dry run: against a shared database whose content model differs from the

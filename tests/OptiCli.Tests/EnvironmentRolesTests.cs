@@ -54,6 +54,12 @@ public sealed class EnvironmentRolesTests : IDisposable
         "types remove OldPage",
         "types remove-property StandardPage Old",
         "types prune",
+        "projects create Spring",
+        "projects ready Spring 1",
+        "projects remove Spring 1",
+        "projects publish Spring",
+        "projects reactivate Spring",
+        "projects delete Spring",
     ];
 
     public static TheoryData<string> WriteCommandLines() => new(WriteLines);

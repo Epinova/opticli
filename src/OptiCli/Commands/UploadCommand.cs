@@ -40,6 +40,7 @@ internal static class UploadCommand
         command.Options.Add(replace);
         write.AddProperties(command);
         write.AddCommon(command);
+        write.AddProject(command);
 
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
         {
@@ -52,8 +53,10 @@ internal static class UploadCommand
                 ContentGuid = parse.GetValue(guid),
                 Replace = parse.GetValue(replace),
             };
+            // Before the database is opened: --in-project and --ready are checked with the other options.
+            var applied = write.WithApproval(operation, parse);
             await using var session = await context.OpenContentAsync(cancellationToken);
-            return WriteOptions.Result(await context.Writes(session).RunAsync(write.WithApproval(operation, parse), parse.GetValue(write.DryRun), cancellationToken));
+            return WriteOptions.Result(await context.Writes(session).RunAsync(applied, parse.GetValue(write.DryRun), cancellationToken));
         });
         return command;
     }

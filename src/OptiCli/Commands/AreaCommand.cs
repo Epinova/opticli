@@ -49,6 +49,7 @@ internal static class AreaCommand
         command.Options.Add(values);
         command.Options.Add(name);
         write.AddCommon(command);
+        write.AddProject(command);
         write.AddPublishAt(command);
         write.AddIncludeDraft(command);
         write.AddConcurrency(command);
@@ -114,8 +115,10 @@ internal static class AreaCommand
                 Values = inlineValues is { Count: > 0 } ? inlineValues : null,
                 Name = parse.GetValue(name),
             };
+            // Before the database is opened: --in-project and --ready are checked with the other options.
+            var applied = write.WithApproval(operation, parse);
             await using var session = await context.OpenContentAsync(cancellationToken);
-            return WriteOptions.Result(await context.Writes(session, parse.GetValue(content.Site)).RunAsync(write.WithApproval(operation, parse), parse.GetValue(write.DryRun), cancellationToken));
+            return WriteOptions.Result(await context.Writes(session, parse.GetValue(content.Site)).RunAsync(applied, parse.GetValue(write.DryRun), cancellationToken));
         });
         return command;
     }

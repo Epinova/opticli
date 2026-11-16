@@ -27,6 +27,10 @@ public static class SealedPlan
         ["language"] = "changes language branches",
     };
 
+    /// <summary>Why a sealed plan doesn't put drafts in a project.</summary>
+    public const string ProjectRefused =
+        "puts drafts in a project, a review tool on the site itself: editors review and publish projects in production's edit UI, and a sealed run doesn't make or fill them";
+
     /// <summary>
     /// Why an upload can't run without production's blob storage: the run's site would write the file to the local blob folder
     /// while production's database points at it.
@@ -74,10 +78,18 @@ public static class SealedPlan
     {
         var references = model is null ? new HashSet<string>(StringComparer.OrdinalIgnoreCase) : ReferenceProperties(model);
         var problems = new List<string>();
+        if (plan.Project is not null)
+        {
+            problems.Add($"The plan's \"project\" {ProjectRefused}.");
+        }
         foreach (var step in plan.Steps)
         {
             var op = step.Operation;
             var where = $"operations[{step.Index}] ({op.Kind})";
+            if (op.Project is not null && !op.ProjectFromPlan)
+            {
+                problems.Add($"{where} has \"project\": it {ProjectRefused}.");
+            }
             if (RefusedOps.TryGetValue(op.Kind, out var why))
             {
                 problems.Add($"{where} {why}.");

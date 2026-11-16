@@ -63,7 +63,7 @@ production entry's login can write. The one write to production is a sealed appl
 | `history <ref> [--since <date\|7d>] [--by <user>]` | The CMS's change log (`tblActivityLog`) for one item, newest first: `when`, `by`, `action` (`create`, `publish`, `delayedPublish`, `requestApproval`, `rejected`, `checkIn`, `move`, `delete` = to the recycle bin, `restore` = out of it, `deletePermanently`, `deleteLanguage`, `deleteVersion`, ...), `version`, `language`, `name` (as it was), `from`/`to` (`ref`, `name`) for moves, `previousStatus` for a publish. The only record of moves and deletes; drafts saved aren't in it (`versions`), and the Change Log Auto Truncate job removes old entries. |
 | `categories` | The category tree, depth first: `id`, `name` (what `set Category=...` takes; `get` shows it), `description` (edit mode's name, which `set` takes too), `parent`, `path`, `depth`, `selectable` (only those can be set), `visible`, `items` (content that has it), `guid`. |
 | `visitor-groups` | `id` (what `visitorGroups` in `get` and `set` hold), `name`, `match` (`all`, `any`, `points` with `pointsThreshold`), `securityRole` (usable in access rights), `statistics`. Criteria and notes aren't read. |
-| `projects [<id>]` | Projects (versions of several items published together): `id`, `name`, `status`, `created`, `createdBy`, `publishAt`, `items`. With an id, its items: `ref`, `version`, `type`, `name`, `language`, `status`. Read-only. |
+| `projects [<id\|name>]` | Projects (versions of several items published together): `id`, `name`, `status`, `created`, `createdBy`, `publishAt`, `items`, `ready` (items marked Ready to publish: what a publish puts live). With a project (id or exact name), its items: `ref`, `version`, `type`, `name`, `language`, `status` (`checkedIn` = ready). Writes: see [Projects](#projects). |
 | `trash [--since <date\|7d>] [--by <user>] [--type T]` | What is directly in the recycle bin (what was deleted), newest first: identity, `deletedBy`, `deleted` (UTC), `descendants` (below it, coming back with it), `originalParent` (`ref`, `name`, `type`, `path`, `url`; `deleted: true` when it is in the recycle bin too, `missing: true` when it is gone): the parent the CMS stored when it was deleted, where `restore` puts it. Null when the CMS has no record of it (`restore --to`). Read from the database, or from the site while `serve` runs (as `restore` reads it; `meta.source: agent`); a warning says why the site wasn't asked when it wasn't. |
 | `display-templates [--type T]` | CMS 13: Visual Builder display templates: `key`, `name`, `nodeType`/`baseType`/`contentType` it is for (absent: any), `isDefault`, `settings[]` (`key`, `name`, `editor` select or checkbox, `choices`). `--type`: the ones content of that type can use. Empty on CMS 12. |
 | `blob <ref>` | Media only: blob URI, file path on disk (the file blob provider's folder, from appsettings or `EPiServer__Cms__FileBlobProvider__Path` in the environment), `exists`; same for the thumbnail. |
@@ -678,6 +678,44 @@ compared (`checked: false`).
 - CMS 13: types of unknown origin are listed with `ahead: unknown`, `informational: true`; they count toward neither
   `differences` nor the fingerprint, so they don't stop writes. New job classes the site registers at startup aren't
   drift.
+
+### Projects
+
+| Command | Example |
+|---|---|
+| `projects create <name>` | `opticli projects create "Spring campaign"` |
+| `<write> ... --in-project <id\|name> [--ready]` (`set`, `create`, `area`, `composition`, `block create`, `upload`, `translate`) | `opticli set 123 Heading=Hi --in-project "Spring campaign" --ready` |
+| `projects ready <project> <ref>... \| --all [--lang] [--request-approval [--comment text]]` | `opticli projects ready 12 --all` |
+| `projects remove <project> <ref>... [--lang]` | `opticli projects remove 12 123` |
+| `projects publish <project> [--at time] [--include-draft]` | `opticli projects publish 12 --dry-run` (only when the user asked) |
+| `projects reactivate <project>` | `opticli projects reactivate 12` |
+| `projects delete <project>` | `opticli projects delete 12 --dry-run` (only when the user asked) |
+
+- A project is its id or its exact name (case-insensitive); a name two unpublished projects share is a usage error
+  listing their ids. Only `active` and `publishFailed` projects take items or publish; a scheduled one
+  (`delayedPublished`) is a `conflict` whose hint is `projects reactivate`; a published one is a `conflict`.
+- A save with `--in-project` has `project`: `id`, `name`, `item` (`added`, `replaced` with `replaced` the version it
+  replaced, `unchanged`, `none`), `ready`, `editorUi` (`projectMode` or `gadget`), and `error` when the save stood but
+  putting it in the project failed. Not with `--publish`/`--publish-at` (exit 1). Folders and content without versions
+  are refused; content in another unpublished project in the same language is a `conflict` (`inOtherProject`).
+- `--ready` checks the version in (it keeps its version id); under an approval sequence it needs
+  `--request-approval`, which sends it for review instead (it stays in the project). A write with nothing to change
+  puts the version it is based on in the project when that is a draft.
+- Every project write prints the project (`id`, `name`, `status`, `items`, `ready`), `editorUi`, `dryRun`, `valid`.
+  `ready`, `remove`, `reactivate`, `delete`: `items[]` (`content`, `outcome`: `ready`, `approvalRequested`,
+  `alreadyReady`, `skipped`, `removed`, `unscheduled`, `failed` with `error`). `publish`: `published[]` (or
+  `scheduled[]` and `scheduledFor`), `notReady[]`, `alreadyPublished[]`, `failed[]` and `siteError` (the project is
+  then `publishFailed` and publishes again), `siteChanges`, each item's `pendingDraft` and `previouslyPublished`.
+- A refusal over items (`details.reason`: `projectItems`, or the reason all of them share: `pendingDraft`,
+  `approvalSequence`, `inReview`) has `details.project` with every item and its `problem` (`code`, `message`,
+  `reason`); nothing was changed. `nothingReady`: no item is ready. `projectsDisabled` (exit 3): the site's edit UI has
+  neither project mode nor the Projects gadget.
+- `projects publish` on a terminal shows what goes live and what stays behind and asks; elsewhere it publishes as asked.
+  It publishes only ready items, also on gadget sites, whose own Publish puts every unpublished item live.
+- Plans: `"project"` on the plan (every save step; made by the run if no unpublished project has the name; a folder is
+  left out) or on a step (overrides; `null` for none), `"ready": true` per step. A step marked ready whose content a
+  later step changes is marked ready once the plan ran. `data.projects[]`: `id`, `name`, `status` (`existing`,
+  `created`, `toCreate` for a dry run, whose steps are then checked without the project), `markedReady`, `undo`.
 
 ### Approval sequences
 
