@@ -179,7 +179,9 @@ public sealed record BuildSectionArgs(
     [property: Description("The id of the page to build the section below (its newest version gets the new block in its MainContentArea).")] int Page,
     [property: Description("The new section page's name; its child, folder and block are named after it.")] string Name,
     [property: Description("The id of a page to move below the new section.")] int? MovePage = null,
-    [property: Description("Test-only: give the child page a value for a property it doesn't have, so the run fails at that step.")] bool Fail = false);
+    [property: Description("Test-only: give the child page a value for a property it doesn't have, so the run fails at that step.")] bool Fail = false,
+    [property: Description("A CMS project (id or exact name) for the drafts the run saves; the new folder stays out of it.")] string? Project = null,
+    [property: Description("With project: mark the drafts Ready to publish.")] bool Ready = false);
 
 /// <summary>
 /// Create steps with handles, a ContentArea value and an area edit with planned content, a "For this page" folder, and a
@@ -208,6 +210,10 @@ public sealed class FixtureBuildSectionTool(IOptiCliEditor editor) : IOptiCliWri
         if (args.MovePage is { } move)
         {
             plan.Move(editor.Load<IContent>(new ContentReference(move), latest: true), section);
+        }
+        if (!string.IsNullOrWhiteSpace(args.Project))
+        {
+            plan.InProject(args.Project, args.Ready);
         }
         return Task.FromResult(plan);
     }
