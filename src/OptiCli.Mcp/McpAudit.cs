@@ -43,20 +43,41 @@ internal sealed class McpAudit(ILoggerFactory loggers)
             Clean(by), Clean(grant.UserName), Clean(grant.ClientName), Clean(grant.ClientId), grant.GrantId);
 
     /// <summary>A tool call and how it ended; <paramref name="contentRefs"/> are the content references it named.</summary>
-    public void ToolCall(string user, string clientId, string tool, IReadOnlyList<string> contentRefs, string outcome) =>
-        _logger.LogInformation(
-            "MCP tool {Tool} {Outcome}: user {User}, client {ClientId}, content {ContentRefs}",
-            Clean(tool), outcome, Clean(user), Clean(clientId), contentRefs.Count == 0 ? "-" : Clean(string.Join(", ", contentRefs)));
+    /// <param name="project">The CMS project it changed or saved into (<see cref="Tools.ToolAudit.Project(string?, ModelContextProtocol.Protocol.CallToolResult)"/>); null for none.</param>
+    public void ToolCall(string user, string clientId, string tool, IReadOnlyList<string> contentRefs, string outcome, string? project = null)
+    {
+        var content = contentRefs.Count == 0 ? "-" : Clean(string.Join(", ", contentRefs));
+        if (project is null)
+        {
+            _logger.LogInformation("MCP tool {Tool} {Outcome}: user {User}, client {ClientId}, content {ContentRefs}",
+                Clean(tool), outcome, Clean(user), Clean(clientId), content);
+        }
+        else
+        {
+            _logger.LogInformation("MCP tool {Tool} {Outcome}: user {User}, client {ClientId}, content {ContentRefs}, project {Project}",
+                Clean(tool), outcome, Clean(user), Clean(clientId), content, Clean(project));
+        }
+    }
 
     /// <summary>
     /// One step of a site's write tool's plan, as the real run ran it (<see cref="Tools.PlanRunner"/>): the content it
     /// saved, moved or trashed, or the one it failed on. The tool call itself is audited as every call is
     /// (<see cref="ToolCall"/>); its arguments rarely name the content a plan changes.
     /// </summary>
-    public void PlanStep(string user, string clientId, string tool, int step, string kind, string content, string outcome) =>
-        _logger.LogInformation(
-            "MCP tool {Tool} step {Step} {Kind} {Outcome}: user {User}, client {ClientId}, content {Content}",
-            Clean(tool), step, kind, outcome, Clean(user), Clean(clientId), Clean(content));
+    /// <param name="project">The CMS project the step saved into (<see cref="ContentPlan.InProject(string, bool)"/>); null for none.</param>
+    public void PlanStep(string user, string clientId, string tool, int step, string kind, string content, string outcome, string? project = null)
+    {
+        if (project is null)
+        {
+            _logger.LogInformation("MCP tool {Tool} step {Step} {Kind} {Outcome}: user {User}, client {ClientId}, content {Content}",
+                Clean(tool), step, kind, outcome, Clean(user), Clean(clientId), Clean(content));
+        }
+        else
+        {
+            _logger.LogInformation("MCP tool {Tool} step {Step} {Kind} {Outcome}: user {User}, client {ClientId}, content {Content}, project {Project}",
+                Clean(tool), step, kind, outcome, Clean(user), Clean(clientId), Clean(content), Clean(project));
+        }
+    }
 
     /// <summary>
     /// A preview link opened (<see cref="Preview.PreviewLinkMiddleware"/>): the version and language it names, the

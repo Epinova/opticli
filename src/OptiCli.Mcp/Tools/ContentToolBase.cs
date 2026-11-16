@@ -29,8 +29,33 @@ internal abstract class ContentToolBase(IHttpContextAccessor http, IOptions<Opti
         Invoke(scope, gate, (editor, call) => JsonSerializer.Serialize(operation(call), AgentJson.Options));
 
     /// <summary>Runs a read of one content version: the result gets its preview URL when it isn't the published one (<see cref="ResultUrls"/>).</summary>
-    protected string Read(string scope, Func<CmsCall, ContentItem> operation) =>
-        Invoke(scope, null, (editor, call) => ResultUrls.Serialize(operation(call), http.HttpContext!));
+    /// <param name="projects">The projects that hold a version of the content read, for the result's <c>projects</c>.</param>
+    protected string Read(string scope, Func<CmsCall, ContentItem> operation, Func<CmsCall, ContentItem, IReadOnlyList<ContentProject>?>? projects = null) =>
+        Invoke(scope, null, (editor, call) =>
+        {
+            var item = operation(call);
+            return ResultUrls.Serialize(item, http.HttpContext!, projects?.Invoke(call, item));
+        });
+
+    /// <summary>Runs an operation whose result <paramref name="serialize"/> turns into JSON with the request's URLs (a project's).</summary>
+    protected string Run<T>(string scope, Func<CmsCall, T> operation, Func<T, HttpContext, string> serialize, Action<McpEditor>? gate = null) =>
+        Invoke(scope, gate, (editor, call) => serialize(operation(call), http.HttpContext!));
+
+    /// <inheritdoc cref="Run{T}(string, Func{CmsCall, T}, Func{T, HttpContext, string}, Action{McpEditor}?)"/>
+    protected async Task<string> RunAsync<T>(string scope, Func<CmsCall, Task<T>> operation, Func<T, HttpContext, string> serialize, Action<McpEditor>? gate = null)
+    {
+        var editor = McpEditor.From(http);
+        editor.Require(scope);
+        gate?.Invoke(editor);
+        try
+        {
+            return serialize(await operation(editor.Call(Site)), http.HttpContext!);
+        }
+        catch (Exception e) when (ToolErrors.Map(e, _logger) is { } mapped)
+        {
+            throw mapped;
+        }
+    }
 
     /// <summary>
     /// Runs a write: the result gets the public and edit UI URLs of the content it names, and the preview URL of the

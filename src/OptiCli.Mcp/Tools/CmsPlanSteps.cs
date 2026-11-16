@@ -44,7 +44,7 @@ internal sealed class CmsPlanSteps(IHttpContextAccessor http, IOptions<OptiCliMc
     public StepOutcome Check(PlanStep step) => step switch
     {
         UpdateStep update => CheckUpdate(update),
-        CreateStep create => CheckCreate(create),
+        CreateStep create => CheckCreate(FolderOutOfProject(create)),
         MoveStep move => CheckMove(move),
         TrashStep trash => CheckTrash(trash),
         _ => throw new ArgumentOutOfRangeException(nameof(step), step.Kind, "No such step."),
@@ -66,7 +66,7 @@ internal sealed class CmsPlanSteps(IHttpContextAccessor http, IOptions<OptiCliMc
             }
             case CreateStep create:
             {
-                var result = CreateOperation.Run(Call, Create(create, dryRun: false));
+                var result = CreateOperation.Run(Call, Create(FolderOutOfProject(create), dryRun: false));
                 return new StepOutcome(Json(ResultUrls.Serialize(result, result.Content, Context, preview: result.Saved)))
                 {
                     Status = "saved",
@@ -150,6 +150,27 @@ internal sealed class CmsPlanSteps(IHttpContextAccessor http, IOptions<OptiCliMc
             Valid = result.Valid,
             Facts = new JsonObject { ["siblingsOfType"] = SiblingsOfType(call, create, parent, type) },
         };
+    }
+
+    /// <summary>
+    /// A new folder without the plan's project: a folder has no versions to put in one (a save into a project refuses it),
+    /// so a plan that makes a folder for its drafts leaves the folder out, as the CLI's plans do.
+    /// </summary>
+    private CreateStep FolderOutOfProject(CreateStep create)
+    {
+        if (create.Project is null)
+        {
+            return create;
+        }
+        try
+        {
+            return CreateOperation.Kind(TypeOperation.Find(Call, new WriteFlow(Call).Types, create.Type)) == PlacementKind.Folder ? create with { Project = null } : create;
+        }
+        catch (AgentException)
+        {
+            // An unknown type: the create's own dry run says so.
+            return create;
+        }
     }
 
     /// <summary>
@@ -320,6 +341,8 @@ internal sealed class CmsPlanSteps(IHttpContextAccessor http, IOptions<OptiCliMc
             : null,
         BaseVersion = baseVersion,
         DryRun = dryRun,
+        Project = update.Project?.Project,
+        Ready = update.Project?.Ready ?? false,
     };
 
     private static CreateRequest Create(CreateStep create, bool dryRun) => new()
@@ -332,6 +355,8 @@ internal sealed class CmsPlanSteps(IHttpContextAccessor http, IOptions<OptiCliMc
         Properties = create.Properties.Count > 0 ? PlanValues.Elements(create.Properties) : null,
         ParentType = dryRun ? create.PlannedParentType : null,
         DryRun = dryRun,
+        Project = create.Project?.Project,
+        Ready = create.Project?.Ready ?? false,
     };
 
     /// <summary>The content, as the operations take it: the version is the step's to say (an update's base version).</summary>

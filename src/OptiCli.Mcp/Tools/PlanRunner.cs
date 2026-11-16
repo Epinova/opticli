@@ -160,11 +160,11 @@ internal sealed class PlanRunner(
             StepOutcome outcome;
             try
             {
-                outcome = cms.Run(Resolve(plan, step, created), checks[i].Outcome!.Facts);
+                outcome = cms.Run(InProject(plan, Resolve(plan, step, created)), checks[i].Outcome!.Facts);
             }
             catch (Exception e) when (Error(e) is { } error)
             {
-                audit?.PlanStep(editor, client, tool, step.Number, step.KindName, Target(step, created), "failed");
+                audit?.PlanStep(editor, client, tool, step.Number, step.KindName, Target(step, created), "failed", AuditProject(plan, step));
                 reports.Add(Head(step, "failed", error));
                 reports.AddRange(checks.Skip(i + 1).Select(c => Head(c.Step, "notRun")));
                 var saved = i == 0 ? "No step was saved." : i == 1 ? "Step 1 was saved and stays saved." : $"Steps 1 to {i} were saved and stay saved.";
@@ -179,7 +179,7 @@ internal sealed class PlanRunner(
             {
                 created[step.Number] = made.ToReferenceWithoutVersion();
             }
-            audit?.PlanStep(editor, client, tool, step.Number, step.KindName, outcome.Content?.ToString() ?? Target(step, created), outcome.Status ?? "saved");
+            audit?.PlanStep(editor, client, tool, step.Number, step.KindName, outcome.Content?.ToString() ?? Target(step, created), outcome.Status ?? "saved", AuditProject(plan, step));
             var report = Head(step, outcome.Status ?? "saved");
             Merge(report, outcome.Report);
             reports.Add(report);
@@ -226,7 +226,7 @@ internal sealed class PlanRunner(
             var (checkable, uncheckedValues) = Checkable(plan, step);
             try
             {
-                var outcome = cms.Check(checkable);
+                var outcome = cms.Check(InProject(plan, checkable));
                 var below = BelowTrashed(trashed, checkable);
                 if (step is TrashStep trash)
                 {
@@ -384,6 +384,13 @@ internal sealed class PlanRunner(
         };
     }
 
+    /// <summary><paramref name="step"/> with the plan's project, when it saves a draft (<see cref="ContentPlan.InProject(string, bool)"/>).</summary>
+    private static PlanStep InProject(ContentPlan plan, PlanStep step) =>
+        plan.Project is { } project && step.SavesDraft ? step with { Project = project } : step;
+
+    /// <summary>The project a step saved into, for its audit line; null for none.</summary>
+    private static string? AuditProject(ContentPlan plan, PlanStep step) => step.SavesDraft ? plan.Project?.Project : null;
+
     /// <summary>The content a step names, for the audit of a step that failed.</summary>
     private static string Target(PlanStep step, IReadOnlyDictionary<int, ContentReference> created) => step switch
     {
@@ -494,6 +501,10 @@ internal sealed class PlanRunner(
             ["arguments"] = arguments.DeepClone(),
             ["steps"] = steps,
         };
+        if (plan.Project is { } project)
+        {
+            data["project"] = new JsonObject { ["project"] = project.Project, ["ready"] = project.Ready };
+        }
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(data.ToJsonString())));
     }
 

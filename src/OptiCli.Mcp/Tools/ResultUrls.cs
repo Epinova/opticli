@@ -54,6 +54,16 @@ internal static class ResultUrls
 
     public const string AssistantPreviewExpires = "assistantPreviewExpires";
 
+    public const string ProjectUrl = "projectUrl";
+
+    public const string ProjectNote = "projectNote";
+
+    /// <summary>
+    /// Where a project is in a site with only the Projects gadget (<see cref="ProjectEditorUi.Gadget"/>), in place of a
+    /// <see cref="ProjectUrl"/>: there, the edit UI's project link opens an empty overview.
+    /// </summary>
+    public const string GadgetNote = "This site's CMS has no project mode, so there is no link to the project: the user opens the Projects gadget in the CMS edit UI (Add Gadgets in a pane, if it isn't there yet) and picks the project. Its Publish button puts every unpublished item of the project live, ready or not.";
+
     /// <summary>What the tool descriptions say about <see cref="AssistantPreview"/>, whether or not the site allows it.</summary>
     public const string AssistantPreviewNote = "Unless this site turned them off (whoami: allowPreviewLinks), assistantPreviewUrl is a short-lived link to the same preview that you may fetch yourself, without a sign-in.";
 
@@ -80,13 +90,123 @@ internal static class ResultUrls
             json[Preview] = previewUrl;
             AddAssistantPreview(json, content.Ref, content.Language, context);
         }
+        // A save into a project (WriteResult.Project): where the editor finds the project.
+        if (json["project"] is JsonObject project && project["id"] is JsonValue id && id.TryGetValue<int>(out var projectId))
+        {
+            AddProjectLink(project, projectId, project["editorUi"]?.GetValue<string>(), context);
+        }
         return json.ToJsonString(AgentJson.Options);
     }
 
+    /// <summary>
+    /// A project tool's result as JSON: where the project is in the edit UI (<see cref="ProjectUrl"/>, or
+    /// <see cref="ProjectNote"/>), and for each item its <see cref="Edit"/> URL, plus its <see cref="Public"/> one when the
+    /// project's publish put it live.
+    /// </summary>
+    public static string SerializeProject(ProjectResult result, HttpContext context)
+    {
+        var json = JsonSerializer.SerializeToNode(result, AgentJson.Options)!.AsObject();
+        AddProjectLink(json, result.Project.Id, result.EditorUi, context);
+        foreach (var list in new[] { "items", "published", "scheduled", "failed", "notReady", "alreadyPublished" })
+        {
+            AddItemUrls(json[list] as JsonArray, context, publicUrl: list == "published" && !result.DryRun);
+        }
+        return json.ToJsonString(AgentJson.Options);
+    }
+
+    /// <inheritdoc cref="SerializeProject(ProjectResult, HttpContext)"/>
+    public static string SerializeProject(ProjectDetails details, HttpContext context)
+    {
+        var json = JsonSerializer.SerializeToNode(details, AgentJson.Options)!.AsObject();
+        AddProjectLink(json, details.Project.Id, details.EditorUi, context);
+        AddItemUrls(json["items"] as JsonArray, context, publicUrl: false);
+        return json.ToJsonString(AgentJson.Options);
+    }
+
+    /// <summary><c>list_projects</c>' result: each project with its <see cref="ProjectUrl"/>, or one <see cref="ProjectNote"/> for all.</summary>
+    public static string SerializeProjects(ProjectList list, HttpContext context)
+    {
+        var json = JsonSerializer.SerializeToNode(list, AgentJson.Options)!.AsObject();
+        if (list.EditorUi == ProjectEditorUi.Gadget)
+        {
+            json[ProjectNote] = GadgetNote;
+        }
+        else if (json["projects"] is JsonArray projects)
+        {
+            foreach (var project in projects.OfType<JsonObject>())
+            {
+                if (project["id"] is JsonValue id && id.TryGetValue<int>(out var projectId))
+                {
+                    AddProjectLink(project, projectId, list.EditorUi, context);
+                }
+            }
+        }
+        return json.ToJsonString(AgentJson.Options);
+    }
+
+    /// <summary>
+    /// The edit UI's link to project <paramref name="id"/>, where project mode is on (<see cref="ProjectEditorUi.ProjectMode"/>):
+    /// <c>&lt;edit UI root&gt;#context=epi.cms.project:///&lt;id&gt;</c>, the root as the CMS's own <see cref="EditUrlResolver"/>
+    /// gives it for <see cref="Edit"/> URLs, on the site's edit host. It opens the project overview, and makes the project
+    /// the editor's current one in the edit UI. Null elsewhere: with only the gadget the link opens an empty overview.
+    /// </summary>
+    public static string? ProjectLink(int id, string? editorUi, HttpContext context)
+    {
+        return id <= 0 || editorUi != ProjectEditorUi.ProjectMode || EditUrl(ContentReference.RootPage, null, context) is not { } edit
+            ? null
+            : ProjectLinkOn(edit, id);
+    }
+
+    /// <summary>The link to project <paramref name="id"/> in the edit UI that <paramref name="editUrl"/> (any content's edit URL) opens.</summary>
+    internal static string ProjectLinkOn(string editUrl, int id)
+    {
+        var root = editUrl[..(editUrl.IndexOfAny(['?', '#']) is var cut and >= 0 ? cut : editUrl.Length)];
+        return string.Create(CultureInfo.InvariantCulture, $"{root}#context=epi.cms.project:///{id}");
+    }
+
+    /// <summary>Adds <see cref="ProjectUrl"/> to <paramref name="json"/> where project mode is on, <see cref="ProjectNote"/> where only the gadget is.</summary>
+    private static void AddProjectLink(JsonObject json, int id, string? editorUi, HttpContext context)
+    {
+        if (ProjectLink(id, editorUi, context) is { } url)
+        {
+            json[ProjectUrl] = url;
+        }
+        else if (editorUi == ProjectEditorUi.Gadget && id > 0)
+        {
+            json[ProjectNote] = GadgetNote;
+        }
+    }
+
+    /// <summary>Adds each item's <see cref="Edit"/> URL (and <see cref="Public"/>, with <paramref name="publicUrl"/>), from its <c>content</c>.</summary>
+    private static void AddItemUrls(JsonArray? items, HttpContext context, bool publicUrl)
+    {
+        foreach (var item in items?.OfType<JsonObject>() ?? [])
+        {
+            // A version that no longer exists has no name or GUID, and nothing to open.
+            if (item["content"]?.Deserialize<ContentSummary>(AgentJson.Options) is not { Guid: var guid } content || guid == Guid.Empty)
+            {
+                continue;
+            }
+            if (publicUrl && PublicUrl(content, context) is { } url)
+            {
+                item[Public] = url;
+            }
+            if (EditUrl(content, context) is { } editUrl)
+            {
+                item[Edit] = editUrl;
+            }
+        }
+    }
+
     /// <summary><c>get_content</c>'s result, with <see cref="Preview"/> added when the version it read isn't published.</summary>
-    public static string Serialize(ContentItem item, HttpContext context)
+    /// <param name="projects">The projects that hold a version of the content, added as <c>projects</c>; none when null.</param>
+    public static string Serialize(ContentItem item, HttpContext context, IReadOnlyList<ContentProject>? projects = null)
     {
         var json = JsonSerializer.SerializeToNode(item, AgentJson.Options)!.AsObject();
+        if (projects is { Count: > 0 })
+        {
+            json["projects"] = JsonSerializer.SerializeToNode(projects, AgentJson.Options);
+        }
         // The item's ref names the content; the version it read is its version.
         var version = ContentReference.TryParse(item.Ref, out var link) && item.Version is { } id
             ? new ContentReference(link.ID, id, link.ProviderName).ToString()

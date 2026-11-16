@@ -26,7 +26,8 @@ internal sealed class ModuleTools
 {
     /// <param name="Custom">The site's, not the module's: its exceptions are mapped by <see cref="ToolErrors.InnerFilter"/>.</param>
     /// <param name="Deletes">Offered only where the site allows deleting (<see cref="OptiCliMcpOptions.AllowDelete"/>): <c>delete_content</c>, and a write tool that may trash.</param>
-    internal sealed record Entry(McpServerTool Tool, bool Custom, bool Deletes);
+    /// <param name="Publishes">Offered only where the site allows publishing (<see cref="OptiCliMcpOptions.AllowPublish"/>): the project publish tools (<see cref="ProjectPublishTools"/>).</param>
+    internal sealed record Entry(McpServerTool Tool, bool Custom, bool Deletes, bool Publishes = false);
 
     private readonly HashSet<McpServerTool> _custom = new(ReferenceEqualityComparer.Instance);
 
@@ -78,7 +79,8 @@ internal sealed class ModuleTools
     public IReadOnlyList<Entry> All { get; }
 
     /// <summary>The tools the module's server offers on a site with <paramref name="site"/>'s options.</summary>
-    public IEnumerable<McpServerTool> Offered(OptiCliMcpOptions site) => All.Where(e => site.AllowDelete || !e.Deletes).Select(e => e.Tool);
+    public IEnumerable<McpServerTool> Offered(OptiCliMcpOptions site) =>
+        All.Where(e => (site.AllowDelete || !e.Deletes) && (site.AllowPublish || !e.Publishes)).Select(e => e.Tool);
 
     /// <summary>Whether <paramref name="tool"/> is one of the site's that the module made (not a copy another server made).</summary>
     public bool IsCustom(McpServerTool? tool) => tool is not null && _custom.Contains(tool);
@@ -98,7 +100,7 @@ internal sealed class ModuleTools
         {
             throw new InvalidOperationException($"WithTools<{type.FullName}>(), method {method.Name}: the MCP SDK can't make a tool of it: {e.Message}", e);
         }
-        return new Entry(tool, custom, tool.ProtocolTool.Name == DeleteTool.ToolName && !custom);
+        return new Entry(tool, custom, tool.ProtocolTool.Name == DeleteTool.ToolName && !custom, Publishes: type == typeof(ProjectPublishTools));
     }
 
     /// <summary>The SDK's own: without services (never the case in a call) the class's parameterless constructor.</summary>

@@ -30,6 +30,10 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
 
     internal const string IncludeDraft = "Also put live the unpublished changes someone else saved (the pendingDraft of a refused call): only after asking the user.";
 
+    internal const string Project = "Put the saved draft in this CMS project (its id or exact name; create_project makes one), in place of the content's earlier version there, so the user reviews it with the project's other items and it goes live with them. Only when the user wants it in that project: name it on every save that should go there. Not with publish or publishAt.";
+
+    internal const string Ready = "With project: mark the saved draft Ready to publish in the project, so publishing the project puts it live. Only when the user wants it ready. Where an approval sequence applies it is refused, unless requestApproval, which sends it for review instead.";
+
     internal const string Properties = "Property values by name, e.g. {\"Heading\": \"Text\", \"MainBody\": \"<p>XHTML</p>\"}: strings, numbers, booleans, content refs, ContentArea arrays of {ref} (a shared block) or {type, properties} (an inline block, values as plain values: a whole area replaces the area, and an inline item keeps a block's other values only as an exact copy of it); \"MainArea[2]\": {...} sets values of the one inline block at that position; null clears. Names and types: get_content_type.";
 
     [McpServerTool(Name = "create_content", Title = "Create content", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
@@ -44,7 +48,9 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
         [Description(Publish)] bool publish = false,
         [Description(RequestApproval)] bool requestApproval = false,
         [Description(PublishAt)] DateTime? publishAt = null,
-        [Description(DryRun)] bool dryRun = false) =>
+        [Description(DryRun)] bool dryRun = false,
+        [Description(Project)] string? project = null,
+        [Description(Ready)] bool ready = false) =>
         Write(Scopes.Write, call => CreateOperation.Run(call, new CreateRequest
         {
             Type = type,
@@ -57,6 +63,8 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
             RequestApproval = requestApproval,
             PublishAt = publishAt,
             DryRun = dryRun,
+            Project = Blank(project),
+            Ready = ready,
         }), PublishingIf(publish || publishAt is not null));
 
     [McpServerTool(Name = "update_content", Title = "Update content", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
@@ -72,7 +80,9 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
         [Description(Publish)] bool publish = false,
         [Description(RequestApproval)] bool requestApproval = false,
         [Description(PublishAt)] DateTime? publishAt = null,
-        [Description(IncludeDraft)] bool includeDraft = false) =>
+        [Description(IncludeDraft)] bool includeDraft = false,
+        [Description(Project)] string? project = null,
+        [Description(Ready)] bool ready = false) =>
         Write(Scopes.Write, call => DraftOperation.Run(call, reference, new DraftRequest
         {
             Properties = properties,
@@ -85,6 +95,8 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
             RequestApproval = requestApproval,
             PublishAt = publishAt,
             IncludeDraft = includeDraft,
+            Project = Blank(project),
+            Ready = ready,
         }), PublishingIf(publish || publishAt is not null));
 
     [McpServerTool(Name = "add_language", Title = "Add language", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
@@ -96,7 +108,9 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
         [Description(Properties)] Dictionary<string, JsonElement>? properties = null,
         [Description(Publish)] bool publish = false,
         [Description(RequestApproval)] bool requestApproval = false,
-        [Description(DryRun)] bool dryRun = false) =>
+        [Description(DryRun)] bool dryRun = false,
+        [Description(Project)] string? project = null,
+        [Description(Ready)] bool ready = false) =>
         Write(Scopes.Write, call => LanguagesOperation.Run(call, reference, new LanguageBranchRequest
         {
             Lang = lang,
@@ -105,6 +119,8 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
             Publish = publish,
             RequestApproval = requestApproval,
             DryRun = dryRun,
+            Project = Blank(project),
+            Ready = ready,
         }), PublishingIf(publish));
 
     [McpServerTool(Name = "discard_draft", Title = "Discard draft", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
@@ -136,7 +152,9 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
         [Description("Existing media (id or GUID) to give this file instead, as a new version.")] string? replace = null,
         [Description(Publish)] bool publish = false,
         [Description(RequestApproval)] bool requestApproval = false,
-        [Description(DryRun)] bool dryRun = false) =>
+        [Description(DryRun)] bool dryRun = false,
+        [Description(Project)] string? project = null,
+        [Description(Ready)] bool ready = false) =>
         Write(Scopes.Write, call => UploadOperation.Run(call, new UploadRequest
         {
             FileName = fileName,
@@ -150,6 +168,8 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
             Publish = publish,
             RequestApproval = requestApproval,
             DryRun = dryRun,
+            Project = Blank(project),
+            Ready = ready,
         }), editor =>
         {
 #if CMS13
@@ -167,6 +187,9 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
         [Description("The new parent: id or GUID.")] string destination,
         [Description("Only check that the move is allowed.")] bool dryRun = false) =>
         Move(Scopes.Write, call => MoveOperation.Run(call, reference, new MoveRequest { Parent = destination, DryRun = dryRun }));
+
+    /// <summary>An empty argument as none: assistants send "" for an optional string as often as they leave it out.</summary>
+    private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 }
 
 /// <summary>Deleting, always to the recycle bin; only registered when the site allows it (<see cref="OptiCliMcpOptions.AllowDelete"/>).</summary>

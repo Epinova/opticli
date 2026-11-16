@@ -17,7 +17,21 @@ internal abstract record PlanStep
 
     /// <summary>The kind as results and the audit name it: <c>update</c>, <c>create</c>, <c>move</c>, <c>trash</c>.</summary>
     public string KindName => Kind.ToString().ToLowerInvariant();
+
+    /// <summary>
+    /// For an update or a create: the CMS project its draft goes into (<see cref="ContentPlan.InProject(string, bool)"/>),
+    /// set by <see cref="PlanRunner"/> as it checks and runs the step; null for none.
+    /// </summary>
+    public PlanProject? Project { get; init; }
+
+    /// <summary>Whether the step saves a draft, which <see cref="ContentPlan.InProject(string, bool)"/> puts in its project.</summary>
+    public bool SavesDraft => Kind is ContentPlanKinds.Update or ContentPlanKinds.Create;
 }
+
+/// <summary>A plan's CMS project (<see cref="ContentPlan.InProject(string, bool)"/>).</summary>
+/// <param name="Project">Its id or exact name, as the tool gave it.</param>
+/// <param name="Ready">Mark each saved draft Ready to publish.</param>
+internal sealed record PlanProject(string Project, bool Ready);
 
 /// <param name="Content">The content, with the version the change is based on (none: the latest).</param>
 /// <param name="Language">The branch, as the content passed was loaded; null for content without languages.</param>

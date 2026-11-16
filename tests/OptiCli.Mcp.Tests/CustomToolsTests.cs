@@ -107,7 +107,7 @@ public sealed class CustomToolsTests
     {
         // What AddOptiCliMcp registered before the module made its tools itself.
         var sdk = new ServiceCollection();
-        sdk.AddMcpServer().WithTools<WhoAmITool>().WithTools<ReadTools>().WithTools<WriteTools>().WithTools<PublishTools>().WithTools<DeleteTool>();
+        sdk.AddMcpServer().WithTools<WhoAmITool>().WithTools<ReadTools>().WithTools<WriteTools>().WithTools<PublishTools>().WithTools<ProjectTools>().WithTools<ProjectPublishTools>().WithTools<DeleteTool>();
         await using var provider = sdk.BuildServiceProvider();
         var expected = provider.GetServices<McpServerTool>().Select(Protocol).ToList();
 

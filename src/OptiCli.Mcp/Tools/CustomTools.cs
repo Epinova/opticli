@@ -17,9 +17,9 @@ namespace OptiCli.Mcp.Tools;
 internal sealed partial class CustomTools
 {
     /// <summary>The module's own tool classes, in the order the module offers their tools.</summary>
-    internal static readonly Type[] BuiltInTypes = [typeof(WhoAmITool), typeof(ReadTools), typeof(WriteTools), typeof(PublishTools), typeof(DeleteTool)];
+    internal static readonly Type[] BuiltInTypes = [typeof(WhoAmITool), typeof(ReadTools), typeof(WriteTools), typeof(PublishTools), typeof(ProjectTools), typeof(ProjectPublishTools), typeof(DeleteTool)];
 
-    /// <summary>The built-in tools' names, every one of them, also those a site may not be offered (<c>delete_content</c>).</summary>
+    /// <summary>The built-in tools' names, every one of them, also those a site may not be offered (<c>delete_content</c>, <c>publish_project</c>).</summary>
     internal static readonly IReadOnlySet<string> BuiltInNames = BuiltInTypes.SelectMany(ToolMethods).Select(m => m.GetCustomAttribute<McpServerToolAttribute>()!.Name!).ToHashSet(StringComparer.Ordinal);
 
     private readonly List<Type> _readTools = [];

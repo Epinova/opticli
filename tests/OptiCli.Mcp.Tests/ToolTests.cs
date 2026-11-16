@@ -25,9 +25,12 @@ namespace OptiCli.Mcp.Tests;
 /// </summary>
 public sealed class ToolTests
 {
-    private static readonly string[] ReadOnlyTools = ["whoami", "get_content", "list_children", "resolve_url", "find_content", "get_content_type", "list_versions", "view_media"];
+    private static readonly string[] ReadOnlyTools = ["whoami", "get_content", "list_children", "resolve_url", "find_content", "get_content_type", "list_versions", "view_media", "list_projects", "get_project"];
 
-    private static readonly string[] WritingTools = ["create_content", "update_content", "add_language", "discard_draft", "upload_media", "move_content", "publish_content", "unpublish_content"];
+    private static readonly string[] WritingTools = ["create_content", "update_content", "add_language", "discard_draft", "upload_media", "move_content", "publish_content", "unpublish_content", "create_project", "mark_ready_to_publish", "remove_from_project"];
+
+    /// <summary>Offered only where the site allows publishing: publishing a project changes what visitors see in one go.</summary>
+    private static readonly string[] ProjectPublishingTools = ["publish_project", "reactivate_project"];
 
     [Fact]
     public async Task Every_tool_is_offered_with_its_annotations_and_delete_only_when_the_site_allows_it()
@@ -41,15 +44,63 @@ public sealed class ToolTests
         Assert.All(ReadOnlyTools, name => Assert.Equal((true, false, true, false), Hints(tools[name])));
         Assert.All(WritingTools, name => Assert.False(tools[name].ReadOnlyHint));
         Assert.All(tools.Values, a => Assert.False(a.OpenWorldHint));
-        Assert.Equal(new[] { "discard_draft", "move_content", "publish_content", "unpublish_content" },
+        Assert.Equal(new[] { "discard_draft", "move_content", "publish_content", "remove_from_project", "unpublish_content" },
             WritingTools.Where(name => tools[name].DestructiveHint == true).Order());
         Assert.DoesNotContain("set_access", tools.Keys);
         Assert.DoesNotContain("remove_language", tools.Keys);
+        Assert.DoesNotContain("delete_project", tools.Keys);
 
         await using var deleting = await TestSite.StartAsync(o => o.AllowDelete = true);
         await using var deletingClient = await Connect(deleting);
         var delete = Assert.Single(await deletingClient.ListToolsAsync(), t => t.Name == "delete_content");
         Assert.Equal((false, true, true, false), Hints(delete.ProtocolTool.Annotations!));
+        Assert.DoesNotContain(await deletingClient.ListToolsAsync(), t => ProjectPublishingTools.Contains(t.Name));
+    }
+
+    [Fact]
+    public async Task Publishing_a_project_is_offered_only_where_the_site_allows_publishing()
+    {
+        await using var site = await TestSite.StartAsync(o => o.AllowPublish = true);
+        await using var client = await Connect(site);
+
+        var tools = (await client.ListToolsAsync()).ToDictionary(t => t.Name, t => t.ProtocolTool.Annotations!);
+
+        // Everything a site without publishing has, and the project's publish tools: nothing else changes.
+        Assert.Equal(ReadOnlyTools.Concat(WritingTools).Concat(ProjectPublishingTools).Order(), tools.Keys.Order());
+        Assert.All(ProjectPublishingTools, name => Assert.Equal((false, true, false, false), Hints(tools[name])));
+    }
+
+    [Theory]
+    [InlineData("publish_project", """{"project":"Spring campaign"}""")]
+    [InlineData("publish_project", """{"project":"12","dryRun":true}""")]
+    [InlineData("reactivate_project", """{"project":"12"}""")]
+    public async Task Publishing_a_project_needs_the_publish_scope_and_checks_the_site_should_it_be_called_regardless(string tool, string arguments)
+    {
+        await using var site = await TestSite.StartAsync(o => o.AllowPublish = true);
+        await using var client = await Connect(site, scope: "content:read content:write");
+
+        var error = await CallFailing(client, tool, arguments);
+
+        Assert.Equal((AgentErrorCodes.Refused, McpErrorReasons.MissingScope), (error.Code, error.Reason));
+        Assert.Contains("content:publish", error.Message);
+        var line = Assert.Single(site.Audit.Audit, l => l.Contains($"MCP tool {tool} failed", StringComparison.Ordinal));
+        Assert.Contains(", project ", line);
+    }
+
+    [Theory]
+    [InlineData("create_project", """{"name":"Spring campaign"}""")]
+    [InlineData("mark_ready_to_publish", """{"project":"12","all":true}""")]
+    [InlineData("remove_from_project", """{"project":"12","items":["123"]}""")]
+    [InlineData("create_content", """{"type":"ArticlePage","name":"News","parent":"123","project":"12"}""")]
+    public async Task A_read_only_connection_can_not_change_a_project(string tool, string arguments)
+    {
+        await using var site = await TestSite.StartAsync(o => o.AllowPublish = true);
+        await using var client = await Connect(site, scope: "content:read");
+
+        var error = await CallFailing(client, tool, arguments);
+
+        Assert.Equal((AgentErrorCodes.Refused, McpErrorReasons.MissingScope), (error.Code, error.Reason));
+        Assert.Contains("content:write", error.Message);
     }
 
     [Fact]
@@ -84,6 +135,21 @@ public sealed class ToolTests
         await using var openClient = await Connect(open);
         Assert.Contains("only when the user asks for it", openClient.ServerInstructions);
         Assert.DoesNotContain("Deleting is turned off", openClient.ServerInstructions);
+
+        // Projects: when to suggest one, that a save names it every time, where the user finds it, what goes live.
+        Assert.Contains(McpInstructions.Projects, instructions);
+        Assert.Contains("ask whether to put them in a project", instructions);
+        Assert.Contains("only when it names it", instructions);
+        Assert.Contains("projectUrl", instructions);
+        Assert.Contains("projectNote", instructions);
+        Assert.Contains("current project", instructions);
+        Assert.Contains(McpInstructions.ProjectPublishingOff, instructions);
+        Assert.DoesNotContain("publish_project", instructions);
+        Assert.Contains("every unpublished item live, ready or not", instructions);
+        Assert.Contains(McpInstructions.ProjectPublishing, openClient.ServerInstructions);
+        Assert.Contains("only its items marked Ready to publish", openClient.ServerInstructions);
+        Assert.Contains("dryRun first", McpInstructions.ProjectPublishing);
+        Assert.DoesNotContain(McpInstructions.ProjectPublishingOff, openClient.ServerInstructions);
     }
 
     [Fact]

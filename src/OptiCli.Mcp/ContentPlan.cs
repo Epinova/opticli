@@ -15,7 +15,8 @@ namespace OptiCli.Mcp;
 /// <para>
 /// Nothing here changes anything: the module does the dry run and the real run itself. Before saving the first step
 /// it checks them all; a step that fails stops the run, and the steps before it stay saved (there is no transaction
-/// across CMS saves). Nothing in a plan publishes, and nothing deletes for good: trash is the recycle bin.
+/// across CMS saves). Nothing in a plan publishes, and nothing deletes for good: trash is the recycle bin. The drafts can
+/// go into a CMS project (<see cref="InProject(string, bool)"/>), which the editor then publishes.
 /// </para>
 /// <para>
 /// A plan must come out the same for the same content and arguments (<see cref="IOptiCliWriteTool{TArgs}"/>): the real
@@ -38,6 +39,45 @@ public sealed class ContentPlan
     public int Count => _steps.Count;
 
     internal IReadOnlyList<PlanStep> Steps => _steps;
+
+    /// <summary>The CMS project every draft of the plan goes into (<see cref="InProject(string, bool)"/>); null for none.</summary>
+    internal PlanProject? Project { get; private set; }
+
+    /// <summary>
+    /// Puts the draft every update and create of the plan saves in the CMS project <paramref name="project"/> (its id or its
+    /// exact name), as the save tools' <c>project</c> does: in place of the content's earlier version there, so the editor
+    /// reviews them together in the CMS and they go live together when the project is published. Moves and trashes save
+    /// no draft, so they aren't in it. The project must exist (<c>create_project</c> makes one), be active, and the content
+    /// mustn't be in another project; the dry run checks each step against it.
+    /// </summary>
+    /// <remarks>
+    /// Name the project from the tool's arguments only when the editor asked for it: a write joins a project only when the
+    /// call names it. The plan token covers the project, so a real run with another one is refused.
+    /// </remarks>
+    /// <param name="ready">
+    /// Also mark each saved draft Ready to publish, so publishing the project puts it live. Where an approval sequence
+    /// applies to a step's content, that step is refused (a plan sends nothing for review).
+    /// </param>
+    /// <exception cref="InvalidOperationException">The plan was put in another project, or with another <paramref name="ready"/>, already.</exception>
+    public ContentPlan InProject(string project, bool ready = false)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(project);
+        var named = new PlanProject(project.Trim(), ready);
+        if (Project is { } earlier && earlier != named)
+        {
+            throw new InvalidOperationException($"The plan is in project '{earlier.Project}'{(earlier.Ready ? " with ready" : "")} already: a plan goes into one project, once.");
+        }
+        Project = named;
+        return this;
+    }
+
+    /// <summary>Puts the plan's drafts in the CMS project with id <paramref name="projectId"/>.</summary>
+    /// <inheritdoc cref="InProject(string, bool)"/>
+    public ContentPlan InProject(int projectId, bool ready = false)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(projectId);
+        return InProject(projectId.ToString(CultureInfo.InvariantCulture), ready);
+    }
 
     /// <summary>
     /// A new draft of <paramref name="content"/>, in its language, with the changes <paramref name="change"/> makes, as

@@ -1,4 +1,8 @@
+using System.Text.Json;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using OptiCli.Mcp.Tools;
+using OptiCli.Protocol;
 
 namespace OptiCli.Mcp.Tests;
 
@@ -37,4 +41,50 @@ public sealed class ResultUrlsTests
     [InlineData(null, null)]
     public void The_preview_goes_on_the_edit_links_host(string? editUrl, string? origin) =>
         Assert.Equal(origin, ResultUrls.Origin(editUrl));
+
+    [Theory]
+    [InlineData("https://edit.example.com/EPiServer/CMS/?language=en#context=epi.cms.contentdata:///1", 30, "https://edit.example.com/EPiServer/CMS/#context=epi.cms.project:///30")]
+    [InlineData("http://127.0.0.1:5200/Optimizely/CMS/#context=epi.cms.contentdata:///1", 14, "http://127.0.0.1:5200/Optimizely/CMS/#context=epi.cms.project:///14")]
+    [InlineData("https://alloy.example.com/ui/CMS/", 7, "https://alloy.example.com/ui/CMS/#context=epi.cms.project:///7")]
+    public void A_project_link_is_on_the_edit_uis_own_root(string editUrl, int id, string expected) =>
+        Assert.Equal(expected, ResultUrls.ProjectLinkOn(editUrl, id));
+
+    [Fact]
+    public void Where_editors_have_only_the_projects_gadget_a_result_says_where_the_project_is_instead_of_linking_to_it()
+    {
+        var context = new DefaultHttpContext { RequestServices = new ServiceCollection().BuildServiceProvider() };
+        var result = new ProjectResult
+        {
+            Project = new ProjectSummary { Id = 12, Name = "Spring campaign", Status = ProjectStatuses.Active },
+            EditorUi = ProjectEditorUi.Gadget,
+            Items = [new ProjectItemResult { Content = new ContentSummary { Ref = "5_6", Id = 5, Guid = Guid.Empty, Name = "" }, Outcome = ProjectItemOutcomes.Removed }],
+        };
+
+        using var gadget = JsonDocument.Parse(ResultUrls.SerializeProject(result, context));
+        Assert.Equal(ResultUrls.GadgetNote, gadget.RootElement.GetProperty(ResultUrls.ProjectNote).GetString());
+        Assert.False(gadget.RootElement.TryGetProperty(ResultUrls.ProjectUrl, out _));
+        // A version that no longer exists has nothing to open.
+        Assert.False(gadget.RootElement.GetProperty("items")[0].TryGetProperty(ResultUrls.Edit, out _));
+
+        // Project mode, without a CMS edit UI to link into: neither.
+        using var none = JsonDocument.Parse(ResultUrls.SerializeProject(result with { EditorUi = ProjectEditorUi.ProjectMode }, context));
+        Assert.False(none.RootElement.TryGetProperty(ResultUrls.ProjectUrl, out _));
+        Assert.False(none.RootElement.TryGetProperty(ResultUrls.ProjectNote, out _));
+        // A dry-run create has no project to link to yet.
+        Assert.Null(ResultUrls.ProjectLink(0, ProjectEditorUi.ProjectMode, context));
+
+        using var list = JsonDocument.Parse(ResultUrls.SerializeProjects(new ProjectList { Projects = [result.Project], EditorUi = ProjectEditorUi.Gadget }, context));
+        Assert.Equal(ResultUrls.GadgetNote, list.RootElement.GetProperty(ResultUrls.ProjectNote).GetString());
+    }
+
+    [Fact]
+    public void A_save_into_a_project_says_where_the_project_is()
+    {
+        var context = new DefaultHttpContext { RequestServices = new ServiceCollection().BuildServiceProvider() };
+        var saved = new WriteResult { Saved = true, Project = new ProjectSaveResult(12, "Spring campaign") { Item = ProjectSaveItems.Added, EditorUi = ProjectEditorUi.Gadget } };
+
+        using var json = JsonDocument.Parse(ResultUrls.Serialize(saved, null, context));
+
+        Assert.Equal(ResultUrls.GadgetNote, json.RootElement.GetProperty("project").GetProperty(ResultUrls.ProjectNote).GetString());
+    }
 }

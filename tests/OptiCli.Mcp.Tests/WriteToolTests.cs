@@ -33,6 +33,7 @@ public sealed class WriteToolTests
                 s.AddSingleton(_cms);
                 s.AddSingleton<IContentPlanSteps>(_cms);
                 s.AddSingleton<TestCounter>();
+                s.AddSingleton<TestProject>();
             },
             module: module ?? (m => m.WithWriteTool<RenameTool>().WithWriteTool<BuildTool>()));
 
@@ -652,6 +653,91 @@ public sealed class WriteToolTests
         Assert.Equal("{\"Heading\":\"Last\",\"Count\":3,\"Visible\":true,\"Cleared\":null,\"Link\":\"8\",\"Page\":\"5\",\"Planned\":\"step 1\",\"Area\":[{\"ref\":\"5\",\"displayOption\":\"narrow\"},{\"ref\":\"step 1\",\"Note\":null}],\"Raw\":{\"href\":\"https://example.com\"}}", json);
         Assert.Equal([1, 1], PlanValues.Steps(update.Properties, plan));
         Assert.Equal("step 1", folder.ToString());
+    }
+
+    [Fact]
+    public async Task A_plan_in_a_project_saves_every_draft_into_it_moves_aside_and_audits_the_project()
+    {
+        await using var site = await Site(m => m.WithWriteTool<CampaignTool>());
+        await using var client = await ToolTests.Connect(site);
+        var arguments = new Dictionary<string, object?> { ["project"] = "Spring campaign", ["ready"] = true };
+
+        var token = await DryRun(client, "test_campaign", arguments);
+
+        Assert.Equal([("create", new PlanProject("Spring campaign", true)), ("update", new PlanProject("Spring campaign", true)), ("move", null)],
+            _cms.Checked.Select(s => (s.KindName, s.Project)));
+        _cms.Calls.Clear();
+
+        Ok(await client.CallToolAsync("test_campaign", With(arguments, token)));
+
+        Assert.Equal([new PlanProject("Spring campaign", true), new PlanProject("Spring campaign", true), null], _cms.Ran.Select(s => s.Project));
+        var steps = site.Audit.Audit.Where(m => m.Contains(" step ", StringComparison.Ordinal)).ToList();
+        Assert.Equal(3, steps.Count);
+        Assert.All(steps.Take(2), m => Assert.EndsWith(", project Spring campaign", m, StringComparison.Ordinal));
+        Assert.DoesNotContain("project", steps[2], StringComparison.Ordinal);
+
+        // Without a project, no step has one.
+        _cms.Calls.Clear();
+        await DryRun(client, "test_campaign", []);
+        Assert.All(_cms.Checked, s => Assert.Null(s.Project));
+    }
+
+    [Fact]
+    public async Task The_plan_token_covers_the_project_whatever_the_arguments()
+    {
+        await using var site = await Site(m => m.WithWriteTool<CampaignTool>());
+        await using var client = await ToolTests.Connect(site);
+        var project = site.Services.GetRequiredService<TestProject>();
+        project.Name = "Spring campaign";
+        var token = await DryRun(client, "test_campaign", []);
+
+        project.Name = "Autumn campaign";
+        var error = Error(await client.CallToolAsync("test_campaign", With([], token)));
+
+        Assert.Equal(AgentErrorCodes.Conflict, error.Code);
+        Assert.Contains("isn't the one the dry run showed", error.Message);
+        Assert.Empty(_cms.Ran);
+    }
+
+    [Fact]
+    public void A_plan_goes_into_one_project_once()
+    {
+        var plan = new ContentPlan().InProject("Spring campaign").InProject(" Spring campaign ");
+        Assert.Equal(new PlanProject("Spring campaign", false), plan.Project);
+        Assert.Contains("in project 'Spring campaign' already", Assert.Throws<InvalidOperationException>(() => plan.InProject("Autumn campaign")).Message);
+        Assert.Throws<InvalidOperationException>(() => plan.InProject("Spring campaign", ready: true));
+        Assert.Throws<ArgumentException>(() => new ContentPlan().InProject(" "));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ContentPlan().InProject(0));
+        Assert.Equal(new PlanProject("12", true), new ContentPlan().InProject(12, ready: true).Project);
+    }
+}
+
+public sealed record CampaignArgs(
+    [property: Description("The CMS project for the drafts.")] string? Project = null,
+    [property: Description("Mark them ready.")] bool Ready = false);
+
+/// <summary>The project a test's <see cref="CampaignTool"/> puts its plan in when its arguments name none.</summary>
+internal sealed class TestProject
+{
+    public string? Name { get; set; }
+}
+
+[OptiCliWriteTool("test_campaign", Kinds = ContentPlanKinds.Create | ContentPlanKinds.Update | ContentPlanKinds.Move)]
+[Description("Makes a teaser, puts it on the start page and moves a page below the start page, in a project.")]
+internal sealed class CampaignTool(FakePlanSteps cms, IServiceProvider services) : IOptiCliWriteTool<CampaignArgs>
+{
+    public Task<ContentPlan> PlanAsync(CampaignArgs args, CancellationToken cancellationToken)
+    {
+        var plan = new ContentPlan();
+        var start = cms.Latest(5);
+        var teaser = plan.Create(start, "TeaserBlock", "Teaser");
+        plan.Update(start, p => p.Set("Teaser", teaser));
+        plan.Move(cms.Latest(7), cms.Latest(6));
+        if ((args.Project ?? services.GetService<TestProject>()?.Name) is { } project)
+        {
+            plan.InProject(project, args.Ready);
+        }
+        return Task.FromResult(plan);
     }
 }
 
