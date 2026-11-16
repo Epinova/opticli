@@ -20,11 +20,15 @@ public sealed class ProjectWrites(WriteExecutor executor)
 {
     /// <summary>What to do about a project publish that would put other people's unpublished changes live.</summary>
     public const string PendingDraftHint =
-        "details.project lists each ready item, and pendingDraft on an item the unpublished changes someone else saved that it would put live. Ask the user whether those should go live too, and only if so run again with --include-draft. To leave them out, save the item again into the project from its published version (opticli set <ref> ... --from published --in-project <project> --ready). Nothing was published.";
+        "details.project lists each ready item, and pendingDraft on an item the unpublished changes someone else saved that it would put live (not those of whoever marked it ready, readyBy, which need no confirming). Ask the user whether those should go live too, and only if so run again with --include-draft. To leave them out, save the item again into the project from its published version (opticli set <ref> ... --from published --in-project <project> --ready). Nothing was published.";
 
     /// <summary>A refusal over several items with different problems.</summary>
     public const string ProjectItemsHint =
         "details.project lists every item, each one that stops it with problem (code, message). Fix those items, or take them out of the project (opticli projects remove), then run again. Nothing was changed.";
+
+    /// <summary><c>projects ready</c> of an item whose version someone else saved, without <c>--include-draft</c>.</summary>
+    public const string ReadyPendingDraftHint =
+        "details.project lists each item, and pendingDraft on an item the draft someone else saved. Marking it ready records opticli as the one who saved it, so the project's publish wouldn't ask about those changes. Ask the user whether they should go live; only if so run again with --include-draft. Nothing was changed.";
 
     /// <summary><c>projects ready</c> under an approval sequence, without <c>--request-approval</c>.</summary>
     public const string ReadyApprovalHint =
@@ -35,8 +39,9 @@ public sealed class ProjectWrites(WriteExecutor executor)
         SendAsync(HttpMethod.Post, AgentRoutes.Projects, new ProjectCreateRequest { Name = name, DryRun = dryRun }, dryRun, cancellationToken);
 
     /// <param name="items">Refs of the items (ids, versions, GUIDs, URLs); null with <paramref name="all"/>.</param>
-    public async Task<ProjectResult> ReadyAsync(string project, IReadOnlyList<string>? items, string? lang, bool all, bool requestApproval, string? comment, bool dryRun,
-        CancellationToken cancellationToken)
+    /// <param name="includeDraft">Also mark ready items whose version someone else saved.</param>
+    public async Task<ProjectResult> ReadyAsync(string project, IReadOnlyList<string>? items, string? lang, bool all, bool requestApproval, string? comment, bool includeDraft,
+        bool dryRun, CancellationToken cancellationToken)
     {
         if ((items is { Count: > 0 }) == all)
         {
@@ -54,6 +59,7 @@ public sealed class ProjectWrites(WriteExecutor executor)
             All = all,
             RequestApproval = requestApproval,
             Comment = comment,
+            IncludeDraft = includeDraft,
             DryRun = dryRun,
         };
         return await SendAsync(HttpMethod.Post, AgentRoutes.ProjectReady(project), request, dryRun, cancellationToken);
@@ -158,6 +164,10 @@ public sealed class ProjectWrites(WriteExecutor executor)
             {
                 text.AppendLine(CultureInfo.InvariantCulture, $"      also puts live {draft.Describe()}");
             }
+            if (item.ReadyBy is { } readyBy)
+            {
+                text.AppendLine(CultureInfo.InvariantCulture, $"      marked ready by {readyBy}");
+            }
         }
         if (preview.NotReady is { Count: > 0 } notReady)
         {
@@ -245,7 +255,7 @@ public sealed class ProjectWrites(WriteExecutor executor)
         var ready = route.EndsWith("/ready", StringComparison.Ordinal);
         return details.Reason switch
         {
-            AgentErrorReasons.PendingDraft => new ConflictException(ex.Message, PendingDraftHint) { Details = details },
+            AgentErrorReasons.PendingDraft => new ConflictException(ex.Message, ready ? ReadyPendingDraftHint : PendingDraftHint) { Details = details },
             AgentErrorReasons.ApprovalSequence when ready => new RefusedException(ex.Message, ReadyApprovalHint) { Details = details },
             AgentErrorReasons.ProjectItems => OptiCliException.Create(ex.Code, ex.Message, ProjectItemsHint, details),
             AgentErrorReasons.InReview => new ConflictException(ex.Message, ApprovalRules.InReviewHint) { Details = details },

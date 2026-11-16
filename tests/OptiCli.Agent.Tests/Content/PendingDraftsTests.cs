@@ -55,6 +55,33 @@ public class PendingDraftsTests
         Assert.Empty(PendingDrafts.ByOthers(versions, baseVersion: 10, Agent));
     }
 
+    [Fact]
+    public void Whoever_marked_a_project_item_ready_consented_to_their_own_drafts_in_it_not_to_another_persons()
+    {
+        // 11 by bob, 12 by alice, 13 by alice: the version alice marked ready (the CMS records her as its saver too).
+        VersionStamp[] versions = [Version(10, "opticli", published: true), Version(11, "bob@example.com"), Version(12, "alice@example.com"), Version(13, "alice@example.com")];
+
+        Assert.Equal([11], PendingDrafts.ByOthers(versions, baseVersion: 13, Agent, readyBy: "Alice@example.com ").Select(v => v.Id));
+        Assert.Equal([13, 12, 11], PendingDrafts.ByOthers(versions, baseVersion: 13, Agent).Select(v => v.Id));
+        // Only alice's: nothing to confirm.
+        VersionStamp[] hers = [Version(10, "opticli", published: true), Version(12, "alice@example.com"), Version(13, "alice@example.com")];
+        Assert.Empty(PendingDrafts.ByOthers(hers, baseVersion: 13, Agent, readyBy: "alice@example.com"));
+        // A version without a user name is nobody's consent.
+        VersionStamp[] job = [Version(10, "opticli", published: true), Version(11, ""), Version(12, "alice@example.com")];
+        Assert.Equal([11], PendingDrafts.ByOthers(job, baseVersion: 12, Agent, readyBy: "alice@example.com").Select(v => v.Id));
+    }
+
+    [Fact]
+    public void Who_marked_a_version_ready_is_who_checked_it_in_unless_that_is_the_caller_or_nobody()
+    {
+        Assert.Equal("alice@example.com", PendingDrafts.ReadyBy(checkedIn: true, " alice@example.com ", Agent));
+        Assert.Null(PendingDrafts.ReadyBy(checkedIn: true, "OptiCli", Agent));
+        Assert.Null(PendingDrafts.ReadyBy(checkedIn: true, "", Agent));
+        Assert.Null(PendingDrafts.ReadyBy(checkedIn: true, null, Agent));
+        // A draft, or a version in review: nobody marked it ready.
+        Assert.Null(PendingDrafts.ReadyBy(checkedIn: false, "alice@example.com", Agent));
+    }
+
     private static PropertyChange Change(string property, string? before, string? after) => new(property,
         before is null ? null : JsonSerializer.SerializeToElement(before), after is null ? null : JsonSerializer.SerializeToElement(after));
 

@@ -271,7 +271,8 @@ or published together; ask before making one, and use the name they give.
 - `--ready` (with `--in-project`) marks the draft Ready to publish; later, `opticli projects ready <project> <ref>...`
   (or `--all` for every draft in it). Under an approval sequence that is refused (exit 3): ask the user, then
   `--request-approval` sends it for review instead (`--comment` for the reviewers on `projects ready`); once approved
-  it counts as ready.
+  it counts as ready. An item whose version someone else saved is a `conflict` (`pendingDraft`): marking it ready makes
+  their changes publishable without asking, so tell the user whose they are and only then `--include-draft`.
 - In a plan, `"project": "<name>"` next to `"operations"` puts every save step's draft in that project (the run makes it
   first if no unpublished project has the name; folders are left out); a step's own `"project"` overrides it,
   `"project": null` leaves it out; `"ready": true` per step. `data.projects` says which project was made
@@ -284,7 +285,9 @@ or published together; ask before making one, and use the name they give.
   Ready to publish** live; the rest stay drafts (`notReady`). Only when the user asks for it to go live: dry-run first
   and show them `published` (or `scheduled`) and `notReady`. Note for gadget sites (`editorUi: "gadget"`): the gadget's
   own Publish button puts every unpublished item live, ready or not, so the same project behaves differently there;
-  say so if the user will publish from the CMS. Other people's unpublished changes in a ready item stop it
+  say so if the user will publish from the CMS. An item a colleague marked ready (`readyBy`) goes live with their
+  changes without `--include-draft`, since marking it ready was their consent; still tell the user whose changes go
+  live (`pendingDraft`). Other people's unpublished changes that whoever marked it ready didn't make stop it
   (`pendingDraft`, per item in `details.project`): ask, and only then `--include-draft`. One problem item stops the
   whole publish with nothing published (`details.project` lists each item's `problem`); nothing ready is a `conflict`
   (`nothingReady`).

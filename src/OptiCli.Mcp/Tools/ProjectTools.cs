@@ -47,14 +47,15 @@ internal sealed class ProjectTools(IHttpContextAccessor http, IOptions<OptiCliMc
         Run(Scopes.Write, call => ProjectCreateOperation.Run(call, new ProjectCreateRequest { Name = name, DryRun = dryRun }), ResultUrls.SerializeProject);
 
     [McpServerTool(Name = "mark_ready_to_publish", Title = "Mark ready to publish", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
-    [Description("Marks items of a project Ready to publish (the CMS's Ready to Publish), so publishing the project puts them live. Only when the user wants them ready. Give items, or all for every item that is a draft. Where an approval sequence applies it is refused: requestApproval sends those items for review instead, and marks the others ready. Needs edit access to each item. Every item is checked first: one that can't be marked stops the call, with each item's problem in error.project. Run it with dryRun first.")]
+    [Description("Marks items of a project Ready to publish (the CMS's Ready to Publish), so publishing the project puts them live. Only when the user wants them ready. Give items, or all for every item that is a draft. Where an approval sequence applies it is refused: requestApproval sends those items for review instead, and marks the others ready. Needs edit access to each item. An item whose version someone else saved (pendingDraft) needs includeDraft: marking it ready records the user as the one who saved it, so publishing the project wouldn't ask about those changes. Every item is checked first: one that can't be marked stops the call, with each item's problem in error.project. Run it with dryRun first.")]
     public string MarkReadyToPublish(
         [Description(Project)] string project,
         [Description(Items + " Give this or all.")] string[]? items = null,
-        [Description("Every item that is a draft; the others are left as they are (skipped).")] bool all = false,
+        [Description("Every item that is a draft; the others are left as they are (skipped), and so are drafts the user may not edit (noAccess).")] bool all = false,
         [Description("Only items in this language, e.g. en.")] string? lang = null,
         [Description("Send items that have an approval sequence for review instead (the CMS's Ready for Review).")] bool requestApproval = false,
         [Description("With requestApproval: a comment for the reviewers, required where the sequence asks for one.")] string? comment = null,
+        [Description("Also mark items whose version someone else saved (their pendingDraft): only after telling the user whose changes they are and asking.")] bool includeDraft = false,
         [Description("Only check, and report what each item would get; valid: false, with each item's problem, when one can't be marked.")] bool dryRun = false) =>
         Run(Scopes.Write, call => ProjectReadyOperation.Run(call, project, new ProjectReadyRequest
         {
@@ -63,6 +64,7 @@ internal sealed class ProjectTools(IHttpContextAccessor http, IOptions<OptiCliMc
             Lang = lang,
             RequestApproval = requestApproval,
             Comment = comment,
+            IncludeDraft = includeDraft,
             DryRun = dryRun,
         }), ResultUrls.SerializeProject);
 
@@ -92,11 +94,11 @@ internal sealed class ProjectPublishTools(IHttpContextAccessor http, IOptions<Op
     internal const string PublishingOffHint = "Mark the items the user wants live ready (mark_ready_to_publish) and give the user the project's projectUrl (or tell them what projectNote says), so they publish or reactivate the project in the CMS. Nothing was changed.";
 
     [McpServerTool(Name = "publish_project", Title = "Publish project", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-    [Description("Publishes a project's items marked Ready to publish, together, now or at publishAt; items that aren't ready stay as they are (notReady), as do items live already (alreadyPublished). Only when the user asked to publish the project: run it with dryRun first, show the user what goes live (published, or scheduled), whose unpublished changes go with it (an item's pendingDraft) and what stays behind, and publish once they confirm. Every ready item is checked first, as publish_content checks one: a problem stops the publish, with each item's in error.project, and nothing goes live. Returns each item's url and editUrl, failed (items the CMS didn't publish, with siteError) and siteChanges (what the site's own code did meanwhile).")]
+    [Description("Publishes a project's items marked Ready to publish, together, now or at publishAt; items that aren't ready stay as they are (notReady), as do items live already (alreadyPublished). Only when the user asked to publish the project: run it with dryRun first, show the user what goes live (published, or scheduled), whose unpublished changes go with it (an item's pendingDraft; readyBy is the colleague who marked it ready, whose own changes go live without includeDraft) and what stays behind, and publish once they confirm. Every ready item is checked first, as publish_content checks one: a problem stops the publish, with each item's in error.project, and nothing goes live. Returns each item's url and editUrl, failed (items the CMS didn't publish, with siteError) and siteChanges (what the site's own code did meanwhile).")]
     public Task<string> PublishProject(
         [Description(ProjectTools.Project)] string project,
         [Description("Schedule the publish for this time instead (ISO 8601 with offset, e.g. 2026-10-05T08:00:00+02:00): only when the user asked for it.")] DateTime? publishAt = null,
-        [Description("Also put live the unpublished changes someone else saved that ready items carry (their pendingDraft): only after asking the user.")] bool includeDraft = false,
+        [Description("Also put live the unpublished changes someone else saved that ready items carry (their pendingDraft), other than those of whoever marked the item ready: only after asking the user.")] bool includeDraft = false,
         [Description("Only check, and report what would go live and what would stay behind; valid: false, with each ready item's problem, when the publish would be refused.")] bool dryRun = false) =>
         RunAsync(Scopes.Write, call => ProjectPublishOperation.RunAsync(call, project, new ProjectPublishRequest
         {

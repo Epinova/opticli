@@ -245,6 +245,29 @@ public class ProjectSaveTests
     }
 
     [Fact]
+    public void A_write_that_changed_nothing_doesnt_mark_another_persons_draft_ready()
+    {
+        // Checking it in would record opticli as the one who saved it, and the publish would no longer ask about it.
+        var save = Save(ready: true);
+        var theirs = new TrackedPage(new ContentReference(10, 100), CultureInfo.GetCultureInfo("en")) { ChangedBy = "bob@example.com" };
+
+        Assert.False(save.Planned(theirs, review: false, intoVersion: 100).Ready);
+        var (result, warning) = save.AddUnchanged(theirs, SaveAction.Save);
+
+        Assert.Equal((ProjectSaveItems.Added, false), (result.Item, result.Ready));
+        Assert.Contains("a draft bob@example.com saved", warning?.Message);
+        Assert.Contains("--include-draft", warning?.Message);
+        Assert.DoesNotContain(_saves.Calls, c => c.Method == nameof(IContentRepository.Save));
+
+        // Its own draft is marked ready as before.
+        var mine = new TrackedPage(new ContentReference(11, 110), CultureInfo.GetCultureInfo("en")) { ChangedBy = AgentProtocol.PrincipalName };
+        Assert.True(save.Planned(mine, review: false, intoVersion: 110).Ready);
+        var (own, none) = save.AddUnchanged(mine, SaveAction.Save);
+        Assert.Equal((ProjectSaveItems.Added, true, null), (own.Item, own.Ready, none));
+        Assert.Contains(_saves.Calls, c => c.Method == nameof(IContentRepository.Save));
+    }
+
+    [Fact]
     public void A_failing_project_repository_only_drops_the_warning_on_a_save_without_a_project()
     {
         _projects.AddItem(1, new ContentReference(10, 100), "en");
@@ -253,8 +276,30 @@ public class ProjectSaveTests
         Assert.Null(ProjectSave.NotInProject(_call, Version(10, 101), intoVersion: null));
     }
 
+    /// <summary>A <see cref="Page"/> that knows who saved it.</summary>
+    private sealed class TrackedPage(ContentReference link, CultureInfo? language) : Page(link, language), IChangeTrackable
+    {
+        public bool IsModified { get; set; }
+
+        public DateTime Created { get; set; }
+
+        public string CreatedBy { get; set; } = "";
+
+        public string ChangedBy { get; set; } = "";
+
+        public DateTime Changed { get; set; }
+
+        public DateTime Saved { get; set; }
+
+        public bool SetChangedOnPublish { get; set; }
+
+        public DateTime? Deleted { get; set; }
+
+        public string DeletedBy { get; set; } = "";
+    }
+
     /// <summary>A language branch of a page, as the CMS loads it (read-only, so it can be cloned).</summary>
-    private sealed class Page(ContentReference link, CultureInfo? language) : CmsCallTests.Secured(link, AccessLevel.FullAccess), ILocalizable, IVersionable, IReadOnly
+    private class Page(ContentReference link, CultureInfo? language) : CmsCallTests.Secured(link, AccessLevel.FullAccess), ILocalizable, IVersionable, IReadOnly
     {
         public CultureInfo Language { get; set; } = language!;
 

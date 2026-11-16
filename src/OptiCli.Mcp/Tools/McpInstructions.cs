@@ -49,7 +49,7 @@ internal static class McpInstructions
 
     /// <summary>Publishing a project, where the site lets assistants publish.</summary>
     internal const string ProjectPublishing =
-        "8. Publishing a project (publish_project) puts live only its items marked Ready to publish; the others stay behind as they are, and the result lists them. Call it with dryRun first and show the user what goes live, whose unpublished changes go with it and what stays behind; publish or schedule only when they ask for it, as for publish_content. reactivate_project cancels a scheduled one; its items are then drafts to mark ready again.";
+        "8. Publishing a project (publish_project) puts live only its items marked Ready to publish; the others stay behind as they are, and the result lists them. Call it with dryRun first and show the user what goes live, whose unpublished changes go with it (also those of a colleague who marked an item ready, readyBy: marking it ready was their consent, so those need no includeDraft) and what stays behind; publish or schedule only when they ask for it, as for publish_content. reactivate_project cancels a scheduled one; its items are then drafts to mark ready again.";
 
     /// <summary>Publishing a project, where the site doesn't let assistants publish.</summary>
     internal const string ProjectPublishingOff =

@@ -43,9 +43,19 @@ public sealed record ProjectReadyRequest
 
     /// <summary>
     /// Every item that is a draft (<c>checkedOut</c> or <c>rejected</c>); the others (ready already, in review, published,
-    /// scheduled, in the recycle bin) are left as they are and listed as <see cref="ProjectItemOutcomes.Skipped"/>.
+    /// scheduled, in the recycle bin) are left as they are and listed as <see cref="ProjectItemOutcomes.Skipped"/>, and
+    /// drafts the caller may not edit (Edit access, or the language) as <see cref="ProjectItemOutcomes.NoAccess"/>.
     /// </summary>
     public bool All { get; init; }
+
+    /// <summary>
+    /// Also mark ready (or send for review) items whose version someone else saved (<see cref="ProjectItemResult.PendingDraft"/>).
+    /// The CMS records whoever marks a version ready as the one who saved it, so marking another person's draft ready makes
+    /// their changes the caller's, and a publish no longer asks about them: without this, such an item is a
+    /// <c>conflict</c> (<see cref="AgentErrorReasons.PendingDraft"/>).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool IncludeDraft { get; init; }
 
     /// <summary>
     /// Where an approval sequence applies, send the item for review (<c>SaveAction.RequestApproval</c>) instead of marking it
@@ -94,6 +104,8 @@ public sealed record ProjectPublishRequest
     /// <summary>
     /// Also publish the unpublished changes of others that ready versions carry (<see cref="PendingDraft"/>, per item).
     /// Without it such a publish fails with <c>conflict</c> (<see cref="AgentErrorReasons.PendingDraft"/>); a dry run lists them.
+    /// Not needed for the changes of the person who marked the item ready (<see cref="ProjectItemResult.ReadyBy"/>): marking
+    /// an item Ready to publish is their consent to publish it, their own earlier drafts in it included.
     /// </summary>
     public bool IncludeDraft { get; init; }
 
@@ -236,6 +248,13 @@ public static class ProjectItemOutcomes
     /// <summary>Left as it is: <see cref="ProjectReadyRequest.All"/> takes only drafts.</summary>
     public const string Skipped = "skipped";
 
+    /// <summary>
+    /// Left as it is: with <see cref="ProjectReadyRequest.All"/>, a draft the caller may not edit (Edit access, or the
+    /// language); <see cref="ProjectItemResult.Validation"/> says why. Named in <see cref="ProjectReadyRequest.Items"/>, it is a
+    /// problem instead.
+    /// </summary>
+    public const string NoAccess = "noAccess";
+
     /// <summary>Taken out of the project.</summary>
     public const string Removed = "removed";
 
@@ -286,9 +305,21 @@ public sealed record ProjectItemResult
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<ValidationIssue>? Validation { get; init; }
 
-    /// <summary>For a publish: other people's unpublished changes the ready version carries, which go live with it.</summary>
+    /// <summary>
+    /// For a publish: other people's unpublished changes the ready version carries, which go live with it; the ones that
+    /// need <see cref="ProjectPublishRequest.IncludeDraft"/> when there are any, else those of <see cref="ReadyBy"/>, which
+    /// don't. For marking ready: the item's version is another person's draft (<see cref="ProjectReadyRequest.IncludeDraft"/>).
+    /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PendingDraft? PendingDraft { get; init; }
+
+    /// <summary>
+    /// For a publish: who marked the item's version Ready to publish, when it wasn't the caller (the CMS's "status changed
+    /// by"). Marking it ready was their consent to publish it, so their own unpublished changes in it go live without
+    /// <see cref="ProjectPublishRequest.IncludeDraft"/>; another person's older draft it carries still needs it.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ReadyBy { get; init; }
 
     /// <summary>For a published item: the version that was live until then, to publish again to go back. Null when it never was.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

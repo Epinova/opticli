@@ -17,9 +17,13 @@ namespace OptiCli.Cms.Operations;
 /// comment, as "Ready for Review" does.
 /// </summary>
 /// <remarks>
-/// Every item is checked before any is changed (state, language access, Edit access, the sequence, validation), so a
-/// refusal changes nothing. What the CMS still refuses while committing is reported per item, and the others go ahead,
-/// as the edit UI lists each item it couldn't mark.
+/// <para>Every item is checked before any is changed (state, language access, Edit access, the sequence, validation,
+/// another person's draft), so a refusal changes nothing. What the CMS still refuses while committing is reported per
+/// item, and the others go ahead, as the edit UI lists each item it couldn't mark. With <c>all</c>, drafts the caller may
+/// not edit are left out and listed (<see cref="ProjectItemOutcomes.NoAccess"/>) instead of stopping the request.</para>
+/// <para>The CMS records whoever checks a version in as the one who saved it (<see cref="PendingDrafts"/>), so marking
+/// another person's draft ready would hide their changes from the publish's pending-draft check: it needs
+/// <c>includeDraft</c>, as publishing their draft does.</para>
 /// </remarks>
 internal static class ProjectReadyOperation
 {
@@ -48,7 +52,7 @@ internal static class ProjectReadyOperation
             // An item of content the editor can't read is, for them, not in the project (its name stays out of the result).
             : ProjectSelection.Select(all.Where(projects.Visible).ToList(), refs.Select(r => (r, flow.Locator.Resolve(r))).ToList(), language, ProjectLookup.Describe(project));
 
-        var plans = selected.Select(item => Plan(call, flow, projects, item, body.All, body.RequestApproval, comment)).ToList();
+        var plans = selected.Select(item => Plan(call, flow, projects, item, body.All, body.RequestApproval, comment, body.IncludeDraft)).ToList();
         var result = new ProjectResult
         {
             Project = projects.Describe(project, all),
@@ -77,13 +81,13 @@ internal static class ProjectReadyOperation
     private sealed record ItemPlan(LoadedItem Item, SaveAction? Action, ProjectItemResult Result);
 
     /// <summary>What marking <paramref name="item"/> ready takes, checked; a problem when it can't be.</summary>
-    private static ItemPlan Plan(CmsCall call, WriteFlow flow, ProjectContext projects, LoadedItem item, bool all, bool requestApproval, string? comment)
+    private static ItemPlan Plan(CmsCall call, WriteFlow flow, ProjectContext projects, LoadedItem item, bool all, bool requestApproval, string? comment, bool includeDraft)
     {
         var what = ProjectContext.What(item);
         var shown = projects.Summary(item);
-        ItemPlan Leave(string outcome) => new(item, null, new ProjectItemResult { Content = shown, Outcome = outcome });
-        ItemPlan Problem(ProjectItemProblem problem, IReadOnlyList<ValidationIssue>? issues = null) =>
-            new(item, null, new ProjectItemResult { Content = shown, Problem = problem, Validation = issues });
+        ItemPlan Leave(string outcome, IReadOnlyList<ValidationIssue>? issues = null) => new(item, null, new ProjectItemResult { Content = shown, Outcome = outcome, Validation = issues });
+        ItemPlan Problem(ProjectItemProblem problem, IReadOnlyList<ValidationIssue>? issues = null, PendingDraft? pending = null) =>
+            new(item, null, new ProjectItemResult { Content = shown, Problem = problem, Validation = issues, PendingDraft = pending });
 
         if (item.State == ProjectItemState.Ready)
         {
@@ -97,8 +101,16 @@ internal static class ProjectReadyOperation
         var version = item.Version!;
         try
         {
-            call.RequireLanguageAccess(version);
-            call.RequireAccess(version, AccessLevel.Edit);
+            try
+            {
+                call.RequireLanguageAccess(version);
+                call.RequireAccess(version, AccessLevel.Edit);
+            }
+            catch (AgentException ex) when (all)
+            {
+                // Every draft, as far as the caller may edit: the others are listed, not a reason to stop.
+                return Leave(ProjectItemOutcomes.NoAccess, [new ValidationIssue(null, $"Left as it is: {ex.Message}", "warning")]);
+            }
             var sequence = Approvals.Applying(call, version.ContentLink);
             if (sequence is not null && !requestApproval)
             {
@@ -115,12 +127,22 @@ internal static class ProjectReadyOperation
             {
                 return Problem(new ProjectItemProblem(AgentErrorCodes.Validation, $"{what} doesn't pass validation."), issues);
             }
-            var warnings = issues.Concat(NewerVersions(flow, version)).ToList();
+            var language = version is ILocalizable { Language: { } own } ? own : null;
+            var branch = flow.Locator.Versions(version.ContentLink, language, Compat.CmsApi.Variation(version));
+            var theirs = TheirDraft(flow, branch, version);
+            if (theirs is not null && !includeDraft)
+            {
+                return Problem(new ProjectItemProblem(AgentErrorCodes.Conflict,
+                    $"Version {version.ContentLink} of {what} is a draft of {(string.IsNullOrWhiteSpace(theirs.SavedBy) ? "nobody signed in (a scheduled job or import)" : theirs.SavedBy)}: marking it {(action == SaveAction.CheckIn ? "ready" : "for review")} would record you as the one who saved it, so publishing the project would put {theirs.Describe()} live without asking.",
+                    AgentErrorReasons.PendingDraft), pending: theirs);
+            }
+            var warnings = issues.Concat(NewerVersions(branch, version)).ToList();
             return new(item, action, new ProjectItemResult
             {
                 Content = shown,
                 Outcome = action == SaveAction.CheckIn ? ProjectItemOutcomes.Ready : ProjectItemOutcomes.ApprovalRequested,
                 Validation = warnings.Count > 0 ? warnings : null,
+                PendingDraft = theirs,
             });
         }
         catch (AgentException ex)
@@ -133,10 +155,9 @@ internal static class ProjectReadyOperation
     /// A warning when the item's version isn't the newest of its branch: marked ready, it becomes the primary draft (the
     /// one the CMS edit UI opens), and the newer versions stay as they are.
     /// </summary>
-    private static IEnumerable<ValidationIssue> NewerVersions(WriteFlow flow, IContent version)
+    private static IEnumerable<ValidationIssue> NewerVersions(IReadOnlyList<EPiServer.DataAbstraction.ContentVersion> branch, IContent version)
     {
-        var language = version is ILocalizable { Language: { } own } ? own : null;
-        var newer = flow.Locator.Versions(version.ContentLink, language, Compat.CmsApi.Variation(version))
+        var newer = branch
             .Where(v => v.ContentLink.WorkID > version.ContentLink.WorkID)
             .Select(v => v.ContentLink.ToString())
             .ToList();
@@ -147,6 +168,17 @@ internal static class ProjectReadyOperation
                 "warning");
         }
     }
+
+    /// <summary>
+    /// The item's version itself, when someone other than the caller saved it and it differs from the published version:
+    /// checking it in would record the caller as its saver. Another person's older draft it carries keeps their name, so the
+    /// publish still asks about that one.
+    /// </summary>
+    private static PendingDraft? TheirDraft(WriteFlow flow, IReadOnlyList<EPiServer.DataAbstraction.ContentVersion> branch, IContent version) =>
+        flow.Locator.PendingDraft(branch, version) is { } pending
+        && pending.Version == $"{version.ContentLink.ID.ToString(System.Globalization.CultureInfo.InvariantCulture)}_{version.ContentLink.WorkID.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+            ? pending
+            : null;
 
     /// <summary>Commits one item; what the CMS refuses is that item's failure, and the others go ahead.</summary>
     private static ProjectItemResult Commit(CmsCall call, ItemPlan plan, SaveAction action, string? comment)

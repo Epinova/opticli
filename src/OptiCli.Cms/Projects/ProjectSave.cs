@@ -148,7 +148,8 @@ internal sealed class ProjectSave
             intoVersion is { } into && mine.Any(i => i.ContentLink.WorkID == into) ? ProjectSaveItems.Unchanged
                 : mine.Count > 0 ? ProjectSaveItems.Replaced : ProjectSaveItems.Added,
             mine.Select(i => i.ContentLink.ToString()).FirstOrDefault(),
-            ready: Ready && !review);
+            // Another person's draft, put in as it is, isn't marked ready (AddUnchanged).
+            ready: Ready && !review && !(intoVersion == writable.ContentLink.WorkID && writable is IChangeTrackable { ChangedBy: var by } && !PendingDrafts.SavedBy(by, Call.UserName)));
     }
 
     /// <summary>
@@ -158,7 +159,8 @@ internal sealed class ProjectSave
     /// </summary>
     /// <param name="action">How it was saved: a version sent for review isn't marked ready.</param>
     /// <remarks>Marking ready is a save of its own: take the save's site events before calling this.</remarks>
-    public ProjectSaveResult Add(IContent saved, SaveAction action)
+    /// <param name="markReady">False to leave <see cref="Ready"/> out for this version (<see cref="AddUnchanged"/>).</param>
+    public ProjectSaveResult Add(IContent saved, SaveAction action, bool markReady = true)
     {
         var language = ProjectContext.Language(saved);
         string item;
@@ -193,7 +195,7 @@ internal sealed class ProjectSave
             return Failed(saved, ex, ProjectSaveItems.None, null);
         }
 
-        if (!Ready || WriteFlow.Kind(action) == SaveAction.RequestApproval || saved is not IVersionable { Status: VersionStatus.CheckedOut or VersionStatus.Rejected })
+        if (!Ready || !markReady || WriteFlow.Kind(action) == SaveAction.RequestApproval || saved is not IVersionable { Status: VersionStatus.CheckedOut or VersionStatus.Rejected })
         {
             return Result(item, replaced, ready: saved is IVersionable { Status: VersionStatus.CheckedIn });
         }
@@ -217,6 +219,18 @@ internal sealed class ProjectSave
     public (ProjectSaveResult Result, ValidationIssue? Warning) AddUnchanged(IContent based, SaveAction action)
     {
         var state = ProjectRules.State((based as IVersionable)?.Status, based.IsDeleted);
+        if (Ready && state == ProjectItemState.Draft && based is IChangeTrackable { ChangedBy: var by } && !PendingDrafts.SavedBy(by, Call.UserName))
+        {
+            // Checking another person's draft in would record the caller as the one who saved it, and the project's publish
+            // would no longer ask about their changes (ProjectReadyOperation asks for includeDraft for that).
+            var id = _project.ID.ToString(CultureInfo.InvariantCulture);
+            return (Add(based, action, markReady: false), new ValidationIssue(null,
+                $"Nothing changed, so nothing was saved, and version {based.ContentLink} is a draft {(string.IsNullOrWhiteSpace(by) ? "saved without a user name (a scheduled job or import)" : $"{by} saved")}: it was put in project {ProjectLookup.Describe(_project)}, but not marked ready, since that would record you as the one who saved it and publishing the project wouldn't ask about those changes. "
+                + Call.ForCaller(
+                    $"If they should go live, mark it ready with opticli projects ready {id} {based.ContentLink} --include-draft.",
+                    "If the user wants those changes to go live, mark it ready with mark_ready_to_publish and includeDraft."),
+                "warning"));
+        }
         if (state is ProjectItemState.Draft or ProjectItemState.Ready or ProjectItemState.InReview)
         {
             return (Add(based, action), null);

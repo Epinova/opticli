@@ -20,7 +20,8 @@ namespace OptiCli.Cms.Operations;
 /// </summary>
 /// <remarks>
 /// <para>Every ready item is checked first, as a single publish (<see cref="PublishOperation"/>) is: read, language and
-/// (for an editor) Publish access, validation, served media, another person's draft it carries (<c>includeDraft</c>), and
+/// (for an editor) Publish access, validation, served media, another person's draft it carries (<c>includeDraft</c>; not
+/// for the drafts of whoever marked it ready, which they consented to by doing so), and
 /// under an approval sequence a reviewer's approval of the version (CMS 12 lets the API check a version in past its
 /// sequence, and a project publish would put that live). One item that fails stops the publish, with every failure
 /// listed, so nothing goes live by halves over something opticli could tell up front; the edit UI instead leaves an item
@@ -176,10 +177,17 @@ internal static class ProjectPublishOperation
                 UploadOperation.RequireServedSafely(call, media, null,
                     previouslyPublished is { } live && flow.Repository.TryGet<IContent>(new ContentReference(version.ContentLink.ID, live, version.ContentLink.ProviderName), out var published) ? published : null);
             }
-            var pending = flow.Locator.PendingDraft(branch, version);
-            if (pending is not null && !includeDraft)
+            // Whoever marked the version ready consented to publishing it, their own earlier drafts in it included; another
+            // person's draft it carries still needs includeDraft. The result shows whose changes go live either way.
+            var stored = branch.FirstOrDefault(v => v.ContentLink.WorkID == version.ContentLink.WorkID);
+            var readyBy = PendingDrafts.ReadyBy(stored?.Status == VersionStatus.CheckedIn, stored?.StatusChangedBy, call.UserName);
+            var unconfirmed = flow.Locator.PendingDraft(branch, version, readyBy);
+            var pending = unconfirmed ?? (readyBy is null ? null : flow.Locator.PendingDraft(branch, version));
+            if (unconfirmed is not null && !includeDraft)
             {
-                return Problem(new ProjectItemProblem(AgentErrorCodes.Conflict, $"Publishing {what} would also put live {pending.Describe()}.", AgentErrorReasons.PendingDraft), pending: pending);
+                return Problem(new ProjectItemProblem(AgentErrorCodes.Conflict,
+                    $"Publishing {what} would also put live {unconfirmed.Describe()}{(readyBy is null ? "" : $" ({readyBy} marked it ready, but those changes aren't theirs)")}.",
+                    AgentErrorReasons.PendingDraft), pending: unconfirmed, readyBy: readyBy);
             }
             var warnings = issues.ToList();
             if (version is IVersionable { StopPublish: { } stop } && stop <= DateTime.Now)
@@ -193,6 +201,7 @@ internal static class ProjectPublishOperation
                 Outcome = outcome,
                 Validation = warnings.Count > 0 ? warnings : null,
                 PendingDraft = pending,
+                ReadyBy = readyBy,
                 PreviouslyPublished = previouslyPublished,
             });
         }
@@ -201,8 +210,8 @@ internal static class ProjectPublishOperation
             return Problem(ProjectRules.Problem(ex, what), pending: ex.PendingDraft);
         }
 
-        ItemPlan Problem(ProjectItemProblem problem, IReadOnlyList<ValidationIssue>? issues = null, PendingDraft? pending = null) =>
-            new(item, new ProjectItemResult { Content = shown, Outcome = outcome, Problem = problem, Validation = issues, PendingDraft = pending, PreviouslyPublished = previouslyPublished });
+        ItemPlan Problem(ProjectItemProblem problem, IReadOnlyList<ValidationIssue>? issues = null, PendingDraft? pending = null, string? readyBy = null) =>
+            new(item, new ProjectItemResult { Content = shown, Outcome = outcome, Problem = problem, Validation = issues, PendingDraft = pending, ReadyBy = readyBy, PreviouslyPublished = previouslyPublished });
     }
 
     /// <summary>Whether a reviewer approved the version (its approval is <c>Approved</c>, as when the sequence ends).</summary>

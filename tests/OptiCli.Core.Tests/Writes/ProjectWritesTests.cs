@@ -216,6 +216,12 @@ public class ProjectWritesTests
         Assert.Contains("also puts live changes saved by bob in 123_455", summary, StringComparison.Ordinal);
         Assert.Contains("Stays behind, not ready (1):\n  124_460 'About'", summary.ReplaceLineEndings("\n"), StringComparison.Ordinal);
         Assert.Contains("Published already, left as it is (1):", summary, StringComparison.Ordinal);
+        Assert.DoesNotContain("marked ready by", summary, StringComparison.Ordinal);
+
+        // An item a colleague marked ready: their changes go live, and the summary says who marked it.
+        var theirs = preview with { Published = [preview.Published![0] with { ReadyBy = "bob" }] };
+        Assert.Contains("also puts live changes saved by bob in 123_455 (2026-11-16 08:00:00Z) that aren't published yet (Heading)\n      marked ready by bob",
+            ProjectWrites.Summary(theirs).ReplaceLineEndings("\n"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -237,6 +243,11 @@ public class ProjectWritesTests
         var mixed = ProjectWrites.Translate(Refusal(AgentErrorCodes.Validation, AgentErrorReasons.ProjectItems), AgentRoutes.ProjectPublish("12"));
         Assert.Equal(ErrorCode.Validation, mixed!.Code);
         Assert.Contains("details.project", mixed.Hint);
+
+        // Marking another person's draft ready: the ready hint, not the publish's.
+        var readyPending = ProjectWrites.Translate(Refusal(AgentErrorCodes.Conflict, AgentErrorReasons.PendingDraft), AgentRoutes.ProjectReady("12"));
+        Assert.Equal(ProjectWrites.ReadyPendingDraftHint, readyPending!.Hint);
+        Assert.Contains("--include-draft", readyPending.Hint);
 
         // The publish's own approval hint (save the items again for review) stays as the site words it.
         Assert.Null(ProjectWrites.Translate(Refusal(AgentErrorCodes.Refused, AgentErrorReasons.ApprovalSequence), AgentRoutes.ProjectPublish("12")));

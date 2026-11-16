@@ -14,6 +14,14 @@ internal readonly record struct VersionStamp(int Id, bool Published, DateTime Sa
 /// The caller is whoever the CMS records the save under (<see cref="CmsCall.UserName"/>): the opticli principal for the
 /// developer's agent, so its own earlier drafts never count; the editor for the MCP module, so an editor's own drafts
 /// (from the edit UI or an earlier conversation) are theirs to publish, and only a colleague's need confirming.
+/// <para>A project publish also leaves out the versions of whoever marked the item Ready to publish (<see cref="ReadyBy"/>):
+/// marking it ready was their consent to publish it, their own earlier drafts in it included (Olav, after phase 3 of the
+/// projects plan). The CMS records a check-in on the version itself: <c>editSetVersionStatus</c> sets both
+/// <c>tblWorkContent.ChangedByName</c> (<c>ContentVersion.SavedBy</c>) and <c>NewStatusByName</c>
+/// (<c>ContentVersion.StatusChangedBy</c>) to the user who checks it in, on CMS 12 and 13 alike, while the older versions
+/// keep the names of those who saved them. So who marked the version ready is known, and so is who saved each older draft
+/// it carries; who wrote the ready version's own changes is lost once someone else checks it in, which is why marking
+/// another person's draft ready needs <c>includeDraft</c> itself (<see cref="Operations.ProjectReadyOperation"/>).</para>
 /// </remarks>
 internal static class PendingDrafts
 {
@@ -28,15 +36,30 @@ internal static class PendingDrafts
         ByOthers(versions, baseVersion, self).Select(v => (VersionStamp?)v).FirstOrDefault();
 
     /// <summary>As <see cref="NewestByOthers"/>: every such version, newest first.</summary>
-    public static IReadOnlyList<VersionStamp> ByOthers(IEnumerable<VersionStamp> versions, int baseVersion, string self)
+    /// <param name="readyBy">
+    /// Who marked <paramref name="baseVersion"/> Ready to publish, for a project publish (<see cref="ReadyBy"/>): their
+    /// versions are left out too.
+    /// </param>
+    public static IReadOnlyList<VersionStamp> ByOthers(IEnumerable<VersionStamp> versions, int baseVersion, string self, string? readyBy = null)
     {
         var all = versions.ToList();
         var published = all.Where(v => v.Published).Select(v => v.Id).DefaultIfEmpty(0).Max();
         return all
-            .Where(v => v.Id > published && v.Id <= baseVersion && !SavedBy(v.SavedBy, self))
+            .Where(v => v.Id > published && v.Id <= baseVersion && !SavedBy(v.SavedBy, self) && (readyBy is null || !SavedBy(v.SavedBy, readyBy)))
             .OrderByDescending(v => v.Id)
             .ToList();
     }
+
+    /// <summary>
+    /// Who consented to publishing a project item's version by marking it Ready to publish: the user the CMS recorded
+    /// checking it in (<c>ContentVersion.StatusChangedBy</c>), when the version is ready (<c>CheckedIn</c>) and that isn't the
+    /// caller. Null otherwise, also when nobody was signed in (a job or an import).
+    /// </summary>
+    /// <param name="checkedIn">The version's status is <c>CheckedIn</c> (Ready to publish, or approved by its reviewers).</param>
+    /// <param name="statusChangedBy">Who changed its status last, as the CMS recorded it.</param>
+    /// <param name="self">The caller's user name (<see cref="CmsCall.UserName"/>).</param>
+    public static string? ReadyBy(bool checkedIn, string? statusChangedBy, string self) =>
+        checkedIn && !string.IsNullOrWhiteSpace(statusChangedBy) && !SavedBy(statusChangedBy, self) ? statusChangedBy.Trim() : null;
 
     /// <summary>
     /// Whether the version a publish is based on carries a draft's changes. A higher version id doesn't say so: a change

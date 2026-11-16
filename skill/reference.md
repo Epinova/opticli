@@ -685,7 +685,7 @@ compared (`checked: false`).
 |---|---|
 | `projects create <name>` | `opticli projects create "Spring campaign"` |
 | `<write> ... --in-project <id\|name> [--ready]` (`set`, `create`, `area`, `composition`, `block create`, `upload`, `translate`) | `opticli set 123 Heading=Hi --in-project "Spring campaign" --ready` |
-| `projects ready <project> <ref>... \| --all [--lang] [--request-approval [--comment text]]` | `opticli projects ready 12 --all` |
+| `projects ready <project> <ref>... \| --all [--lang] [--request-approval [--comment text]] [--include-draft]` | `opticli projects ready 12 --all` |
 | `projects remove <project> <ref>... [--lang]` | `opticli projects remove 12 123` |
 | `projects publish <project> [--at time] [--include-draft]` | `opticli projects publish 12 --dry-run` (only when the user asked) |
 | `projects reactivate <project>` | `opticli projects reactivate 12` |
@@ -705,7 +705,12 @@ compared (`checked: false`).
   `ready`, `remove`, `reactivate`, `delete`: `items[]` (`content`, `outcome`: `ready`, `approvalRequested`,
   `alreadyReady`, `skipped`, `removed`, `unscheduled`, `failed` with `error`). `publish`: `published[]` (or
   `scheduled[]` and `scheduledFor`), `notReady[]`, `alreadyPublished[]`, `failed[]` and `siteError` (the project is
-  then `publishFailed` and publishes again), `siteChanges`, each item's `pendingDraft` and `previouslyPublished`.
+  then `publishFailed` and publishes again), `siteChanges`, each item's `pendingDraft`, `readyBy` and
+  `previouslyPublished`.
+- Marking an item ready is consent to publish it: `readyBy` is who marked it (when not opticli), and their own unpublished
+  changes in it go live without `--include-draft`. Another person's older draft it carries still needs it (`pendingDraft`
+  names that one). `projects ready` of an item whose version someone else saved is a `conflict` (`pendingDraft`)
+  without `--include-draft`: the CMS records whoever marks a version ready as the one who saved it.
 - A refusal over items (`details.reason`: `projectItems`, or the reason all of them share: `pendingDraft`,
   `approvalSequence`, `inReview`) has `details.project` with every item and its `problem` (`code`, `message`,
   `reason`); nothing was changed. `nothingReady`: no item is ready. `projectsDisabled` (exit 3): the site's edit UI has

@@ -199,7 +199,9 @@ public partial class EdgeCasesSetup : IInitializableModule
 /// <c>POST /opticli-fixture/hand-over?version=&lt;id_version&gt;&amp;user=&lt;name&gt;</c> from the machine itself: saves that
 /// version again, unchanged and as the same version, as <c>user</c>, so it becomes that user's draft the way an editor's
 /// save makes it (the CMS records the user and clears its cached version list). The tests of someone else's draft use
-/// it; opticli's agent only saves as itself.
+/// it; opticli's agent only saves as itself. With <c>&amp;ready=1</c> it marks the version Ready to publish as that user
+/// instead, as the edit UI's "Ready to Publish" does (a check-in of the same version), for the tests of a project item a
+/// colleague marked ready.
 /// </summary>
 [InitializableModule]
 public class OptiCliHandOverFixture : IConfigurableModule
@@ -242,9 +244,17 @@ public class OptiCliHandOverFixture : IConfigurableModule
                 try
                 {
                     var content = (IContent)((IReadOnly)repository.Get<IContent>(version)).CreateWritableClone();
-                    // The CMS doesn't save an unchanged version's data; ChangedBy is what changes (to the saving user).
-                    ((IChangeTrackable)content).ChangedBy = user;
-                    repository.Save(content, SaveAction.CheckOut | SaveAction.ForceCurrentVersion, AccessLevel.NoAccess);
+                    if (context.Request.Query["ready"] == "1")
+                    {
+                        // What the edit UI's commit sends (ContentDataCommitter): the same version, checked in.
+                        repository.Save(content, SaveAction.CheckIn | SaveAction.ForceCurrentVersion, AccessLevel.NoAccess);
+                    }
+                    else
+                    {
+                        // The CMS doesn't save an unchanged version's data; ChangedBy is what changes (to the saving user).
+                        ((IChangeTrackable)content).ChangedBy = user;
+                        repository.Save(content, SaveAction.CheckOut | SaveAction.ForceCurrentVersion, AccessLevel.NoAccess);
+                    }
                 }
                 finally
                 {

@@ -195,7 +195,7 @@ internal sealed class PlanProjects
         foreach (var (project, review, versions) in Unready(planned, results))
         {
             var entry = _entries.Values.FirstOrDefault(e => e.Id == project);
-            var result = await writes.ReadyAsync(project.ToString(CultureInfo.InvariantCulture), versions, null, all: false, requestApproval: review, comment: null, dryRun: false, cancellationToken);
+            var result = await writes.ReadyAsync(project.ToString(CultureInfo.InvariantCulture), versions, null, all: false, requestApproval: review, comment: null, includeDraft: false, dryRun: false, cancellationToken);
             entry?.MarkedReady.AddRange((result.Items ?? []).Where(i => i.Outcome is ProjectItemOutcomes.Ready or ProjectItemOutcomes.ApprovalRequested).Select(i => i.Content.Ref));
         }
     }

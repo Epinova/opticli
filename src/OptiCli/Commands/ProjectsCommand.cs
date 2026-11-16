@@ -80,11 +80,12 @@ internal static class ProjectsCommand
         var comment = new Option<string?>("--comment") { Description = "With --request-approval: a comment for the reviewers (required where the sequence says so).", HelpName = "text" };
         var write = new WriteOptions();
         write.RequestApproval.Description = "Where an approval sequence applies, send the item for review instead (marking it ready would skip the reviewers, so that is refused, exit 3); once approved it counts as ready. Items without a sequence are marked ready as usual.";
+        write.IncludeDraft.Description = "Also mark ready items whose version someone else saved. The CMS then records opticli as the one who saved it, so the project's publish no longer asks about their changes: without it such an item is a conflict (exit 5), with pendingDraft in details.project.";
         var command = new Command("ready", """
             Mark project items Ready to publish, as the edit UI's "Ready to Publish" does (the version is checked in, and keeps
             its id). Needs `opticli serve`. Give refs or --all. Every item is checked before any is changed: an item that
-            can't be marked (in review, published, a validation error) stops it, with each item's problem in
-            details.project. Publishing the project puts only ready items live.
+            can't be marked (in review, published, a validation error, someone else's draft without --include-draft) stops
+            it, with each item's problem in details.project. Publishing the project puts only ready items live.
             Example: opticli projects ready 12 123 124
             Also:    opticli projects ready "Spring campaign" --all --request-approval --comment "Campaign texts"
             """);
@@ -95,6 +96,7 @@ internal static class ProjectsCommand
         write.AddCommon(command, publish: false);
         write.AddRequestApproval(command);
         command.Options.Add(comment);
+        write.AddIncludeDraft(command);
         CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
@@ -110,7 +112,7 @@ internal static class ProjectsCommand
             }
             await using var session = await context.OpenContentAsync(cancellationToken);
             return Result(await Writes(context, session).ReadyAsync(parse.GetValue(project)!, refs.Length > 0 ? refs : null, parse.GetValue(lang), parse.GetValue(all),
-                parse.GetValue(write.RequestApproval), parse.GetValue(comment), parse.GetValue(write.DryRun), cancellationToken));
+                parse.GetValue(write.RequestApproval), parse.GetValue(comment), parse.GetValue(write.IncludeDraft), parse.GetValue(write.DryRun), cancellationToken));
         });
         return command;
     }
@@ -144,14 +146,15 @@ internal static class ProjectsCommand
         var project = ProjectArgument();
         var at = new Option<string?>("--at") { Description = $"Schedule the publish instead: {PublishTimes.Syntax}. The ready items become delayedPublish and the project delayedPublished until then; `opticli projects reactivate` cancels it.", HelpName = "time" };
         var write = new WriteOptions();
-        write.IncludeDraft.Description = "Also publish the unpublished changes someone else saved after the published version, which ready items carry. Without it such a publish asks on a terminal, and elsewhere fails with a conflict (exit 5) listing them per item in details.project.";
+        write.IncludeDraft.Description = "Also publish the unpublished changes someone else saved after the published version, which ready items carry. Not needed for the changes of whoever marked an item ready (readyBy): marking it ready was their consent. Without it such a publish asks on a terminal, and elsewhere fails with a conflict (exit 5) listing them per item in details.project.";
         var command = new Command("publish", """
             Publish a project: its items marked Ready to publish go live together (or at --at), through the CMS's own project
             publisher. Needs `opticli serve`. Items that aren't ready (drafts, in review) stay as they are and are listed in
             notReady. Only ready items, also where editors use the Projects gadget (CMS 13's default), whose own Publish
             puts every unpublished item live. Every ready item is checked first (validation, approval, other people's
-            drafts): one problem stops the publish, with each item's problem in details.project, and nothing goes live. On a
-            terminal it shows what goes live and what stays behind, and asks. Nothing ready is a conflict (exit 5).
+            drafts, except those of whoever marked the item ready): one problem stops the publish, with each item's problem in
+            details.project, and nothing goes live. On a terminal it shows what goes live, whose changes go with it and what
+            stays behind, and asks. Nothing ready is a conflict (exit 5).
             Prints published (or scheduled and scheduledFor), notReady, alreadyPublished, failed (with siteError) and
             siteChanges: what the site's own code changed meanwhile.
             Example: opticli projects publish 12 --dry-run
@@ -226,6 +229,9 @@ internal static class ProjectsCommand
         var warnings = (result.Validation ?? []).Where(v => v.Severity != "error").Select(v => v.Message).ToList();
         var items = (result.Items ?? []).Concat(result.Published ?? []).Concat(result.Scheduled ?? []).Concat(result.Failed ?? []);
         warnings.AddRange(items.SelectMany(i => (i.Validation ?? []).Where(v => v.Severity != "error").Select(v => $"{i.Content.Ref}: {v.Message}")));
+        // Whose changes went (or go) live with the project, also those its readyBy consented to by marking it ready.
+        warnings.AddRange((result.Published ?? []).Concat(result.Scheduled ?? []).Where(i => i.PendingDraft is not null && i.Problem is null).Select(i =>
+            $"{i.Content.Ref}: {(result.DryRun ? "would put" : result.Scheduled is null ? "put" : "will put")} live {i.PendingDraft!.Describe()}{(i.ReadyBy is { } by ? $"; {by} marked it ready" : "")}."));
         if (result.Failed is { Count: > 0 } failed)
         {
             warnings.Add($"{failed.Count} ready item(s) failed to publish ({string.Join(", ", failed.Select(f => f.Content.Ref))}): the project is {result.Project.Status}, and publishing it again tries them again{(result.SiteError is { } error ? $". The CMS said: {error}" : "")}.");

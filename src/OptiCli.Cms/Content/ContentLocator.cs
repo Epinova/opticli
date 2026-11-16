@@ -163,15 +163,16 @@ internal sealed class ContentLocator(CmsCall call)
     /// </summary>
     /// <param name="branch">The versions of <paramref name="based"/>'s branch (<see cref="Versions"/>).</param>
     /// <param name="based">The version the publish is based on, as loaded.</param>
+    /// <param name="readyBy">For a project publish: who marked <paramref name="based"/> ready (<see cref="PendingDrafts.ReadyBy"/>), whose versions are left out too.</param>
     /// <returns>The newest such version; null when there is none (or the content isn't versioned).</returns>
-    public PendingDraft? PendingDraft(IReadOnlyList<ContentVersion> branch, IContent based)
+    public PendingDraft? PendingDraft(IReadOnlyList<ContentVersion> branch, IContent based, string? readyBy = null)
     {
         if (based is not IVersionable)
         {
             return null;
         }
         var stamps = branch.Select(v => new VersionStamp(v.ContentLink.WorkID, v.Status == VersionStatus.Published, v.Saved, v.SavedBy));
-        var candidates = PendingDrafts.ByOthers(stamps, based.ContentLink.WorkID, call.UserName);
+        var candidates = PendingDrafts.ByOthers(stamps, based.ContentLink.WorkID, call.UserName, readyBy);
         if (candidates.Count == 0)
         {
             return null;

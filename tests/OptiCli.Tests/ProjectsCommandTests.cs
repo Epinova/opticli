@@ -80,6 +80,26 @@ public class ProjectsCommandTests
     }
 
     [Fact]
+    public void A_publish_says_whose_changes_went_live_and_who_marked_them_ready()
+    {
+        static ContentSummary Content(int id) => new() { Ref = $"{id}_1", Id = id, Guid = Guid.Empty, Name = "x" };
+        var draft = new PendingDraft("1_1", "bob", new DateTime(2026, 11, 16, 8, 0, 0, DateTimeKind.Utc), []);
+        var result = new ProjectResult
+        {
+            Project = new ProjectSummary { Id = 12, Name = "Spring", Status = ProjectStatuses.Published },
+            Published = [
+                new ProjectItemResult { Content = Content(1), Outcome = ProjectItemOutcomes.Published, PendingDraft = draft, ReadyBy = "bob" },
+                new ProjectItemResult { Content = Content(2), Outcome = ProjectItemOutcomes.Published },
+            ],
+        };
+
+        var warning = Assert.Single(ProjectsCommand.Warnings(result));
+
+        Assert.Equal("1_1: put live changes saved by bob in 1_1 (2026-11-16 08:00:00Z) that aren't published yet; bob marked it ready.", warning);
+        Assert.StartsWith("1_1: would put live", Assert.Single(ProjectsCommand.Warnings(result with { DryRun = true })), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_publish_that_failed_part_says_so_in_the_warnings()
     {
         static ContentSummary Content(int id) => new() { Ref = $"{id}_1", Id = id, Guid = Guid.Empty, Name = "x" };
