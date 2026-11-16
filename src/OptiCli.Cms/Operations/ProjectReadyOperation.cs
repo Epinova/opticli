@@ -197,6 +197,8 @@ internal static class ProjectReadyOperation
         {
             warnings.Add(failed);
         }
+        // A read racing the commit can leave CMS 12's cache with the version as it was (ProjectContext.Load).
+        call.OptionalService<EPiServer.IContentCacheRemover>()?.RemoveVersion(version.ContentLink);
         var stored = call.Service<EPiServer.IContentRepository>().Get<IContent>(version.ContentLink);
         return plan.Result with
         {

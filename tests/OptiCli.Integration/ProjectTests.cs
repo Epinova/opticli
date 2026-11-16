@@ -209,6 +209,32 @@ public sealed class ProjectTests
     }
 
     [SiteFact]
+    public async Task An_item_the_content_cache_still_holds_as_a_draft_is_read_as_stored()
+    {
+        // CMS 12 can keep a version in its content cache as the draft it was while it was checked in, when a read races
+        // the check-in (the edit UI's project overview does). Made here without the race: the version is cached as a draft
+        // by the save, then checked in behind the CMS's back, which is what the cache then holds against the database.
+        await using var scratch = await Scratch.StartAsync();
+        if (scratch is null)
+        {
+            return;
+        }
+        var project = (await scratch.CreateProjectAsync(scratch.Name("stale cache"))).ToString(CultureInfo.InvariantCulture);
+        var page = await scratch.PageAsync("stale cache");
+        var draft = await scratch.SetAsync(page, "checked in behind the cache", project: project);
+        // Read through the site, which puts the version in its content cache, as a draft.
+        var cached = await scratch.Site.Agent.SendAsync<ContentItem>(HttpMethod.Get, AgentRoutes.Read(draft.Version!), null, None);
+        Assert.Equal("checkedOut", cached.Status);
+        await scratch.Site.Session.Db.QueryAsync(
+            "UPDATE tblWorkContent SET Status = 3, NewStatusByName = ChangedByName WHERE pkID = @version; SELECT @@ROWCOUNT",
+            r => r.GetInt32(0), None, new SqlParameter("@version", VersionId(draft.Version!)));
+
+        var preview = await scratch.Projects.PublishAsync(project, null, includeDraft: false, dryRun: true, confirm: null, None);
+        Assert.Equal(draft.Version, Assert.Single(preview.Published!).Content.Ref);
+        Assert.Null(preview.NotReady);
+    }
+
+    [SiteFact]
     public async Task A_scheduled_project_is_reactivated_into_drafts_that_have_to_be_marked_ready_again()
     {
         await using var scratch = await Scratch.StartAsync();

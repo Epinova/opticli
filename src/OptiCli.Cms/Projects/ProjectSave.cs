@@ -207,6 +207,9 @@ internal sealed class ProjectSave
         {
             return Failed(saved, ex, item, replaced);
         }
+        // A read racing the check-in (the edit UI's project overview) can leave CMS 12's cache with the version as a draft
+        // (ProjectContext.Load): dropped, so the result reads it as stored. A project operation reads its items fresh anyway.
+        _projects.Forget(saved.ContentLink);
         return Result(item, replaced, ready: true);
     }
 

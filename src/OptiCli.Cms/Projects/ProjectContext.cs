@@ -68,14 +68,28 @@ internal sealed class ProjectContext(CmsCall call)
     public Project Resolve(string? reference) => ProjectLookup.Find(Repository.List(), id => Repository.Get(id), reference);
 
     /// <summary>The project's items, each with its version.</summary>
-    public IReadOnlyList<LoadedItem> Items(Project project) => Repository.ListItems(project.ID).Select(Load).ToList();
+    /// <param name="fresh">Read each version from the database, not the content cache (<see cref="Load"/>).</param>
+    public IReadOnlyList<LoadedItem> Items(Project project, bool fresh = true) => Repository.ListItems(project.ID).Select(i => Load(i, fresh)).ToList();
 
     /// <summary>The item with its version: the one it names, or (for an item without one) the content's in the item's language.</summary>
-    public LoadedItem Load(ProjectItem item)
+    /// <param name="item">The project item.</param>
+    /// <param name="fresh">
+    /// Drop the version from the content cache first, so it is read from the database. CMS 12 (seen on 12.21) can keep a
+    /// stale copy of a version there: a read that loads the version while it is being checked in (the edit UI's project
+    /// overview does, when the CMS pushes it the project item change) puts the copy it read before the check-in into the
+    /// cache after the check-in removed it. The version then stays a draft for every later read until the cache drops it,
+    /// and a project publish would leave behind an item marked ready (CMS 13 bumps its cache version on that change and
+    /// didn't show it). Only the item's own version is dropped; the database read costs one query per item.
+    /// </param>
+    public LoadedItem Load(ProjectItem item, bool fresh = true)
     {
         IContent? version;
         if (item.ContentLink.WorkID > 0)
         {
+            if (fresh)
+            {
+                Forget(item.ContentLink);
+            }
             version = Content.TryGet<IContent>(item.ContentLink, out var loaded) && loaded.ContentLink.ID == item.ContentLink.ID ? loaded : null;
         }
         else
@@ -84,6 +98,9 @@ internal sealed class ProjectContext(CmsCall call)
         }
         return new LoadedItem(item, version);
     }
+
+    /// <summary>Drops a version from the content cache (<see cref="Load"/>), so the next read takes it from the database.</summary>
+    public void Forget(ContentReference version) => Call.OptionalService<IContentCacheRemover>()?.RemoveVersion(version);
 
     /// <summary>
     /// Whether the caller sees <paramref name="item"/>: always the developer; an editor an item whose content they can
@@ -95,7 +112,9 @@ internal sealed class ProjectContext(CmsCall call)
     /// <param name="items">Its items, if loaded already.</param>
     public ProjectSummary Describe(Project project, IReadOnlyList<LoadedItem>? items = null)
     {
-        items = (items ?? Items(project)).Where(Visible).ToList();
+        // Without the items (the list of projects), from the content cache: a database read per item of every project
+        // listed would be too much for a list, and a project's own operations read its items fresh.
+        items = (items ?? Items(project, fresh: false)).Where(Visible).ToList();
         return new ProjectSummary
         {
             Id = project.ID,
