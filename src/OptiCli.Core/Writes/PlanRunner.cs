@@ -132,7 +132,20 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         foreach (var step in steps)
         {
             var (result, failure) = await ValidateAsync(step, steps, existing, resolved, targets, masters, checks, cancellationToken);
-            checks.Add(projects.Note(planned.First(p => p.Index == step.Index).Operation, result));
+            var asPlanned = planned.First(p => p.Index == step.Index);
+            if (failure is null && asPlanned.Operation.Ready && projects.ToMake(asPlanned.Operation))
+            {
+                // Checked without its project, so without ready: an approval sequence still refuses ready, as the run would.
+                try
+                {
+                    await CheckPlannedApprovalAsync(asPlanned, steps, cancellationToken);
+                }
+                catch (OptiCliException ex)
+                {
+                    (result, failure) = (new PlanStepResult(step.Index, step.Operation.Kind, step.Operation.Id, PlanStepStatus.Invalid, ex.Details, Error(ex), Guid: step.Operation.ContentGuid), ex);
+                }
+            }
+            checks.Add(projects.Note(asPlanned.Operation, result));
             firstFailure ??= failure;
             Progress?.Invoke("checking", checks.Count, steps.Count);
         }
@@ -214,9 +227,10 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                 results.Add(new PlanStepResult(step.Index, operation.Kind, operation.Id, PlanStepStatus.Failed, ex.Details, Error(ex), Guid: operation.ContentGuid));
                 results.AddRange(steps.Where(s => s.Index > step.Index).Select(s => new PlanStepResult(s.Index, s.Operation.Kind, s.Operation.Id, PlanStepStatus.NotRun, Guid: s.Operation.ContentGuid)));
                 var saved = results.Count(r => r.Status == PlanStepStatus.Saved);
+                var notMarked = PlanProjects.NotMarked(steps, planned, step.Index) is { } deferred ? $" {deferred}" : "";
                 throw OptiCliException.Create(
                     ex.Code,
-                    $"Operation {step.Index} ({operation.Kind}) failed: {ex.Message.TrimEnd('.')}. {saved} earlier operation(s) were saved; details lists them with undo hints.",
+                    $"Operation {step.Index} ({operation.Kind}) failed: {ex.Message.TrimEnd('.')}. {saved} earlier operation(s) were saved; details lists them with undo hints.{notMarked}",
                     ex.Hint,
                     new PlanRun(false, results, Refs(created)) { Partial = true, Projects = projects.Report() });
             }

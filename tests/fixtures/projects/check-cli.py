@@ -279,6 +279,19 @@ def main():
         check(page_ref + "_" in "".join(made.get("markedReady") or []), "data.projects says what was marked ready at the end", made)
         again, _ = cli.ok("apply", path, "--dry-run")
         check(again["projects"] == [{"id": made["id"], "name": plan_name, "status": "existing"}], "run again, the plan finds the project by name", again.get("projects"))
+        code, error = cli.fails("apply", cli.plan("guarded.json", {"project": f"cli never made {stamp}", "operations": [
+            {"op": "create", "parent": APPROVAL_ROOT, "type": "StandardPage", "name": f"opticli-cli never {stamp}", "ready": True}]}), "--dry-run")
+        check(code == 3 and error.get("details", {}).get("operations", [{}])[0].get("status") == "invalid",
+              "a dry run refuses ready under an approval sequence also for a project the run would make", error)
+        check(project_id(f"cli never made {stamp}") is None, "and makes no project", None)
+        d = page(f"opticli-cli review deferred {stamp}", container)
+        run, _ = cli.ok("apply", cli.plan("deferred.json", {"project": made["id"], "operations": [
+            {"op": "set", "ref": d, "properties": {"TeaserText": "one"}, "ready": True, "requestApproval": True},
+            {"op": "set", "ref": d, "properties": {"MetaDescription": "two"}},
+        ]}))
+        items, _ = cli.ok("projects", made["id"])
+        check({i["ref"]: i["status"] for i in items}.get(d) == "checkedIn",
+              "a deferred ready keeps its review request for the end (no sequence: marked ready, not refused)", run.get("projects"))
         bad = cli.plan("bad.json", {"project": plan_name, "operations": [{"op": "set", "ref": c, "properties": {"TeaserText": "x"}, "publish": True}]})
         code, error = cli.fails("apply", bad, "--dry-run")
         check(code == 1 and "\"project\": null" in error.get("message", ""), "a step that publishes under the plan's project is a plan problem", error)

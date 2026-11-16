@@ -117,6 +117,25 @@ public class ProjectWritesTests
     }
 
     [Fact]
+    public void A_deferred_ready_takes_its_review_request_along_and_a_stopped_run_names_it()
+    {
+        var plan = WritePlan.Parse("""
+            {"project": "Spring", "operations": [
+              {"op": "set", "ref": "123", "name": "x", "ready": true, "requestApproval": true},
+              {"op": "set", "ref": "124", "name": "x", "ready": true, "requestApproval": true},
+              {"op": "set", "ref": "123", "name": "y"}
+            ]}
+            """);
+
+        var steps = PlanProjects.DeferReady(plan.Steps.ToList());
+
+        // Saved now, the review would start before the later change (or, without a sequence, be refused).
+        Assert.Equal([false, true, false], steps.Select(s => s.Operation.RequestApproval));
+        Assert.Contains("Operation(s) 0 asked for ready", PlanProjects.NotMarked(steps, plan.Steps, failed: 2));
+        Assert.Null(PlanProjects.NotMarked(steps, plan.Steps, failed: 0));
+    }
+
+    [Fact]
     public void At_the_end_the_last_version_of_content_asked_ready_is_marked_unless_it_is()
     {
         var plan = WritePlan.Parse("""

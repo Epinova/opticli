@@ -39,6 +39,9 @@ internal sealed class PlanProjects
     {
         public string Name { get; } = name;
 
+        /// <summary>The existing project's own name, where the plan names it by id.</summary>
+        public string? ProjectName { get; init; }
+
         /// <summary>The project's id, once known (an existing project, or one the run made).</summary>
         public int? Id { get; set; }
 
@@ -79,7 +82,7 @@ internal sealed class PlanProjects
         if (found is not null && (found.Unpublished || (isId && found.Id == id)))
         {
             // A published project named by its id is the site's to refuse (with what to do instead).
-            return new Entry(name) { Id = found.Id };
+            return new Entry(name) { Id = found.Id, ProjectName = found.Name };
         }
         if (isId)
         {
@@ -105,6 +108,9 @@ internal sealed class PlanProjects
         ? operation with { Project = id.ToString(CultureInfo.InvariantCulture) }
         : operation;
 
+    /// <summary>The operation's project doesn't exist yet: the run makes it, so the plan's check runs without it.</summary>
+    public bool ToMake(WriteOperation operation) => For(operation) is { Id: null };
+
     /// <summary>A step's check, with a note when its project doesn't exist yet and so wasn't part of it.</summary>
     /// <param name="operation">The step as the plan gives it.</param>
     public PlanStepResult Note(WriteOperation operation, PlanStepResult result)
@@ -113,7 +119,7 @@ internal sealed class PlanProjects
         {
             return result;
         }
-        var note = $"Project '{entry.Name}' doesn't exist yet: the run makes it before the first operation saves anything, and saves this operation's draft in it{(operation.Ready ? ", marked Ready to publish" : "")}. This check ran without the project.";
+        var note = $"Project '{entry.Name}' doesn't exist yet: the run makes it before the first operation saves anything, and saves this operation's draft in it{(operation.Ready ? ", marked Ready to publish" : "")}. This check ran without the project, so content that is in another project already is refused only when the plan runs (the project made by then stays, with the operations saved before it).";
         return result with { Warnings = [.. result.Warnings ?? [], note] };
     }
 
@@ -141,8 +147,23 @@ internal sealed class PlanProjects
         }
         var changedLater = steps.Skip(i + 1).Any(later => later.Operation.Project is not null && Changes(later.Operation) is { } target
             && string.Equals(target.Trim(), written.Trim(), StringComparison.Ordinal));
-        return changedLater ? step with { Operation = op with { Ready = false } } : step;
+        // Its review request goes with the ready (ReadyAsync sends it): saved now, it would start the review (or, where no
+        // sequence applies, be refused) before the later step's change.
+        return changedLater ? step with { Operation = op with { Ready = false, RequestApproval = false } } : step;
     }).ToList();
+
+    /// <summary>
+    /// For a plan that stopped at <paramref name="failed"/>: the operations before it whose <c>ready</c> was deferred to the
+    /// end of the run (<see cref="DeferReady"/>), and so are drafts in their project, not ready; null when there are none.
+    /// </summary>
+    public static string? NotMarked(IReadOnlyList<PlanStep> running, IReadOnlyList<PlanStep> planned, int failed)
+    {
+        var deferred = running.Where(s => s.Index < failed && !s.Operation.Ready && planned.FirstOrDefault(p => p.Index == s.Index)?.Operation is { Ready: true, Project: not null })
+            .Select(s => s.Index).ToList();
+        return deferred.Count == 0
+            ? null
+            : $"Operation(s) {string.Join(", ", deferred)} asked for ready, which the run gives once its last operation is saved, so they are drafts in their project, not ready: run the plan again once the problem is fixed, or mark them with `opticli projects ready <project> <ref>...`.";
+    }
 
     /// <summary>The content a step saves, as later steps name it: its ref, or <c>$id</c> for content it creates.</summary>
     private static string? Wrote(WriteOperation operation) => operation switch
@@ -220,7 +241,7 @@ internal sealed class PlanProjects
         ? null
         : _entries.Values.Select(e => new PlanProject(
             e.Id,
-            e.Name,
+            e.ProjectName ?? e.Name,
             e.Made ? Created : e.Make ? ToCreate : Existing,
             e.MarkedReady.Count > 0 ? e.MarkedReady : null,
             e.Made ? $"opticli projects delete {e.Id} (the drafts saved into it stay as they are)" : null)).ToList();
