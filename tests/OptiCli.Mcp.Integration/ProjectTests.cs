@@ -454,6 +454,101 @@ public sealed class ProjectTests(SharedSessions sessions)
         }
     }
 
+    [McpSiteFact]
+    public async Task A_colleague_who_marks_an_item_ready_consents_to_their_changes_going_live_but_not_to_anothers()
+    {
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var admin = await sessions.ForAsync(TestUsers.Admin);
+        var start = Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        var theirs = Id((await editor.OkAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = start, publish = true })).GetProperty("content"));
+        var mine = Id((await editor.OkAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = start, publish = true })).GetProperty("content"));
+        var name = ScratchName();
+        await editor.OkAsync("create_project", new { name });
+        try
+        {
+            // The administrator saves a draft into the project and marks it ready: their consent to publish it.
+            await admin.OkAsync("update_content", new { reference = theirs, properties = new { TeaserText = "the administrator's text" }, project = name, ready = true });
+            // The editor's own draft, which the administrator marks ready: their name goes on it (the CMS records whoever marks
+            // a version ready as its saver), so they need includeDraft, after the user says the editor's changes may go live.
+            var editorsDraft = await editor.OkAsync("update_content", new { reference = mine, properties = new { TeaserText = "the editor's text" }, project = name });
+            var editorsVersion = editorsDraft.GetProperty("content").GetProperty("version").GetInt32();
+            var check = await admin.OkAsync("mark_ready_to_publish", new { project = name, items = new[] { mine }, dryRun = true });
+            Assert.False(check.GetProperty("valid").GetBoolean());
+            var checkedItem = Assert.Single(check.GetProperty("items").EnumerateArray());
+            Assert.Equal(("pendingDraft", TestUsers.Editor), (checkedItem.GetProperty("problem").GetProperty("reason").GetString(), checkedItem.GetProperty("pendingDraft").GetProperty("savedBy").GetString()));
+            Assert.Equal(("conflict", "pendingDraft"), Code(await admin.ErrorAsync("mark_ready_to_publish", new { project = name, items = new[] { mine } })));
+            var marked = await admin.OkAsync("mark_ready_to_publish", new { project = name, items = new[] { mine }, includeDraft = true });
+            Assert.Equal("ready", Assert.Single(marked.GetProperty("items").EnumerateArray()).GetProperty("outcome").GetString());
+
+            // The editor publishes without includeDraft: both were marked ready by the administrator, whose name both carry.
+            var preview = await editor.OkAsync("publish_project", new { project = name, dryRun = true });
+            Assert.True(preview.GetProperty("valid").GetBoolean(), preview.GetRawText());
+            var items = preview.GetProperty("published").EnumerateArray().ToList();
+            Assert.Equal(2, items.Count);
+            Assert.All(items, i => Assert.Equal((TestUsers.Admin, TestUsers.Admin), (i.GetProperty("readyBy").GetString(), i.GetProperty("pendingDraft").GetProperty("savedBy").GetString())));
+            var published = await editor.OkAsync("publish_project", new { project = name });
+            Assert.Equal("published", published.GetProperty("project").GetProperty("status").GetString());
+            Assert.Equal(editorsVersion, Assert.Single(published.GetProperty("published").EnumerateArray(), i => Id(i.GetProperty("content")) == mine).GetProperty("content").GetProperty("version").GetInt32());
+            Assert.Equal("the administrator's text", (await editor.OkAsync("get_content", new { reference = theirs })).GetProperty("properties").GetProperty("TeaserText").GetProperty("value").GetString());
+        }
+        finally
+        {
+            await DeleteAsync(editor, theirs);
+            await DeleteAsync(editor, mine);
+        }
+    }
+
+    [McpSiteFact]
+    public async Task Marking_every_draft_ready_leaves_out_and_lists_the_ones_the_editor_may_not_edit()
+    {
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var admin = await sessions.ForAsync(TestUsers.Admin);
+        var start = Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        var page = Id((await editor.OkAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = start, publish = true })).GetProperty("content"));
+        var name = ScratchName();
+        await editor.OkAsync("create_project", new { name });
+        try
+        {
+            await editor.OkAsync("update_content", new { reference = page, properties = new { TeaserText = "in English" }, project = name });
+            // A branch in the language only administrators may edit, put in the project by an administrator.
+            await admin.OkAsync("add_language", new { reference = page, lang = TestUsers.AdminLanguage, name = "Seite", project = name });
+
+            var marked = await editor.OkAsync("mark_ready_to_publish", new { project = name, all = true });
+            Assert.True(marked.GetProperty("valid").GetBoolean());
+            var outcomes = marked.GetProperty("items").EnumerateArray().ToDictionary(i => Language(i.GetProperty("content")), i => i.GetProperty("outcome").GetString());
+            Assert.Equal("ready", outcomes["en"]);
+            Assert.Equal("noAccess", outcomes[TestUsers.AdminLanguage]);
+            var left = marked.GetProperty("items").EnumerateArray().Single(i => Language(i.GetProperty("content")) == TestUsers.AdminLanguage);
+            Assert.Contains("Left as it is", Assert.Single(left.GetProperty("validation").EnumerateArray()).GetProperty("message").GetString());
+            // Named, it is still a problem that stops the call.
+            Assert.Equal("refused", (await editor.ErrorAsync("mark_ready_to_publish", new { project = name, items = new[] { page }, lang = TestUsers.AdminLanguage })).GetProperty("code").GetString());
+            var states = (await editor.OkAsync("get_project", new { project = name })).GetProperty("items").EnumerateArray().ToDictionary(i => Language(i.GetProperty("content")), i => i.GetProperty("state").GetString());
+            Assert.Equal(("ready", "draft"), (states["en"], states[TestUsers.AdminLanguage]));
+        }
+        finally
+        {
+            await DeleteAsync(admin, page);
+        }
+    }
+
+    [McpSiteFact]
+    public async Task The_edge_case_sites_campaign_project_shows_a_ready_item_and_a_draft()
+    {
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var read = await editor.CallAsync("get_project", new { project = "Edge campaign" });
+        if (read.IsError)
+        {
+            // A site built before the edge-case fixture made it.
+            Assert.Contains("not_found", read.Text);
+            return;
+        }
+        var campaign = JsonDocument.Parse(read.Text).RootElement;
+        Assert.Equal((2, 1), (campaign.GetProperty("project").GetProperty("items").GetInt32(), campaign.GetProperty("project").GetProperty("ready").GetInt32()));
+        var items = campaign.GetProperty("items").EnumerateArray()
+            .ToDictionary(i => i.GetProperty("content").GetProperty("name").GetString()!, i => i.GetProperty("state").GetString());
+        Assert.Equal(("ready", "draft"), (items["Campaign page, ready"], items["Campaign page, draft"]));
+    }
+
     /// <summary>What a save did to its project: id, item, ready.</summary>
     private static (int Id, string? Item, bool Ready) SavedInto(JsonElement result)
     {

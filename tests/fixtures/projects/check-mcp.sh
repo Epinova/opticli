@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs the MCP module's project checks (tests/OptiCli.Mcp.Integration/ProjectTests.cs) against MCP test sites that
 # tests/fixtures/mcp/setup.sh built from this checkout: for each site, it rebuilds the site with this checkout's module
-# and fixture files, starts it on <port> (publishing allowed) and <port>+1 (publishing off), and runs the tests against
+# and fixture files (the MCP fixture's and the edge-case site's), starts it on <port> (publishing allowed) and <port>+1 (publishing off), and runs the tests against
 # both. With --project-mode it also starts a CMS 13 site on <port>+3 with project mode on (CMS 13's default is the
 # Projects gadget) and runs the tests there, which then expect projectUrl instead of projectNote.
 #
@@ -44,10 +44,19 @@ for entry in "${sites[@]}"; do
   echo "== $site: rebuild with this checkout's module, start on $port and $((port + 1)) (publishing off)"
   "$SERVE" "$site" --port "$port" --stop
   "$SERVE" "$site" --port $((port + 1)) --stop
-  # The fixture files the site has, as this checkout has them (setup.sh copied them once).
+  # The fixture files the site has, as this checkout has them (setup.sh copied them once): the MCP fixture's, and the
+  # edge-case site's it was copied from (with the site's namespace for Alloy's, as edge-cases/setup.sh writes them).
   for fixture in "$site"/McpFixture/*.cs; do
     if [ -f "$REPO/tests/fixtures/mcp/${fixture##*/}" ]; then
       cp "$REPO/tests/fixtures/mcp/${fixture##*/}" "$fixture"
+    fi
+  done
+  csproj=$(find "$site" -maxdepth 1 -name '*.csproj' | head -n 1)
+  namespace=$(sed -n 's:.*<RootNamespace>\(.*\)</RootNamespace>.*:\1:p' "$csproj" | head -n 1)
+  namespace=${namespace:-$(basename "$csproj" .csproj)}
+  for fixture in "$site"/EdgeCases/*.cs; do
+    if [ -f "$REPO/tests/fixtures/edge-cases/${fixture##*/}" ]; then
+      sed "s/typeof(Alloy\.Models\./typeof($namespace.Models./g" "$REPO/tests/fixtures/edge-cases/${fixture##*/}" > "$fixture"
     fi
   done
   (cd "$site" && dotnet build -nologo -v quiet -clp:ErrorsOnly)
