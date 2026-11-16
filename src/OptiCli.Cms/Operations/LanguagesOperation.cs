@@ -11,6 +11,7 @@ internal static class LanguagesOperation
     public static WriteResult Run(CmsCall call, string reference, LanguageBranchRequest body)
     {
         var flow = new WriteFlow(call);
+        flow.Project = Projects.ProjectSave.For(call, body.Project, body.Ready, body.Publish, publishAt: null);
         var link = flow.Locator.ResolveContent(reference);
         var culture = flow.Locator.EnabledLanguage(body.Lang);
         call.RequireLanguageAccess(culture);
@@ -26,7 +27,7 @@ internal static class LanguagesOperation
                 $"Change it with a draft instead (lang '{culture.Name}').");
         }
 
-        var action = Approvals.Decide(call, link, body.Publish, body.RequestApproval, $"The '{culture.Name}' branch of {link.ID} ('{master.Name}')");
+        var action = flow.Decide(link, body.Publish, body.RequestApproval, publishAt: null, $"The '{culture.Name}' branch of {link.ID} ('{master.Name}')");
 
         // Compare against what visitors in that language see today: the master language version.
         var before = PropertyValues.Snapshot(master);

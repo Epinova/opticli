@@ -18,6 +18,7 @@ internal static class UploadOperation
     public static WriteResult Run(CmsCall call, UploadRequest body)
     {
         var flow = new WriteFlow(call);
+        flow.Project = Projects.ProjectSave.For(call, body.Project, body.Ready, body.Publish, publishAt: null);
         var extension = MediaFileNames.Extension(body.FileName) ?? throw AgentException.Usage(
             $"fileName '{body.FileName}' must be a file name with an extension, without directories.");
         var data = Data(body);
@@ -51,7 +52,7 @@ internal static class UploadOperation
         flow.NewFile = (extension, data);
         media.Name = string.IsNullOrWhiteSpace(body.Name) ? body.FileName.Trim() : body.Name;
         flow.Writer.Apply(media, body.Properties);
-        var action = Approvals.Decide(call, parent.ContentLink, body.Publish, body.RequestApproval, $"New {type.Name} '{media.Name}'");
+        var action = flow.Decide(parent.ContentLink, body.Publish, body.RequestApproval, publishAt: null, $"New {type.Name} '{media.Name}'");
 
         Blob? blob = null;
         if (!body.DryRun)
@@ -188,7 +189,7 @@ internal static class UploadOperation
         {
             Approvals.RequireNotInReview(branch, what, null);
         }
-        var action = Approvals.Decide(call, link, body.Publish, body.RequestApproval, what);
+        var action = flow.Decide(link, body.Publish, body.RequestApproval, publishAt: null, what);
         var pending = action == SaveAction.Publish && branch is not null
             ? PendingDrafts.Require(flow.Locator.PendingDraft(branch, latest), body.IncludeDraft, body.DryRun, what, null)
             : null;

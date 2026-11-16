@@ -123,6 +123,24 @@ internal sealed class SiteChanges : IDisposable
         return changes.Count > 0 ? changes : null;
     }
 
+    /// <summary>
+    /// The changes to report for a project publish (<see cref="Projects.ProjectPublishEvents"/>): everything the events say
+    /// happened to other content, and of the items it published only what the publish didn't do itself (moved, deleted).
+    /// Content the caller can't read is left out.
+    /// </summary>
+    /// <param name="published">The content ids of the items the publish was given.</param>
+    /// <returns>Null when there is nothing to report.</returns>
+    public static IReadOnlyList<SiteChange>? ReportProjectPublish(CmsCall call, IContentTypeRepository types, IReadOnlyList<SiteEvent> events, IReadOnlySet<int> published)
+    {
+        var changes = events
+            .Where(e => !published.Contains(e.Link.ID) || e.Action is "moved" or "deleted")
+            .GroupBy(e => e.Link.ID)
+            .Select(group => Change(call, types, group.ToList(), null))
+            .OfType<SiteChange>()
+            .ToList();
+        return changes.Count > 0 ? changes : null;
+    }
+
     /// <summary>One content item's events as one change, described as it is now (else as the last event gave it).</summary>
     private static SiteChange? Change(CmsCall call, IContentTypeRepository types, IReadOnlyList<SiteEvent> events, IContent? content)
     {

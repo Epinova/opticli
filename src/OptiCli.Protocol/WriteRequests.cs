@@ -112,6 +112,26 @@ public sealed record DraftRequest
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? IntoVersion { get; init; }
 
+    /// <summary>
+    /// Put the saved version in this project (its id, or its exact name), as the edit UI's save in project mode does: it
+    /// takes the place of the content's earlier version in the project in the same language. Only an active project
+    /// (<c>active</c> or <c>publishFailed</c>) takes items; content in another project that isn't published, a folder
+    /// and content without versions are refused. Not with <see cref="Publish"/> or <see cref="PublishAt"/> (<c>usage</c>):
+    /// publish or schedule the project instead. With <see cref="RequestApproval"/>, the version goes for review and is
+    /// in the project. The result's <see cref="WriteResult.Project"/> says what happened. Left out when null.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Project { get; init; }
+
+    /// <summary>
+    /// With <see cref="Project"/>: also mark the saved version Ready to publish (<c>SaveAction.CheckIn</c>). Where an
+    /// approval sequence applies that is refused (<c>refused</c>, <see cref="AgentErrorReasons.ApprovalSequence"/>) unless
+    /// <see cref="RequestApproval"/>, which sends the version for review instead; elsewhere <see cref="RequestApproval"/>
+    /// then needs no sequence.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Ready { get; init; }
+
     /// <summary>The <see cref="From"/> value for the published version.</summary>
     public const string FromPublished = "published";
 }
@@ -395,6 +415,14 @@ public sealed record CreateRequest
     /// <see cref="AgentError.PendingDraft"/>; a dry run reports them in <see cref="WriteResult.PendingDraft"/>.
     /// </summary>
     public bool IncludeDraft { get; init; }
+
+    /// <summary>As <see cref="DraftRequest.Project"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Project { get; init; }
+
+    /// <summary>As <see cref="DraftRequest.Ready"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Ready { get; init; }
 }
 
 /// <summary>Body of <see cref="AgentRoutes.Media"/>: upload a file as a new media item (image, PDF, video, ...).</summary>
@@ -461,6 +489,14 @@ public sealed record UploadRequest
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Sha256 { get; init; }
+
+    /// <summary>As <see cref="DraftRequest.Project"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Project { get; init; }
+
+    /// <summary>As <see cref="DraftRequest.Ready"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Ready { get; init; }
 }
 
 /// <summary>Body of <see cref="AgentRoutes.Languages"/>: create a language branch as a draft.</summary>
@@ -481,6 +517,14 @@ public sealed record LanguageBranchRequest
     public bool RequestApproval { get; init; }
 
     public bool DryRun { get; init; }
+
+    /// <summary>As <see cref="DraftRequest.Project"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Project { get; init; }
+
+    /// <summary>As <see cref="DraftRequest.Ready"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Ready { get; init; }
 }
 
 /// <summary>Body of <see cref="AgentRoutes.RemoveLanguage"/>.</summary>

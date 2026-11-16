@@ -303,6 +303,64 @@ public static class AgentRoutes
     }
 
     private static string Content(string contentRef) => $"{Create}/{Uri.EscapeDataString(contentRef)}";
+
+    /// <summary>
+    /// <c>POST /v1/projects</c>. Body: <see cref="ProjectCreateRequest"/>. Response: <see cref="ProjectResult"/> (201 when
+    /// made). Errors: <c>conflict</c> (a project that isn't published has the name), <c>usage</c> (no name, too long),
+    /// <c>refused</c> (<see cref="AgentErrorReasons.ProjectsDisabled"/>).
+    /// </summary>
+    /// <remarks>
+    /// <para>Every project route names the project by <c>{project}</c>: its id, or its exact name (case-insensitive), of
+    /// which a project that isn't published wins over published ones; a name more than one such project has is a
+    /// <c>usage</c> error listing their ids. Errors common to them: <c>not_found</c> (project, or content that isn't in
+    /// it), <c>conflict</c> (<see cref="AgentErrorReasons.ProjectNotActive"/>: the project's status doesn't allow the
+    /// change), <c>refused</c> (<see cref="AgentErrorReasons.ProjectsDisabled"/>: the site's edit UI has neither project
+    /// mode nor the Projects gadget on), and for one refused over its items <see cref="AgentErrorReasons.ProjectItems"/>
+    /// with <see cref="AgentError.Project"/>.</para>
+    /// <para>Saves join a project through <see cref="DraftRequest.Project"/> (and the same field on create, upload and
+    /// language requests).</para>
+    /// </remarks>
+    public static readonly string Projects = $"{Prefix}/projects";
+
+    /// <summary>
+    /// <c>POST /v1/projects/{project}/ready</c>. Body: <see cref="ProjectReadyRequest"/>. Response: <see cref="ProjectResult"/>
+    /// with <see cref="ProjectResult.Items"/>. Errors: <c>refused</c> (an approval sequence without requestApproval),
+    /// <c>validation</c>, <c>conflict</c> (an item in review, published or scheduled), <c>usage</c>.
+    /// </summary>
+    public static string ProjectReady(string project) => $"{Project(project)}/ready";
+
+    /// <summary>
+    /// <c>POST /v1/projects/{project}/remove</c>. Body: <see cref="ProjectRemoveRequest"/>. Response: <see cref="ProjectResult"/>
+    /// with <see cref="ProjectResult.Items"/>. The items' versions stay as they are.
+    /// </summary>
+    public static string ProjectRemove(string project) => $"{Project(project)}/remove";
+
+    /// <summary>
+    /// <c>POST /v1/projects/{project}/publish</c>. Body: <see cref="ProjectPublishRequest"/> (optional). Response:
+    /// <see cref="ProjectResult"/>. Publishes (or schedules) the items marked Ready to publish, through the CMS's
+    /// <c>ProjectPublisher</c>, and returns once every item was tried. Errors: <c>conflict</c> (no item ready,
+    /// <see cref="AgentErrorReasons.NothingReady"/>; other people's drafts without includeDraft), <c>refused</c>,
+    /// <c>validation</c> (an item's), <c>usage</c> (publishAt not in the future).
+    /// </summary>
+    public static string ProjectPublish(string project) => $"{Project(project)}/publish";
+
+    /// <summary>
+    /// <c>POST /v1/projects/{project}/reactivate</c>. Body: <see cref="ProjectReactivateRequest"/> (optional). Response:
+    /// <see cref="ProjectResult"/>. Cancels a scheduled project's publish (<c>ProjectPublisher.ReactivateAsync</c>): the
+    /// project is active again and its scheduled items drafts, not ready. Errors: <c>conflict</c> for a project that isn't
+    /// scheduled.
+    /// </summary>
+    public static string ProjectReactivate(string project) => $"{Project(project)}/reactivate";
+
+    /// <summary>
+    /// <c>DELETE /v1/projects/{project}</c>. Deletes the project (<c>ProjectRepository.Delete</c>); its items' versions stay
+    /// as they are. Response: <see cref="ProjectResult"/> with <see cref="ProjectResult.Deleted"/>. Errors: <c>conflict</c>
+    /// while it is scheduled (reactivate it first) or being published or reactivated. Developer-only: the MCP module has
+    /// no such tool.
+    /// </summary>
+    public static string ProjectDelete(string project) => Project(project);
+
+    private static string Project(string project) => $"{Projects}/{Uri.EscapeDataString(project)}";
 }
 
 /// <summary>Query parameters of <see cref="AgentRoutes.Read"/>.</summary>

@@ -87,7 +87,7 @@ internal static class ExistingContent
             Approvals.RequireNotInReview(versions, what, branch?.Name);
         }
         // In the recycle bin, the sequence of where it is restored to applies.
-        var decision = WriteFlow.Publishing(flow.Call, deleted ? parent.ContentLink : link, publish, requestApproval, publishAt, what);
+        var decision = flow.Decide(deleted ? parent.ContentLink : link, publish, requestApproval, publishAt, what);
         var pending = (decision is SaveAction.Publish or SaveAction.Schedule) && versions is not null
             ? PendingDrafts.Require(
                 flow.Locator.PendingDraft(versions, flow.Repository.Get<IContent>(ContentLocator.Latest(versions, link, branch).ContentLink)),

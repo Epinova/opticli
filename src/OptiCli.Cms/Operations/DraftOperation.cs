@@ -18,6 +18,7 @@ internal static class DraftOperation
     public static WriteResult Run(CmsCall call, string reference, DraftRequest body)
     {
         var flow = new WriteFlow(call);
+        flow.Project = Projects.ProjectSave.For(call, body.Project, body.Ready, body.Publish, body.PublishAt);
         var link = flow.Locator.Resolve(reference);
         var language = flow.Locator.ContentLanguage(flow.Locator.LoadAnyLanguage(link), body.Lang);
         // CMS 13: the content variation asked for, or the one the ref's version belongs to. Its versions are a branch of
@@ -58,7 +59,7 @@ internal static class DraftOperation
 
         var what = $"{link.ID} ('{current.Name}')";
         Approvals.RequireNotInReview(branch, what, language?.Name);
-        var action = WriteFlow.Publishing(call, link, body.Publish, body.RequestApproval, body.PublishAt, what);
+        var action = flow.Decide(link, body.Publish, body.RequestApproval, body.PublishAt, what);
         // The draft the caller names, when it is still the latest and theirs: the base is then that version itself.
         var into = body.IntoVersion is not null && current is IVersionable
             && SaveInto.Applies(body.IntoVersion, latest, call.UserName, startsVariation, basedElsewhere: body.From is not null || link.WorkID > 0);

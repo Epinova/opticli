@@ -37,6 +37,12 @@ internal enum AgentEndpoint
     UserRoles,
     Sealed,
     SealedEventsFlush,
+    ProjectCreate,
+    ProjectReady,
+    ProjectRemove,
+    ProjectPublish,
+    ProjectReactivate,
+    ProjectDelete,
 }
 
 /// <param name="Argument">The <c>{name}</c> or <c>{ref}</c> segment, when the route has one.</param>
@@ -52,7 +58,8 @@ internal static partial class AgentRouter
 
     private static readonly string RouteList =
         $"GET {AgentRoutes.Prefix}/ping, POST {AgentRoutes.Prefix}/shutdown, GET {AgentRoutes.Prefix}/drift, GET {AgentRoutes.Prefix}/restore-parents, GET {AgentRoutes.Prefix}/types/{{name}}, GET {AgentRoutes.Prefix}/types-without-code, POST {AgentRoutes.Prefix}/types/remove, POST {AgentRoutes.Prefix}/content, POST {AgentRoutes.Prefix}/media, " +
-        $"POST {AgentRoutes.Prefix}/content/{{ref}}/draft|languages|remove-language|publish|unpublish|discard|move|restore|access, GET|DELETE {AgentRoutes.Prefix}/content/{{ref}}, POST {AgentRoutes.Prefix}/sites/hosts|add, POST {AgentRoutes.Prefix}/languages, POST {AgentRoutes.Prefix}/jobs/run|stop|set, POST {AgentRoutes.Prefix}/users/add|remove, GET {AgentRoutes.Prefix}/users/roles, GET {AgentRoutes.Prefix}/sealed, POST {AgentRoutes.Prefix}/sealed/events/flush";
+        $"POST {AgentRoutes.Prefix}/content/{{ref}}/draft|languages|remove-language|publish|unpublish|discard|move|restore|access, GET|DELETE {AgentRoutes.Prefix}/content/{{ref}}, POST {AgentRoutes.Prefix}/sites/hosts|add, POST {AgentRoutes.Prefix}/languages, POST {AgentRoutes.Prefix}/jobs/run|stop|set, POST {AgentRoutes.Prefix}/users/add|remove, GET {AgentRoutes.Prefix}/users/roles, GET {AgentRoutes.Prefix}/sealed, POST {AgentRoutes.Prefix}/sealed/events/flush, " +
+        $"POST {AgentRoutes.Prefix}/projects, POST {AgentRoutes.Prefix}/projects/{{project}}/ready|remove|publish|reactivate, DELETE {AgentRoutes.Prefix}/projects/{{project}}";
 
     /// <exception cref="AgentException">No route matches, or it belongs to another protocol version.</exception>
     public static RouteMatch Match(string method, string? path)
@@ -107,6 +114,12 @@ internal static partial class AgentRouter
             ["content", var reference, "move"] => (AgentEndpoint.Move, reference),
             ["content", var reference, "restore"] => (AgentEndpoint.Restore, reference),
             ["content", var reference, "access"] => (AgentEndpoint.Access, reference),
+            ["projects"] => (AgentEndpoint.ProjectCreate, (string?)null),
+            ["projects", var project] => (AgentEndpoint.ProjectDelete, project),
+            ["projects", var project, "ready"] => (AgentEndpoint.ProjectReady, project),
+            ["projects", var project, "remove"] => (AgentEndpoint.ProjectRemove, project),
+            ["projects", var project, "publish"] => (AgentEndpoint.ProjectPublish, project),
+            ["projects", var project, "reactivate"] => (AgentEndpoint.ProjectReactivate, project),
             _ => throw NotFound(shown),
         };
         var allowed = Methods[endpoint];
@@ -155,6 +168,12 @@ internal static partial class AgentRouter
         [AgentEndpoint.UserAdd] = "POST",
         [AgentEndpoint.UserRemove] = "POST",
         [AgentEndpoint.UserRoles] = "GET",
+        [AgentEndpoint.ProjectCreate] = "POST",
+        [AgentEndpoint.ProjectReady] = "POST",
+        [AgentEndpoint.ProjectRemove] = "POST",
+        [AgentEndpoint.ProjectPublish] = "POST",
+        [AgentEndpoint.ProjectReactivate] = "POST",
+        [AgentEndpoint.ProjectDelete] = "DELETE",
     };
 
     private static bool IsMethod(string method, string expected) => string.Equals(method, expected, StringComparison.OrdinalIgnoreCase);

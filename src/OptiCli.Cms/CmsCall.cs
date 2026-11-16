@@ -191,6 +191,31 @@ internal sealed class CmsCall(IServiceProvider services, CancellationToken abort
         return Checked ? Repository.Save(content, action) : Repository.Save(content, action, AccessLevel.NoAccess);
     }
 
+    /// <summary>
+    /// Publishes, or with <paramref name="delayPublishUntil"/> schedules, the project's <paramref name="items"/> through the
+    /// CMS's <see cref="ProjectPublisher"/> (the site's own, if it registers one), which sets the project's status around
+    /// it: for an editor with Publish on each item (the CMS checks it per item, with the editor's principal), unchecked for
+    /// the developer. Passes the caller's publishing gate first. The task ends once every item was tried; it fails with
+    /// the CMS's <see cref="AggregateException"/> when one wasn't published.
+    /// </summary>
+    /// <remarks>The CMS publishes on a background task of its own: see <see cref="Projects.ProjectPublishEvents"/> for what the site's code does meanwhile.</remarks>
+    public Task<Project> PublishProject(Project project, IEnumerable<ProjectItem> items, DateTime? delayPublishUntil)
+    {
+        RequirePublishing(delayPublishUntil is null ? SaveAction.Publish : SaveAction.Schedule);
+        return Service<ProjectPublisher>().PublishAsync(project, items, delayPublishUntil, Checked ? AccessLevel.Publish : AccessLevel.NoAccess);
+    }
+
+    /// <summary>
+    /// Cancels a scheduled project's publish through the CMS's <see cref="ProjectPublisher"/> (<c>ReactivateAsync</c>): for
+    /// an editor with Publish on each scheduled item, as the edit UI asks, unchecked for the developer. A change to what
+    /// goes live, so it passes the caller's publishing gate first.
+    /// </summary>
+    public Task<Project> ReactivateProject(Project project)
+    {
+        RequirePublishing(SaveAction.Publish);
+        return Service<ProjectPublisher>().ReactivateAsync(project, Checked ? AccessLevel.Publish : AccessLevel.NoAccess);
+    }
+
     private readonly List<SiteEvent> _siteEvents = [];
 
     /// <summary>The content events of the last <see cref="Save"/>, in order (<see cref="SiteChanges"/>), and forgets them.</summary>

@@ -146,6 +146,12 @@ public sealed record WriteResult
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<SiteChange>? SiteChanges { get; init; }
+    /// <summary>
+    /// For a save with a <c>project</c> (<see cref="DraftRequest.Project"/>): what it did to the project (would do, for a
+    /// dry run). Null for a save without one.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ProjectSaveResult? Project { get; init; }
 }
 
 /// <summary>A change the site's own code made while content was saved: <see cref="WriteResult.SiteChanges"/>.</summary>

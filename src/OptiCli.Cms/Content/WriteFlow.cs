@@ -3,6 +3,7 @@ using EPiServer;
 using EPiServer.Core;
 using EPiServer.DataAbstraction;
 using EPiServer.DataAccess;
+using OptiCli.Cms.Projects;
 using OptiCli.Protocol;
 
 namespace OptiCli.Cms.Content;
@@ -49,6 +50,12 @@ internal sealed class WriteFlow
     /// </summary>
     public (string Extension, byte[]? Data)? NewFile { get; set; }
 
+    /// <summary>
+    /// The project the save goes into (the request's <c>project</c>, <see cref="ProjectSave.For"/>); null for a save
+    /// without one. Set before <see cref="Decide"/>, which it changes for <c>ready</c>.
+    /// </summary>
+    public ProjectSave? Project { get; set; }
+
     /// <summary>New content as stored, if a save got that far.</summary>
     public IContent? Saved(IContent writable) =>
         writable.ContentGuid != Guid.Empty && Repository.TryGet<IContent>(writable.ContentGuid, out var stored) ? stored : null;
@@ -78,6 +85,15 @@ internal sealed class WriteFlow
         Approvals.Decide(call, link, publish: true, requestApproval: false, what);
         return SaveAction.Schedule;
     }
+
+    /// <summary>
+    /// How this write saves: <see cref="Publishing"/>, after <see cref="Project"/> has had its say on
+    /// <paramref name="requestApproval"/> (<see cref="ProjectSave.RequestApproval"/>: with <c>ready</c>, a review where
+    /// an approval sequence applies, else none).
+    /// </summary>
+    /// <param name="link">The content, or the parent of new content.</param>
+    public SaveAction? Decide(ContentReference link, bool publish, bool requestApproval, DateTime? publishAt, string what) =>
+        Publishing(Call, link, publish, Project?.RequestApproval(link, requestApproval, what) ?? requestApproval, publishAt, what);
 
     /// <summary>For a scheduled save: the version's start-publish date, which the CMS publishes it at.</summary>
     public static void ScheduleAt(IContent writable, SaveAction? action, DateTime? publishAt)
@@ -169,9 +185,14 @@ internal sealed class WriteFlow
         var diff = PropertyValues.Diff(before, asked);
         // What is reported: an editor never sees a hidden property's value, also not in a diff.
         var changes = Call.Properties.Shown(writable, diff);
+        Project?.Check(writable);
         var issues = (precheck ?? []).Concat(InlineBlockWarnings()).Concat(Writer.Warnings).Concat(ValidationErrors.Validate(Call, writable, action)).ToList();
         var valid = !ValidationErrors.HasErrors(issues);
         var published = Kind(action) == SaveAction.Publish;
+        if (Project is null && !published && ProjectSave.NotInProject(Call, writable, intoVersion) is { } notInProject)
+        {
+            issues.Add(notInProject);
+        }
 
         if (dryRun)
         {
@@ -185,6 +206,10 @@ internal sealed class WriteFlow
                 Changes = changes,
                 Validation = issues.Count > 0 ? issues : null,
                 IntoVersion = intoVersion is not null && (diff.Count > 0 || saveUnchanged),
+                // The version the save goes into, or (nothing to save) the version the write is based on, which goes in as it is.
+                Project = Project?.Planned(writable, review: Kind(action) == SaveAction.RequestApproval,
+                    intoVersion is not null && (diff.Count > 0 || saveUnchanged) ? intoVersion
+                    : diff.Count == 0 && !saveUnchanged && writable.ContentLink.WorkID > 0 ? writable.ContentLink.WorkID : null),
             };
         }
         if (!valid)
@@ -197,6 +222,20 @@ internal sealed class WriteFlow
         beforeSave?.Invoke();
         if (diff.Count == 0 && !saveUnchanged)
         {
+            if (Project is not null && !ContentReference.IsNullOrEmpty(writable.ContentLink) && writable.ContentLink.WorkID > 0)
+            {
+                // Nothing to save, but the version the write is based on may still go in the project (a plan run again).
+                var (project, warning) = Project.AddUnchanged(Repository.Get<IContent>(writable.ContentLink));
+                var unchanged = Repository.Get<IContent>(writable.ContentLink);
+                return new WriteResult
+                {
+                    Content = ContentSummaries.Describe(unchanged, Types),
+                    BaseVersion = baseVersion,
+                    Validation = warning is null ? (issues.Count > 0 ? issues : null) : [.. issues, warning],
+                    SiteChanges = SiteChanges.Report(Call, Types, Call.TakeSiteEvents(), unchanged, null, published: false),
+                    Project = project,
+                };
+            }
             return new WriteResult { Content = shown, BaseVersion = baseVersion, Validation = issues.Count > 0 ? issues : null };
         }
 
@@ -235,14 +274,26 @@ internal sealed class WriteFlow
             // Report what was stored, not what was asked for.
             changes = Call.Properties.Shown(writable, Stored(diff, overridden));
         }
-        var siteChanges = SiteChanges.Report(Call, Types, Call.TakeSiteEvents(), result, askedParent, published,
-            Call.Properties.Shown(result, overridden).Select(c => new SiteChangedProperty(c.Property, c.Before, c.After)).ToList());
+        var events = Call.TakeSiteEvents().ToList();
         if (!published && writable is IVersionable && saved.WorkID > 0 && Compat.CmsApi.Variation(writable) is null)
         {
             // ForceNewVersion leaves the old primary draft in place, and edit mode would keep opening that one. (Not for a
             // content variation's version: the primary draft is the content's own.)
             Versions.SetCommonDraft(saved);
         }
+        ProjectSaveResult? inProject = null;
+        if (Project is not null)
+        {
+            // Marking it ready is a save of its own, whose events the site's code may act on too.
+            inProject = Project.Add(result, action);
+            events.AddRange(Call.TakeSiteEvents());
+            if (inProject.Ready)
+            {
+                result = Repository.Get<IContent>(saved);
+            }
+        }
+        var siteChanges = SiteChanges.Report(Call, Types, events, result, askedParent, published,
+            Call.Properties.Shown(result, overridden).Select(c => new SiteChangedProperty(c.Property, c.Before, c.After)).ToList());
         return new WriteResult
         {
             Content = ContentSummaries.Describe(result, Types),
@@ -257,6 +308,7 @@ internal sealed class WriteFlow
             SiteError = siteError,
             SiteChanges = siteChanges,
             IntoVersion = intoVersion is { } target && saved.WorkID == target,
+            Project = inProject,
         };
     }
 

@@ -109,7 +109,25 @@ internal static class AgentMiddleware
         [AgentEndpoint.TypesRemove] = Write(r => r.ReadBodyAsync<OrphanRemovalRequest>(), b => b.DryRun, (r, b) => Ok(OrphanRemovalOperation.Run(r, b))),
         // No body and no dry run: a delete is always real.
         [AgentEndpoint.Delete] = Write(Task.FromResult, _ => false, (r, _) => Ok(DeleteOperation.Run(r.Call, r.Argument))),
+        // Projects: the same OptiCli.Cms operations the MCP module runs (all but delete, which is the CLI's only).
+        [AgentEndpoint.ProjectCreate] = Write(r => r.ReadBodyAsync<ProjectCreateRequest>(), b => b.DryRun, (r, b) => ProjectCreated(ProjectCreateOperation.Run(r.Call, b))),
+        [AgentEndpoint.ProjectReady] = Write(r => r.ReadBodyAsync<ProjectReadyRequest>(), b => b.DryRun, (r, b) => Ok(ProjectReadyOperation.Run(r.Call, ProjectName(r), b))),
+        [AgentEndpoint.ProjectRemove] = Write(r => r.ReadBodyAsync<ProjectRemoveRequest>(), b => b.DryRun, (r, b) => Ok(ProjectRemoveOperation.Run(r.Call, ProjectName(r), b))),
+        [AgentEndpoint.ProjectPublish] = Write(async r => await r.ReadOptionalBodyAsync<ProjectPublishRequest>() ?? new ProjectPublishRequest(), b => b.DryRun,
+            async (r, b) => Ok(await ProjectPublishOperation.RunAsync(r.Call, ProjectName(r), b))),
+        [AgentEndpoint.ProjectReactivate] = Write(async r => await r.ReadOptionalBodyAsync<ProjectReactivateRequest>() ?? new ProjectReactivateRequest(), b => b.DryRun,
+            async (r, b) => Ok(await ProjectReactivateOperation.RunAsync(r.Call, ProjectName(r), b))),
+        // No body and no dry run, as a content delete.
+        [AgentEndpoint.ProjectDelete] = Write(Task.FromResult, _ => false, (r, _) => Ok(ProjectDeleteOperation.Run(r.Call, ProjectName(r)))),
     };
+
+    private static (int, object) ProjectCreated(ProjectResult result) => (result.Created ? 201 : 200, result);
+
+    /// <summary>
+    /// The <c>{project}</c> segment: an id or a name. ASP.NET Core decodes a path except for <c>%2F</c>, which a name with a
+    /// slash arrives as.
+    /// </summary>
+    internal static string ProjectName(AgentRequest request) => request.Argument.Replace("%2F", "/", StringComparison.OrdinalIgnoreCase);
 
     /// <param name="Gated">The endpoint is a write, and passes <see cref="DriftGate"/> before it runs.</param>
     internal sealed record EndpointHandler(bool Gated, Func<AgentRequest, Task<(int Status, object Data)>> Run);

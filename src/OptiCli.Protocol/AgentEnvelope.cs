@@ -38,6 +38,12 @@ public sealed record AgentError(string Code, string Message, string? Hint = null
     /// records of what was removed before it stopped.
     /// </summary>
     public OrphanRemovalResult? Removal { get; init; }
+
+    /// <summary>
+    /// For a project operation refused over its items (<see cref="AgentErrorReasons.ProjectItems"/>, or a pending draft in
+    /// one): the project and every item, each with its <see cref="ProjectItemResult.Problem"/>, as a dry run reports them.
+    /// </summary>
+    public ProjectResult? Project { get; init; }
 }
 
 /// <summary>Values of <see cref="AgentError.Reason"/>, which the CLI passes on as <c>details.reason</c>.</summary>
@@ -93,6 +99,32 @@ public static class AgentErrorReasons
     /// can't be removed; <see cref="AgentError.Validation"/> has each one and why, and nothing was removed.
     /// </summary>
     public const string Orphans = "orphans";
+
+    /// <summary>
+    /// Refused: neither project mode nor the Projects gadget is on in the site's CMS edit UI, so editors have no projects
+    /// to review or publish.
+    /// </summary>
+    public const string ProjectsDisabled = "projectsDisabled";
+
+    /// <summary>
+    /// Conflict: the project doesn't take the change in its status (it is published, scheduled, or being published or
+    /// reactivated); the message says which, and the hint what to do.
+    /// </summary>
+    public const string ProjectNotActive = "projectNotActive";
+
+    /// <summary>Conflict: the content is in another project that isn't published, in the same language.</summary>
+    public const string InOtherProject = "inOtherProject";
+
+    /// <summary>
+    /// A project operation refused over one or more of its items: <see cref="AgentError.Project"/> has each item and its
+    /// problem; nothing was changed. The code is that of the most serious problem. When every item's problem has the same
+    /// reason (<see cref="PendingDraft"/>, <see cref="ApprovalSequence"/>, ...), the error has that reason instead, and
+    /// <see cref="AgentError.Project"/> all the same.
+    /// </summary>
+    public const string ProjectItems = "projectItems";
+
+    /// <summary>Conflict: a project publish with no item marked Ready to publish.</summary>
+    public const string NothingReady = "nothingReady";
 }
 
 /// <summary>Error codes and the HTTP status each one is sent with.</summary>

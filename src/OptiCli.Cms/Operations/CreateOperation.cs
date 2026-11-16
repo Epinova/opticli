@@ -14,6 +14,7 @@ internal static class CreateOperation
     public static WriteResult Run(CmsCall call, CreateRequest body)
     {
         var flow = new WriteFlow(call);
+        flow.Project = Projects.ProjectSave.For(call, body.Project, body.Ready, body.Publish, body.PublishAt);
         if (string.IsNullOrWhiteSpace(body.Name))
         {
             throw AgentException.Usage("name is required.");
@@ -57,7 +58,7 @@ internal static class CreateOperation
         flow.Writer.Apply(content, body.Properties);
         Compat.CmsCompositionWrites.Apply(flow, content, body.Composition, null);
         // For a plan's dry run under a stand-in parent, that is the nearest existing ancestor, whose sequence is inherited.
-        var action = WriteFlow.Publishing(call, parent.ContentLink, body.Publish, body.RequestApproval, body.PublishAt, $"New {type.Name} '{body.Name}'");
+        var action = flow.Decide(parent.ContentLink, body.Publish, body.RequestApproval, body.PublishAt, $"New {type.Name} '{body.Name}'");
         WriteFlow.ScheduleAt(content, action, body.PublishAt);
 
         return flow.Save(
