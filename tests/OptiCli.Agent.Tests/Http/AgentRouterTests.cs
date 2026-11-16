@@ -39,6 +39,12 @@ public class AgentRouterTests
     [InlineData("GET", "/v1/content/123_456", "Read", "123_456")]
     [InlineData("get", "/v1/content/0b1c2d3e-0000-4000-8000-000000000001", "Read", "0b1c2d3e-0000-4000-8000-000000000001")]
     [InlineData("get", "/v1/ping", "Ping", null)]
+    [InlineData("POST", "/v1/projects", "ProjectCreate", null)]
+    [InlineData("POST", "/v1/projects/12/ready", "ProjectReady", "12")]
+    [InlineData("POST", "/v1/projects/Spring campaign/remove", "ProjectRemove", "Spring campaign")]
+    [InlineData("POST", "/v1/projects/12/publish", "ProjectPublish", "12")]
+    [InlineData("POST", "/v1/projects/12/reactivate", "ProjectReactivate", "12")]
+    [InlineData("DELETE", "/v1/projects/12", "ProjectDelete", "12")]
     public void Matches_every_route(string method, string path, string endpoint, string? argument)
     {
         var match = AgentRouter.Match(method, path);
@@ -110,6 +116,14 @@ public class AgentRouterTests
         Assert.Equal(new RouteMatch(AgentEndpoint.Delete, "123"), AgentRouter.Match("DELETE", AgentRoutes.Delete("123")));
         Assert.Equal(new RouteMatch(AgentEndpoint.Read, "123"), AgentRouter.Match("GET", AgentRoutes.Read("123")));
         Assert.Equal(AgentEndpoint.TypesRemove, AgentRouter.Match("POST", AgentRoutes.TypesRemove).Endpoint);
+        Assert.Equal(AgentEndpoint.ProjectCreate, AgentRouter.Match("POST", AgentRoutes.Projects).Endpoint);
+        Assert.Equal(new RouteMatch(AgentEndpoint.ProjectReady, "12"), AgentRouter.Match("POST", AgentRoutes.ProjectReady("12")));
+        Assert.Equal(new RouteMatch(AgentEndpoint.ProjectRemove, "12"), AgentRouter.Match("POST", AgentRoutes.ProjectRemove("12")));
+        Assert.Equal(new RouteMatch(AgentEndpoint.ProjectPublish, "12"), AgentRouter.Match("POST", AgentRoutes.ProjectPublish("12")));
+        Assert.Equal(new RouteMatch(AgentEndpoint.ProjectReactivate, "12"), AgentRouter.Match("POST", AgentRoutes.ProjectReactivate("12")));
+        Assert.Equal(new RouteMatch(AgentEndpoint.ProjectDelete, "12"), AgentRouter.Match("DELETE", AgentRoutes.ProjectDelete("12")));
+        // A name is escaped; ASP.NET Core decodes it again, but for a slash.
+        Assert.Equal("/v1/projects/Spring%20campaign%2F2027/publish", AgentRoutes.ProjectPublish("Spring campaign/2027"));
     }
 
     [Theory]
