@@ -199,7 +199,7 @@ public class ProjectSaveTests
         var warning = ProjectSave.NotInProject(_call, Version(10, 100), intoVersion: null);
         Assert.Equal("warning", warning?.Severity);
         Assert.Contains("1 ('Launch', active), which holds version 10_100", warning!.Message);
-        Assert.Contains("--project 1", warning.Message);
+        Assert.Contains("--in-project 1", warning.Message);
 
         // Saved into the version the project holds, published projects, other languages: nothing to say.
         Assert.Null(ProjectSave.NotInProject(_call, Version(10, 100), intoVersion: 100));
@@ -225,14 +225,32 @@ public class ProjectSaveTests
     {
         var save = Save();
 
-        var (added, none) = save.AddUnchanged(Version(10, 100));
+        var (added, none) = save.AddUnchanged(Version(10, 100), SaveAction.Save);
         Assert.Equal(ProjectSaveItems.Added, added.Item);
         Assert.Null(none);
 
-        var (published, warning) = save.AddUnchanged(Version(11, 110, status: VersionStatus.Published));
+        var (published, warning) = save.AddUnchanged(Version(11, 110, status: VersionStatus.Published), SaveAction.Save);
         Assert.Equal(ProjectSaveItems.None, published.Item);
         Assert.Contains("isn't a draft", warning?.Message);
         Assert.Single(_projects.Items);
+    }
+
+    [Fact]
+    public void A_write_that_changed_nothing_isnt_checked_in_past_a_review_it_asked_for()
+    {
+        var (result, _) = Save(ready: true).AddUnchanged(Version(10, 100), SaveAction.RequestApproval | SaveAction.ForceNewVersion);
+
+        Assert.Equal((ProjectSaveItems.Added, false), (result.Item, result.Ready));
+        Assert.DoesNotContain(_saves.Calls, c => c.Method == nameof(IContentRepository.Save));
+    }
+
+    [Fact]
+    public void A_failing_project_repository_only_drops_the_warning_on_a_save_without_a_project()
+    {
+        _projects.AddItem(1, new ContentReference(10, 100), "en");
+        _projects.ItemsFailure = new InvalidOperationException("The project database is gone.");
+
+        Assert.Null(ProjectSave.NotInProject(_call, Version(10, 101), intoVersion: null));
     }
 
     /// <summary>A language branch of a page, as the CMS loads it (read-only, so it can be cloned).</summary>

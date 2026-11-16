@@ -225,7 +225,9 @@ internal sealed class WriteFlow
             if (Project is not null && !ContentReference.IsNullOrEmpty(writable.ContentLink) && writable.ContentLink.WorkID > 0)
             {
                 // Nothing to save, but the version the write is based on may still go in the project (a plan run again).
-                var (project, warning) = Project.AddUnchanged(Repository.Get<IContent>(writable.ContentLink));
+                // With the decided action: a review request isn't marked ready (it is unreachable today, as a request with an
+                // action saves even unchanged, but the item must never be checked in past its reviewers).
+                var (project, warning) = Project.AddUnchanged(Repository.Get<IContent>(writable.ContentLink), action);
                 var unchanged = Repository.Get<IContent>(writable.ContentLink);
                 return new WriteResult
                 {

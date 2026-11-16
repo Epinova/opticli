@@ -67,8 +67,12 @@ internal sealed class FakeProjects : ProjectRepository
         return listed.Skip(startIndex).Take(maxRows);
     }
 
-    public override IEnumerable<ProjectItem> GetItems(IEnumerable<ContentReference> contentReferences) =>
-        contentReferences.SelectMany(link => Items.Where(i => i.ContentLink.ID == link.ID && (link.WorkID == 0 || i.ContentLink.WorkID == link.WorkID))).ToList();
+    /// <summary>Makes <see cref="GetItems"/> throw, as a failing project database would.</summary>
+    public Exception? ItemsFailure { get; set; }
+
+    public override IEnumerable<ProjectItem> GetItems(IEnumerable<ContentReference> contentReferences) => ItemsFailure is { } failure
+        ? throw failure
+        : contentReferences.SelectMany(link => Items.Where(i => i.ContentLink.ID == link.ID && (link.WorkID == 0 || i.ContentLink.WorkID == link.WorkID))).ToList();
 
     public override void SaveItems(IEnumerable<ProjectItem> projectItems)
     {

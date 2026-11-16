@@ -58,7 +58,7 @@ internal sealed class ProjectSave
         {
             return ready
                 ? throw AgentException.Usage("ready marks the saved version Ready to publish in a project, so it needs project too.",
-                    call.ForCaller("Give the project (--project) with --ready, or leave --ready out.", "Give project with ready, or leave ready out."))
+                    call.ForCaller("Give the project (--in-project) with --ready, or leave --ready out.", "Give project with ready, or leave ready out."))
                 : null;
         }
         if (publish || publishAt is not null)
@@ -213,12 +213,13 @@ internal sealed class ProjectSave
     /// project when it is a draft (and marked ready if asked), as a plan run again expects. A published version is left
     /// out, with a warning.
     /// </summary>
-    public (ProjectSaveResult Result, ValidationIssue? Warning) AddUnchanged(IContent based)
+    /// <param name="action">The write's decided save action (<see cref="WriteFlow.Decide"/>): a review request isn't marked ready.</param>
+    public (ProjectSaveResult Result, ValidationIssue? Warning) AddUnchanged(IContent based, SaveAction action)
     {
         var state = ProjectRules.State((based as IVersionable)?.Status, based.IsDeleted);
         if (state is ProjectItemState.Draft or ProjectItemState.Ready or ProjectItemState.InReview)
         {
-            return (Add(based, SaveAction.Save), null);
+            return (Add(based, action), null);
         }
         return (Result(ProjectSaveItems.None, null, ready: false), new ValidationIssue(null,
             $"Nothing changed, so nothing was saved, and version {based.ContentLink} isn't a draft, so it wasn't put in project {ProjectLookup.Describe(_project)}: save a change to make a draft for it.",
@@ -231,12 +232,32 @@ internal sealed class ProjectSave
     /// </summary>
     /// <param name="intoVersion">The version the save goes into instead of a new one, when it does: still the project's, if it was.</param>
     /// <returns>Null when the content isn't in such a project, or the project holds the version saved into.</returns>
+    /// <remarks>
+    /// A failure to read the projects (the project repository's database, a site's own repository) only drops the warning,
+    /// logged: a save that names no project never fails over projects.
+    /// </remarks>
     public static ValidationIssue? NotInProject(CmsCall call, IContent writable, int? intoVersion)
     {
-        if (ContentReference.IsNullOrEmpty(writable.ContentLink) || writable is not IVersionable || call.OptionalService<ProjectRepository>() is null)
+        if (ContentReference.IsNullOrEmpty(writable.ContentLink) || writable is not IVersionable)
         {
             return null;
         }
+        try
+        {
+            return call.OptionalService<ProjectRepository>() is null ? null : NotInProjectWarning(call, writable, intoVersion);
+        }
+        catch (Exception ex) when (ex is not AgentException)
+        {
+            if (call.OptionalService<ILoggerFactory>() is { } loggers)
+            {
+                loggers.CreateLogger(CmsCall.LogCategory).LogWarning(ex, "Couldn't check whether {Content} is in a project; saved without the warning.", writable.ContentLink.ToString());
+            }
+            return null;
+        }
+    }
+
+    private static ValidationIssue? NotInProjectWarning(CmsCall call, IContent writable, int? intoVersion)
+    {
         var projects = new ProjectContext(call);
         var holding = projects.InOtherProjects(writable.ContentLink, ProjectContext.Language(writable), except: 0);
         if (holding.Count == 0 || (intoVersion is { } into && holding.Any(h => h.Item.ContentLink.WorkID == into)))
@@ -249,9 +270,9 @@ internal sealed class ProjectSave
         var next = project.Status switch
         {
             _ when ProjectRules.IsActive(project.Status) =>
-                call.ForCaller($"To put it there instead, save with project {id} (--project {id}).", $"To put it there instead, save with project {id}."),
+                call.ForCaller($"To put it there instead, save with project {id} (--in-project {id}).", $"To put it there instead, save with project {id}."),
             ProjectStatus.DelayedPublished => call.ForCaller(
-                $"The project is scheduled to be published: to put the new version there instead, reactivate it (opticli projects reactivate {id}) and save with project {id} (--project {id}).",
+                $"The project is scheduled to be published: to put the new version there instead, reactivate it (opticli projects reactivate {id}) and save with project {id} (--in-project {id}).",
                 $"The project is scheduled to be published: to put the new version there instead, it must be reactivated first (reactivate_project {id}), then saved with project {id}."),
             _ => "",
         };

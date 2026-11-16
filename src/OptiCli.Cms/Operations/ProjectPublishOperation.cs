@@ -87,7 +87,7 @@ internal static class ProjectPublishOperation
                 : throw ProjectRules.Refusal("publish", ProjectLookup.Describe(project), result, ready.Select(p => p.Result).ToList(),
                     // Marking them ready again can't send them for review: they are ready already.
                     call.ForCaller(
-                        "Those items were marked ready without their reviewers' approval: send each for review by saving it into the project with ready and requestApproval (--project, --ready, --request-approval), and publish the project once they are approved. Nothing was published.",
+                        "Those items were marked ready without their reviewers' approval: send each for review by saving it into the project with ready and requestApproval (--in-project, --ready, --request-approval), and publish the project once they are approved. Nothing was published.",
                         "Those items were marked ready without their reviewers' approval: send each for review by saving it into the project with ready and requestApproval, and publish the project once they are approved. Nothing was published."));
         }
         if (body.DryRun)
