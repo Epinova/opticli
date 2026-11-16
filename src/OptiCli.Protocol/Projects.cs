@@ -153,7 +153,73 @@ public static class ProjectEditorUi
     /// Publish puts every unpublished item live, ready or not.
     /// </summary>
     public const string Gadget = "gadget";
+
+    /// <summary>
+    /// Neither (both turned off in the site's configuration): editors have no projects, and saves into one are refused.
+    /// Only reads (<see cref="ProjectList"/>, <see cref="ProjectDetails"/>) say so; a write is refused instead.
+    /// </summary>
+    public const string None = "none";
 }
+
+/// <summary>The projects the MCP module's <c>list_projects</c> shows, newest first.</summary>
+public sealed record ProjectList
+{
+    public required IReadOnlyList<ProjectSummary> Projects { get; init; }
+
+    /// <summary>As <see cref="ProjectResult.EditorUi"/>, or <see cref="ProjectEditorUi.None"/>.</summary>
+    public string? EditorUi { get; init; }
+
+    /// <summary>More projects than the limit matched.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool More { get; init; }
+}
+
+/// <summary>One project and its items, as the MCP module's <c>get_project</c> shows it.</summary>
+public sealed record ProjectDetails
+{
+    public required ProjectSummary Project { get; init; }
+
+    /// <summary>As <see cref="ProjectResult.EditorUi"/>, or <see cref="ProjectEditorUi.None"/>.</summary>
+    public string? EditorUi { get; init; }
+
+    /// <summary>Its items, in the project's order: for an editor, the ones whose content they can read.</summary>
+    public required IReadOnlyList<ProjectItemEntry> Items { get; init; }
+}
+
+/// <summary>An item of a project: its version, and where it stands.</summary>
+/// <param name="State">One of <see cref="ProjectItemStates"/>.</param>
+public sealed record ProjectItemEntry(ContentSummary Content, string State);
+
+/// <summary>Where an item of a project stands (<see cref="ProjectItemEntry.State"/>).</summary>
+public static class ProjectItemStates
+{
+    /// <summary>A draft (<c>checkedOut</c>), or rejected by a reviewer: not ready.</summary>
+    public const string Draft = "draft";
+
+    /// <summary>Marked Ready to publish (<c>checkedIn</c>): what a project publish puts live.</summary>
+    public const string Ready = "ready";
+
+    /// <summary>Awaiting approval: its reviewers decide.</summary>
+    public const string InReview = "inReview";
+
+    /// <summary>Its version is scheduled to be published.</summary>
+    public const string Scheduled = "scheduled";
+
+    /// <summary>Its version is the published one, or was.</summary>
+    public const string Published = "published";
+
+    /// <summary>The content is in the recycle bin.</summary>
+    public const string Deleted = "deleted";
+
+    /// <summary>The version no longer exists.</summary>
+    public const string Missing = "missing";
+}
+
+/// <summary>A project that holds a version of content (the MCP module's <c>get_content</c>, as the CLI's <c>get</c> shows it).</summary>
+/// <param name="Status">One of <see cref="ProjectStatuses"/>.</param>
+/// <param name="Version">The version it holds (<c>id_version</c>); null when the item names the content without one.</param>
+/// <param name="Language">The item's language; null for content without languages.</param>
+public sealed record ContentProject(int Id, string Name, string Status, string? Version, string? Language);
 
 /// <summary>What happened (or, for a dry run, would happen) to one item: <see cref="ProjectItemResult.Outcome"/>.</summary>
 public static class ProjectItemOutcomes

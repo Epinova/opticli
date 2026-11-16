@@ -45,7 +45,8 @@ internal static class ProjectReadyOperation
         var all = projects.Items(project);
         var selected = body.All
             ? all.Where(i => i.Version is { } version && call.CanRead(version) && (language is null || ProjectContext.SameLanguage(i.Item.Language, language))).ToList()
-            : ProjectSelection.Select(all, refs.Select(r => (r, flow.Locator.Resolve(r))).ToList(), language, ProjectLookup.Describe(project));
+            // An item of content the editor can't read is, for them, not in the project (its name stays out of the result).
+            : ProjectSelection.Select(all.Where(projects.Visible).ToList(), refs.Select(r => (r, flow.Locator.Resolve(r))).ToList(), language, ProjectLookup.Describe(project));
 
         var plans = selected.Select(item => Plan(call, flow, projects, item, body.All, body.RequestApproval, comment)).ToList();
         var result = new ProjectResult

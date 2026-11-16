@@ -85,11 +85,17 @@ internal sealed class ProjectContext(CmsCall call)
         return new LoadedItem(item, version);
     }
 
-    /// <summary>The project as results show it, with its item and ready counts.</summary>
+    /// <summary>
+    /// Whether the caller sees <paramref name="item"/>: always the developer; an editor an item whose content they can
+    /// read, or whose version no longer exists (there is nothing of it to hide).
+    /// </summary>
+    public bool Visible(LoadedItem item) => item.Version is null || Call.CanRead(item.Version);
+
+    /// <summary>The project as results show it, with its item and ready counts (for an editor, of the items they see).</summary>
     /// <param name="items">Its items, if loaded already.</param>
     public ProjectSummary Describe(Project project, IReadOnlyList<LoadedItem>? items = null)
     {
-        items ??= Items(project);
+        items = (items ?? Items(project)).Where(Visible).ToList();
         return new ProjectSummary
         {
             Id = project.ID,

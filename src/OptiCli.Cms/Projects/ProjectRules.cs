@@ -102,7 +102,7 @@ internal static class ProjectRules
                     "Create a new project for further changes (create_project). Nothing was changed.")),
             ProjectStatus.DelayedPublished => ($"Project {what} is scheduled to be published{At(project)}, so it {cant}.",
                 call.ForCaller($"Reactivate it first (opticli projects reactivate {id}), which cancels the scheduled publish; its items are then drafts to mark ready again. Nothing was changed.",
-                    $"Ask the user whether to cancel the scheduled publish (reactivate_project {id}); its items are then drafts to mark ready again. Nothing was changed.")),
+                    $"Ask the user whether to cancel the scheduled publish (reactivate_project {id}, where the site lets assistants publish; else the user reactivates it in the CMS); its items are then drafts to mark ready again. Nothing was changed.")),
             ProjectStatus.Publishing => ($"Project {what} is being published right now, so it {cant}.", "Try again once the publish is done. Nothing was changed."),
             ProjectStatus.Reactivating => ($"Project {what} is being reactivated right now, so it {cant}.", "Try again once that is done. Nothing was changed."),
             _ => ($"Project {what} {cant} in its status.", "Nothing was changed."),

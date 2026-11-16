@@ -273,7 +273,7 @@ internal sealed class ProjectSave
                 call.ForCaller($"To put it there instead, save with project {id} (--in-project {id}).", $"To put it there instead, save with project {id}."),
             ProjectStatus.DelayedPublished => call.ForCaller(
                 $"The project is scheduled to be published: to put the new version there instead, reactivate it (opticli projects reactivate {id}) and save with project {id} (--in-project {id}).",
-                $"The project is scheduled to be published: to put the new version there instead, it must be reactivated first (reactivate_project {id}), then saved with project {id}."),
+                $"The project is scheduled to be published: to put the new version there instead, it must be reactivated first (reactivate_project {id}, where the site lets assistants publish; else in the CMS), then saved with project {id}."),
             _ => "",
         };
         return new ValidationIssue(null,
