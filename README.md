@@ -2134,11 +2134,16 @@ with the reason in `tests/OptiCli.Integration/Comparison/KnownDifferences.cs`; a
 A sample site lacks much of what real sites have: fetch-data pages, a site whose start page is under another site's,
 simple addresses on several sites, culture-specific properties in shared and local blocks, personalized ContentAreas,
 an approval sequence, language fallback settings, a media type for PDF files, three sites whose hosts the site host
-tests change (and put back), and a scheduled job of its own. `tests/fixtures/edge-cases/` builds them from an Alloy
+tests change (and put back), CMS projects (one with an item marked Ready to publish and one that isn't), and a scheduled
+job of its own. `tests/fixtures/edge-cases/` builds them from an Alloy
 site (`dotnet new epi-alloy-mvc`) without changing it. `setup.sh` copies the site and its database, adds
 `EdgeCasesFixture.cs` (the extra content types, plus a startup module for what a plan can't create) and
-`JobsFixture.cs`, `UsersFixture.cs`, `OrphansFixture.cs` and `Cms12Fixture.cs` (on CMS 13 `Cms13Fixture.cs`: the
-CMS-specific parts, such as the hosts sites), and applies `edge-cases.plan.json`. `JobsFixture.cs` has "opticli test job", a manual, stoppable job
+`JobsFixture.cs`, `UsersFixture.cs`, `OrphansFixture.cs`, `../projects/ProjectsFixture.cs` and `Cms12Fixture.cs` (on
+CMS 13 `Cms13Fixture.cs`: the CMS-specific parts, such as the hosts sites), and applies `edge-cases.plan.json`. At
+startup the fixture makes the projects "Edge project" (the approval root's draft) and "Edge campaign" (two pages of its
+own, one draft marked ready and one not). `ProjectsFixture.cs` is a site handler that runs during a project publish: it
+makes and publishes a page next to each published "opticli-pp-notify ..." page, and fails the first publish of an
+"opticli-pp-flaky ..." page as CMS 12's task executor does, which the project tests use. `JobsFixture.cs` has "opticli test job", a manual, stoppable job
 that writes a status message a second for 3 steps (the number in `App_Data/opticli-job-steps`, if it exists) and fails
 when `App_Data/opticli-job-fail` exists; the `jobs` tests run it. `OrphansFixture.cs` leaves what removed code leaves behind: the page types `EdgeRemovedPage` (whose class doesn't
 exist, used by one page), `EdgeTrashedPage` (its only page is in the recycle bin) and `EdgeRemovedEmptyPage` (used by
@@ -2162,8 +2167,12 @@ dotnet test tests/OptiCli.Integration
 ```
 
 The integration tests run one at a time, since the write tests make and remove scratch content on the same site.
-Tests of someone else's draft have the fixture save a version again as another user (`POST /opticli-fixture/hand-over`,
-loopback only), through the CMS.
+Tests of someone else's draft have the fixture save a version again as another user, or mark it ready as that user
+with `&ready=1` (`POST /opticli-fixture/hand-over`, loopback only), through the CMS. The project tests turn the approval
+sequence's "require a comment" on and off again with `POST /opticli-fixture/approval-comment?required=1|0` (loopback
+only). Their test of a site with projects turned off runs only against a site served with
+`EPiServer__CmsUI__ProjectUI__ProjectModeEnabled=false` and `EPiServer__CmsUI__ProjectUI__ProjectGadgetEnabled=false`
+(`--filter "FullyQualifiedName~Projects_are_refused"`); elsewhere it checks that projects work.
 
 `drift.sh` in the same folder runs the shared-database scenario on copies of the edge-case site and its database. It
 reaches the copy through a host name instead of a loopback name (`<hostname>.localhost` resolves to the loopback
