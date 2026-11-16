@@ -58,6 +58,22 @@ public sealed class ToolTests
     }
 
     [Fact]
+    public async Task Marking_ready_takes_includeDraft_and_the_publish_tells_who_marked_items_ready()
+    {
+        await using var site = await TestSite.StartAsync(o => o.AllowPublish = true);
+        await using var client = await Connect(site);
+        var tools = (await client.ListToolsAsync()).ToDictionary(t => t.Name);
+
+        var ready = tools["mark_ready_to_publish"].ProtocolTool;
+        Assert.True(ready.InputSchema.GetProperty("properties").TryGetProperty("includeDraft", out _));
+        Assert.Contains("needs includeDraft", ready.Description);
+        Assert.Contains("noAccess", ready.InputSchema.GetProperty("properties").GetProperty("all").GetProperty("description").GetString());
+        Assert.Contains("readyBy", tools["publish_project"].ProtocolTool.Description);
+        Assert.Contains("readyBy", McpInstructions.ProjectPublishing);
+        Assert.Contains("need no includeDraft", McpInstructions.ProjectPublishing);
+    }
+
+    [Fact]
     public async Task Publishing_a_project_is_offered_whether_or_not_the_site_allows_publishing()
     {
         await using var site = await TestSite.StartAsync(o => o.AllowPublish = true);
