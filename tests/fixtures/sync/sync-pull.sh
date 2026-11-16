@@ -69,6 +69,9 @@ RESELLER=ef61f729-8e7a-4c56-aede-98d361f1556d
 HOW_TO_BUY=e9cefa25-6a0a-47d0-b12c-74c3f6a51c9a
 MANAGEMENT=43772e2d-46fa-412a-92ea-16bc0940fcda
 FIND_RESELLER=6a5312a5-f9b7-40bd-a6b3-4f2ae2bdf7c0
+# The edge-case fixture's own content (EdgeCasesFixture.cs's fixed GUIDs) is left out of the draft and kept lists: its
+# "Edge campaign" project has drafts of two pages on both sides, which a pull lists as drafts and as kept.
+NOT_EDGE='map(select(startswith("6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e") | not))'
 
 finish() {
   local status=$?
@@ -168,7 +171,7 @@ expect changes "[.data.updated[].guid] | sort" "$(jq -nc --arg a $ABOUT_US --arg
 expect changes "[.data.moved[].guid]" "[\"$RESELLER\"]" "moved"
 expect changes "[.data.trashed[].guid]" "[\"$MANAGEMENT\"]" "trashed with --delete"
 expect changes "[.data.skipped[] | select(.guid == \"$ORPHAN\") | .reason | contains(\"EdgeRemovedEmptyPage\")]" '[true]' "the page of a type the target lacks is skipped"
-expect changes "[.data.drafts[].guid]" "[\"$CONTACT_US\"]" "the newer draft is left out"
+expect changes "[.data.drafts[].guid] | $NOT_EDGE" "[\"$CONTACT_US\"]" "the newer draft is left out"
 expect changes '.data.conflicts | length' 0 "no conflicts"
 [ "$(target get "$MANAGEMENT" --json | jq -r '.data.deleted // false')" = true ] || fail "Management isn't in the target's recycle bin"
 [ "$(target get "$SCHEDULED" --json | jq -r '.data.status')" = delayedPublish ] || fail "the scheduled page isn't scheduled in the target"
@@ -232,7 +235,7 @@ echo "== local changes: Sync page B edited (kept), Sync page A1 moved to the rec
 target set "$PAGE_B" TeaserText="Only in the target" --publish >/dev/null
 target delete "$PAGE_A1" >/dev/null
 pull local --delete
-expect local "[.data.kept[].guid]" "[\"$PAGE_B\"]" "a local change only is kept"
+expect local "[.data.kept[].guid] | $NOT_EDGE" "[\"$PAGE_B\"]" "a local change only is kept"
 expect local "[.data.conflicts[].guid]" "[\"$PAGE_A1\"]" "a local trash of synced content is a conflict"
 expect local '.data.steps' 0 "nothing written for local changes"
 [ "$(value "$PAGE_B" TeaserText)" = '"Only in the target"' ] || fail "the local change to Sync page B was overwritten"
