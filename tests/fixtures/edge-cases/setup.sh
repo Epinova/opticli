@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds the edge-case site for opticli's integration tests: a copy of an Alloy site and of its database, with
-# EdgeCasesFixture.cs, JobsFixture.cs, UsersFixture.cs, OrphansFixture.cs and Cms12Fixture.cs added (on CMS 13,
-# Cms13Fixture.cs instead of Cms12Fixture.cs), and the content of edge-cases.plan.json. The
+# EdgeCasesFixture.cs, JobsFixture.cs, UsersFixture.cs, OrphansFixture.cs, ../projects/ProjectsFixture.cs and
+# Cms12Fixture.cs added (on CMS 13, Cms13Fixture.cs instead of Cms12Fixture.cs), and the content of edge-cases.plan.json. The
 # original site and database are not changed. The source can be CMS 12's Alloy or CMS 13's (tests/fixtures/cms13/
 # setup.sh's /demo/Alloy13, database alloy13).
 #
@@ -50,7 +50,9 @@ rm -rf "$TARGET/EdgeCases"
 mkdir -p "$TARGET/EdgeCases"
 project=$(find "$TARGET" -maxdepth 1 -name '*.csproj' | head -n 1)
 cms_major=$(sed -n 's:.*Include="EPiServer\.CMS" Version="\([0-9]*\)\..*:\1:p' "$project" | head -n 1)
-fixtures=("$HERE/EdgeCasesFixture.cs" "$HERE/JobsFixture.cs" "$HERE/UsersFixture.cs" "$HERE/OrphansFixture.cs")
+# ProjectsFixture.cs: a site handler that runs during a project publish, for the project tests (only for pages named
+# "opticli-pp-...").
+fixtures=("$HERE/EdgeCasesFixture.cs" "$HERE/JobsFixture.cs" "$HERE/UsersFixture.cs" "$HERE/OrphansFixture.cs" "$HERE/../projects/ProjectsFixture.cs")
 if [ "${cms_major:-12}" -ge 13 ]; then
   # Cms13Fixture.cs turns on visitor groups, which CMS 13 only registers when the site asks, makes the hosts sites as
   # applications with start pages of their own (no nested site: CMS 13 refuses applications whose start pages
@@ -102,7 +104,7 @@ if ! result=$($OPTICLI apply "$HERE/edge-cases.plan.json" --update-existing); th
   exit 1
 fi
 echo "$result" | jq -c '.data.operations[] | {index, op, id, status}'
-echo "== restart (creates the nested site (CMS 12), the hosts sites, the approval sequence, the language settings and the orphans)"
+echo "== restart (creates the nested site (CMS 12), the hosts sites, the approval sequence, the language settings, the projects and the orphans)"
 restart
 if $OPTICLI serve --logs --tail 400 | jq -r '.data.lines[]' | grep -A3 '\[edge-cases\] setup failed'; then
   exit 1

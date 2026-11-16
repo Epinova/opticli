@@ -1,7 +1,8 @@
 // Copied into an Alloy site by setup.sh, for opticli's integration tests. It adds the content types the edge-case
 // plan (edge-cases.plan.json) needs, and at startup sets up what a plan can't create: a visitor group, a second site
-// whose start page is under the first site's, three sites for the site host tests, an approval sequence and language
-// settings. Each is made once, and only once the plan's content exists, so setup.sh restarts the site after applying
+// whose start page is under the first site's, three sites for the site host tests, an approval sequence, language
+// settings, and two CMS projects: "Edge project" (the approval root's draft) and "Edge campaign" (two pages of its own,
+// one draft marked Ready to publish and one not). Each is made once, and only once the plan's content exists, so setup.sh restarts the site after applying
 // the plan. The sites are made by Cms12Fixture.cs on CMS 12; on CMS 13, Cms13Fixture.cs makes the three hosts sites as
 // applications (with start pages of their own below the root) and no nested site, which CMS 13 can't have.
 // POST /opticli-fixture/hand-over (loopback only) saves a version again as another user, for the tests of someone else's
@@ -86,6 +87,10 @@ public partial class EdgeCasesSetup : IInitializableModule
     public static readonly Guid HostsStartB = Guid.Parse("6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e05");
     public static readonly Guid HostsStartC = Guid.Parse("6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e06");
 
+    /// <summary>The "Edge campaign" project's pages: a draft marked Ready to publish, and a draft that isn't.</summary>
+    public static readonly Guid CampaignReady = Guid.Parse("6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e07");
+    public static readonly Guid CampaignDraft = Guid.Parse("6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e08");
+
     public const string NestedSiteName = "Edge nested site";
     public const string NestedHost = "edge-nested.localhost";
 
@@ -111,6 +116,7 @@ public partial class EdgeCasesSetup : IInitializableModule
             {
                 EnsureApproval(locate.GetInstance<IApprovalDefinitionRepository>(), approval);
                 EnsureProject(locate.GetInstance<ProjectRepository>(), content, approval);
+                EnsureCampaign(locate.GetInstance<ProjectRepository>(), content, locate.GetInstance<IContentTypeRepository>(), content.Get<IContent>(approval).ParentLink);
             }
             if (Find(content, LanguageRoot) is { } languages)
             {
@@ -182,6 +188,46 @@ public partial class EdgeCasesSetup : IInitializableModule
 
     public const string ProjectName = "Edge project";
 
+    public const string CampaignName = "Edge campaign";
+
+    /// <summary>
+    /// A project with ready and not-ready items, for reads: two published pages below the edge-case root (made once, by
+    /// their GUIDs), each with a newer draft in the project; the first draft is marked Ready to publish (checked in, as the
+    /// edit UI's Ready to Publish does), the second stays a draft.
+    /// </summary>
+    private static void EnsureCampaign(ProjectRepository projects, IContentRepository content, IContentTypeRepository types, ContentReference parent)
+    {
+        if (projects.List().Any(p => p.Name == CampaignName))
+        {
+            return;
+        }
+        var ready = Draft(CampaignReady, "Campaign page, ready", "<p>Marked Ready to publish in the Edge campaign project.</p>");
+        ready = content.Get<IContent>(content.Save(Writable(ready), SaveAction.CheckIn, AccessLevel.NoAccess));
+        var draft = Draft(CampaignDraft, "Campaign page, draft", "<p>Still a draft in the Edge campaign project.</p>");
+        var project = new Project { Name = CampaignName };
+        projects.Save(project);
+        projects.SaveItems([new ProjectItem(project.ID, ready) { Category = "default" }, new ProjectItem(project.ID, draft) { Category = "default" }]);
+        Console.Error.WriteLine($"[edge-cases] created project '{CampaignName}' with {ready.ContentLink} (ready) and {draft.ContentLink} (draft)");
+
+        // The page (published once), then a new draft of it with the new text.
+        IContent Draft(Guid guid, string name, string text)
+        {
+            if (!content.TryGet<PageData>(guid, out var page) || page.IsDeleted)
+            {
+                var made = content.GetDefault<PageData>(parent, types.Load("StandardPage").ID);
+                made.ContentGuid = guid;
+                made.Name = name;
+                made["MainBody"] = new XhtmlString("<p>Published.</p>");
+                page = content.Get<PageData>(content.Save(made, SaveAction.Publish, AccessLevel.NoAccess));
+            }
+            var writable = (PageData)page.CreateWritableClone();
+            writable["MainBody"] = new XhtmlString(text);
+            return content.Get<IContent>(content.Save(writable, SaveAction.CheckOut | SaveAction.ForceNewVersion, AccessLevel.NoAccess));
+        }
+
+        static IContent Writable(IContent version) => (IContent)((IReadOnly)version).CreateWritableClone();
+    }
+
     private static void EnsureLanguageSettings(ContentLanguageSettingRepository settings, ContentReference root)
     {
         if (settings.Load(root).Any())
@@ -202,11 +248,16 @@ public partial class EdgeCasesSetup : IInitializableModule
 /// it; opticli's agent only saves as itself. With <c>&amp;ready=1</c> it marks the version Ready to publish as that user
 /// instead, as the edit UI's "Ready to Publish" does (a check-in of the same version), for the tests of a project item a
 /// colleague marked ready.
+/// <para><c>POST /opticli-fixture/approval-comment?required=1</c> (or <c>0</c>), also from the machine itself, turns the
+/// approval root's sequence's "require a comment" on (or off), for the tests of a review request that needs one; they turn
+/// it off again.</para>
 /// </summary>
 [InitializableModule]
 public class OptiCliHandOverFixture : IConfigurableModule
 {
     public const string Path = "/opticli-fixture/hand-over";
+
+    public const string CommentPath = "/opticli-fixture/approval-comment";
 
     public void ConfigureContainer(ServiceConfigurationContext context) =>
         context.Services.AddTransient<IStartupFilter, Endpoint>();
@@ -225,6 +276,11 @@ public class OptiCliHandOverFixture : IConfigurableModule
         {
             app.Use(async (context, nextMiddleware) =>
             {
+                if (context.Request.Path.Equals(CommentPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    await RequireComment(context);
+                    return;
+                }
                 if (!context.Request.Path.Equals(Path, StringComparison.OrdinalIgnoreCase))
                 {
                     await nextMiddleware();
@@ -264,5 +320,24 @@ public class OptiCliHandOverFixture : IConfigurableModule
             });
             next(app);
         };
+
+        private static async Task RequireComment(HttpContext context)
+        {
+            var required = context.Request.Query["required"].ToString();
+            var repository = context.RequestServices.GetRequiredService<IContentRepository>();
+            var approvals = context.RequestServices.GetRequiredService<IApprovalDefinitionRepository>();
+            if (!HttpMethods.IsPost(context.Request.Method) || context.Connection.RemoteIpAddress is not { } address || !IPAddress.IsLoopback(address)
+                || required is not ("0" or "1")
+                || !repository.TryGet<IContent>(EdgeCasesSetup.ApprovalRoot, out var root)
+                || await approvals.GetAsync(root.ContentLink.ToReferenceWithoutVersion()) is not { } definition)
+            {
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                return;
+            }
+            var writable = definition.CreateWritableClone();
+            writable.RequireCommentOnStart = required == "1";
+            await approvals.SaveAsync(writable);
+            context.Response.StatusCode = StatusCodes.Status204NoContent;
+        }
     }
 }

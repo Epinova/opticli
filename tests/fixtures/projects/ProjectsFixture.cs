@@ -1,5 +1,5 @@
-// Copied into a copy of the edge-case site (CMS 12 or 13) for check-endpoints.py, which checks the agent's project
-// routes. Like a site's own publishing handler, it makes and publishes a page next to every page named
+// Copied into the edge-case site (CMS 12 or 13) by its setup.sh, for the project integration tests and
+// check-endpoints.py, which checks the agent's project routes. Like a site's own publishing handler, it makes and publishes a page next to every page named
 // "opticli-pp-notify ..." that is published, so a project publish has something of the site's own to report in
 // siteChanges. The CMS publishes a project on a background task, so this runs there. And the first time a page named
 // "opticli-pp-flaky ..." is published, it fails that publish before anything is saved with the error CMS 12's task

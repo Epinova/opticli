@@ -40,13 +40,18 @@ internal sealed class SiteUnderTest : IAsyncDisposable
     /// (its version list isn't cached after the agent's save); CMS 13 keeps the list cached after the agent's own save
     /// until the CMS changes the content again, so a change in SQL wouldn't reach the agent there.
     /// </summary>
-    /// <returns>False on a CMS 13 site without the fixture: the test then stops where it needs the other user's draft.</returns>
-    public async Task<bool> HandOverAsync(string versionRef, CancellationToken cancellationToken)
+    /// <param name="user">The other user, <see cref="SomeoneElse"/> by default.</param>
+    /// <param name="ready">
+    /// Mark the version Ready to publish as that user instead (a check-in of the same version, as the edit UI's Ready to
+    /// Publish): only through the fixture, which the method then needs.
+    /// </param>
+    /// <returns>False on a CMS 13 site without the fixture (or without it at all, for <paramref name="ready"/>): the test then stops where it needs the other user's draft.</returns>
+    public async Task<bool> HandOverAsync(string versionRef, CancellationToken cancellationToken, string user = SomeoneElse, bool ready = false)
     {
         if (SiteUrl is { } url)
         {
             using var http = new HttpClient { BaseAddress = url };
-            using var response = await http.PostAsync($"opticli-fixture/hand-over?version={Uri.EscapeDataString(versionRef)}&user={Uri.EscapeDataString(SomeoneElse)}", null, cancellationToken);
+            using var response = await http.PostAsync($"opticli-fixture/hand-over?version={Uri.EscapeDataString(versionRef)}&user={Uri.EscapeDataString(user)}{(ready ? "&ready=1" : "")}", null, cancellationToken);
             if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
             {
                 return true;
@@ -56,16 +61,35 @@ internal sealed class SiteUnderTest : IAsyncDisposable
                 throw new InvalidOperationException($"POST /opticli-fixture/hand-over answered {(int)response.StatusCode}: {await response.Content.ReadAsStringAsync(cancellationToken)}");
             }
         }
-        if (Session.Model.Schema.Major >= 13)
+        if (Session.Model.Schema.Major >= 13 || ready)
         {
             return false;
         }
         var changed = await Session.Db.QueryAsync("UPDATE tblWorkContent SET ChangedByName = @user WHERE pkID = @version; SELECT @@ROWCOUNT",
             r => r.GetInt32(0), cancellationToken,
-            new Microsoft.Data.SqlClient.SqlParameter("@user", SomeoneElse),
+            new Microsoft.Data.SqlClient.SqlParameter("@user", user),
             new Microsoft.Data.SqlClient.SqlParameter("@version", int.Parse(versionRef.Split('_')[1], System.Globalization.CultureInfo.InvariantCulture)));
         return changed.Single() == 1;
     }
+
+    /// <summary>
+    /// Turns the edge-case approval sequence's "require a comment" on or off, through the fixture's
+    /// <c>POST /opticli-fixture/approval-comment</c>.
+    /// </summary>
+    /// <returns>False on a site without the fixture.</returns>
+    public async Task<bool> RequireApprovalCommentAsync(bool required, CancellationToken cancellationToken)
+    {
+        if (SiteUrl is not { } url)
+        {
+            return false;
+        }
+        using var http = new HttpClient { BaseAddress = url };
+        using var response = await http.PostAsync($"opticli-fixture/approval-comment?required={(required ? 1 : 0)}", null, cancellationToken);
+        return response.StatusCode == System.Net.HttpStatusCode.NoContent;
+    }
+
+    /// <summary>Whether the site has the projects fixture (tests/fixtures/projects/ProjectsFixture.cs, which setup.sh adds).</summary>
+    public bool HasProjectsFixture => File.Exists(Path.Combine(ProjectDirectory, "EdgeCases", "ProjectsFixture.cs"));
 
     public static async Task<SiteUnderTest> ConnectAsync(CancellationToken cancellationToken)
     {
