@@ -29,7 +29,7 @@ public sealed class ToolTests
 
     private static readonly string[] WritingTools = ["create_content", "update_content", "add_language", "discard_draft", "upload_media", "move_content", "publish_content", "unpublish_content", "create_project", "mark_ready_to_publish", "remove_from_project"];
 
-    /// <summary>Offered only where the site allows publishing: publishing a project changes what visitors see in one go.</summary>
+    /// <summary>Offered on every site, as publish_content is; refused where the site doesn't allow publishing.</summary>
     private static readonly string[] ProjectPublishingTools = ["publish_project", "reactivate_project"];
 
     [Fact]
@@ -40,12 +40,13 @@ public sealed class ToolTests
 
         var tools = (await client.ListToolsAsync()).ToDictionary(t => t.Name, t => t.ProtocolTool.Annotations!);
 
-        Assert.Equal(ReadOnlyTools.Concat(WritingTools).Order(), tools.Keys.Order());
+        Assert.Equal(ReadOnlyTools.Concat(WritingTools).Concat(ProjectPublishingTools).Order(), tools.Keys.Order());
         Assert.All(ReadOnlyTools, name => Assert.Equal((true, false, true, false), Hints(tools[name])));
         Assert.All(WritingTools, name => Assert.False(tools[name].ReadOnlyHint));
         Assert.All(tools.Values, a => Assert.False(a.OpenWorldHint));
         Assert.Equal(new[] { "discard_draft", "move_content", "publish_content", "remove_from_project", "unpublish_content" },
             WritingTools.Where(name => tools[name].DestructiveHint == true).Order());
+        Assert.All(ProjectPublishingTools, name => Assert.Equal((false, true, false, false), Hints(tools[name])));
         Assert.DoesNotContain("set_access", tools.Keys);
         Assert.DoesNotContain("remove_language", tools.Keys);
         Assert.DoesNotContain("delete_project", tools.Keys);
@@ -54,20 +55,32 @@ public sealed class ToolTests
         await using var deletingClient = await Connect(deleting);
         var delete = Assert.Single(await deletingClient.ListToolsAsync(), t => t.Name == "delete_content");
         Assert.Equal((false, true, true, false), Hints(delete.ProtocolTool.Annotations!));
-        Assert.DoesNotContain(await deletingClient.ListToolsAsync(), t => ProjectPublishingTools.Contains(t.Name));
     }
 
     [Fact]
-    public async Task Publishing_a_project_is_offered_only_where_the_site_allows_publishing()
+    public async Task Publishing_a_project_is_offered_whether_or_not_the_site_allows_publishing()
     {
         await using var site = await TestSite.StartAsync(o => o.AllowPublish = true);
         await using var client = await Connect(site);
 
-        var tools = (await client.ListToolsAsync()).ToDictionary(t => t.Name, t => t.ProtocolTool.Annotations!);
+        // The same tools as a site without publishing, as publish_content is offered on both.
+        Assert.Equal(ReadOnlyTools.Concat(WritingTools).Concat(ProjectPublishingTools).Order(), (await client.ListToolsAsync()).Select(t => t.Name).Order());
+    }
 
-        // Everything a site without publishing has, and the project's publish tools: nothing else changes.
-        Assert.Equal(ReadOnlyTools.Concat(WritingTools).Concat(ProjectPublishingTools).Order(), tools.Keys.Order());
-        Assert.All(ProjectPublishingTools, name => Assert.Equal((false, true, false, false), Hints(tools[name])));
+    [Theory]
+    [InlineData("publish_project", """{"project":"Spring campaign"}""")]
+    [InlineData("publish_project", """{"project":"12","dryRun":true}""")]
+    [InlineData("reactivate_project", """{"project":"12","dryRun":true}""")]
+    public async Task Publishing_a_project_is_refused_with_a_hint_where_the_site_does_not_allow_publishing(string tool, string arguments)
+    {
+        await using var site = await TestSite.StartAsync();
+        await using var client = await Connect(site);
+
+        var error = await CallFailing(client, tool, arguments);
+
+        Assert.Equal((AgentErrorCodes.Refused, McpErrorReasons.PublishingOff), (error.Code, error.Reason));
+        Assert.Contains("mark_ready_to_publish", error.Hint);
+        Assert.Contains("in the CMS", error.Hint);
     }
 
     [Theory]

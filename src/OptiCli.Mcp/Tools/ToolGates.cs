@@ -29,14 +29,15 @@ internal static class ToolGates
     /// that may be live, discard a scheduled version, save content without versions): the site must allow it and the
     /// editor must have granted <see cref="Scopes.Publish"/>. Drafts and review requests need neither.
     /// </summary>
+    /// <param name="hint">What still works, for a tool whose case the general hint doesn't fit (a project's publish).</param>
     /// <exception cref="ModelContextProtocol.McpException"><c>refused</c>, with a hint that says what still works.</exception>
-    public static void Publishing(IReadOnlyCollection<string> granted, OptiCliMcpOptions site)
+    public static void Publishing(IReadOnlyCollection<string> granted, OptiCliMcpOptions site, string? hint = null)
     {
         if (!site.AllowPublish)
         {
             throw ToolErrors.Refused(
                 "This site doesn't let assistants publish, unpublish or schedule publishing, or change what visitors see in other ways (moving content that may be live, discarding a scheduled version).",
-                "Save the change as a draft (leave out publish and publishAt) and give the user its editUrl to review and publish it in the CMS; where an approval sequence applies, requestApproval sends it for review. A move or discard that changes what visitors see is for the user to make in the CMS. Nothing was changed.",
+                hint ?? "Save the change as a draft (leave out publish and publishAt) and give the user its editUrl to review and publish it in the CMS; where an approval sequence applies, requestApproval sends it for review. A move or discard that changes what visitors see is for the user to make in the CMS. Nothing was changed.",
                 McpErrorReasons.PublishingOff);
         }
         Scope(granted, Scopes.Publish);

@@ -78,18 +78,19 @@ internal sealed class ProjectTools(IHttpContextAccessor http, IOptions<OptiCliMc
 
 /// <summary>
 /// Publishing a project, scheduling it and cancelling the schedule: what a site allows only with
-/// <see cref="OptiCliMcpOptions.AllowPublish"/>, so only offered there (<see cref="ModuleTools"/>), and then only to a
-/// connection granted <see cref="Scopes.Publish"/>, as far as the editor's access rights allow (Publish on every item).
+/// <see cref="OptiCliMcpOptions.AllowPublish"/>, and then only to a connection granted <see cref="Scopes.Publish"/>, as
+/// far as the editor's access rights allow (Publish on every item).
 /// </summary>
 /// <remarks>
-/// Unlike <see cref="PublishTools"/>, not offered where the site doesn't allow publishing: a site that hasn't opted in
-/// keeps the tool list it had, apart from the project tools that make drafts (<see cref="ProjectTools"/>). The gate is
-/// checked all the same, should either be called regardless.
+/// Offered on every site, as <see cref="PublishTools"/> is: where the site doesn't allow publishing, a call is refused
+/// (<c>publishingOff</c>) with a hint that the user publishes the project in the CMS.
 /// </remarks>
 [McpServerToolType]
 internal sealed class ProjectPublishTools(IHttpContextAccessor http, IOptions<OptiCliMcpOptions> options, ILoggerFactory loggers)
     : ContentToolBase(http, options, loggers)
 {
+    internal const string PublishingOffHint = "Mark the items the user wants live ready (mark_ready_to_publish) and give the user the project's projectUrl (or tell them what projectNote says), so they publish or reactivate the project in the CMS. Nothing was changed.";
+
     [McpServerTool(Name = "publish_project", Title = "Publish project", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
     [Description("Publishes a project's items marked Ready to publish, together, now or at publishAt; items that aren't ready stay as they are (notReady), as do items live already (alreadyPublished). Only when the user asked to publish the project: run it with dryRun first, show the user what goes live (published, or scheduled), whose unpublished changes go with it (an item's pendingDraft) and what stays behind, and publish once they confirm. Every ready item is checked first, as publish_content checks one: a problem stops the publish, with each item's in error.project, and nothing goes live. Returns each item's url and editUrl, failed (items the CMS didn't publish, with siteError) and siteChanges (what the site's own code did meanwhile).")]
     public Task<string> PublishProject(
@@ -102,12 +103,12 @@ internal sealed class ProjectPublishTools(IHttpContextAccessor http, IOptions<Op
             PublishAt = publishAt,
             IncludeDraft = includeDraft,
             DryRun = dryRun,
-        }), ResultUrls.SerializeProject, PublishingIf(true));
+        }), ResultUrls.SerializeProject, PublishingIf(true, PublishingOffHint));
 
     [McpServerTool(Name = "reactivate_project", Title = "Reactivate project", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
     [Description("Cancels a scheduled project's publish: the project is active again, and its scheduled items are drafts again, not ready (mark them ready again before the project is published). Needs publish access to each scheduled item. Only when the user asked for it, after confirming; dryRun checks it.")]
     public Task<string> ReactivateProject(
         [Description(ProjectTools.Project)] string project,
         [Description("Only check that it can be reactivated, and which items it would unschedule; valid: false, with each item's problem, when one can't be.")] bool dryRun = false) =>
-        RunAsync(Scopes.Write, call => ProjectReactivateOperation.RunAsync(call, project, new ProjectReactivateRequest { DryRun = dryRun }), ResultUrls.SerializeProject, PublishingIf(true));
+        RunAsync(Scopes.Write, call => ProjectReactivateOperation.RunAsync(call, project, new ProjectReactivateRequest { DryRun = dryRun }), ResultUrls.SerializeProject, PublishingIf(true, PublishingOffHint));
 }

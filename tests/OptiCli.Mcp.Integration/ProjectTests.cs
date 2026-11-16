@@ -379,7 +379,7 @@ public sealed class ProjectTests(SharedSessions sessions)
     }
 
     [NoPublishSiteFact]
-    public async Task A_site_that_does_not_allow_publishing_offers_projects_but_not_publishing_them()
+    public async Task A_site_that_does_not_allow_publishing_offers_projects_and_refuses_to_publish_them()
     {
         var site = McpSiteSettings.NoPublishUrl!;
         await using var editor = await McpSession.ConnectAsync(TestUsers.Editor, new SessionOptions { Site = site });
@@ -388,8 +388,9 @@ public sealed class ProjectTests(SharedSessions sessions)
         Assert.Contains("mark_ready_to_publish", tools);
         Assert.Contains("remove_from_project", tools);
         Assert.Contains("list_projects", tools);
-        Assert.DoesNotContain("publish_project", tools);
-        Assert.DoesNotContain("reactivate_project", tools);
+        // Listed, as publish_content is, and refused when called.
+        Assert.Contains("publish_project", tools);
+        Assert.Contains("reactivate_project", tools);
         Assert.Contains("This site doesn't let assistants publish projects", editor.Client.ServerInstructions);
 
         var start = Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
@@ -400,9 +401,17 @@ public sealed class ProjectTests(SharedSessions sessions)
         {
             var marked = await editor.OkAsync("mark_ready_to_publish", new { project = name, items = new[] { page } });
             Assert.Equal("ready", Assert.Single(marked.GetProperty("items").EnumerateArray()).GetProperty("outcome").GetString());
-            // Not there to call.
-            var unknown = await Assert.ThrowsAnyAsync<ModelContextProtocol.McpException>(() => editor.CallAsync("publish_project", new { project = name }));
-            Assert.Contains("Unknown tool", unknown.Message);
+            foreach (var (tool, arguments) in new (string, object)[]
+            {
+                ("publish_project", new { project = name }),
+                ("publish_project", new { project = name, dryRun = true }),
+                ("reactivate_project", new { project = name }),
+            })
+            {
+                var refused = await editor.ErrorAsync(tool, arguments);
+                Assert.Equal(("refused", "publishingOff"), Code(refused));
+                Assert.Contains("mark_ready_to_publish", refused.GetProperty("hint").GetString());
+            }
             Assert.Equal("ready", Assert.Single((await editor.OkAsync("get_project", new { project = name })).GetProperty("items").EnumerateArray()).GetProperty("state").GetString());
             Assert.Equal(("refused", "publishingOff"), Code(await editor.ErrorAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = start, project = name, publish = true })));
         }

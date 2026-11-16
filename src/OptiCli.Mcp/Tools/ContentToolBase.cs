@@ -96,5 +96,6 @@ internal abstract class ContentToolBase(IHttpContextAccessor http, IOptions<Opti
     }
 
     /// <summary>The gate for a call that publishes, unpublishes or schedules (<see cref="ToolGates.Publishing"/>), when it does.</summary>
-    protected Action<McpEditor>? PublishingIf(bool publishes) => publishes ? editor => ToolGates.Publishing(editor.Scopes, Site) : null;
+    /// <param name="hint">The refusal's hint where the site doesn't allow publishing, when the general one doesn't fit.</param>
+    protected Action<McpEditor>? PublishingIf(bool publishes, string? hint = null) => publishes ? editor => ToolGates.Publishing(editor.Scopes, Site, hint) : null;
 }
