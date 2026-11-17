@@ -62,14 +62,16 @@ export class Cms {
   ) {}
 
   /**
-   * Creates a page and removes it after the test unless `keep`. Published, unless `publish: false` or it goes into a
-   * project (`inProject`), whose publish puts it live.
+   * Creates a page and removes it after the test unless `keep`. Published, unless `publish: false`, it is scheduled
+   * (`publishAt`), or it goes into a project (`inProject`), whose publish puts it live.
    */
   async page(type: string, name: string, properties: Properties = {}, { parent: given, keep, ...options }: PageOptions = {}): Promise<CreatedPage> {
     const parent = given ?? this.parent;
     if (!parent) throw new Error('cms.page() needs a parent: pass { parent }, or set the opticliSandbox option in playwright.config.');
     if (keep) this.checkKeep('cms.page()', [parent]);
-    const result = await this.opticli.create(parent, type, name, properties, { ...options, publish: options.publish ?? !options.inProject });
+    // opticli refuses --publish with --publish-at or --in-project.
+    const publish = options.publish ?? !(options.inProject || options.publishAt);
+    const result = await this.opticli.create(parent, type, name, properties, { ...options, publish });
     if (!keep) this.track(result.ref, parent);
     if (!result.url) throw new Error(`${type} ${result.ref} has no URL: is ${type} a page type with a template?`);
     return { ...result, url: browseUrl(result.url, result.canonicalUrl, this.addresses)! };

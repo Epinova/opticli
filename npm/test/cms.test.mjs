@@ -128,6 +128,19 @@ test('a page into a project is a draft there, unless told to publish', async () 
   assert.ok(set.includes('--in-project'));
 });
 
+test('a scheduled page is not also published (opticli refuses --publish with --publish-at)', async () => {
+  const { calls } = fake([{ match: 'create 100', envelope: ok({ ref: '7', url: '/en/sandbox/a/' }) }]);
+  const c = cms();
+
+  await c.page('StandardPage', 'A', {}, { publishAt: '2030-01-01T00:00:00Z' });
+  await c.page('StandardPage', 'B');
+
+  const [scheduled, published] = calls().map((x) => x.args);
+  assert.ok(!scheduled.includes('--publish'));
+  assert.deepEqual(scheduled.slice(-3), ['--publish-at', '2030-01-01T00:00:00Z', '--json']);
+  assert.ok(published.includes('--publish'));
+});
+
 test("apply removes a project the plan made after its content, and never one that was there", async () => {
   const { calls } = fake([
     {
