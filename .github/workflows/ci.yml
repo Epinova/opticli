@@ -111,10 +111,13 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npm run generate
-          git diff --exit-code -- src/generated || {
+          # Untracked files too: a new generated file that wasn't committed.
+          if [ -n "$(git status --porcelain -- src/generated)" ]; then
+            git status --short -- src/generated
+            git diff -- src/generated
             echo "::error::npm/src/generated is out of date: build the CLI, run npm run generate in npm/, and commit the result."
             exit 1
-          }
+          fi
 
       - name: Build and test
         working-directory: npm

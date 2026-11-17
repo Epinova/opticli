@@ -1,25 +1,18 @@
-// A typed wrapper around the opticli CLI. Every call runs `opticli <command> --json`, parses the JSON envelope it prints
-// on stdout, and returns `data`, or throws an OptiCliError for `ok: false`. What opticli checks (the local database, drift,
-// property names, plans) stays in the CLI: this module only runs it.
-import { spawn } from 'node:child_process';
+// The clients: OptiCli (async) and OptiCliSync (blocking). Each call runs `opticli <command> --json`, parses the JSON
+// envelope it prints on stdout, and returns `data`, or throws an OptiCliError for `ok: false`. What opticli checks (the
+// local database, drift, property names, plans) stays in the CLI: this module only runs it.
+//
+// One method per command is generated (generated/commands.ts, the classes these extend); written here by hand are the
+// ones that add something to the command: `create` and `set` take the properties as an object, `apply` a typed plan.
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import type {
-  ApplyResult,
-  ContentItem,
-  ContentRef,
-  DeleteResult,
-  Envelope,
-  ErrorBody,
-  ErrorCode,
-  OkEnvelope,
-  Plan,
-  Properties,
-  ServeResult,
-  SiteInfo,
-  UrlResult,
-  WriteResult,
-} from './types.ts';
+import type { Envelope, OkEnvelope } from './envelope.ts';
+import { argv, OptiCliCommands, OptiCliCommandsSync, optionsOf } from './generated/commands.ts';
+import type { ApplyOptions, CreateOptions, RunOptions, SetOptions } from './generated/options.ts';
+import type { ErrorBody, ErrorCode, SealResult, WriteOutput } from './generated/types.ts';
+import type { AppliedPlan, CreatedContent, SavedContent } from './results.ts';
+import type { ContentRef, Plan, Properties } from './types.ts';
 
 export interface OptiCliOptions {
   /**
@@ -44,18 +37,16 @@ export interface OptiCliOptions {
   onWarnings?: (warnings: string[], args: readonly string[]) => void;
 }
 
-export interface RunOptions {
-  /** Text for stdin (`apply -`). */
-  input?: string;
-  /** Working directory for this call. */
-  cwd?: string;
-  timeoutMs?: number;
-}
+/** `create`'s options: its flags, except the type, name and values, which are parameters. */
+export type CreateCallOptions = Omit<CreateOptions, 'type' | 'name' | 'values'>;
 
-export interface WriteOptions {
-  publish?: boolean;
-  dryRun?: boolean;
-  lang?: string;
+/** `set`'s options: its flags, except the values, which are a parameter. */
+export type SetCallOptions = Omit<SetOptions, 'values'>;
+
+/** `apply`'s options: its flags, and where the plan's files are. */
+export interface ApplyCallOptions extends ApplyOptions {
+  /** The folder the plan's files (`upload`, `"@file"` values) are relative to, and must be inside. Default: `cwd`. */
+  baseDir?: string;
 }
 
 /** opticli answered `ok: false`, or didn't answer with JSON (`code` `internal`). */
@@ -80,164 +71,248 @@ export class OptiCliError extends Error {
   }
 }
 
-export class OptiCli {
+/**
+ * opticli, run as a child process per call. Every command is a method (`cli.get('123')`, `cli.languages()`,
+ * `cli.whereUsed('123', { pages: true })`), with its arguments as parameters and its flags as an options object;
+ * `run` runs any other.
+ */
+export class OptiCli extends OptiCliCommands {
   readonly command: readonly string[];
   readonly project?: string;
   readonly cwd?: string;
   readonly profile?: string;
-  private readonly onWarnings?: OptiCliOptions['onWarnings'];
+  readonly #onWarnings?: OptiCliOptions['onWarnings'];
 
   constructor(options: OptiCliOptions = {}) {
-    this.cwd = options.cwd;
-    this.command = options.command ?? resolveCommand(options.cwd ?? process.cwd());
-    // Absolute: opticli resolves --project against its working directory, and apply runs in the plan's folder.
-    const project = options.project ?? (process.env.OPTICLI_PROJECT || undefined);
-    this.project = project ? resolve(options.cwd ?? process.cwd(), project) : undefined;
-    this.profile = options.profile ?? (process.env.OPTICLI_PROFILE || undefined);
-    this.onWarnings = options.onWarnings;
+    super();
+    const s = settings(options);
+    this.command = s.command;
+    this.project = s.project;
+    this.cwd = s.cwd;
+    this.profile = s.profile;
+    this.#onWarnings = s.onWarnings;
   }
 
   /** Runs any opticli command with `--json` and returns its envelope; throws OptiCliError when `ok` is false. */
   async run<T>(args: readonly string[], options: RunOptions = {}): Promise<OkEnvelope<T>> {
-    const full = [...args, '--json', ...(this.project ? ['--project', this.project] : []), ...(this.profile ? ['--profile', this.profile] : [])];
-    const { stdout, stderr, exitCode } = await this.exec(full, options);
-    let envelope: Envelope<T>;
-    try {
-      envelope = JSON.parse(stdout) as Envelope<T>;
-    } catch {
-      const output = (stderr || stdout).trim().slice(0, 2000);
-      throw new OptiCliError({ code: 'internal', message: `no JSON on stdout (exit ${exitCode}): ${output}` }, exitCode, args);
-    }
-    if (!envelope.ok) throw new OptiCliError(envelope.error, exitCode, args, envelope.meta?.version);
-    if (envelope.meta?.warnings?.length) this.onWarnings?.(envelope.meta.warnings, args);
-    return envelope;
-  }
-
-  private async data<T>(args: readonly string[], options?: RunOptions): Promise<T> {
-    return (await this.run<T>(args, options)).data;
-  }
-
-  // serve
-
-  /** Starts the site with the site agent in the background (`serve`), or returns the one that runs. */
-  serve(options: { build?: boolean; port?: number; https?: boolean; httpsPort?: number; timeoutSeconds?: number } = {}): Promise<OkEnvelope<ServeResult>> {
-    const timeout = options.timeoutSeconds ?? 180;
-    const args = ['serve', '--timeout', String(timeout)];
-    if (options.build) args.push('--build');
-    if (options.port) args.push('--port', String(options.port));
-    if (options.httpsPort) args.push('--https-port', String(options.httpsPort));
-    else if (options.https) args.push('--https');
-    // A build comes first, and may take minutes.
-    return this.run(args, { timeoutMs: (timeout + 600) * 1000 });
-  }
-
-  /** The site definitions (CMS 13: applications), as `opticli sites` lists them. */
-  sites(): Promise<SiteInfo[]> {
-    return this.data(['sites']);
-  }
-
-  serveStatus(): Promise<ServeResult> {
-    return this.data(['serve', '--status']);
-  }
-
-  serveStop(): Promise<ServeResult> {
-    return this.data(['serve', '--stop']);
-  }
-
-  // reads
-
-  get(ref: ContentRef, options: { lang?: string; version?: 'published' | 'latest' | (string & {}); full?: boolean } = {}): Promise<ContentItem> {
-    const args = ['get', ref];
-    if (options.lang) args.push('--lang', options.lang);
-    if (options.version) args.push('--version', options.version);
-    if (options.full) args.push('--full');
-    return this.data(args);
-  }
-
-  /** Every language branch's path and absolute URL. Write results have `url` already. */
-  url(ref: ContentRef): Promise<UrlResult> {
-    return this.data(['url', ref]);
-  }
-
-  // writes
-
-  create(parent: ContentRef, type: string, name: string, properties: Properties = {}, options: WriteOptions = {}): Promise<WriteResult> {
-    return this.data(['create', parent, '--type', type, '--name', name, ...values(properties), ...writeFlags(options)]);
-  }
-
-  /** Saves a draft of the change, unless `publish`. */
-  set(ref: ContentRef, properties: Properties, options: WriteOptions & { name?: string; from?: string } = {}): Promise<WriteResult> {
-    const args = ['set', ref, ...values(properties), ...writeFlags(options)];
-    if (options.name) args.push('--name', options.name);
-    if (options.from) args.push('--from', options.from);
-    return this.data(args);
-  }
-
-  /** Publishes the latest version, or the version `ref` names (`123_456`). */
-  publish(ref: ContentRef, options: { includeDraft?: boolean; dryRun?: boolean } = {}): Promise<WriteResult> {
-    const args = ['publish', ref];
-    if (options.includeDraft) args.push('--include-draft');
-    if (options.dryRun) args.push('--dry-run');
-    return this.data(args);
-  }
-
-  /** Moves content, with everything below it, to the recycle bin. */
-  delete(ref: ContentRef, options: { ignoreReferences?: boolean; dryRun?: boolean } = {}): Promise<DeleteResult> {
-    const args = ['delete', ref];
-    if (options.ignoreReferences) args.push('--ignore-references');
-    if (options.dryRun) args.push('--dry-run');
-    return this.data(args);
+    const { stdout, stderr, exitCode } = await exec(this.command, fullArgs(this, args), options.cwd ?? this.cwd, options);
+    return envelope<T>(stdout, stderr, exitCode, args, this.#onWarnings);
   }
 
   /**
-   * Runs a plan, sent on stdin. Its files (`upload`, `"@file"` values) are relative to `baseDir` and must be inside it.
-   * With the plan's `guidNamespace` and `updateExisting`, running it again only changes what differs.
+   * Creates content below `parent` (`opticli create`): a draft, unless `publish`. `properties` are its values as an
+   * object (sent as `--values`). Writes: needs the site running (`opticli serve`).
    */
-  apply(plan: Plan, options: { baseDir?: string; updateExisting?: boolean; publish?: boolean; dryRun?: boolean } = {}): Promise<ApplyResult> {
-    const args = ['apply', '-'];
-    if (options.updateExisting) args.push('--update-existing');
-    if (options.publish) args.push('--publish');
-    if (options.dryRun) args.push('--dry-run');
-    return this.data(args, { input: JSON.stringify(plan), cwd: options.baseDir, timeoutMs: 600_000 });
+  create(parent: ContentRef, type: string, name: string, properties: Properties | undefined, options: CreateCallOptions & { dryRun: true }, call?: RunOptions): Promise<WriteOutput>;
+  create(parent: ContentRef, type: string, name: string, properties?: Properties, options?: CreateCallOptions & { dryRun?: false }, call?: RunOptions): Promise<CreatedContent>;
+  create(parent: ContentRef, type: string, name: string, properties?: Properties, options?: CreateCallOptions, call?: RunOptions): Promise<WriteOutput>;
+  async create(parent: ContentRef, type: string, name: string, properties: Properties = {}, options: CreateCallOptions = {}, call?: RunOptions): Promise<WriteOutput> {
+    return (await this.run<WriteOutput>(createArgs(parent, type, name, properties, options), call)).data;
   }
 
-  private exec(args: readonly string[], options: RunOptions): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
-    const [program, ...prefix] = this.command;
-    const timeoutMs = options.timeoutMs ?? 120_000;
-    return new Promise((resolvePromise, reject) => {
-      // The timer is ours, not spawn's `timeout`: spawn's outlives a program that never started, and keeps Node running.
-      let timer: NodeJS.Timeout | undefined;
-      let settled = false;
-      const settle = (done: () => void) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        done();
-      };
-      const child = spawn(program, [...prefix, ...args], { cwd: options.cwd ?? this.cwd, stdio: ['pipe', 'pipe', 'pipe'] });
-      timer = setTimeout(() => {
-        child.kill();
-        const message = `no answer within ${timeoutMs / 1000} s; it was stopped`;
-        settle(() => reject(new OptiCliError({ code: 'timeout', message, hint: 'For a command that takes longer, pass a longer timeoutMs to run().' }, null, args)));
-      }, timeoutMs);
-      let stdout = '';
-      let stderr = '';
-      child.stdout.setEncoding('utf8').on('data', (chunk: string) => (stdout += chunk));
-      child.stderr.setEncoding('utf8').on('data', (chunk: string) => (stderr += chunk));
-      child.on('error', (error: NodeJS.ErrnoException) =>
-        settle(() =>
-          reject(
-            error.code === 'ENOENT'
-              ? new Error(`Couldn't run ${this.command.join(' ')}: install opticli (dotnet tool install -g OptiCli), or set OPTICLI to it.`, { cause: error })
-              : error,
-          ),
-        ),
-      );
-      child.on('close', (exitCode) => settle(() => resolvePromise({ stdout, stderr, exitCode })));
-      child.stdin.on('error', () => {}); // a CLI that exits before reading stdin
-      child.stdin.end(options.input ?? '');
-    });
+  /**
+   * Saves a draft of the change (`opticli set`), unless `publish`. `properties` are the values as an object (sent as
+   * `--values`). Writes: needs the site running (`opticli serve`).
+   */
+  async set(ref: ContentRef, properties: Properties, options: SetCallOptions = {}, call?: RunOptions): Promise<SavedContent> {
+    return (await this.run<SavedContent>(setArgs(ref, properties, options), call)).data;
   }
+
+  /**
+   * Runs a plan (`opticli apply`): an object, sent on stdin, or a plan file's path. Its files (`upload`, `"@file"`
+   * values) are relative to `baseDir` and must be inside it. With the plan's `guidNamespace` and `updateExisting`,
+   * running it again only changes what differs. A plan's `project` (or a step's) puts the drafts in a project, which it
+   * creates if no unpublished project has the name. Writes: needs the site running (`opticli serve`).
+   */
+  apply<const P extends Plan>(plan: P | string, options: ApplyCallOptions & { sealFor: string }, call?: RunOptions): Promise<SealResult>;
+  apply<const P extends Plan>(plan: P | string, options: ApplyCallOptions & { dryRun: true }, call?: RunOptions): Promise<AppliedPlan>;
+  apply<const P extends Plan>(plan: P, options?: ApplyCallOptions & { sealFor?: undefined }, call?: RunOptions): Promise<AppliedPlan<P>>;
+  apply(plan: string, options?: ApplyCallOptions & { sealFor?: undefined }, call?: RunOptions): Promise<AppliedPlan>;
+  apply(plan: Plan | string, options?: ApplyCallOptions, call?: RunOptions): Promise<AppliedPlan | SealResult>;
+  async apply(plan: Plan | string, options: ApplyCallOptions = {}, call?: RunOptions): Promise<AppliedPlan | SealResult> {
+    const [args, run] = applyArgs(plan, options, call);
+    return (await this.run<AppliedPlan | SealResult>(args, run)).data;
+  }
+}
+
+/**
+ * opticli, blocking: the same methods as OptiCli, each waiting for opticli to exit (a read takes about a second, a
+ * write longer) while nothing else in the process runs. For code that can't await, such as building `projects` in a
+ * `playwright.config` (`new OptiCliSync().languages()`); everywhere else, use OptiCli.
+ */
+export class OptiCliSync extends OptiCliCommandsSync {
+  readonly command: readonly string[];
+  readonly project?: string;
+  readonly cwd?: string;
+  readonly profile?: string;
+  readonly #onWarnings?: OptiCliOptions['onWarnings'];
+
+  constructor(options: OptiCliOptions = {}) {
+    super();
+    const s = settings(options);
+    this.command = s.command;
+    this.project = s.project;
+    this.cwd = s.cwd;
+    this.profile = s.profile;
+    this.#onWarnings = s.onWarnings;
+  }
+
+  /** Runs any opticli command with `--json` and returns its envelope, blocking; throws OptiCliError when `ok` is false. */
+  runSync<T>(args: readonly string[], options: RunOptions = {}): OkEnvelope<T> {
+    const { stdout, stderr, exitCode } = execSync(this.command, fullArgs(this, args), options.cwd ?? this.cwd, options);
+    return envelope<T>(stdout, stderr, exitCode, args, this.#onWarnings);
+  }
+
+  /** As `OptiCli.create`, blocking. */
+  create(parent: ContentRef, type: string, name: string, properties: Properties | undefined, options: CreateCallOptions & { dryRun: true }, call?: RunOptions): WriteOutput;
+  create(parent: ContentRef, type: string, name: string, properties?: Properties, options?: CreateCallOptions & { dryRun?: false }, call?: RunOptions): CreatedContent;
+  create(parent: ContentRef, type: string, name: string, properties?: Properties, options?: CreateCallOptions, call?: RunOptions): WriteOutput;
+  create(parent: ContentRef, type: string, name: string, properties: Properties = {}, options: CreateCallOptions = {}, call?: RunOptions): WriteOutput {
+    return this.runSync<WriteOutput>(createArgs(parent, type, name, properties, options), call).data;
+  }
+
+  /** As `OptiCli.set`, blocking. */
+  set(ref: ContentRef, properties: Properties, options: SetCallOptions = {}, call?: RunOptions): SavedContent {
+    return this.runSync<SavedContent>(setArgs(ref, properties, options), call).data;
+  }
+
+  /** As `OptiCli.apply`, blocking. */
+  apply<const P extends Plan>(plan: P | string, options: ApplyCallOptions & { sealFor: string }, call?: RunOptions): SealResult;
+  apply<const P extends Plan>(plan: P | string, options: ApplyCallOptions & { dryRun: true }, call?: RunOptions): AppliedPlan;
+  apply<const P extends Plan>(plan: P, options?: ApplyCallOptions & { sealFor?: undefined }, call?: RunOptions): AppliedPlan<P>;
+  apply(plan: string, options?: ApplyCallOptions & { sealFor?: undefined }, call?: RunOptions): AppliedPlan;
+  apply(plan: Plan | string, options?: ApplyCallOptions, call?: RunOptions): AppliedPlan | SealResult;
+  apply(plan: Plan | string, options: ApplyCallOptions = {}, call?: RunOptions): AppliedPlan | SealResult {
+    const [args, run] = applyArgs(plan, options, call);
+    return this.runSync<AppliedPlan | SealResult>(args, run).data;
+  }
+}
+
+// The command lines of the hand-written methods, the same for both clients.
+
+function createArgs(parent: ContentRef, type: string, name: string, properties: Properties, options: CreateCallOptions): string[] {
+  return argv(['create'], [parent], { ...options, type, name, ...values(properties) }, optionsOf('create'));
+}
+
+function setArgs(ref: ContentRef, properties: Properties, options: SetCallOptions): string[] {
+  return argv(['set'], [ref], { ...options, ...values(properties) }, optionsOf('set'));
+}
+
+function applyArgs(plan: Plan | string, { baseDir, ...options }: ApplyCallOptions, call: RunOptions = {}): [string[], RunOptions] {
+  const file = typeof plan === 'string';
+  const args = argv(['apply'], [file ? plan : '-'], options, optionsOf('apply'));
+  return [args, { ...call, input: file ? call.input : JSON.stringify(plan), cwd: baseDir ?? call.cwd, timeoutMs: call.timeoutMs ?? 600_000 }];
+}
+
+/** `--values` for a non-empty properties object. */
+function values(properties: Properties): { values?: Properties } {
+  return Object.keys(properties).length ? { values: properties } : {};
+}
+
+// Running opticli, for both clients.
+
+interface Settings {
+  command: readonly string[];
+  project?: string;
+  cwd?: string;
+  profile?: string;
+  onWarnings?: OptiCliOptions['onWarnings'];
+}
+
+function settings(options: OptiCliOptions): Settings {
+  // Absolute: opticli resolves --project against its working directory, and apply runs in the plan's folder.
+  const project = options.project ?? (process.env.OPTICLI_PROJECT || undefined);
+  return {
+    command: options.command ?? resolveCommand(options.cwd ?? process.cwd()),
+    project: project ? resolve(options.cwd ?? process.cwd(), project) : undefined,
+    cwd: options.cwd,
+    profile: options.profile ?? (process.env.OPTICLI_PROFILE || undefined),
+    onWarnings: options.onWarnings,
+  };
+}
+
+/** The command line with what every call passes: `--json`, the project and the profile. */
+function fullArgs(settings: Pick<Settings, 'project' | 'profile'>, args: readonly string[]): string[] {
+  return [...args, '--json', ...(settings.project ? ['--project', settings.project] : []), ...(settings.profile ? ['--profile', settings.profile] : [])];
+}
+
+/** The envelope opticli printed; throws OptiCliError when it is `ok: false` or not JSON. */
+function envelope<T>(stdout: string, stderr: string, exitCode: number | null, args: readonly string[], onWarnings: Settings['onWarnings']): OkEnvelope<T> {
+  let parsed: Envelope<T>;
+  try {
+    parsed = JSON.parse(stdout) as Envelope<T>;
+  } catch {
+    const output = (stderr || stdout).trim().slice(0, 2000);
+    throw new OptiCliError({ code: 'internal', message: `no JSON on stdout (exit ${exitCode}): ${output}` }, exitCode, args);
+  }
+  if (!parsed.ok) throw new OptiCliError(parsed.error, exitCode, args, parsed.meta?.version);
+  if (parsed.meta?.warnings?.length) onWarnings?.(parsed.meta.warnings, args);
+  return parsed;
+}
+
+interface Exited {
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+}
+
+const defaultTimeoutMs = 120_000;
+
+function timedOut(args: readonly string[], timeoutMs: number): OptiCliError {
+  const hint = 'For a command that takes longer, pass a longer timeoutMs (the run options, after the options object).';
+  return new OptiCliError({ code: 'timeout', message: `no answer within ${timeoutMs / 1000} s; it was stopped`, hint }, null, args);
+}
+
+function notInstalled(command: readonly string[], error: Error): Error {
+  return new Error(`Couldn't run ${command.join(' ')}: install opticli (dotnet tool install -g OptiCli), or set OPTICLI to it.`, { cause: error });
+}
+
+function exec(command: readonly string[], args: readonly string[], cwd: string | undefined, options: RunOptions): Promise<Exited> {
+  const [program, ...prefix] = command;
+  const timeoutMs = options.timeoutMs ?? defaultTimeoutMs;
+  return new Promise((resolvePromise, reject) => {
+    // The timer is ours, not spawn's `timeout`: spawn's outlives a program that never started, and keeps Node running.
+    let timer: NodeJS.Timeout | undefined;
+    let settled = false;
+    const settle = (done: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      done();
+    };
+    const child = spawn(program, [...prefix, ...args], { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+    timer = setTimeout(() => {
+      child.kill();
+      settle(() => reject(timedOut(args, timeoutMs)));
+    }, timeoutMs);
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => (stdout += chunk));
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => (stderr += chunk));
+    child.on('error', (error: NodeJS.ErrnoException) => settle(() => reject(error.code === 'ENOENT' ? notInstalled(command, error) : error)));
+    child.on('close', (exitCode) => settle(() => resolvePromise({ stdout, stderr, exitCode })));
+    child.stdin.on('error', () => {}); // a CLI that exits before reading stdin
+    child.stdin.end(options.input ?? '');
+  });
+}
+
+function execSync(command: readonly string[], args: readonly string[], cwd: string | undefined, options: RunOptions): Exited {
+  const [program, ...prefix] = command;
+  const timeoutMs = options.timeoutMs ?? defaultTimeoutMs;
+  const result = spawnSync(program, [...prefix, ...args], {
+    cwd,
+    input: options.input ?? '',
+    encoding: 'utf8',
+    timeout: timeoutMs,
+    killSignal: 'SIGTERM',
+    // A large list or plan result is still one envelope.
+    maxBuffer: 256 * 1024 * 1024,
+  });
+  const error = result.error as NodeJS.ErrnoException | undefined;
+  if (error?.code === 'ETIMEDOUT') throw timedOut(args, timeoutMs);
+  if (error?.code === 'ENOENT') throw notInstalled(command, error);
+  if (error) throw error;
+  return { stdout: result.stdout, stderr: result.stderr, exitCode: result.status };
 }
 
 /** The command that runs opticli from `cwd`: see {@link OptiCliOptions.command}. */
@@ -271,16 +346,4 @@ export function compareVersions(a: string, b: string): number {
     if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) - (y[i] ?? 0);
   }
   return 0;
-}
-
-function values(properties: Properties): string[] {
-  return Object.keys(properties).length ? ['--values', JSON.stringify(properties)] : [];
-}
-
-function writeFlags(options: WriteOptions): string[] {
-  const flags: string[] = [];
-  if (options.publish) flags.push('--publish');
-  if (options.dryRun) flags.push('--dry-run');
-  if (options.lang) flags.push('--lang', options.lang);
-  return flags;
 }

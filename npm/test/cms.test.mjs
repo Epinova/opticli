@@ -109,3 +109,88 @@ test('a page on another site the served one answers gets that site address, one 
   assert.equal((await c.page('StandardPage', 'B', {}, { parent: '50' })).url, 'http://alloy-sv.localhost:5199/sv/b/');
   await c.cleanup();
 });
+
+const projectDeletes = (calls) => calls().filter((c) => c.args[0] === 'projects' && c.args[1] === 'delete').map((c) => c.args[2]);
+
+test('a page into a project is a draft there, unless told to publish', async () => {
+  const { calls } = fake([
+    { match: 'create 100', envelope: ok({ ref: '7', url: '/en/sandbox/a/' }) },
+    { match: 'set 7', envelope: ok({ ref: '7' }) },
+  ]);
+  const c = cms();
+
+  await c.page('StandardPage', 'A', {}, { inProject: 'Spring campaign', ready: true, requestApproval: true });
+  await c.set('7', { Heading: 'x' }, { inProject: 'Spring campaign' });
+
+  const [create, set] = calls().map((x) => x.args);
+  assert.ok(!create.includes('--publish'));
+  assert.deepEqual(create.slice(-5), ['--request-approval', '--in-project', 'Spring campaign', '--ready', '--json']);
+  assert.ok(set.includes('--in-project'));
+});
+
+test("apply removes a project the plan made after its content, and never one that was there", async () => {
+  const { calls } = fake([
+    {
+      match: 'apply',
+      envelope: ok({
+        dryRun: false,
+        created: { a: '30' },
+        operations: [{ index: 0, op: 'create', id: 'a', status: 'saved', result: { ref: '30' } }],
+        projects: [
+          { id: 4, name: 'Test campaign', status: 'created' },
+          { id: 2, name: 'Spring campaign', status: 'existing' },
+        ],
+      }),
+    },
+    { match: 'delete', envelope: ok({ ref: '30' }) },
+    { match: 'projects delete', envelope: ok({ project: { id: 4, name: 'Test campaign', status: 'active' }, dryRun: false, valid: true, deleted: true }) },
+  ]);
+  const c = cms();
+
+  await c.apply({
+    project: 'Test campaign',
+    operations: [
+      { op: 'create', id: 'a', parent: sandbox, type: 'StandardPage', name: 'A' },
+      { op: 'set', ref: '5', properties: { Heading: 'x' }, project: 'Spring campaign' },
+    ],
+  });
+  await c.cleanup();
+
+  const order = calls().map((x) => x.args.slice(0, 2).join(' '));
+  assert.deepEqual(deletes(calls), ['30']);
+  assert.deepEqual(projectDeletes(calls), ['4']);
+  assert.ok(order.indexOf('delete 30') < order.indexOf('projects delete'));
+});
+
+test('apply with keep, or a dry run, removes no project', async () => {
+  const projects = (status) => [{ name: 'Test campaign', status, ...(status === 'created' ? { id: 4 } : {}) }];
+  const { calls } = fake([
+    { match: 'apply - --dry-run', envelope: ok({ dryRun: true, created: {}, operations: [], projects: projects('toCreate') }) },
+    { match: 'apply', envelope: ok({ dryRun: false, created: {}, operations: [], projects: projects('created') }) },
+  ]);
+  const c = cms();
+  const plan = { project: 'Test campaign', operations: [{ op: 'set', ref: '5', properties: { Heading: 'x' } }] };
+
+  await c.apply(plan, { dryRun: true });
+  await c.apply(plan, { keep: true });
+  await c.cleanup();
+
+  assert.deepEqual(projectDeletes(calls), []);
+});
+
+test('cms.project makes a project the test removes, unless keep', async () => {
+  const made = (id, name) => ok({ project: { id, name, status: 'active' }, dryRun: false, valid: true, created: true });
+  const { calls } = fake([
+    { match: 'projects create Test campaign', envelope: made(4, 'Test campaign') },
+    { match: 'projects create Kept', envelope: made(5, 'Kept') },
+    { match: 'projects delete 4', exit: 2, envelope: { ok: false, error: { code: 'not_found', message: 'gone' } } },
+  ]);
+  const c = cms();
+
+  const project = await c.project('Test campaign');
+  await c.project('Kept', { keep: true });
+  await c.cleanup();
+
+  assert.equal(project.project.id, 4);
+  assert.deepEqual(projectDeletes(calls), ['4']);
+});

@@ -1,21 +1,27 @@
 // The generated commands (src/generated/commands.ts): the command line each method makes from its arguments and
-// options, run through a stand-in runner that records it.
+// options, run through a stand-in client (the abstract classes extended with a `run` that records it).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { OptiCliCommands, OptiCliCommandsSync } from '../dist/lib/generated/commands.js';
 
-/** A runner that records each call and answers with the next of `pages` (an envelope's data and meta), else `{}`. */
+/** Clients that record each call and answer with the next of `pages` (an envelope's data and meta), else `{}`. */
 function recorder(pages = []) {
   const calls = [];
   const answer = (args, options) => {
     calls.push({ args, options });
     return pages.shift() ?? { data: {}, meta: {} };
   };
-  return {
-    calls,
-    async: new OptiCliCommands({ run: async (args, options) => answer(args, options) }),
-    sync: new OptiCliCommandsSync({ runSync: (args, options) => answer(args, options) }),
-  };
+  class Async extends OptiCliCommands {
+    async run(args, options) {
+      return answer(args, options);
+    }
+  }
+  class Sync extends OptiCliCommandsSync {
+    runSync(args, options) {
+      return answer(args, options);
+    }
+  }
+  return { calls, async: new Async(), sync: new Sync() };
 }
 
 test('arguments, then options: a value after its flag, a flag for true, nothing for false', async () => {
@@ -55,25 +61,60 @@ test('--values is the properties object as JSON', async () => {
   const { calls, async: cli } = recorder();
   const values = { Heading: 'Hello', MainArea: [{ ref: '123' }], Link: { href: '/en/' } };
 
-  await cli.set('123', { values, dryRun: true });
+  await cli.translate('123', { lang: 'sv', values, dryRun: true });
 
-  assert.deepEqual(calls[0].args, ['set', '123', '--values', JSON.stringify(values), '--dry-run']);
+  assert.deepEqual(calls[0].args, ['translate', '123', '--lang', 'sv', '--values', JSON.stringify(values), '--dry-run']);
 });
 
-test('an optional argument, given in the options, goes with the arguments before every option', async () => {
-  const { calls, async: cli } = recorder([{}, {}, { data: [], meta: {} }, { data: [], meta: {} }]);
+test('an optional argument stays positional, before every option', async () => {
+  const { calls, async: cli } = recorder([{}, {}, { data: [], meta: {} }, { data: [], meta: {} }, { data: [], meta: {} }]);
 
-  await cli.set('123', { publish: true, properties: ['Heading=Hello', 'Intro=Hi'] });
-  await cli.area('1', 'MainArea', 'add', { items: ['123'], dryRun: true });
-  await cli.projects({ project: 'Spring campaign' });
-  await cli.whereUsed({ ref: '123', pages: true });
+  await cli.translate('123', ['Heading=Hej', 'Intro=Hi'], { lang: 'sv' });
+  await cli.area('1', 'MainArea', 'add', ['123'], { dryRun: true });
+  await cli.projects('Spring campaign');
+  await cli.whereUsed('123', { pages: true });
+  await cli.jobsLog('Empty trash');
 
   assert.deepEqual(calls.map((c) => c.args), [
-    ['set', '123', 'Heading=Hello', 'Intro=Hi', '--publish'],
+    ['translate', '123', 'Heading=Hej', 'Intro=Hi', '--lang', 'sv'],
     ['area', '1', 'MainArea', 'add', '123', '--dry-run'],
     ['projects', 'Spring campaign'],
     ['where-used', '123', '--pages'],
+    ['jobs', 'log', 'Empty trash'],
   ]);
+});
+
+test('left out, an optional argument gives its place to the options object', async () => {
+  const list = () => ({ data: [], meta: {} });
+  const { calls, async: cli, sync } = recorder([list(), list(), list(), list(), {}, list()]);
+
+  await cli.whereUsed({ type: 'TeaserBlock' }, { timeoutMs: 5000 });
+  await cli.whereUsed(undefined, { pages: true });
+  await cli.projects();
+  sync.projects({ limit: 5 });
+  sync.translate('123', { lang: 'sv' }, { cwd: '/site' });
+  for (const _ of sync.jobsLogAll({ failed: true })) break;
+
+  assert.deepEqual(calls.map((c) => c.args), [
+    ['where-used', '--type', 'TeaserBlock'],
+    ['where-used', '--pages'],
+    ['projects'],
+    ['projects', '--limit', '5'],
+    ['translate', '123', '--lang', 'sv'],
+    ['jobs', 'log', '--failed'],
+  ]);
+  assert.deepEqual(calls[0].options, { timeoutMs: 5000 });
+  assert.deepEqual(calls[4].options, { cwd: '/site' });
+});
+
+test('arguments that are missing, of the wrong kind or too many are a TypeError before anything runs', async () => {
+  const { calls, async: cli, sync } = recorder();
+
+  await assert.rejects(() => cli.whereUsed('1', 'pages'), { name: 'TypeError', message: 'opticli where-used: expected the options object, not "pages".' });
+  await assert.rejects(() => cli.projects('a', {}, {}, {}), { name: 'TypeError', message: 'opticli projects: too many arguments.' });
+  assert.throws(() => sync.translate({ lang: 'sv' }), { name: 'TypeError', message: 'opticli translate: argument 1 must be a string, not {"lang":"sv"}.' });
+  assert.throws(() => sync.projectsReady('12', '123'), TypeError);
+  assert.equal(calls.length, 0);
 });
 
 test('a required list argument is spread; a subcommand is its words', async () => {
@@ -82,11 +123,13 @@ test('a required list argument is spread; a subcommand is its words', async () =
   await cli.languagesEnable(['sv', 'no'], { dryRun: true });
   await cli.blockCreate({ type: 'TeaserBlock', name: 'Teaser', for: '123' });
   await cli.projectsReady('12', { all: true, requestApproval: true, comment: 'Campaign texts' });
+  await cli.projectsRemove('12', ['123', '456']);
 
   assert.deepEqual(calls.map((c) => c.args), [
     ['languages', 'enable', 'sv', 'no', '--dry-run'],
     ['block', 'create', '--type', 'TeaserBlock', '--name', 'Teaser', '--for', '123'],
     ['projects', 'ready', '12', '--all', '--request-approval', '--comment', 'Campaign texts'],
+    ['projects', 'remove', '12', '123', '456'],
   ]);
 });
 
@@ -102,25 +145,33 @@ test('the options every command takes: another database', async () => {
   ]);
 });
 
-test('an option the command lacks is a TypeError before anything runs', async () => {
+test('an option the command lacks is a TypeError before anything runs, an inherited name too', async () => {
   const { calls, async: cli, sync } = recorder();
 
   await assert.rejects(() => cli.get('1', { nope: true }), { name: 'TypeError', message: "opticli get has no option 'nope'." });
-  assert.throws(() => sync.apply('plan.json', { seal: 'abc' }), { name: 'TypeError', message: "opticli apply has no option 'seal'." });
+  await assert.rejects(() => cli.get('1', { toString: 'x' }), { name: 'TypeError', message: "opticli get has no option 'toString'." });
   assert.throws(() => sync.serve({ foreground: true }), TypeError);
+  assert.throws(() => sync.jobsRun('Empty trash', { constructor: true }), TypeError);
   assert.equal(calls.length, 0);
 });
 
-test("the call's options reach the runner; serve, apply and jobs run wait longer by default", async () => {
+test('the hand-written commands have no generated method', () => {
+  for (const name of ['create', 'set', 'apply']) {
+    assert.equal(name in OptiCliCommands.prototype, false, name);
+    assert.equal(name in OptiCliCommandsSync.prototype, false, name);
+  }
+});
+
+test("the run options reach run; serve and jobs run wait longer by default", async () => {
   const { calls, async: cli } = recorder();
 
-  await cli.apply('-', { dryRun: true }, { input: '{"operations": []}', cwd: '/plans' });
+  await cli.usersAdd('editor', { passwordStdin: true }, { input: 'secret', cwd: '/site' });
   await cli.serve({ timeout: 60 });
   await cli.serve({ status: true }, { timeoutMs: 5000 });
   await cli.jobsRun('Empty trash', { timeout: 30 });
   await cli.get('1');
 
-  assert.deepEqual(calls[0], { args: ['apply', '-', '--dry-run'], options: { input: '{"operations": []}', cwd: '/plans', timeoutMs: 600_000 } });
+  assert.deepEqual(calls[0], { args: ['users', 'add', 'editor', '--password-stdin'], options: { input: 'secret', cwd: '/site' } });
   assert.equal(calls[1].options.timeoutMs, (60 + 600) * 1000);
   assert.equal(calls[2].options.timeoutMs, 5000);
   assert.equal(calls[3].options.timeoutMs, 90_000);

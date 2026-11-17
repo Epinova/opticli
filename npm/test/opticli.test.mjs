@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { compareVersions, findToolManifest, OptiCli, OptiCliError, resolveCommand } from '../dist/lib/index.js';
+import { compareVersions, findToolManifest, OptiCli, OptiCliError, OptiCliSync, resolveCommand } from '../dist/lib/index.js';
 import { fake, fakeCommand, ok } from './fake.mjs';
 
 test('a command runs with --json and the project, and returns its data', async () => {
@@ -79,6 +79,130 @@ test('apply sends the plan on stdin and runs in its folder', async () => {
   assert.deepEqual(call.args, ['apply', '-', '--update-existing', '--publish', '--json']);
   assert.deepEqual(JSON.parse(call.stdin), plan);
   assert.equal(call.cwd, dir);
+});
+
+test('writes into a project: inProject, ready and requestApproval are their flags', async () => {
+  const { calls } = fake([
+    { match: 'create', envelope: ok({ ref: '9', project: { id: 4, name: 'Spring campaign', item: 'added', ready: true } }) },
+    { match: 'set', envelope: ok({ ref: '9' }) },
+  ]);
+  const cli = new OptiCli({ command: fakeCommand });
+
+  const created = await cli.create('/en/', 'StandardPage', 'Hello', {}, { inProject: 'Spring campaign', ready: true });
+  await cli.set('9', { Heading: 'Hi' }, { inProject: '4', requestApproval: true, dryRun: true });
+
+  assert.equal(created.project.item, 'added');
+  assert.deepEqual(calls()[0].args, ['create', '/en/', '--type', 'StandardPage', '--name', 'Hello', '--in-project', 'Spring campaign', '--ready', '--json']);
+  assert.deepEqual(calls()[1].args, ['set', '9', '--values', '{"Heading":"Hi"}', '--dry-run', '--request-approval', '--in-project', '4', '--json']);
+});
+
+test("a hand-written write refuses an option its command lacks, as the generated ones do", async () => {
+  const { calls } = fake([]);
+  const cli = new OptiCli({ command: fakeCommand });
+
+  await assert.rejects(() => cli.create('/en/', 'StandardPage', 'Hello', {}, { pubish: true }), { name: 'TypeError', message: "opticli create has no option 'pubish'." });
+  await assert.rejects(() => cli.apply({ operations: [] }, { seal: 'abc' }), { name: 'TypeError', message: "opticli apply has no option 'seal'." });
+  assert.equal(calls().length, 0);
+});
+
+test("apply sends a plan's project with it, and runs a plan file by its path", async () => {
+  const projects = [{ id: 4, name: 'Spring campaign', status: 'created', undo: 'opticli projects delete 4' }];
+  const { calls, dir } = fake([{ match: 'apply', envelope: ok({ dryRun: false, operations: [], created: { news: '9' }, projects }) }]);
+  const cli = new OptiCli({ command: fakeCommand });
+  const plan = { project: 'Spring campaign', operations: [{ op: 'create', id: 'news', parent: '1', type: 'ArticlePage', name: 'News', ready: true }] };
+
+  const run = await cli.apply(plan);
+  await cli.apply('plan.json', { dryRun: true, baseDir: dir }, { timeoutMs: 1000 });
+
+  assert.deepEqual(run.projects, projects);
+  assert.equal(run.created.news, '9');
+  assert.deepEqual(JSON.parse(calls()[0].stdin), plan);
+  assert.deepEqual(calls()[1].args, ['apply', 'plan.json', '--dry-run', '--json']);
+  assert.equal(calls()[1].stdin, '');
+  assert.equal(calls()[1].cwd, dir);
+});
+
+test('sql returns the columns and rows as opticli prints them', async () => {
+  const data = { columns: ['LanguageID', 'Enabled'], rows: [{ LanguageID: 'en', Enabled: true }], rowCount: 1, rolledBack: true };
+  const { calls } = fake([{ match: 'sql', envelope: ok(data, { source: 'db' }) }]);
+
+  const result = await new OptiCli({ command: fakeCommand }).sql('SELECT LanguageID, Enabled FROM tblLanguageBranch', { limit: 10 });
+
+  assert.deepEqual(result, data);
+  assert.deepEqual(calls()[0].args, ['sql', 'SELECT LanguageID, Enabled FROM tblLanguageBranch', '--limit', '10', '--json']);
+});
+
+test('a value starting with @ reaches opticli as it is', async () => {
+  const { calls } = fake([{ match: 'search', envelope: ok([]) }]);
+
+  await new OptiCli({ command: fakeCommand }).search('@alloy');
+
+  assert.deepEqual(calls()[0].args, ['search', '@alloy', '--json']);
+});
+
+test('the sync client runs the same command lines, and runSync returns the envelope', () => {
+  const { calls } = fake([
+    { match: 'languages', envelope: ok([{ code: 'en', enabled: true }], { source: 'db', next: 'c2' }) },
+    { match: 'projects Spring', envelope: ok([{ ref: '9' }]) },
+    { match: 'create', envelope: ok({ ref: '9' }) },
+    { match: 'apply', envelope: ok({ dryRun: false, operations: [], created: {} }) },
+  ]);
+  const sync = new OptiCliSync({ command: fakeCommand, project: '/sites/alloy', profile: 'Alloy' });
+
+  const envelope = sync.runSync(['languages']);
+  const items = sync.projects('Spring campaign');
+  sync.create('1', 'StandardPage', 'Hello', { MainBody: '<p>Hi</p>' }, { publish: true });
+  sync.apply({ operations: [] }, { dryRun: true });
+
+  assert.deepEqual(envelope.data, [{ code: 'en', enabled: true }]);
+  assert.equal(envelope.meta.next, 'c2');
+  assert.deepEqual(items, [{ ref: '9' }]);
+  const flags = ['--json', '--project', '/sites/alloy', '--profile', 'Alloy'];
+  assert.deepEqual(calls().map((c) => c.args), [
+    ['languages', ...flags],
+    ['projects', 'Spring campaign', ...flags],
+    ['create', '1', '--type', 'StandardPage', '--name', 'Hello', '--values', '{"MainBody":"<p>Hi</p>"}', '--publish', ...flags],
+    ['apply', '-', '--dry-run', ...flags],
+  ]);
+  assert.deepEqual(JSON.parse(calls()[3].stdin), { operations: [] });
+});
+
+test('the sync client throws OptiCliError, warns, and stops a command that runs too long', () => {
+  fake([
+    { match: 'get 5', exit: 2, envelope: { ok: false, meta: { version: '0.34.0' }, error: { code: 'not_found', message: 'No content 5.' } } },
+    { match: 'get 1', envelope: ok({ ref: '1' }, { warnings: ['The database is remote.'] }) },
+    { match: 'get 2', delayMs: 5_000, envelope: ok({ ref: '2' }) },
+  ]);
+  const seen = [];
+  const sync = new OptiCliSync({ command: fakeCommand, onWarnings: (w) => seen.push(...w) });
+
+  const error = (() => {
+    try {
+      sync.get('5');
+    } catch (e) {
+      return e;
+    }
+  })();
+  sync.get('1');
+  const late = (() => {
+    try {
+      sync.runSync(['get', '2'], { timeoutMs: 300 });
+    } catch (e) {
+      return e;
+    }
+  })();
+
+  assert.ok(error instanceof OptiCliError);
+  assert.equal(error.code, 'not_found');
+  assert.equal(error.exitCode, 2);
+  assert.equal(error.version, '0.34.0');
+  assert.deepEqual(seen, ['The database is remote.']);
+  assert.ok(late instanceof OptiCliError);
+  assert.equal(late.code, 'timeout');
+});
+
+test('a missing opticli says how to install it, in the sync client too', () => {
+  assert.throws(() => new OptiCliSync({ command: ['opticli-that-does-not-exist'] }).get('1'), /dotnet tool install -g OptiCli/);
 });
 
 test('warnings go to onWarnings', async () => {

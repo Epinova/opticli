@@ -74,3 +74,6 @@ export const timeouts = {
   // Waits as long as the job runs, unless --timeout or --no-wait.
   'jobs run': '((options?.timeout ?? 3540) + 60) * 1000',
 };
+
+/** Types the hand-written layer names that no generated command reaches: `apply`'s result for a `site` step. */
+export const handWrittenTypes = ['SiteHostsView'];

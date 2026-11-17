@@ -1,7 +1,10 @@
 // Playwright's globalSetup: start the site, check opticli's version, apply the seed plan, and hand what the workers need
 // to them through the environment. It returns the teardown, which Playwright runs after the tests.
+import type { OkEnvelope } from '../envelope.ts';
+import type { AgentStatus } from '../generated/types.ts';
 import { compareVersions, OptiCli, type OptiCliOptions } from '../opticli.ts';
-import type { ApplyResult, ContentRef, OkEnvelope, Plan, ServeResult } from '../types.ts';
+import type { AppliedStep } from '../results.ts';
+import type { ContentRef, Plan } from '../types.ts';
 import { requiredOpticli } from '../version.ts';
 import { browseUrl, siteUrl } from './urls.ts';
 
@@ -78,11 +81,11 @@ export function defineSetup(options: SetupOptions = {}): () => Promise<() => Pro
       onWarnings: (warnings, args) => console.warn(`opticli ${args[0]}: ${warnings.join(' ')}`),
     });
 
-    const before = await opticli.serveStatus();
+    const before = await opticli.serve({ status: true });
     const startedSite = before.state !== 'running';
     const keepSite = options.keepSite ?? process.env.OPTICLI_KEEP_SITE === '1';
     const teardown = async () => {
-      if (startedSite && !keepSite) await opticli.serveStop();
+      if (startedSite && !keepSite) await opticli.serve({ stop: true });
     };
 
     const httpsPort = options.httpsPort ?? (process.env.OPTICLI_HTTPS_PORT ? Number(process.env.OPTICLI_HTTPS_PORT) : undefined);
@@ -90,7 +93,7 @@ export function defineSetup(options: SetupOptions = {}): () => Promise<() => Pro
       throw new Error(`opticli: httpsPort (OPTICLI_HTTPS_PORT) must be a port number, not ${process.env.OPTICLI_HTTPS_PORT ?? httpsPort}.`);
     }
     const https = httpsPort !== undefined || (options.https ?? (process.env.OPTICLI_HTTPS ? process.env.OPTICLI_HTTPS === '1' : undefined));
-    const served = await opticli.serve({ build: options.build ?? process.env.OPTICLI_BUILD === '1', https, httpsPort });
+    const served = await serve(opticli, { build: options.build ?? process.env.OPTICLI_BUILD === '1', https, httpsPort });
     try {
       if (https && !startedSite && served.data.mode !== 'ide' && !served.data.browseUrl) {
         throw new Error(
@@ -108,7 +111,21 @@ export function defineSetup(options: SetupOptions = {}): () => Promise<() => Pro
   };
 }
 
-async function seed(opticli: OptiCli, served: OkEnvelope<ServeResult>, options: SetupOptions): Promise<SeedState> {
+/**
+ * Starts the site (`opticli serve`), or finds the one that runs, with the envelope: its `meta.version` is the CLI's, which
+ * the generated `serve()` (data only) doesn't give.
+ */
+function serve(opticli: OptiCli, options: { build: boolean; https: boolean | undefined; httpsPort: number | undefined }): Promise<OkEnvelope<AgentStatus>> {
+  const timeout = 180;
+  const args = ['serve', '--timeout', String(timeout)];
+  if (options.build) args.push('--build');
+  if (options.httpsPort) args.push('--https-port', String(options.httpsPort));
+  else if (options.https) args.push('--https');
+  // A build comes first, and may take minutes.
+  return opticli.run<AgentStatus>(args, { timeoutMs: (timeout + 600) * 1000 });
+}
+
+async function seed(opticli: OptiCli, served: OkEnvelope<AgentStatus>, options: SetupOptions): Promise<SeedState> {
   checkVersions(served.meta.version, served.data.agent?.version);
   const baseURL = served.data.browseUrl ?? served.data.url;
   if (!baseURL) throw new Error(`opticli serve gave no URL: ${JSON.stringify(served.data)}`);
@@ -129,7 +146,9 @@ async function seed(opticli: OptiCli, served: OkEnvelope<ServeResult>, options: 
     });
     state.refs = applied.created;
     for (const step of applied.operations) {
-      const url = browseUrl(step.result?.url, step.result?.canonicalUrl, state.addresses);
+      // Only creating steps have an `id`.
+      const created = step.op === 'create' || step.op === 'block' || step.op === 'upload';
+      const url = created ? browseUrl(step.result?.url, step.result?.canonicalUrl, state.addresses) : undefined;
       if (step.id && url) state.urls[step.id] = url;
     }
     const changed = applied.operations.filter((o) => o.status !== 'unchanged');
@@ -160,10 +179,11 @@ async function sites(opticli: OptiCli, baseURL: string, addresses: readonly stri
 }
 
 /** A step that changed, for the log: what it is, and which properties it changed. */
-function describeStep(step: ApplyResult['operations'][number]): string {
+function describeStep(step: AppliedStep): string {
   const name = `${step.id ?? `#${step.index}`} (${step.op}${step.status === 'saved' ? '' : `, ${step.status}`})`;
   // A site step's changes are lines of text; a content step's are properties.
-  const properties = (step.result?.changes ?? []).map((c) => (typeof c === 'string' ? c : c.property)).filter(Boolean);
+  const changes: readonly (string | { property: string })[] = step.result && 'changes' in step.result ? step.result.changes : [];
+  const properties = changes.map((c) => (typeof c === 'string' ? c : c.property)).filter(Boolean);
   return properties.length ? `${name}: ${properties.join(', ')}` : name;
 }
 
