@@ -3,6 +3,68 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.33.0 (unreleased)
+
+### CLI
+
+- **Drafts go into the CMS's projects**, so editors review many related changes together and they go live in one go.
+  `--in-project <id|name>` on `set`, `create`, `area`, `composition`, `block create`, `upload` and `translate` puts the
+  draft in that project, in place of the content's earlier version there; the result's `project` says whether it was
+  `added` or `replaced`. A write joins a project only when it names it, every time. Content in another unpublished
+  project is a `conflict` (`inOtherProject`), and `--in-project` doesn't go with `--publish` or `--publish-at`. A save
+  without `--in-project` of content that is in a project warns that the new version isn't in it. The flag is
+  `--in-project` because `--project` already names the site's .csproj.
+- **`projects create`, `ready`, `remove`, `publish`, `reactivate` and `delete`**, through the running site. `--ready` on
+  a save, or `projects ready` (refs or `--all`), marks drafts Ready to publish; under an approval sequence that is
+  refused, and `--request-approval` (with `--comment` on `projects ready`) sends them for review instead. Marking
+  someone else's draft ready needs `--include-draft`, since the CMS then records opticli as the one who saved it.
+- **Publishing a project puts only its items marked Ready to publish live**, now or `--at` a set time, through the
+  site's own `ProjectPublisher`, as the edit UI does in project mode. The rest stay drafts and are listed in
+  `notReady`. This also holds where editors use the Projects gadget (CMS 13's default), whose own Publish puts every
+  unpublished item live. Every ready item gets `publish`'s checks first, and one problem stops the publish with nothing
+  published. Marking an item ready counts as consent: the changes of whoever marked it (`readyBy`, after an approval
+  the reviewer) go live without `--include-draft`, other people's still need it. On a terminal it shows what goes live
+  and what stays behind, and asks. `siteChanges` says what the site's own code did meanwhile, on the CMS's publishing
+  thread. On CMS 12 a publish whose background task fails to start is tried again, up to twice.
+- **Plans take `"project"`**, on the plan for every save step or on a step (`null` for none), and `"ready": true` per
+  step. A project the plan names that doesn't exist yet is created by the run before its first save; a step marked
+  ready whose content a later step changes is marked ready once the plan has run. `data.projects` lists the projects,
+  what was made and what was marked ready. Plans never publish a project, and sealed production runs refuse projects.
+- `projects` lists `ready` (items marked Ready to publish) next to `items`, and `projects <project>` takes the project's
+  exact name as well as its id.
+- Where the site's edit UI has neither project mode nor the Projects gadget, project writes are `refused`
+  (`projectsDisabled`).
+
+### MCP server for editors
+
+- **New tools**: `list_projects` and `get_project` (each item's state and `editUrl`) to read, `create_project`,
+  `mark_ready_to_publish` and `remove_from_project` to write, and `publish_project` and `reactivate_project` to publish
+  or schedule a project, and cancel a schedule. The publish tools are offered on every site, as `publish_content` is,
+  and need `AllowPublish` and the `content:publish` scope; elsewhere they are refused with a hint to mark the items
+  ready and publish the project in the CMS.
+- **`project` and `ready` on `create_content`, `update_content`, `add_language` and `upload_media`** put the draft in a
+  project and mark it Ready to publish. Marking ready and taking items out need Edit access on each item, publishing
+  needs Publish on each ready item, and reactivating Publish on each scheduled one, all checked before anything changes.
+  `mark_ready_to_publish` with `all` leaves out drafts the editor may not edit, and lists them.
+- **Publishing puts only ready items live**, with the same checks and consent rule as the CLI: `includeDraft` for the
+  changes of anyone other than whoever marked an item ready, and for marking someone else's draft ready. Dry runs
+  report each item's problem with `valid: false`.
+- **Links for the editor**: `projectUrl` opens the project in the edit UI where the CMS has project mode (and makes it
+  the editor's current project); on sites with only the Projects gadget, `projectNote` says to open the gadget and that
+  its Publish puts every unpublished item live.
+- **Custom write tools** put their plan's drafts in a project with `ContentPlan.InProject(project, ready)`.
+- The server's instructions say when to suggest a project, that a save joins one only when it names it, and how to
+  publish one (or, where the site doesn't let assistants publish, that the editor publishes it in the CMS). Audit lines
+  name the project a call worked on.
+- **Fixed:** `get_content` didn't show which projects hold a version of the content (`projects`), as the CLI's `get`
+  does. It does now.
+
+### Documentation
+
+- New guides: [Collect changes in a project and publish them together](https://epinova.github.io/opticli/guides/) for
+  editors, and [Hand a batch of changes to editors as a project](https://epinova.github.io/opticli/guides/) for
+  developers.
+
 ## 0.32.0 (12 November 2026)
 
 ### CLI and npm package
