@@ -659,7 +659,7 @@ public sealed class WriteExecutor(
                 : op.Publish || (op.RequestApproval && op.Project is null)
                     ? await PublishAsync(new PublishOperation(op.Ref, Lang: language.Code) { IncludeDraft = op.IncludeDraft, RequestApproval = op.RequestApproval }, dryRun, cancellationToken)
                     : await LatestUnchangedAsync(target, language, dryRun, $"The {language.Code} branch already exists; nothing to do.", cancellationToken);
-            outcome = existing with { Output = ((WriteOutput)existing.Output) with { Existing = true } };
+            outcome = existing with { Output = existing.Output with { Existing = true } };
         }
         else
         {

@@ -105,7 +105,7 @@ internal static class SitesCommand
                 SiteAssetsModes.Parse(parse.GetValue(siteAssets)));
             await using var session = await context.OpenContentAsync(cancellationToken);
             var outcome = await context.Writes(session, updateExisting: parse.GetValue(updateExisting)).RunAsync(operation, parse.GetValue(write.DryRun), cancellationToken);
-            var view = (SiteHostsView)outcome.Output;
+            var view = outcome.Output;
             return new CommandResult<SiteHostsView>(view, Text: Render([view]), Warnings: outcome.Warnings, Source: WriteExecutor.AgentSource);
         });
         return command;
