@@ -18,6 +18,8 @@ export interface PropertyOut {
   /** The property's type: `String`, `XhtmlString`, `ContentArea`, `ContentReference`, ... */
   type: string;
   value: JsonValue;
+  /** The language branch the stored value is in (`sv`). */
+  culture?: string;
   /** The value was cut short (`full` shows it whole). */
   truncated?: boolean;
   /** The whole value's length, when it was cut. */
