@@ -3,6 +3,16 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.34.1 (unreleased)
+
+### CLI
+
+- **Fixed on Windows: output and plans with characters outside ASCII.** When another program read opticli's output
+  (the npm package, a script, an agent), Windows encoded it in the console's code page instead of UTF-8: `æøå` in a
+  content name came out as other characters, and some (such as `→` in a command's help) as a control character that
+  made the JSON invalid. A plan piped to `apply -` was read the same wrong way. Redirected stdin, stdout and stderr are
+  UTF-8 now; output to a console window is as before.
+
 ## 0.34.0 (17 November 2026)
 
 The npm package's client has a typed method for every command a test or script needs, generated from the CLI itself,

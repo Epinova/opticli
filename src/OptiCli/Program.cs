@@ -6,6 +6,8 @@ using OptiCli.Core.Refs;
 using OptiCli.Core.Serve;
 using OptiCli.Core.Text;
 
+StandardStreams.UseUtf8WhenRedirected();
+
 var options = new GlobalOptions();
 var root = Program.CreateRoot(options);
 

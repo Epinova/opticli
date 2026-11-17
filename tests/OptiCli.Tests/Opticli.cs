@@ -91,13 +91,23 @@ internal static class Opticli
     }
 
     /// <summary>The built opticli.dll as a child process, so stdout is redirected as it is for an agent.</summary>
-    public static async Task<Run> RunProcessAsync(params string[] args)
+    public static Task<Run> RunProcessAsync(params string[] args) => RunProcessWithInputAsync(null, args);
+
+    /// <summary>
+    /// As <see cref="RunProcessAsync"/>, with <paramref name="input"/> on stdin. Both ways in UTF-8, as the npm package and
+    /// agents read and write it.
+    /// </summary>
+    public static async Task<Run> RunProcessWithInputAsync(string? input, params string[] args)
     {
+        var utf8 = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         var start = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") is { Length: > 0 } host ? host : "dotnet")
         {
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            StandardInputEncoding = utf8,
+            StandardOutputEncoding = utf8,
+            StandardErrorEncoding = utf8,
             UseShellExecute = false,
             // Parse errors and help need no project; a neutral directory keeps the repository's own files out of it.
             WorkingDirectory = Path.GetTempPath(),
@@ -113,9 +123,13 @@ internal static class Opticli
         }
 
         using var process = Process.Start(start)!;
-        process.StandardInput.Close();
         var stdout = process.StandardOutput.ReadToEndAsync();
         var stderr = process.StandardError.ReadToEndAsync();
+        if (input is not null)
+        {
+            await process.StandardInput.WriteAsync(input);
+        }
+        process.StandardInput.Close();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         await process.WaitForExitAsync(timeout.Token);
         return new Run(process.ExitCode, await stdout, await stderr);
