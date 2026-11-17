@@ -30,7 +30,7 @@ internal static class RestoreCommand
         command.Options.Add(to);
         write.AddCommon(command, publish: false);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<RestoreOutput>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             var operation = new RestoreOperation(parse.GetValue(content.Ref)!, parse.GetValue(to));

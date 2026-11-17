@@ -18,7 +18,7 @@ internal static class VisitorGroupsCommand
             """);
         list.AddTo(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<IReadOnlyList<VisitorGroupInfo>>(command, options, async (context, cancellationToken) =>
         {
             await using var db = await context.OpenDatabaseAsync(cancellationToken);
             var groups = await new VisitorGroupReader(db).ListAsync(cancellationToken);

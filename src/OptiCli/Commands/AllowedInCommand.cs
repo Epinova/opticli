@@ -31,7 +31,7 @@ internal static class AllowedInCommand
         command.Options.Add(explicitOnly);
         list.AddTo(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<IReadOnlyList<AllowedIn>>(command, options, async (context, cancellationToken) =>
         {
             var project = context.Project;
             await using var session = await context.OpenContentAsync(cancellationToken);

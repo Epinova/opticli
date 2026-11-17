@@ -89,7 +89,7 @@ internal static class IdeCommand
             Example: opticli ide on
             """);
         command.Options.Add(configuration);
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<OnResult>(command, options, async (context, cancellationToken) =>
         {
             var project = context.Project;
             var name = context.Parse.GetValue(configuration)!.Trim();
@@ -151,7 +151,7 @@ internal static class IdeCommand
             var next = rebuild
                 ? $"Rebuild the site ({name}): in Rider or Visual Studio use Rebuild, since Run's up-to-date check doesn't notice a changed .csproj.user. Then start it from the IDE; `opticli serve --status` shows it (mode ide)."
                 : "The build already has the hook: restart the site from the IDE if it runs.";
-            return new CommandResult(
+            return new CommandResult<OnResult>(
                 new OnResult(userFile, created, copy, IdeProject.AgentVersion(copy), name, store.IdePath,
                     new IdeDatabase(connection.Server, connection.Database, !connection.IsLocal),
                     tracking switch { GitTracking.Ignored => "ignored", GitTracking.NotIgnored => excludeFile is null ? "notIgnored" : "excluded", _ => "noRepository" },
@@ -169,7 +169,7 @@ internal static class IdeCommand
             else is in it) and the line opticli added to .git/info/exclude. The build loads the agent until it is rebuilt.
             Example: opticli ide off
             """);
-        CommandRunner.SetHandler(command, options, (context, cancellationToken) =>
+        CommandRunner.SetHandler<OffResult>(command, options, (context, cancellationToken) =>
         {
             var project = context.Project;
             var userFile = IdeProject.UserFile(project);
@@ -178,7 +178,7 @@ internal static class IdeCommand
             var excludeFile = IdeProject.Unexclude(userFile);
             var rebuild = block is not null && HasHook(context, project, block.AgentDll, out _);
             var warnings = rebuild ? new[] { "The current build still loads the agent: rebuild the site (and restart it) to drop it." } : null;
-            return Task.FromResult(new CommandResult(
+            return Task.FromResult(new CommandResult<OffResult>(
                 new OffResult(userFile, removed, deleted, excludeFile, rebuild),
                 Warnings: warnings,
                 Source: CommandResult.CliSource));
@@ -193,7 +193,7 @@ internal static class IdeCommand
             whether it is this opticli's), whether the build output has the hook (else rebuild), whether git ignores the file,
             and the site opticli writes through (the IDE's when it runs). Example: opticli ide status
             """);
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<StatusResult>(command, options, async (context, cancellationToken) =>
         {
             var project = context.Project;
             var userFile = IdeProject.UserFile(project);
@@ -217,7 +217,7 @@ internal static class IdeCommand
             {
                 warnings.Add($"The site's agent wasn't checked: {ex.Message}");
             }
-            return new CommandResult(
+            return new CommandResult<StatusResult>(
                 new StatusResult(block is not null, userFile, block?.AgentDll, block is null ? null : File.Exists(block.AgentDll), block is null ? null : IdeProject.AgentVersion(block.AgentDll),
                     current, block?.Configuration, block?.RemoteDatabase, build,
                     tracking switch { GitTracking.Ignored => "ignored", GitTracking.NotIgnored => "notIgnored", GitTracking.Tracked => "tracked", _ => "noRepository" },

@@ -99,7 +99,7 @@ internal static class DoctorCommand
             Example: opticli doctor
             """);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<Report>(command, options, async (context, cancellationToken) =>
         {
             var warnings = new List<string>();
 
@@ -196,7 +196,7 @@ internal static class DoctorCommand
                 sitesMapping,
                 skills,
                 warnings);
-            return new CommandResult(report);
+            return new CommandResult<Report>(report);
         });
         return command;
     }

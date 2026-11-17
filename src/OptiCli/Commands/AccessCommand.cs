@@ -63,40 +63,41 @@ internal static class AccessCommand
         command.Options.Add(inherit);
         command.Options.Add(allowUnknown);
         write.AddCommon(command, publish: false);
-        // Without changes it only shows the rights.
-        WriteCommands.Mark(command, parse => parse.GetValue(grant) is { Length: > 0 } || parse.GetValue(user) is { Length: > 0 } || parse.GetValue(revoke) is { Length: > 0 }
-            || parse.GetValue(breakInheritance) || parse.GetValue(inherit));
+        // With any of these it changes the rights (a write); without them it only shows them.
+        var changes = ModeCondition.AnyOf(ModeCondition.Set(grant), ModeCondition.Set(user), ModeCondition.Set(revoke), ModeCondition.Set(breakInheritance), ModeCondition.Set(inherit));
+        WriteCommands.Mark(command, changes.Matches);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
-        {
-            var parse = context.Parse;
-            var operation = new AccessOperation(
-                parse.GetValue(content.Ref)!,
-                Assignments(parse.GetValue(grant), "--grant"),
-                Assignments(parse.GetValue(user), "--user"),
-                parse.GetValue(revoke) is { Length: > 0 } names ? names : null,
-                parse.GetValue(breakInheritance),
-                parse.GetValue(inherit),
-                parse.GetValue(allowUnknown));
-            var changes = operation.Grant is not null || operation.GrantUsers is not null || operation.Revoke is not null || operation.BreakInheritance || operation.Inherit;
-
-            await using var session = await context.OpenContentAsync(cancellationToken);
-            if (changes)
+        CommandRunner.SetHandler(command, options, new ResultModes()
+            .When(changes, async (context, cancellationToken) =>
             {
+                var parse = context.Parse;
+                var operation = new AccessOperation(
+                    parse.GetValue(content.Ref)!,
+                    Assignments(parse.GetValue(grant), "--grant"),
+                    Assignments(parse.GetValue(user), "--user"),
+                    parse.GetValue(revoke) is { Length: > 0 } names ? names : null,
+                    parse.GetValue(breakInheritance),
+                    parse.GetValue(inherit),
+                    parse.GetValue(allowUnknown));
+                await using var session = await context.OpenContentAsync(cancellationToken);
                 return WriteOptions.Result(await context.Writes(session, parse.GetValue(content.Site)).RunAsync(operation, parse.GetValue(write.DryRun), cancellationToken));
-            }
-            if (parse.GetValue(write.DryRun) || operation.AllowUnknownRole)
+            })
+            .Otherwise(async (context, cancellationToken) =>
             {
-                throw new UsageException("--dry-run and --allow-unknown-role only apply to a change.", "Give --grant, --user, --revoke, --break-inheritance or --inherit, or leave them out to show the access rights.");
-            }
+                var parse = context.Parse;
+                await using var session = await context.OpenContentAsync(cancellationToken);
+                if (parse.GetValue(write.DryRun) || parse.GetValue(allowUnknown))
+                {
+                    throw new UsageException("--dry-run and --allow-unknown-role only apply to a change.", "Give --grant, --user, --revoke, --break-inheritance or --inherit, or leave them out to show the access rights.");
+                }
 
-            var located = await content.LocateAsync(context, session, cancellationToken);
-            var header = await session.HeaderAsync(located.Id, cancellationToken);
-            var identity = session.Identities.Describe(header, null);
-            var access = await AccessReader.ReadAsync(session.Db, header, cancellationToken);
-            var approval = await ApprovalReader.ResolveAsync(session.Db, session.Model, header, cancellationToken);
-            return new CommandResult(new AccessView(identity.Ref!, header.Guid, identity.Type, identity.Name, access.Inherited, access.From, access.AssetsOf, access.Entries, approval));
-        });
+                var located = await content.LocateAsync(context, session, cancellationToken);
+                var header = await session.HeaderAsync(located.Id, cancellationToken);
+                var identity = session.Identities.Describe(header, null);
+                var access = await AccessReader.ReadAsync(session.Db, header, cancellationToken);
+                var approval = await ApprovalReader.ResolveAsync(session.Db, session.Model, header, cancellationToken);
+                return new CommandResult<AccessView>(new AccessView(identity.Ref!, header.Guid, identity.Type, identity.Name, access.Inherited, access.From, access.AssetsOf, access.Entries, approval));
+            }));
         return command;
     }
 

@@ -31,7 +31,7 @@ internal static class PublishCommand
         write.AddRequestApproval(command);
         write.AddPublishAt(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<WriteOutput>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             var versionId = parse.GetValue(version) is { } text ? WriteOptions.ParseVersion(text, "--version") : (int?)null;

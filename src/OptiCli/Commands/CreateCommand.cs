@@ -37,7 +37,7 @@ internal static class CreateCommand
         write.AddProject(command);
         write.AddPublishAt(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<WriteOutput>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             if (parse.GetValue(type) is null && parse.GetValue(blueprint) is null)

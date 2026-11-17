@@ -28,7 +28,7 @@ internal static class DiscardCommand
         write.IncludeDraft.Description = "Discard it even when someone other than opticli saved it. Without it that asks on a terminal, and elsewhere fails with a conflict (exit 5) that shows its changes.";
         write.AddIncludeDraft(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<WriteOutput>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             var versionId = parse.GetValue(version) is { } text ? WriteOptions.ParseVersion(text, "--version") : (int?)null;

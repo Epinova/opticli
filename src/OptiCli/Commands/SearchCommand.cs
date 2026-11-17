@@ -30,7 +30,7 @@ internal static class SearchCommand
         list.AddTo(command);
         command.Options.Add(blueprints);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<IReadOnlyList<SearchHit>>(command, options, async (context, cancellationToken) =>
         {
             var needle = context.Parse.GetValue(text)!;
             if (needle.Trim().Length < 2)
@@ -41,7 +41,7 @@ internal static class SearchCommand
             var (hits, capped) = await new SearchReader(session, context.Parse.GetValue(blueprints)).SearchAsync(
                 needle, Enum.Parse<SearchScope>(context.Parse.GetValue(scope)!, ignoreCase: true), session.Language(context.Parse.GetValue(content.Lang)), cancellationToken);
             var page = list.Apply(context.Parse, hits);
-            return new CommandResult(page.Items, page.Next, Warnings: capped
+            return new CommandResult<IReadOnlyList<SearchHit>>(page.Items, page.Next, Warnings: capped
                 ? [$"More than {SearchReader.MaxRows} values matched; results are incomplete. Use a more specific text, --in names, or --lang."]
                 : null);
         });

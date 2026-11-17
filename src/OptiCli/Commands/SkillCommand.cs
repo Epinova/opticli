@@ -41,7 +41,7 @@ internal static class SkillCommand
         command.Options.Add(repo);
         command.Options.Add(force);
 
-        CommandRunner.SetHandler(command, options, (context, _) =>
+        CommandRunner.SetHandler<SkillInstallResult>(command, options, (context, _) =>
         {
             string directory;
             if (context.Parse.GetValue(repo))
@@ -56,7 +56,7 @@ internal static class SkillCommand
             {
                 directory = SkillLocations.User(context.Environment);
             }
-            return Task.FromResult(new CommandResult(SkillInstaller.Install(BundledSkill.Load(), directory, context.Parse.GetValue(force)), Source: CommandResult.CliSource));
+            return Task.FromResult(new CommandResult<SkillInstallResult>(SkillInstaller.Install(BundledSkill.Load(), directory, context.Parse.GetValue(force)), Source: CommandResult.CliSource));
         });
         return command;
     }
@@ -77,8 +77,8 @@ internal static class SkillCommand
             """);
         command.Arguments.Add(file);
 
-        CommandRunner.SetHandler(command, options, (context, _) =>
-            Task.FromResult(new CommandResult(null, Raw: bundle.Files[context.Parse.GetValue(file)!])));
+        CommandRunner.SetHandler<RawOutput>(command, options, (context, _) =>
+            Task.FromResult(new CommandResult<RawOutput>(RawOutput.Instance, Raw: bundle.Files[context.Parse.GetValue(file)!])));
         return command;
     }
 }

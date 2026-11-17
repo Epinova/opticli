@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Microsoft.Data.SqlClient;
 using OptiCli.Core.Content;
 using OptiCli.Core.Cms;
@@ -11,7 +12,8 @@ namespace OptiCli.Core.Queries;
 /// <param name="Kind">contentArea, contentReference, contentReferenceList, richTextLink, richTextBlock, link, linkCollection, url, text or softlink; CMS 13: composition (a shared block placed in a Visual Builder composition).</param>
 /// <param name="Sources"><c>softlink</c> (the CMS's own link index) and/or <c>property</c> (a scan of stored values).</param>
 /// <param name="Saved">When the owner's branch was last saved (its primary version), so owners can be sorted by recency.</param>
-public sealed record Usage(
+/// <remarks>Not sealed: <see cref="PageUsageRow"/> is a usage with the blocks it was reached through.</remarks>
+public record Usage(
     string Ref, Guid Guid, string Type, string? Name, string? Language, string Status, string? Url, bool? Deleted,
     string Property, string Kind, IReadOnlyList<string> Sources, DateTime? Saved, string? ChangedBy)
 {
@@ -198,6 +200,20 @@ public sealed class WhereUsedReader(ContentSession session, PropertyReferenceInd
 
 /// <summary>A usage reached through blocks: <see cref="Via"/> is the chain of block refs from the owner down to the target.</summary>
 public sealed record PageUsage(Usage Usage, IReadOnlyList<string> Via);
+
+/// <summary>A row of <c>where-used --pages</c>: the usage's own fields, so it reads like a plain where-used row, then <see cref="Via"/>.</summary>
+public sealed record PageUsageRow : Usage
+{
+    public PageUsageRow(PageUsage usage)
+        : base(usage.Usage)
+    {
+        Via = usage.Via.Count > 0 ? usage.Via : null;
+    }
+
+    /// <summary>The chain of block refs from the owner down to the target; left out when the owner uses it directly.</summary>
+    [JsonPropertyOrder(1)]
+    public IReadOnlyList<string>? Via { get; }
+}
 
 /// <summary>
 /// <c>where-used --pages</c>: follows owners that are blocks up to the content that uses them (pages, media,

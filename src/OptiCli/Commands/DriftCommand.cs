@@ -32,19 +32,19 @@ internal static class DriftCommand
             Example: opticli drift
             """);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<DriftReport>(command, options, async (context, cancellationToken) =>
         {
             if (context.UseConnection().IsLocal)
             {
                 var local = new DriftReport { Checked = false, Notes = [LocalNote] };
-                return new CommandResult(local, Text: Text(local), Source: CommandResult.CliSource);
+                return new CommandResult<DriftReport>(local, Text: Text(local), Source: CommandResult.CliSource);
             }
             var agent = await context.ConnectAgentAsync(cancellationToken);
             var report = await WithHistoryAsync(context, await agent.DriftAsync(cancellationToken), cancellationToken);
             var warnings = report.Fingerprint is null
                 ? null
                 : new[] { $"{DriftText.Prefix}{DriftText.Short(report.Ahead)}. {DriftText.Advice(report)} Writes stop until the user confirms with --accept-drift {report.Fingerprint}." };
-            return new CommandResult(report, Text: Text(report), Warnings: warnings, Source: WriteExecutor.AgentSource);
+            return new CommandResult<DriftReport>(report, Text: Text(report), Warnings: warnings, Source: WriteExecutor.AgentSource);
         });
         return command;
     }

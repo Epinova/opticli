@@ -80,7 +80,7 @@ internal static class SyncCommand
         command.Options.Add(dryRun);
         WriteCommands.Mark(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<SyncResult>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             var given = parse.GetValue(reference) is { Length: > 0 } refs ? refs : null;
@@ -170,7 +170,7 @@ internal static class SyncCommand
                     cancellationToken);
                 progress.Done();
                 warnings.AddRange(Warnings(result));
-                return new CommandResult(result, Text: Text(result), Warnings: warnings, Source: result.Run is null ? CommandResult.DbSource : WriteExecutor.AgentSource);
+                return new CommandResult<SyncResult>(result, Text: Text(result), Warnings: warnings, Source: result.Run is null ? CommandResult.DbSource : WriteExecutor.AgentSource);
             }
             finally
             {
@@ -221,7 +221,7 @@ internal static class SyncCommand
         // It writes nothing, but dry-runs the plan through the local site, as every write's dry run does.
         WriteCommands.Mark(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<SyncPushOutput>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             var given = parse.GetValue(reference) is { Length: > 0 } refs ? refs : null;
@@ -291,7 +291,7 @@ internal static class SyncCommand
             }
             if (push.Steps == 0)
             {
-                return new CommandResult(new { push, seal = (SealResult?)null, userCommand = (string?)null },
+                return new CommandResult<SyncPushOutput>(new SyncPushOutput(push, null, null),
                     Text: $"Nothing to push: production has the {push.Unchanged} item(s) as the local database has them.{Environment.NewLine}", Warnings: warnings, Source: CommandResult.DbSource);
             }
             var plan = await PlanSnapshot.ReadAsync(push.Plan, cancellationToken);
@@ -300,7 +300,7 @@ internal static class SyncCommand
             var text = new StringBuilder()
                 .AppendLine(CultureInfo.InvariantCulture, $"Push to '{production.Database}': created {push.Created.Count}, updated {push.Updated.Count}, moved {push.Moved.Count}, restored {push.Restored.Count}, unchanged {push.Unchanged}; conflicts {push.Conflicts.Count}, skipped {push.Skipped.Count}{(mediaFiles is null ? $", media left out {push.Media.Count}" : "")}.")
                 .Append(Sealing.Text(sealResult));
-            return new CommandResult(new { push, seal = sealResult, userCommand = sealResult.UserCommand }, Text: text.ToString(), Warnings: warnings, Source: WriteExecutor.AgentSource);
+            return new CommandResult<SyncPushOutput>(new SyncPushOutput(push, sealResult, sealResult.UserCommand), Text: text.ToString(), Warnings: warnings, Source: WriteExecutor.AgentSource);
         });
         return command;
     }
@@ -446,3 +446,9 @@ internal static class SyncCommand
         public void Dispose() => Done();
     }
 }
+
+/// <summary><c>sync push</c>: the plan it built, and the seal for the user's run (none when there is nothing to push).</summary>
+/// <param name="Push">What the plan does, item by item, and what was left out.</param>
+/// <param name="Seal">The sealed plan; null when nothing needs pushing.</param>
+/// <param name="UserCommand">The command the user runs in their own terminal (the seal's); null when nothing needs pushing.</param>
+internal sealed record SyncPushOutput(PushPlan Push, SealResult? Seal, string? UserCommand);

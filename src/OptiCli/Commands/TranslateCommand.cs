@@ -34,7 +34,9 @@ internal static class TranslateCommand
         write.AddCommon(command);
         write.AddProject(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        // The operation as the options give it; --in-project and --ready are checked with the other options, before the
+        // database is opened.
+        TranslateOperation Operation(CliContext context)
         {
             var parse = context.Parse;
             var operation = new TranslateOperation(parse.GetValue(content.Ref)!, parse.GetValue(content.Lang)!, parse.GetValue(name), write.ParseProperties(context), parse.GetValue(write.Publish))
@@ -43,11 +45,21 @@ internal static class TranslateCommand
                 Remove = parse.GetValue(remove),
                 Confirm = parse.GetValue(confirm),
             };
-            // Before the database is opened: --in-project and --ready are checked with the other options.
-            var applied = write.WithApproval(operation, parse);
-            await using var session = await context.OpenContentAsync(cancellationToken);
-            return WriteOptions.Result(await context.Writes(session, parse.GetValue(content.Site)).RunAsync(applied, parse.GetValue(write.DryRun), cancellationToken));
-        });
+            return write.WithApproval(operation, parse);
+        }
+        CommandRunner.SetHandler(command, options, new ResultModes()
+            .When(ModeCondition.Set(remove), async (context, cancellationToken) =>
+            {
+                var operation = Operation(context);
+                await using var session = await context.OpenContentAsync(cancellationToken);
+                return WriteOptions.Result(await context.Writes(session, context.Parse.GetValue(content.Site)).RemoveLanguageAsync(operation, context.Parse.GetValue(write.DryRun), cancellationToken));
+            })
+            .Otherwise(async (context, cancellationToken) =>
+            {
+                var operation = Operation(context);
+                await using var session = await context.OpenContentAsync(cancellationToken);
+                return WriteOptions.Result(await context.Writes(session, context.Parse.GetValue(content.Site)).TranslateAsync(operation, context.Parse.GetValue(write.DryRun), cancellationToken));
+            }));
         return command;
     }
 }

@@ -33,7 +33,7 @@ internal static class SitesCommand
         command.Subcommands.Add(Primary(options));
         command.Subcommands.Add(Host(options));
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<IReadOnlyList<SiteInfo>>(command, options, async (context, cancellationToken) =>
         {
             await using var db = await context.OpenDatabaseAsync(cancellationToken);
             var sites = await SiteReader.ListAsync(db, cancellationToken);
@@ -94,7 +94,7 @@ internal static class SitesCommand
         command.Options.Add(write.DryRun);
         WriteCommands.Mark(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<SiteHostsView>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             var operation = new SiteOperation(
@@ -106,7 +106,7 @@ internal static class SitesCommand
             await using var session = await context.OpenContentAsync(cancellationToken);
             var outcome = await context.Writes(session, updateExisting: parse.GetValue(updateExisting)).RunAsync(operation, parse.GetValue(write.DryRun), cancellationToken);
             var view = (SiteHostsView)outcome.Output;
-            return new CommandResult(view, Text: Render([view]), Warnings: outcome.Warnings, Source: WriteExecutor.AgentSource);
+            return new CommandResult<SiteHostsView>(view, Text: Render([view]), Warnings: outcome.Warnings, Source: WriteExecutor.AgentSource);
         });
         return command;
     }
@@ -173,94 +173,96 @@ internal static class SitesCommand
         command.Options.Add(write.DryRun);
         WriteCommands.Mark(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
-        {
-            var parse = context.Parse;
-            var given = parse.GetValue(pairs) ?? [];
-            var useConfig = parse.GetValue(fromConfig);
-            var saving = parse.GetValue(save);
-            var dryRun = parse.GetValue(write.DryRun);
-            if (parse.GetValue(forget) is { Length: > 0 } forgotten)
+        CommandRunner.SetHandler(command, options, new ResultModes()
+            .When(ModeCondition.Set(forget), async (context, cancellationToken) =>
             {
-                if (given.Length > 0 || useConfig || saving || dryRun || parse.GetValue(keepEdit) || parse.GetValue(keepSiteUrl) || parse.GetValue(https) is not null)
+                var parse = context.Parse;
+                if (parse.GetValue(pairs) is { Length: > 0 } || parse.GetValue(fromConfig) || parse.GetValue(save) || parse.GetValue(write.DryRun) || parse.GetValue(keepEdit) || parse.GetValue(keepSiteUrl) || parse.GetValue(https) is not null)
                 {
                     throw new UsageException("--forget only changes the saved mapping; give it without pairs, --from-config, --save, --dry-run, --keep-edit, --keep-site-url or --https.");
                 }
-                return await ForgetAsync(context, forgotten, cancellationToken);
-            }
-            if (useConfig && given.Length > 0)
+                return await ForgetAsync(context, parse.GetValue(forget)!, cancellationToken);
+            })
+            .Otherwise(async (context, cancellationToken) =>
             {
-                throw new UsageException("Give pairs or --from-config, not both.");
-            }
-            if (useConfig && saving)
-            {
-                throw new UsageException("--from-config applies the saved mapping; --save would only save it again.", "Leave out --save, or give the pairs to save instead of --from-config.");
-            }
-            if (!useConfig && given.Length == 0)
-            {
-                throw new UsageException("Give at least one pair, or --from-config.", $"Pairs are {PrimaryPairs.Syntax}.");
-            }
-            var httpsValue = ParseHttps(parse.GetValue(https));
-
-            await using var session = await context.OpenContentAsync(cancellationToken);
-            var sites = session.Model.Sites.All;
-            var languages = EnabledLanguages(session);
-            var warnings = new List<string>();
-            IReadOnlyList<PrimaryPair> list;
-            if (useConfig)
-            {
-                var mapping = UserConfig.ForProject(context.Environment.UserConfigFile, context.Project.Directory)?.PrimaryHosts
-                    ?? throw new NotFoundException(
-                        "This project has no saved sites mapping.",
-                        "Save one with the pairs once: `opticli sites primary \"Site A=localhost:5001\" --save`.");
-                list = PrimaryMapping.Pairs(mapping, sites, languages, httpsValue, parse.GetValue(keepEdit), parse.GetValue(keepSiteUrl), warnings);
-            }
-            else
-            {
-                list = given.Select(p => PrimaryPairs.Parse(p, sites, languages, httpsValue) with
+                var parse = context.Parse;
+                var given = parse.GetValue(pairs) ?? [];
+                var useConfig = parse.GetValue(fromConfig);
+                var saving = parse.GetValue(save);
+                var dryRun = parse.GetValue(write.DryRun);
+                if (useConfig && given.Length > 0)
                 {
-                    KeepEdit = parse.GetValue(keepEdit),
-                    KeepSiteUrl = parse.GetValue(keepSiteUrl),
+                    throw new UsageException("Give pairs or --from-config, not both.");
+                }
+                if (useConfig && saving)
+                {
+                    throw new UsageException("--from-config applies the saved mapping; --save would only save it again.", "Leave out --save, or give the pairs to save instead of --from-config.");
+                }
+                if (!useConfig && given.Length == 0)
+                {
+                    throw new UsageException("Give at least one pair, or --from-config.", $"Pairs are {PrimaryPairs.Syntax}.");
+                }
+                var httpsValue = ParseHttps(parse.GetValue(https));
+
+                await using var session = await context.OpenContentAsync(cancellationToken);
+                var sites = session.Model.Sites.All;
+                var languages = EnabledLanguages(session);
+                var warnings = new List<string>();
+                IReadOnlyList<PrimaryPair> list;
+                if (useConfig)
+                {
+                    var mapping = UserConfig.ForProject(context.Environment.UserConfigFile, context.Project.Directory)?.PrimaryHosts
+                        ?? throw new NotFoundException(
+                            "This project has no saved sites mapping.",
+                            "Save one with the pairs once: `opticli sites primary \"Site A=localhost:5001\" --save`.");
+                    list = PrimaryMapping.Pairs(mapping, sites, languages, httpsValue, parse.GetValue(keepEdit), parse.GetValue(keepSiteUrl), warnings);
+                }
+                else
+                {
+                    list = given.Select(p => PrimaryPairs.Parse(p, sites, languages, httpsValue) with
+                    {
+                        KeepEdit = parse.GetValue(keepEdit),
+                        KeepSiteUrl = parse.GetValue(keepSiteUrl),
+                    }).ToList();
+                }
+                if (list.GroupBy(p => p.Key, StringComparer.OrdinalIgnoreCase).FirstOrDefault(g => g.Count() > 1) is { } twice)
+                {
+                    throw new UsageException($"{twice.Key} is given {twice.Count()} times; a site has one primary host per language.");
+                }
+
+                var changes = list.Select(p => new SiteHostChange
+                {
+                    Site = p.Site.Key,
+                    Host = p.Typed,
+                    Action = SiteHostActions.Primary,
+                    Language = p.Language,
+                    Https = p.Https,
+                    KeepEdit = p.KeepEdit,
+                    KeepSiteUrl = p.KeepSiteUrl,
                 }).ToList();
-            }
-            if (list.GroupBy(p => p.Key, StringComparer.OrdinalIgnoreCase).FirstOrDefault(g => g.Count() > 1) is { } twice)
-            {
-                throw new UsageException($"{twice.Key} is given {twice.Count()} times; a site has one primary host per language.");
-            }
 
-            var changes = list.Select(p => new SiteHostChange
-            {
-                Site = p.Site.Key,
-                Host = p.Typed,
-                Action = SiteHostActions.Primary,
-                Language = p.Language,
-                Https = p.Https,
-                KeepEdit = p.KeepEdit,
-                KeepSiteUrl = p.KeepSiteUrl,
-            }).ToList();
-
-            var result = await RunAsync(context, session, changes, dryRun, warnings, cancellationToken);
-            if (saving && dryRun)
-            {
-                warnings.Add("Not saved to the sites mapping: --save saves after a real run, not a dry run.");
-            }
-            else if (saving)
-            {
-                UserConfig.SavePrimaryHosts(
-                    context.Environment.UserConfigFile,
-                    context.Project.Directory,
-                    list.Select(p => p.Site.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
-                    session.Model.Languages.Select(l => l.Code).ToList(),
-                    list.Select(p => KeyValuePair.Create(p.Key, p.Saved)).ToList());
-                warnings.Add($"Saved the mapping ({string.Join(", ", list)}) for this project; after the next database restore run `{PrimaryMapping.FromConfigCommand}`.");
-            }
-            return result;
-        });
+                var result = await RunAsync(context, session, changes, dryRun, warnings, cancellationToken);
+                if (saving && dryRun)
+                {
+                    warnings.Add("Not saved to the sites mapping: --save saves after a real run, not a dry run.");
+                }
+                else if (saving)
+                {
+                    UserConfig.SavePrimaryHosts(
+                        context.Environment.UserConfigFile,
+                        context.Project.Directory,
+                        list.Select(p => p.Site.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                        session.Model.Languages.Select(l => l.Code).ToList(),
+                        list.Select(p => KeyValuePair.Create(p.Key, p.Saved)).ToList());
+                    warnings.Add($"Saved the mapping ({string.Join(", ", list)}) for this project; after the next database restore run `{PrimaryMapping.FromConfigCommand}`.");
+                }
+                return result;
+            }));
         return command;
     }
 
     /// <summary><c>--forget</c>: drops entries from the saved mapping, which the sites in the database may no longer have.</summary>
-    private static async Task<CommandResult> ForgetAsync(CliContext context, IReadOnlyList<string> sites, CancellationToken cancellationToken)
+    private static async Task<CommandResult<SitesForgetResult>> ForgetAsync(CliContext context, IReadOnlyList<string> sites, CancellationToken cancellationToken)
     {
         var file = context.Environment.UserConfigFile;
         var mapping = UserConfig.ForProject(file, context.Project.Directory)?.PrimaryHosts
@@ -281,7 +283,7 @@ internal static class SitesCommand
             forgotten.AddRange(removed);
         }
         var left = UserConfig.ForProject(file, context.Project.Directory)?.PrimaryHosts;
-        return new CommandResult(new { forgotten, mapping = left }, Source: CommandResult.CliSource);
+        return new CommandResult<SitesForgetResult>(new SitesForgetResult(forgotten, left), Source: CommandResult.CliSource);
     }
 
     private static Command Host(GlobalOptions options)
@@ -325,7 +327,7 @@ internal static class SitesCommand
         command.Options.Add(https);
         write.AddCommon(command, publish: false);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<IReadOnlyList<SiteHostsView>>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             var typeName = HostTypes.Parse(parse.GetValue(type) ?? HostTypes.Undefined)
@@ -370,7 +372,7 @@ internal static class SitesCommand
         command.Options.Add(write.DryRun);
         WriteCommands.Mark(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<IReadOnlyList<SiteHostsView>>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             // As typed, not normalised: a host the site has as www.site.example:443 is removed by that name.
@@ -385,7 +387,7 @@ internal static class SitesCommand
 
     /// <summary>Checks shared mode and drift, sends the changes, and shows each site's end state.</summary>
     /// <param name="warnings">The command's own warnings; the agent's are added after them.</param>
-    private static async Task<CommandResult> RunAsync(CliContext context, ContentSession session, IReadOnlyList<SiteHostChange> changes, bool dryRun, List<string> warnings, CancellationToken cancellationToken)
+    private static async Task<CommandResult<IReadOnlyList<SiteHostsView>>> RunAsync(CliContext context, ContentSession session, IReadOnlyList<SiteHostChange> changes, bool dryRun, List<string> warnings, CancellationToken cancellationToken)
     {
         var sites = session.Model.Sites.All;
         var shared = !session.Db.ConnectionString.IsLocal;
@@ -397,7 +399,7 @@ internal static class SitesCommand
         }
         var outcome = await SiteHostsRunner.RunAsync(await context.ConnectAgentAsync(cancellationToken), sites, changes, dryRun, shared, cancellationToken);
         warnings.InsertRange(0, outcome.Warnings);
-        return new CommandResult(outcome.Sites, Text: Render(outcome.Sites), Warnings: warnings, Source: WriteExecutor.AgentSource);
+        return new CommandResult<IReadOnlyList<SiteHostsView>>(outcome.Sites, Text: Render(outcome.Sites), Warnings: warnings, Source: WriteExecutor.AgentSource);
     }
 
     private static string Render(IReadOnlyList<SiteHostsView> sites)
@@ -437,4 +439,9 @@ internal static class SitesCommand
 
     private static IReadOnlyCollection<string> EnabledLanguages(ContentSession session) =>
         session.Model.Languages.Where(l => l.Enabled && !l.IsInvariant).Select(l => l.Code).ToList();
+
+    /// <summary><c>sites primary --forget</c>.</summary>
+    /// <param name="Forgotten">The entries dropped from the saved mapping (<c>Site</c> or <c>Site@lang</c>).</param>
+    /// <param name="Mapping">What the saved mapping has left; left out when nothing.</param>
+    private sealed record SitesForgetResult(IReadOnlyList<string> Forgotten, IReadOnlyDictionary<string, SavedPrimaryHost>? Mapping);
 }

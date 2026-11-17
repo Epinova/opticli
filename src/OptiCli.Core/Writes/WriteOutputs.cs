@@ -236,10 +236,26 @@ public sealed record AccessOutput(
     AccessList Before,
     AccessList After);
 
-/// <param name="Output">A <see cref="WriteOutput"/>, <see cref="MoveOutput"/>, <see cref="RestoreOutput"/> or <see cref="AccessOutput"/>.</param>
+/// <summary>What an operation did: its output (<see cref="WriteOutcome{T}"/>), where it ran, and its warnings.</summary>
 /// <param name="Source"><c>agent</c> when the site did the work, <c>db</c> for dry runs opticli checks itself.</param>
 /// <param name="CreatedId">Content id of what a create made (for plans' <c>$id</c>).</param>
-public sealed record WriteOutcome(object Output, string Source, int? CreatedId, IReadOnlyList<string> Warnings);
+public abstract record WriteOutcome(string Source, int? CreatedId, IReadOnlyList<string> Warnings)
+{
+    /// <summary>The output, boxed, for a caller that takes any operation's (a plan).</summary>
+    public object Output => BoxedOutput;
+
+    private protected abstract object BoxedOutput { get; }
+}
+
+/// <summary>A <see cref="WriteOutcome"/> whose output has the type its operation declares (<see cref="WriteOperation{TOutput}"/>).</summary>
+/// <param name="Output">The command's <c>data</c>.</param>
+public sealed record WriteOutcome<T>(T Output, string Source, int? CreatedId, IReadOnlyList<string> Warnings) : WriteOutcome(Source, CreatedId, Warnings)
+    where T : notnull
+{
+    public new T Output { get; init; } = Output;
+
+    private protected override object BoxedOutput => Output;
+}
 
 /// <summary>What <c>languages enable|disable</c> (a plan's <c>language</c> step) did to each language branch.</summary>
 public sealed record LanguagesOutput(IReadOnlyList<LanguageBranchChange> Languages, bool Saved, bool? DryRun = null);

@@ -18,7 +18,7 @@ internal static class CategoriesCommand
             """);
         list.AddTo(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<IReadOnlyList<CategoryInfo>>(command, options, async (context, cancellationToken) =>
         {
             await using var db = await context.OpenDatabaseAsync(cancellationToken);
             var categories = await new CategoryReader(db).ListAsync(cancellationToken);

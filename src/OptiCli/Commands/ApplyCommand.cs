@@ -99,12 +99,12 @@ internal static class ApplyCommand
         // write commands' check before the command runs would stop it first. Every other apply is checked as a write.
         WriteCommands.Mark(command, parse => parse.GetValue(seal) is null);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
-        {
-            var parse = context.Parse;
-            var path = parse.GetValue(file)!;
-            if (parse.GetValue(seal) is { } sealId)
+        CommandRunner.SetHandler(command, options, new ResultModes()
+            .When(ModeCondition.Set(seal), async (context, cancellationToken) =>
             {
+                var parse = context.Parse;
+                var path = parse.GetValue(file)!;
+                var sealId = parse.GetValue(seal)!;
                 var given = new (bool Given, string Name)[]
                 {
                     (parse.GetValue(sealFor) is not null, "--seal-for"), (parse.GetValue(write.DryRun), "--dry-run"), (parse.GetValue(write.Publish), "--publish"),
@@ -122,35 +122,42 @@ internal static class ApplyCommand
                     throw new UsageException("--seal needs the plan file and --db naming the production database it was sealed for.", "Run exactly the command the seal printed: opticli apply <plan> --db <name> --seal <id>.");
                 }
                 return await SealedApply.RunAsync(context, path, sealId, production, cancellationToken);
-            }
-            if (parse.GetValue(sealFor) is { } sealTarget)
+            })
+            .When(ModeCondition.Set(sealFor), async (context, cancellationToken) =>
             {
+                var parse = context.Parse;
+                var path = parse.GetValue(file)!;
+                var sealTarget = parse.GetValue(sealFor)!;
                 if (parse.GetValue(versionPerStep))
                 {
                     throw new UsageException("--version-per-step doesn't apply to a sealed plan: its run saves the changes to each content and language into one draft.");
                 }
                 return await SealAsync(context, path, sealTarget, parse.GetValue(write.DryRun), parse.GetValue(updateExisting), parse.GetValue(write.Publish),
                     parse.GetValue(write.RequestApproval), parse.GetValue(allowOutside), parse.GetValue(write.AcceptDrift), cancellationToken);
-            }
-            var plan = WritePlan.Parse(await ReadPlanAsync(path, context.Environment.CurrentDirectory, cancellationToken));
-            var planDirectory = path == "-" ? context.Environment.CurrentDirectory : Path.GetDirectoryName(Path.GetFullPath(path, context.Environment.CurrentDirectory))!;
-            await using var session = await context.OpenContentAsync(cancellationToken);
-            // A plan confirms other people's drafts per step ("includeDraft"), never by a prompt halfway through.
-            var writes = context.Writes(session, updateExisting: parse.GetValue(updateExisting), ask: false);
-            var project = context.TryGetProject(out _);
-            var allowedTypes = project is null ? null : new AllowedTypesCheck(session.Model, () => CSharpSourceIndex.Build(project.SourceRoot));
-            var runner = new PlanRunner(session, writes, planDirectory, parse.GetValue(allowOutside), allowedTypes, parse.GetValue(write.RequestApproval))
+            })
+            .Otherwise(async (context, cancellationToken) =>
             {
-                VersionPerStep = parse.GetValue(versionPerStep),
-            };
-            var run = await runner.RunAsync(plan, parse.GetValue(write.DryRun), parse.GetValue(write.Publish), cancellationToken);
-            return new CommandResult(run, Warnings: run.DryRun ? [Coverage(run, runner.VersionPerStep)] : null, Source: WriteExecutor.AgentSource);
-        });
+                var parse = context.Parse;
+                var path = parse.GetValue(file)!;
+                var plan = WritePlan.Parse(await ReadPlanAsync(path, context.Environment.CurrentDirectory, cancellationToken));
+                var planDirectory = path == "-" ? context.Environment.CurrentDirectory : Path.GetDirectoryName(Path.GetFullPath(path, context.Environment.CurrentDirectory))!;
+                await using var session = await context.OpenContentAsync(cancellationToken);
+                // A plan confirms other people's drafts per step ("includeDraft"), never by a prompt halfway through.
+                var writes = context.Writes(session, updateExisting: parse.GetValue(updateExisting), ask: false);
+                var project = context.TryGetProject(out _);
+                var allowedTypes = project is null ? null : new AllowedTypesCheck(session.Model, () => CSharpSourceIndex.Build(project.SourceRoot));
+                var runner = new PlanRunner(session, writes, planDirectory, parse.GetValue(allowOutside), allowedTypes, parse.GetValue(write.RequestApproval))
+                {
+                    VersionPerStep = parse.GetValue(versionPerStep),
+                };
+                var run = await runner.RunAsync(plan, parse.GetValue(write.DryRun), parse.GetValue(write.Publish), cancellationToken);
+                return new CommandResult<PlanRun>(run, Warnings: run.DryRun ? [Coverage(run, runner.VersionPerStep)] : null, Source: WriteExecutor.AgentSource);
+            }));
         return command;
     }
 
     /// <summary><c>apply &lt;plan&gt; --dry-run --seal-for &lt;prod&gt;</c>: checks the plan and seals it for the user to run.</summary>
-    private static async Task<CommandResult> SealAsync(CliContext context, string path, string production, bool dryRun, bool updateExisting, bool publish, bool requestApproval,
+    private static async Task<CommandResult<SealResult>> SealAsync(CliContext context, string path, string production, bool dryRun, bool updateExisting, bool publish, bool requestApproval,
         bool allowOutside, string? acceptDrift, CancellationToken cancellationToken)
     {
         if (!dryRun)
@@ -170,7 +177,7 @@ internal static class ApplyCommand
         await using var productionSession = await ContentSession.OpenAsync(await CmsDatabase.OpenAsync(connection, cancellationToken), cancellationToken);
         var warnings = new List<string>();
         var result = await Sealing.SealAsync(context, plan, production, new SealOptions(updateExisting, publish, requestApproval), "apply", session, candidate, productionSession, warnings, cancellationToken);
-        return new CommandResult(result, Text: Sealing.Text(result), Warnings: warnings.Count > 0 ? warnings : null, Source: WriteExecutor.AgentSource);
+        return new CommandResult<SealResult>(result, Text: Sealing.Text(result), Warnings: warnings.Count > 0 ? warnings : null, Source: WriteExecutor.AgentSource);
     }
 
     /// <summary>How thoroughly the dry run could check the plan.</summary>

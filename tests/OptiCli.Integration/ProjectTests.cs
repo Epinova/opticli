@@ -260,9 +260,9 @@ public sealed class ProjectTests
         // While it is scheduled: saves and ready marks are refused with the reactivate hint, and so is deleting it.
         var save = await Assert.ThrowsAsync<ConflictException>(() => scratch.SetAsync(other, "meanwhile", project: id));
         Assert.Contains("projects reactivate", save.Hint, StringComparison.Ordinal);
-        var delete = await Assert.ThrowsAsync<ConflictException>(() => scratch.Projects.DeleteAsync(id, dryRun: true, None));
+        var delete = await Assert.ThrowsAsync<ConflictException>(() => scratch.Projects.PreviewDeleteAsync(id, None));
         Assert.Equal(AgentErrorReasons.ProjectNotActive, Assert.IsType<AgentErrorDetails>(delete.Details).Reason);
-        await Assert.ThrowsAsync<ConflictException>(() => scratch.Projects.DeleteAsync(id, dryRun: false, None));
+        await Assert.ThrowsAsync<ConflictException>(() => scratch.Projects.DeleteAsync(id, None));
 
         var reactivated = await scratch.Projects.ReactivateAsync(id, dryRun: false, None);
         Assert.Equal(ProjectStatuses.Active, reactivated.Project.Status);
@@ -669,7 +669,7 @@ public sealed class ProjectTests
                         {
                             await Projects.ReactivateAsync(project.ToString(CultureInfo.InvariantCulture), dryRun: false, None);
                         }
-                        await Projects.DeleteAsync(project.ToString(CultureInfo.InvariantCulture), dryRun: false, None);
+                        await Projects.DeleteAsync(project.ToString(CultureInfo.InvariantCulture), None);
                     }
                     catch (OptiCliException)
                     {

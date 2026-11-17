@@ -83,10 +83,10 @@ public partial class CommandRunnerTests
         await cancel.CancelAsync();
 
         var run = await Opticli.RunCommandAsync(
-            (command, options) => CommandRunner.SetHandler(command, options, (_, token) =>
+            (command, options) => CommandRunner.SetHandler<string>(command, options, (_, token) =>
             {
                 token.ThrowIfCancellationRequested();
-                return Task.FromResult(new CommandResult("not reached"));
+                return Task.FromResult(new CommandResult<string>("not reached"));
             }),
             ["--json"],
             cancel.Token);
@@ -107,7 +107,7 @@ public partial class CommandRunnerTests
     [Fact]
     public async Task Json_forces_the_success_envelope()
     {
-        var run = await Returning(new CommandResult(new[] { new { Name = "Start", Count = 2 } }, Next: "50", Warnings: ["capped"], Source: CommandResult.CliSource), "--json");
+        var run = await Returning(Result(new[] { new { Name = "Start", Count = 2 } }, Next: "50", Warnings: ["capped"], Source: CommandResult.CliSource), "--json");
 
         Assert.Equal(0, run.ExitCode);
         Assert.Empty(run.Stderr);
@@ -124,7 +124,7 @@ public partial class CommandRunnerTests
     [Fact]
     public async Task Text_forces_tables_with_warnings_on_stderr()
     {
-        var run = await Returning(new CommandResult(new[] { new { Name = "Start", Count = 2 } }, Next: "50", Warnings: ["capped"]), "--text");
+        var run = await Returning(Result(new[] { new { Name = "Start", Count = 2 } }, Next: "50", Warnings: ["capped"]), "--text");
 
         Assert.Equal(0, run.ExitCode);
         Assert.Contains("Start", run.Stdout, StringComparison.Ordinal);
@@ -136,7 +136,7 @@ public partial class CommandRunnerTests
     [Fact]
     public async Task A_text_rendering_replaces_the_table_only_in_text_mode()
     {
-        var result = new CommandResult(new { Name = "Start" }, Text: "custom rendering\n");
+        var result = Result(new { Name = "Start" }, Text: "custom rendering\n");
 
         Assert.Equal("custom rendering\n", (await Returning(result, "--text")).Stdout);
         Assert.Equal("Start", (await Returning(result, "--json")).Json().GetProperty("data").GetProperty("name").GetString());
@@ -145,7 +145,7 @@ public partial class CommandRunnerTests
     [Fact]
     public async Task A_text_rendering_keeps_the_warnings_on_stderr()
     {
-        var run = await Returning(new CommandResult(new { Name = "Start" }, Text: "custom rendering\n", Warnings: ["restart the site"]), "--text");
+        var run = await Returning(Result(new { Name = "Start" }, Text: "custom rendering\n", Warnings: ["restart the site"]), "--text");
 
         Assert.Equal("custom rendering\n", run.Stdout);
         Assert.Equal("warning: restart the site", run.Stderr.TrimEnd());
@@ -154,7 +154,7 @@ public partial class CommandRunnerTests
     [Fact]
     public async Task Raw_output_is_printed_as_is_in_every_format()
     {
-        var result = new CommandResult(null, Raw: "export A=1\n");
+        var result = new CommandResult<RawOutput>(RawOutput.Instance, Raw: "export A=1\n");
 
         Assert.Equal("export A=1\n", (await Returning(result, "--json")).Stdout);
         Assert.Equal("export A=1\n", (await Returning(result, "--text")).Stdout);
@@ -168,7 +168,7 @@ public partial class CommandRunnerTests
             (command, options) => CommandRunner.SetHandler(command, options, (_, _) =>
             {
                 ran = true;
-                return Task.FromResult(new CommandResult(null));
+                return Task.FromResult(new CommandResult<RawOutput>(RawOutput.Instance));
             }),
             ["--json", "--text"]);
 
@@ -200,10 +200,15 @@ public partial class CommandRunnerTests
     }
 
     private static Task<Run> Throwing(Exception exception) =>
-        Opticli.RunCommandAsync((command, options) => CommandRunner.SetHandler(command, options, (_, _) => throw exception), ["--json"]);
+        Opticli.RunCommandAsync((command, options) => CommandRunner.SetHandler<RawOutput>(command, options, (_, _) => throw exception), ["--json"]);
 
-    private static Task<Run> Returning(CommandResult result, string format) =>
+    private static Task<Run> Returning<T>(CommandResult<T> result, string format) where T : notnull =>
         Opticli.RunCommandAsync((command, options) => CommandRunner.SetHandler(command, options, (_, _) => Task.FromResult(result)), [format]);
+
+    /// <summary>A result of any data, anonymous types included.</summary>
+    private static CommandResult<T> Result<T>(T data, string? Next = null, string? Text = null, IReadOnlyList<string>? Warnings = null, string Source = CommandResult.DbSource)
+        where T : notnull =>
+        new(data, Next, Text, Warnings, Source);
 
     [GeneratedRegex(@"^\|\s*(?<exit>\d+)\s*\|(?<codes>[^|]*)\|", RegexOptions.Multiline)]
     private static partial Regex TableRow();

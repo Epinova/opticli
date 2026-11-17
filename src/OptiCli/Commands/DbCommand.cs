@@ -34,6 +34,10 @@ internal static partial class DbCommand
 
     private sealed record UseResult(DatabaseChoice Development, SavedDatabase Saved, string? Note);
 
+    /// <summary><c>db forget</c>.</summary>
+    /// <param name="Forgotten">A development database was saved, and is forgotten now.</param>
+    private sealed record ForgetResult(bool Forgotten);
+
     /// <param name="Replaced">An entry of that name was there and is replaced.</param>
     /// <param name="Previous">The role its server and database had been given before; omitted when none.</param>
     private sealed record AddResult(DatabaseChoice Database, bool Replaced, DatabaseRole? Previous, string? Note);
@@ -77,7 +81,7 @@ internal static partial class DbCommand
             its role and where it was found, and which one is the development database. Passwords are never shown.
             Example: opticli db list
             """);
-        CommandRunner.SetHandler(command, options, (context, _) =>
+        CommandRunner.SetHandler<ListResult>(command, options, (context, _) =>
         {
             if (context.TryGetProject(out var projectError) is null)
             {
@@ -90,7 +94,7 @@ internal static partial class DbCommand
                 : null;
             var problem = resolution.Failure is { } failure ? new ProblemView(ExitCodes.Name(failure.Code), failure.Message, failure.Hint) : null;
             var result = new ListResult(choices.FirstOrDefault(c => c.Development == true), resolution.DevelopmentMode, saved, choices, problem);
-            return Task.FromResult(new CommandResult(result, Source: CommandResult.CliSource));
+            return Task.FromResult(new CommandResult<ListResult>(result, Source: CommandResult.CliSource));
         });
         return command;
     }
@@ -109,7 +113,7 @@ internal static partial class DbCommand
             A prod database is refused (exit 3). Example: opticli db use a71c3f
             """);
         command.Arguments.Add(id);
-        CommandRunner.SetHandler(command, options, (context, _) =>
+        CommandRunner.SetHandler<UseResult>(command, options, (context, _) =>
         {
             var resolution = context.ResolveConnection();
             var selectable = resolution.Selectable;
@@ -153,11 +157,11 @@ internal static partial class DbCommand
             Remove the saved development database, so opticli goes back to the local database of the site's Development
             configuration (or asks again). Example: opticli db forget
             """);
-        CommandRunner.SetHandler(command, options, (context, _) =>
+        CommandRunner.SetHandler<ForgetResult>(command, options, (context, _) =>
         {
             var had = context.ResolveConnection().Saved is not null;
             UserConfig.SaveDatabase(context.Environment.UserConfigFile, context.Project.Directory, null);
-            return Task.FromResult(new CommandResult(new { forgotten = had }, Source: CommandResult.CliSource));
+            return Task.FromResult(new CommandResult<ForgetResult>(new ForgetResult(had), Source: CommandResult.CliSource));
         });
         return command;
     }
@@ -181,7 +185,7 @@ internal static partial class DbCommand
             """);
         command.Arguments.Add(name);
         command.Options.Add(role);
-        CommandRunner.SetHandler(command, options, (context, _) =>
+        CommandRunner.SetHandler<AddResult>(command, options, (context, _) =>
         {
             var project = context.Project;
             var entry = context.Parse.GetValue(name)!.Trim();
@@ -205,7 +209,7 @@ internal static partial class DbCommand
             UserConfig.SaveNamedDatabase(file, project.Directory, new NamedDatabase(entry, connection));
 
             var choice = Resolved(context).Choices().First(c => string.Equals(c.Name, entry, StringComparison.OrdinalIgnoreCase));
-            return Task.FromResult(new CommandResult(new AddResult(choice, replaced, previous, Note(wanted)), Source: CommandResult.CliSource));
+            return Task.FromResult(new CommandResult<AddResult>(new AddResult(choice, replaced, previous, Note(wanted)), Source: CommandResult.CliSource));
         });
         return command;
     }
@@ -218,7 +222,7 @@ internal static partial class DbCommand
             names them keeps it (`db role` changes it). Example: opticli db remove staging
             """);
         command.Arguments.Add(name);
-        CommandRunner.SetHandler(command, options, (context, _) =>
+        CommandRunner.SetHandler<RemoveResult>(command, options, (context, _) =>
         {
             var wanted = context.Parse.GetValue(name)!.Trim();
             var named = context.ResolveConnection().Candidates.FirstOrDefault(c => c.Source == ConnectionSource.Named && string.Equals(c.Name, wanted, StringComparison.OrdinalIgnoreCase));
@@ -226,7 +230,7 @@ internal static partial class DbCommand
             {
                 throw new NotFoundException($"This project has no database named '{wanted}'.", "`opticli db list` shows the names.");
             }
-            return Task.FromResult(new CommandResult(new RemoveResult(named?.Name ?? wanted, named?.Role), Source: CommandResult.CliSource));
+            return Task.FromResult(new CommandResult<RemoveResult>(new RemoveResult(named?.Name ?? wanted, named?.Role), Source: CommandResult.CliSource));
         });
         return command;
     }
@@ -244,7 +248,7 @@ internal static partial class DbCommand
             """);
         command.Arguments.Add(target);
         command.Arguments.Add(role);
-        CommandRunner.SetHandler(command, options, (context, _) =>
+        CommandRunner.SetHandler<RoleResult>(command, options, (context, _) =>
         {
             var project = context.TryGetProject(out var _);
             var wanted = DatabaseRoles.Parse(context.Parse.GetValue(role)!, "Role");
@@ -253,7 +257,7 @@ internal static partial class DbCommand
             var previous = SetRole(context, candidate.Target!, wanted, "role");
 
             var choice = Resolved(context).Choices().First(c => c.Id == candidate.Id);
-            return Task.FromResult(new CommandResult(new RoleResult(choice, previous, previous != wanted, Note(wanted)), Source: CommandResult.CliSource));
+            return Task.FromResult(new CommandResult<RoleResult>(new RoleResult(choice, previous, previous != wanted, Note(wanted)), Source: CommandResult.CliSource));
         });
         return command;
     }
@@ -341,11 +345,11 @@ internal static partial class DbCommand
     private static partial Regex HexId();
 
     /// <summary>Re-resolves after saving, so the result shows what opticli will use from now on.</summary>
-    private static CommandResult Saved(CliContext context)
+    private static CommandResult<UseResult> Saved(CliContext context)
     {
         var resolution = ConnectionResolver.Resolve(context.ConnectionRequest, context.Project, context.Environment);
         var development = resolution.Choices().First(c => c.Development == true);
         var note = development.Local ? null : RemoteNote;
-        return new CommandResult(new UseResult(development, resolution.Saved!, note), Source: CommandResult.CliSource);
+        return new CommandResult<UseResult>(new UseResult(development, resolution.Saved!, note), Source: CommandResult.CliSource);
     }
 }

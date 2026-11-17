@@ -31,7 +31,7 @@ internal static class TrashCommand
         command.Options.Add(type);
         list.AddTo(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<IReadOnlyList<TrashItem>>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             var from = parse.GetValue(since) is { } text ? JobTimes.ParseSince(text, DateTime.UtcNow) : (DateTime?)null;
@@ -56,7 +56,7 @@ internal static class TrashCommand
                 warnings.Add($"The original parent of {string.Join(", ", orphaned)} is in the recycle bin too, or gone: restore that parent first, or use --to.");
             }
             // The items are the database's; their parents the site's when it answered.
-            return new CommandResult(page.Items, page.Next, Warnings: warnings.Count > 0 ? warnings : null,
+            return new CommandResult<IReadOnlyList<TrashItem>>(page.Items, page.Next, Warnings: warnings.Count > 0 ? warnings : null,
                 Source: reader.ParentsFrom == "site" ? WriteExecutor.AgentSource : CommandResult.DbSource);
         });
         return command;

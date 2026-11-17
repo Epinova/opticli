@@ -102,7 +102,7 @@ internal static class TypeCommand
             """);
         command.Arguments.Add(name);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<TypeDetails>(command, options, async (context, cancellationToken) =>
         {
             await using var db = await context.OpenDatabaseAsync(cancellationToken);
             var types = await ContentTypeReader.ListAsync(db, cancellationToken, countInstances: true);
@@ -131,7 +131,7 @@ internal static class TypeCommand
                 };
             }
             var notInCode = details.Properties.Where(p => p.ExistsOnModel == false).Select(p => p.Name).ToList();
-            return new CommandResult(details, Warnings: notInCode.Count == 0 ? null :
+            return new CommandResult<TypeDetails>(details, Warnings: notInCode.Count == 0 ? null :
             [
                 $"In the database but not in the type's code (existsOnModel: false): {string.Join(", ", notInCode)}. The CMS keeps a property removed from code while it has values (values), and properties added in admin mode look the same. values counts the CMS's own tables: what a content provider (a catalog, a DAM) keeps for it isn't seen here; `opticli types remove-property <type> <property> --dry-run` asks the site, which asks the providers.",
             ]);

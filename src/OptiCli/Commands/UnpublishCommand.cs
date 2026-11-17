@@ -20,7 +20,7 @@ internal static class UnpublishCommand
         content.AddTo(command);
         write.AddCommon(command, publish: false);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<WriteOutput>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             var operation = new UnpublishOperation(parse.GetValue(content.Ref)!, parse.GetValue(content.Lang));

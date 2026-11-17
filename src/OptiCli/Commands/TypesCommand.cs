@@ -76,7 +76,7 @@ internal static class TypesCommand
             command.Subcommands.Add(subcommand);
         }
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<IReadOnlyList<TypeSummary>>(command, options, async (context, cancellationToken) =>
         {
             await using var db = await context.OpenDatabaseAsync(cancellationToken);
             IEnumerable<ContentTypeInfo> types = await ContentTypeReader.ListAsync(db, cancellationToken, countInstances: true);
@@ -120,7 +120,7 @@ internal static class TypesCommand
                 Source = t.Source,
             }).ToList();
             var page = list.Apply(context.Parse, summaries);
-            return new CommandResult(page.Items, page.Next, Warnings: warnings.Count > 0 ? warnings : null,
+            return new CommandResult<IReadOnlyList<TypeSummary>>(page.Items, page.Next, Warnings: warnings.Count > 0 ? warnings : null,
                 Source: askedSite ? Core.Writes.WriteExecutor.AgentSource : CommandResult.DbSource);
         });
         return command;

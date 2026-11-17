@@ -23,7 +23,7 @@ internal static class VersionsCommand
         content.AddTo(command);
         list.AddTo(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<IReadOnlyList<VersionInfo>>(command, options, async (context, cancellationToken) =>
         {
             await using var session = await context.OpenContentAsync(cancellationToken);
             var located = await content.LocateAsync(context, session, cancellationToken);

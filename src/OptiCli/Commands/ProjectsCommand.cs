@@ -36,17 +36,18 @@ internal static class ProjectsCommand
         command.Subcommands.Add(Reactivate(options));
         command.Subcommands.Add(Delete(options));
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
-        {
-            await using var session = await context.OpenContentAsync(cancellationToken);
-            var projects = await ProjectReader.ListAsync(session.Db, cancellationToken);
-            if (context.Parse.GetValue(project) is not { } reference)
+        CommandRunner.SetHandler(command, options, new ResultModes()
+            .When(ModeCondition.Set(project), async (context, cancellationToken) =>
             {
-                return CommandResult.From(list.Apply(context.Parse, projects));
-            }
-            var found = ProjectReader.Require(projects, reference);
-            return CommandResult.From(list.Apply(context.Parse, await ProjectReader.ItemsAsync(session, found.Id, cancellationToken)));
-        });
+                await using var session = await context.OpenContentAsync(cancellationToken);
+                var found = ProjectReader.Require(await ProjectReader.ListAsync(session.Db, cancellationToken), context.Parse.GetValue(project)!);
+                return CommandResult.From(list.Apply(context.Parse, await ProjectReader.ItemsAsync(session, found.Id, cancellationToken)));
+            })
+            .Otherwise(async (context, cancellationToken) =>
+            {
+                await using var session = await context.OpenContentAsync(cancellationToken);
+                return CommandResult.From(list.Apply(context.Parse, await ProjectReader.ListAsync(session.Db, cancellationToken)));
+            }));
         return command;
     }
 
@@ -63,7 +64,7 @@ internal static class ProjectsCommand
             """);
         command.Arguments.Add(name);
         write.AddCommon(command, publish: false);
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<Protocol.ProjectResult>(command, options, async (context, cancellationToken) =>
         {
             await using var session = await context.OpenContentAsync(cancellationToken);
             return Result(await Writes(context, session).CreateAsync(context.Parse.GetValue(name)!, context.Parse.GetValue(write.DryRun), cancellationToken));
@@ -97,7 +98,7 @@ internal static class ProjectsCommand
         write.AddRequestApproval(command);
         command.Options.Add(comment);
         write.AddIncludeDraft(command);
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<Protocol.ProjectResult>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             var refs = parse.GetValue(items) ?? [];
@@ -132,7 +133,7 @@ internal static class ProjectsCommand
         command.Arguments.Add(items);
         command.Options.Add(lang);
         write.AddCommon(command, publish: false);
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<Protocol.ProjectResult>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             await using var session = await context.OpenContentAsync(cancellationToken);
@@ -164,7 +165,7 @@ internal static class ProjectsCommand
         command.Options.Add(at);
         write.AddCommon(command, publish: false);
         write.AddIncludeDraft(command);
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<Protocol.ProjectResult>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             var when = parse.GetValue(at) is { } text ? PublishTimes.Parse(text, "--at", DateTimeOffset.UtcNow) : (DateTimeOffset?)null;
@@ -186,7 +187,7 @@ internal static class ProjectsCommand
             """);
         command.Arguments.Add(project);
         write.AddCommon(command, publish: false);
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<Protocol.ProjectResult>(command, options, async (context, cancellationToken) =>
         {
             await using var session = await context.OpenContentAsync(cancellationToken);
             return Result(await Writes(context, session).ReactivateAsync(context.Parse.GetValue(project)!, context.Parse.GetValue(write.DryRun), cancellationToken));
@@ -206,13 +207,17 @@ internal static class ProjectsCommand
             """);
         command.Arguments.Add(project);
         write.AddCommon(command, publish: false);
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
-        {
-            var dryRun = context.Parse.GetValue(write.DryRun);
-            await using var session = await context.OpenContentAsync(cancellationToken);
-            var result = await Writes(context, session).DeleteAsync(context.Parse.GetValue(project)!, dryRun, cancellationToken);
-            return result is Protocol.ProjectResult deleted ? Result(deleted) : new CommandResult(result, Source: WriteExecutor.DbSource);
-        });
+        CommandRunner.SetHandler(command, options, new ResultModes()
+            .When(ModeCondition.Set(write.DryRun), async (context, cancellationToken) =>
+            {
+                await using var session = await context.OpenContentAsync(cancellationToken);
+                return new CommandResult<ProjectDeletePreview>(await Writes(context, session).PreviewDeleteAsync(context.Parse.GetValue(project)!, cancellationToken), Source: WriteExecutor.DbSource);
+            })
+            .Otherwise(async (context, cancellationToken) =>
+            {
+                await using var session = await context.OpenContentAsync(cancellationToken);
+                return Result(await Writes(context, session).DeleteAsync(context.Parse.GetValue(project)!, cancellationToken));
+            }));
         return command;
     }
 
@@ -220,7 +225,7 @@ internal static class ProjectsCommand
 
     private static ProjectWrites Writes(CliContext context, Core.Content.ContentSession session) => new(context.Writes(session));
 
-    private static CommandResult Result(Protocol.ProjectResult result) =>
+    private static CommandResult<Protocol.ProjectResult> Result(Protocol.ProjectResult result) =>
         new(result, Warnings: Warnings(result) is { Count: > 0 } warnings ? warnings : null, Source: WriteExecutor.AgentSource);
 
     /// <summary>The result's warnings as <c>meta.warnings</c>: the operation's own, each item's, and what needs a look.</summary>

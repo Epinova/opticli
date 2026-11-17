@@ -25,7 +25,7 @@ internal static class DeleteCommand
         write.AddCommon(command, publish: false);
         command.Options.Add(ignoreReferences);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<MoveOutput>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             var operation = new DeleteOperation(parse.GetValue(content.Ref)!, parse.GetValue(ignoreReferences));

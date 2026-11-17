@@ -39,7 +39,7 @@ internal static class DraftsCommand
         list.AddTo(command);
         command.Options.Add(blueprints);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<IReadOnlyList<DraftInfo>>(command, options, async (context, cancellationToken) =>
         {
             DateTime? from = null;
             if (context.Parse.GetValue(since) is { } text)

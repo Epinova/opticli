@@ -115,16 +115,15 @@ public sealed class ProjectWrites(WriteExecutor executor)
     public Task<ProjectResult> ReactivateAsync(string project, bool dryRun, CancellationToken cancellationToken) =>
         SendAsync(HttpMethod.Post, AgentRoutes.ProjectReactivate(project), new ProjectReactivateRequest { DryRun = dryRun }, dryRun, cancellationToken);
 
+    /// <summary>Deletes the project; its items' versions stay as they are.</summary>
+    public Task<ProjectResult> DeleteAsync(string project, CancellationToken cancellationToken) =>
+        SendAsync(HttpMethod.Delete, AgentRoutes.ProjectDelete(project), null, dryRun: false, cancellationToken);
+
     /// <summary>
-    /// Deletes the project; its items' versions stay as they are. The site has no dry run for it, so a dry run checks the
-    /// project's status in the database (<see cref="ProjectDeletePreview"/>).
+    /// A dry run of <see cref="DeleteAsync"/>. The site has none, so this checks the project's status in the database.
     /// </summary>
-    public async Task<object> DeleteAsync(string project, bool dryRun, CancellationToken cancellationToken)
+    public async Task<ProjectDeletePreview> PreviewDeleteAsync(string project, CancellationToken cancellationToken)
     {
-        if (!dryRun)
-        {
-            return await SendAsync(HttpMethod.Delete, AgentRoutes.ProjectDelete(project), null, dryRun: false, cancellationToken);
-        }
         var session = executor.Session;
         var found = ProjectReader.Require(await ProjectReader.ListAsync(session.Db, cancellationToken), project);
         (string? Message, string? Hint) why = found.Status switch

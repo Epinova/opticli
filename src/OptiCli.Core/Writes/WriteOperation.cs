@@ -12,6 +12,9 @@ public abstract record WriteOperation
     /// <summary>The plan's <c>op</c> name.</summary>
     public abstract string Kind { get; }
 
+    /// <summary>Runs it, for a caller that takes whatever output it has (a plan): <see cref="WriteExecutor.RunAsync(WriteOperation, bool, CancellationToken)"/>.</summary>
+    internal abstract Task<WriteOutcome> RunUntypedAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken);
+
     /// <summary>Plan-local name of the content a create step makes, referenced by later steps as <c>$id</c>.</summary>
     public string? Id { get; init; }
 
@@ -153,6 +156,19 @@ public abstract record WriteOperation
     }
 }
 
+/// <summary>
+/// An operation whose output is always a <typeparamref name="TOutput"/>, so <see cref="WriteExecutor.RunAsync{T}"/> returns
+/// it typed: each operation runs its own executor method (<see cref="RunOnAsync"/>), which the compiler checks.
+/// </summary>
+public abstract record WriteOperation<TOutput> : WriteOperation
+    where TOutput : notnull
+{
+    internal abstract Task<WriteOutcome<TOutput>> RunOnAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken);
+
+    internal sealed override async Task<WriteOutcome> RunUntypedAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken) =>
+        await executor.RunAsync(this, dryRun, cancellationToken);
+}
+
 /// <param name="BaseVersion">
 /// Version the change must be based on, which must be the latest; default: the latest, read just before the call. With
 /// <see cref="From"/>, only the version expected to be the latest.
@@ -165,9 +181,12 @@ public sealed record SetOperation(
     string? Lang = null,
     bool Publish = false,
     int? BaseVersion = null,
-    bool Force = false) : WriteOperation
+    bool Force = false) : WriteOperation<WriteOutput>
 {
     public override string Kind => "set";
+
+    internal override Task<WriteOutcome<WriteOutput>> RunOnAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken) =>
+        executor.SetAsync(this, dryRun, cancellationToken);
 
     /// <summary>
     /// Base the change on this version instead of the latest (<c>--from</c>, a plan's <c>from</c>); the concurrency check
@@ -215,9 +234,12 @@ public sealed record CreateOperation(
     string Name,
     JsonObject? Properties = null,
     string? Lang = null,
-    bool Publish = false) : WriteOperation
+    bool Publish = false) : WriteOperation<WriteOutput>
 {
     public override string Kind => "create";
+
+    internal override Task<WriteOutcome<WriteOutput>> RunOnAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken) =>
+        executor.CreateAsync(this, dryRun, cancellationToken);
 
     /// <summary>
     /// Dry run only: check that the type is allowed below this type instead of below <see cref="Parent"/>'s, for a plan
@@ -268,9 +290,12 @@ public sealed record AreaEdit(
     string? Lang = null,
     bool Publish = false,
     int? BaseVersion = null,
-    bool Force = false) : WriteOperation
+    bool Force = false) : WriteOperation<WriteOutput>
 {
     public override string Kind => "area";
+
+    internal override Task<WriteOutcome<WriteOutput>> RunOnAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken) =>
+        executor.AreaAsync(this, dryRun, cancellationToken);
 
     /// <summary>As <see cref="SetOperation.From"/>.</summary>
     public FromVersion? From { get; init; }
@@ -319,9 +344,12 @@ public sealed record CompositionEdit(
     string? Lang = null,
     bool Publish = false,
     int? BaseVersion = null,
-    bool Force = false) : WriteOperation
+    bool Force = false) : WriteOperation<WriteOutput>
 {
     public override string Kind => "composition";
+
+    internal override Task<WriteOutcome<WriteOutput>> RunOnAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken) =>
+        executor.CompositionAsync(this, dryRun, cancellationToken);
 
     /// <summary>As <see cref="SetOperation.From"/>.</summary>
     public FromVersion? From { get; init; }
@@ -351,9 +379,12 @@ public sealed record BlockCreateOperation(
     string? Parent = null,
     JsonObject? Properties = null,
     string? Lang = null,
-    bool Publish = false) : WriteOperation
+    bool Publish = false) : WriteOperation<WriteOutput>
 {
     public override string Kind => "block";
+
+    internal override Task<WriteOutcome<WriteOutput>> RunOnAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken) =>
+        executor.BlockAsync(this, dryRun, cancellationToken);
 
     public override IEnumerable<string?> Refs => [For, Parent];
 
@@ -377,9 +408,12 @@ public sealed record UploadOperation(
     string? Name = null,
     string? Type = null,
     JsonObject? Properties = null,
-    bool Publish = false) : WriteOperation
+    bool Publish = false) : WriteOperation<WriteOutput>
 {
     public override string Kind => "upload";
+
+    internal override Task<WriteOutcome<WriteOutput>> RunOnAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken) =>
+        executor.UploadAsync(this, dryRun, cancellationToken);
 
     /// <summary>
     /// Replace the file of this existing media item instead (<c>--replace</c>): a new version with the file, of the same
@@ -407,6 +441,11 @@ public sealed record TranslateOperation(
 {
     public override string Kind => "translate";
 
+    // Its output depends on Remove (a WriteOutput, or RemoveLanguageOutput), so it has a typed entry point per mode
+    // (WriteExecutor.TranslateAsync, RemoveLanguageAsync) instead of one declared output.
+    internal override async Task<WriteOutcome> RunUntypedAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken) =>
+        Remove ? await executor.RemoveLanguageAsync(this, dryRun, cancellationToken) : await executor.TranslateAsync(this, dryRun, cancellationToken);
+
     /// <summary>
     /// Also give every block in the content's "For this page" folder the branch (a copy of its master language, saved or
     /// published as the content is), so the new branch doesn't show blocks in another language.
@@ -430,9 +469,12 @@ public sealed record TranslateOperation(
 }
 
 /// <param name="Version">Version id to publish; default: the ref's version, else the latest in the language.</param>
-public sealed record PublishOperation(string Ref, int? Version = null, string? Lang = null) : WriteOperation
+public sealed record PublishOperation(string Ref, int? Version = null, string? Lang = null) : WriteOperation<WriteOutput>
 {
     public override string Kind => "publish";
+
+    internal override Task<WriteOutcome<WriteOutput>> RunOnAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken) =>
+        executor.PublishAsync(this, dryRun, cancellationToken);
 
     public override bool Publishes => true;
 
@@ -445,9 +487,12 @@ public sealed record PublishOperation(string Ref, int? Version = null, string? L
 /// Takes a published branch offline, as the edit UI's expiry does: a copy of the published version that stops publishing
 /// now is published. Drafts are left as they are.
 /// </summary>
-public sealed record UnpublishOperation(string Ref, string? Lang = null) : WriteOperation
+public sealed record UnpublishOperation(string Ref, string? Lang = null) : WriteOperation<WriteOutput>
 {
     public override string Kind => "unpublish";
+
+    internal override Task<WriteOutcome<WriteOutput>> RunOnAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken) =>
+        executor.UnpublishAsync(this, dryRun, cancellationToken);
 
     public override IEnumerable<string?> Refs => [Ref];
 
@@ -456,18 +501,24 @@ public sealed record UnpublishOperation(string Ref, string? Lang = null) : Write
 
 /// <summary>Deletes one unpublished version, which can't be undone.</summary>
 /// <param name="Version">The version; default: the ref's version, else the newest version in the language.</param>
-public sealed record DiscardOperation(string Ref, int? Version = null, string? Lang = null) : WriteOperation
+public sealed record DiscardOperation(string Ref, int? Version = null, string? Lang = null) : WriteOperation<WriteOutput>
 {
     public override string Kind => "discard";
+
+    internal override Task<WriteOutcome<WriteOutput>> RunOnAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken) =>
+        executor.DiscardAsync(this, dryRun, cancellationToken);
 
     public override IEnumerable<string?> Refs => [Ref];
 
     public override WriteOperation MapRefs(Func<string, string> map) => this with { Ref = map(Ref) };
 }
 
-public sealed record MoveOperation(string Ref, string To) : WriteOperation
+public sealed record MoveOperation(string Ref, string To) : WriteOperation<MoveOutput>
 {
     public override string Kind => "move";
+
+    internal override Task<WriteOutcome<MoveOutput>> RunOnAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken) =>
+        executor.MoveAsync(this, dryRun, cancellationToken);
 
     public override IEnumerable<string?> Refs => [Ref, To];
 
@@ -479,9 +530,12 @@ public sealed record MoveOperation(string Ref, string To) : WriteOperation
 /// Delete even when other content references it or its descendants (<c>--ignore-references</c>, a plan's
 /// <c>ignoreReferences</c>); without it such a delete asks on a terminal, and elsewhere fails with a <c>conflict</c>.
 /// </param>
-public sealed record DeleteOperation(string Ref, bool IgnoreReferences = false) : WriteOperation
+public sealed record DeleteOperation(string Ref, bool IgnoreReferences = false) : WriteOperation<MoveOutput>
 {
     public override string Kind => "delete";
+
+    internal override Task<WriteOutcome<MoveOutput>> RunOnAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken) =>
+        executor.DeleteAsync(this, dryRun, cancellationToken);
 
     public override IEnumerable<string?> Refs => [Ref];
 
@@ -492,9 +546,12 @@ public sealed record DeleteOperation(string Ref, bool IgnoreReferences = false) 
 /// Brings content back out of the recycle bin, as the edit UI's Restore does: below the parent it had before it was
 /// deleted (as the CMS stored it), or below <paramref name="To"/>.
 /// </summary>
-public sealed record RestoreOperation(string Ref, string? To = null) : WriteOperation
+public sealed record RestoreOperation(string Ref, string? To = null) : WriteOperation<RestoreOutput>
 {
     public override string Kind => "restore";
+
+    internal override Task<WriteOutcome<RestoreOutput>> RunOnAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken) =>
+        executor.RestoreAsync(this, dryRun, cancellationToken);
 
     public override IEnumerable<string?> Refs => [Ref, To];
 
@@ -515,9 +572,12 @@ public sealed record AccessOperation(
     IReadOnlyList<string>? Revoke = null,
     bool BreakInheritance = false,
     bool Inherit = false,
-    bool AllowUnknownRole = false) : WriteOperation
+    bool AllowUnknownRole = false) : WriteOperation<AccessOutput>
 {
     public override string Kind => "access";
+
+    internal override Task<WriteOutcome<AccessOutput>> RunOnAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken) =>
+        executor.AccessAsync(this, dryRun, cancellationToken);
 
     public override IEnumerable<string?> Refs => [Ref];
 
@@ -535,9 +595,12 @@ public sealed record AccessOperation(
 /// <param name="SiteAssets">
 /// <see cref="SiteAssetsModes"/>; null: <c>own</c> for a new site, an existing site's assets root left as it is.
 /// </param>
-public sealed record SiteOperation(string Name, string StartPage, IReadOnlyList<SiteAddHost> Hosts, bool? Https = null, string? SiteAssets = null) : WriteOperation
+public sealed record SiteOperation(string Name, string StartPage, IReadOnlyList<SiteAddHost> Hosts, bool? Https = null, string? SiteAssets = null) : WriteOperation<Sites.SiteHostsView>
 {
     public override string Kind => "site";
+
+    internal override Task<WriteOutcome<Sites.SiteHostsView>> RunOnAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken) =>
+        executor.SiteAsync(this, dryRun, cancellationToken);
 
     public override IEnumerable<string?> Refs => [StartPage];
 
@@ -548,9 +611,12 @@ public sealed record SiteOperation(string Name, string StartPage, IReadOnlyList<
 /// Enables (or disables) language branches (<c>languages enable|disable</c>, a plan's <c>language</c>), adding a branch the
 /// database lacks. Local databases only: refused against a shared one.
 /// </summary>
-public sealed record LanguageOperation(IReadOnlyList<string> Langs, bool Enabled = true) : WriteOperation
+public sealed record LanguageOperation(IReadOnlyList<string> Langs, bool Enabled = true) : WriteOperation<LanguagesOutput>
 {
     public override string Kind => "language";
+
+    internal override Task<WriteOutcome<LanguagesOutput>> RunOnAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken) =>
+        executor.LanguagesAsync(this, dryRun, cancellationToken);
 
     public override IEnumerable<string?> Refs => [];
 

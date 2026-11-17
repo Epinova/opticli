@@ -21,7 +21,7 @@ internal static class BlobCommand
             """);
         content.AddTo(command, withLang: false);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<BlobResult>(command, options, async (context, cancellationToken) =>
         {
             await using var session = await context.OpenContentAsync(cancellationToken);
             var located = await content.LocateAsync(context, session, cancellationToken);
@@ -35,7 +35,7 @@ internal static class BlobCommand
 
             var project = context.TryGetProject(out _)?.Directory;
             var identity = session.Identities.Describe(header, null);
-            return new CommandResult(new BlobResult(
+            return new CommandResult<BlobResult>(new BlobResult(
                 identity.Ref!, header.Guid, identity.Type!, identity.Name, identity.Url,
                 row?.BlobUri is { } blob ? BlobLocator.Locate(blob, project, context.Environment.Variables) : null,
                 row?.ThumbnailUri is { } thumbnail ? BlobLocator.Locate(thumbnail, project, context.Environment.Variables) : null,

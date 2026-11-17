@@ -48,7 +48,7 @@ internal static class GetCommand
         command.Options.Add(expand);
         command.Options.Add(variation);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<ContentDocument>(command, options, async (context, cancellationToken) =>
         {
             await using var session = await context.OpenContentAsync(cancellationToken);
             var located = await content.LocateAsync(context, session, cancellationToken);
@@ -85,7 +85,7 @@ internal static class GetCommand
             var loader = new ContentLoader(session.Db, session.Identities);
             var document = await loader.GetAsync(located.Id, selector, content.Language(context, session, located), decode, cancellationToken);
             // A composition reads as the tree it is, not as a table.
-            return new CommandResult(document, Text: document.Composition is null ? null : CompositionText.Document(JsonOutput.ToNode(document)));
+            return new CommandResult<ContentDocument>(document, Text: document.Composition is null ? null : CompositionText.Document(JsonOutput.ToNode(document)));
         });
         return command;
     }

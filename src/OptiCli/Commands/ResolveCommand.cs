@@ -25,14 +25,14 @@ internal static class ResolveCommand
         command.Arguments.Add(url);
         content.AddTo(command, withRef: false, withLang: false);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<Resolved>(command, options, async (context, cancellationToken) =>
         {
             await using var session = await context.OpenContentAsync(cancellationToken);
             var resolved = await new UrlResolver(session.Db, session.Model)
                 .ResolveAsync(context.Parse.GetValue(url)!, session.Site(context.Parse.GetValue(content.Site)), cancellationToken);
             var header = await session.HeaderAsync(resolved.ContentId, cancellationToken);
             var identity = session.Identities.Describe(header, resolved.Language);
-            return new CommandResult(new Resolved(
+            return new CommandResult<Resolved>(new Resolved(
                 identity.Ref, identity.Guid, identity.Type, identity.Name, identity.Language, identity.Status, identity.Url,
                 resolved.Site?.Name, resolved.Host, resolved.LanguageSource, resolved.MatchedBy));
         });

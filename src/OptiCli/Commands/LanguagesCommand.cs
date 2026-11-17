@@ -21,7 +21,7 @@ internal static class LanguagesCommand
         command.Subcommands.Add(Change(options, enable: true));
         command.Subcommands.Add(Change(options, enable: false));
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<IReadOnlyList<LanguageInfo>>(command, options, async (context, cancellationToken) =>
         {
             await using var db = await context.OpenDatabaseAsync(cancellationToken);
             var languages = await LanguageReader.ListAsync(db, cancellationToken);
@@ -55,7 +55,7 @@ internal static class LanguagesCommand
         command.Options.Add(write.DryRun);
         WriteCommands.Mark(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<LanguagesOutput>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             await using var session = await context.OpenContentAsync(cancellationToken);

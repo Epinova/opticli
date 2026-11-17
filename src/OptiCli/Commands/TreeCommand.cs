@@ -29,7 +29,7 @@ internal static class TreeCommand
         command.Options.Add(limit);
         command.Options.Add(blueprints);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<TreeResult>(command, options, async (context, cancellationToken) =>
         {
             var levels = context.Parse.GetValue(depth);
             var perNode = context.Parse.GetValue(limit) ?? Paging.DefaultLimit;
@@ -42,7 +42,7 @@ internal static class TreeCommand
             var located = await content.LocateAsync(context, session, cancellationToken);
             var language = content.Language(context, session, located);
             var (root, capped) = await new TreeReader(session, context.Parse.GetValue(blueprints)).TreeAsync(located.Id, levels, perNode, language, cancellationToken);
-            return new CommandResult(new TreeResult(root, capped ? true : null), Text: Render(root, capped));
+            return new CommandResult<TreeResult>(new TreeResult(root, capped ? true : null), Text: Render(root, capped));
         });
         return command;
     }

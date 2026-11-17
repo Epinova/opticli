@@ -60,7 +60,7 @@ internal static class UsersCommand
         command.Options.Add(write.DryRun);
         WriteCommands.Mark(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<UserAddOutput>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             var user = parse.GetValue(name)!.Trim();
@@ -129,7 +129,7 @@ internal static class UsersCommand
             {
                 warnings.Add("Not on a terminal and without --password-stdin, so the real run generates a password and writes it to a file only you can read (passwordFile); it is never printed.");
             }
-            return new CommandResult(new UserAddOutput(result.Name, result.Email, result.Roles, result.CreatedRoles, source, file, result.UserType, result.Created, result.DryRun ? true : null),
+            return new CommandResult<UserAddOutput>(new UserAddOutput(result.Name, result.Email, result.Roles, result.CreatedRoles, source, file, result.UserType, result.Created, result.DryRun ? true : null),
                 Warnings: warnings.Count > 0 ? warnings : null, Source: WriteExecutor.AgentSource);
         });
         return command;
@@ -150,7 +150,7 @@ internal static class UsersCommand
         command.Options.Add(write.DryRun);
         WriteCommands.Mark(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<UserRemoveOutput>(command, options, async (context, cancellationToken) =>
         {
             var user = context.Parse.GetValue(name)!.Trim();
             var dryRun = context.Parse.GetValue(write.DryRun);
@@ -167,7 +167,7 @@ internal static class UsersCommand
                 }
                 fileRemoved = PasswordFiles.Delete(file);
             }
-            return new CommandResult(new UserRemoveOutput(result.Name, result.Roles, result.Removed, fileRemoved ? file : null, dryRun ? true : null), Source: WriteExecutor.AgentSource);
+            return new CommandResult<UserRemoveOutput>(new UserRemoveOutput(result.Name, result.Roles, result.Removed, fileRemoved ? file : null, dryRun ? true : null), Source: WriteExecutor.AgentSource);
         });
         return command;
     }
@@ -182,12 +182,12 @@ internal static class UsersCommand
             Example: opticli users roles
             """);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<UserRolesResult>(command, options, async (context, cancellationToken) =>
         {
             RequireLocal(context);
             var agent = await context.ConnectAgentAsync(cancellationToken);
             var result = await Send<UserRolesResult>(agent, AgentRoutes.UserRoles, null, cancellationToken, HttpMethod.Get);
-            return new CommandResult(result, Source: WriteExecutor.AgentSource);
+            return new CommandResult<UserRolesResult>(result, Source: WriteExecutor.AgentSource);
         });
         return command;
     }

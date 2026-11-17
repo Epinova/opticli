@@ -21,7 +21,7 @@ internal static class ChildrenCommand
         list.AddTo(command);
         command.Options.Add(blueprints);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<IReadOnlyList<TreeNode>>(command, options, async (context, cancellationToken) =>
         {
             await using var session = await context.OpenContentAsync(cancellationToken);
             var located = await content.LocateAsync(context, session, cancellationToken);
@@ -30,7 +30,7 @@ internal static class ChildrenCommand
             var page = list.Apply(context.Parse, await reader.ChildIdsAsync(located.Id, language, cancellationToken));
             var headers = await reader.HeadersAsync(page.Items, cancellationToken);
             var leftOut = await reader.BlueprintsLeftOutAsync(located.Id, cancellationToken);
-            return new CommandResult(await reader.NodesAsync(headers, language, cancellationToken, sortIndex: true), page.Next,
+            return new CommandResult<IReadOnlyList<TreeNode>>(await reader.NodesAsync(headers, language, cancellationToken, sortIndex: true), page.Next,
                 Warnings: leftOut > 0 ? [$"{leftOut} blueprint(s) left out (Visual Builder templates, not content): --blueprints lists them."] : null);
         });
         return command;

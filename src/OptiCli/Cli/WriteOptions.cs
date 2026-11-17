@@ -184,6 +184,6 @@ internal sealed class WriteOptions
             : throw new UsageException($"{option} '{value}' is not a version (use the id, or 123_456 as shown by `opticli versions`).");
     }
 
-    public static CommandResult Result(WriteOutcome outcome) =>
+    public static CommandResult<T> Result<T>(WriteOutcome<T> outcome) where T : notnull =>
         new(outcome.Output, Warnings: outcome.Warnings.Count > 0 ? outcome.Warnings : null, Source: outcome.Source);
 }

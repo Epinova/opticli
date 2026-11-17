@@ -22,7 +22,7 @@ internal static class UrlCommand
             """);
         content.AddTo(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<Urls>(command, options, async (context, cancellationToken) =>
         {
             await using var session = await context.OpenContentAsync(cancellationToken);
             var located = await content.LocateAsync(context, session, cancellationToken);
@@ -47,7 +47,7 @@ internal static class UrlCommand
                     : header.Blueprint ? "A blueprint is a template new content is made from (CMS 13's Visual Builder), not content visitors see: it has no URL."
                     : $"{(kind is ContentKind.Experience or ContentKind.Element ? "An" : "A")} {kind.Name()} has no URL of its own; only pages{(session.Model.Schema.Compositions ? ", experiences" : "")} and media do."
                 : null;
-            return new CommandResult(new Urls(ContentIdentity.RefFor(header.Id), header.Guid, session.Model.TypeName(header.TypeId), languages, note));
+            return new CommandResult<Urls>(new Urls(ContentIdentity.RefFor(header.Id), header.Guid, session.Model.TypeName(header.TypeId), languages, note));
         });
         return command;
     }

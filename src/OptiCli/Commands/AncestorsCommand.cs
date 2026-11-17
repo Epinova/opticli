@@ -17,7 +17,7 @@ internal static class AncestorsCommand
         content.AddTo(command);
         options.AddJsonLines(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<IReadOnlyList<TreeNode>>(command, options, async (context, cancellationToken) =>
         {
             await using var session = await context.OpenContentAsync(cancellationToken);
             var located = await content.LocateAsync(context, session, cancellationToken);
@@ -25,7 +25,7 @@ internal static class AncestorsCommand
             var header = await session.HeaderAsync(located.Id, cancellationToken);
             await session.Identities.LoadAsync(header.AncestorIds, [], cancellationToken);
             var ancestors = header.AncestorIds.Select(session.Identities.Header).OfType<ContentHeader>().ToList();
-            return new CommandResult(await new TreeReader(session).NodesAsync(ancestors, language, cancellationToken));
+            return new CommandResult<IReadOnlyList<TreeNode>>(await new TreeReader(session).NodesAsync(ancestors, language, cancellationToken));
         });
         return command;
     }

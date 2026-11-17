@@ -91,7 +91,7 @@ internal static class ExportCommand
         command.Options.Add(site);
         command.Options.Add(all);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<ExportResult>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             var given = parse.GetValue(reference) is { Length: > 0 } refs ? refs : null;
@@ -254,7 +254,7 @@ internal static class ExportCommand
                 [.. read.Dropped, .. plan.Dropped],
                 plan.ProviderRefs,
                 NotExported);
-            return new CommandResult(result, Text: Text(result), Warnings: warnings);
+            return new CommandResult<ExportResult>(result, Text: Text(result), Warnings: warnings);
         });
         return command;
     }

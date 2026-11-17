@@ -38,7 +38,7 @@ internal static class BlockCommand
         write.AddCommon(command);
         write.AddProject(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<WriteOutput>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             var operation = new BlockCreateOperation(

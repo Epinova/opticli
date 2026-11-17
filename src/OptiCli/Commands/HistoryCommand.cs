@@ -29,7 +29,7 @@ internal static class HistoryCommand
         command.Options.Add(by);
         list.AddTo(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<IReadOnlyList<HistoryEntry>>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             var from = parse.GetValue(since) is { } text ? JobTimes.ParseSince(text, DateTime.UtcNow) : (DateTime?)null;
@@ -46,7 +46,7 @@ internal static class HistoryCommand
             var warnings = offset == 0 && page.Items.Count == 0
                 ? [$"The change log has nothing for {reference}{(from is null && parse.GetValue(by) is null ? "" : " that matches")}: its entries may be older than what the Change Log Auto Truncate job keeps. `opticli versions {reference}` lists its versions."]
                 : (List<string>?)null;
-            return new CommandResult(page.Items, page.Next, Warnings: warnings);
+            return new CommandResult<IReadOnlyList<HistoryEntry>>(page.Items, page.Next, Warnings: warnings);
         });
         return command;
     }

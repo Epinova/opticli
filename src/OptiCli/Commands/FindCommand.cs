@@ -15,12 +15,17 @@ internal static class FindCommand
     }
 
     /// <summary>
-    /// An item of <c>--status draft</c> (CMS 13) that a content variation's draft makes match: its identity, with the
-    /// variations (keys) that have one.
+    /// An item of <c>--status draft</c>: its identity, as other rows give it, and on CMS 13 the content variations (keys)
+    /// whose draft makes it match, when one does.
     /// </summary>
-    private sealed record VariationDraftItem(string? Ref, Guid Guid, string? Type, string? Name, string? Language, string? Status, string? Url, string? Kind, bool? Blueprint, IReadOnlyList<string> VariationDrafts)
+    /// <remarks>
+    /// Without <see cref="VariationDrafts"/> it is written as a <see cref="Core.Content.ContentIdentity"/> is: find never
+    /// lists content in the recycle bin, from a provider or missing, so those fields are never set.
+    /// </remarks>
+    /// <param name="VariationDrafts">CMS 13: the variations with a draft newer than their published version; left out when none.</param>
+    private sealed record DraftItem(string? Ref, Guid Guid, string? Type, string? Name, string? Language, string? Status, string? Url, string? Kind, bool? Blueprint, IReadOnlyList<string>? VariationDrafts)
     {
-        public static VariationDraftItem From(Core.Content.ContentIdentity identity, IReadOnlyList<string> variations) =>
+        public static DraftItem From(Core.Content.ContentIdentity identity, IReadOnlyList<string>? variations) =>
             new(identity.Ref, identity.Guid, identity.Type, identity.Name, identity.Language, identity.Status, identity.Url, identity.Kind, identity.Blueprint, variations);
     }
 
@@ -67,7 +72,9 @@ internal static class FindCommand
         list.AddTo(command);
         command.Options.Add(blueprints);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        // The rows depend on --status: scheduled and expired items say when, draft items which variations (CMS 13).
+        async Task<CommandResult<IReadOnlyList<TRow>>> FindAsync<TRow>(CliContext context, Func<FoundItem, Core.Content.ContentIdentity, TRow> row, CancellationToken cancellationToken)
+            where TRow : notnull
         {
             await using var session = await context.OpenContentAsync(cancellationToken);
             var contentType = session.Model.RequireType(context.Parse.GetValue(type)!);
@@ -81,14 +88,15 @@ internal static class FindCommand
                 contentType, clauses, underId, Enum.Parse<FindStatus>(context.Parse.GetValue(status)!, ignoreCase: true), language, offset, limit, cancellationToken);
             var page = Paging.FromWindow(found, offset, limit);
             await session.Identities.LoadAsync(page.Items.Select(f => f.Id), [], cancellationToken);
-            var items = page.Items.Select(f => (object)(f switch
-            {
-                { VariationDrafts: { } variations } => VariationDraftItem.From(session.Identities.Describe(session.Identities.Header(f.Id)!, language), variations),
-                { PublishAt: null, ExpiredAt: null } => session.Identities.Describe(session.Identities.Header(f.Id)!, language),
-                _ => TimedItem.From(session.Identities.Describe(session.Identities.Header(f.Id)!, language), f.PublishAt, f.ExpiredAt),
-            })).ToList();
-            return new CommandResult(items, page.Next);
-        });
+            var items = page.Items.Select(f => row(f, session.Identities.Describe(session.Identities.Header(f.Id)!, language))).ToList();
+            return new CommandResult<IReadOnlyList<TRow>>(items, page.Next);
+        }
+        CommandRunner.SetHandler(command, options, new ResultModes()
+            .When(ModeCondition.Is(status, "scheduled", "expired"), (context, cancellationToken) =>
+                FindAsync(context, (found, identity) => TimedItem.From(identity, found.PublishAt, found.ExpiredAt), cancellationToken))
+            .When(ModeCondition.Is(status, "draft"), (context, cancellationToken) =>
+                FindAsync(context, (found, identity) => DraftItem.From(identity, found.VariationDrafts), cancellationToken))
+            .Otherwise((context, cancellationToken) => FindAsync(context, (_, identity) => identity, cancellationToken)));
         return command;
     }
 }

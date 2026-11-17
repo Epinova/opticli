@@ -46,7 +46,7 @@ internal static class JobsCommand
         command.Subcommands.Add(Stop(options));
         command.Subcommands.Add(Set(options));
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<IReadOnlyList<JobView>>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             if (parse.GetValue(enabled) && parse.GetValue(disabled))
@@ -79,7 +79,7 @@ internal static class JobsCommand
                 warnings.Add($"In the code but not in the database yet: {string.Join(", ", unregistered)}. {JobReferences.UnregisteredHint}");
             }
             var page = list.Apply(parse, views);
-            return new CommandResult(page.Items, page.Next, Warnings: warnings.Count > 0 ? warnings : null);
+            return new CommandResult<IReadOnlyList<JobView>>(page.Items, page.Next, Warnings: warnings.Count > 0 ? warnings : null);
         });
         return command;
     }
@@ -106,7 +106,7 @@ internal static class JobsCommand
         command.Options.Add(since);
         list.AddTo(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<IReadOnlyList<JobLogView>>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             var from = parse.GetValue(since) is { } text ? JobTimes.ParseSince(text, DateTime.UtcNow) : (DateTime?)null;
@@ -157,7 +157,7 @@ internal static class JobsCommand
         command.Options.Add(write.DryRun);
         WriteCommands.Mark(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<JobRunView>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             if (parse.GetValue(timeout) is <= 0)
@@ -180,7 +180,7 @@ internal static class JobsCommand
                 AllowDestructive: parse.GetValue(allowDestructive),
                 DryRun: parse.GetValue(write.DryRun),
                 OnStatus: Console.IsErrorRedirected ? null : status => Console.Error.WriteLine($"[{target.Name}] {status}")), cancellationToken);
-            return new CommandResult(view, Warnings: warnings.Count > 0 ? warnings : null, Source: WriteExecutor.AgentSource);
+            return new CommandResult<JobRunView>(view, Warnings: warnings.Count > 0 ? warnings : null, Source: WriteExecutor.AgentSource);
         });
         return command;
     }
@@ -201,7 +201,7 @@ internal static class JobsCommand
         command.Options.Add(write.DryRun);
         WriteCommands.Mark(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<JobStopView>(command, options, async (context, cancellationToken) =>
         {
             await using var db = await context.OpenDatabaseAsync(cancellationToken);
             var jobSources = Sources(context, null);
@@ -209,7 +209,7 @@ internal static class JobsCommand
             var shared = !db.ConnectionString.IsLocal;
             JobRunner.RequireLocal(shared);
             var (view, warnings) = await JobRunner.StopAsync(await context.ConnectAgentAsync(cancellationToken), db, target, shared, context.Parse.GetValue(write.DryRun), cancellationToken);
-            return new CommandResult(view, Warnings: warnings.Count > 0 ? warnings : null, Source: WriteExecutor.AgentSource);
+            return new CommandResult<JobStopView>(view, Warnings: warnings.Count > 0 ? warnings : null, Source: WriteExecutor.AgentSource);
         });
         return command;
     }
@@ -243,7 +243,7 @@ internal static class JobsCommand
         command.Options.Add(write.DryRun);
         WriteCommands.Mark(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<JobSetView>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             bool? enable = parse.GetValue(enabled) is { } flag
@@ -271,7 +271,7 @@ internal static class JobsCommand
             {
                 warnings.Add($"'{target.Name}' is already like that; nothing was saved.");
             }
-            return new CommandResult(new JobSetView(result.Before, result.After, result.Changes, result.DryRun ? true : null, result.Saved), Warnings: warnings.Count > 0 ? warnings : null, Source: WriteExecutor.AgentSource);
+            return new CommandResult<JobSetView>(new JobSetView(result.Before, result.After, result.Changes, result.DryRun ? true : null, result.Saved), Warnings: warnings.Count > 0 ? warnings : null, Source: WriteExecutor.AgentSource);
         });
         return command;
     }

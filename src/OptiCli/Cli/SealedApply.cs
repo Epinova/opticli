@@ -52,7 +52,7 @@ internal static class SealedApply
             ? $"The site started for this run stopped (its log: {logPath}), and nothing more is written. Check what production has (`opticli get <ref> --db <name>`) before sealing again."
             : hint;
 
-    public static async Task<CommandResult> RunAsync(CliContext context, string planPath, string sealId, string database, CancellationToken cancellationToken)
+    public static async Task<CommandResult<SealedRunOutput>> RunAsync(CliContext context, string planPath, string sealId, string database, CancellationToken cancellationToken)
     {
         var terminal = Terminal;
         var environment = context.Environment;
@@ -243,18 +243,9 @@ internal static class SealedApply
             };
         }
 
-        var result = new
-        {
-            seal = seal.Id,
-            target = new SealedDatabase(name, write.Server, write.Database, "prod"),
-            plan = plan.Path,
-            run,
-            events,
-            media = providers?.Providers.Blobs is null ? null : media,
-            restartNeeded,
-            restart = restartNeeded ? RestartWarning : null,
-        };
-        return new CommandResult(result, Text: Text(seal, target, run, events, media), Warnings: restartNeeded ? [Restart(events)] : [], Source: WriteExecutor.AgentSource);
+        var result = new SealedRunOutput(seal.Id, new SealedDatabase(name, write.Server, write.Database, "prod"), plan.Path, run, events,
+            providers?.Providers.Blobs is null ? null : media, restartNeeded, restartNeeded ? RestartWarning : null);
+        return new CommandResult<SealedRunOutput>(result, Text: Text(seal, target, run, events, media), Warnings: restartNeeded ? [Restart(events)] : [], Source: WriteExecutor.AgentSource);
     }
 
     /// <summary>
@@ -373,3 +364,15 @@ internal static class SealedApply
         return path;
     }
 }
+
+/// <summary><c>apply &lt;plan&gt; --db &lt;prod&gt; --seal &lt;id&gt;</c>: the user's run of a sealed plan against production.</summary>
+/// <param name="Seal">The seal's id.</param>
+/// <param name="Target">The production database it ran against.</param>
+/// <param name="Plan">The plan file.</param>
+/// <param name="Run">What the plan did, step by step.</param>
+/// <param name="Events">Production's event bus at the run (the cache drops sent to production's servers); left out without one.</param>
+/// <param name="Media">Each uploaded file, checked in production's blob storage; left out without blob storage.</param>
+/// <param name="RestartNeeded">Production's servers didn't hear about the changes: restart the site (<see cref="Restart"/>).</param>
+/// <param name="Restart">Why and what to restart, when <see cref="RestartNeeded"/>.</param>
+internal sealed record SealedRunOutput(string Seal, SealedDatabase Target, string Plan, PlanRun Run, SealedEventsResult? Events, IReadOnlyList<SealedMediaResult>? Media,
+    bool RestartNeeded, string? Restart);

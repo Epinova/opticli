@@ -90,8 +90,32 @@ public sealed class WriteExecutor(
     /// <summary>The drift check passed for this run (nothing differs, or the user confirmed it).</summary>
     private bool _driftAccepted;
 
+    /// <summary>Runs an operation whose output type it declares, and returns that output typed.</summary>
     /// <exception cref="ContentValidationException">A dry run found the change would fail validation (details: the dry-run result).</exception>
-    public async Task<WriteOutcome> RunAsync(WriteOperation operation, bool dryRun, CancellationToken cancellationToken)
+    public Task<WriteOutcome<T>> RunAsync<T>(WriteOperation<T> operation, bool dryRun, CancellationToken cancellationToken) where T : notnull =>
+        RunCoreAsync(operation, dryRun, () => operation.RunOnAsync(this, dryRun, cancellationToken), cancellationToken);
+
+    /// <summary>Runs any operation (a plan's step), with its output boxed.</summary>
+    /// <exception cref="ContentValidationException">A dry run found the change would fail validation (details: the dry-run result).</exception>
+    public Task<WriteOutcome> RunAsync(WriteOperation operation, bool dryRun, CancellationToken cancellationToken) =>
+        operation.RunUntypedAsync(this, dryRun, cancellationToken);
+
+    /// <summary><c>translate</c>: a new language branch (<paramref name="operation"/>'s <c>Remove</c> is ignored).</summary>
+    public Task<WriteOutcome<WriteOutput>> TranslateAsync(TranslateOperation operation, bool dryRun, CancellationToken cancellationToken)
+    {
+        var translate = operation with { Remove = false };
+        return RunCoreAsync(translate, dryRun, () => TranslateBranchAsync(translate, dryRun, cancellationToken), cancellationToken);
+    }
+
+    /// <summary><c>translate --remove</c>: deletes the language branch.</summary>
+    public Task<WriteOutcome<RemoveLanguageOutput>> RemoveLanguageAsync(TranslateOperation operation, bool dryRun, CancellationToken cancellationToken)
+    {
+        var remove = operation with { Remove = true };
+        return RunCoreAsync(remove, dryRun, () => RemoveBranchAsync(remove, dryRun, cancellationToken), cancellationToken);
+    }
+
+    /// <summary>What every operation goes through: the checks before, <paramref name="run"/>, and the dry run's warnings and validation after.</summary>
+    private async Task<WriteOutcome<T>> RunCoreAsync<T>(WriteOperation operation, bool dryRun, Func<Task<WriteOutcome<T>>> run, CancellationToken cancellationToken) where T : notnull
     {
         if (operation.PublishAt is not null)
         {
@@ -116,26 +140,7 @@ public sealed class WriteExecutor(
         {
             await RequireDriftAcceptedAsync(cancellationToken);
         }
-        var outcome = operation switch
-        {
-            SetOperation set => await SetAsync(set, dryRun, cancellationToken),
-            AreaEdit area => await AreaAsync(area, dryRun, cancellationToken),
-            CompositionEdit composition => await CompositionAsync(composition, dryRun, cancellationToken),
-            CreateOperation create => await CreateAsync(create, dryRun, cancellationToken),
-            BlockCreateOperation block => await BlockAsync(block, dryRun, cancellationToken),
-            UploadOperation upload => await UploadAsync(upload, dryRun, cancellationToken),
-            TranslateOperation translate => await TranslateAsync(translate, dryRun, cancellationToken),
-            PublishOperation publish => await PublishAsync(publish, dryRun, cancellationToken),
-            UnpublishOperation unpublish => await UnpublishAsync(unpublish, dryRun, cancellationToken),
-            DiscardOperation discard => await DiscardAsync(discard, dryRun, cancellationToken),
-            MoveOperation move => await MoveAsync(move, dryRun, cancellationToken),
-            DeleteOperation delete => await DeleteAsync(delete, dryRun, cancellationToken),
-            RestoreOperation restore => await RestoreAsync(restore, dryRun, cancellationToken),
-            AccessOperation access => await AccessAsync(access, dryRun, cancellationToken),
-            SiteOperation site => await SiteAsync(site, dryRun, cancellationToken),
-            LanguageOperation language => await LanguagesAsync(language, dryRun, cancellationToken),
-            _ => throw new InvalidOperationException($"Unknown operation {operation.GetType().Name}."),
-        };
+        var outcome = await run();
 
         if (outcome.Output is WriteOutput { DryRun: true, PendingDraft: { } draft })
         {
@@ -156,7 +161,7 @@ public sealed class WriteExecutor(
         return outcome;
     }
 
-    private async Task<WriteOutcome> SetAsync(SetOperation op, bool dryRun, CancellationToken cancellationToken)
+    internal async Task<WriteOutcome<WriteOutput>> SetAsync(SetOperation op, bool dryRun, CancellationToken cancellationToken)
     {
         var target = await EditableAsync(op.Ref, cancellationToken);
         op.From?.Check(target.Id, target.Version);
@@ -204,7 +209,7 @@ public sealed class WriteExecutor(
         return WithWarning(await DraftAsync(target, request, op.From, op.Publishes, cancellationToken), masterFirst);
     }
 
-    private async Task<WriteOutcome> AreaAsync(AreaEdit op, bool dryRun, CancellationToken cancellationToken)
+    internal async Task<WriteOutcome<WriteOutput>> AreaAsync(AreaEdit op, bool dryRun, CancellationToken cancellationToken)
     {
         var target = await EditableAsync(op.Ref, cancellationToken);
         op.From?.Check(target.Id, target.Version);
@@ -230,7 +235,7 @@ public sealed class WriteExecutor(
         return WithWarning(await DraftAsync(target, request, op.From, op.Publishes, cancellationToken), masterFirst);
     }
 
-    private async Task<WriteOutcome> CompositionAsync(CompositionEdit op, bool dryRun, CancellationToken cancellationToken)
+    internal async Task<WriteOutcome<WriteOutput>> CompositionAsync(CompositionEdit op, bool dryRun, CancellationToken cancellationToken)
     {
         var target = await EditableAsync(op.Ref, cancellationToken);
         op.From?.Check(target.Id, target.Version);
@@ -368,7 +373,7 @@ public sealed class WriteExecutor(
     }
 
     /// <param name="from">What <c>--from</c> based the change on, for the warning about the newer versions it leaves out.</param>
-    private async Task<WriteOutcome> DraftAsync(Target target, DraftRequest request, FromVersion? from, bool publishes, CancellationToken cancellationToken)
+    private async Task<WriteOutcome<WriteOutput>> DraftAsync(Target target, DraftRequest request, FromVersion? from, bool publishes, CancellationToken cancellationToken)
     {
         WriteResult result;
         try
@@ -395,7 +400,7 @@ public sealed class WriteExecutor(
         : $"Someone saved {latest} after the version this change expected to be the latest. Look at it (opticli get {latest}), then run the command again: --from still bases the change on {(from.IsPublished ? "the published version" : $"version {from}")}, and without --base-version it is checked against the latest version; --force skips the check.";
 
     /// <param name="header">The page written, or the parent of new content (<paramref name="self"/> false).</param>
-    private async Task<WriteOutcome> WithSimpleAddressCheckAsync(WriteOutcome outcome, WriteResult result, ContentHeader? header, bool self, CancellationToken cancellationToken)
+    private async Task<WriteOutcome<WriteOutput>> WithSimpleAddressCheckAsync(WriteOutcome<WriteOutput> outcome, WriteResult result, ContentHeader? header, bool self, CancellationToken cancellationToken)
     {
         if (header is null)
         {
@@ -406,7 +411,7 @@ public sealed class WriteExecutor(
         return warnings.Count == 0 ? outcome : outcome with { Warnings = [.. outcome.Warnings, .. warnings] };
     }
 
-    private async Task<WriteOutcome> CreateAsync(CreateOperation op, bool dryRun, CancellationToken cancellationToken)
+    internal async Task<WriteOutcome<WriteOutput>> CreateAsync(CreateOperation op, bool dryRun, CancellationToken cancellationToken)
     {
         if ((op.For is null) == (op.Parent is null))
         {
@@ -454,7 +459,7 @@ public sealed class WriteExecutor(
         return await CreatedAsync(request, type.Name, cancellationToken, op.Parent is null ? null : parent.Stored);
     }
 
-    private async Task<WriteOutcome> BlockAsync(BlockCreateOperation op, bool dryRun, CancellationToken cancellationToken)
+    internal async Task<WriteOutcome<WriteOutput>> BlockAsync(BlockCreateOperation op, bool dryRun, CancellationToken cancellationToken)
     {
         if ((op.For is null) == (op.Parent is null))
         {
@@ -486,7 +491,7 @@ public sealed class WriteExecutor(
         return await CreatedAsync(request, type.Name, cancellationToken);
     }
 
-    private async Task<WriteOutcome> UploadAsync(UploadOperation op, bool dryRun, CancellationToken cancellationToken)
+    internal async Task<WriteOutcome<WriteOutput>> UploadAsync(UploadOperation op, bool dryRun, CancellationToken cancellationToken)
     {
         if (op.Replace is not null)
         {
@@ -540,7 +545,7 @@ public sealed class WriteExecutor(
         return Outcome(output, CreatedId(result));
     }
 
-    private async Task<WriteOutcome> ReplaceAsync(UploadOperation op, bool dryRun, CancellationToken cancellationToken)
+    private async Task<WriteOutcome<WriteOutput>> ReplaceAsync(UploadOperation op, bool dryRun, CancellationToken cancellationToken)
     {
         if (op.For is not null || op.Parent is not null || op.Type is not null || op.ContentGuid is not null)
         {
@@ -600,7 +605,7 @@ public sealed class WriteExecutor(
     }
 
     /// <param name="parent">The parent's header, for the simple address check.</param>
-    private async Task<WriteOutcome> CreatedAsync(CreateRequest request, string typeName, CancellationToken cancellationToken, ContentHeader? parent = null)
+    private async Task<WriteOutcome<WriteOutput>> CreatedAsync(CreateRequest request, string typeName, CancellationToken cancellationToken, ContentHeader? parent = null)
     {
         var result = await PublishingPostAsync(AgentRoutes.Create, request, r => r with { IncludeDraft = true }, cancellationToken);
         return await WithSimpleAddressCheckAsync(
@@ -623,14 +628,17 @@ public sealed class WriteExecutor(
     private static int? CreatedId(WriteResult result) =>
         (result.Saved || result.Existing) && !result.DryRun ? result.Content?.Id : null;
 
-    private async Task<WriteOutcome> TranslateAsync(TranslateOperation op, bool dryRun, CancellationToken cancellationToken)
+    private async Task<WriteOutcome<RemoveLanguageOutput>> RemoveBranchAsync(TranslateOperation op, bool dryRun, CancellationToken cancellationToken)
     {
         var target = await EditableAsync(op.Ref, cancellationToken);
         var language = session.Language(op.Lang) ?? throw new UsageException("translate needs --lang <code>.");
-        if (op.Remove)
-        {
-            return await RemoveLanguageAsync(op, target, language, dryRun, cancellationToken);
-        }
+        return await RemoveLanguageCoreAsync(op, target, language, dryRun, cancellationToken);
+    }
+
+    private async Task<WriteOutcome<WriteOutput>> TranslateBranchAsync(TranslateOperation op, bool dryRun, CancellationToken cancellationToken)
+    {
+        var target = await EditableAsync(op.Ref, cancellationToken);
+        var language = session.Language(op.Lang) ?? throw new UsageException("translate needs --lang <code>.");
         // An existing branch is updated by a set or publish below, which check it themselves.
         var masterFirst = updateExisting && target.Header.Languages.ContainsKey(language.Id)
             ? null
@@ -642,7 +650,7 @@ public sealed class WriteExecutor(
             await TranslateBlocksAsync(blocks, op, language, dryRun: true, cancellationToken);
         }
 
-        WriteOutcome outcome;
+        WriteOutcome<WriteOutput> outcome;
         if (updateExisting && target.Header.Languages.ContainsKey(language.Id))
         {
             var existing = op.Properties is not null || op.Name is not null
@@ -675,7 +683,7 @@ public sealed class WriteExecutor(
             return outcome;
         }
         var translated = await TranslateBlocksAsync(blocks, op, language, dryRun, cancellationToken);
-        return outcome with { Output = ((WriteOutput)outcome.Output) with { Blocks = translated } };
+        return outcome with { Output = outcome.Output with { Blocks = translated } };
     }
 
     /// <summary>The blocks in the content's "For this page" folder, and in folders below it.</summary>
@@ -742,7 +750,7 @@ public sealed class WriteExecutor(
         return results;
     }
 
-    private async Task<WriteOutcome> RemoveLanguageAsync(TranslateOperation op, Target target, LanguageBranch language, bool dryRun, CancellationToken cancellationToken)
+    private async Task<WriteOutcome<RemoveLanguageOutput>> RemoveLanguageCoreAsync(TranslateOperation op, Target target, LanguageBranch language, bool dryRun, CancellationToken cancellationToken)
     {
         if (op.Properties is not null || op.Name is not null || op.Publish || op.RequestApproval || op.WithBlocks)
         {
@@ -771,7 +779,7 @@ public sealed class WriteExecutor(
         }
         var output = new RemoveLanguageOutput(WriteOutput.Id(result.Content.Id), result.Content.Guid, result.Content.Type, result.Content.Name,
             result.Language, result.Versions, result.Published, result.Removed, result.DryRun);
-        return new WriteOutcome(output, AgentSource, null, dryRun ? [$"{message} This can't be undone; the real run needs --confirm (ask the user first)."] : []);
+        return new WriteOutcome<RemoveLanguageOutput>(output, AgentSource, null, dryRun ? [$"{message} This can't be undone; the real run needs --confirm (ask the user first)."] : []);
     }
 
     public const string RemoveBranchReason = "removesBranch";
@@ -779,7 +787,7 @@ public sealed class WriteExecutor(
     public const string RemoveBranchHint =
         "Removing a language branch can't be undone. Ask the user, and only if so run again with --confirm (in a plan: \"confirm\": true on the step).";
 
-    private async Task<WriteOutcome> PublishAsync(PublishOperation op, bool dryRun, CancellationToken cancellationToken)
+    internal async Task<WriteOutcome<WriteOutput>> PublishAsync(PublishOperation op, bool dryRun, CancellationToken cancellationToken)
     {
         var target = await EditableAsync(op.Ref, cancellationToken);
         if (op.Version is { } given && target.Version is { } inRef && given != inRef)
@@ -865,7 +873,7 @@ public sealed class WriteExecutor(
         {
             notes.Add(masterFirst);
         }
-        return new WriteOutcome(output, DbSource, null, notes);
+        return new WriteOutcome<WriteOutput>(output, DbSource, null, notes);
     }
 
     /// <summary>
@@ -896,28 +904,28 @@ public sealed class WriteExecutor(
         return MasterLanguageRule.Check(target.Id, $"{target.Id} ('{header.LanguageRow(language.Id)?.Name}')", language.Code, master, op, deferred, dryRun);
     }
 
-    private static WriteOutcome WithWarning(WriteOutcome outcome, string? warning) =>
+    private static WriteOutcome<T> WithWarning<T>(WriteOutcome<T> outcome, string? warning) where T : notnull =>
         warning is null ? outcome : outcome with { Warnings = [.. outcome.Warnings, warning] };
 
     /// <summary>The latest version of <paramref name="language"/>, reported as a step that changed nothing.</summary>
-    private async Task<WriteOutcome> LatestUnchangedAsync(Target target, LanguageBranch language, bool dryRun, string message, CancellationToken cancellationToken)
+    private async Task<WriteOutcome<WriteOutput>> LatestUnchangedAsync(Target target, LanguageBranch language, bool dryRun, string message, CancellationToken cancellationToken)
     {
         var version = await VersionReader.LatestAsync(session.Db, session.Model, target.Id, language.Id, cancellationToken)
             ?? throw new NotFoundException($"Content {target.Id} has no version in {language.Code}.", $"List them with `opticli versions {target.Id}`.");
         return Unchanged(target, version, dryRun, message);
     }
 
-    private WriteOutcome Unchanged(Target target, VersionInfo version, bool dryRun, string message)
+    private WriteOutcome<WriteOutput> Unchanged(Target target, VersionInfo version, bool dryRun, string message)
     {
         var current = session.Identities.Describe(target.Header, session.Model.Language(version.LanguageId), version.Id, version.StatusValue, version.Name);
-        return new WriteOutcome(
+        return new WriteOutcome<WriteOutput>(
             new WriteOutput(WriteOutput.Id(target.Id), version.Ref, current.Guid, current.Type, current.Name, current.Language, current.Status,
                 target.Header.ParentId is { } parentId ? WriteOutput.Id(parentId) : null,
                 Saved: false, Published: false, DryRun: dryRun, Valid: true, BaseVersion: version.Ref, Changes: [], Validation: null),
             DbSource, null, [message]);
     }
 
-    private async Task<WriteOutcome> UnpublishAsync(UnpublishOperation op, bool dryRun, CancellationToken cancellationToken)
+    internal async Task<WriteOutcome<WriteOutput>> UnpublishAsync(UnpublishOperation op, bool dryRun, CancellationToken cancellationToken)
     {
         var target = await EditableAsync(op.Ref, cancellationToken);
         var language = LanguageFor(op.Lang, target);
@@ -926,10 +934,10 @@ public sealed class WriteExecutor(
         List<string> warnings = dryRun
             ? [$"It would be offline from the moment it runs: a copy of {output.BaseVersion} that stops publishing then is published. Drafts stay as they are."]
             : [$"Offline now: {output.Version}, a copy of {output.PreviouslyPublished} that stops publishing now, is published. Drafts stay as they are."];
-        return new WriteOutcome(output, AgentSource, null, warnings);
+        return new WriteOutcome<WriteOutput>(output, AgentSource, null, warnings);
     }
 
-    private async Task<WriteOutcome> DiscardAsync(DiscardOperation op, bool dryRun, CancellationToken cancellationToken)
+    internal async Task<WriteOutcome<WriteOutput>> DiscardAsync(DiscardOperation op, bool dryRun, CancellationToken cancellationToken)
     {
         var target = await EditableAsync(op.Ref, cancellationToken);
         if (op.Version is { } given && target.Version is { } inRef && given != inRef)
@@ -943,10 +951,10 @@ public sealed class WriteExecutor(
         List<string> warnings = dryRun
             ? [$"Discarding can't be undone: {output.Version} would be deleted for good; changes shows what it holds compared with {output.BaseVersion}."]
             : [];
-        return new WriteOutcome(output, AgentSource, null, warnings);
+        return new WriteOutcome<WriteOutput>(output, AgentSource, null, warnings);
     }
 
-    private async Task<WriteOutcome> MoveAsync(MoveOperation op, bool dryRun, CancellationToken cancellationToken)
+    internal async Task<WriteOutcome<MoveOutput>> MoveAsync(MoveOperation op, bool dryRun, CancellationToken cancellationToken)
     {
         var target = await MovableAsync(await EditableAsync(op.Ref, cancellationToken), cancellationToken);
         var destination = await EditableAsync(op.To, cancellationToken, "--to");
@@ -958,7 +966,7 @@ public sealed class WriteExecutor(
         if (target.Header.ParentId == destination.Id && !target.Header.Deleted)
         {
             // The CMS would save a move to where it is (and log one); nothing to do, as a plan run again expects.
-            return new WriteOutcome(DryMove(target, destination.ContentRef, descendants, recycleBin: null) with { DryRun = dryRun },
+            return new WriteOutcome<MoveOutput>(DryMove(target, destination.ContentRef, descendants, recycleBin: null) with { DryRun = dryRun },
                 DbSource, null, [$"Content {target.Id} is already under {destination.Id}; nothing to do."]);
         }
         // A dry run asks the site too: whether the type may go below the new parent is the CMS's answer.
@@ -973,17 +981,17 @@ public sealed class WriteExecutor(
                 "Move it below a parent whose type allows it (the parent type's [AvailableContentTypes], or its settings in admin mode); nothing was moved.")
             { Details = ex.Details };
         }
-        return new WriteOutcome(Moved(result, descendants, recycleBin: null, dryRun), AgentSource, null, []);
+        return new WriteOutcome<MoveOutput>(Moved(result, descendants, recycleBin: null, dryRun), AgentSource, null, []);
     }
 
-    private async Task<WriteOutcome> DeleteAsync(DeleteOperation op, bool dryRun, CancellationToken cancellationToken)
+    internal async Task<WriteOutcome<MoveOutput>> DeleteAsync(DeleteOperation op, bool dryRun, CancellationToken cancellationToken)
     {
         var target = await MovableAsync(await EditableAsync(op.Ref, cancellationToken), cancellationToken);
         if (target.Header.Deleted)
         {
             if (updateExisting)
             {
-                return new WriteOutcome(DryMove(target, null, 0, recycleBin: true) with { DryRun = dryRun }, DbSource, null,
+                return new WriteOutcome<MoveOutput>(DryMove(target, null, 0, recycleBin: true) with { DryRun = dryRun }, DbSource, null,
                     [$"Content {target.Id} is already in the recycle bin; nothing to do."]);
             }
             throw new ConflictException($"Content {target.Id} is already in the recycle bin.");
@@ -998,7 +1006,7 @@ public sealed class WriteExecutor(
         }
         if (dryRun)
         {
-            return new WriteOutcome(DryMove(target, null, descendants, recycleBin: true).WithReferences(references), DbSource, null, warnings);
+            return new WriteOutcome<MoveOutput>(DryMove(target, null, descendants, recycleBin: true).WithReferences(references), DbSource, null, warnings);
         }
         if (references.Count > 0 && !op.IgnoreReferences)
         {
@@ -1017,7 +1025,7 @@ public sealed class WriteExecutor(
         }
         var agent = await AgentAsync(cancellationToken);
         var result = await agent.SendAsync<MoveResult>(HttpMethod.Delete, AgentRoutes.Delete(target.ContentRef), null, cancellationToken);
-        return new WriteOutcome(Moved(result, descendants, recycleBin: true, dryRun: false).WithReferences(references), AgentSource, null, warnings);
+        return new WriteOutcome<MoveOutput>(Moved(result, descendants, recycleBin: true, dryRun: false).WithReferences(references), AgentSource, null, warnings);
     }
 
     /// <summary>
@@ -1026,7 +1034,7 @@ public sealed class WriteExecutor(
     /// and is what was deleted (not something below it). A dry run asks the site too, which knows the stored parent and
     /// which types may go below it.
     /// </summary>
-    private async Task<WriteOutcome> RestoreAsync(RestoreOperation op, bool dryRun, CancellationToken cancellationToken)
+    internal async Task<WriteOutcome<RestoreOutput>> RestoreAsync(RestoreOperation op, bool dryRun, CancellationToken cancellationToken)
     {
         Target target;
         try
@@ -1044,7 +1052,7 @@ public sealed class WriteExecutor(
             if (updateExisting)
             {
                 var identity = session.Identities.Describe(header, null);
-                return new WriteOutcome(
+                return new WriteOutcome<RestoreOutput>(
                     new RestoreOutput(WriteOutput.Id(target.Id), identity.Guid, identity.Type, identity.Name, identity.Language, identity.Status,
                         header.ParentId is { } parent ? WriteOutput.Id(parent) : "", null, "unchanged", null, Restored: false, DryRun: dryRun, Descendants: 0),
                     DbSource, null, [$"Content {target.Id} is not in the recycle bin; nothing to do."]);
@@ -1094,7 +1102,7 @@ public sealed class WriteExecutor(
                 ? $"It would be restored below {result.Parent} as --to says, not below {stored}, where it was before it was deleted."
                 : $"Restored below {result.Parent} as --to says, not below {stored}, where it was before it was deleted.");
         }
-        return new WriteOutcome(output, AgentSource, null, warnings);
+        return new WriteOutcome<RestoreOutput>(output, AgentSource, null, warnings);
     }
 
     /// <summary>
@@ -1113,7 +1121,7 @@ public sealed class WriteExecutor(
     /// <c>sites add</c>, a plan's <c>site</c>: through the site (the CMS's site definitions or applications), never against a
     /// shared database. After a save the content model is read again, so later steps see the site.
     /// </summary>
-    private async Task<WriteOutcome> SiteAsync(SiteOperation op, bool dryRun, CancellationToken cancellationToken)
+    internal async Task<WriteOutcome<Sites.SiteHostsView>> SiteAsync(SiteOperation op, bool dryRun, CancellationToken cancellationToken)
     {
         RequireLocal(Protocol.SiteAddRequest.SharedRefusal, Protocol.SiteAddRequest.SharedHint);
         if (string.IsNullOrWhiteSpace(op.Name))
@@ -1146,14 +1154,14 @@ public sealed class WriteExecutor(
             // An agent from before siteAssets ignores it.
             warnings.Add($"The site's opticli agent is older than this CLI and ignored siteAssets: {op.SiteAssets} wasn't applied. Run the site with this version's `opticli serve`, which loads its own agent.");
         }
-        return new WriteOutcome(view, AgentSource, null, warnings);
+        return new WriteOutcome<Sites.SiteHostsView>(view, AgentSource, null, warnings);
     }
 
     /// <summary>
     /// <c>languages enable|disable</c>, a plan's <c>language</c>: through the site, never against a shared database. After a
     /// save the content model is read again, so later steps (and their checks) see the languages.
     /// </summary>
-    private async Task<WriteOutcome> LanguagesAsync(LanguageOperation op, bool dryRun, CancellationToken cancellationToken)
+    internal async Task<WriteOutcome<LanguagesOutput>> LanguagesAsync(LanguageOperation op, bool dryRun, CancellationToken cancellationToken)
     {
         RequireLocal(LanguageBranchesRequest.SharedRefusal, LanguageBranchesRequest.SharedHint);
         var codes = op.Langs.Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
@@ -1182,7 +1190,7 @@ public sealed class WriteExecutor(
         {
             await session.ReloadModelAsync(cancellationToken);
         }
-        return new WriteOutcome(new LanguagesOutput(result.Languages, result.Saved, result.DryRun ? true : null), AgentSource, null, warnings);
+        return new WriteOutcome<LanguagesOutput>(new LanguagesOutput(result.Languages, result.Saved, result.DryRun ? true : null), AgentSource, null, warnings);
     }
 
     /// <exception cref="RefusedException">The database is shared: what the deployed site uses too.</exception>
@@ -1194,7 +1202,7 @@ public sealed class WriteExecutor(
         }
     }
 
-    private async Task<WriteOutcome> AccessAsync(AccessOperation op, bool dryRun, CancellationToken cancellationToken)
+    internal async Task<WriteOutcome<AccessOutput>> AccessAsync(AccessOperation op, bool dryRun, CancellationToken cancellationToken)
     {
         var target = await EditableAsync(op.Ref, cancellationToken);
         var grants = op.Grant ?? new Dictionary<string, string>();
@@ -1234,7 +1242,7 @@ public sealed class WriteExecutor(
         {
             warnings.Add("The access rights were already like that, so nothing was saved.");
         }
-        return new WriteOutcome(output, AgentSource, null, warnings);
+        return new WriteOutcome<AccessOutput>(output, AgentSource, null, warnings);
     }
 
     /// <summary>
@@ -1280,7 +1288,7 @@ public sealed class WriteExecutor(
         WriteOutput.Id(result.Content.Id), result.Content.Guid, result.Content.Type, result.Content.Name, result.Content.Language, result.Content.Status,
         result.Parent, result.PreviousParent, Moved: !dryRun, DryRun: dryRun, descendants, recycleBin);
 
-    private static WriteOutcome Outcome(WriteOutput output, int? createdId)
+    private static WriteOutcome<WriteOutput> Outcome(WriteOutput output, int? createdId)
     {
         var warnings = new List<string>();
         if (!output.DryRun && !output.Saved)
@@ -1299,7 +1307,7 @@ public sealed class WriteExecutor(
         {
             warnings.Add($"{output.Version ?? output.Ref} was saved, but putting it in project {project.Id} ('{project.Name}'){(project.Item is ProjectSaveItems.Added or ProjectSaveItems.Replaced ? " worked and marking it ready" : "")} failed: {projectError}. The save stands; `opticli projects {project.Id}` shows what the project holds, and `opticli projects ready {project.Id} {output.Ref}` marks it ready.");
         }
-        return new WriteOutcome(output, AgentSource, createdId, warnings);
+        return new WriteOutcome<WriteOutput>(output, AgentSource, createdId, warnings);
     }
 
     /// <summary>

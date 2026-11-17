@@ -186,7 +186,7 @@ public sealed class EnvironmentRolesTests : IDisposable
         var run = await RunWithProjectAsync((command, options) => CommandRunner.SetHandler(command, options, (context, _) =>
         {
             context.UseConnection();
-            return Task.FromResult(new CommandResult("read"));
+            return Task.FromResult(new CommandResult<string>("read"));
         }), "--db", "prod");
 
         Assert.True(run.ExitCode == 0, run.ToString());
@@ -204,7 +204,7 @@ public sealed class EnvironmentRolesTests : IDisposable
         var run = await RunWithProjectAsync((command, options) => CommandRunner.SetHandler(command, options, (context, _) =>
         {
             context.UseConnection();
-            return Task.FromResult(new CommandResult("read"));
+            return Task.FromResult(new CommandResult<string>("read"));
         }));
 
         Assert.False(run.Json().GetProperty("meta").TryGetProperty("database", out _), run.ToString());

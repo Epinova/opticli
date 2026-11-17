@@ -27,7 +27,7 @@ public enum AgentState
 }
 
 /// <summary>What <c>serve --status</c> and <c>doctor</c> report about a project's agent.</summary>
-public sealed record AgentStatus(AgentState State, string Message)
+public sealed record AgentStatus(AgentState State, string Message) : ServeForegroundOutput
 {
     public ServeMode? Mode { get; init; }
 

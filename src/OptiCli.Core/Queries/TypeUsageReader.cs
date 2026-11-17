@@ -1,12 +1,21 @@
+using System.Text.Json.Serialization;
 using Microsoft.Data.SqlClient;
 using OptiCli.Core.Content;
 using OptiCli.Core.Data;
 
 namespace OptiCli.Core.Queries;
 
+/// <summary>
+/// A row of <c>where-used --type</c>: an instance of the type (<see cref="InstanceUsage"/>), or on CMS 13 the last row,
+/// the type's inline blocks (<see cref="InlineUsages"/>, <c>inline: true</c>). Written as the row it is.
+/// </summary>
+[JsonDerivedType(typeof(InstanceUsage))]
+[JsonDerivedType(typeof(InlineUsages))]
+public abstract record TypeUsageRow;
+
 /// <summary>One instance of a type and where it is used.</summary>
 /// <param name="Count">How many usages it has (0: unused).</param>
-public sealed record InstanceUsage(string Ref, Guid Guid, string? Name, string? Language, string? Status, int Count, IReadOnlyList<Usage> Usages)
+public sealed record InstanceUsage(string Ref, Guid Guid, string? Name, string? Language, string? Status, int Count, IReadOnlyList<Usage> Usages) : TypeUsageRow
 {
     /// <summary>CMS 13: true for a Visual Builder blueprint of the type, a template for new content rather than an instance.</summary>
     public bool? Blueprint { get; init; }
@@ -18,7 +27,7 @@ public sealed record InstanceUsage(string Ref, Guid Guid, string? Name, string? 
 /// included.
 /// </summary>
 /// <param name="Count">How many inline blocks of the type there are.</param>
-public sealed record InlineUsages(int Count, IReadOnlyList<Usage> Usages)
+public sealed record InlineUsages(int Count, IReadOnlyList<Usage> Usages) : TypeUsageRow
 {
     /// <summary>Marks the row of inline blocks among the instances.</summary>
     public bool Inline => true;

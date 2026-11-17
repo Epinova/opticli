@@ -12,7 +12,23 @@ namespace OptiCli.Cli;
 /// </summary>
 internal static class CommandRunner
 {
-    public static void SetHandler(Command command, GlobalOptions options, Func<CliContext, CancellationToken, Task<CommandResult>> body)
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Command, ResultModes> Declared = new();
+
+    /// <summary>The result types a command declared; null for a command without an action of its own (a group).</summary>
+    public static ResultModes? Results(Command command) => Declared.TryGetValue(command, out var modes) ? modes : null;
+
+    /// <summary>Runs <paramref name="body"/> as the command's action; its <c>data</c> is a <typeparamref name="T"/>.</summary>
+    public static void SetHandler<T>(Command command, GlobalOptions options, Func<CliContext, CancellationToken, Task<CommandResult<T>>> body) where T : notnull =>
+        SetHandler(command, options, new ResultModes().Otherwise(body));
+
+    /// <summary>For a command whose <c>data</c> depends on its options: one handler per mode, each with its type.</summary>
+    public static void SetHandler(Command command, GlobalOptions options, ResultModes modes)
+    {
+        Declared.AddOrUpdate(command, modes);
+        Run(command, options, modes.RunAsync);
+    }
+
+    private static void Run(Command command, GlobalOptions options, Func<CliContext, CancellationToken, Task<CommandResult>> body)
     {
         command.SetAction(async (parse, cancellationToken) =>
         {
@@ -52,7 +68,7 @@ internal static class CommandRunner
                         Console.Out.Write(text);
                         return ExitCodes.Ok;
                     }
-                    var data = writer.Format == OutputFormat.JsonLines && result.Lines is not null ? result.Lines : result.Data;
+                    var data = writer.Format == OutputFormat.JsonLines && result.Lines is not null ? result.Lines : result.Untyped;
                     return writer.Success(data, new Meta(result.Source, ToolInfo.Version, result.Next, warnings.Count > 0 ? warnings : null, context.DatabaseMeta));
                 }
                 catch (NeedsSelectionException ex) when (attempt == 0 && DatabasePrompt.CanAsk)

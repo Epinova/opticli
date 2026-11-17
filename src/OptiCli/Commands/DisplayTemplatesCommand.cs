@@ -25,7 +25,7 @@ internal static class DisplayTemplatesCommand
         command.Options.Add(type);
         list.AddTo(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<IReadOnlyList<DisplayTemplateInfo>>(command, options, async (context, cancellationToken) =>
         {
             await using var session = await context.OpenContentAsync(cancellationToken);
             IEnumerable<DisplayTemplateInfo> templates = await DisplayTemplateReader.ListAsync(session.Db, session.Model, cancellationToken);

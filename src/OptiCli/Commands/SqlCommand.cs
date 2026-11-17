@@ -27,7 +27,7 @@ internal static class SqlCommand
         command.Options.Add(personal);
         options.AddJsonLines(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<SqlResult>(command, options, async (context, cancellationToken) =>
         {
             var max = context.Parse.GetValue(limit);
             if (max < 1)
@@ -37,7 +37,7 @@ internal static class SqlCommand
             await using var db = await context.OpenDatabaseAsync(cancellationToken);
             var result = await RawQuery.RunAsync(
                 db, context.Parse.GetValue(query)!, max, context.Parse.GetValue(personal), context.Parse.GetValue(full), cancellationToken);
-            return new CommandResult(
+            return new CommandResult<SqlResult>(
                 result,
                 Warnings: result.Truncated == true ? [$"The query returned more than {max} rows; only the first {max} are shown (raise --limit)."] : null,
                 Lines: result.Rows);

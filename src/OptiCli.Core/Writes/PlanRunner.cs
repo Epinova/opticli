@@ -544,7 +544,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                         && issues.Where(v => v.Severity == "error").All(v => PlanSimulation.OnlyLinksPlannedContent(v, steps, existing)))
                     {
                         // CMS 13 checks that linked content exists; the plan creates it first.
-                        linked = new WriteOutcome(invalid with { Validation = issues.Where(v => v.Severity != "error").ToList() is { Count: > 0 } rest ? rest : null }, WriteExecutor.AgentSource, null, []);
+                        linked = new WriteOutcome<WriteOutput>(invalid with { Validation = issues.Where(v => v.Severity != "error").ToList() is { Count: > 0 } rest ? rest : null }, WriteExecutor.AgentSource, null, []);
                     }
                     if (linked.Output is WriteOutput { PendingDraft: { } pending } && !op.IncludeDraft)
                     {

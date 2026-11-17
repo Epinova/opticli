@@ -67,7 +67,7 @@ internal static class CompositionCommand
         write.AddIncludeDraft(command);
         write.AddConcurrency(command);
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<WriteOutput>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             var verb = parse.GetValue(action)!;

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using OptiCli.Core.Discovery;
 using OptiCli.Core.Errors;
@@ -443,6 +444,31 @@ public static partial class SiteLauncher
 }
 
 public sealed record StopResult(ServeMode Mode, int? Pid, int? Port, bool Stopped, bool Graceful);
+
+/// <summary>
+/// What <c>serve --foreground</c> prints: once the site it ran has stopped, <see cref="ServeStopOutput.Ended"/>; when a
+/// site already ran (nothing was started), that site's <see cref="AgentStatus"/>. Written as the one it is.
+/// </summary>
+[JsonDerivedType(typeof(AgentStatus))]
+[JsonDerivedType(typeof(ServeStopOutput))]
+public abstract record ServeForegroundOutput;
+
+/// <summary>
+/// <c>serve --stop</c>: what was stopped (<see cref="StopResult"/>), or, with only <see cref="Stopped"/> false and
+/// <see cref="Message"/>, that nothing was running. Also the end of <c>serve --foreground</c> (<see cref="Ended"/>).
+/// </summary>
+/// <param name="Mode">How the site was started; left out when nothing was running.</param>
+/// <param name="Graceful">It shut down when asked, rather than being killed; left out when nothing was running.</param>
+/// <param name="Message">Why nothing was stopped.</param>
+public sealed record ServeStopOutput(ServeMode? Mode, int? Pid, int? Port, bool Stopped, bool? Graceful, string? Message) : ServeForegroundOutput
+{
+    /// <summary>A foreground run's site stopped: <c>{"stopped": true}</c>.</summary>
+    public static readonly ServeStopOutput Ended = new(null, null, null, Stopped: true, null, null);
+
+    public static ServeStopOutput From(StopResult stopped) => new(stopped.Mode, stopped.Pid, stopped.Port, stopped.Stopped, stopped.Graceful, null);
+
+    public static ServeStopOutput Nothing(string message) => new(null, null, null, Stopped: false, null, message);
+}
 
 /// <param name="FirstException">The first exception in the run's log (and its innermost inner one), when it has one.</param>
 public sealed record StartupLog(string Log, IReadOnlyList<string> Lines, string? FirstException = null);

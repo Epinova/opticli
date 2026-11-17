@@ -71,21 +71,39 @@ internal static class ServeCommand
             command.Options.Add(option);
         }
 
-        CommandRunner.SetHandler(command, options, async (context, cancellationToken) =>
+        // The start options, checked; for a start in the background or in the foreground.
+        StartOptions Start(CliContext context)
         {
             var parse = context.Parse;
-            var modes = new[] { parse.GetValue(status), parse.GetValue(logs), parse.GetValue(stop) }.Count(m => m);
-            var starting = parse.GetValue(build) || parse.GetValue(port) is not null || parse.GetValue(foreground) || parse.GetValue(output) is not null || parse.GetResult(https) is { Implicit: false } || parse.GetValue(httpsPort) is not null || parse.GetResult(scheduler) is { Implicit: false } || parse.GetValue(allowPendingMigrations);
-            if (modes > 1 || (modes == 1 && starting))
+            var seconds = parse.GetValue(timeout);
+            if (seconds <= 0)
             {
-                throw new UsageException("--status, --logs and --stop are separate actions; don't combine them with each other or with start options.");
+                throw new UsageException("--timeout must be a positive number of seconds.");
             }
-            if (parse.GetValue(tail) is not null && !parse.GetValue(logs))
+            if (parse.GetValue(httpsPort) is not null && parse.GetResult(https) is { Implicit: false } && !parse.GetValue(https))
             {
-                throw new UsageException("--tail only applies to --logs.");
+                throw new UsageException("--https-port turns HTTPS on; it can't go with --https false.");
             }
+            return new StartOptions(parse.GetValue(build), parse.GetValue(port), parse.GetValue(output), parse.GetResult(https) is { Implicit: false } ? parse.GetValue(https) : null,
+                parse.GetResult(scheduler) is { Implicit: false } ? parse.GetValue(scheduler) : null, parse.GetValue(allowPendingMigrations), TimeSpan.FromSeconds(seconds), parse.GetValue(httpsPort));
+        }
 
-            if (parse.GetValue(status))
+        CommandRunner.SetHandler(command, options, new ResultModes()
+            .Check(context =>
+            {
+                var parse = context.Parse;
+                var modes = new[] { parse.GetValue(status), parse.GetValue(logs), parse.GetValue(stop) }.Count(m => m);
+                var starting = parse.GetValue(build) || parse.GetValue(port) is not null || parse.GetValue(foreground) || parse.GetValue(output) is not null || parse.GetResult(https) is { Implicit: false } || parse.GetValue(httpsPort) is not null || parse.GetResult(scheduler) is { Implicit: false } || parse.GetValue(allowPendingMigrations);
+                if (modes > 1 || (modes == 1 && starting))
+                {
+                    throw new UsageException("--status, --logs and --stop are separate actions; don't combine them with each other or with start options.");
+                }
+                if (parse.GetValue(tail) is not null && !parse.GetValue(logs))
+                {
+                    throw new UsageException("--tail only applies to --logs.");
+                }
+            })
+            .When(ModeCondition.Set(status), async (context, cancellationToken) =>
             {
                 var current = await StatusAsync(context, cancellationToken);
                 List<string> statusWarnings = [];
@@ -104,37 +122,35 @@ internal static class ServeCommand
                     // this run reads another database (the development one, say): the site still runs against production.
                     statusWarnings.Add($"The running site uses '{running.Name}' on '{running.Server}', which has the role prod: stop it with `opticli serve --stop`. opticli refuses writes to it.");
                 }
-                return new CommandResult(current, Warnings: statusWarnings.Count > 0 ? statusWarnings : null, Source: WriteExecutor.AgentSource);
-            }
-            if (parse.GetValue(logs))
-            {
-                return Logs(context, parse.GetValue(tail) ?? DefaultLogLines);
-            }
-            if (parse.GetValue(stop))
-            {
-                return await StopAsync(context);
-            }
-
-            var seconds = parse.GetValue(timeout);
-            if (seconds <= 0)
-            {
-                throw new UsageException("--timeout must be a positive number of seconds.");
-            }
-            if (parse.GetValue(httpsPort) is not null && parse.GetResult(https) is { Implicit: false } && !parse.GetValue(https))
-            {
-                throw new UsageException("--https-port turns HTTPS on; it can't go with --https false.");
-            }
-            return await StartAsync(context, parse.GetValue(build), parse.GetValue(port), parse.GetValue(foreground), parse.GetValue(output), parse.GetResult(https) is { Implicit: false } ? parse.GetValue(https) : null,
-                parse.GetResult(scheduler) is { Implicit: false } ? parse.GetValue(scheduler) : null, parse.GetValue(allowPendingMigrations), TimeSpan.FromSeconds(seconds), cancellationToken,
-                parse.GetValue(httpsPort));
-        });
+                return new CommandResult<AgentStatus>(current, Warnings: statusWarnings.Count > 0 ? statusWarnings : null, Source: WriteExecutor.AgentSource);
+            })
+            .When(ModeCondition.Set(logs), (context, _) => Task.FromResult(Logs(context, context.Parse.GetValue(tail) ?? DefaultLogLines)))
+            .When(ModeCondition.Set(stop), (context, _) => StopAsync(context))
+            // Blocks until the site stops; a site that already runs is reported as it is, as without --foreground.
+            .When(ModeCondition.Set(foreground), (context, cancellationToken) =>
+                StartAsync<ServeForegroundOutput>(context, Start(context), status => status, RunForegroundAsync, cancellationToken))
+            .Otherwise((context, cancellationToken) =>
+                StartAsync(context, Start(context), status => status, StartBackgroundAsync, cancellationToken)));
         return command;
     }
 
-    /// <param name="scheduler">--scheduler as given; null to take the user config's.</param>
-    /// <param name="httpsPort">--https-port as given; null to take the user config's (with --https, else the next free port).</param>
-    private static async Task<CommandResult> StartAsync(CliContext context, bool build, int? port, bool foreground, string? output, bool? https, bool? scheduler, bool allowPendingMigrations, TimeSpan timeout, CancellationToken cancellationToken,
-        int? httpsPort = null)
+    /// <param name="Scheduler">--scheduler as given; null to take the user config's.</param>
+    /// <param name="Https">--https as given; null to take the user config's.</param>
+    /// <param name="HttpsPort">--https-port as given; null to take the user config's (with --https, else the next free port).</param>
+    private sealed record StartOptions(bool Build, int? Port, string? Output, bool? Https, bool? Scheduler, bool AllowPendingMigrations, TimeSpan Timeout, int? HttpsPort);
+
+    /// <summary>A site ready to be launched, inside <see cref="StartAsync{T}"/>'s start lock.</summary>
+    private sealed record Launch(StateStore Store, LaunchRequest Request, IDisposable StartLock, List<string> Warnings, Core.Discovery.ProjectInfo Project,
+        IReadOnlyList<Core.Cms.ContentTypeInfo> Types, bool SchedulerOn);
+
+    /// <summary>
+    /// Starts the site, unless one runs already (or another <c>serve</c> is starting it): that one's status, as
+    /// <paramref name="running"/> gives it. <paramref name="launch"/> starts it once everything is checked, in the
+    /// background or in the foreground.
+    /// </summary>
+    private static async Task<CommandResult<T>> StartAsync<T>(CliContext context, StartOptions start, Func<AgentStatus, T> running, Func<Launch, CancellationToken, Task<CommandResult<T>>> launch,
+        CancellationToken cancellationToken)
+        where T : notnull
     {
         var project = context.Project;
         // The database check comes before anything is started or even looked for.
@@ -143,7 +159,7 @@ internal static class ServeCommand
         var profile = context.ConnectionRequest.Profile is { } profileName
             ? LaunchProfile.Read(project.Directory, profileName, context.ConnectionRequest.Name)
             : null;
-        if (scheduler == true && !connection.IsLocal)
+        if (start.Scheduler == true && !connection.IsLocal)
         {
             throw new UsageException(
                 "--scheduler doesn't apply against a shared database: its scheduler stays off, or the jobs would run beside the deployed site's.",
@@ -157,13 +173,13 @@ internal static class ServeCommand
         switch (existing.State)
         {
             case AgentState.Running when existing.Mode == ServeMode.Ide:
-                return new CommandResult(existing, Warnings: [$"The site your IDE started (pid {existing.Pid}) runs with the agent (opticli ide on), and writes go there; nothing was started."],
+                return new CommandResult<T>(running(existing), Warnings: [$"The site your IDE started (pid {existing.Pid}) runs with the agent (opticli ide on), and writes go there; nothing was started."],
                     Source: WriteExecutor.AgentSource);
             case not AgentState.Stopped when existing.Mode == ServeMode.Ide:
                 // A second site would keep its own cache, and the IDE's would still win once it answers.
                 throw new UsageException($"The site your IDE started runs with the agent (opticli ide on) but can't be used: {existing.Message}", existing.Hint ?? "Fix it or stop it in the IDE, then try again.");
             case AgentState.Running when existing.Mode != ServeMode.External:
-                return new CommandResult(existing, Warnings: [
+                return new CommandResult<T>(running(existing), Warnings: [
                         "The site was already running; nothing was started.",
                         .. profile is null ? Array.Empty<string>() : [$"--profile '{profile.Name}' applies when serve starts the site; this one runs with whatever it was started with (`opticli serve --stop` first)."],
                         .. DriftWarning(store, started: false) is { } drifted ? [drifted] : Array.Empty<string>()],
@@ -178,23 +194,23 @@ internal static class ServeCommand
                 throw new UsageException(
                     $"A site started with the variables from `opticli env` is running on port {existing.Port}.",
                     "Use it as it is, or stop it (and `opticli serve --stop` to forget its token) before `opticli serve`.");
-            case AgentState.Unresponsive when existing.StartedAt > DateTimeOffset.UtcNow - timeout:
+            case AgentState.Unresponsive when existing.StartedAt > DateTimeOffset.UtcNow - start.Timeout:
                 // Another `serve` started it moments ago and is waiting for it: wait too, rather than start a second site.
                 startLock.Dispose();
-                return await WaitForOtherStartAsync(store, connection, existing, timeout, cancellationToken);
+                return await WaitForOtherStartAsync(store, connection, existing, start.Timeout, running, cancellationToken);
             default:
                 throw new UsageException($"A site is already registered for this project: {existing.Message}", "Check `opticli serve --status` and `--logs`; `opticli serve --stop` stops it.");
         }
 
         var settings = UserConfig.ForProject(context.Environment.UserConfigFile, project.Directory);
-        var schedulerOn = connection.IsLocal && (scheduler ?? settings?.Scheduler ?? false);
-        if (build)
+        var schedulerOn = connection.IsLocal && (start.Scheduler ?? settings?.Scheduler ?? false);
+        if (start.Build)
         {
             await SiteBuild.RunAsync(project, Console.Error, cancellationToken);
         }
         // After a build, which restores: an unrestored project's CMS version is only known then.
         var agent = await SelectAgentAsync(context, connection, cancellationToken);
-        var siteOutput = OutputLocator.Locate(project, output, settings?.Output, context.Environment.CurrentDirectory);
+        var siteOutput = OutputLocator.Locate(project, start.Output, settings?.Output, context.Environment.CurrentDirectory);
         var warnings = new List<string>();
         var agentDll = BuildAgent(siteOutput.Dll, agent.Dll, warnings) ?? agent.Dll;
         string? driftFile = null;
@@ -217,11 +233,11 @@ internal static class ServeCommand
                     // Only for the history lookup, which then goes by name.
                 }
             }
-            startup.ThrowIfBlocked(allowPendingMigrations);
+            startup.ThrowIfBlocked(start.AllowPendingMigrations);
             warnings.AddRange(startup.Warnings);
             driftFile = store.WriteStartupDrift(startup.Drift);
         }
-        if (!connection.IsLocal && scheduler is null && settings?.Scheduler == true)
+        if (!connection.IsLocal && start.Scheduler is null && settings?.Scheduler == true)
         {
             warnings.Add("\"scheduler\": true in the user config doesn't apply against a shared database: the scheduler stays off.");
         }
@@ -244,9 +260,9 @@ internal static class ServeCommand
         }
         // Claimed, so another serve starting at the same moment doesn't pick the same port before this site listens on it.
         var free = PortClaims.ForUser.FreeAndClaimed(PortSelector.IsFree);
-        var httpPort = PortSelector.Select(port, settings?.Port, free);
+        var httpPort = PortSelector.Select(start.Port, settings?.Port, free);
         // A fixed HTTPS port (--https-port, "httpsPort") is taken as given, never another: site hosts carry it.
-        var fixedHttps = httpsPort ?? (https == false ? null : settings?.HttpsPort);
+        var fixedHttps = start.HttpsPort ?? (start.Https == false ? null : settings?.HttpsPort);
         if (fixedHttps == httpPort)
         {
             throw new UsageException($"The HTTPS port {fixedHttps} is the HTTP port too.", "Give --port and --https-port different ports.");
@@ -255,9 +271,9 @@ internal static class ServeCommand
         {
             throw new UsageException(
                 wanted is < 1 or > 65535 ? $"HTTPS port {wanted} is not a valid port." : $"HTTPS port {wanted} is already in use.",
-                $"Stop what listens there, or give another --https-port{(httpsPort is null ? " (the user config's \"httpsPort\" asked for this one)" : "")}.");
+                $"Stop what listens there, or give another --https-port{(start.HttpsPort is null ? " (the user config's \"httpsPort\" asked for this one)" : "")}.");
         }
-        int? httpsListen = fixedHttps ?? ((https ?? settings?.Https == true) ? PortSelector.Select(null, null, p => p != httpPort && free(p)) : null);
+        int? httpsListen = fixedHttps ?? ((start.Https ?? settings?.Https == true) ? PortSelector.Select(null, null, p => p != httpPort && free(p)) : null);
         if (profile is not null)
         {
             warnings.Add(profile.Describe());
@@ -269,7 +285,7 @@ internal static class ServeCommand
             siteOutput,
             agentDll,
             httpPort,
-            timeout,
+            start.Timeout,
             httpsListen,
             siteEndpoints,
             driftFile,
@@ -279,33 +295,42 @@ internal static class ServeCommand
             ProfileVariables = profile?.Applied,
         };
 
-        if (!foreground)
-        {
-            AgentStatus started;
-            try
-            {
-                started = await SiteLauncher.StartBackgroundAsync(store, request, startLock, cancellationToken);
-            }
-            finally
-            {
-                // The site listens on its ports now (or didn't start): the claims have done their job.
-                PortClaims.ForUser.ReleaseAll();
-            }
-            if (request.HttpsPort is null && started.Url is { } url && await RedirectsToHttpsAsync(url, cancellationToken))
-            {
-                warnings.Add($"The site redirects {url} to HTTPS, so it can't be browsed there (opticli itself is unaffected). `opticli serve --stop`, then `opticli serve --https` adds an HTTPS address.");
-            }
-            if (DriftWarning(store, started: true, project.Directory, types) is { } drift)
-            {
-                warnings.Add(drift);
-            }
-            if (schedulerOn && started.Scheduler == "off")
-            {
-                warnings.Add("The site turns its scheduler off itself (SchedulerOptions in its code or configuration): --scheduler leaves the site's own setting.");
-            }
-            return new CommandResult(started, Warnings: warnings.Count > 0 ? warnings : null, Source: WriteExecutor.AgentSource);
-        }
+        return await launch(new Launch(store, request, startLock, warnings, project, types, schedulerOn), cancellationToken);
+    }
 
+    /// <summary><c>serve</c>: starts the site in the background and returns once the agent answers.</summary>
+    private static async Task<CommandResult<AgentStatus>> StartBackgroundAsync(Launch launch, CancellationToken cancellationToken)
+    {
+        var (store, request, startLock, warnings, project, types, schedulerOn) = launch;
+        AgentStatus started;
+        try
+        {
+            started = await SiteLauncher.StartBackgroundAsync(store, request, startLock, cancellationToken);
+        }
+        finally
+        {
+            // The site listens on its ports now (or didn't start): the claims have done their job.
+            PortClaims.ForUser.ReleaseAll();
+        }
+        if (request.HttpsPort is null && started.Url is { } url && await RedirectsToHttpsAsync(url, cancellationToken))
+        {
+            warnings.Add($"The site redirects {url} to HTTPS, so it can't be browsed there (opticli itself is unaffected). `opticli serve --stop`, then `opticli serve --https` adds an HTTPS address.");
+        }
+        if (DriftWarning(store, started: true, project.Directory, types) is { } drift)
+        {
+            warnings.Add(drift);
+        }
+        if (schedulerOn && started.Scheduler == "off")
+        {
+            warnings.Add("The site turns its scheduler off itself (SchedulerOptions in its code or configuration): --scheduler leaves the site's own setting.");
+        }
+        return new CommandResult<AgentStatus>(started, Warnings: warnings.Count > 0 ? warnings : null, Source: WriteExecutor.AgentSource);
+    }
+
+    /// <summary><c>serve --foreground</c>: runs the site attached until it stops (Ctrl+C).</summary>
+    private static async Task<CommandResult<ServeForegroundOutput>> RunForegroundAsync(Launch launch, CancellationToken cancellationToken)
+    {
+        var (store, request, startLock, warnings, project, types, _) = launch;
         foreach (var warning in warnings)
         {
             Console.Error.WriteLine($"warning: {warning}");
@@ -323,7 +348,7 @@ internal static class ServeCommand
             },
             cancellationToken);
         PortClaims.ForUser.ReleaseAll();
-        return new CommandResult(new { stopped = true });
+        return new CommandResult<ServeForegroundOutput>(ServeStopOutput.Ended);
     }
 
     /// <summary>
@@ -352,7 +377,9 @@ internal static class ServeCommand
     }
 
     /// <summary>Waits for a site another <c>serve</c> is starting, and reports it like one that was already running.</summary>
-    private static async Task<CommandResult> WaitForOtherStartAsync(StateStore store, Core.Safety.VerifiedConnectionString connection, AgentStatus starting, TimeSpan timeout, CancellationToken cancellationToken)
+    private static async Task<CommandResult<T>> WaitForOtherStartAsync<T>(StateStore store, Core.Safety.VerifiedConnectionString connection, AgentStatus starting, TimeSpan timeout,
+        Func<AgentStatus, T> running, CancellationToken cancellationToken)
+        where T : notnull
     {
         var waited = System.Diagnostics.Stopwatch.StartNew();
         var status = starting;
@@ -363,7 +390,7 @@ internal static class ServeCommand
         }
         return status.State switch
         {
-            AgentState.Running => new CommandResult(status,
+            AgentState.Running => new CommandResult<T>(running(status),
                 Warnings: ["Another `opticli serve` was starting the site; this one waited for it and started nothing.", .. DriftWarning(store, started: false) is { } drifted ? [drifted] : Array.Empty<string>()],
                 Source: WriteExecutor.AgentSource),
             AgentState.Stopped or AgentState.Stale => throw new UnreachableException(
@@ -373,7 +400,7 @@ internal static class ServeCommand
         };
     }
 
-    private static async Task<CommandResult> StopAsync(CliContext context)
+    private static async Task<CommandResult<ServeStopOutput>> StopAsync(CliContext context)
     {
         var store = context.StateStore;
         StopResult? stopped;
@@ -384,12 +411,12 @@ internal static class ServeCommand
         catch (CorruptStateException ex)
         {
             store.Delete();
-            return new CommandResult(
-                new { stopped = false, message = "Removed the corrupt state file; nothing is known to run for this project." },
+            return new CommandResult<ServeStopOutput>(
+                ServeStopOutput.Nothing("Removed the corrupt state file; nothing is known to run for this project."),
                 Warnings: [$"{ex.Message} If a site opticli started earlier still runs, stop it yourself."],
                 Source: WriteExecutor.AgentSource);
         }
-        return new CommandResult(stopped ?? (object)new { stopped = false, message = "Nothing was running for this project." }, Source: WriteExecutor.AgentSource);
+        return new CommandResult<ServeStopOutput>(stopped is null ? ServeStopOutput.Nothing("Nothing was running for this project.") : ServeStopOutput.From(stopped), Source: WriteExecutor.AgentSource);
     }
 
     /// <summary>
@@ -531,7 +558,7 @@ internal static class ServeCommand
         return status;
     }
 
-    private static CommandResult Logs(CliContext context, int lines)
+    private static CommandResult<ServeLogs> Logs(CliContext context, int lines)
     {
         if (lines <= 0)
         {
@@ -544,6 +571,12 @@ internal static class ServeCommand
         }
         var tail = LogTail.Read(store.LogPath, lines);
         var previous = Enumerable.Range(1, StateStore.LogsKept - 1).Select(store.PreviousLogPath).Where(File.Exists).ToList();
-        return new CommandResult(new { log = store.LogPath, lines = tail, previous = previous.Count > 0 ? previous : null }, Text: string.Concat(tail.Select(l => l + Environment.NewLine)));
+        return new CommandResult<ServeLogs>(new ServeLogs(store.LogPath, tail, previous.Count > 0 ? previous : null), Text: string.Concat(tail.Select(l => l + Environment.NewLine)));
     }
 }
+
+/// <summary><c>serve --logs</c>.</summary>
+/// <param name="Log">The latest run's log file.</param>
+/// <param name="Lines">Its last lines (<c>--tail</c>).</param>
+/// <param name="Previous">The log files of earlier runs, newest first; left out when there are none.</param>
+internal sealed record ServeLogs(string Log, IReadOnlyList<string> Lines, IReadOnlyList<string>? Previous);
