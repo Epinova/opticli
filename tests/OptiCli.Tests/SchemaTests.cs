@@ -287,6 +287,19 @@ public class SchemaTests
         Assert.Equal(JsonOutput.Serialize(usage), direct);
     }
 
+    [Fact]
+    public void Serve_stop_records_write_what_the_anonymous_objects_did()
+    {
+        var stopped = new Core.Serve.StopResult(Core.Serve.ServeMode.Background, 123, 5000, Stopped: true, Graceful: false);
+
+        Assert.Equal(JsonOutput.Serialize(stopped), JsonOutput.Serialize(Core.Serve.ServeStopOutput.From(stopped)));
+        Assert.Equal(JsonOutput.Serialize(new { stopped = true }), JsonOutput.Serialize(Core.Serve.ServeStopOutput.Ended));
+        Assert.Equal(JsonOutput.Serialize(new { stopped = false, message = "Nothing was running for this project." }),
+            JsonOutput.Serialize(Core.Serve.ServeStopOutput.Nothing("Nothing was running for this project.")));
+        Assert.Equal(JsonOutput.Serialize(new { log = "a.log", lines = new[] { "x" }, previous = (List<string>?)null }),
+            JsonOutput.Serialize(new ServeLogs("a.log", ["x"], null)));
+    }
+
     private static bool IsDynamic(JsonNode? schema) => schema is JsonObject node &&
         (node["x-dynamic"] is not null || IsDynamic(node["items"]) || IsDynamic(node["additionalProperties"]) || (node["anyOf"]?.AsArray().Any(IsDynamic) ?? false));
 
