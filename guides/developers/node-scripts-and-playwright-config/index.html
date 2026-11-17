@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Read the site from Node.js scripts and playwright.config · opticli guides</title>
+<meta name="description" content="Call opticli&#x27;s commands as typed methods from a Node.js script, and build Playwright projects from the site&#x27;s own data, such as one project per enabled language.">
+<meta property="og:title" content="Read the site from Node.js scripts and playwright.config · opticli guides">
+<meta property="og:description" content="Call opticli&#x27;s commands as typed methods from a Node.js script, and build Playwright projects from the site&#x27;s own data, such as one project per enabled language.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://epinova.github.io/opticli/guides/developers/node-scripts-and-playwright-config/">
+<meta name="twitter:card" content="summary">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="../../../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../../style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chev" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 20 20"><path d="M8 4.5H4.5v11h11V12M11 4.5h4.5V9M15.2 4.8L9 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href="../../../">opticli<span>.</span></a>
+    <nav aria-label="Pages">
+      <a class="keep" href="../../">All guides</a><span class="sep" aria-hidden="true"></span><a class="page-link" href="../../../editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep page-link" href="../../../">For developers <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<div class="wrap guide">
+  <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#developers">For developers</a></p>
+  <h1>Read the site from Node.js scripts and playwright.config</h1>
+  <p class="lead">Call opticli&#x27;s commands as typed methods from a Node.js script, and build Playwright projects from the site&#x27;s own data, such as one project per enabled language.</p>
+  <p class="guide-meta">Written for opticli 0.34.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/developers/node-scripts-and-playwright-config.md">Edit on GitHub</a></p>
+  <div class="guide-body">
+    <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#steps">Steps</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
+    <article class="prose">
+<p>A test suite or a build script often needs to know something about the site before it starts: which languages are
+enabled, which pages use a block, which pages of a type exist. The npm package <code>@epinova/opticli</code> has a method for
+each opticli command a script needs, typed by what the command prints, and a blocking client for the one place that
+can't wait for an answer: <code>playwright.config</code>. By the end of this guide you have a script that reads the site, a
+Playwright config with a project per enabled language, and the escape hatches for what no command answers.</p>
+<h2 id="before-you-start">Before you start</h2>
+<ul>
+<li>opticli at the npm package's version or newer (<code>opticli --version</code>), and the package installed: <code>npm install -D @epinova/opticli</code>. <a href="../../developers/playwright-seed-content/">Seed CMS content for Playwright tests</a> shows how to pin opticli
+with a tool manifest.</li>
+<li>The site's repository, with a local database opticli finds (<code>opticli doctor</code>). Reads need no running site; writes
+need <code>opticli serve</code>.</li>
+<li>Node.js 18 or newer, and TypeScript for the types (plain JavaScript works too). The examples use the Alloy sample
+site's types.</li>
+</ul>
+<h2 id="steps">Steps</h2>
+<h3 id="1-call-a-command">1. Call a command</h3>
+<p>Each command is a method named after it in camelCase. Its arguments are parameters in the CLI's order, and its flags
+an options object named after them:</p>
+<div class="snippet lang-ts"><div class="snippet-bar"><span>TypeScript</span></div><pre><code id="code-1"><span class="t-c1">// scripts/report.ts</span>
+<span class="t-k">import</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">OptiCli</span><span class="t-w"> </span><span class="t-p">}</span><span class="t-w"> </span><span class="t-kr">from</span><span class="t-w"> </span><span class="t-s1">&#39;@epinova/opticli&#39;</span><span class="t-p">;</span>
+
+<span class="t-kd">const</span><span class="t-w"> </span><span class="t-nx">cli</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-ow">new</span><span class="t-w"> </span><span class="t-nx">OptiCli</span><span class="t-p">({</span><span class="t-w"> </span><span class="t-nx">project</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;../src/Alloy&#39;</span><span class="t-w"> </span><span class="t-p">});</span>
+
+<span class="t-kd">const</span><span class="t-w"> </span><span class="t-nx">languages</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-nx">cli</span><span class="t-p">.</span><span class="t-nx">languages</span><span class="t-p">();</span><span class="t-w"> </span><span class="t-c1">// LanguageInfo[]</span>
+<span class="t-nx">console</span><span class="t-p">.</span><span class="t-nx">log</span><span class="t-p">(</span><span class="t-nx">languages</span><span class="t-p">.</span><span class="t-nx">filter</span><span class="t-p">((</span><span class="t-nx">l</span><span class="t-p">)</span><span class="t-w"> </span><span class="t-p">=&gt;</span><span class="t-w"> </span><span class="t-nx">l</span><span class="t-p">.</span><span class="t-nx">enabled</span><span class="t-p">).</span><span class="t-nx">map</span><span class="t-p">((</span><span class="t-nx">l</span><span class="t-p">)</span><span class="t-w"> </span><span class="t-p">=&gt;</span><span class="t-w"> </span><span class="t-nx">l</span><span class="t-p">.</span><span class="t-nx">code</span><span class="t-p">));</span>
+
+<span class="t-kd">const</span><span class="t-w"> </span><span class="t-nx">articles</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-nx">cli</span><span class="t-p">.</span><span class="t-nx">find</span><span class="t-p">({</span><span class="t-w"> </span><span class="t-kr">type</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;ArticlePage&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">lang</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;en&#39;</span><span class="t-w"> </span><span class="t-p">});</span><span class="t-w"> </span><span class="t-c1">// ContentIdentity[]</span>
+<span class="t-k">for</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-kd">const</span><span class="t-w"> </span><span class="t-nx">usage</span><span class="t-w"> </span><span class="t-k">of</span><span class="t-w"> </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-nx">cli</span><span class="t-p">.</span><span class="t-nx">whereUsed</span><span class="t-p">(</span><span class="t-s1">&#39;/en/about-us/&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">pages</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-kt">true</span><span class="t-w"> </span><span class="t-p">}))</span><span class="t-w"> </span><span class="t-p">{</span>
+<span class="t-w">  </span><span class="t-nx">console</span><span class="t-p">.</span><span class="t-nx">log</span><span class="t-p">(</span><span class="t-sb">`</span><span class="t-si">${</span><span class="t-nx">usage</span><span class="t-p">.</span><span class="t-nx">name</span><span class="t-si">}</span><span class="t-sb"> (</span><span class="t-si">${</span><span class="t-nx">usage</span><span class="t-p">.</span><span class="t-nx">ref</span><span class="t-si">}</span><span class="t-sb">) shows it in </span><span class="t-si">${</span><span class="t-nx">usage</span><span class="t-p">.</span><span class="t-nx">property</span><span class="t-si">}</span><span class="t-sb">`</span><span class="t-p">);</span>
+<span class="t-p">}</span>
+<span class="t-nx">console</span><span class="t-p">.</span><span class="t-nx">log</span><span class="t-p">(</span><span class="t-sb">`</span><span class="t-si">${</span><span class="t-nx">articles</span><span class="t-p">.</span><span class="t-nx">length</span><span class="t-si">}</span><span class="t-sb"> articles`</span><span class="t-p">);</span></code></pre></div>
+<p><code>opticli &lt;command&gt; --help</code> and your editor's hover show the same help for each method and option. Where an option
+changes what the command prints, the return type follows it: <code>cli.find({ type: 'ArticlePage', status: 'draft' })</code>
+gives <code>DraftItem[]</code>, <code>cli.serve({ status: true })</code> gives <code>AgentStatus</code>. An option the command doesn't have throws a
+<code>TypeError</code> before opticli runs.</p>
+<h3 id="2-read-every-page-of-a-list">2. Read every page of a list</h3>
+<p>A command that lists gives one page at a time. Its <code>...All</code> method follows the pages and yields every item:</p>
+<div class="snippet lang-ts"><div class="snippet-bar"><span>TypeScript</span></div><pre><code id="code-2"><span class="t-kd">let</span><span class="t-w"> </span><span class="t-nx">count</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-mf">0</span><span class="t-p">;</span>
+<span class="t-k">for</span><span class="t-w"> </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-kd">const</span><span class="t-w"> </span><span class="t-nx">article</span><span class="t-w"> </span><span class="t-k">of</span><span class="t-w"> </span><span class="t-nx">cli</span><span class="t-p">.</span><span class="t-nx">findAll</span><span class="t-p">({</span><span class="t-w"> </span><span class="t-kr">type</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;ArticlePage&#39;</span><span class="t-w"> </span><span class="t-p">}))</span><span class="t-w"> </span><span class="t-p">{</span>
+<span class="t-w">  </span><span class="t-k">if</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-nx">article</span><span class="t-p">.</span><span class="t-nx">status</span><span class="t-w"> </span><span class="t-o">===</span><span class="t-w"> </span><span class="t-s1">&#39;published&#39;</span><span class="t-p">)</span><span class="t-w"> </span><span class="t-nx">count</span><span class="t-o">++</span><span class="t-p">;</span>
+<span class="t-p">}</span>
+<span class="t-nx">console</span><span class="t-p">.</span><span class="t-nx">log</span><span class="t-p">(</span><span class="t-sb">`</span><span class="t-si">${</span><span class="t-nx">count</span><span class="t-si">}</span><span class="t-sb"> published articles`</span><span class="t-p">);</span></code></pre></div>
+<h3 id="3-build-playwright-projects-from-the-site">3. Build Playwright projects from the site</h3>
+<p><code>playwright.config</code> can't await, so use <code>OptiCliSync</code>: the same methods, each blocking until opticli answers. A
+project per language the site has enabled:</p>
+<div class="snippet lang-ts"><div class="snippet-bar"><span>TypeScript</span></div><pre><code id="code-3"><span class="t-c1">// playwright.config.ts</span>
+<span class="t-k">import</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">defineConfig</span><span class="t-w"> </span><span class="t-p">}</span><span class="t-w"> </span><span class="t-kr">from</span><span class="t-w"> </span><span class="t-s1">&#39;@playwright/test&#39;</span><span class="t-p">;</span>
+<span class="t-k">import</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">OptiCliSync</span><span class="t-w"> </span><span class="t-p">}</span><span class="t-w"> </span><span class="t-kr">from</span><span class="t-w"> </span><span class="t-s1">&#39;@epinova/opticli&#39;</span><span class="t-p">;</span>
+
+<span class="t-kd">const</span><span class="t-w"> </span><span class="t-nx">languages</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-ow">new</span><span class="t-w"> </span><span class="t-nx">OptiCliSync</span><span class="t-p">().</span><span class="t-nx">languages</span><span class="t-p">().</span><span class="t-nx">filter</span><span class="t-p">((</span><span class="t-nx">language</span><span class="t-p">)</span><span class="t-w"> </span><span class="t-p">=&gt;</span><span class="t-w"> </span><span class="t-nx">language</span><span class="t-p">.</span><span class="t-nx">enabled</span><span class="t-p">);</span>
+
+<span class="t-k">export</span><span class="t-w"> </span><span class="t-k">default</span><span class="t-w"> </span><span class="t-nx">defineConfig</span><span class="t-p">({</span>
+<span class="t-w">  </span><span class="t-nx">testDir</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;./e2e&#39;</span><span class="t-p">,</span>
+<span class="t-w">  </span><span class="t-nx">projects</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-kt">languages.map</span><span class="t-p">((</span><span class="t-nx">language</span><span class="t-p">)</span><span class="t-w"> </span><span class="t-p">=&gt;</span><span class="t-w"> </span><span class="t-p">({</span><span class="t-w"> </span><span class="t-nx">name</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-kt">language.code</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">use</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">locale</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-kt">language.code</span><span class="t-w"> </span><span class="t-p">}</span><span class="t-w"> </span><span class="t-p">})),</span>
+<span class="t-p">});</span></code></pre></div>
+<p>A test reads its project's language from <code>testInfo.project.name</code> (or <code>locale</code>), and <code>npx playwright test --list</code>
+shows a project per language. Playwright loads the config in its main process and again in every worker, so the
+call runs once per process, about a second each. Everywhere else, use the async <code>OptiCli</code>.</p>
+<h3 id="4-ask-the-database-when-no-command-answers">4. Ask the database when no command answers</h3>
+<p><code>sql&lt;Row&gt;()</code> runs a read-only query (opticli refuses anything that writes) and types the rows as you say they are. The
+columns are as SQL names them:</p>
+<div class="snippet lang-ts"><div class="snippet-bar"><span>TypeScript</span></div><pre><code id="code-4"><span class="t-kd">const</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">rows</span><span class="t-w"> </span><span class="t-p">}</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-nx">cli</span><span class="t-p">.</span><span class="t-nx">sql</span><span class="t-o">&lt;</span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">LanguageID</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-kt">string</span><span class="t-p">;</span><span class="t-w"> </span><span class="t-nx">Name</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-kt">string</span><span class="t-w"> </span><span class="t-o">|</span><span class="t-w"> </span><span class="t-kc">null</span><span class="t-w"> </span><span class="t-p">}</span><span class="t-o">&gt;</span><span class="t-p">(</span>
+<span class="t-w">  </span><span class="t-s1">&#39;SELECT LanguageID, Name FROM tblLanguageBranch WHERE Enabled = 1&#39;</span><span class="t-p">,</span>
+<span class="t-p">);</span></code></pre></div>
+<p>opticli can't check your row type, and the CMS's tables change between versions, so look for a command first. A
+command that isn't a method (<code>drift</code>, <code>doctor</code>, ...) runs with <code>run(['drift'])</code> (<code>runSync</code> on <code>OptiCliSync</code>), which
+returns the JSON envelope.</p>
+<h3 id="5-handle-errors">5. Handle errors</h3>
+<p>A command that fails throws <code>OptiCliError</code>, with opticli's <code>code</code>, <code>exitCode</code>, <code>hint</code> and <code>details</code>:</p>
+<div class="snippet lang-ts"><div class="snippet-bar"><span>TypeScript</span></div><pre><code id="code-5"><span class="t-k">import</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nx">OptiCliError</span><span class="t-w"> </span><span class="t-p">}</span><span class="t-w"> </span><span class="t-kr">from</span><span class="t-w"> </span><span class="t-s1">&#39;@epinova/opticli&#39;</span><span class="t-p">;</span>
+
+<span class="t-k">try</span><span class="t-w"> </span><span class="t-p">{</span>
+<span class="t-w">  </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-nx">cli</span><span class="t-p">.</span><span class="t-nx">get</span><span class="t-p">(</span><span class="t-s1">&#39;/en/no-such-page/&#39;</span><span class="t-p">);</span>
+<span class="t-p">}</span><span class="t-w"> </span><span class="t-k">catch</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-nx">e</span><span class="t-p">)</span><span class="t-w"> </span><span class="t-p">{</span>
+<span class="t-w">  </span><span class="t-k">if</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-nx">e</span><span class="t-w"> </span><span class="t-ow">instanceof</span><span class="t-w"> </span><span class="t-nx">OptiCliError</span><span class="t-w"> </span><span class="t-o">&amp;&amp;</span><span class="t-w"> </span><span class="t-nx">e</span><span class="t-p">.</span><span class="t-nx">code</span><span class="t-w"> </span><span class="t-o">===</span><span class="t-w"> </span><span class="t-s1">&#39;not_found&#39;</span><span class="t-p">)</span><span class="t-w"> </span><span class="t-nx">console</span><span class="t-p">.</span><span class="t-nx">log</span><span class="t-p">(</span><span class="t-nx">e</span><span class="t-p">.</span><span class="t-nx">hint</span><span class="t-p">);</span>
+<span class="t-w">  </span><span class="t-k">else</span><span class="t-w"> </span><span class="t-k">throw</span><span class="t-w"> </span><span class="t-nx">e</span><span class="t-p">;</span>
+<span class="t-p">}</span></code></pre></div>
+<p>A command that doesn't answer within two minutes is stopped and throws <code>code</code> <code>timeout</code>. Pass a longer <code>timeoutMs</code>
+in the run options, after the options object: <code>cli.search('Alloy', {}, { timeoutMs: 300_000 })</code>.</p>
+<h2 id="if-something-goes-wrong">If something goes wrong</h2>
+<table>
+<thead>
+<tr>
+<th>What you see</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Couldn't run opticli: install opticli ...</code></td>
+<td>opticli isn't on PATH or in a tool manifest above the working directory. Install it, or set <code>OPTICLI</code> to it.</td>
+</tr>
+<tr>
+<td><code>needs_selection</code> (exit 6)</td>
+<td>opticli doesn't know the development database yet. Run <code>opticli db use &lt;id&gt;</code> once at your terminal.</td>
+</tr>
+<tr>
+<td><code>TypeError: opticli find has no option '...'</code></td>
+<td>The option isn't one of the command's: check <code>opticli find --help</code>.</td>
+</tr>
+<tr>
+<td><code>playwright.config</code> takes seconds to load</td>
+<td>Each Playwright process runs the blocking call once. Read the data in the global setup instead if it doesn't decide the projects.</td>
+</tr>
+<tr>
+<td>A method you need isn't there</td>
+<td>Commands for the terminal or for setting up aren't generated. Use <code>run([...])</code>.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="related">Related</h2>
+<ul>
+<li><a href="https://github.com/Epinova/opticli/blob/main/npm/README.md#nodejs">The npm package's README</a></li>
+<li><a href="../../developers/playwright-seed-content/">Seed CMS content for Playwright tests</a></li>
+<li><a href="../../developers/find-content-and-code/">Find content and the code behind it</a></li>
+<li><a href="https://github.com/Epinova/opticli#tests-with-playwright-and-nodejs">Tests with Playwright and Node.js</a></li>
+</ul>
+    </article>
+  </div>
+  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for developers</h2><div class="file"><ol class="guide-list"><li><a href="../../developers/restored-production-database/"><b>Work on a restored production database</b><span>Point opticli at a restored copy of production, make its sites answer on localhost, get a local login and keep its scheduled jobs from running.</span></a></li><li><a href="../../developers/find-content-and-code/"><b>Find content and the code behind it</b><span>Go from a URL or a name to the content item, its C# class and Razor view, and every page that uses it.</span></a></li><li><a href="../../developers/playwright-seed-content/"><b>Seed CMS content for Playwright tests</b><span>Use the @epinova/opticli npm package to start the site, seed the content your Playwright tests read, and give each test pages of its own that are cleaned up afterwards.</span></a></li><li><a href="../../developers/pull-from-staging/"><b>Pull content from staging into your local database</b><span>Register a staging or test database by name, bring its content into your local database with sync pull, and keep it current without another restore.</span></a></li><li><a href="../../developers/build-a-test-database/"><b>Build a test database from scratch</b><span>Start from an empty database, and let one seed plan add the languages, the content and the sites, so end-to-end tests run on a database that code builds the same way every time.</span></a></li><li><a href="../../developers/hand-changes-to-editors-as-a-project/"><b>Hand a batch of changes to editors as a project</b><span>Put the drafts a plan or your coding agent makes in a CMS project, so an editor reviews them together in the CMS and they go live in one go, when someone decides they should.</span></a></li></ol></div></section>
+</div>
+</main>
+
+<footer class="wrap">
+  <p>opticli and OptiCli.Mcp are open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. They are independent projects, not affiliated with or endorsed by Optimizely.</p>
+</footer>
+<script>
+for (const button of document.querySelectorAll('[data-copy]')) {
+  button.addEventListener('click', async () => {
+    const text = document.getElementById(button.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(text); } catch { getSelection().selectAllChildren(document.getElementById(button.dataset.copy)); return; }
+    button.textContent = 'Copied';
+    button.dataset.done = '';
+    setTimeout(() => { button.textContent = 'Copy'; delete button.dataset.done; }, 1600);
+  });
+}
+</script>
+</body>
+</html>

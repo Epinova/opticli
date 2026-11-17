@@ -354,6 +354,22 @@ await expect(page.getByText('Hi')).toBeVisible();
   </div>
   <article class="file">
     <ol class="releases">
+      <li><div class="v"><b>0.34.0</b><span>17 November 2026</span></div>
+        <ul>
+          <li><b>A typed method for every command:</b> the npm package's client is generated from opticli's own
+            description of its commands, with the CLI's shape and each command's JSON as the return type:
+            <code>cli.languages()</code>, <code>cli.projects('Spring campaign')</code>,
+            <code>cli.whereUsed('123', { pages: true })</code>. <code>OptiCliSync</code> has the same methods, blocking,
+            for a <code>playwright.config</code> that makes a project per enabled language. The API changes where 0.33's
+            no longer fit; see the <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>. See the guide
+            <a href="guides/developers/node-scripts-and-playwright-config/">Read the site from Node.js scripts and playwright.config</a>.</li>
+          <li><b>Projects in tests:</b> <code>cms.page()</code> and <code>cms.set()</code> take <code>inProject</code>
+            and <code>ready</code>, and a project a test makes is deleted after the test.</li>
+          <li><b>On the command line:</b> a value that starts with <code>@</code> is plain text
+            (<code>opticli search @alloy</code>), and plans that replace a file they upload work.</li>
+          <li><b>For editors' assistants:</b> <code>get_content_type</code> gives the block types an editor descriptor
+            allows, and saves follow them, as the edit UI does.</li>
+        </ul></li>
       <li><div class="v"><b>0.33.0</b><span>17 November 2026</span></div>
         <ul>
           <li><b>Changes collected in a project:</b> drafts can go into the CMS's projects, so editors review many related
