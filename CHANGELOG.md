@@ -49,13 +49,12 @@ below.
 **Breaking changes.** Code that only calls the 0.33 methods and reads their usual fields mostly compiles unchanged;
 the [npm README](https://github.com/Epinova/opticli/blob/main/npm/README.md#upgrading-from-033) shows what to change.
 
-- Result types renamed to the generated names, with no aliases: `ContentItem` → `ContentDocument` (`language`,
-  `parent`, `name`, `saved` and `changedBy` are optional, as opticli leaves them out for a folder, media or the root;
-  `properties` is `Record<string, PropertyOut>`), `WriteResult` → `WriteOutput` (`set` returns `SavedContent`, a
-  `create` that isn't a dry run `CreatedContent`, with `ref`, `version`, `guid`, `type` and `name` always there),
-  `ChangedProperty` → `PropertyChange`, `DeleteResult` → `MoveOutput`, `UrlResult` → `ContentUrls`, `ApplyResult` →
-  `AppliedPlan<P>`, `ServeResult` → `AgentStatus` (whose `state` has no `starting`, and `mode` has `external`),
-  `ServeStopOutput` and `ServeLogs`.
+- Result types renamed to the generated names, with no aliases: `ContentItem` → `ContentDocument` (`language`, `parent`,
+  `name`, `saved` and `changedBy` are optional, as opticli leaves them out for a folder, media or the root),
+  `WriteResult` → `WriteOutput` (`set` returns `SavedContent`, a `create` that isn't a dry run `CreatedContent`, with
+  `ref`, `version`, `guid`, `type` and `name` always there), `ChangedProperty` → `PropertyChange`, `DeleteResult` →
+  `MoveOutput`, `UrlResult` → `ContentUrls`, `ApplyResult` → `AppliedPlan<P>`, `ServeResult` → `AgentStatus` (whose
+  `state` has no `starting`, and `mode` has `external`), `ServeStopOutput` and `ServeLogs`.
 - Same name, the generated shape: `PlanStepResult` (`result` is `unknown`; `apply`'s steps are `AppliedStep`, whose
   `result` is typed by `op`), `SiteChange` (`actions` is `string[]`), `SiteInfo`, `PropertyOut` (`value` is
   `JsonValue`).
