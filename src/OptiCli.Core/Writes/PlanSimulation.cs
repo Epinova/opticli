@@ -98,12 +98,18 @@ public static class PlanSimulation
     /// <param name="existing">Plan ids whose content already exists (<c>--update-existing</c>): real refs, not stand-ins.</param>
     /// <param name="updateExisting">Leave the GUID out, so the agent doesn't match it against content under the stand-in.</param>
     /// <returns>
-    /// Null for steps that can't be simulated this way (area, translate, access, move, delete), and for a set or publish of
-    /// another language branch than the one the content is created in (<see cref="MasterFirst"/> checks their order).
+    /// Null for steps that can't be simulated this way (area, translate, access, move, delete, an upload that replaces the
+    /// file of planned media), and for a set or publish of another language branch than the one the content is created in
+    /// (<see cref="MasterFirst"/> checks their order).
     /// </returns>
     public static Simulation? For(PlanStep step, IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing, bool updateExisting)
     {
         var op = step.Operation;
+        if (op is UploadOperation { Replace: not null })
+        {
+            // It makes no content: the plan checks the new file when it runs, once the media it replaces exists.
+            return null;
+        }
         var (target, publish) = op switch
         {
             CreateOperation or BlockCreateOperation or UploadOperation => (op.Id, IsPublishing(op)),

@@ -36,6 +36,19 @@ public class ReplaceMediaTests
         Assert.Equal(["doc"], WritePlan.FixedGuids(plan.Steps).Keys);
     }
 
+    [Fact]
+    public void Replacing_planned_media_is_not_simulated_as_new_media()
+    {
+        var plan = WritePlan.Parse("""
+            {"guidNamespace": "3f6d2a9e-6c1b-4f7e-9a51-0d2b8c4e7f10", "operations": [
+              {"op": "upload", "id": "doc", "file": "a.pdf", "parent": "45"},
+              {"op": "upload", "file": "b.pdf", "replace": "$doc"}]}
+            """);
+
+        Assert.NotNull(PlanSimulation.For(plan.Steps[0], plan.Steps, new Dictionary<string, int>(), updateExisting: false));
+        Assert.Null(PlanSimulation.For(plan.Steps[1], plan.Steps, new Dictionary<string, int>(), updateExisting: false));
+    }
+
     [Theory]
     [InlineData("\"id\": \"doc2\"")]
     [InlineData("\"guid\": \"9d1c0b6e-2f4a-4c55-8a37-1e9f0d6b2a44\"")]

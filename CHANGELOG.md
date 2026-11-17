@@ -15,9 +15,10 @@ below.
   contents in its place, or failed with "Response file not found": `opticli search @alloy`, `get @5`, `create ...
   --name @Home` and `apply @plan.json` didn't do what they said. Now they search for `@alloy`, name the page `@Home`,
   and so on. `Prop=@file` values (a file's text as a property value) and `@@` (a literal `@`) work as before.
-- **Fixed: a plan with a `guidNamespace` couldn't replace a file.** An `upload` step with `replace` was refused for
-  having no `id`, while `replace` takes no `id` or `guid`. Such a step keeps the media's own GUID now, as without a
-  namespace. This dates from 0.6.0.
+- **Fixed: plans that replace a file.** In a plan with a `guidNamespace`, an `upload` step with `replace` was refused
+  for having no `id`, while `replace` takes no `id` or `guid`; it keeps the media's own GUID now, as without a
+  namespace. And `"replace": "$id"` of media an earlier step of the same plan uploads failed validation (`$ids only
+  work inside opticli apply`), in a dry run and a real run alike; it is now checked when the plan runs (`deferred`).
 
 ### npm package
 
