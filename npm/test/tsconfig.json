@@ -8,5 +8,5 @@
     "rootDir": "..",
     "allowImportingTsExtensions": true
   },
-  "include": ["*.ts"]
+  "include": ["*.ts", "playwright-languages/*.ts"]
 }
