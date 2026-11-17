@@ -67,11 +67,12 @@ export const argumentNames = {
 
 /**
  * How long a call may take by default (milliseconds), as an expression over `options`, for commands that wait longer than
- * the runner's default; `call.timeoutMs` overrides it.
+ * the runner's default (`undefined` keeps that default); `call.timeoutMs` overrides it.
  */
 export const timeouts = {
-  // A start may build the site first (minutes), then waits --timeout seconds for it to answer.
-  serve: '((options?.timeout ?? 180) + 600) * 1000',
+  // A start may build the site first (minutes), then waits --timeout seconds for it to answer; status, logs and stop
+  // start nothing, so they keep the runner's default (undefined).
+  serve: 'options?.status || options?.logs || options?.stop ? undefined : ((options?.timeout ?? 180) + 600) * 1000',
   apply: '600_000',
   // Waits as long as the job runs, unless --timeout or --no-wait.
   'jobs run': '((options?.timeout ?? 3540) + 60) * 1000',

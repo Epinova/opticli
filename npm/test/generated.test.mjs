@@ -107,6 +107,41 @@ test('left out, an optional argument gives its place to the options object', asy
   assert.deepEqual(calls[4].options, { cwd: '/site' });
 });
 
+test('undefined followed by more values is the optional argument left out, as the types say', async () => {
+  const list = () => ({ data: [], meta: {} });
+  const { calls, async: cli, sync } = recorder([list(), list(), list(), list(), list(), list(), {}, list()]);
+  const maybeRef = undefined;
+
+  // A possibly-undefined argument in its place: left out when undefined, given otherwise.
+  await cli.whereUsed(maybeRef, { pages: true });
+  await cli.whereUsed('123', { pages: true });
+  // Run options with nothing else: undefined for the argument and for the options object.
+  await cli.whereUsed(undefined, undefined, { timeoutMs: 5000 });
+  sync.projects(undefined, undefined, { cwd: '/site' });
+  // The options object first, then run options.
+  await cli.jobsLog({ failed: true }, { timeoutMs: 7000 });
+  for await (const _ of cli.whereUsedAll(maybeRef, { type: 'TeaserBlock' }, { timeoutMs: 3000 })) break;
+  sync.projectsReady('12', undefined, { all: true });
+  await cli.area('1', 'MainArea', 'add', undefined, { dryRun: true });
+
+  assert.deepEqual(calls.map((c) => c.args), [
+    ['where-used', '--pages'],
+    ['where-used', '123', '--pages'],
+    ['where-used'],
+    ['projects'],
+    ['jobs', 'log', '--failed'],
+    ['where-used', '--type', 'TeaserBlock'],
+    ['projects', 'ready', '12', '--all'],
+    ['area', '1', 'MainArea', 'add', '--dry-run'],
+  ]);
+  assert.deepEqual(calls.slice(2, 6).map((c) => c.options), [{ timeoutMs: 5000 }, { cwd: '/site' }, { timeoutMs: 7000 }, { timeoutMs: 3000 }]);
+
+  // undefined then run options: the run options are read as the options object, which the types refuse too.
+  await assert.rejects(() => cli.whereUsed(undefined, { timeoutMs: 5000 }), { name: 'TypeError', message: "opticli where-used has no option 'timeoutMs'." });
+  assert.throws(() => sync.jobsLog(undefined, { cwd: '/site' }), { name: 'TypeError', message: "opticli jobs log has no option 'cwd'." });
+  assert.equal(calls.length, 8);
+});
+
 test('arguments that are missing, of the wrong kind or too many are a TypeError before anything runs', async () => {
   const { calls, async: cli, sync } = recorder();
 
@@ -162,20 +197,27 @@ test('the hand-written commands have no generated method', () => {
   }
 });
 
-test("the run options reach run; serve and jobs run wait longer by default", async () => {
-  const { calls, async: cli } = recorder();
+test("the run options reach run; serve's start and jobs run wait longer by default", async () => {
+  const { calls, async: cli, sync } = recorder();
 
   await cli.usersAdd('editor', { passwordStdin: true }, { input: 'secret', cwd: '/site' });
   await cli.serve({ timeout: 60 });
   await cli.serve({ status: true }, { timeoutMs: 5000 });
   await cli.jobsRun('Empty trash', { timeout: 30 });
   await cli.get('1');
+  await cli.serve();
+  // Status, logs and stop start nothing: the runner's default.
+  await cli.serve({ status: true });
+  sync.serve({ logs: true, tail: 20 });
+  await cli.serve({ stop: true }, { cwd: '/site' });
 
   assert.deepEqual(calls[0], { args: ['users', 'add', 'editor', '--password-stdin'], options: { input: 'secret', cwd: '/site' } });
   assert.equal(calls[1].options.timeoutMs, (60 + 600) * 1000);
   assert.equal(calls[2].options.timeoutMs, 5000);
   assert.equal(calls[3].options.timeoutMs, 90_000);
   assert.equal(calls[4].options, undefined);
+  assert.equal(calls[5].options.timeoutMs, (180 + 600) * 1000);
+  assert.deepEqual(calls.slice(6).map((c) => c.options), [{ timeoutMs: undefined }, { timeoutMs: undefined }, { cwd: '/site', timeoutMs: undefined }]);
 });
 
 test('a list iterator follows meta.next with --cursor until there is none', async () => {

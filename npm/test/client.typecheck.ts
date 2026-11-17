@@ -38,6 +38,7 @@ import {
   type TypeUsageRow,
   type Usage,
   type VersionStatus,
+  type WhereUsedOptions,
   type WriteOutput,
 } from '../src/index.ts';
 
@@ -114,6 +115,28 @@ export async function asyncCalls(): Promise<void> {
   }
   // @ts-expect-error: the ref is an argument now, not an option
   await cli.whereUsed({ ref: '123' });
+  // undefined followed by more values is the argument left out, as at run time: run options alone need both undefineds.
+  await cli.whereUsed(undefined, undefined, { timeoutMs: 5000 });
+  await cli.whereUsed({ pages: true }, { timeoutMs: 5000 });
+  // @ts-expect-error: undefined then run options would read the run options as the options object
+  await cli.whereUsed(undefined, { timeoutMs: 5000 });
+  // @ts-expect-error: likewise for projects
+  await cli.projects(undefined, { cwd: '/site' });
+  // @ts-expect-error: likewise for an iterator
+  cli.jobsLogAll(undefined, { timeoutMs: 1000 });
+  // @ts-expect-error: and for the sync client
+  sync.whereUsed(undefined, { timeoutMs: 5000 });
+  const maybeOptions = (Math.random() > 0.5 ? { pages: true } : undefined) as WhereUsedOptions | undefined;
+  // @ts-expect-error: options that may be undefined can't come first with run options after them
+  await cli.whereUsed(maybeOptions, { timeoutMs: 5000 });
+  const eitherUsage = await cli.whereUsed(undefined, maybeOptions, { timeoutMs: 5000 });
+  expect<Equal<typeof eitherUsage, TypeUsageRow[] | PageUsageRow[] | Usage[]>>(true);
+  await cli.whereUsed(maybeOptions);
+  await cli.area('1', 'MainArea', 'add', undefined, { dryRun: true });
+  await cli.upload('a.pdf', undefined, undefined, { cwd: '/site' });
+  await cli.projectsReady('12', { all: true }, { timeoutMs: 5000 });
+  // @ts-expect-error: projectsReady's refs left out, then run options
+  await cli.projectsReady('12', undefined, { timeoutMs: 5000 });
   const log = await cli.jobsLog('Empty trash', { failed: true });
   expect<Equal<typeof log, JobLogView[]>>(true);
   await cli.jobsLog({ limit: 5 });

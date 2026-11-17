@@ -532,6 +532,11 @@ const arity = (a) => (a.array ? "'many'" : "'one'");
  * The parameter lists of one signature: the required arguments, then the optional ones given (all of them, then one
  * fewer, ... none, so the options object can take the place of those left out), each with the parameters' docs.
  * `present` and `absent` are optional arguments a mode needs given or left out.
+ *
+ * `split()` reads an `undefined` followed by more values as an optional argument left out, so where the options object
+ * takes an argument's place it can't be `undefined` with run options after it: such a form is two, `(options?)` and
+ * `(options, call?)` (`last` says which). `whereUsed(undefined, { timeoutMs })` then doesn't compile, as it throws;
+ * `whereUsed(undefined, undefined, call)` (the form with the argument) says it.
  */
 function forms(c, s) {
   const required = c.args.filter((a) => !a.optional);
@@ -544,9 +549,20 @@ function forms(c, s) {
       ...required.map((a) => `${a.key}: ${argType(a)}`),
       ...given.map((a) => `${a.key}: ${argType(a)}${s.present.includes(a) ? '' : ' | undefined'}`),
     ];
-    out.push({ params, documented: [...required, ...given] });
+    const documented = [...required, ...given];
+    if (k < optional.length && !s.required && !c.options.some((o) => o.required)) {
+      out.push({ params, documented, last: 'options' }, { params, documented, last: 'call', optionsRequired: true });
+    } else {
+      out.push({ params, documented, last: 'call' });
+    }
   }
   return out;
+}
+
+/** A signature's trailing parameters: the options object, and the run options unless the form ends at the options. */
+function trailing(s, options, optionsRequired) {
+  const optionsParam = `options${s.required || optionsRequired || s.optionsRequired ? '' : '?'}: ${options}`;
+  return s.last === 'options' ? [optionsParam] : [optionsParam, 'call?: RunOptions'];
 }
 
 /** The method (and for a list, its iterator), with an overload per mode and per way to leave out optional arguments. */
@@ -555,7 +571,7 @@ function methods(c, typeOf, sync) {
   const custom = overrides.methods[c.method];
   const typeParameters = custom ? `<${custom.typeParameters}>` : '';
   const timeout = overrides.timeouts[c.path];
-  const call = timeout ? `{ ...call, timeoutMs: call?.timeoutMs ?? ${timeout} }` : 'call';
+  const call = timeout ? `{ ...call, timeoutMs: call?.timeoutMs ?? ${/^[\w.]+$/.test(timeout) ? timeout : `(${timeout})`} }` : 'call';
   const words = `[${c.words.map((w) => literal(w)).join(', ')}]`;
   const wrap = (t) => (sync ? t : `Promise<${t}>`);
   const iterator = (t) => (sync ? `Generator<${t}, void, undefined>` : `AsyncGenerator<${t}, void, undefined>`);
@@ -578,7 +594,7 @@ function methods(c, typeOf, sync) {
   const expanded = signatures
     .flatMap((s) => forms(c, s).map((f) => ({ ...s, ...f })))
     .filter((s) => {
-      const id = [...s.params, s.options(c.optionsType), s.required].join(',');
+      const id = [...s.params, s.options(c.optionsType), s.required, s.last, s.optionsRequired].join(',');
       return !seen.has(id) && seen.add(id);
     });
   const many = expanded.length > 1 || !simple;
@@ -587,13 +603,12 @@ function methods(c, typeOf, sync) {
 
   let out = '';
   for (const s of expanded) {
-    const optionsParam = `options${s.required || optionsRequired ? '' : '?'}: ${s.options(c.optionsType)}`;
     // The sync class repeats only the first line: the async method has the whole description.
     const text = sync
       ? `${first}${s.writes && !first.includes('opticli serve') ? ' Writes: needs the site running (`opticli serve`).' : ''}\nBlocks until opticli exits; see \`OptiCliCommands.${c.method}\`.`
       : describe(c, s.writes);
     out += `\n${doc([text, ...argDocs(s.documented)].join('\n'), '  ')}`;
-    out += `  ${many ? '' : modifier}${key(c.method)}${typeParameters}(${[...s.params, optionsParam, 'call?: RunOptions'].join(', ')}): ${wrap(s.result)}${many ? ';' : ' {'}\n`;
+    out += `  ${many ? '' : modifier}${key(c.method)}${typeParameters}(${[...s.params, ...trailing(s, s.options(c.optionsType), optionsRequired)].join(', ')}): ${wrap(s.result)}${many ? ';' : ' {'}\n`;
   }
   const resultType = many ? 'any' : expanded[0].result;
   if (many) out += `  ${modifier}${key(c.method)}(${implParams.join(', ')}): ${wrap('any')} {\n${simple ? '' : splitLine}`;
@@ -603,9 +618,8 @@ function methods(c, typeOf, sync) {
     const all = `${c.method}All`;
     const cursorless = `Omit<${c.optionsType}, 'cursor'>`;
     for (const s of expanded) {
-      const optionsParam = `options${s.required || optionsRequired ? '' : '?'}: ${s.options(cursorless)}`;
       out += `\n${doc([`Every page of \`${c.method}\`, one call per page (\`limit\` is the page size): ${firstSentence(c.description)}`, ...argDocs(s.documented)].join('\n'), '  ')}`;
-      out += `  ${all}(${[...s.params, optionsParam, 'call?: RunOptions'].join(', ')}): ${iterator(s.item)}${many ? ';' : ' {'}\n`;
+      out += `  ${all}(${[...s.params, ...trailing(s, s.options(cursorless), optionsRequired)].join(', ')}): ${iterator(s.item)}${many ? ';' : ' {'}\n`;
     }
     const iteratorParams = simple ? [...required.map((a) => `${a.key}: ${argType(a)}`), `options${optionsRequired ? '' : '?'}: ${cursorless}`, 'call?: RunOptions'] : ['...values: unknown[]'];
     if (many) out += `  ${all}(${iteratorParams.join(', ')}): ${iterator('any')} {\n${simple ? '' : splitLine}`;

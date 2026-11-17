@@ -376,7 +376,7 @@ export abstract class OptiCliCommands {
    */
   serve(options?: ServeOptions, call?: RunOptions): Promise<AgentStatus | ServeLogs | ServeStopOutput>;
   async serve(options?: ServeOptions, call?: RunOptions): Promise<any> {
-    return this.#data<any>(argv(['serve'], [], options, specs.serve), { ...call, timeoutMs: call?.timeoutMs ?? ((options?.timeout ?? 180) + 600) * 1000 });
+    return this.#data<any>(argv(['serve'], [], options, specs.serve), { ...call, timeoutMs: call?.timeoutMs ?? (options?.status || options?.logs || options?.stop ? undefined : ((options?.timeout ?? 180) + 600) * 1000) });
   }
 
   /**
@@ -708,7 +708,22 @@ export abstract class OptiCliCommands {
    * (inline: true) with every inline block of it in the branches' current versions, sections and elements included.
    * Example: opticli where-used 123 --pages
    */
-  whereUsed(options?: WhereUsedOptions & { type?: undefined; pages?: false }, call?: RunOptions): Promise<Usage[]>;
+  whereUsed(options?: WhereUsedOptions & { type?: undefined; pages?: false }): Promise<Usage[]>;
+
+  /**
+   * List everything that references a content item (a block, page or media file), with each owner's last save.
+   * Covers ContentAreas, ContentReference/PageReference properties and lists, link items and collections, rich-text
+   * links and embedded blocks, including values inside local and inline blocks. Combines the CMS link index
+   * (tblContentSoftlink, all saved versions) with a scan of each branch's primary (published, else latest) values;
+   * each usage gives the owner (ref, type, name, language, status, url, saved, changedBy), the property path, the
+   * kind and which source found it, and for rich text only some visitor groups see, their visitorGroups. Owners that
+   * are blocks: add --pages to follow them up to the pages. --type lists every instance of a type with its usages.
+   * CMS 13: inside a Visual Builder composition a usage names its section and element (as `get` lists them) and the
+   * property in it; a shared block placed in a composition has kind composition. --type of a block type adds a row
+   * (inline: true) with every inline block of it in the branches' current versions, sections and elements included.
+   * Example: opticli where-used 123 --pages
+   */
+  whereUsed(options: WhereUsedOptions & { type?: undefined; pages?: false }, call?: RunOptions): Promise<Usage[]>;
 
   /**
    * List everything that references a content item (a block, page or media file), with each owner's last save.
@@ -739,7 +754,22 @@ export abstract class OptiCliCommands {
    * (inline: true) with every inline block of it in the branches' current versions, sections and elements included.
    * Example: opticli where-used 123 --pages
    */
-  whereUsed(options?: WhereUsedOptions, call?: RunOptions): Promise<TypeUsageRow[] | PageUsageRow[] | Usage[]>;
+  whereUsed(options?: WhereUsedOptions): Promise<TypeUsageRow[] | PageUsageRow[] | Usage[]>;
+
+  /**
+   * List everything that references a content item (a block, page or media file), with each owner's last save.
+   * Covers ContentAreas, ContentReference/PageReference properties and lists, link items and collections, rich-text
+   * links and embedded blocks, including values inside local and inline blocks. Combines the CMS link index
+   * (tblContentSoftlink, all saved versions) with a scan of each branch's primary (published, else latest) values;
+   * each usage gives the owner (ref, type, name, language, status, url, saved, changedBy), the property path, the
+   * kind and which source found it, and for rich text only some visitor groups see, their visitorGroups. Owners that
+   * are blocks: add --pages to follow them up to the pages. --type lists every instance of a type with its usages.
+   * CMS 13: inside a Visual Builder composition a usage names its section and element (as `get` lists them) and the
+   * property in it; a shared block placed in a composition has kind composition. --type of a block type adds a row
+   * (inline: true) with every inline block of it in the branches' current versions, sections and elements included.
+   * Example: opticli where-used 123 --pages
+   */
+  whereUsed(options: WhereUsedOptions, call?: RunOptions): Promise<TypeUsageRow[] | PageUsageRow[] | Usage[]>;
   async whereUsed(...values: unknown[]): Promise<any> {
     const [positional, options, call] = split('where-used', values, [], ['one']);
     return this.#data<any>(argv(['where-used'], positional, options, specs.whereUsed), call);
@@ -770,7 +800,10 @@ export abstract class OptiCliCommands {
   whereUsedAll(ref: string | undefined, options?: Omit<WhereUsedOptions, 'cursor'> & { type?: undefined; pages?: false }, call?: RunOptions): AsyncGenerator<Usage, void, undefined>;
 
   /** Every page of `whereUsed`, one call per page (`limit` is the page size): List everything that references a content item (a block, page or media file), with each owner's last save. */
-  whereUsedAll(options?: Omit<WhereUsedOptions, 'cursor'> & { type?: undefined; pages?: false }, call?: RunOptions): AsyncGenerator<Usage, void, undefined>;
+  whereUsedAll(options?: Omit<WhereUsedOptions, 'cursor'> & { type?: undefined; pages?: false }): AsyncGenerator<Usage, void, undefined>;
+
+  /** Every page of `whereUsed`, one call per page (`limit` is the page size): List everything that references a content item (a block, page or media file), with each owner's last save. */
+  whereUsedAll(options: Omit<WhereUsedOptions, 'cursor'> & { type?: undefined; pages?: false }, call?: RunOptions): AsyncGenerator<Usage, void, undefined>;
 
   /**
    * Every page of `whereUsed`, one call per page (`limit` is the page size): List everything that references a content item (a block, page or media file), with each owner's last save.
@@ -779,7 +812,10 @@ export abstract class OptiCliCommands {
   whereUsedAll(ref: string | undefined, options?: Omit<WhereUsedOptions, 'cursor'>, call?: RunOptions): AsyncGenerator<TypeUsageRow | PageUsageRow | Usage, void, undefined>;
 
   /** Every page of `whereUsed`, one call per page (`limit` is the page size): List everything that references a content item (a block, page or media file), with each owner's last save. */
-  whereUsedAll(options?: Omit<WhereUsedOptions, 'cursor'>, call?: RunOptions): AsyncGenerator<TypeUsageRow | PageUsageRow | Usage, void, undefined>;
+  whereUsedAll(options?: Omit<WhereUsedOptions, 'cursor'>): AsyncGenerator<TypeUsageRow | PageUsageRow | Usage, void, undefined>;
+
+  /** Every page of `whereUsed`, one call per page (`limit` is the page size): List everything that references a content item (a block, page or media file), with each owner's last save. */
+  whereUsedAll(options: Omit<WhereUsedOptions, 'cursor'>, call?: RunOptions): AsyncGenerator<TypeUsageRow | PageUsageRow | Usage, void, undefined>;
   whereUsedAll(...values: unknown[]): AsyncGenerator<any, void, undefined> {
     const [positional, options, call] = split('where-used', values, [], ['one']);
     return this.#all<any>(argv(['where-used'], positional, options, specs.whereUsed), call);
@@ -1096,7 +1132,27 @@ export abstract class OptiCliCommands {
    * @param property - The ContentArea property (see `opticli type <type>`), or a path to one inside a block: 'MainArea[0].Area' (the inline block at position 0), Hero.Area (a local block).
    * @param action - add, remove, move or set.
    */
-  area(ref: string, property: string, action: 'add' | 'move' | 'remove' | 'set', options?: AreaOptions, call?: RunOptions): Promise<WriteOutput>;
+  area(ref: string, property: string, action: 'add' | 'move' | 'remove' | 'set', options?: AreaOptions): Promise<WriteOutput>;
+
+  /**
+   * Add, remove, reorder or change ContentArea items on a new version, a draft unless --publish. Needs `opticli serve`.
+   * add takes a shared block (its ref), or --type T for a new inline block (CMS 12.20+) stored in the area itself, with
+   * its values as Prop=value (and --values). Positions are zero-based; remove and move take a position (2) or the
+   * item's content (ref:456); an inline block has no ref, so only its position names it. set <position> changes an
+   * inline block's values (Prop=value, --values) and --name, the rest of it staying as it is (as
+   * `opticli set <ref> 'MainArea[2].Heading=New'` does). Prints the new version and the area's items before/after.
+   * Read the positions in the version you change: `opticli get <ref> --version latest --fields <Prop>`. An area inside an
+   * inline block is named by its path: opticli area 123 'MainArea[0].Area' remove 1.
+   * --from published edits the published version's area instead of the latest draft's (which is left out).
+   * Example: opticli area 123 MainArea add 456 --at 0 --display wide --dry-run
+   * Also:    opticli area 123 MainArea add --type TeaserBlock Heading=Hi --at 0 --dry-run
+   *          opticli area 123 MainArea set 2 Heading=New --name Intro
+   *          opticli area 123 MainArea remove ref:456    opticli area 123 MainArea move 0 3
+   * @param ref - A ref is a content id (123), id_version (123_456), a content GUID, a URL/path (/en/about/ or https://host/en/about/), or content provider content as get prints it (63__provider).
+   * @param property - The ContentArea property (see `opticli type <type>`), or a path to one inside a block: 'MainArea[0].Area' (the inline block at position 0), Hero.Area (a local block).
+   * @param action - add, remove, move or set.
+   */
+  area(ref: string, property: string, action: 'add' | 'move' | 'remove' | 'set', options: AreaOptions, call?: RunOptions): Promise<WriteOutput>;
   async area(...values: unknown[]): Promise<any> {
     const [positional, options, call] = split('area', values, ['one', 'one', 'one'], ['many']);
     return this.#data<any>(argv(['area'], positional, options, specs.area), call);
@@ -1225,7 +1281,17 @@ export abstract class OptiCliCommands {
    * Example: opticli upload report.pdf --parent 456 --name "Annual report" --dry-run
    * @param file - The file to upload (at most 50 MB).
    */
-  upload(file: string, options?: UploadOptions, call?: RunOptions): Promise<WriteOutput>;
+  upload(file: string, options?: UploadOptions): Promise<WriteOutput>;
+
+  /**
+   * Upload a file (PDF, image, video, ...) as a new media item, as a draft unless --publish. Needs `opticli serve`.
+   * Give exactly one of --for (a page's or block's own "For this page" assets folder) or --parent (a media folder; make
+   * one with `opticli create <parent> --type SysContentFolder --name ...`), or --replace to give existing media a new file. Properties such as alt text are set as for
+   * `create`. Prints the new item's ref and version, and where the site stored the file (as `opticli blob` does).
+   * Example: opticli upload report.pdf --parent 456 --name "Annual report" --dry-run
+   * @param file - The file to upload (at most 50 MB).
+   */
+  upload(file: string, options: UploadOptions, call?: RunOptions): Promise<WriteOutput>;
   async upload(...values: unknown[]): Promise<any> {
     const [positional, options, call] = split('upload', values, ['one'], ['many']);
     return this.#data<any>(argv(['upload'], positional, options, specs.upload), call);
@@ -1336,7 +1402,21 @@ export abstract class OptiCliCommands {
    * puts every unpublished item live instead.
    * Example: opticli projects "Spring campaign"
    */
-  projects(options?: ProjectsOptions, call?: RunOptions): Promise<ProjectInfo[]>;
+  projects(options?: ProjectsOptions): Promise<ProjectInfo[]>;
+
+  /**
+   * List projects (edit mode's Projects: versions of several items reviewed and published together): id, name,
+   * status, who created it and when, publishAt when scheduled, how many items it has and how many of them are ready
+   * (marked Ready to publish: what publishing the project puts live). `opticli projects <project>` (its id or exact
+   * name) lists its items instead: the content, the version in the project, its status (checkedIn is ready,
+   * checkedOut a draft) and language.
+   * Subcommands write: create, ready, remove, publish, reactivate, delete. Saves join a project with --in-project on
+   * set, create, area, composition, block create, upload and translate (--ready marks them ready), or "project" in
+   * an apply plan. Publishing a project puts only its ready items live; the CMS 13 Projects gadget's own Publish
+   * puts every unpublished item live instead.
+   * Example: opticli projects "Spring campaign"
+   */
+  projects(options: ProjectsOptions, call?: RunOptions): Promise<ProjectInfo[]>;
 
   /**
    * List projects (edit mode's Projects: versions of several items reviewed and published together): id, name,
@@ -1364,7 +1444,10 @@ export abstract class OptiCliCommands {
   projectsAll(project: string, options?: Omit<ProjectsOptions, 'cursor'>, call?: RunOptions): AsyncGenerator<ProjectItemInfo, void, undefined>;
 
   /** Every page of `projects`, one call per page (`limit` is the page size): List projects (edit mode's Projects: versions of several items reviewed and published together): id, name, status, who created it and when, publishAt when scheduled, how many items it has and how many of them are ready (marked Ready to publish: what publishing the project puts live). */
-  projectsAll(options?: Omit<ProjectsOptions, 'cursor'>, call?: RunOptions): AsyncGenerator<ProjectInfo, void, undefined>;
+  projectsAll(options?: Omit<ProjectsOptions, 'cursor'>): AsyncGenerator<ProjectInfo, void, undefined>;
+
+  /** Every page of `projects`, one call per page (`limit` is the page size): List projects (edit mode's Projects: versions of several items reviewed and published together): id, name, status, who created it and when, publishAt when scheduled, how many items it has and how many of them are ready (marked Ready to publish: what publishing the project puts live). */
+  projectsAll(options: Omit<ProjectsOptions, 'cursor'>, call?: RunOptions): AsyncGenerator<ProjectInfo, void, undefined>;
 
   /**
    * Every page of `projects`, one call per page (`limit` is the page size): List projects (edit mode's Projects: versions of several items reviewed and published together): id, name, status, who created it and when, publishAt when scheduled, how many items it has and how many of them are ready (marked Ready to publish: what publishing the project puts live).
@@ -1409,7 +1492,18 @@ export abstract class OptiCliCommands {
    * Also:    opticli projects ready "Spring campaign" --all --request-approval --comment "Campaign texts"
    * @param project - The project: its id, or its exact name (`opticli projects` lists them).
    */
-  projectsReady(project: string, options?: ProjectsReadyOptions, call?: RunOptions): Promise<ProjectResult>;
+  projectsReady(project: string, options?: ProjectsReadyOptions): Promise<ProjectResult>;
+
+  /**
+   * Mark project items Ready to publish, as the edit UI's "Ready to Publish" does (the version is checked in, and keeps
+   * its id). Needs `opticli serve`. Give refs or --all. Every item is checked before any is changed: an item that
+   * can't be marked (in review, published, a validation error, someone else's draft without --include-draft) stops
+   * it, with each item's problem in details.project. Publishing the project puts only ready items live.
+   * Example: opticli projects ready 12 123 124
+   * Also:    opticli projects ready "Spring campaign" --all --request-approval --comment "Campaign texts"
+   * @param project - The project: its id, or its exact name (`opticli projects` lists them).
+   */
+  projectsReady(project: string, options: ProjectsReadyOptions, call?: RunOptions): Promise<ProjectResult>;
   async projectsReady(...values: unknown[]): Promise<any> {
     const [positional, options, call] = split('projects ready', values, ['one'], ['many']);
     return this.#data<any>(argv(['projects', 'ready'], positional, options, specs.projectsReady), call);
@@ -1548,7 +1642,17 @@ export abstract class OptiCliCommands {
    * Example: opticli jobs log --failed --since 1d
    * Example: opticli jobs log "Publish Delayed Content Versions" --limit 5
    */
-  jobsLog(options?: JobsLogOptions, call?: RunOptions): Promise<JobLogView[]>;
+  jobsLog(options?: JobsLogOptions): Promise<JobLogView[]>;
+
+  /**
+   * The runs of a job, latest first, from the CMS's job log (tblScheduledItemLog): when it started and finished, how
+   * long it took, status (succeeded, failed, cancelled = stopped by a user, unableToStart, aborted = the site shut
+   * down), trigger (scheduler, user, restart) and server, and the job's message in full (it can be HTML). Without a
+   * job: the latest runs of every job, e.g. what failed last night. The CMS keeps the latest 1000 runs per job.
+   * Example: opticli jobs log --failed --since 1d
+   * Example: opticli jobs log "Publish Delayed Content Versions" --limit 5
+   */
+  jobsLog(options: JobsLogOptions, call?: RunOptions): Promise<JobLogView[]>;
   async jobsLog(...values: unknown[]): Promise<any> {
     const [positional, options, call] = split('jobs log', values, [], ['one']);
     return this.#data<any>(argv(['jobs', 'log'], positional, options, specs.jobsLog), call);
@@ -1561,7 +1665,10 @@ export abstract class OptiCliCommands {
   jobsLogAll(job: string | undefined, options?: Omit<JobsLogOptions, 'cursor'>, call?: RunOptions): AsyncGenerator<JobLogView, void, undefined>;
 
   /** Every page of `jobsLog`, one call per page (`limit` is the page size): The runs of a job, latest first, from the CMS's job log (tblScheduledItemLog): when it started and finished, how long it took, status (succeeded, failed, cancelled = stopped by a user, unableToStart, aborted = the site shut down), trigger (scheduler, user, restart) and server, and the job's message in full (it can be HTML). */
-  jobsLogAll(options?: Omit<JobsLogOptions, 'cursor'>, call?: RunOptions): AsyncGenerator<JobLogView, void, undefined>;
+  jobsLogAll(options?: Omit<JobsLogOptions, 'cursor'>): AsyncGenerator<JobLogView, void, undefined>;
+
+  /** Every page of `jobsLog`, one call per page (`limit` is the page size): The runs of a job, latest first, from the CMS's job log (tblScheduledItemLog): when it started and finished, how long it took, status (succeeded, failed, cancelled = stopped by a user, unableToStart, aborted = the site shut down), trigger (scheduler, user, restart) and server, and the job's message in full (it can be HTML). */
+  jobsLogAll(options: Omit<JobsLogOptions, 'cursor'>, call?: RunOptions): AsyncGenerator<JobLogView, void, undefined>;
   jobsLogAll(...values: unknown[]): AsyncGenerator<any, void, undefined> {
     const [positional, options, call] = split('jobs log', values, [], ['one']);
     return this.#all<any>(argv(['jobs', 'log'], positional, options, specs.jobsLog), call);
@@ -1581,7 +1688,7 @@ export abstract class OptiCliCommands {
    * @param job - The job: the job's id (GUID), its name, its class (full or short name), or a part of its name that only it has.
    */
   async jobsRun(job: string, options?: JobsRunOptions, call?: RunOptions): Promise<JobRunView> {
-    return this.#data<JobRunView>(argv(['jobs', 'run'], [job], options, specs.jobsRun), { ...call, timeoutMs: call?.timeoutMs ?? ((options?.timeout ?? 3540) + 60) * 1000 });
+    return this.#data<JobRunView>(argv(['jobs', 'run'], [job], options, specs.jobsRun), { ...call, timeoutMs: call?.timeoutMs ?? (((options?.timeout ?? 3540) + 60) * 1000) });
   }
 
   /**
@@ -1714,7 +1821,7 @@ export abstract class OptiCliCommandsSync {
    */
   serve(options?: ServeOptions, call?: RunOptions): AgentStatus | ServeLogs | ServeStopOutput;
   serve(options?: ServeOptions, call?: RunOptions): any {
-    return this.#data<any>(argv(['serve'], [], options, specs.serve), { ...call, timeoutMs: call?.timeoutMs ?? ((options?.timeout ?? 180) + 600) * 1000 });
+    return this.#data<any>(argv(['serve'], [], options, specs.serve), { ...call, timeoutMs: call?.timeoutMs ?? (options?.status || options?.logs || options?.stop ? undefined : ((options?.timeout ?? 180) + 600) * 1000) });
   }
 
   /**
@@ -1922,7 +2029,13 @@ export abstract class OptiCliCommandsSync {
    * List everything that references a content item (a block, page or media file), with each owner's last save.
    * Blocks until opticli exits; see `OptiCliCommands.whereUsed`.
    */
-  whereUsed(options?: WhereUsedOptions & { type?: undefined; pages?: false }, call?: RunOptions): Usage[];
+  whereUsed(options?: WhereUsedOptions & { type?: undefined; pages?: false }): Usage[];
+
+  /**
+   * List everything that references a content item (a block, page or media file), with each owner's last save.
+   * Blocks until opticli exits; see `OptiCliCommands.whereUsed`.
+   */
+  whereUsed(options: WhereUsedOptions & { type?: undefined; pages?: false }, call?: RunOptions): Usage[];
 
   /**
    * List everything that references a content item (a block, page or media file), with each owner's last save.
@@ -1935,7 +2048,13 @@ export abstract class OptiCliCommandsSync {
    * List everything that references a content item (a block, page or media file), with each owner's last save.
    * Blocks until opticli exits; see `OptiCliCommands.whereUsed`.
    */
-  whereUsed(options?: WhereUsedOptions, call?: RunOptions): TypeUsageRow[] | PageUsageRow[] | Usage[];
+  whereUsed(options?: WhereUsedOptions): TypeUsageRow[] | PageUsageRow[] | Usage[];
+
+  /**
+   * List everything that references a content item (a block, page or media file), with each owner's last save.
+   * Blocks until opticli exits; see `OptiCliCommands.whereUsed`.
+   */
+  whereUsed(options: WhereUsedOptions, call?: RunOptions): TypeUsageRow[] | PageUsageRow[] | Usage[];
   whereUsed(...values: unknown[]): any {
     const [positional, options, call] = split('where-used', values, [], ['one']);
     return this.#data<any>(argv(['where-used'], positional, options, specs.whereUsed), call);
@@ -1966,7 +2085,10 @@ export abstract class OptiCliCommandsSync {
   whereUsedAll(ref: string | undefined, options?: Omit<WhereUsedOptions, 'cursor'> & { type?: undefined; pages?: false }, call?: RunOptions): Generator<Usage, void, undefined>;
 
   /** Every page of `whereUsed`, one call per page (`limit` is the page size): List everything that references a content item (a block, page or media file), with each owner's last save. */
-  whereUsedAll(options?: Omit<WhereUsedOptions, 'cursor'> & { type?: undefined; pages?: false }, call?: RunOptions): Generator<Usage, void, undefined>;
+  whereUsedAll(options?: Omit<WhereUsedOptions, 'cursor'> & { type?: undefined; pages?: false }): Generator<Usage, void, undefined>;
+
+  /** Every page of `whereUsed`, one call per page (`limit` is the page size): List everything that references a content item (a block, page or media file), with each owner's last save. */
+  whereUsedAll(options: Omit<WhereUsedOptions, 'cursor'> & { type?: undefined; pages?: false }, call?: RunOptions): Generator<Usage, void, undefined>;
 
   /**
    * Every page of `whereUsed`, one call per page (`limit` is the page size): List everything that references a content item (a block, page or media file), with each owner's last save.
@@ -1975,7 +2097,10 @@ export abstract class OptiCliCommandsSync {
   whereUsedAll(ref: string | undefined, options?: Omit<WhereUsedOptions, 'cursor'>, call?: RunOptions): Generator<TypeUsageRow | PageUsageRow | Usage, void, undefined>;
 
   /** Every page of `whereUsed`, one call per page (`limit` is the page size): List everything that references a content item (a block, page or media file), with each owner's last save. */
-  whereUsedAll(options?: Omit<WhereUsedOptions, 'cursor'>, call?: RunOptions): Generator<TypeUsageRow | PageUsageRow | Usage, void, undefined>;
+  whereUsedAll(options?: Omit<WhereUsedOptions, 'cursor'>): Generator<TypeUsageRow | PageUsageRow | Usage, void, undefined>;
+
+  /** Every page of `whereUsed`, one call per page (`limit` is the page size): List everything that references a content item (a block, page or media file), with each owner's last save. */
+  whereUsedAll(options: Omit<WhereUsedOptions, 'cursor'>, call?: RunOptions): Generator<TypeUsageRow | PageUsageRow | Usage, void, undefined>;
   whereUsedAll(...values: unknown[]): Generator<any, void, undefined> {
     const [positional, options, call] = split('where-used', values, [], ['one']);
     return this.#all<any>(argv(['where-used'], positional, options, specs.whereUsed), call);
@@ -2167,7 +2292,16 @@ export abstract class OptiCliCommandsSync {
    * @param property - The ContentArea property (see `opticli type <type>`), or a path to one inside a block: 'MainArea[0].Area' (the inline block at position 0), Hero.Area (a local block).
    * @param action - add, remove, move or set.
    */
-  area(ref: string, property: string, action: 'add' | 'move' | 'remove' | 'set', options?: AreaOptions, call?: RunOptions): WriteOutput;
+  area(ref: string, property: string, action: 'add' | 'move' | 'remove' | 'set', options?: AreaOptions): WriteOutput;
+
+  /**
+   * Add, remove, reorder or change ContentArea items on a new version, a draft unless --publish. Writes: needs the site running (`opticli serve`).
+   * Blocks until opticli exits; see `OptiCliCommands.area`.
+   * @param ref - A ref is a content id (123), id_version (123_456), a content GUID, a URL/path (/en/about/ or https://host/en/about/), or content provider content as get prints it (63__provider).
+   * @param property - The ContentArea property (see `opticli type <type>`), or a path to one inside a block: 'MainArea[0].Area' (the inline block at position 0), Hero.Area (a local block).
+   * @param action - add, remove, move or set.
+   */
+  area(ref: string, property: string, action: 'add' | 'move' | 'remove' | 'set', options: AreaOptions, call?: RunOptions): WriteOutput;
   area(...values: unknown[]): any {
     const [positional, options, call] = split('area', values, ['one', 'one', 'one'], ['many']);
     return this.#data<any>(argv(['area'], positional, options, specs.area), call);
@@ -2263,7 +2397,14 @@ export abstract class OptiCliCommandsSync {
    * Blocks until opticli exits; see `OptiCliCommands.upload`.
    * @param file - The file to upload (at most 50 MB).
    */
-  upload(file: string, options?: UploadOptions, call?: RunOptions): WriteOutput;
+  upload(file: string, options?: UploadOptions): WriteOutput;
+
+  /**
+   * Upload a file (PDF, image, video, ...) as a new media item, as a draft unless --publish. Writes: needs the site running (`opticli serve`).
+   * Blocks until opticli exits; see `OptiCliCommands.upload`.
+   * @param file - The file to upload (at most 50 MB).
+   */
+  upload(file: string, options: UploadOptions, call?: RunOptions): WriteOutput;
   upload(...values: unknown[]): any {
     const [positional, options, call] = split('upload', values, ['one'], ['many']);
     return this.#data<any>(argv(['upload'], positional, options, specs.upload), call);
@@ -2334,7 +2475,13 @@ export abstract class OptiCliCommandsSync {
    * List projects (edit mode's Projects: versions of several items reviewed and published together): id, name, status, who created it and when, publishAt when scheduled, how many items it has and how many of them are ready (marked Ready to publish: what publishing the project puts live).
    * Blocks until opticli exits; see `OptiCliCommands.projects`.
    */
-  projects(options?: ProjectsOptions, call?: RunOptions): ProjectInfo[];
+  projects(options?: ProjectsOptions): ProjectInfo[];
+
+  /**
+   * List projects (edit mode's Projects: versions of several items reviewed and published together): id, name, status, who created it and when, publishAt when scheduled, how many items it has and how many of them are ready (marked Ready to publish: what publishing the project puts live).
+   * Blocks until opticli exits; see `OptiCliCommands.projects`.
+   */
+  projects(options: ProjectsOptions, call?: RunOptions): ProjectInfo[];
 
   /**
    * List projects (edit mode's Projects: versions of several items reviewed and published together): id, name, status, who created it and when, publishAt when scheduled, how many items it has and how many of them are ready (marked Ready to publish: what publishing the project puts live).
@@ -2354,7 +2501,10 @@ export abstract class OptiCliCommandsSync {
   projectsAll(project: string, options?: Omit<ProjectsOptions, 'cursor'>, call?: RunOptions): Generator<ProjectItemInfo, void, undefined>;
 
   /** Every page of `projects`, one call per page (`limit` is the page size): List projects (edit mode's Projects: versions of several items reviewed and published together): id, name, status, who created it and when, publishAt when scheduled, how many items it has and how many of them are ready (marked Ready to publish: what publishing the project puts live). */
-  projectsAll(options?: Omit<ProjectsOptions, 'cursor'>, call?: RunOptions): Generator<ProjectInfo, void, undefined>;
+  projectsAll(options?: Omit<ProjectsOptions, 'cursor'>): Generator<ProjectInfo, void, undefined>;
+
+  /** Every page of `projects`, one call per page (`limit` is the page size): List projects (edit mode's Projects: versions of several items reviewed and published together): id, name, status, who created it and when, publishAt when scheduled, how many items it has and how many of them are ready (marked Ready to publish: what publishing the project puts live). */
+  projectsAll(options: Omit<ProjectsOptions, 'cursor'>, call?: RunOptions): Generator<ProjectInfo, void, undefined>;
 
   /**
    * Every page of `projects`, one call per page (`limit` is the page size): List projects (edit mode's Projects: versions of several items reviewed and published together): id, name, status, who created it and when, publishAt when scheduled, how many items it has and how many of them are ready (marked Ready to publish: what publishing the project puts live).
@@ -2388,7 +2538,14 @@ export abstract class OptiCliCommandsSync {
    * Blocks until opticli exits; see `OptiCliCommands.projectsReady`.
    * @param project - The project: its id, or its exact name (`opticli projects` lists them).
    */
-  projectsReady(project: string, options?: ProjectsReadyOptions, call?: RunOptions): ProjectResult;
+  projectsReady(project: string, options?: ProjectsReadyOptions): ProjectResult;
+
+  /**
+   * Mark project items Ready to publish, as the edit UI's "Ready to Publish" does (the version is checked in, and keeps its id). Writes: needs the site running (`opticli serve`).
+   * Blocks until opticli exits; see `OptiCliCommands.projectsReady`.
+   * @param project - The project: its id, or its exact name (`opticli projects` lists them).
+   */
+  projectsReady(project: string, options: ProjectsReadyOptions, call?: RunOptions): ProjectResult;
   projectsReady(...values: unknown[]): any {
     const [positional, options, call] = split('projects ready', values, ['one'], ['many']);
     return this.#data<any>(argv(['projects', 'ready'], positional, options, specs.projectsReady), call);
@@ -2488,7 +2645,13 @@ export abstract class OptiCliCommandsSync {
    * The runs of a job, latest first, from the CMS's job log (tblScheduledItemLog): when it started and finished, how long it took, status (succeeded, failed, cancelled = stopped by a user, unableToStart, aborted = the site shut down), trigger (scheduler, user, restart) and server, and the job's message in full (it can be HTML).
    * Blocks until opticli exits; see `OptiCliCommands.jobsLog`.
    */
-  jobsLog(options?: JobsLogOptions, call?: RunOptions): JobLogView[];
+  jobsLog(options?: JobsLogOptions): JobLogView[];
+
+  /**
+   * The runs of a job, latest first, from the CMS's job log (tblScheduledItemLog): when it started and finished, how long it took, status (succeeded, failed, cancelled = stopped by a user, unableToStart, aborted = the site shut down), trigger (scheduler, user, restart) and server, and the job's message in full (it can be HTML).
+   * Blocks until opticli exits; see `OptiCliCommands.jobsLog`.
+   */
+  jobsLog(options: JobsLogOptions, call?: RunOptions): JobLogView[];
   jobsLog(...values: unknown[]): any {
     const [positional, options, call] = split('jobs log', values, [], ['one']);
     return this.#data<any>(argv(['jobs', 'log'], positional, options, specs.jobsLog), call);
@@ -2501,7 +2664,10 @@ export abstract class OptiCliCommandsSync {
   jobsLogAll(job: string | undefined, options?: Omit<JobsLogOptions, 'cursor'>, call?: RunOptions): Generator<JobLogView, void, undefined>;
 
   /** Every page of `jobsLog`, one call per page (`limit` is the page size): The runs of a job, latest first, from the CMS's job log (tblScheduledItemLog): when it started and finished, how long it took, status (succeeded, failed, cancelled = stopped by a user, unableToStart, aborted = the site shut down), trigger (scheduler, user, restart) and server, and the job's message in full (it can be HTML). */
-  jobsLogAll(options?: Omit<JobsLogOptions, 'cursor'>, call?: RunOptions): Generator<JobLogView, void, undefined>;
+  jobsLogAll(options?: Omit<JobsLogOptions, 'cursor'>): Generator<JobLogView, void, undefined>;
+
+  /** Every page of `jobsLog`, one call per page (`limit` is the page size): The runs of a job, latest first, from the CMS's job log (tblScheduledItemLog): when it started and finished, how long it took, status (succeeded, failed, cancelled = stopped by a user, unableToStart, aborted = the site shut down), trigger (scheduler, user, restart) and server, and the job's message in full (it can be HTML). */
+  jobsLogAll(options: Omit<JobsLogOptions, 'cursor'>, call?: RunOptions): Generator<JobLogView, void, undefined>;
   jobsLogAll(...values: unknown[]): Generator<any, void, undefined> {
     const [positional, options, call] = split('jobs log', values, [], ['one']);
     return this.#all<any>(argv(['jobs', 'log'], positional, options, specs.jobsLog), call);
@@ -2513,7 +2679,7 @@ export abstract class OptiCliCommandsSync {
    * @param job - The job: the job's id (GUID), its name, its class (full or short name), or a part of its name that only it has.
    */
   jobsRun(job: string, options?: JobsRunOptions, call?: RunOptions): JobRunView {
-    return this.#data<JobRunView>(argv(['jobs', 'run'], [job], options, specs.jobsRun), { ...call, timeoutMs: call?.timeoutMs ?? ((options?.timeout ?? 3540) + 60) * 1000 });
+    return this.#data<JobRunView>(argv(['jobs', 'run'], [job], options, specs.jobsRun), { ...call, timeoutMs: call?.timeoutMs ?? (((options?.timeout ?? 3540) + 60) * 1000) });
   }
 
   /**
