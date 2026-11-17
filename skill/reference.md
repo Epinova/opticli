@@ -698,6 +698,7 @@ compared (`checked: false`).
   replaced, `unchanged`, `none`), `ready`, `editorUi` (`projectMode` or `gadget`), and `error` when the save stood but
   putting it in the project failed. Not with `--publish`/`--publish-at` (exit 1). Folders and content without versions
   are refused; content in another unpublished project in the same language is a `conflict` (`inOtherProject`).
+  `translate --with-blocks --in-project` puts the translated blocks in the project too (ready as the page).
 - `--ready` checks the version in (it keeps its version id); under an approval sequence it needs
   `--request-approval`, which sends it for review instead (it stays in the project). A write with nothing to change
   puts the version it is based on in the project when that is a draft.
@@ -706,11 +707,14 @@ compared (`checked: false`).
   `alreadyReady`, `skipped`, `removed`, `unscheduled`, `failed` with `error`). `publish`: `published[]` (or
   `scheduled[]` and `scheduledFor`), `notReady[]`, `alreadyPublished[]`, `failed[]` and `siteError` (the project is
   then `publishFailed` and publishes again), `siteChanges`, each item's `pendingDraft`, `readyBy` and
-  `previouslyPublished`.
+  `previouslyPublished`. `siteChanges` are the content events on the CMS's publishing thread: what a site's handler
+  hands to another thread isn't in it. On CMS 12 a publish whose background task failed to start ("Cannot access a
+  disposed object") is tried again, up to twice, with a warning.
 - Marking an item ready is consent to publish it: `readyBy` is who marked it (when not opticli), and their own unpublished
   changes in it go live without `--include-draft`. Another person's older draft it carries still needs it (`pendingDraft`
-  names that one). `projects ready` of an item whose version someone else saved is a `conflict` (`pendingDraft`)
-  without `--include-draft`: the CMS records whoever marks a version ready as the one who saved it.
+  names that one). After an approval, `readyBy` is the reviewer (the CMS records them). `projects ready` of an item
+  whose version someone else saved is a `conflict` (`pendingDraft`) without `--include-draft`: the CMS records whoever
+  marks a version ready as the one who saved it.
 - A refusal over items (`details.reason`: `projectItems`, or the reason all of them share: `pendingDraft`,
   `approvalSequence`, `inReview`) has `details.project` with every item and its `problem` (`code`, `message`,
   `reason`); nothing was changed. `nothingReady`: no item is ready. `projectsDisabled` (exit 3): the site's edit UI has
@@ -749,7 +753,8 @@ step by step. `get` and `access` show it as `approval`: `definedOn`, `inherited`
 ```
 
 Ops: `set`, `create`, `area`, `block`, `upload`, `translate`, `publish`, `unpublish`, `discard`, `move`, `delete`,
-`restore`, `access`, `language`, `site`, with the same fields as the commands (`opticli apply --help` lists them). `"$id"` refers to what an earlier
+`restore`, `access`, `language`, `site`, with the same fields as the commands (`opticli apply --help` lists them).
+`"project"` (on the plan or a step) and `"ready"` put drafts in a CMS project: see [Projects](#projects). `"$id"` refers to what an earlier
 `create`, `block` or `upload` with that `id` made, in ref fields and as a whole string value in `properties` (also in
 arrays): a reference property gets the content, a string property its id as text (`"TagId": "$tag"` stores
 `"456"`). A top-level `"source"` (what `export` writes) is accepted and not read.

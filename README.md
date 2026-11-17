@@ -544,6 +544,7 @@ apply or not: give production a read-only SQL login for reads and a separate log
 | The site agent answers only loopback callers that send the per-run token, and only in `Development`. The token is kept in a state file only your user can read. | Site agent, per request |
 | Writes create drafts; publishing needs `--publish` (or `publish`). Saves are attributed to the user `opticli`. | CLI + site agent |
 | A publish that would also put live changes someone else saved after the published version stops: on a terminal it shows who saved what and asks, elsewhere it fails with `conflict` (exit 5) listing them. `--include-draft` (a plan step's `"includeDraft": true`) confirms; `publish --version <id>` publishes that version as it is (an editor's assistant naming a version through the MCP module still needs `includeDraft`); `--from published` bases the change on the published version, leaving them out. | Site agent |
+| A write joins a CMS project only when it names it (`--in-project`, a plan's `"project"`), and never publishes while it does. Publishing a project puts live only its items marked Ready to publish, after every one passed `publish`'s checks; one problem stops it with nothing published. Marking an item ready counts as its marker's consent to publish their changes, so marking someone else's draft ready needs `--include-draft`. Sealed production runs refuse projects. | Site agent, CLI first |
 | Against a shared database, writes stop while the build and the database differ (drift): on a terminal it shows the differences and asks, elsewhere it fails with `drift` (exit 5). `--accept-drift <fingerprint>` confirms; the fingerprint stops counting when the differences change. | Site agent, CLI first |
 | Against a shared database, `sites add`, `sites primary`, `sites host remove` and `languages enable\|disable` are refused (exit 3), and `sites host add` only adds hosts of type undefined: the deployed site uses the same site definitions and language branches. Sealed plans never have `site` or `language` steps. There is no override; change those sites in their own admin UI. Site definitions are never reachable from the MCP module. | Site agent, CLI first |
 | `delete` moves content to the recycle bin; nothing empties it, and `restore` brings it back. Site roots, start pages, asset roots and anything above them can't be moved or deleted. The MCP module doesn't restore. | Site agent |
@@ -649,7 +650,7 @@ add-ons need first.
 | `versions <ref>`, `drafts [--since] [--by] [--kind] [--type]` | version history; unpublished changes |
 | `history <ref> [--since] [--by]` | the CMS's change log for one item: creates, publishes, moves (from, to), deletes and restores, with who and when; the only record of moves and deletes (drafts saved aren't in it) |
 | `categories`, `visitor-groups` | the category tree (names `set` takes, selectable, how many items use each); visitor groups (ids ContentAreas store, names, how criteria combine), without their criteria or notes |
-| `projects [<id>]` | projects, and the versions in one |
+| `projects [<id\|name>]` | projects, with how many items each has and how many are marked Ready to publish (`ready`); with a project, its items and each version's status (see [CMS projects](#cms-projects)) |
 | `trash [--since] [--by] [--type]` | what is in the recycle bin: who deleted it and when, what came along (`descendants`), and `originalParent`, where `restore` puts it back (asked of the site while `serve` runs, `meta.source: agent`; otherwise read from the database, with a warning saying why) |
 | `jobs [--failed]`, `jobs log [<job>] [--failed] [--since]` | scheduled jobs: schedule, next and last run, how it ended, overdue, running; their runs with status and message (see [Scheduled jobs](#scheduled-jobs)) |
 | `display-templates [--type T]` | CMS 13: Visual Builder display templates and their settings, the styles a composition's nodes can use |
@@ -699,6 +700,9 @@ with [IDE mode](#running-the-site-from-your-ide-ide-mode) on.
 - `sites add` creates a site definition (CMS 13: an application), and `languages enable|disable` changes which language
   branches are enabled, for a database the CMS created from scratch; see
   [A database built from scratch](#a-database-built-from-scratch).
+- `projects create`, `ready`, `remove`, `publish`, `reactivate` and `delete` work with the CMS's projects, and
+  `--in-project <id|name>` (with `--ready`) on `set`, `create`, `area`, `composition`, `block create`, `upload` and
+  `translate` puts the draft in one; see [CMS projects](#cms-projects).
 - `jobs run`, `jobs stop` and `jobs set` run, stop and reschedule scheduled jobs; see [Scheduled jobs](#scheduled-jobs).
 - `users add` and `users remove` make and remove a local login for a restored database; see
   [Local users](#local-users-after-a-database-restore).
@@ -712,7 +716,8 @@ with [IDE mode](#running-the-site-from-your-ide-ide-mode) on.
 - `apply plan.json` runs several operations validated together. Later operations can refer to an item an earlier
   one created as `$id`, in ref fields and as a whole property value: a reference property gets the content, a string
   property its id as text (`"TagId": "$tag"` stores `"456"`). Besides content steps, a plan can enable languages
-  and create sites (`language` and `site`; see [A database built from scratch](#a-database-built-from-scratch)). A
+  and create sites (`language` and `site`; see [A database built from scratch](#a-database-built-from-scratch)), and
+  put its drafts in a CMS project (`"project"`; see [CMS projects](#cms-projects)). A
   property value `"@texts/body.html"` is that file's text, as `Prop=@file` is on the command
   line. Files in a plan are relative to the plan file and must stay inside its folder. With `"guidNamespace"`, what a
   plan creates gets the same GUIDs in every database, and `apply --update-existing` runs it again: existing content is
@@ -756,6 +761,128 @@ sequence isn't published directly (exit 3); `--request-approval` sends it for re
 Against a shared database that differs from the build, writes stop with `drift` (exit 5) until `--accept-drift
 <fingerprint>` (`apply --accept-drift` for a whole plan); dry runs don't stop.
 [skill/reference.md](skill/reference.md) documents value syntax and the plan format.
+
+### CMS projects
+
+A project in the CMS's edit mode collects drafts of many items, so editors review them together and they go live in one
+go, now or at a set time: a campaign, a new section, thirty pages. opticli makes projects, puts its drafts in them,
+marks items Ready to publish, and publishes or schedules a project, through the CMS's own project API in the running
+site. Reading projects comes from the database and needs nothing running.
+
+```sh
+opticli projects create "Spring campaign"
+opticli set 123 Heading="Spring sale" --in-project "Spring campaign"          # a draft, in the project
+opticli create 45 --type ArticlePage --name "Spring news" --in-project "Spring campaign" --ready
+opticli projects "Spring campaign"                                             # its items and their status
+opticli projects ready "Spring campaign" 123                                   # mark the first draft ready too
+opticli projects publish "Spring campaign" --dry-run                           # what goes live, what stays behind
+opticli projects publish "Spring campaign" --at 2026-12-01T07:00Z              # or now, without --at
+```
+
+A `<project>` is its id or its exact name (whole, ignoring case). Names aren't unique in the CMS: a project that isn't
+published wins over published ones of the same name, and a name two unpublished projects share is a `usage` error that
+lists their ids. Only active projects (status `active`, or `publishFailed` after a failed publish) take items, have
+items marked ready or taken out, and publish; a published project is a `conflict` (`details.reason:
+"projectNotActive"`), and so is a scheduled one (`delayedPublished`), whose hint is `projects reactivate`.
+
+| Command | Does |
+|---|---|
+| `projects [<project>]` | lists projects (`id`, `name`, `status`, `created`, `createdBy`, `publishAt`, `items`, `ready`: the items a publish puts live); with a project, its items (`ref`, `version`, `type`, `name`, `language`, `status`: `checkedIn` is ready, `checkedOut` a draft, `awaitingApproval` in review) |
+| `projects create <name>` | an active, empty project. A name a project that isn't published has already is a `conflict`; at most 255 characters |
+| `<write> --in-project <project> [--ready]` | `set`, `create`, `area`, `composition`, `block create`, `upload` and `translate` (with `--with-blocks`, the translated blocks too) put the draft they save in the project; `--ready` marks it Ready to publish |
+| `projects ready <project> <ref>... \| --all [--lang] [--request-approval [--comment <text>]] [--include-draft]` | marks items Ready to publish, as the edit UI's Ready to Publish does. Refs are content (every item of it, in `--lang` if given) or versions; `--all` takes every item that is a draft |
+| `projects remove <project> <ref>... [--lang]` | takes items out; their versions stay as they are |
+| `projects publish <project> [--at <time>] [--include-draft]` | publishes (or schedules) the items marked Ready to publish, together |
+| `projects reactivate <project>` | cancels a scheduled project's publish |
+| `projects delete <project>` | deletes the project, as the edit UI's Delete Project does; its drafts stay drafts. Not while it is scheduled, being published or reactivated |
+
+Every write takes `--dry-run` and prints the project (`id`, `name`, `status`, `items`, `ready`), `editorUi`, `dryRun`
+and `valid`. `projects delete --dry-run` checks the project in the database (`meta.source: db`).
+
+**A write joins a project only when it names it**, every time: there is no current project that later saves go into.
+(`--in-project`, not `--project`: that global option names the site's .csproj.) The result's `project` says what
+happened: `id`, `name`, `item` (`added`; `replaced`, with `replaced` the version the project held before; `unchanged`
+when the project holds that version already), `ready`, `editorUi`, and `error` when the save stood but putting it in
+the project failed (also a warning).
+- A project holds one version per content and language, as the edit UI's save in project mode does: a new draft takes
+  the place of the content's earlier version in that project and language. Two languages of a page are two items.
+- Content that is in another project that isn't published, in the same language, is a `conflict` (`details.reason:
+  "inOtherProject"`, naming the project and the version): take it out of that project first. Folders and content
+  without versions (which would go live at once) are a `usage` error.
+- `--in-project` with `--publish` or `--publish-at`, and `--ready` without `--in-project`, are `usage` errors before
+  the database is opened: publish or schedule the project instead.
+- A write with nothing to change puts the version it is based on in the project when that is a draft (a plan run
+  again), and warns when it is published.
+- A save without `--in-project` of content that is in a project saves as before, and warns that the new version isn't
+  in the project: which version the project holds, and to save again with `--in-project` (for a scheduled project,
+  reactivate it first).
+
+**Marking ready** checks the version in; it keeps its version id, and the project keeps pointing at it.
+- Every item is checked before any is changed: an item that can't be marked (in review, published, scheduled, a
+  validation error) stops the call, with each item's `problem` in `details.project`. With `--all`, items that aren't
+  drafts are left as they are (`skipped`); an item ready already is `alreadyReady`. Each item's `outcome` is in
+  `items[]`.
+- Under an approval sequence, marking ready would skip the reviewers, so it is refused (exit 3, `details.reason:
+  "approvalSequence"`), on a save with `--ready` too. `--request-approval` sends those items for review instead, as the
+  edit UI's Ready for Review does (`approvalRequested`; they stay in the project); items without a sequence are marked
+  ready as usual. `--comment` goes to the reviewers on `projects ready`, and is required where the sequence says so.
+  Once a reviewer approves an item, it counts as ready without another step.
+- An item whose version someone else saved is a `conflict` (`details.reason: "pendingDraft"`) without
+  `--include-draft`: the CMS records whoever marks a version ready as the one who saved it, so the project's publish
+  could no longer tell whose changes it carries. Confirm with the person whose draft it is. A save with `--ready` never
+  checks in someone else's draft: a changed save makes a version of its own, and an unchanged one puts their draft in the
+  project without marking it, with a warning.
+
+**Publishing a project puts only the items marked Ready to publish live**, as the edit UI does in project mode. Items
+that aren't ready (drafts, in review, rejected) stay as they are, and the result lists them. That holds wherever
+editors use projects, also on a site with only the Projects gadget (CMS 13's default, `editorUi: "gadget"`), whose own
+Publish button puts every unpublished item of the project live, ready or not: the same project goes live differently
+from the gadget than from opticli.
+- Before anything is published, every ready item goes through `publish`'s checks: an approval sequence (the version must
+  have been approved), validation, and other people's unpublished changes. One problem stops the whole publish with
+  nothing published, each item's `problem` in `details.project` (`details.reason` is the one the problems share, such as
+  `pendingDraft`, else `projectItems`). No item ready is a `conflict` (`details.reason: "nothingReady"`). A passed
+  stop-publish date is a warning.
+- **Marking an item ready is consent to publish it.** The changes of whoever marked an item ready (`readyBy`) go live
+  without `--include-draft`, also their own older drafts in it; after an approval that is the reviewer, whom the CMS
+  records as the one who checked the version in. Changes of someone else that the ready version carries still need
+  `--include-draft` (`pendingDraft` names them). Each item's `pendingDraft` and `readyBy` say whose changes go live,
+  either way.
+- On a terminal (stdin, stdout and stderr), `projects publish` first does a dry run, shows what goes live and whose
+  changes go with it, what stays behind and what is published already, and asks; no is a `conflict` (exit 5, "Not
+  published, as answered"). Elsewhere it publishes as asked, and other people's changes need `--include-draft`.
+- It publishes through the site's `ProjectPublisher` (a site's own one too) and waits until every item has been tried.
+  The result has `published[]` (or `scheduled[]` and `scheduledFor`), `notReady[]`, `alreadyPublished[]`, `failed[]`
+  with the CMS's messages in `siteError`, and per item `previouslyPublished`. When an item fails, the others still go
+  live and the project is `publishFailed`; publishing it again tries the rest.
+- `siteChanges` lists what the site's own code did while the project was published (content its handlers created,
+  published, moved or deleted). The CMS publishes a project on a background thread of its own, so opticli records the
+  content events raised on that thread while the publish runs; work that a site's handler hands to yet another thread
+  isn't seen.
+- On CMS 12 the CMS's background task sometimes fails to start before it publishes anything ("Cannot access a disposed
+  object"). opticli then tries again, up to twice, only while every ready item is still unpublished, and says so in a
+  warning.
+- `--at <time>` (an ISO 8601 time, UTC unless it has an offset) schedules it instead: the ready items wait to be
+  published and the project is `delayedPublished`. `projects reactivate` cancels that: the project is active again, and
+  its scheduled items are drafts again (the same versions), not ready, so mark them ready again before publishing.
+
+**Plans** take `"project"` next to `"operations"` (a name, or an id as a number): every `set`, `create`, `area`,
+`composition`, `block`, `upload` and `translate` step puts its draft in that project. A step's own `"project"` overrides
+it, and `"project": null` leaves the step out; a folder a `create` step makes is left out. `"ready": true` on a step
+marks its draft ready. A project the plan names (on the plan or on a step) that no unpublished project has is created by
+the run, after the whole plan passed its check and before the first step saves; a number that is no project's id is
+`not_found`, never a new project's name. A dry run checks the steps of a project still to be made without it, with a
+warning (content in another project is then found only when the plan runs). A step with `ready` whose content a later
+step changes is marked ready after the last step, so the later step saves into the same draft. `data.projects[]` has
+each project's `id`, `name`, `status` (`existing`, `created`, `toCreate` in a dry run), `markedReady` and, for a project
+the run made, `undo`. Plans don't publish projects: `"publish"` or `"publishAt"` on a step with a project is a plan
+problem, and `apply --publish` with a project a `usage` error. Sealed production runs refuse `"project"`.
+
+Editors only have projects where the CMS's edit UI offers them: project mode (the project bar; on by default on CMS 12,
+off on CMS 13: `EPiServer:CmsUI:ProjectUI:ProjectModeEnabled`) or the Projects gadget (`ProjectGadgetEnabled`, on by
+default). Where both are off, every project write is `refused` (exit 3, `details.reason: "projectsDisabled"`).
+`editorUi` says which one the site has (`projectMode` or `gadget`), so you can tell the user where to find the project
+in the CMS.
 
 ### Site hosts after a database restore
 
@@ -1488,7 +1615,7 @@ which wins. In configuration, an `AllowedRoles` or `AllowedRedirectHosts` list r
 | `RefreshTokenLifetime` | 30 days | how long a connection survives unused; each refresh extends it |
 | `ConnectionLifetime` | 30 days | the longest a connection lasts, however often it is used; then the editor connects again, through the site's login (see below) |
 | `RefreshTokenReuseGrace` | 1 minute | how long after a refresh the refresh token it replaced, sent again by the same client, is only refused; later (or from another client) it revokes the connection |
-| `AllowPublish` | `false` | let assistants publish, unpublish and schedule publishing (the `content:publish` scope) |
+| `AllowPublish` | `false` | let assistants publish, unpublish and schedule publishing, and publish, schedule and reactivate [projects](#projects-for-editors-assistants) (the `content:publish` scope) |
 | `AllowDelete` | `false` | let assistants delete content, always to the recycle bin |
 | `AllowPreviewLinks` | `true` | give the assistant a short-lived link of its own to a draft's preview, which it can open without a sign-in (`assistantPreviewUrl`, see below); `false` turns it off |
 | `PreviewLinkLifetime` | 10 minutes | how long such a link works (1 minute to 1 hour) |
@@ -1575,6 +1702,60 @@ module sees to it that each endpoint serves only its own server:
   other server registers the same class too (its `WithTools<T>()`, or `WithToolsFromAssembly()`), the module removes
   those tools there. A tool of the other server's that has the name of one of the module's tools stays on that server,
   whichever is registered first.
+
+### Projects for editors' assistants
+
+An editor's assistant can collect drafts in a CMS project, so the editor reviews them together in the CMS and they go
+live together: it suggests one when the editor wants several related changes reviewed or published together, an
+existing project or a new one, and asks first. The module follows the same rules as the CLI's
+[CMS projects](#cms-projects), as the editor, with their access rights.
+
+| Tool | Scope | Does |
+|---|---|---|
+| `list_projects(all, limit)` | read | projects newest first, each with `items` and `ready` (how many are marked Ready to publish): every one that isn't published (active, scheduled, failed), and published ones too with `all`; 50 by default, at most 200, `more` when there are more |
+| `get_project(project)` | read | the project and its items, each with its version, `state` (`draft`, `ready`, `inReview`, `scheduled`, `published`, `deleted`: in the recycle bin, `missing`: the version is gone) and `editUrl`, and `url` for a published one |
+| `create_project(name, dryRun)` | write | an active, empty project; a name an unpublished project has is refused |
+| `mark_ready_to_publish(project, items \| all, lang, requestApproval, comment, includeDraft, dryRun)` | write | marks items Ready to publish; under an approval sequence `requestApproval` sends them for review instead |
+| `remove_from_project(project, items, lang, dryRun)` | write | takes items out; their versions stay as they are |
+| `publish_project(project, publishAt, includeDraft, dryRun)` | publish | publishes or schedules the items marked ready |
+| `reactivate_project(project, dryRun)` | publish | cancels a scheduled project's publish; its items are drafts again |
+
+A project is named by its id or its exact name. `create_content`, `update_content`, `add_language` and `upload_media`
+take `project` and `ready`: the draft they save goes into the project (`ready` marks it Ready to publish), and their
+result's `project` says how (`added`, `replaced`, `unchanged`). A save goes into a project only when it names it, so the
+assistant names it on every save that belongs there. The other tools save no draft that could go into one. `get_content`
+lists the projects that hold a version of the content (`projects`: `id`, `name`, `status`, `version`, `language`).
+
+- **Ready only.** `publish_project` puts live only the items marked Ready to publish; the rest stay as they are, and
+  the result lists them (`notReady`, `alreadyPublished`) beside what went live (`published`, or `scheduled`), each item
+  with its `editUrl` and `url`. Every ready item is checked first, as `publish_content` checks one: one problem stops
+  the publish and nothing goes live. The server's instructions tell the assistant to dry-run first, show the editor
+  what goes live, whose changes go with it and what stays behind, and publish only when they ask. The result's
+  `siteChanges` says what the site's own code did meanwhile, as far as it ran on the publish's own thread (see
+  [CMS projects](#cms-projects)).
+- **Publishing needs `AllowPublish`**, as `publish_content` does: `publish_project` and `reactivate_project` are offered
+  on every site, need the `content:publish` scope, and are refused elsewhere (`publishingOff`) with a hint to mark the
+  items ready and have the editor publish the project in the CMS. Where the site doesn't let assistants publish, the
+  instructions say so.
+- **Access.** Marking an item ready and taking it out need Edit access (and access to its language) on it, publishing
+  needs Publish on every ready item, and reactivating Publish on every scheduled one, all checked before anything
+  changes. `mark_ready_to_publish` with `all` leaves out drafts the editor may not edit (`noAccess`) and lists them;
+  named in `items`, such an item stops the call. Items of content the editor can't read aren't in the project for them:
+  lists and counts leave them out and naming one is `not_found`. A ready (or, for a reactivate, scheduled) item they
+  can't read refuses the publish, with only how many there are.
+- **Dry runs report problems per item.** `mark_ready_to_publish`, `remove_from_project`, `publish_project` and
+  `reactivate_project` with `dryRun` answer `valid: false` with each item's `problem`; the real call is refused with
+  every item in `error.project`.
+- **Links.** Where the CMS has project mode, project results (and a save's `project`) have `projectUrl`, the project's
+  overview in the edit UI (`/EPiServer/CMS/#context=epi.cms.project:///<id>`, under `/Optimizely/CMS/` on CMS 13). Opening
+  it makes it the editor's current project, so their own later saves in the edit UI go into it too; the instructions
+  tell the assistant to say so. An open overview can show an item's old status until the editor refreshes it. With only
+  the Projects gadget (CMS 13's default) there is no such link: `projectNote` tells the editor to open the gadget, and
+  that its Publish puts every unpublished item of the project live, ready or not.
+- **Where editors have no projects** (project mode and the gadget both off), the reads answer with `editorUi: "none"`
+  and every project write is refused (`projectsDisabled`).
+- **Audit.** Each line of a call that names a project ends with `, project <id> (<name as given>)`, and items are logged
+  as content references.
 
 ### Custom tools
 
@@ -1706,6 +1887,21 @@ in a value. When the plan runs, the module puts the new content's reference in i
 var folder = plan.CreateFor(page, "SysContentFolder", "Spring campaign");
 var teaser = plan.Create(folder, "TeaserBlock", "Spring sale", v => v.Set("Heading", "Spring sale"));
 plan.Update(page, p => p.AddToArea("MainContentArea", teaser));
+```
+
+`plan.InProject(project, ready: false)` (the project's exact name, or its id) puts the draft of every update and create
+in the plan in that [CMS project](#projects-for-editors-assistants), as the save tools' `project` does, and with `ready`
+marks each Ready to publish. Moves and trashes save no draft, so they aren't in it, and a folder a create makes is left
+out. A plan goes into one project, once (another project, or another `ready`, throws). The project must exist and be
+active, and the dry run checks every step against it (content in another project, an approval sequence where `ready`
+is asked for: a plan sends nothing for review); the plan token covers it. Name a project only when the editor asked for
+it, typically from an argument of the tool:
+
+```csharp
+if (!string.IsNullOrWhiteSpace(args.Project))
+{
+    plan.InProject(args.Project, args.Ready);
+}
 ```
 
 What a site's tools must allow for:
@@ -1926,6 +2122,14 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   is the developer's choice, the assistant picks it. A review request (`requestApproval`) is never refused for someone
   else's changes, as the reviewer sees the whole version, but its result (and an `update_content` dry run's) names them
   in `pendingDraft`, so the assistant can tell the editor.
+- **In a project, marking an item ready is consent to publish it.** `publish_project` puts live without `includeDraft`
+  the changes of whoever marked an item ready (`readyBy`): a colleague who marked their own draft ready in the CMS, the
+  reviewer who approved it under an approval sequence (the CMS records the reviewer), or the developer's opticli
+  (`readyBy: "opticli"`). Changes of anyone else that a ready version carries still need `includeDraft`, and the result
+  names whose changes went live either way. Because the CMS records whoever marks a version ready as the one who saved
+  it, `mark_ready_to_publish` of a draft someone else saved needs `includeDraft` too: after it, the publish couldn't
+  tell. The Projects gadget's own Publish (in the CMS) puts every unpublished item of a project live, ready or not,
+  without asking about anyone's changes.
 - **The consent page** lists what the app may do, with a checkbox each: reading is required, writing and (where the
   site allows it) publishing can be unticked, and the connection gets only what was left ticked. For an app that
   registered itself, a warning says plainly that it chose its own name and the site can't confirm who made it; an app
