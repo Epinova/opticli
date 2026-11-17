@@ -58,6 +58,8 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.28" />
     <!-- The MCP module's end-to-end tests connect as Claude does, with the official SDK's client. -->
     <PackageVersion Include="ModelContextProtocol" Version="2.2.0" />
+    <!-- The integration test validates the CLI's real JSON output against `opticli schema` with a standard validator. -->
+    <PackageVersion Include="JsonSchema.Net" Version="7.3.4" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
