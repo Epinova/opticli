@@ -9,7 +9,7 @@ namespace OptiCli.Core.Queries;
 /// <param name="Drafts">How many unpublished versions of this branch are newer than the published one.</param>
 /// <param name="PublishAt">For a scheduled version (<c>delayedPublish</c>): when the CMS publishes it, UTC.</param>
 public sealed record DraftInfo(
-    string Ref, Guid Guid, string Type, string? Name, string? Language, string Status, string? Url,
+    string Ref, Guid Guid, string Type, string? Name, string? Language, VersionStatus Status, string? Url,
     string Version, DateTime? Saved, string? ChangedBy, int Drafts, DateTime? PublishAt = null)
 {
     /// <summary>
@@ -152,7 +152,7 @@ public sealed class DraftReader(ContentSession session, bool includeBlueprints =
         {
             var header = session.Identities.Header(r.ContentId)!;
             var identity = session.Identities.Describe(header, session.Model.Language(r.LanguageId), status: r.Status, name: r.Name);
-            return new DraftInfo(identity.Ref!, identity.Guid, identity.Type!, identity.Name, identity.Language, identity.Status!, identity.Url,
+            return new DraftInfo(identity.Ref!, identity.Guid, identity.Type!, identity.Name, identity.Language, identity.Status!.Value, identity.Url,
                 ContentIdentity.RefFor(r.ContentId, r.Version), r.Saved, r.ChangedBy, r.Drafts,
                 r.Status == VersionStatus.DelayedPublish ? r.PublishAt : null)
             {

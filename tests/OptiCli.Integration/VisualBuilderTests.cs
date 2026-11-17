@@ -56,7 +56,7 @@ public sealed class VisualBuilderTests
 
         var document = await GetAsync(site, fixture.Experience, cancellationToken: cancellationToken);
 
-        Assert.Equal("experience", document.Kind);
+        Assert.Equal(Core.Cms.ContentKind.Experience, document.Kind);
         Assert.DoesNotContain("Layout", document.Properties.Select(p => p.Key));
         Assert.DoesNotContain("UnstructuredData", document.Properties.Select(p => p.Key));
         var composition = document.Composition!;
@@ -123,7 +123,7 @@ public sealed class VisualBuilderTests
 
         var versions = await VersionReader.ListAsync(site.Session.Db, model, fixture.Experience, null, 0, 100, cancellationToken);
         Assert.All(versions.Where(v => v.Variation is not null), v => Assert.Null(v.Primary));
-        Assert.Contains(versions, v => v is { Variation: "vbFixtureVariation", Status: "published" });
+        Assert.Contains(versions, v => v is { Variation: "vbFixtureVariation", Status: VersionStatus.Published });
 
         var published = await GetAsync(site, fixture.Experience, VersionSelector.Published with { Variation = "vbFixtureVariation" }, cancellationToken: cancellationToken);
         Assert.Equal(("vbFixtureVariation", "The variation's summary"), (published.Variation, Text(published.Properties["Summary"]!["value"])));
@@ -194,7 +194,7 @@ public sealed class VisualBuilderTests
         var (hits, _) = await new SearchReader(site.Session).SearchAsync("Another inline element", SearchScope.Strings, null, cancellationToken);
         var match = Assert.Single(Assert.Single(hits, h => h.Ref == experience).Matches);
         Assert.Equal(("Body", "Body", "Second text", "VbTextElement"), (match.Property, match.Section?.Name, match.Element?.Name, match.Element?.Type));
-        Assert.Equal("experience", hits.Single(h => h.Ref == experience).Kind);
+        Assert.Equal(Core.Cms.ContentKind.Experience, hits.Single(h => h.Ref == experience).Kind);
 
         var usages = await new WhereUsedReader(site.Session).FindAsync(await site.Session.HeaderAsync(fixture.Shared, cancellationToken), cancellationToken);
         // The fixture's own placements: other content (the write tests', in the recycle bin) may place it too.

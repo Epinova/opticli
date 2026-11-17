@@ -10,7 +10,7 @@ internal static class UrlCommand
     private sealed record ContentUrls(string Ref, Guid Guid, string Type, IReadOnlyList<LanguageUrl> Languages, string? Note);
 
     /// <param name="Path">As served on <paramref name="Url"/>'s host (no language prefix when the host is mapped to the language).</param>
-    private sealed record LanguageUrl(string? Language, string? Name, string Status, string? Path, string? Url, string? Site);
+    private sealed record LanguageUrl(string? Language, string? Name, VersionStatus Status, string? Path, string? Url, string? Site);
 
     public static Command Create(GlobalOptions options)
     {
@@ -38,7 +38,7 @@ internal static class UrlCommand
                     continue;
                 }
                 var url = session.Identities.Urls.UrlOf(header, language is { IsInvariant: false } ? language : null);
-                languages.Add(new LanguageUrl(language?.DisplayCode, row.Name, VersionStatuses.Name(row.Status), url?.Path, url?.Absolute, url?.Site));
+                languages.Add(new LanguageUrl(language?.DisplayCode, row.Name, row.Status, url?.Path, url?.Absolute, url?.Site));
             }
 
             var kind = session.Model.Kind(header.TypeId);

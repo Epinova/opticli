@@ -60,7 +60,7 @@ public class CompositionsTests
         public ContentIdentity Content(int id) => ContentIdentity.MissingId(id);
 
         public ContentIdentity Content(Guid guid) => guid == SharedGuid
-            ? new ContentIdentity("103", SharedGuid, "VbTextElement", "VB shared element", "en", "published", null)
+            ? new ContentIdentity("103", SharedGuid, "VbTextElement", "VB shared element", "en", VersionStatus.Published, null)
             : ContentIdentity.MissingGuid(guid);
 
         public JsonObject? Expanded(Guid guid) => null;

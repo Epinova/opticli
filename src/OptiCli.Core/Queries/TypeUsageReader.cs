@@ -15,7 +15,7 @@ public abstract record TypeUsageRow;
 
 /// <summary>One instance of a type and where it is used.</summary>
 /// <param name="Count">How many usages it has (0: unused).</param>
-public sealed record InstanceUsage(string Ref, Guid Guid, string? Name, string? Language, string? Status, int Count, IReadOnlyList<Usage> Usages) : TypeUsageRow
+public sealed record InstanceUsage(string Ref, Guid Guid, string? Name, string? Language, VersionStatus Status, int Count, IReadOnlyList<Usage> Usages) : TypeUsageRow
 {
     /// <summary>CMS 13: true for a Visual Builder blueprint of the type, a template for new content rather than an instance.</summary>
     public bool? Blueprint { get; init; }
@@ -76,7 +76,7 @@ public sealed class TypeUsageReader(ContentSession session)
                 var branch = header.LanguageRow(r.Language);
                 var place = compositions.DescribeItem(r.Content, r.Language, r.Scope);
                 return new Usage(
-                    identity.Ref!, identity.Guid, identity.Type ?? "", identity.Name, identity.Language, identity.Status ?? "", identity.Url, identity.Deleted,
+                    identity.Ref!, identity.Guid, identity.Type ?? "", identity.Name, identity.Language, identity.Status!.Value, identity.Url, identity.Deleted,
                     place?.Property ?? ItemPath(r.Scope), "inline", ["inlineBlockUsage"], branch?.Saved, string.IsNullOrEmpty(branch?.ChangedBy) ? null : branch.ChangedBy)
                 {
                     Blueprint = identity.Blueprint,
@@ -123,7 +123,7 @@ public sealed class TypeUsageReader(ContentSession session)
             }
             var usages = await reader.FindAsync(header, cancellationToken);
             var identity = session.Identities.Describe(header, null);
-            result.Add(new InstanceUsage(identity.Ref!, header.Guid, identity.Name, identity.Language, identity.Status, usages.Count, usages) { Blueprint = identity.Blueprint });
+            result.Add(new InstanceUsage(identity.Ref!, header.Guid, identity.Name, identity.Language, identity.Status!.Value, usages.Count, usages) { Blueprint = identity.Blueprint });
         }
         // Blueprints after the instances.
         return result.OrderBy(r => r.Blueprint == true ? 1 : 0).ThenByDescending(r => r.Count).ThenBy(r => int.Parse(r.Ref, System.Globalization.CultureInfo.InvariantCulture)).ToList();

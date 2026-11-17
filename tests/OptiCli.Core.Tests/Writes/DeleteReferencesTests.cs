@@ -18,7 +18,7 @@ public class DeleteReferencesTests
     [Fact]
     public void A_delete_output_lists_the_references_only_when_there_are_some()
     {
-        var output = new MoveOutput("123", null, "ArticlePage", "News", "en", "published", null, "5", Moved: false, DryRun: true, Descendants: 0, RecycleBin: true);
+        var output = new MoveOutput("123", Guid.Empty, "ArticlePage", "News", "en", "published", null, "5", Moved: false, DryRun: true, Descendants: 0, RecycleBin: true);
 
         Assert.Same(output, output.WithReferences(new IncomingReferences([], 0)));
         var referenced = output.WithReferences(new IncomingReferences([Reference(40)], 51));

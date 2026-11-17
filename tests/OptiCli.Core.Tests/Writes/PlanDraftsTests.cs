@@ -167,7 +167,7 @@ public class PlanDraftsTests
     public void The_database_must_still_have_it_as_an_unpublished_draft_of_opticlis_in_the_branch()
     {
         static VersionInfo Version(VersionStatus status = VersionStatus.CheckedOut, string? by = "opticli", int content = 123, int language = 1, string? variation = null) =>
-            new($"{content}_456", "en", "checkedOut", "Name", DateTime.UtcNow, by, null, null, true, variation)
+            new($"{content}_456", "en", VersionStatus.CheckedOut, "Name", DateTime.UtcNow, by, null, null, true, variation)
             {
                 Id = 456, ContentId = content, LanguageId = language, StatusValue = status,
             };

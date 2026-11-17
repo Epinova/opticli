@@ -170,7 +170,7 @@ public sealed record UploadInfo(string File, long Bytes, Queries.BlobLocation? B
 /// <param name="Descendants">Content items below it, which moved with it.</param>
 public sealed record MoveOutput(
     string Ref,
-    Guid? Guid,
+    Guid Guid,
     string? Type,
     string? Name,
     string? Language,
@@ -208,7 +208,7 @@ public sealed record MoveOutput(
 /// <param name="Descendants">Content items below it, which came back with it.</param>
 public sealed record RestoreOutput(
     string Ref,
-    Guid? Guid,
+    Guid Guid,
     string? Type,
     string? Name,
     string? Language,

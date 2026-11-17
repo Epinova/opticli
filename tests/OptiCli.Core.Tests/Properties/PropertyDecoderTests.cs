@@ -27,9 +27,9 @@ public class PropertyDecoderTests
 
         public JsonObject? Expanded(Guid guid) => Expansions.GetValueOrDefault(guid);
 
-        private static ContentIdentity Teaser => new("789", TeaserGuid, "TeaserBlock", "Summer teaser", "en", "published", null);
+        private static ContentIdentity Teaser => new("789", TeaserGuid, "TeaserBlock", "Summer teaser", "en", VersionStatus.Published, null);
 
-        private static ContentIdentity Page => new("456", PageGuid, "ArticlePage", "About us", "en", "published", "/en/about/");
+        private static ContentIdentity Page => new("456", PageGuid, "ArticlePage", "About us", "en", VersionStatus.Published, "/en/about/");
     }
 
     private static JsonObject Decode(IEnumerable<PropertyRow> rows, DecodeOptions? options = null, FakeLookup? lookup = null) =>

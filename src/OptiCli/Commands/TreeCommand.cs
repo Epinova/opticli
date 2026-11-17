@@ -1,6 +1,8 @@
 using System.CommandLine;
 using System.Text;
 using OptiCli.Cli;
+using OptiCli.Core.Cms;
+using OptiCli.Core.Content;
 using OptiCli.Core.Output;
 using OptiCli.Core.Queries;
 
@@ -55,10 +57,10 @@ internal static class TreeCommand
             text.Append(' ', indent * 2)
                 .Append(indent == 0 ? "" : "- ")
                 .Append(node.Name ?? "(no name)")
-                .Append("  [").Append(node.Ref).Append(' ').Append(node.Type).Append(' ').Append(node.Status)
+                .Append("  [").Append(node.Ref).Append(' ').Append(node.Type).Append(' ').Append(VersionStatuses.Name(node.Status))
                 .Append(node.Languages.Count > 0 ? " " + string.Join(",", node.Languages) : "")
                 .Append(node.Deleted == true ? " deleted" : "")
-                .Append(node.Kind is { } kind ? " " + kind : "")
+                .Append(node.Kind is { } kind ? " " + kind.Name() : "")
                 .Append(node.Blueprint == true ? " blueprint" : "")
                 .Append(']')
                 .Append(node.Url is null ? "" : "  " + node.Url)

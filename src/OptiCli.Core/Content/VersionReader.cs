@@ -14,7 +14,7 @@ namespace OptiCli.Core.Content;
 public sealed record VersionInfo(
     string Ref,
     string? Language,
-    string Status,
+    VersionStatus Status,
     string? Name,
     DateTime? Saved,
     string? ChangedBy,
@@ -210,7 +210,7 @@ public static class VersionReader
         return new VersionInfo(
             ContentIdentity.RefFor(contentId, id),
             model.Language(languageId)?.DisplayCode,
-            VersionStatuses.Name(status),
+            status,
             r.GetStringOrNull("Name"),
             r.GetDateTimeOrNull("Saved"),
             r.GetStringOrNull("ChangedByName"),

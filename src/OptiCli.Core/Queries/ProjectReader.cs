@@ -21,7 +21,7 @@ public sealed record ProjectInfo(int Id, string Name, string Status, DateTime? C
 
 /// <summary>One version in a project.</summary>
 /// <param name="Version">The version (<c>id_version</c>); null when the item names the content without one.</param>
-public sealed record ProjectItemInfo(string Ref, string? Version, string? Type, string? Name, string? Language, string? Status, string? Category);
+public sealed record ProjectItemInfo(string Ref, string? Version, string? Type, string? Name, string? Language, VersionStatus? Status, string? Category);
 
 /// <summary>A project an item is in, as <c>get</c> shows it.</summary>
 public sealed record ItemProject(int Id, string Name, string Status, string? Version, string? Language);
@@ -108,7 +108,7 @@ public static class ProjectReader
             var language = r.Language?.Trim() is { Length: > 0 } code ? session.Model.LanguageByCode(code) : null;
             var identity = header is null ? ContentIdentity.MissingId(r.Id) : session.Identities.Describe(header, language);
             return new ProjectItemInfo(identity.Ref!, r.Version is > 0 ? ContentIdentity.RefFor(r.Id, r.Version) : null, identity.Type, identity.Name,
-                language?.Code ?? identity.Language, r.Status is { } status ? VersionStatuses.Name(VersionStatuses.From(status)) : identity.Status,
+                language?.Code ?? identity.Language, r.Status is { } status ? VersionStatuses.From(status) : identity.Status,
                 r.Category is { Length: > 0 } category ? category : null);
         }).ToList();
     }

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
+using OptiCli.Core.Cms;
 using OptiCli.Core.Content;
 using OptiCli.Core.Errors;
 using OptiCli.Core.Output;
@@ -55,7 +56,7 @@ internal sealed class ItemComparer(SiteUnderTest site)
 
         if (db is not null && agent is not null)
         {
-            var context = new Context(label, db.Type, db.Kind);
+            var context = new Context(label, db.Type, db.Kind.Name());
             CompareIdentity(context, db, agent, language, mismatches);
             CompareProperties(context, Canonical.FromDb(db.Properties), Canonical.FromAgent(agent.Properties), mismatches);
             CompareComposition(context, Canonical.CompositionFromDb(db.Composition), Canonical.CompositionFromAgent(agent.Composition), mismatches);

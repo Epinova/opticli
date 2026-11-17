@@ -16,7 +16,7 @@ public sealed record TreeNode(
     string Type,
     string? Name,
     string? Language,
-    string Status,
+    VersionStatus Status,
     string? Url,
     IReadOnlyList<string> Languages,
     int ChildCount,
@@ -27,7 +27,7 @@ public sealed record TreeNode(
     bool? Blueprint = null)
 {
     /// <summary>CMS 13: experience, section or element for Visual Builder content; left out otherwise.</summary>
-    public string? Kind { get; init; }
+    public Cms.ContentKind? Kind { get; init; }
 
     /// <summary>
     /// CMS 13: how many of its children are blueprints, which <c>tree</c> and <c>children</c> leave out (and
@@ -176,7 +176,7 @@ public sealed class TreeReader(ContentSession session, bool includeBlueprints = 
             identity.Type!,
             identity.Name,
             identity.Language,
-            identity.Status!,
+            identity.Status!.Value,
             identity.Url,
             header.Languages.Keys.Select(id => session.Model.Language(id)?.DisplayCode).OfType<string>().Order().ToList(),
             childCount.Children,

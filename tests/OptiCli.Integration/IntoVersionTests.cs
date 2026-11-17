@@ -89,7 +89,7 @@ public sealed class IntoVersionTests
             Assert.Equal(live, published.PreviouslyPublished);
             Assert.Equal(ours, await CommonDraftAsync(site, id, cancellationToken));
             var versions = await VersionReader.ListAsync(site.Session.Db, site.Session.Model, id, null, 0, 50, cancellationToken);
-            Assert.Equal(("published", "previouslyPublished"), (versions.Single(v => v.Id == ours).Status, versions.Single(v => v.Id == live).Status));
+            Assert.Equal((VersionStatus.Published, VersionStatus.PreviouslyPublished), (versions.Single(v => v.Id == ours).Status, versions.Single(v => v.Id == live).Status));
 
             // Not into a published version.
             var afterPublish = await DraftAsync(site, page, new DraftRequest { Properties = Values("MetaTitle", "After the publish"), IntoVersion = ours }, cancellationToken);

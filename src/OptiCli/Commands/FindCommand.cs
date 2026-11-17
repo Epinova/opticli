@@ -8,10 +8,10 @@ namespace OptiCli.Commands;
 internal static class FindCommand
 {
     /// <summary>An item of <c>--status scheduled|expired</c>: its identity, with when it goes live or went offline (UTC).</summary>
-    private sealed record TimedItem(string? Ref, Guid Guid, string? Type, string? Name, string? Language, string? Status, string? Url, DateTime? PublishAt, DateTime? ExpiredAt)
+    private sealed record TimedItem(string Ref, Guid Guid, string Type, string? Name, string? Language, Core.Content.VersionStatus Status, string? Url, DateTime? PublishAt, DateTime? ExpiredAt)
     {
         public static TimedItem From(Core.Content.ContentIdentity identity, DateTime? publishAt, DateTime? expiredAt) =>
-            new(identity.Ref, identity.Guid, identity.Type, identity.Name, identity.Language, identity.Status, identity.Url, publishAt, expiredAt);
+            new(identity.Ref!, identity.Guid, identity.Type!, identity.Name, identity.Language, identity.Status!.Value, identity.Url, publishAt, expiredAt);
     }
 
     /// <summary>
@@ -23,10 +23,10 @@ internal static class FindCommand
     /// lists content in the recycle bin, from a provider or missing, so those fields are never set.
     /// </remarks>
     /// <param name="VariationDrafts">CMS 13: the variations with a draft newer than their published version; left out when none.</param>
-    private sealed record DraftItem(string? Ref, Guid Guid, string? Type, string? Name, string? Language, string? Status, string? Url, string? Kind, bool? Blueprint, IReadOnlyList<string>? VariationDrafts)
+    private sealed record DraftItem(string Ref, Guid Guid, string Type, string? Name, string? Language, Core.Content.VersionStatus Status, string? Url, Core.Cms.ContentKind? Kind, bool? Blueprint, IReadOnlyList<string>? VariationDrafts)
     {
         public static DraftItem From(Core.Content.ContentIdentity identity, IReadOnlyList<string>? variations) =>
-            new(identity.Ref, identity.Guid, identity.Type, identity.Name, identity.Language, identity.Status, identity.Url, identity.Kind, identity.Blueprint, variations);
+            new(identity.Ref!, identity.Guid, identity.Type!, identity.Name, identity.Language, identity.Status!.Value, identity.Url, identity.Kind, identity.Blueprint, variations);
     }
 
     public static Command Create(GlobalOptions options)

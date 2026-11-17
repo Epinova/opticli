@@ -28,14 +28,14 @@ public sealed record SearchMatch(string Property, string Snippet)
 }
 
 public sealed record SearchHit(
-    string Ref, Guid Guid, string Type, string? Name, string? Language, string Status, string? Url, bool? Deleted,
+    string Ref, Guid Guid, string Type, string? Name, string? Language, VersionStatus Status, string? Url, bool? Deleted,
     IReadOnlyList<SearchMatch> Matches)
 {
     /// <summary>CMS 13: true for a Visual Builder blueprint.</summary>
     public bool? Blueprint { get; init; }
 
     /// <summary>CMS 13: experience, section or element for Visual Builder content; left out otherwise.</summary>
-    public string? Kind { get; init; }
+    public Cms.ContentKind? Kind { get; init; }
 }
 
 /// <summary>
@@ -133,7 +133,7 @@ public sealed partial class SearchReader(ContentSession session, bool includeBlu
             {
                 var header = session.Identities.Header(group.Key.ContentId)!;
                 var identity = session.Identities.Describe(header, session.Model.Language(group.Key.LanguageId));
-                return new SearchHit(identity.Ref!, identity.Guid, identity.Type!, identity.Name, identity.Language, identity.Status!, identity.Url,
+                return new SearchHit(identity.Ref!, identity.Guid, identity.Type!, identity.Name, identity.Language, identity.Status!.Value, identity.Url,
                     identity.Deleted, group.Select(m => m.Match).DistinctBy(m => (m.Property, m.Section?.Key, m.Element?.Key)).ToList())
                 {
                     Blueprint = identity.Blueprint,

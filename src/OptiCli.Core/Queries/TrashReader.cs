@@ -23,7 +23,7 @@ public sealed record TrashParent(string Ref, string? Name, string? Type, string 
 /// </param>
 /// <param name="Descendants">Content below it, in the recycle bin with it; it comes back with it.</param>
 public sealed record TrashItem(
-    string Ref, Guid Guid, string Type, string? Name, string? Language, string Status,
+    string Ref, Guid Guid, string Type, string? Name, string? Language, VersionStatus Status,
     string? DeletedBy, DateTime? Deleted, TrashParent? OriginalParent, int Descendants);
 
 /// <summary>
@@ -94,7 +94,7 @@ public sealed class TrashReader(ContentSession session, Func<CancellationToken, 
         return rows.Where(r => headers.ContainsKey(r.Id)).Select(r =>
         {
             var identity = session.Identities.Describe(headers[r.Id], null);
-            return new TrashItem(identity.Ref!, identity.Guid, identity.Type!, identity.Name, identity.Language, identity.Status!,
+            return new TrashItem(identity.Ref!, identity.Guid, identity.Type!, identity.Name, identity.Language, identity.Status!.Value,
                 r.DeletedBy, r.Deleted, parents.TryGetValue(r.Id, out var parent) ? Parent(parent, headers.GetValueOrDefault(parent)) : null, r.Descendants);
         }).ToList();
     }

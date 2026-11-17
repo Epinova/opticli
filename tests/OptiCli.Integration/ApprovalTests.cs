@@ -50,7 +50,7 @@ public sealed class ApprovalTests
             Assert.Equal((true, false, "awaitingApproval"), (review.ApprovalRequested, review.Published, review.Status));
             Assert.Contains("sent for review", UndoHints.For(new SetOperation(page) { RequestApproval = true }, review));
             var drafts = await new DraftReader(site.Session).ListAsync(null, null, null, null, 0, 20, cancellationToken);
-            Assert.Equal("awaitingApproval", drafts.First(d => d.Ref == page).Status);
+            Assert.Equal(VersionStatus.AwaitingApproval, drafts.First(d => d.Ref == page).Status);
 
             // In review, it can't be changed until a reviewer decides.
             var inReview = await Assert.ThrowsAsync<ConflictException>(() => writes.RunAsync(new SetOperation(page, Name: "changed meanwhile"), dryRun: false, cancellationToken));

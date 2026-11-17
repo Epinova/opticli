@@ -69,7 +69,7 @@ public sealed class FromVersionTests
             var nowLive = await GetAsync(site, page, VersionSelector.Published, cancellationToken);
             Assert.Equal(("Live title", "Live change"), (nowLive.Properties["MetaTitle"]?["value"]?.GetValue<string>(), nowLive.Properties["MetaDescription"]?["value"]?.GetValue<string>()));
             var versions = await VersionReader.ListAsync(site.Session.Db, site.Session.Model, created.CreatedId.Value, null, 0, 50, cancellationToken);
-            Assert.Equal("checkedOut", versions.Single(v => v.Ref == draft).Status);
+            Assert.Equal(VersionStatus.CheckedOut, versions.Single(v => v.Ref == draft).Status);
 
             // Another draft of theirs, on top of what is live now.
             var second = Assert.IsType<WriteOutput>((await writes.RunAsync(new SetOperation(page, new JsonObject { ["MetaTitle"] = "Their second draft" }), dryRun: false, cancellationToken)).Output).Version!;

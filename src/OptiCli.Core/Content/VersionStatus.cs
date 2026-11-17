@@ -37,6 +37,9 @@ public static class VersionStatuses
         branchStatus == VersionStatus.Published ? storedVersion : commonDraft ?? storedVersion;
 
     /// <summary>camelCase name used in output (<c>published</c>, <c>checkedOut</c>, ...).</summary>
+    /// <summary>The status as output writes it (<see cref="Output.JsonOutput"/>'s camelCase enums); null for null.</summary>
+    public static string? Name(VersionStatus? status) => status is { } value ? Name(value) : null;
+
     public static string Name(VersionStatus status)
     {
         var name = status.ToString();

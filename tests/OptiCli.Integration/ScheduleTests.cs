@@ -29,7 +29,7 @@ public sealed class ScheduleTests
             var scheduled = Assert.IsType<WriteOutput>((await writes.RunAsync(schedule, dryRun: false, cancellationToken)).Output);
             Assert.Equal(("delayedPublish", false, at.UtcDateTime), (scheduled.Status, scheduled.Published, scheduled.ScheduledFor));
             var draft = (await new DraftReader(site.Session).ListAsync(null, null, null, null, 0, 20, cancellationToken)).First(d => d.Ref == page);
-            Assert.Equal(("delayedPublish", at.UtcDateTime), (draft.Status, draft.PublishAt));
+            Assert.Equal((Core.Content.VersionStatus.DelayedPublish, (DateTime?)at.UtcDateTime), (draft.Status, draft.PublishAt));
             Assert.Contains("opticli discard", UndoHints.For(schedule, scheduled));
 
             var cancelled = Assert.IsType<WriteOutput>((await writes.RunAsync(new DiscardOperation(scheduled.Version!), dryRun: false, cancellationToken)).Output);

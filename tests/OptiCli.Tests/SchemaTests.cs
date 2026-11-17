@@ -268,7 +268,7 @@ public class SchemaTests
     [Fact]
     public void Polymorphic_rows_are_written_as_the_row_they_are()
     {
-        IReadOnlyList<TypeUsageRow> rows = [new InstanceUsage("1", Guid.Empty, "A", "en", "published", 0, []), new InlineUsages(2, [])];
+        IReadOnlyList<TypeUsageRow> rows = [new InstanceUsage("1", Guid.Empty, "A", "en", Core.Content.VersionStatus.Published, 0, []), new InlineUsages(2, [])];
 
         Assert.Equal(
             """[{"ref":"1","guid":"00000000-0000-0000-0000-000000000000","name":"A","language":"en","status":"published","count":0,"usages":[]},{"count":2,"usages":[],"inline":true}]""",
@@ -278,7 +278,7 @@ public class SchemaTests
     [Fact]
     public void A_page_usage_row_is_the_usage_then_via()
     {
-        var usage = new Usage("1", Guid.Empty, "ArticlePage", "A", "en", "published", null, null, "MainArea", "contentArea", ["property"], null, null) { Blueprint = true };
+        var usage = new Usage("1", Guid.Empty, "ArticlePage", "A", "en", Core.Content.VersionStatus.Published, null, null, "MainArea", "contentArea", ["property"], null, null) { Blueprint = true };
 
         var row = JsonOutput.Serialize(new PageUsageRow(new PageUsage(usage, ["5", "6"])));
         var direct = JsonOutput.Serialize(new PageUsageRow(new PageUsage(usage, [])));

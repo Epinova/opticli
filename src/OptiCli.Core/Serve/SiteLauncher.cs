@@ -446,7 +446,7 @@ public static partial class SiteLauncher
 public sealed record StopResult(ServeMode Mode, int? Pid, int? Port, bool Stopped, bool Graceful);
 
 /// <summary>
-/// What <c>serve --foreground</c> prints: once the site it ran has stopped, <see cref="ServeStopOutput.Ended"/>; when a
+/// What <c>serve --foreground</c> prints: once the site it ran has stopped, <c>{"stopped": true}</c>; when a
 /// site already ran (nothing was started), that site's <see cref="AgentStatus"/>. Written as the one it is.
 /// </summary>
 [JsonDerivedType(typeof(AgentStatus))]
@@ -455,7 +455,7 @@ public abstract record ServeForegroundOutput;
 
 /// <summary>
 /// <c>serve --stop</c>: what was stopped (<see cref="StopResult"/>), or, with only <see cref="Stopped"/> false and
-/// <see cref="Message"/>, that nothing was running. Also the end of <c>serve --foreground</c> (<see cref="Ended"/>).
+/// <see cref="Message"/>, that nothing was running. Also the end of <c>serve --foreground</c>: <c>{"stopped": true}</c>.
 /// </summary>
 /// <param name="Mode">How the site was started; left out when nothing was running.</param>
 /// <param name="Graceful">It shut down when asked, rather than being killed; left out when nothing was running.</param>

@@ -7,15 +7,15 @@ namespace OptiCli.Core.Content;
 /// </summary>
 /// <param name="Ref"><c>123</c>, or <c>123_456</c> when a specific version is meant; null for a missing target.</param>
 /// <param name="Language">The branch shown; null for language-invariant content (media, folders).</param>
-/// <param name="Status">Status of that branch or version (<c>published</c>, <c>checkedOut</c>, ...).</param>
+/// <param name="Status">Status of that branch or version (<c>published</c>, <c>checkedOut</c>, ...); null for a missing target or provider content.</param>
 /// <param name="Url">Site-relative URL for pages and media, when the item is routable.</param>
-public sealed record ContentIdentity(string? Ref, Guid Guid, string? Type, string? Name, string? Language, string? Status, string? Url)
+public sealed record ContentIdentity(string? Ref, Guid Guid, string? Type, string? Name, string? Language, VersionStatus? Status, string? Url)
 {
     /// <summary>
     /// CMS 13: <c>experience</c>, <c>section</c> or <c>element</c> for Visual Builder content (an experience's
     /// composition is in <c>get</c>); left out for every other kind, which <see cref="Type"/> and <c>opticli types</c> tell.
     /// </summary>
-    public string? Kind { get; init; }
+    public Cms.ContentKind? Kind { get; init; }
 
     /// <summary>True for items in the recycle bin.</summary>
     public bool? Deleted { get; init; }

@@ -14,7 +14,7 @@ namespace OptiCli.Core.Queries;
 /// <param name="Saved">When the owner's branch was last saved (its primary version), so owners can be sorted by recency.</param>
 /// <remarks>Not sealed: <see cref="PageUsageRow"/> is a usage with the blocks it was reached through.</remarks>
 public record Usage(
-    string Ref, Guid Guid, string Type, string? Name, string? Language, string Status, string? Url, bool? Deleted,
+    string Ref, Guid Guid, string Type, string? Name, string? Language, VersionStatus Status, string? Url, bool? Deleted,
     string Property, string Kind, IReadOnlyList<string> Sources, DateTime? Saved, string? ChangedBy)
 {
     /// <summary>CMS 13: true when the owner is a Visual Builder blueprint, not content visitors see.</summary>
@@ -138,7 +138,7 @@ public sealed class WhereUsedReader(ContentSession session, PropertyReferenceInd
                     : null;
                 var place = places[first];
                 return new Usage(
-                    identity.Ref!, identity.Guid, identity.Type ?? "", identity.Name, identity.Language, identity.Status ?? "", identity.Url, identity.Deleted,
+                    identity.Ref!, identity.Guid, identity.Type ?? "", identity.Name, identity.Language, identity.Status!.Value, identity.Url, identity.Deleted,
                     first.DefinitionId == 0 ? "(unknown)" : place?.Property ?? group.Key.Path,
                     place?.Property == Compositions.Field ? Compositions.Field : first.Kind,
                     group.Select(f => f.Source).Distinct().Order().ToList(),

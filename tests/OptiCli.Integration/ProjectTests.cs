@@ -50,7 +50,7 @@ public sealed class ProjectTests
         Assert.Equal((ProjectSaveItems.Replaced, first.Version, true, "checkedIn"), (third.Project!.Item, third.Project.Replaced, third.Project.Ready, third.Status));
         Assert.Equal("checkedOut", await scratch.StatusAsync(first.Version!));
         var item = Assert.Single(await ProjectReader.ItemsAsync(scratch.Site.Session, project, None));
-        Assert.Equal((third.Version, "checkedIn", "en", "default"), (item.Version, item.Status, item.Language, item.Category));
+        Assert.Equal((third.Version, (VersionStatus?)VersionStatus.CheckedIn, "en", "default"), (item.Version, item.Status, item.Language, item.Category));
         var listed = Assert.Single(await ProjectReader.ListAsync(scratch.Site.Session.Db, None), p => p.Id == project);
         Assert.Equal((name, ProjectStatuses.Active, 1, 1), (listed.Name, listed.Status, listed.Items, listed.Ready));
 
@@ -80,7 +80,7 @@ public sealed class ProjectTests
         Assert.Equal((ProjectStatuses.Active, 2, 1), (campaign.Status, campaign.Items, campaign.Ready));
         var items = await ProjectReader.ItemsAsync(scratch.Site.Session, campaign.Id, None);
         // "Campaign page, draft", then "Campaign page, ready".
-        Assert.Equal(["checkedOut", "checkedIn"], items.OrderBy(i => i.Name, StringComparer.Ordinal).Select(i => i.Status));
+        Assert.Equal([VersionStatus.CheckedOut, VersionStatus.CheckedIn], items.OrderBy(i => i.Name, StringComparer.Ordinal).Select(i => i.Status));
         Assert.Equal(["Campaign page, draft", "Campaign page, ready"], items.Select(i => i.Name).Order(StringComparer.Ordinal));
         // A dry run of its publish puts only the ready one live (nothing is published).
         var preview = await scratch.Projects.PublishAsync("Edge campaign", null, includeDraft: false, dryRun: true, confirm: null, None);
@@ -130,7 +130,7 @@ public sealed class ProjectTests
         Assert.Equal("awaitingApproval", await scratch.StatusAsync(draft.Version!));
         Assert.Equal(["Campaign texts, please review"], await scratch.ReviewCommentsAsync(draft.Version!));
         // It stays in the project, in review; publishing the project finds nothing ready.
-        Assert.Equal("awaitingApproval", Assert.Single(await ProjectReader.ItemsAsync(scratch.Site.Session, int.Parse(project, CultureInfo.InvariantCulture), None)).Status);
+        Assert.Equal(VersionStatus.AwaitingApproval, Assert.Single(await ProjectReader.ItemsAsync(scratch.Site.Session, int.Parse(project, CultureInfo.InvariantCulture), None)).Status);
         var nothing = await Assert.ThrowsAsync<ConflictException>(() => scratch.Projects.PublishAsync(project, null, includeDraft: false, dryRun: false, confirm: null, None));
         Assert.Equal(AgentErrorReasons.NothingReady, Assert.IsType<AgentErrorDetails>(nothing.Details).Reason);
     }
@@ -499,7 +499,7 @@ public sealed class ProjectTests
         Assert.Single(made.MarkedReady ?? []);
         var item = Assert.Single(await ProjectReader.ItemsAsync(scratch.Site.Session, made.Id.Value, None));
         // The page's last version, with the later step's change, is the ready one.
-        Assert.Equal((run.Created["page"], "checkedIn"), (item.Ref, item.Status));
+        Assert.Equal((run.Created["page"], (VersionStatus?)VersionStatus.CheckedIn), (item.Ref, item.Status));
         Assert.Equal(Assert.IsType<WriteOutput>(run.Operations[1].Result).Version, item.Version);
 
         // Plans don't publish a project.

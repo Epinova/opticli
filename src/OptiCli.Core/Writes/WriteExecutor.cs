@@ -848,7 +848,7 @@ public sealed class WriteExecutor(
         }
         var identity = session.Identities.Describe(target.Header, session.Model.Language(version.LanguageId), version.Id, version.StatusValue, version.Name);
         var output = new WriteOutput(
-            WriteOutput.Id(target.Id), version.Ref, identity.Guid, identity.Type, identity.Name, identity.Language, identity.Status,
+            WriteOutput.Id(target.Id), version.Ref, identity.Guid, identity.Type, identity.Name, identity.Language, VersionStatuses.Name(identity.Status),
             target.Header.ParentId is { } parent ? WriteOutput.Id(parent) : null,
             Saved: false, Published: false, DryRun: true, Valid: true, BaseVersion: version.Ref, Changes: [], Validation: null)
         {
@@ -919,7 +919,7 @@ public sealed class WriteExecutor(
     {
         var current = session.Identities.Describe(target.Header, session.Model.Language(version.LanguageId), version.Id, version.StatusValue, version.Name);
         return new WriteOutcome<WriteOutput>(
-            new WriteOutput(WriteOutput.Id(target.Id), version.Ref, current.Guid, current.Type, current.Name, current.Language, current.Status,
+            new WriteOutput(WriteOutput.Id(target.Id), version.Ref, current.Guid, current.Type, current.Name, current.Language, VersionStatuses.Name(current.Status),
                 target.Header.ParentId is { } parentId ? WriteOutput.Id(parentId) : null,
                 Saved: false, Published: false, DryRun: dryRun, Valid: true, BaseVersion: version.Ref, Changes: [], Validation: null),
             DbSource, null, [message]);
@@ -1053,7 +1053,7 @@ public sealed class WriteExecutor(
             {
                 var identity = session.Identities.Describe(header, null);
                 return new WriteOutcome<RestoreOutput>(
-                    new RestoreOutput(WriteOutput.Id(target.Id), identity.Guid, identity.Type, identity.Name, identity.Language, identity.Status,
+                    new RestoreOutput(WriteOutput.Id(target.Id), identity.Guid, identity.Type, identity.Name, identity.Language, VersionStatuses.Name(identity.Status),
                         header.ParentId is { } parent ? WriteOutput.Id(parent) : "", null, "unchanged", null, Restored: false, DryRun: dryRun, Descendants: 0),
                     DbSource, null, [$"Content {target.Id} is not in the recycle bin; nothing to do."]);
             }
@@ -1279,7 +1279,7 @@ public sealed class WriteExecutor(
     {
         var identity = session.Identities.Describe(target.Header, null);
         return new MoveOutput(
-            WriteOutput.Id(target.Id), identity.Guid, identity.Type, identity.Name, identity.Language, identity.Status,
+            WriteOutput.Id(target.Id), identity.Guid, identity.Type, identity.Name, identity.Language, VersionStatuses.Name(identity.Status),
             parent, target.Header.ParentId is { } previous ? WriteOutput.Id(previous) : null,
             Moved: false, DryRun: true, descendants, recycleBin);
     }

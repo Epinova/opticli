@@ -85,10 +85,10 @@ public sealed class IdentityResolver(CmsDatabase db, CmsModel model)
             Model.TypeName(header.TypeId),
             name ?? row?.Name,
             shown?.DisplayCode,
-            VersionStatuses.Name(status ?? row?.Status ?? VersionStatus.NotCreated),
+            status ?? row?.Status ?? VersionStatus.NotCreated,
             Urls.UrlOf(header, shown is { IsInvariant: false } ? shown : null)?.Path)
         {
-            Kind = Model.Kind(header.TypeId) is var kind && kind.IsComposition() ? kind.Name() : null,
+            Kind = Model.Kind(header.TypeId) is var kind && kind.IsComposition() ? kind : null,
             Deleted = header.Deleted ? true : null,
             Blueprint = header.Blueprint ? true : null,
         };
