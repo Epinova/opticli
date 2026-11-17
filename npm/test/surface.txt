@@ -229,6 +229,9 @@ AccessEntry.kind
 AccessEntry.levels
 AccessEntry.mask
 AccessEntry.name
+AccessKind = 'role'
+AccessKind = 'user'
+AccessKind = 'visitorGroup'
 AccessList.assetsOf?
 AccessList.entries
 AccessList.from?
@@ -262,6 +265,12 @@ AccessView.inherited
 AccessView.name?
 AccessView.ref
 AccessView.type?
+AgentState = 'incompatible'
+AgentState = 'running'
+AgentState = 'stale'
+AgentState = 'stopped'
+AgentState = 'unresponsive'
+AgentState = 'wrongDatabase'
 AgentStatus.agent?
 AgentStatus.agentDll?
 AgentStatus.browseUrl?
@@ -311,6 +320,83 @@ AppliedPlan.dryRun
 AppliedPlan.operations
 AppliedPlan.partial?
 AppliedPlan.projects?
+AppliedStep[op='access']
+AppliedStep[op='access'].error?
+AppliedStep[op='access'].guid?
+AppliedStep[op='access'].id?
+AppliedStep[op='access'].index
+AppliedStep[op='access'].op
+AppliedStep[op='access'].result?
+AppliedStep[op='access'].savedInto?
+AppliedStep[op='access'].status
+AppliedStep[op='access'].undo?
+AppliedStep[op='access'].warnings?
+AppliedStep[op='area' | 'block' | 'composition' | 'create' | 'discard' | 'publish' | 'set' | 'unpublish' | 'upload']
+AppliedStep[op='area' | 'block' | 'composition' | 'create' | 'discard' | 'publish' | 'set' | 'unpublish' | 'upload'].error?
+AppliedStep[op='area' | 'block' | 'composition' | 'create' | 'discard' | 'publish' | 'set' | 'unpublish' | 'upload'].guid?
+AppliedStep[op='area' | 'block' | 'composition' | 'create' | 'discard' | 'publish' | 'set' | 'unpublish' | 'upload'].id?
+AppliedStep[op='area' | 'block' | 'composition' | 'create' | 'discard' | 'publish' | 'set' | 'unpublish' | 'upload'].index
+AppliedStep[op='area' | 'block' | 'composition' | 'create' | 'discard' | 'publish' | 'set' | 'unpublish' | 'upload'].op
+AppliedStep[op='area' | 'block' | 'composition' | 'create' | 'discard' | 'publish' | 'set' | 'unpublish' | 'upload'].result?
+AppliedStep[op='area' | 'block' | 'composition' | 'create' | 'discard' | 'publish' | 'set' | 'unpublish' | 'upload'].savedInto?
+AppliedStep[op='area' | 'block' | 'composition' | 'create' | 'discard' | 'publish' | 'set' | 'unpublish' | 'upload'].status
+AppliedStep[op='area' | 'block' | 'composition' | 'create' | 'discard' | 'publish' | 'set' | 'unpublish' | 'upload'].undo?
+AppliedStep[op='area' | 'block' | 'composition' | 'create' | 'discard' | 'publish' | 'set' | 'unpublish' | 'upload'].warnings?
+AppliedStep[op='delete' | 'move']
+AppliedStep[op='delete' | 'move'].error?
+AppliedStep[op='delete' | 'move'].guid?
+AppliedStep[op='delete' | 'move'].id?
+AppliedStep[op='delete' | 'move'].index
+AppliedStep[op='delete' | 'move'].op
+AppliedStep[op='delete' | 'move'].result?
+AppliedStep[op='delete' | 'move'].savedInto?
+AppliedStep[op='delete' | 'move'].status
+AppliedStep[op='delete' | 'move'].undo?
+AppliedStep[op='delete' | 'move'].warnings?
+AppliedStep[op='language']
+AppliedStep[op='language'].error?
+AppliedStep[op='language'].guid?
+AppliedStep[op='language'].id?
+AppliedStep[op='language'].index
+AppliedStep[op='language'].op
+AppliedStep[op='language'].result?
+AppliedStep[op='language'].savedInto?
+AppliedStep[op='language'].status
+AppliedStep[op='language'].undo?
+AppliedStep[op='language'].warnings?
+AppliedStep[op='restore']
+AppliedStep[op='restore'].error?
+AppliedStep[op='restore'].guid?
+AppliedStep[op='restore'].id?
+AppliedStep[op='restore'].index
+AppliedStep[op='restore'].op
+AppliedStep[op='restore'].result?
+AppliedStep[op='restore'].savedInto?
+AppliedStep[op='restore'].status
+AppliedStep[op='restore'].undo?
+AppliedStep[op='restore'].warnings?
+AppliedStep[op='site']
+AppliedStep[op='site'].error?
+AppliedStep[op='site'].guid?
+AppliedStep[op='site'].id?
+AppliedStep[op='site'].index
+AppliedStep[op='site'].op
+AppliedStep[op='site'].result?
+AppliedStep[op='site'].savedInto?
+AppliedStep[op='site'].status
+AppliedStep[op='site'].undo?
+AppliedStep[op='site'].warnings?
+AppliedStep[op='translate']
+AppliedStep[op='translate'].error?
+AppliedStep[op='translate'].guid?
+AppliedStep[op='translate'].id?
+AppliedStep[op='translate'].index
+AppliedStep[op='translate'].op
+AppliedStep[op='translate'].result?
+AppliedStep[op='translate'].savedInto?
+AppliedStep[op='translate'].status
+AppliedStep[op='translate'].undo?
+AppliedStep[op='translate'].warnings?
 ApplyCallOptions.acceptDrift?
 ApplyCallOptions.allowOutside?
 ApplyCallOptions.baseDir?
@@ -475,6 +561,9 @@ CompositionOptions.template?
 CompositionOptions.type?
 CompositionOptions.values?
 CompositionOptions.variation?
+ContentAreaItem = { readonly guid: string; readonly displayOption?: string | undefined; }
+ContentAreaItem = { readonly ref: string; readonly displayOption?: string | undefined; readonly group?: string | undefined; readonly visitorGroups?: readonly string[] | undefined; }
+ContentAreaItem = { readonly type: string; readonly name?: string | undefined; readonly properties: Properties; readonly displayOption?: string | undefined; }
 ContentDocument.approval?
 ContentDocument.blueprint?
 ContentDocument.category?
@@ -521,6 +610,16 @@ ContentIdentity.ref?
 ContentIdentity.status?
 ContentIdentity.type?
 ContentIdentity.url?
+ContentKind = 'block'
+ContentKind = 'contract'
+ContentKind = 'element'
+ContentKind = 'experience'
+ContentKind = 'folder'
+ContentKind = 'media'
+ContentKind = 'other'
+ContentKind = 'page'
+ContentKind = 'section'
+ContentRef = string
 ContentSummary.guid
 ContentSummary.id
 ContentSummary.language?
@@ -535,6 +634,19 @@ ContentUrls.languages
 ContentUrls.note?
 ContentUrls.ref
 ContentUrls.type
+CreateCallOptions.acceptDrift?
+CreateCallOptions.blueprint?
+CreateCallOptions.connection?
+CreateCallOptions.connectionName?
+CreateCallOptions.db?
+CreateCallOptions.dryRun?
+CreateCallOptions.guid?
+CreateCallOptions.inProject?
+CreateCallOptions.lang?
+CreateCallOptions.publish?
+CreateCallOptions.publishAt?
+CreateCallOptions.ready?
+CreateCallOptions.requestApproval?
 CreateOptions.acceptDrift?
 CreateOptions.blueprint?
 CreateOptions.connection?
@@ -551,6 +663,39 @@ CreateOptions.ready?
 CreateOptions.requestApproval?
 CreateOptions.type?
 CreateOptions.values?
+CreatedContent.approvalRequested?
+CreatedContent.baseVersion?
+CreatedContent.blocks?
+CreatedContent.canonicalUrl?
+CreatedContent.changes
+CreatedContent.composition?
+CreatedContent.discarded?
+CreatedContent.dryRun
+CreatedContent.existing?
+CreatedContent.guid
+CreatedContent.intoVersion?
+CreatedContent.language?
+CreatedContent.leftOut?
+CreatedContent.name
+CreatedContent.parent?
+CreatedContent.pendingDraft?
+CreatedContent.previouslyPublished?
+CreatedContent.project?
+CreatedContent.published
+CreatedContent.ref
+CreatedContent.restored?
+CreatedContent.saved
+CreatedContent.scheduledFor?
+CreatedContent.siteChanges?
+CreatedContent.siteError?
+CreatedContent.status?
+CreatedContent.type
+CreatedContent.unpublished?
+CreatedContent.upload?
+CreatedContent.url?
+CreatedContent.valid
+CreatedContent.validation?
+CreatedContent.version
 CreatedPage.approvalRequested?
 CreatedPage.baseVersion?
 CreatedPage.blocks?
@@ -661,10 +806,25 @@ DraftsOptions.since?
 DraftsOptions.type?
 DriftSummary.ahead?
 DriftSummary.differences
+Envelope = ErrorEnvelope
+Envelope = OkEnvelope<T>
 ErrorBody.code
 ErrorBody.details?
 ErrorBody.hint?
 ErrorBody.message
+ErrorCode = 'cancelled'
+ErrorCode = 'conflict'
+ErrorCode = 'drift'
+ErrorCode = 'internal'
+ErrorCode = 'job_failed'
+ErrorCode = 'login_failed'
+ErrorCode = 'needs_selection'
+ErrorCode = 'not_found'
+ErrorCode = 'refused'
+ErrorCode = 'timeout'
+ErrorCode = 'unreachable'
+ErrorCode = 'usage'
+ErrorCode = 'validation'
 ErrorEnvelope.error
 ErrorEnvelope.meta?
 ErrorEnvelope.ok
@@ -714,6 +874,13 @@ HostInfo.https?
 HostInfo.language?
 HostInfo.name
 HostInfo.type
+HostType = 'edit'
+HostType = 'media'
+HostType = 'preview'
+HostType = 'primary'
+HostType = 'redirectPermanent'
+HostType = 'redirectTemporary'
+HostType = 'undefined'
 IncomingReference.from
 IncomingReference.kind
 IncomingReference.language?
@@ -772,6 +939,12 @@ JobState.nextRun?
 JobState.running
 JobState.schedule
 JobState.stoppable
+JobStatus = 'aborted'
+JobStatus = 'cancelled'
+JobStatus = 'failed'
+JobStatus = 'succeeded'
+JobStatus = 'unableToStart'
+JobStatus = 'unknown'
 JobStopView.dryRun?
 JobStopView.duration?
 JobStopView.finished?
@@ -831,10 +1004,21 @@ JobsStopOptions.connection?
 JobsStopOptions.connectionName?
 JobsStopOptions.db?
 JobsStopOptions.dryRun?
+JsonValue = JsonValue[]
+JsonValue = false
+JsonValue = null
+JsonValue = number
+JsonValue = string
+JsonValue = true
+JsonValue = { [key: string]: JsonValue; }
 KeepOption.keep?
 LanguageBranchChange.code
 LanguageBranchChange.enabled
 LanguageBranchChange.status
+LanguageBranchStatus = 'created'
+LanguageBranchStatus = 'disabled'
+LanguageBranchStatus = 'enabled'
+LanguageBranchStatus = 'unchanged'
 LanguageInfo.code
 LanguageInfo.contentItems
 LanguageInfo.enabled
@@ -1213,6 +1397,21 @@ OptiCliSync.visitorGroups
 OptiCliSync.visitorGroupsAll
 OptiCliSync.whereUsed
 OptiCliSync.whereUsedAll
+OptiCliWorkerOptions.opticliSandbox?
+PageOptions.acceptDrift?
+PageOptions.blueprint?
+PageOptions.connection?
+PageOptions.connectionName?
+PageOptions.db?
+PageOptions.guid?
+PageOptions.inProject?
+PageOptions.keep?
+PageOptions.lang?
+PageOptions.parent?
+PageOptions.publish?
+PageOptions.publishAt?
+PageOptions.ready?
+PageOptions.requestApproval?
 PageUsageRow.blueprint?
 PageUsageRow.changedBy?
 PageUsageRow.deleted?
@@ -1244,6 +1443,9 @@ PlanProject.markedReady?
 PlanProject.name
 PlanProject.status
 PlanProject.undo?
+PlanProjectStatus = 'created'
+PlanProjectStatus = 'existing'
+PlanProjectStatus = 'toCreate'
 PlanRun.created
 PlanRun.dryRun
 PlanRun.operations
@@ -1259,10 +1461,194 @@ PlanStepResult.savedInto?
 PlanStepResult.status
 PlanStepResult.undo?
 PlanStepResult.warnings?
+PlanStepStatus = 'deferred'
+PlanStepStatus = 'failed'
+PlanStepStatus = 'invalid'
+PlanStepStatus = 'notRun'
+PlanStepStatus = 'saved'
+PlanStepStatus = 'simulated'
+PlanStepStatus = 'unchanged'
+PlanStepStatus = 'valid'
+PlanStep[op='access']
+PlanStep[op='access'].allowUnknownRole?
+PlanStep[op='access'].breakInheritance?
+PlanStep[op='access'].grant?
+PlanStep[op='access'].grantUsers?
+PlanStep[op='access'].inherit?
+PlanStep[op='access'].op
+PlanStep[op='access'].ref
+PlanStep[op='access'].revoke?
+PlanStep[op='area']
+PlanStep[op='area'].action
+PlanStep[op='area'].at?
+PlanStep[op='area'].baseVersion?
+PlanStep[op='area'].display?
+PlanStep[op='area'].force?
+PlanStep[op='area'].from?
+PlanStep[op='area'].includeDraft?
+PlanStep[op='area'].index?
+PlanStep[op='area'].item?
+PlanStep[op='area'].lang?
+PlanStep[op='area'].name?
+PlanStep[op='area'].op
+PlanStep[op='area'].project?
+PlanStep[op='area'].property
+PlanStep[op='area'].publish?
+PlanStep[op='area'].publishAt?
+PlanStep[op='area'].ready?
+PlanStep[op='area'].ref
+PlanStep[op='area'].requestApproval?
+PlanStep[op='area'].to?
+PlanStep[op='area'].type?
+PlanStep[op='area'].values?
+PlanStep[op='block']
+PlanStep[op='block'].for?
+PlanStep[op='block'].guid?
+PlanStep[op='block'].id?
+PlanStep[op='block'].includeDraft?
+PlanStep[op='block'].lang?
+PlanStep[op='block'].name
+PlanStep[op='block'].op
+PlanStep[op='block'].parent?
+PlanStep[op='block'].project?
+PlanStep[op='block'].properties?
+PlanStep[op='block'].publish?
+PlanStep[op='block'].ready?
+PlanStep[op='block'].requestApproval?
+PlanStep[op='block'].type
+PlanStep[op='composition']
+PlanStep[op='composition'].action
+PlanStep[op='composition'].at?
+PlanStep[op='composition'].baseVersion?
+PlanStep[op='composition'].force?
+PlanStep[op='composition'].from?
+PlanStep[op='composition'].in?
+PlanStep[op='composition'].includeDraft?
+PlanStep[op='composition'].lang?
+PlanStep[op='composition'].node?
+PlanStep[op='composition'].nodeType?
+PlanStep[op='composition'].op
+PlanStep[op='composition'].project?
+PlanStep[op='composition'].publish?
+PlanStep[op='composition'].publishAt?
+PlanStep[op='composition'].ready?
+PlanStep[op='composition'].ref
+PlanStep[op='composition'].requestApproval?
+PlanStep[op='composition'].value?
+PlanStep[op='composition'].variation?
+PlanStep[op='create']
+PlanStep[op='create'].blueprint
+PlanStep[op='create'].blueprint?
+PlanStep[op='create'].for?
+PlanStep[op='create'].guid?
+PlanStep[op='create'].id?
+PlanStep[op='create'].includeDraft?
+PlanStep[op='create'].lang?
+PlanStep[op='create'].name
+PlanStep[op='create'].op
+PlanStep[op='create'].parent?
+PlanStep[op='create'].project?
+PlanStep[op='create'].properties?
+PlanStep[op='create'].publish?
+PlanStep[op='create'].publishAt?
+PlanStep[op='create'].ready?
+PlanStep[op='create'].requestApproval?
+PlanStep[op='create'].type
+PlanStep[op='create'].type?
+PlanStep[op='delete']
+PlanStep[op='delete'].ignoreReferences?
+PlanStep[op='delete'].op
+PlanStep[op='delete'].ref
+PlanStep[op='discard']
+PlanStep[op='discard'].includeDraft?
+PlanStep[op='discard'].lang?
+PlanStep[op='discard'].op
+PlanStep[op='discard'].ref
+PlanStep[op='discard'].version?
+PlanStep[op='language']
+PlanStep[op='language'].enabled?
+PlanStep[op='language'].lang
+PlanStep[op='language'].op
+PlanStep[op='move']
+PlanStep[op='move'].op
+PlanStep[op='move'].ref
+PlanStep[op='move'].to
+PlanStep[op='publish']
+PlanStep[op='publish'].includeDraft?
+PlanStep[op='publish'].lang?
+PlanStep[op='publish'].op
+PlanStep[op='publish'].publishAt?
+PlanStep[op='publish'].ref
+PlanStep[op='publish'].requestApproval?
+PlanStep[op='publish'].version?
+PlanStep[op='restore']
+PlanStep[op='restore'].op
+PlanStep[op='restore'].ref
+PlanStep[op='restore'].to?
+PlanStep[op='set']
+PlanStep[op='set'].baseVersion?
+PlanStep[op='set'].force?
+PlanStep[op='set'].from?
+PlanStep[op='set'].includeDraft?
+PlanStep[op='set'].lang?
+PlanStep[op='set'].name?
+PlanStep[op='set'].op
+PlanStep[op='set'].project?
+PlanStep[op='set'].properties?
+PlanStep[op='set'].publish?
+PlanStep[op='set'].publishAt?
+PlanStep[op='set'].ready?
+PlanStep[op='set'].ref
+PlanStep[op='set'].requestApproval?
+PlanStep[op='set'].variation?
+PlanStep[op='site']
+PlanStep[op='site'].hosts
+PlanStep[op='site'].https?
+PlanStep[op='site'].name
+PlanStep[op='site'].op
+PlanStep[op='site'].siteAssets?
+PlanStep[op='site'].startPage
+PlanStep[op='translate']
+PlanStep[op='translate'].confirm?
+PlanStep[op='translate'].includeDraft?
+PlanStep[op='translate'].lang
+PlanStep[op='translate'].name?
+PlanStep[op='translate'].op
+PlanStep[op='translate'].project?
+PlanStep[op='translate'].properties?
+PlanStep[op='translate'].publish?
+PlanStep[op='translate'].ready?
+PlanStep[op='translate'].ref
+PlanStep[op='translate'].remove?
+PlanStep[op='translate'].requestApproval?
+PlanStep[op='translate'].withBlocks?
+PlanStep[op='unpublish']
+PlanStep[op='unpublish'].lang?
+PlanStep[op='unpublish'].op
+PlanStep[op='unpublish'].ref
+PlanStep[op='upload']
+PlanStep[op='upload'].file
+PlanStep[op='upload'].for?
+PlanStep[op='upload'].guid?
+PlanStep[op='upload'].id?
+PlanStep[op='upload'].includeDraft?
+PlanStep[op='upload'].name?
+PlanStep[op='upload'].op
+PlanStep[op='upload'].parent?
+PlanStep[op='upload'].project?
+PlanStep[op='upload'].properties?
+PlanStep[op='upload'].publish?
+PlanStep[op='upload'].ready?
+PlanStep[op='upload'].replace?
+PlanStep[op='upload'].requestApproval?
+PlanStep[op='upload'].type?
 ProjectDeletePreview.deleted
 ProjectDeletePreview.dryRun
 ProjectDeletePreview.items
 ProjectDeletePreview.project
+ProjectEditorUi = 'gadget'
+ProjectEditorUi = 'none'
+ProjectEditorUi = 'projectMode'
 ProjectInfo.created?
 ProjectInfo.createdBy?
 ProjectInfo.id
@@ -1278,6 +1664,18 @@ ProjectItemInfo.ref
 ProjectItemInfo.status?
 ProjectItemInfo.type?
 ProjectItemInfo.version?
+ProjectItemOutcome = 'alreadyPublished'
+ProjectItemOutcome = 'alreadyReady'
+ProjectItemOutcome = 'approvalRequested'
+ProjectItemOutcome = 'failed'
+ProjectItemOutcome = 'noAccess'
+ProjectItemOutcome = 'notReady'
+ProjectItemOutcome = 'published'
+ProjectItemOutcome = 'ready'
+ProjectItemOutcome = 'removed'
+ProjectItemOutcome = 'scheduled'
+ProjectItemOutcome = 'skipped'
+ProjectItemOutcome = 'unscheduled'
 ProjectItemProblem.code
 ProjectItemProblem.message
 ProjectItemProblem.reason?
@@ -1313,6 +1711,12 @@ ProjectSaveResult.item
 ProjectSaveResult.name
 ProjectSaveResult.ready
 ProjectSaveResult.replaced?
+ProjectStatus = 'active'
+ProjectStatus = 'delayedPublished'
+ProjectStatus = 'publishFailed'
+ProjectStatus = 'published'
+ProjectStatus = 'publishing'
+ProjectStatus = 'reactivating'
 ProjectSummary.created?
 ProjectSummary.createdBy?
 ProjectSummary.id
@@ -1364,6 +1768,7 @@ ProjectsRemoveOptions.connectionName?
 ProjectsRemoveOptions.db?
 ProjectsRemoveOptions.dryRun?
 ProjectsRemoveOptions.lang?
+Properties = { readonly [property: string]: PropertyValue; }
 PropertyChange.after?
 PropertyChange.before?
 PropertyChange.property
@@ -1388,6 +1793,15 @@ PropertyOut.length?
 PropertyOut.truncated?
 PropertyOut.type
 PropertyOut.value
+PropertyValue = LinkValue
+PropertyValue = false
+PropertyValue = null
+PropertyValue = number
+PropertyValue = readonly ContentAreaItem[]
+PropertyValue = readonly PropertyValue[]
+PropertyValue = string
+PropertyValue = true
+PropertyValue = { readonly [property: string]: PropertyValue; }
 PublishOptions.acceptDrift?
 PublishOptions.connection?
 PublishOptions.connectionName?
@@ -1454,8 +1868,43 @@ RunResult.meta?
 SandboxOptions.parent
 SandboxOptions.properties?
 SandboxOptions.type
+SavedContent.approvalRequested?
+SavedContent.baseVersion?
+SavedContent.blocks?
+SavedContent.canonicalUrl?
+SavedContent.changes
+SavedContent.composition?
+SavedContent.discarded?
+SavedContent.dryRun
+SavedContent.existing?
+SavedContent.guid?
+SavedContent.intoVersion?
+SavedContent.language?
+SavedContent.leftOut?
+SavedContent.name?
+SavedContent.parent?
+SavedContent.pendingDraft?
+SavedContent.previouslyPublished?
+SavedContent.project?
+SavedContent.published
+SavedContent.ref
+SavedContent.restored?
+SavedContent.saved
+SavedContent.scheduledFor?
+SavedContent.siteChanges?
+SavedContent.siteError?
+SavedContent.status?
+SavedContent.type?
+SavedContent.unpublished?
+SavedContent.upload?
+SavedContent.url?
+SavedContent.valid
+SavedContent.validation?
+SavedContent.version?
 SavedInto.operation
 SavedInto.version
+SchedulerState = 'off'
+SchedulerState = 'on'
 SealResult.build
 SealResult.expires
 SealResult.file
@@ -1520,6 +1969,10 @@ SeedState.urls
 ServeLogs.lines
 ServeLogs.log
 ServeLogs.previous?
+ServeMode = 'background'
+ServeMode = 'external'
+ServeMode = 'foreground'
+ServeMode = 'ide'
 ServeOptions.allowPendingMigrations?
 ServeOptions.build?
 ServeOptions.connection?
@@ -1541,6 +1994,24 @@ ServeStopOutput.mode?
 ServeStopOutput.pid?
 ServeStopOutput.port?
 ServeStopOutput.stopped
+SetCallOptions.acceptDrift?
+SetCallOptions.baseVersion?
+SetCallOptions.connection?
+SetCallOptions.connectionName?
+SetCallOptions.db?
+SetCallOptions.dryRun?
+SetCallOptions.force?
+SetCallOptions.from?
+SetCallOptions.inProject?
+SetCallOptions.includeDraft?
+SetCallOptions.lang?
+SetCallOptions.name?
+SetCallOptions.publish?
+SetCallOptions.publishAt?
+SetCallOptions.ready?
+SetCallOptions.requestApproval?
+SetCallOptions.site?
+SetCallOptions.variation?
 SetOptions.acceptDrift?
 SetOptions.baseVersion?
 SetOptions.connection?
@@ -1587,6 +2058,9 @@ SiteHostSpec.https?
 SiteHostSpec.lang?
 SiteHostSpec.name
 SiteHostSpec.type?
+SiteHostStatus = 'changed'
+SiteHostStatus = 'created'
+SiteHostStatus = 'unchanged'
 SiteHostsView.application?
 SiteHostsView.changes
 SiteHostsView.dryRun?
@@ -1626,6 +2100,11 @@ SqlResult.rolledBack
 SqlResult.rowCount
 SqlResult.rows
 SqlResult.truncated?
+SqlValue = false
+SqlValue = null
+SqlValue = number
+SqlValue = string
+SqlValue = true
 StoredValues.content
 StoredValues.versions
 TimedItem.expiredAt?
@@ -1738,6 +2217,8 @@ TypeSummary.modelType?
 TypeSummary.name
 TypeSummary.originUnknown?
 TypeSummary.source?
+TypeUsageRow = InlineUsages
+TypeUsageRow = InstanceUsage
 TypesOptions.connection?
 TypesOptions.connectionName?
 TypesOptions.cursor?
@@ -1841,6 +2322,14 @@ VersionInfo.saved?
 VersionInfo.startPublish?
 VersionInfo.status
 VersionInfo.variation?
+VersionStatus = 'awaitingApproval'
+VersionStatus = 'checkedIn'
+VersionStatus = 'checkedOut'
+VersionStatus = 'delayedPublish'
+VersionStatus = 'notCreated'
+VersionStatus = 'previouslyPublished'
+VersionStatus = 'published'
+VersionStatus = 'rejected'
 VersionsOptions.connection?
 VersionsOptions.connectionName?
 VersionsOptions.cursor?

@@ -1,4 +1,5 @@
-// The public surface (exported names, class methods, interface properties) against the checked-in list: see surface.mjs.
+// The public surface (exported names, class methods, interface properties, what type aliases resolve to) against the
+// checked-in list: see surface.mjs.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { checkedIn, surface } from './surface.mjs';
@@ -14,4 +15,23 @@ test('the public surface is the checked-in list: nothing renamed or removed by a
     `The package's names changed. Removed (a breaking change: say so in CHANGELOG.md): ${removed.join(', ') || 'none'}. ` +
       `Added: ${added.join(', ') || 'none'}. If that is meant, run \`node test/surface.mjs --write\` and commit test/surface.txt.`,
   );
+});
+
+test('type aliases are listed by what they resolve to: properties, union members and steps', () => {
+  const now = new Set(surface());
+  for (const line of [
+    "VersionStatus = 'published'",
+    "ProjectEditorUi = 'gadget'",
+    'TypeUsageRow = InstanceUsage',
+    'ContentRef = string',
+    'CreatedContent.ref',
+    'SavedContent.version?',
+    'CreateCallOptions.inProject?',
+    "PlanStep[op='upload'].replace?",
+    "PlanStep[op='area'].display?",
+    "AppliedStep[op='delete' | 'move'].result?",
+  ]) {
+    assert.ok(now.has(line), `${line} is missing from the surface`);
+  }
+  assert.ok(![...now].some((l) => l.startsWith("PlanStep[op='area'].displayOption")), 'an area step has display, not displayOption');
 });
