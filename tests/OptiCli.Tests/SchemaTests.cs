@@ -263,6 +263,26 @@ public class SchemaTests
     }
 
     [Fact]
+    public void A_guid_option_is_a_uuid()
+    {
+        var guid = Command("create")["options"]!.AsArray().Single(o => o!["name"]!.GetValue<string>() == "--guid")!;
+
+        Assert.Equal("string", guid["type"]!["type"]!.GetValue<string>());
+        Assert.Equal("uuid", guid["type"]!["format"]!.GetValue<string>());
+    }
+
+    private sealed record MisnamedValues([property: Protocol.OutputValues("OptiCli.Core.Content.NoSuchStatus, OptiCli.Core")] string Status);
+
+    [Fact]
+    public void A_value_set_named_by_a_type_name_that_is_no_type_fails()
+    {
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            new SchemaCommand.TypeSchemas(SchemaCommand.XmlDocs.Load(), [typeof(MisnamedValues)]));
+
+        Assert.Contains("names no type", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Writes_are_per_mode()
     {
         var access = Command("access");
@@ -305,6 +325,10 @@ public class SchemaTests
         Assert.Equal("ProjectItemOutcome", Ref(Definitions["ProjectItemResult"]!["properties"]!["outcome"]));
         Assert.Equal("JobStatus", Ref(Definitions["JobView"]!["properties"]!["lastStatus"]));
         Assert.Equal("ErrorCode", Ref(Definitions["ErrorBody"]!["properties"]!["code"]));
+        Assert.Equal("PlanProjectStatus", Ref(Definitions["PlanProject"]!["properties"]!["status"]));
+        Assert.Equal(["existing", "created", "toCreate"], Values("PlanProjectStatus"));
+        Assert.Equal("SiteHostStatus", Ref(Definitions["SiteHostsView"]!["properties"]!["status"]));
+        Assert.Equal(["created", "changed", "unchanged"], Values("SiteHostStatus"));
     }
 
     [Theory]
@@ -314,6 +338,10 @@ public class SchemaTests
     [InlineData("ProjectInfo", "status", "ProjectStatus")]
     [InlineData("ProjectSummary", "status", "ProjectStatus")]
     [InlineData("AccessEntry", "kind", "AccessKind")]
+    [InlineData("HistoryEntry", "previousStatus", "VersionStatus")]
+    // Protocol types, which name Core's VersionStatus by its type name.
+    [InlineData("ContentSummary", "status", "VersionStatus")]
+    [InlineData("LeftOutVersion", "status", "VersionStatus")]
     public void An_open_value_set_allows_other_strings(string type, string property, string set)
     {
         var anyOf = Definitions[type]!["properties"]![property]!["anyOf"]!.AsArray();

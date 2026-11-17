@@ -21,7 +21,7 @@ public sealed record HistoryParent(string Ref, string? Name);
 /// <param name="PreviousStatus">For a publish: what the version was before (<c>checkedIn</c>, <c>delayedPublish</c>, ...).</param>
 public sealed record HistoryEntry(
     DateTime When, string By, string Action, string? Version, string? Language, string? Name,
-    HistoryParent? From = null, HistoryParent? To = null, string? PreviousStatus = null);
+    HistoryParent? From = null, HistoryParent? To = null, [property: Protocol.OutputValues(typeof(Content.VersionStatus), Open = true)] string? PreviousStatus = null);
 
 /// <summary>
 /// The CMS's <c>ContentActionType</c> (<c>tblActivityLog.Action</c> for <c>Type = 'Content'</c>), by value, as

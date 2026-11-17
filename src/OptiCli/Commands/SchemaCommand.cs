@@ -212,6 +212,10 @@ internal static partial class SchemaCommand
                 : underlying == typeof(double) ? "number"
                 : "string",
         };
+        if (underlying == typeof(Guid))
+        {
+            schema["format"] = "uuid";
+        }
         if (allowed is not null)
         {
             schema["enum"] = new JsonArray([.. allowed.Select(a => (JsonNode)a)]);
@@ -305,7 +309,7 @@ internal static partial class SchemaCommand
                 Reach(property.PropertyType, reached);
                 if (property.GetCustomAttribute<OutputValuesAttribute>() is { } values)
                 {
-                    Reach(values.Values, reached);
+                    Reach(ValueSet(property, values), reached);
                 }
             }
         }
@@ -503,13 +507,21 @@ internal static partial class SchemaCommand
             {
                 throw new InvalidOperationException($"{property.DeclaringType?.Name}.{property.Name}: [OutputValues] is for string properties.");
             }
-            if (!values.Values.IsEnum && !IsValueSet(values.Values))
+            var set = ValueSet(property, values);
+            if (!set.IsEnum && !IsValueSet(set))
             {
-                throw new InvalidOperationException($"{property.DeclaringType?.Name}.{property.Name}: [OutputValues] names {values.Values.Name}, which is neither an enum nor a static class of string constants.");
+                throw new InvalidOperationException($"{property.DeclaringType?.Name}.{property.Name}: [OutputValues] names {set.Name}, which is neither an enum nor a static class of string constants.");
             }
-            var known = Schema(values.Values, null);
+            var known = Schema(set, null);
             return values.Open ? new JsonObject { ["anyOf"] = new JsonArray(known, Simple("string")) } : known.AsObject();
         }
+
+        /// <summary>The constants class or enum an <see cref="OutputValuesAttribute"/> names, by type or by name.</summary>
+        /// <exception cref="InvalidOperationException">A name that is no type.</exception>
+        private static Type ValueSet(PropertyInfo property, OutputValuesAttribute values) =>
+            values.Values
+            ?? (values.TypeName is { } name ? Type.GetType(name, throwOnError: false) : null)
+            ?? throw new InvalidOperationException($"{property.DeclaringType?.Name}.{property.Name}: [OutputValues(\"{values.TypeName}\")] names no type.");
 
         /// <summary>An enum's values as <see cref="JsonStringEnumConverter"/> writes them with <see cref="JsonNamingPolicy.CamelCase"/>.</summary>
         public static IEnumerable<string> EnumNames(Type type) =>

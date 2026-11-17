@@ -17,7 +17,21 @@ namespace OptiCli.Core.Writes;
 /// operation changed again (or sent for review, where an approval sequence applies and the step asked for that).
 /// </param>
 /// <param name="Undo">For a project the run made: how to delete it again (the drafts in it stay).</param>
-public sealed record PlanProject(int? Id, string Name, string Status, IReadOnlyList<string>? MarkedReady = null, string? Undo = null);
+public sealed record PlanProject(int? Id, string Name, [property: OutputValues(typeof(PlanProjectStatuses))] string Status, IReadOnlyList<string>? MarkedReady = null, string? Undo = null);
+
+/// <summary>Values of <see cref="PlanProject.Status"/>.</summary>
+[ValueSetName("PlanProjectStatus")]
+public static class PlanProjectStatuses
+{
+    /// <summary>The project was there before the run.</summary>
+    public const string Existing = "existing";
+
+    /// <summary>The run made the project.</summary>
+    public const string Created = "created";
+
+    /// <summary>A dry run: the real run makes the project before the first operation saves anything.</summary>
+    public const string ToCreate = "toCreate";
+}
 
 /// <summary>
 /// The projects a plan names (the plan's <c>project</c> and the steps' own): resolved against the database before the
@@ -31,9 +45,9 @@ public sealed record PlanProject(int? Id, string Name, string Status, IReadOnlyL
 /// </remarks>
 internal sealed class PlanProjects
 {
-    public const string Existing = "existing";
-    public const string Created = "created";
-    public const string ToCreate = "toCreate";
+    public const string Existing = PlanProjectStatuses.Existing;
+    public const string Created = PlanProjectStatuses.Created;
+    public const string ToCreate = PlanProjectStatuses.ToCreate;
 
     private sealed class Entry(string name)
     {

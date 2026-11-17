@@ -23,7 +23,11 @@ public sealed record ContentSummary
     public string? Language { get; init; }
 
     /// <summary>CMS version status, camelCase: <c>checkedOut</c> (draft), <c>published</c>, <c>previouslyPublished</c>, ...</summary>
+    [OutputValues(VersionStatusName, Open = true)]
     public string? Status { get; init; }
+
+    /// <summary>Core's <c>VersionStatus</c>, which names the statuses for <c>opticli schema</c> (Protocol can't reference Core).</summary>
+    internal const string VersionStatusName = "OptiCli.Core.Content.VersionStatus, OptiCli.Core";
 
     public string? Parent { get; init; }
 }
@@ -204,7 +208,7 @@ public sealed record PendingDraft(string Version, string? SavedBy, DateTime Save
 /// <param name="SavedBy">Who saved it, as the CMS recorded it; empty when nobody was signed in (a scheduled job or import).</param>
 /// <param name="Saved">When it was saved, UTC.</param>
 /// <param name="Primary">It was the primary draft (what edit mode opened) before the change was saved.</param>
-public sealed record LeftOutVersion(string Version, string? Status, string? SavedBy, DateTime Saved, bool Primary);
+public sealed record LeftOutVersion(string Version, [property: OutputValues(ContentSummary.VersionStatusName, Open = true)] string? Status, string? SavedBy, DateTime Saved, bool Primary);
 
 /// <summary>A property value before and after, in the same JSON shape the draft endpoint accepts.</summary>
 /// <param name="Before">Omitted when the property was empty.</param>

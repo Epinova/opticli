@@ -17,7 +17,7 @@ namespace OptiCli.Core.Sites;
 /// <param name="Application">CMS 13: the application's name, as <c>opticli sites</c> prints it; omitted on CMS 12.</param>
 /// <param name="IsDefault">CMS 13: whether it is the default application (CMS 12's <c>*</c> host); omitted on CMS 12.</param>
 /// <param name="SiteAssets">The site's assets root, from <c>sites add</c> (a plan's <c>site</c>) only.</param>
-public sealed record SiteHostsView(string Site, int? Id, Guid? Guid, string Status, IReadOnlyList<string> Changes, string? Url, IReadOnlyList<HostInfo> Hosts, bool? DryRun = null, string? Application = null, bool? IsDefault = null, SiteAssetsInfo? SiteAssets = null);
+public sealed record SiteHostsView(string Site, int? Id, Guid? Guid, [property: OutputValues(typeof(SiteHostStatus))] string Status, IReadOnlyList<string> Changes, string? Url, IReadOnlyList<HostInfo> Hosts, bool? DryRun = null, string? Application = null, bool? IsDefault = null, SiteAssetsInfo? SiteAssets = null);
 
 public sealed record SiteHostsOutcome(IReadOnlyList<SiteHostsView> Sites, IReadOnlyList<string> Warnings, bool Saved);
 
