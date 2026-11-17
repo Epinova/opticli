@@ -352,5 +352,7 @@ public class EditUiPropertiesTests
     {
         public IReadOnlyDictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>? Restricted(IContentData owner) =>
             restricted is null ? null : new Dictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>(ReferenceEqualityComparer.Instance) { [owner] = restricted };
+
+        public IReadOnlyDictionary<string, EditUiTypes>? Types(ContentType type) => null;
     }
 }

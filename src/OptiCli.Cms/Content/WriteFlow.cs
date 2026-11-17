@@ -186,7 +186,10 @@ internal sealed class WriteFlow
         // What is reported: an editor never sees a hidden property's value, also not in a diff.
         var changes = Call.Properties.Shown(writable, diff);
         Project?.Check(writable);
-        var issues = (precheck ?? []).Concat(InlineBlockWarnings()).Concat(Writer.Warnings).Concat(ValidationErrors.Validate(Call, writable, action)).ToList();
+        // For an editor, also the types the edit UI lets a property hold where an editor descriptor sets them, which the
+        // CMS's own validation doesn't know.
+        var issues = (precheck ?? []).Concat(InlineBlockWarnings()).Concat(Writer.Warnings).Concat(ValidationErrors.Validate(Call, writable, action))
+            .Concat(Call.Properties.Checks ? EditUiTypeRules.Check(Call, writable, before) : []).ToList();
         var valid = !ValidationErrors.HasErrors(issues);
         var published = Kind(action) == SaveAction.Publish;
         if (Project is null && !published && ProjectSave.NotInProject(Call, writable, intoVersion) is { } notInProject)

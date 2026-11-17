@@ -70,7 +70,10 @@ public sealed record PropertyModel
 
     public string? UiHint { get; init; }
 
-    /// <summary>From <c>[AllowedTypes]</c>: content type names (or base class/interface names) that may be referenced.</summary>
+    /// <summary>
+    /// From <c>[AllowedTypes]</c>: content type names (or base class/interface names) that may be referenced. Through the
+    /// MCP module also what an editor descriptor sets for the property's UIHint, from the CMS UI's metadata.
+    /// </summary>
     public IReadOnlyList<string>? AllowedTypes { get; init; }
 
     public IReadOnlyList<string>? RestrictedTypes { get; init; }

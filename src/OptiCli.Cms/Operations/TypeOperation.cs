@@ -1,4 +1,5 @@
 using EPiServer.DataAbstraction;
+using OptiCli.Cms.Content;
 using OptiCli.Cms.Types;
 using OptiCli.Core.Text;
 using OptiCli.Protocol;
@@ -12,8 +13,9 @@ internal static class TypeOperation
     public static ContentTypeModel Run(CmsCall call, string name)
     {
         var types = call.Service<IContentTypeRepository>();
-        // An editor gets the properties the edit UI may show them; the content decides the rest (get_content).
-        var describer = new ContentTypeDescriber(types, call.Service<ContentTypeAvailabilityService>(), call.Properties.Shown);
+        // An editor gets the properties the edit UI may show them; the content decides the rest (get_content). Where the
+        // CMS UI's metadata is to be had (the MCP module), it gives the allowed types an editor descriptor sets.
+        var describer = new ContentTypeDescriber(types, call.Service<ContentTypeAvailabilityService>(), call.Properties.Shown, call.OptionalService<IEditUiMetadata>());
         return describer.Describe(Find(call, types, name));
     }
 

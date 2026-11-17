@@ -1474,7 +1474,8 @@ opticli keeps the file's permissions when it rewrites it, and creates it readabl
 
 - Rules that live only in code are read from the C# sources, not evaluated:
   - `[AllowedTypes]` is parsed. Editor descriptors and metadata extenders that change allowed types at runtime are
-    not; a `uiHint` flags the property.
+    not; a `uiHint` flags the property. The MCP module's `get_content_type` does give them: it runs in the site and
+    asks the CMS UI's own metadata.
   - Validation attributes are only pointed at (file and line).
   - URLs a site rewrites in code (custom segments, partial routing) show as the plain content path.
   - `type` lists views, but not controllers.
@@ -2049,7 +2050,14 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
     the model's settings decide what is shown and nothing of the item may be changed. `get_content` leaves these
     properties out, and so do diffs, also inside local blocks and block lists; writing them is refused, and a block list
     rewritten keeps what its items had of them. `get_content_type` leaves out what the type's settings hide or lock;
-    what depends on the content and the editor only `get_content` knows;
+    what depends on the content and the editor only `get_content` knows. Its `allowedTypes` and `restrictedTypes` are
+    the edit UI's too: from `[AllowedTypes]`, or for a property with a `UIHint` and without the attribute, what an
+    editor descriptor sets for the hint (as sites do for an area many page types share), from the metadata of a new
+    item of the type;
+  - the types such an editor descriptor sets: the CMS checks only `[AllowedTypes]` on save, so content that a write
+    adds to one of these ContentAreas or reference properties, and that the edit UI wouldn't offer there, is a
+    validation error (`valid: false` in a dry run), as for `[AllowedTypes]`. What the property already holds may stay.
+    The content's own properties are checked, not those of blocks inside it;
   - content references: every one is looked up as the editor, also in rich text (embedded blocks), so an assistant
     can't point to content the edit UI's pickers wouldn't offer, or learn from a dry run that it exists. The CMS's own
     text forms of a ContentArea or a reference list, which skip that, are refused: give an array of refs;
@@ -2484,7 +2492,8 @@ rich text, and that a search doesn't count it; return addresses only on Claude's
 isn't cached; drafts in the editor's name, publish refused without Publish rights, approval sequences, `baseVersion`
 conflicts, uploads, images shown (a large one scaled down by the site's image service), `editUrl`, `previewUrl` (a draft shown to the editor signed in, and to nobody else), the assistant's preview links (on the default instance; none, and no preview path, where they are turned off), and `resolve_url`; review requests without publishing (none where no sequence applies),
 content type access rights, restores refused, a branch not published before its master, `list_children` paging; script
-in rich text and links refused, properties the edit UI hides or locks (also by an editor descriptor, or a tab only
+in rich text and links refused, allowed types an editor descriptor sets given by `get_content_type` and kept to on
+writes, properties the edit UI hides or locks (also by an editor descriptor, or a tab only
 administrators see) left out and refused, a language only administrators may edit refused to an editor, live content
 not moved below another approval sequence; links as markup refused, what a property already has written back while
 anything new is refused, SVG files with script and HTML files not uploaded, locks inside local blocks and block lists;
@@ -2496,7 +2505,7 @@ another editor's or tool's use, or 30 minutes, the published-version rule, `MaxP
 per-step audit lines, and none of them at `/site-mcp`. `McpFixture.cs` also adds `RestrictedBlock`, a block type only
 WebAdmins may create; `McpFieldsBlock`, with a property not shown in edit mode, a read-only one, one an editor
 descriptor locks for all but WebAdmins and one on a tab that needs Administer, plus rich text, link, URL, ContentArea
-and reference properties, a local block and a block list (`McpInnerBlock`, with a property locked for all but
+and reference properties (one ContentArea with allowed types an editor descriptor sets for its UIHint), a local block and a block list (`McpInnerBlock`, with a property locked for all but
 WebAdmins and one on the tab that needs Administer); an "opticli write-back fixture" block with a video's `<iframe>` and
 an sms: link; the language `de`, enabled and editable by administrators only; and a folder "opticli find fixture" in the
 global assets with one folder editors see and one only administrators see. `setup.sh` gives the site high `RateLimits`,

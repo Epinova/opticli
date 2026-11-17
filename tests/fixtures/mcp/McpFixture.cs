@@ -1,6 +1,6 @@
 // Copied into a copy of the edge-case site by setup.sh, for the MCP module's end-to-end tests
 // (tests/OptiCli.Mcp.Integration). It adds a content type only administrators may create, a block type with properties
-// the edit UI hides or locks, and at startup makes the test users, the access rights, a language only administrators may
+// the edit UI hides or locks (and a ContentArea whose allowed types an editor descriptor sets), and at startup makes the test users, the access rights, a language only administrators may
 // edit and the folders the tests rely on, on this site's database only. Like a site's own save handler, it files pages
 // named "opticli-filed ..." into an archive page it creates. Passwords are generated, kept in
 // App_Data/mcp-test-users.json (readable by the owner only) and never printed.
@@ -63,6 +63,10 @@ public class McpFieldsBlock : BlockData
 
     public virtual ContentArea Area { get; set; }
 
+    /// <summary>A ContentArea whose allowed types an editor descriptor sets for its UIHint (only the edit UI's metadata knows them).</summary>
+    [UIHint(McpBottomAreaEditorDescriptor.Hint)]
+    public virtual ContentArea Bottom { get; set; }
+
     public virtual IList<ContentReference> Related { get; set; }
 
     public virtual ContentReference Target { get; set; }
@@ -104,6 +108,15 @@ public class McpAdminOnlyEditorDescriptor : EditorDescriptor
             metadata.IsReadOnly = true;
         }
     }
+}
+
+/// <summary>The types a ContentArea with its UIHint takes, as a site sets them for an area many page types share.</summary>
+[EditorDescriptorRegistration(TargetType = typeof(ContentArea), EditorDescriptorBehavior = EditorDescriptorBehavior.ExtendBase, UIHint = Hint)]
+public class McpBottomAreaEditorDescriptor : EditorDescriptor
+{
+    public const string Hint = "McpBottomArea";
+
+    public McpBottomAreaEditorDescriptor() => AllowedTypes = new[] { typeof(RestrictedBlock), typeof(McpFieldsBlock) };
 }
 
 /// <summary>A tab whose properties the edit UI shows only to those with Administer on the content.</summary>

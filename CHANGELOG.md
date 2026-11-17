@@ -3,6 +3,20 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.34.0 (unreleased)
+
+### MCP module
+
+- **`get_content_type` gives the allowed types an editor descriptor sets.** Many sites set a ContentArea's block types
+  with an editor descriptor for its `UIHint` instead of `[AllowedTypes]`, so one list serves an area many page types
+  share. The edit UI follows that list, but `get_content_type` only read the attribute, and the assistant couldn't
+  tell which blocks such an area takes. It now asks the CMS UI's own metadata for a property with a `UIHint` and
+  without `[AllowedTypes]`, and gives what it finds as `allowedTypes` and `restrictedTypes`. The CMS's own default
+  (any content) isn't listed, as before.
+- **Writes keep to those types.** The CMS checks only `[AllowedTypes]` on save, so an assistant could put a block in
+  such an area that the edit UI wouldn't offer an editor there. Content a write adds that the area's types leave out
+  is now a validation error, as for `[AllowedTypes]`, also in a dry run. What the area already holds may stay.
+
 ## 0.33.0 (17 November 2026)
 
 ### CLI
