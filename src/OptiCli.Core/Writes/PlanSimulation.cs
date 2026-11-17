@@ -105,9 +105,9 @@ public static class PlanSimulation
     public static Simulation? For(PlanStep step, IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing, bool updateExisting)
     {
         var op = step.Operation;
-        if (op is UploadOperation { Replace: not null })
+        if (op is UploadOperation { Replace: { } replaced } && PlanId(replaced) is { } replacedId && !existing.ContainsKey(replacedId))
         {
-            // It makes no content: the plan checks the new file when it runs, once the media it replaces exists.
+            // The media it replaces doesn't exist yet: the plan checks the new file when it runs, once it does.
             return null;
         }
         var (target, publish) = op switch
@@ -199,6 +199,8 @@ public static class PlanSimulation
             {
                 For = upload.For is null ? null : Place(upload.For),
                 Parent = upload.Parent is null ? null : Place(upload.Parent),
+                // Existing media only (planned media's replace isn't simulated): a plan id that --update-existing found, as its ref.
+                Replace = upload.Replace is null ? null : Place(upload.Replace),
                 Name = name ?? upload.Name,
                 Properties = values,
                 Publish = publish,

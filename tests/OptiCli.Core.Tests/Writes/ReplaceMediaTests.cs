@@ -49,6 +49,30 @@ public class ReplaceMediaTests
         Assert.Null(PlanSimulation.For(plan.Steps[1], plan.Steps, new Dictionary<string, int>(), updateExisting: false));
     }
 
+    [Fact]
+    public void Replacing_existing_media_that_refers_to_planned_content_is_still_simulated()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "upload", "id": "img", "file": "a.png", "parent": "45"},
+              {"op": "upload", "id": "doc", "file": "a.pdf", "parent": "45"},
+              {"op": "upload", "file": "v.mp4", "replace": "51", "properties": {"PreviewImage": "$img"}},
+              {"op": "upload", "file": "b.pdf", "replace": "$doc", "properties": {"Description": "$img"}}]}
+            """);
+
+        // Existing media: the dry run checks the new file against it, leaving out what refers to planned content.
+        var existingMedia = PlanSimulation.For(plan.Steps[2], plan.Steps, new Dictionary<string, int>(), updateExisting: false);
+        Assert.NotNull(existingMedia);
+        Assert.Equal("51", Assert.IsType<UploadOperation>(existingMedia.Operation).Replace);
+        Assert.Equal(["PreviewImage"], existingMedia.Unchecked);
+
+        // Planned media that --update-existing found: replaced by its ref; not found yet: checked when the plan runs.
+        var found = PlanSimulation.For(plan.Steps[3], plan.Steps, new Dictionary<string, int> { ["doc"] = 291 }, updateExisting: true);
+        Assert.NotNull(found);
+        Assert.Equal("291", Assert.IsType<UploadOperation>(found.Operation).Replace);
+        Assert.Null(PlanSimulation.For(plan.Steps[3], plan.Steps, new Dictionary<string, int>(), updateExisting: false));
+    }
+
     [Theory]
     [InlineData("\"id\": \"doc2\"")]
     [InlineData("\"guid\": \"9d1c0b6e-2f4a-4c55-8a37-1e9f0d6b2a44\"")]
