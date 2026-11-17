@@ -138,28 +138,60 @@ Seeded content costs nothing per test. `cms.page()` creates a published page in 
 the test, also when it fails; pass `keep: true` with a parent outside the sandbox to leave it. `cms.set()` and
 `cms.publish()` on seeded content stay until the next run's seed puts them back, and other workers see them meanwhile.
 
-To test what editors see in a CMS project, `cms.project('Spring campaign test')` makes one for the test, and
-`cms.page(..., { inProject: 'Spring campaign test', ready: true })` saves the page as a draft in it, marked Ready to
-publish. The project is deleted after the test, after its pages; one that was there before stays.
+### 6. Check the CMS side in a test
 
-### 6. Test the errors too
+The `opticli` fixture is the full client, with a typed method for every command a test needs, named after it:
+`opticli.get()`, `opticli.whereUsed()`, `opticli.versions()`, `opticli.find()` and so on. Use it to check what the
+CMS holds, next to what the page shows:
+
+```ts
+test('the seeded teaser is used on the article', async ({ opticli, seed }) => {
+  const usages = await opticli.whereUsed(seed.refs.teaser!);
+  expect(usages.map((usage) => usage.ref)).toContain(seed.refs.article);
+});
+```
+
+What the `opticli` fixture writes stays: use `cms` for writes a test should undo. The
+[Node.js guide](node-scripts-and-playwright-config.md) shows the client on its own.
+
+### 7. Test content in a CMS project
+
+To test what editors see when changes wait in a CMS project, let the test make the project and save its pages in it:
+
+```ts
+test('a page in a project stays a draft', async ({ page, cms }) => {
+  await cms.project('Spring campaign test');
+  const created = await cms.page('StandardPage', 'Campaign page', { MainBody: '<p>Coming soon</p>' },
+    { inProject: 'Spring campaign test', ready: true });
+
+  expect(created.published).toBe(false);
+  await page.goto(created.url);
+  await expect(page.getByText('Coming soon')).toHaveCount(0); // visitors don't see it yet
+});
+```
+
+With `inProject`, `cms.page()` saves a draft in the project instead of publishing (opticli doesn't publish and add to
+a project in one call), and `ready: true` marks it Ready to publish. After the test its pages go to the recycle bin
+first, then the project is deleted. A project that was there before the test is never deleted; `cms.apply()` with a
+plan whose `project` doesn't exist yet deletes that one too.
+
+### 8. Test the errors too
 
 A failed write throws `OptiCliError` with opticli's `code`, `exitCode`, `hint` and `details`, so a test can tell a
 missing page from values the CMS refused:
 
 ```ts
 test('a property typo fails before anything is saved', async ({ cms }) => {
-  const error = await cms.page('StandardPage', 'Typo', { MainBdy: '<p>x</p>' }).catch((e: unknown) => e);
-  expect(error).toBeInstanceOf(OptiCliError);
-  expect((error as OptiCliError).code).toBe('usage');
-  expect((error as OptiCliError).hint).toContain('MainBody');
+  const write = cms.page('StandardPage', 'Typo', { MainBdy: '<p>x</p>' });
+  await expect(write).rejects.toBeInstanceOf(OptiCliError);
+  await expect(write).rejects.toMatchObject({ code: 'usage', hint: expect.stringContaining('MainBody') });
 });
 ```
 
 `code` is typed (`not_found`, `validation`, `conflict`, ...), with the exit codes from
 [Output and exit codes](https://github.com/Epinova/opticli#output-and-exit-codes).
 
-### 7. Run it
+### 9. Run it
 
 ```bash
 npx playwright test

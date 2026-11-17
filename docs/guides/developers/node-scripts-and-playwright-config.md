@@ -35,8 +35,8 @@ import { OptiCli } from '@epinova/opticli';
 
 const cli = new OptiCli({ project: '../src/Alloy' });
 
-const languages = await cli.languages(); // LanguageInfo[]
-console.log(languages.filter((l) => l.enabled).map((l) => l.code));
+const languages = await cli.languages(); // LanguageInfo[]: the enabled ones; { all: true } adds the rest
+console.log(languages.map((language) => language.code));
 
 const articles = await cli.find({ type: 'ArticlePage', lang: 'en' }); // ContentIdentity[]
 for (const usage of await cli.whereUsed('/en/about-us/', { pages: true })) {
@@ -49,6 +49,10 @@ console.log(`${articles.length} articles`);
 changes what the command prints, the return type follows it: `cli.find({ type: 'ArticlePage', status: 'draft' })`
 gives `DraftItem[]`, `cli.serve({ status: true })` gives `AgentStatus`. An option the command doesn't have throws a
 `TypeError` before opticli runs.
+
+Writes are methods too (`cli.create()`, `cli.set()`, `cli.apply()`, `cli.projectsReady()`, ...), and need the site
+running: `await cli.serve()` starts it, or reuses the one that runs. They change the database for good; in tests,
+the `cms` fixture undoes them afterwards (see [Seed CMS content for Playwright tests](playwright-seed-content.md)).
 
 ### 2. Read every page of a list
 
@@ -65,14 +69,14 @@ console.log(`${count} published articles`);
 ### 3. Build Playwright projects from the site
 
 `playwright.config` can't await, so use `OptiCliSync`: the same methods, each blocking until opticli answers. A
-project per language the site has enabled:
+project per language the site has enabled (`languages()` lists only those):
 
 ```ts
 // playwright.config.ts
 import { defineConfig } from '@playwright/test';
 import { OptiCliSync } from '@epinova/opticli';
 
-const languages = new OptiCliSync().languages().filter((language) => language.enabled);
+const languages = new OptiCliSync().languages();
 
 export default defineConfig({
   testDir: './e2e',
