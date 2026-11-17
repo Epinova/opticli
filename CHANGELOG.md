@@ -3,7 +3,7 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
-## 0.34.0 (unreleased)
+## 0.34.0 (17 November 2026)
 
 The npm package's client has a typed method for every command a test or script needs, generated from the CLI itself,
 and a blocking twin for `playwright.config`. Its API changes where 0.33's no longer fit: see the breaking changes
