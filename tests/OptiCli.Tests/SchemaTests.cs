@@ -329,6 +329,9 @@ public class SchemaTests
         Assert.Equal(["existing", "created", "toCreate"], Values("PlanProjectStatus"));
         Assert.Equal("SiteHostStatus", Ref(Definitions["SiteHostsView"]!["properties"]!["status"]));
         Assert.Equal(["created", "changed", "unchanged"], Values("SiteHostStatus"));
+        Assert.Equal("ProjectEditorUi", Ref(Definitions["ProjectResult"]!["properties"]!["editorUi"]));
+        Assert.Equal("ProjectEditorUi", Ref(Definitions["ProjectSaveResult"]!["properties"]!["editorUi"]));
+        Assert.Equal(["projectMode", "gadget", "none"], Values("ProjectEditorUi"));
     }
 
     [Theory]

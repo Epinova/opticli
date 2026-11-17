@@ -345,6 +345,7 @@ public sealed record ProjectResult
     /// Which project UI editors have on this site: <see cref="ProjectEditorUi.ProjectMode"/> or
     /// <see cref="ProjectEditorUi.Gadget"/>; null when it can't be told (a site without the CMS edit UI).
     /// </summary>
+    [OutputValues(typeof(ProjectEditorUi))]
     public string? EditorUi { get; init; }
 
     public bool DryRun { get; init; }
@@ -428,6 +429,7 @@ public sealed record ProjectSaveResult(int Id, string Name)
 
     /// <summary>As <see cref="ProjectResult.EditorUi"/>.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [OutputValues(typeof(ProjectEditorUi))]
     public string? EditorUi { get; init; }
 
     /// <summary>

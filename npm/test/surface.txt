@@ -197,6 +197,7 @@
 @epinova/opticli type PlanProjectStatus
 @epinova/opticli type PlanStep
 @epinova/opticli type PlanStepStatus
+@epinova/opticli type ProjectEditorUi
 @epinova/opticli type ProjectItemOutcome
 @epinova/opticli type ProjectStatus
 @epinova/opticli type Properties

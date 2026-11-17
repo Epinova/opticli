@@ -827,6 +827,9 @@ export interface ProjectDeletePreview {
   items: ProjectItemInfo[];
 }
 
+/** Which project UI the site's CMS gives editors (`editorUi`). */
+export type ProjectEditorUi = 'projectMode' | 'gadget' | 'none';
+
 /** A project (edit mode's Projects): versions of several items that are published together. */
 export interface ProjectInfo {
   id: number;
@@ -891,7 +894,7 @@ export interface ProjectResult {
   /** The project after the operation (before it, for a dry run; as it would be made, for a dry-run create, with id 0). */
   project: ProjectSummary;
   /** Which project UI editors have on this site: `projectMode` or `gadget`; null when it can't be told (a site without the CMS edit UI). */
-  editorUi?: string;
+  editorUi?: ProjectEditorUi;
   dryRun: boolean;
   /** False only for a dry run that would be refused: see each item's `problem`. */
   valid: boolean;
@@ -935,7 +938,7 @@ export interface ProjectSaveResult {
   /** The saved version is marked Ready to publish (would be, for a dry run). */
   ready: boolean;
   /** As `editorUi`. */
-  editorUi?: string;
+  editorUi?: ProjectEditorUi;
   /** The content was saved, but putting it in the project, or marking it ready, failed after that: the CMS's message. The save stands; the project is as `item` and `ready` say. */
   error?: string;
 }
