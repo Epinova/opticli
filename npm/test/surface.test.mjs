@@ -1,4 +1,4 @@
-// The public surface (exported names, class methods) against the checked-in list: see surface.mjs.
+// The public surface (exported names, class methods, interface properties) against the checked-in list: see surface.mjs.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { checkedIn, surface } from './surface.mjs';

@@ -1,5 +1,5 @@
-// The package's public surface: every name its entry points export, and the methods of its classes, read from the
-// built declarations (dist/lib) with the TypeScript compiler. surface.txt is the checked-in list; surface.test.mjs fails
+// The package's public surface: every name its entry points export, the methods of its classes and the properties of
+// its interfaces, read from the built declarations (dist/lib) with the TypeScript compiler. surface.txt is the checked-in list; surface.test.mjs fails
 // when the two differ, so a rename or removal (a breaking change) is never an accident.
 //
 // After a deliberate change: `npm run build && node test/surface.mjs --write`, and say what changed in CHANGELOG.md.
@@ -11,7 +11,10 @@ const here = import.meta.dirname;
 export const listFile = join(here, 'surface.txt');
 const entryPoints = { '@epinova/opticli': 'index.d.ts', '@epinova/opticli/playwright': 'playwright/index.d.ts' };
 
-/** One line per exported name (`<entry> <kind> <name>`) and per public member of an exported class (`<Class>.<member>`). */
+/**
+ * One line per exported name (`<entry> <kind> <name>`), per public member of an exported class (`<Class>.<member>`) and
+ * per property of an exported interface (`<Interface>.<property>`, with `?` when it is optional).
+ */
 export function surface() {
   const lib = join(here, '..', 'dist', 'lib');
   const files = Object.values(entryPoints).map((f) => join(lib, f));
@@ -30,6 +33,14 @@ export function surface() {
         : symbol.flags & ts.SymbolFlags.Interface ? 'interface'
         : 'type';
       lines.add(`${entry} ${kind} ${exported.name}`);
+      if (kind === 'interface') {
+        // Each property, inherited ones too, `?` when optional: a property dropped, or made optional in a result (or
+        // required in an options object), changes the list.
+        for (const member of checker.getPropertiesOfType(checker.getDeclaredTypeOfSymbol(symbol))) {
+          lines.add(`${exported.name}.${member.name}${member.flags & ts.SymbolFlags.Optional ? '?' : ''}`);
+        }
+        continue;
+      }
       if (kind !== 'class') continue;
       for (const member of checker.getPropertiesOfType(checker.getDeclaredTypeOfSymbol(symbol))) {
         const modifiers = ts.getCombinedModifierFlags(member.valueDeclaration ?? member.declarations?.[0]);
