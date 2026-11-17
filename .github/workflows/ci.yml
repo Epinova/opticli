@@ -81,8 +81,8 @@ jobs:
       - name: Check
         run: .github/scripts/check-mcp-extension.sh mcp-extension/dist/opticli-cms.mcpb
 
-  # The npm package (npm/): type-checks it, builds it and tests it against a stand-in opticli, then lists what a publish
-  # would contain.
+  # The npm package (npm/): checks that its generated commands (npm/src/generated) are what this CLI's schema gives,
+  # type-checks it, builds it and tests it against a stand-in opticli, then lists what a publish would contain.
   npm:
     runs-on: ubuntu-latest
     permissions:
@@ -94,10 +94,31 @@ jobs:
         with:
           node-version: 22
 
+      # The generator runs the CLI (`opticli schema --json`): SDK 10 builds it (and its CMS 13 agent), the 8 runtime runs it.
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Build the CLI
+        run: dotnet build src/OptiCli/OptiCli.csproj -c Release
+
+      - name: Check the generated commands
+        working-directory: npm
+        env:
+          OPTICLI: ${{ github.workspace }}/src/OptiCli/bin/Release/net8.0/opticli.dll
+        run: |
+          npm ci --no-audit --no-fund
+          npm run generate
+          git diff --exit-code -- src/generated || {
+            echo "::error::npm/src/generated is out of date: build the CLI, run npm run generate in npm/, and commit the result."
+            exit 1
+          }
+
       - name: Build and test
         working-directory: npm
         run: |
-          npm ci --no-audit --no-fund
           npm run typecheck
           npm test
           npm pack --dry-run ./dist
