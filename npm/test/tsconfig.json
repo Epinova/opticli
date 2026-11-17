@@ -1,0 +1,12 @@
+{
+  // Type-checks the .ts files here (npm run typecheck): samples that compile against the package's sources, with
+  // `// @ts-expect-error` where a call must not.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "rootDir": "..",
+    "allowImportingTsExtensions": true
+  },
+  "include": ["*.ts"]
+}
