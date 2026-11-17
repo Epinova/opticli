@@ -832,8 +832,9 @@ How far the dry run gets (`meta.warnings` sums it up; step statuses):
   on the master branch.
   A step on existing content whose rich text links to planned content is dry-run with those links pointing at the
   content's GUID (or a stand-in).
-- `deferred`: only names were checked (`access`, `translate`, `move`, `delete` on planned content, and a `set` or
-  `publish` of another branch than the one it is created in); the site validates them when the plan runs.
+- `deferred`: only names were checked (`access`, `translate`, `move`, `delete` on planned content, an `upload` that
+  `replace`s the file of media the plan uploads (its file is checked to exist), and a `set` or `publish` of another
+  branch than the one it is created in); the site validates them when the plan runs.
 
 Whatever the status, the order of publishes is checked: a step that publishes a branch other than the master before
 the master branch is published (by an earlier step, or in the database) fails validation with `validation`,
