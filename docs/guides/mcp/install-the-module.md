@@ -3,7 +3,7 @@ title: Install the MCP module in your site
 summary: Add the opticli MCP module to a CMS 12 or CMS 13 site, decide what assistants may do, and connect a first assistant to check that it works.
 audience: mcp
 order: 1
-written-for: 0.30.0
+written-for: 0.33.0
 ---
 
 The MCP module turns your Optimizely site into an MCP server with its own OAuth sign-in. Editors connect an AI
@@ -84,7 +84,8 @@ visitors see is off until you turn it on.
 | What | Default | How a site turns it on or off |
 |---|---|---|
 | Read, and save drafts | on | the editor can untick writing on the consent page |
-| Publish, unpublish, schedule | off | `AllowPublish = true` |
+| Publish, unpublish, schedule; publish, schedule and reactivate a project | off | `AllowPublish = true` |
+| Create projects, put drafts in them, mark items Ready to publish | on, with saving drafts | the CMS's project mode or Projects gadget; see the note below |
 | Delete (to the recycle bin), discard others' drafts | off | `AllowDelete = true` |
 | The assistant's own preview links to a draft | on | `AllowPreviewLinks = false` |
 | Script in rich text and links, files that run script | always refused | no option; see the note below |
@@ -120,6 +121,13 @@ Invalid options stop the site at startup with a message that starts with `OptiCl
 Even with `AllowPublish`, the editor still chooses on the consent page whether to grant publishing, their Publish
 rights still apply, and a publish of content under an approval sequence is refused: the assistant sends it for review
 instead, which needs no publishing option at all.
+
+> **Note:** Assistants work with the CMS's projects where editors have them: project mode (the project bar, CMS 12's
+> default) or the Projects gadget (on by default, the only one on CMS 13 unless you turn project mode on with
+> `EPiServer:CmsUI:ProjectUI:ProjectModeEnabled`). With both off, the project tools are refused. Publishing a project
+> through the assistant puts live only its items marked Ready to publish; the gadget's own Publish button puts every
+> unpublished item live, ready or not. With project mode on, the assistant gives editors a link to the project
+> (`projectUrl`), and the CMS's own publish puts only ready items live too.
 
 > **Note:** The module refuses script in rich text and links whatever you configure, but the CMS saves whatever the
 > edit UI's TinyMCE or other code gives it. On CMS 12.15 or newer, have the CMS's script parser remove script on every

@@ -3,7 +3,7 @@ title: Write your first site-specific tool
 summary: Add a read tool and a write tool of your own to the MCP module, so editors' assistants can find Alloy product pages without a teaser and fill them in as drafts.
 audience: mcp
 order: 2
-written-for: 0.30.0
+written-for: 0.33.0
 ---
 
 The module's own tools work on any content, one item at a time. A tool of your own can know your site: which page
@@ -193,6 +193,38 @@ changed, checks every step again, and saves them in order as drafts, each with a
 
 A token runs once and expires after 30 minutes. A run that fails at a step stops there and keeps the steps before it,
 and the result lists what was saved, what failed and why, and what didn't run.
+
+## Put the drafts in a project
+
+Teasers for every product page are a batch an editor may want to review and publish together, in a CMS project. The
+module's own save tools take a `project` argument for that; give your tool one too, and pass it to
+`ContentPlan.InProject` (opticli 0.33.0 or newer):
+
+```csharp
+public sealed record FillProductTeasersArgs(
+    [property: Description("A teaser for each product page to fill, one per page.")] IReadOnlyList<ProductTeaser> Teasers,
+    [property: Description("The CMS project to save the drafts in (its id or exact name), only when the user wants one; list_projects and create_project find or make it.")] string? Project = null,
+    [property: Description("With project: mark the drafts Ready to publish, only when the user wants them ready.")] bool Ready = false);
+```
+
+And in `PlanAsync`, once the plan has its steps:
+
+```csharp
+if (!string.IsNullOrWhiteSpace(args.Project))
+{
+    plan.InProject(args.Project.Trim(), args.Ready);
+}
+```
+
+Every update and create of the plan then saves its draft into that project, in place of the content's earlier version
+there; moves and trashes aren't in it, and neither is a folder a create makes. The dry run checks each step against the
+project (it must exist and be active, and the content mustn't be in another project), and the plan token covers it, so
+a real run with another project is refused. Where an approval sequence applies, a step with `Ready` is refused: a plan
+sends nothing for review. Call `InProject` once per plan; a second call with another project throws.
+
+Leave the project to the editor: a save joins a project only when the call names it, and the module's instructions tell
+the assistant to ask before putting changes in one. The editor then reviews and publishes the project as described in
+[Collect changes in a project and publish them together](../editors/collect-changes-in-a-project.md).
 
 ## Test it
 

@@ -3,7 +3,7 @@ title: When someone else has changes on the page
 summary: Understand why your assistant stops before publishing a colleague's unpublished changes, decide what goes live, and send pages for review where an approval sequence applies.
 audience: editors
 order: 4
-written-for: 0.30.1
+written-for: 0.33.0
 ---
 
 Publishing in the CMS puts a whole version of a page live, not just the fields you changed. So if a colleague has saved
@@ -93,6 +93,19 @@ A review request never publishes anything, so it works even where assistants may
 - **A page without an approval sequence can't be sent for review.** The assistant tells you, and nothing is saved.
   Publish it as usual, or keep it as a draft.
 
+### 6. Pages in a project
+
+When the page is in a CMS project (see
+[Collect changes in a project and publish them together](collect-changes-in-a-project.md)), marking it **Ready to
+Publish** is what says "this can go live":
+
+- **A colleague marked it ready.** Then their changes on it go live with the project without the assistant asking
+  again. The assistant still tells you whose changes they are before you confirm the publish.
+- **Someone else's changes that nobody marked ready** (an older draft the ready version carries) stop the publish
+  until you have said they may go live, as in step 4.
+- **You ask the assistant to mark a colleague's draft ready.** It asks you first: after that, the CMS records you as the
+  one who saved it, and the publish could no longer tell whose changes they are.
+
 ## If something goes wrong
 
 - **"This site doesn't let assistants publish".** Review the draft through the edit link the assistant gives you, and
@@ -110,6 +123,7 @@ A review request never publishes anything, so it works even where assistants may
 
 - [Connect your assistant to the CMS](connect-your-assistant.md)
 - [Translate a page with your assistant](translate-a-page.md)
+- [Collect changes in a project and publish them together](collect-changes-in-a-project.md)
 - [Opticli for editors](https://epinova.github.io/opticli/editors/)
 - README: [Security model](https://github.com/Epinova/opticli#security-model), on approval sequences and confirming
   other people's changes
