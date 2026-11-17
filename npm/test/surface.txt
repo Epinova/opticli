@@ -1,0 +1,539 @@
+@epinova/opticli class OptiCli
+@epinova/opticli class OptiCliCommands
+@epinova/opticli class OptiCliCommandsSync
+@epinova/opticli class OptiCliError
+@epinova/opticli class OptiCliSync
+@epinova/opticli const requiredOpticli
+@epinova/opticli const version
+@epinova/opticli function compareVersions
+@epinova/opticli function findToolManifest
+@epinova/opticli function resolveCommand
+@epinova/opticli interface AccessEntry
+@epinova/opticli interface AccessList
+@epinova/opticli interface AccessOptions
+@epinova/opticli interface AccessOutput
+@epinova/opticli interface AccessView
+@epinova/opticli interface AgentStatus
+@epinova/opticli interface AgentSummary
+@epinova/opticli interface AllowedIn
+@epinova/opticli interface AllowedInOptions
+@epinova/opticli interface AncestorsOptions
+@epinova/opticli interface AppliedPlan
+@epinova/opticli interface ApplyCallOptions
+@epinova/opticli interface ApplyOptions
+@epinova/opticli interface ApprovalReviewer
+@epinova/opticli interface ApprovalSequence
+@epinova/opticli interface ApprovalStep
+@epinova/opticli interface AreaOptions
+@epinova/opticli interface BlobLocation
+@epinova/opticli interface BlockCreateOptions
+@epinova/opticli interface BlockTranslation
+@epinova/opticli interface CategoriesOptions
+@epinova/opticli interface CategoryInfo
+@epinova/opticli interface ChildrenOptions
+@epinova/opticli interface ClassFile
+@epinova/opticli interface CommonOptions
+@epinova/opticli interface CompositionChange
+@epinova/opticli interface CompositionFieldChange
+@epinova/opticli interface CompositionNodeRef
+@epinova/opticli interface CompositionOptions
+@epinova/opticli interface ContentDocument
+@epinova/opticli interface ContentIdentity
+@epinova/opticli interface ContentSummary
+@epinova/opticli interface ContentUrls
+@epinova/opticli interface CreateOptions
+@epinova/opticli interface DatabaseTarget
+@epinova/opticli interface DeleteOptions
+@epinova/opticli interface DiscardOptions
+@epinova/opticli interface DisplaySettingChoiceInfo
+@epinova/opticli interface DisplaySettingInfo
+@epinova/opticli interface DisplayTemplateInfo
+@epinova/opticli interface DisplayTemplatesOptions
+@epinova/opticli interface DraftInfo
+@epinova/opticli interface DraftItem
+@epinova/opticli interface DraftsOptions
+@epinova/opticli interface DriftSummary
+@epinova/opticli interface ErrorBody
+@epinova/opticli interface ErrorEnvelope
+@epinova/opticli interface FindOptions
+@epinova/opticli interface GetOptions
+@epinova/opticli interface HistoryEntry
+@epinova/opticli interface HistoryOptions
+@epinova/opticli interface HistoryParent
+@epinova/opticli interface HostInfo
+@epinova/opticli interface IncomingReference
+@epinova/opticli interface InlineUsages
+@epinova/opticli interface InstanceUsage
+@epinova/opticli interface ItemProject
+@epinova/opticli interface JobLogView
+@epinova/opticli interface JobRunView
+@epinova/opticli interface JobSetView
+@epinova/opticli interface JobState
+@epinova/opticli interface JobStopView
+@epinova/opticli interface JobView
+@epinova/opticli interface JobsLogOptions
+@epinova/opticli interface JobsOptions
+@epinova/opticli interface JobsRunOptions
+@epinova/opticli interface JobsSetOptions
+@epinova/opticli interface JobsStopOptions
+@epinova/opticli interface LanguageBranchChange
+@epinova/opticli interface LanguageInfo
+@epinova/opticli interface LanguageUrl
+@epinova/opticli interface LanguagesDisableOptions
+@epinova/opticli interface LanguagesEnableOptions
+@epinova/opticli interface LanguagesOptions
+@epinova/opticli interface LanguagesOutput
+@epinova/opticli interface LeftOutVersion
+@epinova/opticli interface LinkValue
+@epinova/opticli interface Meta
+@epinova/opticli interface MoveOptions
+@epinova/opticli interface MoveOutput
+@epinova/opticli interface OkEnvelope
+@epinova/opticli interface OptiCliOptions
+@epinova/opticli interface PageUsageRow
+@epinova/opticli interface PendingDraft
+@epinova/opticli interface Plan
+@epinova/opticli interface PlanProject
+@epinova/opticli interface PlanRun
+@epinova/opticli interface PlanStepResult
+@epinova/opticli interface ProjectDeletePreview
+@epinova/opticli interface ProjectInfo
+@epinova/opticli interface ProjectItemInfo
+@epinova/opticli interface ProjectItemProblem
+@epinova/opticli interface ProjectItemResult
+@epinova/opticli interface ProjectResult
+@epinova/opticli interface ProjectSaveResult
+@epinova/opticli interface ProjectSummary
+@epinova/opticli interface ProjectsCreateOptions
+@epinova/opticli interface ProjectsDeleteOptions
+@epinova/opticli interface ProjectsOptions
+@epinova/opticli interface ProjectsPublishOptions
+@epinova/opticli interface ProjectsReactivateOptions
+@epinova/opticli interface ProjectsReadyOptions
+@epinova/opticli interface ProjectsRemoveOptions
+@epinova/opticli interface PropertyChange
+@epinova/opticli interface PropertyDetails
+@epinova/opticli interface PropertyOut
+@epinova/opticli interface PublishOptions
+@epinova/opticli interface RemoveLanguageOutput
+@epinova/opticli interface ResolveOptions
+@epinova/opticli interface ResolveOutput
+@epinova/opticli interface RestoreOptions
+@epinova/opticli interface RestoreOutput
+@epinova/opticli interface RoleInfo
+@epinova/opticli interface RunOptions
+@epinova/opticli interface RunResult
+@epinova/opticli interface SavedInto
+@epinova/opticli interface SealResult
+@epinova/opticli interface SealSummary
+@epinova/opticli interface SealedBuild
+@epinova/opticli interface SealedDatabase
+@epinova/opticli interface SearchHit
+@epinova/opticli interface SearchMatch
+@epinova/opticli interface SearchOptions
+@epinova/opticli interface ServeLogs
+@epinova/opticli interface ServeOptions
+@epinova/opticli interface ServeStopOutput
+@epinova/opticli interface SetOptions
+@epinova/opticli interface ShortcutInfo
+@epinova/opticli interface SiteAssetsInfo
+@epinova/opticli interface SiteChange
+@epinova/opticli interface SiteChangedProperty
+@epinova/opticli interface SiteHostSpec
+@epinova/opticli interface SiteHostsView
+@epinova/opticli interface SiteInfo
+@epinova/opticli interface SitesOptions
+@epinova/opticli interface SqlOptions
+@epinova/opticli interface SqlResult
+@epinova/opticli interface StoredValues
+@epinova/opticli interface TimedItem
+@epinova/opticli interface TranslateOptions
+@epinova/opticli interface TrashItem
+@epinova/opticli interface TrashOptions
+@epinova/opticli interface TrashParent
+@epinova/opticli interface TreeNode
+@epinova/opticli interface TreeOptions
+@epinova/opticli interface TreeResult
+@epinova/opticli interface TypeDetails
+@epinova/opticli interface TypeOptions
+@epinova/opticli interface TypeSummary
+@epinova/opticli interface TypesOptions
+@epinova/opticli interface UnpublishOptions
+@epinova/opticli interface UploadInfo
+@epinova/opticli interface UploadOptions
+@epinova/opticli interface UrlOptions
+@epinova/opticli interface Usage
+@epinova/opticli interface UserAddOutput
+@epinova/opticli interface UserRemoveOutput
+@epinova/opticli interface UserRolesResult
+@epinova/opticli interface UsersAddOptions
+@epinova/opticli interface UsersRemoveOptions
+@epinova/opticli interface UsersRolesOptions
+@epinova/opticli interface ValidationIssue
+@epinova/opticli interface VersionInfo
+@epinova/opticli interface VersionsOptions
+@epinova/opticli interface ViewFile
+@epinova/opticli interface VirtualRoleInfo
+@epinova/opticli interface VisitorGroupInfo
+@epinova/opticli interface VisitorGroupsOptions
+@epinova/opticli interface WhereUsedOptions
+@epinova/opticli interface WriteOutput
+@epinova/opticli type AccessKind
+@epinova/opticli type AgentState
+@epinova/opticli type AppliedStep
+@epinova/opticli type ContentAreaItem
+@epinova/opticli type ContentKind
+@epinova/opticli type ContentRef
+@epinova/opticli type CreateCallOptions
+@epinova/opticli type CreatedContent
+@epinova/opticli type Envelope
+@epinova/opticli type ErrorCode
+@epinova/opticli type HostType
+@epinova/opticli type JobStatus
+@epinova/opticli type JsonValue
+@epinova/opticli type LanguageBranchStatus
+@epinova/opticli type PlanId
+@epinova/opticli type PlanIds
+@epinova/opticli type PlanProjectStatus
+@epinova/opticli type PlanStep
+@epinova/opticli type PlanStepStatus
+@epinova/opticli type ProjectItemOutcome
+@epinova/opticli type ProjectStatus
+@epinova/opticli type Properties
+@epinova/opticli type PropertyValue
+@epinova/opticli type SavedContent
+@epinova/opticli type SchedulerState
+@epinova/opticli type ServeMode
+@epinova/opticli type SetCallOptions
+@epinova/opticli type SiteHostStatus
+@epinova/opticli type SqlValue
+@epinova/opticli type TypeUsageRow
+@epinova/opticli type VersionStatus
+@epinova/opticli/playwright class Cms
+@epinova/opticli/playwright class OptiCliError
+@epinova/opticli/playwright const stateVariable
+@epinova/opticli/playwright const test
+@epinova/opticli/playwright function createTest
+@epinova/opticli/playwright function defineSetup
+@epinova/opticli/playwright function readSeedState
+@epinova/opticli/playwright interface CreatedPage
+@epinova/opticli/playwright interface KeepOption
+@epinova/opticli/playwright interface SandboxOptions
+@epinova/opticli/playwright interface SeedState
+@epinova/opticli/playwright interface SetupOptions
+@epinova/opticli/playwright type OptiCliWorkerOptions
+@epinova/opticli/playwright type PageOptions
+@epinova/opticli/playwright type expect
+Cms.addresses
+Cms.apply
+Cms.cleanup
+Cms.opticli
+Cms.page
+Cms.parent
+Cms.project
+Cms.publish
+Cms.set
+OptiCli.access
+OptiCli.allowedIn
+OptiCli.allowedInAll
+OptiCli.ancestors
+OptiCli.apply
+OptiCli.area
+OptiCli.blockCreate
+OptiCli.categories
+OptiCli.categoriesAll
+OptiCli.children
+OptiCli.childrenAll
+OptiCli.command
+OptiCli.composition
+OptiCli.create
+OptiCli.cwd
+OptiCli.delete
+OptiCli.discard
+OptiCli.displayTemplates
+OptiCli.displayTemplatesAll
+OptiCli.drafts
+OptiCli.draftsAll
+OptiCli.find
+OptiCli.findAll
+OptiCli.get
+OptiCli.history
+OptiCli.historyAll
+OptiCli.jobs
+OptiCli.jobsAll
+OptiCli.jobsLog
+OptiCli.jobsLogAll
+OptiCli.jobsRun
+OptiCli.jobsSet
+OptiCli.jobsStop
+OptiCli.languages
+OptiCli.languagesAll
+OptiCli.languagesDisable
+OptiCli.languagesEnable
+OptiCli.move
+OptiCli.profile
+OptiCli.project
+OptiCli.projects
+OptiCli.projectsAll
+OptiCli.projectsCreate
+OptiCli.projectsDelete
+OptiCli.projectsPublish
+OptiCli.projectsReactivate
+OptiCli.projectsReady
+OptiCli.projectsRemove
+OptiCli.publish
+OptiCli.resolve
+OptiCli.restore
+OptiCli.run
+OptiCli.search
+OptiCli.searchAll
+OptiCli.serve
+OptiCli.set
+OptiCli.sites
+OptiCli.sitesAll
+OptiCli.sql
+OptiCli.translate
+OptiCli.trash
+OptiCli.trashAll
+OptiCli.tree
+OptiCli.type
+OptiCli.types
+OptiCli.typesAll
+OptiCli.unpublish
+OptiCli.upload
+OptiCli.url
+OptiCli.usersAdd
+OptiCli.usersRemove
+OptiCli.usersRoles
+OptiCli.versions
+OptiCli.versionsAll
+OptiCli.visitorGroups
+OptiCli.visitorGroupsAll
+OptiCli.whereUsed
+OptiCli.whereUsedAll
+OptiCliCommands.access
+OptiCliCommands.allowedIn
+OptiCliCommands.allowedInAll
+OptiCliCommands.ancestors
+OptiCliCommands.area
+OptiCliCommands.blockCreate
+OptiCliCommands.categories
+OptiCliCommands.categoriesAll
+OptiCliCommands.children
+OptiCliCommands.childrenAll
+OptiCliCommands.composition
+OptiCliCommands.delete
+OptiCliCommands.discard
+OptiCliCommands.displayTemplates
+OptiCliCommands.displayTemplatesAll
+OptiCliCommands.drafts
+OptiCliCommands.draftsAll
+OptiCliCommands.find
+OptiCliCommands.findAll
+OptiCliCommands.get
+OptiCliCommands.history
+OptiCliCommands.historyAll
+OptiCliCommands.jobs
+OptiCliCommands.jobsAll
+OptiCliCommands.jobsLog
+OptiCliCommands.jobsLogAll
+OptiCliCommands.jobsRun
+OptiCliCommands.jobsSet
+OptiCliCommands.jobsStop
+OptiCliCommands.languages
+OptiCliCommands.languagesAll
+OptiCliCommands.languagesDisable
+OptiCliCommands.languagesEnable
+OptiCliCommands.move
+OptiCliCommands.projects
+OptiCliCommands.projectsAll
+OptiCliCommands.projectsCreate
+OptiCliCommands.projectsDelete
+OptiCliCommands.projectsPublish
+OptiCliCommands.projectsReactivate
+OptiCliCommands.projectsReady
+OptiCliCommands.projectsRemove
+OptiCliCommands.publish
+OptiCliCommands.resolve
+OptiCliCommands.restore
+OptiCliCommands.run
+OptiCliCommands.search
+OptiCliCommands.searchAll
+OptiCliCommands.serve
+OptiCliCommands.sites
+OptiCliCommands.sitesAll
+OptiCliCommands.sql
+OptiCliCommands.translate
+OptiCliCommands.trash
+OptiCliCommands.trashAll
+OptiCliCommands.tree
+OptiCliCommands.type
+OptiCliCommands.types
+OptiCliCommands.typesAll
+OptiCliCommands.unpublish
+OptiCliCommands.upload
+OptiCliCommands.url
+OptiCliCommands.usersAdd
+OptiCliCommands.usersRemove
+OptiCliCommands.usersRoles
+OptiCliCommands.versions
+OptiCliCommands.versionsAll
+OptiCliCommands.visitorGroups
+OptiCliCommands.visitorGroupsAll
+OptiCliCommands.whereUsed
+OptiCliCommands.whereUsedAll
+OptiCliCommandsSync.access
+OptiCliCommandsSync.allowedIn
+OptiCliCommandsSync.allowedInAll
+OptiCliCommandsSync.ancestors
+OptiCliCommandsSync.area
+OptiCliCommandsSync.blockCreate
+OptiCliCommandsSync.categories
+OptiCliCommandsSync.categoriesAll
+OptiCliCommandsSync.children
+OptiCliCommandsSync.childrenAll
+OptiCliCommandsSync.composition
+OptiCliCommandsSync.delete
+OptiCliCommandsSync.discard
+OptiCliCommandsSync.displayTemplates
+OptiCliCommandsSync.displayTemplatesAll
+OptiCliCommandsSync.drafts
+OptiCliCommandsSync.draftsAll
+OptiCliCommandsSync.find
+OptiCliCommandsSync.findAll
+OptiCliCommandsSync.get
+OptiCliCommandsSync.history
+OptiCliCommandsSync.historyAll
+OptiCliCommandsSync.jobs
+OptiCliCommandsSync.jobsAll
+OptiCliCommandsSync.jobsLog
+OptiCliCommandsSync.jobsLogAll
+OptiCliCommandsSync.jobsRun
+OptiCliCommandsSync.jobsSet
+OptiCliCommandsSync.jobsStop
+OptiCliCommandsSync.languages
+OptiCliCommandsSync.languagesAll
+OptiCliCommandsSync.languagesDisable
+OptiCliCommandsSync.languagesEnable
+OptiCliCommandsSync.move
+OptiCliCommandsSync.projects
+OptiCliCommandsSync.projectsAll
+OptiCliCommandsSync.projectsCreate
+OptiCliCommandsSync.projectsDelete
+OptiCliCommandsSync.projectsPublish
+OptiCliCommandsSync.projectsReactivate
+OptiCliCommandsSync.projectsReady
+OptiCliCommandsSync.projectsRemove
+OptiCliCommandsSync.publish
+OptiCliCommandsSync.resolve
+OptiCliCommandsSync.restore
+OptiCliCommandsSync.runSync
+OptiCliCommandsSync.search
+OptiCliCommandsSync.searchAll
+OptiCliCommandsSync.serve
+OptiCliCommandsSync.sites
+OptiCliCommandsSync.sitesAll
+OptiCliCommandsSync.sql
+OptiCliCommandsSync.translate
+OptiCliCommandsSync.trash
+OptiCliCommandsSync.trashAll
+OptiCliCommandsSync.tree
+OptiCliCommandsSync.type
+OptiCliCommandsSync.types
+OptiCliCommandsSync.typesAll
+OptiCliCommandsSync.unpublish
+OptiCliCommandsSync.upload
+OptiCliCommandsSync.url
+OptiCliCommandsSync.usersAdd
+OptiCliCommandsSync.usersRemove
+OptiCliCommandsSync.usersRoles
+OptiCliCommandsSync.versions
+OptiCliCommandsSync.versionsAll
+OptiCliCommandsSync.visitorGroups
+OptiCliCommandsSync.visitorGroupsAll
+OptiCliCommandsSync.whereUsed
+OptiCliCommandsSync.whereUsedAll
+OptiCliError.args
+OptiCliError.code
+OptiCliError.details
+OptiCliError.exitCode
+OptiCliError.hint
+OptiCliError.version
+OptiCliSync.access
+OptiCliSync.allowedIn
+OptiCliSync.allowedInAll
+OptiCliSync.ancestors
+OptiCliSync.apply
+OptiCliSync.area
+OptiCliSync.blockCreate
+OptiCliSync.categories
+OptiCliSync.categoriesAll
+OptiCliSync.children
+OptiCliSync.childrenAll
+OptiCliSync.command
+OptiCliSync.composition
+OptiCliSync.create
+OptiCliSync.cwd
+OptiCliSync.delete
+OptiCliSync.discard
+OptiCliSync.displayTemplates
+OptiCliSync.displayTemplatesAll
+OptiCliSync.drafts
+OptiCliSync.draftsAll
+OptiCliSync.find
+OptiCliSync.findAll
+OptiCliSync.get
+OptiCliSync.history
+OptiCliSync.historyAll
+OptiCliSync.jobs
+OptiCliSync.jobsAll
+OptiCliSync.jobsLog
+OptiCliSync.jobsLogAll
+OptiCliSync.jobsRun
+OptiCliSync.jobsSet
+OptiCliSync.jobsStop
+OptiCliSync.languages
+OptiCliSync.languagesAll
+OptiCliSync.languagesDisable
+OptiCliSync.languagesEnable
+OptiCliSync.move
+OptiCliSync.profile
+OptiCliSync.project
+OptiCliSync.projects
+OptiCliSync.projectsAll
+OptiCliSync.projectsCreate
+OptiCliSync.projectsDelete
+OptiCliSync.projectsPublish
+OptiCliSync.projectsReactivate
+OptiCliSync.projectsReady
+OptiCliSync.projectsRemove
+OptiCliSync.publish
+OptiCliSync.resolve
+OptiCliSync.restore
+OptiCliSync.runSync
+OptiCliSync.search
+OptiCliSync.searchAll
+OptiCliSync.serve
+OptiCliSync.set
+OptiCliSync.sites
+OptiCliSync.sitesAll
+OptiCliSync.sql
+OptiCliSync.translate
+OptiCliSync.trash
+OptiCliSync.trashAll
+OptiCliSync.tree
+OptiCliSync.type
+OptiCliSync.types
+OptiCliSync.typesAll
+OptiCliSync.unpublish
+OptiCliSync.upload
+OptiCliSync.url
+OptiCliSync.usersAdd
+OptiCliSync.usersRemove
+OptiCliSync.usersRoles
+OptiCliSync.versions
+OptiCliSync.versionsAll
+OptiCliSync.visitorGroups
+OptiCliSync.visitorGroupsAll
+OptiCliSync.whereUsed
+OptiCliSync.whereUsedAll
