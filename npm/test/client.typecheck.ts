@@ -20,6 +20,7 @@ import {
   type PageUsageRow,
   type Plan,
   type PlanProjectStatus,
+  type PlanStep,
   type ProjectDeletePreview,
   type ProjectInfo,
   type ProjectItemInfo,
@@ -247,6 +248,43 @@ export async function asyncCalls(): Promise<void> {
   expect<Equal<typeof seal, SealResult>>(true);
   // @ts-expect-error: --seal isn't an option (only the user runs a sealed plan)
   await cli.apply('plan.json', { seal: 'abc' });
+
+  // Plan steps take the fields opticli's plan parser takes for their op, and no others.
+  const steps = [
+    { op: 'create', id: 'exp', parent: '1', blueprint: '45', name: 'From a blueprint', publishAt: '2030-01-01T08:00:00Z' },
+    { op: 'set', ref: '123', from: 'published', baseVersion: 456, force: true, variation: 'campaign', includeDraft: true },
+    { op: 'area', ref: '123', property: 'MainArea', action: 'add', item: '$teaser', at: 0, display: 'wide' },
+    { op: 'area', ref: '123', property: 'MainArea', action: 'move', index: 2, to: 0 },
+    { op: 'composition', ref: '$exp', action: 'add', nodeType: 'element', in: 'Left', at: 0, value: { type: 'TextElement', properties: { Heading: 'Hi' } } },
+    { op: 'composition', ref: '$exp', action: 'set', node: 'Hero', value: { name: 'Hero' }, project: 'Spring campaign', ready: true },
+    { op: 'upload', id: 'pdf', file: 'q1.pdf', replace: '77' },
+    { op: 'translate', ref: '123', lang: 'sv', withBlocks: true, ready: true },
+    { op: 'publish', ref: '123', version: 456, publishAt: '2030-01-01T08:00:00Z', requestApproval: true },
+    { op: 'discard', ref: '123', version: 456, includeDraft: true },
+    { op: 'access', ref: '123', grant: { Authenticated: 'Read', WebEditors: ['Read', 'Edit'] }, grantUsers: { 'editor@example.com': 'Read' }, revoke: ['Everyone'], breakInheritance: true },
+  ] as const satisfies readonly PlanStep[];
+  void steps;
+  // @ts-expect-error: a create needs a type or a blueprint
+  const noType: PlanStep = { op: 'create', parent: '1', name: 'X' };
+  // @ts-expect-error: a move takes no lang (opticli: unknown field)
+  const moveLang: PlanStep = { op: 'move', ref: '1', to: '2', lang: 'sv' };
+  // @ts-expect-error: a delete takes no publish
+  const deletePublish: PlanStep = { op: 'delete', ref: '1', publish: true };
+  // @ts-expect-error: a restore takes no requestApproval
+  const restoreReview: PlanStep = { op: 'restore', ref: '1', requestApproval: true };
+  // @ts-expect-error: an unpublish takes no id
+  const unpublishId: PlanStep = { op: 'unpublish', ref: '1', id: 'x' };
+  // @ts-expect-error: a discard takes no guid
+  const discardGuid: PlanStep = { op: 'discard', ref: '1', guid: '0d6a8a5e-2f7b-4c1e-9b0a-5c3f1e7d2a61' };
+  // @ts-expect-error: only create, block and upload take an id
+  const setId: PlanStep = { op: 'set', ref: '1', id: 'x' };
+  // @ts-expect-error: a version is its number
+  const versionText: PlanStep = { op: 'publish', ref: '1', version: '123_456' };
+  // @ts-expect-error: an area step's display option is `display`
+  const displayOption: PlanStep = { op: 'area', ref: '1', property: 'MainArea', action: 'add', item: '2', displayOption: 'wide' };
+  // @ts-expect-error: an upload has no language
+  const uploadLang: PlanStep = { op: 'upload', file: 'a.png', parent: '3', lang: 'sv' };
+  void [noType, moveLang, deletePublish, restoreReview, unpublishId, discardGuid, setId, versionText, displayOption, uploadLang];
 
   // sql: rows typed by the caller.
   const branches = await cli.sql<{ LanguageID: string; Enabled: boolean }>('SELECT LanguageID, Enabled FROM tblLanguageBranch');
