@@ -383,6 +383,13 @@ function argv(command: readonly string[], args: readonly (string | readonly stri
   return [...line, ...flags];
 }
 
+/** A list's next cursor (\`meta.next\`); one it gave before would page forever, so it throws instead. */
+function nextCursor(args: readonly string[], next: string, seen: Set<string>): string {
+  if (seen.has(next)) throw new Error(\`opticli \${args.join(' ')} gave the cursor '\${next}' a second time; stopped paging.\`);
+  seen.add(next);
+  return next;
+}
+
 /** opticli's commands, each returning the command's \`data\`. Prefer these to OptiCliCommandsSync wherever you can await. */
 export class OptiCliCommands {
   readonly #runner: CommandRunner;
@@ -398,8 +405,9 @@ export class OptiCliCommands {
   async *#all<T>(args: readonly string[], call?: CallOptions): AsyncGenerator<T, void, undefined> {
     let page = await this.#runner.run<T[]>(args, call);
     yield* page.data;
+    const seen = new Set<string>();
     while (page.meta?.next) {
-      page = await this.#runner.run<T[]>([...args, '--cursor', page.meta.next], call);
+      page = await this.#runner.run<T[]>([...args, '--cursor', nextCursor(args, page.meta.next, seen)], call);
       yield* page.data;
     }
   }
@@ -424,8 +432,9 @@ export class OptiCliCommandsSync {
   *#all<T>(args: readonly string[], call?: CallOptions): Generator<T, void, undefined> {
     let page = this.#runner.runSync<T[]>(args, call);
     yield* page.data;
+    const seen = new Set<string>();
     while (page.meta?.next) {
-      page = this.#runner.runSync<T[]>([...args, '--cursor', page.meta.next], call);
+      page = this.#runner.runSync<T[]>([...args, '--cursor', nextCursor(args, page.meta.next, seen)], call);
       yield* page.data;
     }
   }

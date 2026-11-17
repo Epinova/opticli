@@ -150,6 +150,26 @@ test('a list iterator follows meta.next with --cursor until there is none', asyn
   assert.deepEqual(syncRun.calls.map((c) => c.args), asyncRun.calls.map((c) => c.args));
 });
 
+test('a list iterator stops with an error when a cursor comes back', async () => {
+  const pages = () => [
+    { data: [{ ref: '1' }], meta: { next: 'c2' } },
+    { data: [{ ref: '2' }], meta: { next: 'c3' } },
+    { data: [{ ref: '3' }], meta: { next: 'c2' } },
+  ];
+  const asyncRun = recorder(pages());
+  const syncRun = recorder(pages());
+
+  const found = [];
+  await assert.rejects(async () => {
+    for await (const row of asyncRun.async.findAll({ type: 'ArticlePage' })) found.push(row.ref);
+  }, /gave the cursor 'c2' a second time/);
+  assert.throws(() => [...syncRun.sync.findAll({ type: 'ArticlePage' })], /gave the cursor 'c2' a second time/);
+
+  assert.deepEqual(found, ['1', '2', '3']);
+  assert.equal(asyncRun.calls.length, 3);
+  assert.equal(syncRun.calls.length, 3);
+});
+
 test('the sync class makes the same command lines', () => {
   const { calls, sync } = recorder();
 
