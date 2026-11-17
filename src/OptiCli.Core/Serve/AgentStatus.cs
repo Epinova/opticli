@@ -61,6 +61,7 @@ public sealed record AgentStatus(AgentState State, string Message) : ServeForegr
     /// <c>on</c> or <c>off</c>: whether the site's scheduler starts jobs on their schedule, as the running site reports it.
     /// Null when no site answers (or its agent is older than the field).
     /// </summary>
+    [Protocol.OutputValues(typeof(SchedulerStates))]
     public string? Scheduler { get; init; }
 
     public string? Hint { get; init; }
@@ -284,7 +285,7 @@ public static class AgentProbe
             ? "IDE mode is on: start the site from the IDE (opticli finds it), or with `opticli serve`. If it already runs, it was built without the agent: Rebuild in the IDE (Run's up-to-date check can skip it) and start it again; `opticli ide status` shows the build."
             : StartHint;
 
-    public static string? SchedulerText(bool? enabled) => enabled switch { true => "on", false => "off", null => null };
+    public static string? SchedulerText(bool? enabled) => enabled switch { true => SchedulerStates.On, false => SchedulerStates.Off, null => null };
 
     public static AgentStatus Describe(ServeState state, StateStore store) => new(AgentState.Running, "")
     {
@@ -300,4 +301,12 @@ public static class AgentProbe
         AgentDll = state.AgentDll,
         Drift = state.Drift is { Checked: true } drift ? DriftSummary.From(drift) : null,
     };
+}
+
+/// <summary><see cref="AgentStatus.Scheduler"/>: whether the running site's scheduler starts jobs on their schedule.</summary>
+[Protocol.ValueSetName("SchedulerState")]
+public static class SchedulerStates
+{
+    public const string On = "on";
+    public const string Off = "off";
 }

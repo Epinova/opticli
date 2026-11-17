@@ -126,6 +126,7 @@ public sealed record ProjectSummary
     public required string Name { get; init; }
 
     /// <summary>One of <see cref="ProjectStatuses"/>.</summary>
+    [OutputValues(typeof(ProjectStatuses), Open = true)]
     public required string Status { get; init; }
 
     /// <summary>For a scheduled project (<c>delayedPublished</c>), when it is published, UTC.</summary>
@@ -144,6 +145,7 @@ public sealed record ProjectSummary
 }
 
 /// <summary>A project's status, as the CMS's <c>ProjectStatus</c>, camelCase.</summary>
+[ValueSetName("ProjectStatus")]
 public static class ProjectStatuses
 {
     public const string Active = "active";
@@ -234,6 +236,7 @@ public static class ProjectItemStates
 public sealed record ContentProject(int Id, string Name, string Status, string? Version, string? Language);
 
 /// <summary>What happened (or, for a dry run, would happen) to one item: <see cref="ProjectItemResult.Outcome"/>.</summary>
+[ValueSetName("ProjectItemOutcome")]
 public static class ProjectItemOutcomes
 {
     /// <summary>Marked Ready to publish.</summary>
@@ -288,6 +291,7 @@ public sealed record ProjectItemResult
     /// (a publish's), else null.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [OutputValues(typeof(ProjectItemOutcomes))]
     public string? Outcome { get; init; }
 
     /// <summary>

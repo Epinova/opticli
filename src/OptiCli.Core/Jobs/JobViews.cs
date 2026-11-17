@@ -30,7 +30,7 @@ public sealed record JobView(
     DateTime? NextRun,
     bool? Overdue,
     DateTime? LastRun,
-    string? LastStatus,
+    [property: OutputValues(typeof(JobStatuses))] string? LastStatus,
     string? LastMessage,
     [property: OutputSchema("""{"anyOf": [{"type": "boolean"}, {"const": "stale"}]}""")] object Running,
     bool Stoppable,
@@ -54,7 +54,7 @@ public sealed record JobLogView(
     DateTime Finished,
     string? Duration,
     long? DurationMs,
-    string Status,
+    [property: OutputValues(typeof(JobStatuses))] string Status,
     string Trigger,
     string? Server,
     string? Message);

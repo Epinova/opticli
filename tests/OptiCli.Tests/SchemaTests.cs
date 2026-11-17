@@ -253,16 +253,82 @@ public class SchemaTests
     }
 
     [Fact]
-    public void Types_that_share_a_name_are_qualified()
+    public void Types_that_share_a_name_fail_instead_of_being_renamed()
     {
-        var types = new SchemaCommand.TypeSchemas(SchemaCommand.XmlDocs.Load(), [typeof(ProjectInfo), typeof(Core.Discovery.ProjectInfo)]);
+        // A $defs name is a TypeScript type name in the npm package: qualifying both would rename the one published first.
+        var clash = Assert.Throws<InvalidOperationException>(() =>
+            new SchemaCommand.TypeSchemas(SchemaCommand.XmlDocs.Load(), [typeof(ProjectInfo), typeof(Core.Discovery.ProjectInfo)]));
 
-        types.Schema(typeof(ProjectInfo), null);
-        types.Schema(typeof(Core.Discovery.ProjectInfo), null);
+        Assert.Contains("would both be named ProjectInfo", clash.Message, StringComparison.Ordinal);
+    }
 
-        Assert.Contains("QueriesProjectInfo", types.Definitions.Select(d => d.Key));
-        Assert.Contains("DiscoveryProjectInfo", types.Definitions.Select(d => d.Key));
-        Assert.DoesNotContain("ProjectInfo", types.Definitions.Select(d => d.Key));
+    [Fact]
+    public void Writes_are_per_mode()
+    {
+        var access = Command("access");
+        var apply = Command("apply");
+        var applyModes = apply["modes"]!.AsArray().ToDictionary(m => m!["when"]!["option"]!.GetValue<string>(), m => m!["writes"]!.GetValue<bool>());
+
+        // Showing the rights reads; any change option writes.
+        Assert.False(access["writes"]!.GetValue<bool>());
+        Assert.True(access["modes"]![0]!["writes"]!.GetValue<bool>());
+        // A sealed run isn't checked as a write (it runs against production itself); sealing and a plain run are.
+        Assert.False(applyModes["--seal"]);
+        Assert.True(applyModes["--seal-for"]);
+        Assert.True(apply["writes"]!.GetValue<bool>());
+        Assert.All(Command("serve")["modes"]!.AsArray(), m => Assert.False(m!["writes"]!.GetValue<bool>()));
+        Assert.True(Command("set")["writes"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public void A_hidden_argument_a_mode_depends_on_is_described()
+    {
+        var projects = Command("projects");
+        var argument = projects["arguments"]!.AsArray().Single()!;
+
+        Assert.Equal("project", argument["name"]!.GetValue<string>());
+        Assert.True(argument["hidden"]!.GetValue<bool>());
+        Assert.Equal("project", projects["modes"]![0]!["when"]!["argument"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Known_values_are_value_sets()
+    {
+        var plan = Definitions["PlanStepResult"]!["properties"]!["status"]!;
+        var scheduler = Definitions["AgentStatus"]!["properties"]!["scheduler"]!;
+
+        Assert.Equal("PlanStepStatus", Ref(plan));
+        Assert.Equal(["valid", "deferred", "simulated", "invalid", "saved", "unchanged", "failed", "notRun"], Values("PlanStepStatus"));
+        Assert.Equal("SchedulerState", Ref(scheduler));
+        Assert.Equal(["on", "off"], Values("SchedulerState"));
+        Assert.NotNull(scheduler["description"]);
+        Assert.Equal("ProjectItemOutcome", Ref(Definitions["ProjectItemResult"]!["properties"]!["outcome"]));
+        Assert.Equal("JobStatus", Ref(Definitions["JobView"]!["properties"]!["lastStatus"]));
+        Assert.Equal("ErrorCode", Ref(Definitions["ErrorBody"]!["properties"]!["code"]));
+    }
+
+    [Theory]
+    [InlineData("WriteOutput", "status", "VersionStatus")]
+    [InlineData("MoveOutput", "status", "VersionStatus")]
+    [InlineData("RestoreOutput", "status", "VersionStatus")]
+    [InlineData("ProjectInfo", "status", "ProjectStatus")]
+    [InlineData("ProjectSummary", "status", "ProjectStatus")]
+    [InlineData("AccessEntry", "kind", "AccessKind")]
+    public void An_open_value_set_allows_other_strings(string type, string property, string set)
+    {
+        var anyOf = Definitions[type]!["properties"]![property]!["anyOf"]!.AsArray();
+
+        Assert.Equal(set, Ref(anyOf[0]));
+        Assert.Equal("string", anyOf[1]!["type"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Error_codes_are_the_envelopes()
+    {
+        var names = Enum.GetValues<Core.Errors.ErrorCode>().Select(Core.Errors.ExitCodes.Name).Order(StringComparer.Ordinal);
+
+        Assert.Equal(names, Values("ErrorCode").Order(StringComparer.Ordinal));
+        Assert.Equal("not_found", Core.Errors.ExitCodes.Name(Core.Errors.ErrorCode.NotFound));
     }
 
     [Fact]
@@ -299,6 +365,8 @@ public class SchemaTests
         Assert.Equal(JsonOutput.Serialize(new { log = "a.log", lines = new[] { "x" }, previous = (List<string>?)null }),
             JsonOutput.Serialize(new ServeLogs("a.log", ["x"], null)));
     }
+
+    private static List<string> Values(string set) => [.. Definitions[set]!["enum"]!.AsArray().Select(v => v!.GetValue<string>())];
 
     private static bool IsDynamic(JsonNode? schema) => schema is JsonObject node &&
         (node["x-dynamic"] is not null || IsDynamic(node["items"]) || IsDynamic(node["additionalProperties"]) || (node["anyOf"]?.AsArray().Any(IsDynamic) ?? false));

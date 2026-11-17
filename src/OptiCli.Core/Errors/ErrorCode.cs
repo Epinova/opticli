@@ -68,21 +68,40 @@ public static class ExitCodes
         _ => Usage,
     };
 
-    /// <summary>The snake_case name used in the JSON envelope.</summary>
+    /// <summary>The snake_case name used in the JSON envelope (<see cref="ErrorCodeNames"/>).</summary>
     public static string Name(ErrorCode code) => code switch
     {
-        ErrorCode.Usage => "usage",
-        ErrorCode.NotFound => "not_found",
-        ErrorCode.Refused => "refused",
-        ErrorCode.Unreachable => "unreachable",
-        ErrorCode.LoginFailed => "login_failed",
-        ErrorCode.Conflict => "conflict",
-        ErrorCode.Validation => "validation",
-        ErrorCode.NeedsSelection => "needs_selection",
-        ErrorCode.Cancelled => "cancelled",
-        ErrorCode.Drift => "drift",
-        ErrorCode.JobFailed => "job_failed",
-        ErrorCode.Timeout => "timeout",
-        _ => "internal",
+        ErrorCode.Usage => ErrorCodeNames.Usage,
+        ErrorCode.NotFound => ErrorCodeNames.NotFound,
+        ErrorCode.Refused => ErrorCodeNames.Refused,
+        ErrorCode.Unreachable => ErrorCodeNames.Unreachable,
+        ErrorCode.LoginFailed => ErrorCodeNames.LoginFailed,
+        ErrorCode.Conflict => ErrorCodeNames.Conflict,
+        ErrorCode.Validation => ErrorCodeNames.Validation,
+        ErrorCode.NeedsSelection => ErrorCodeNames.NeedsSelection,
+        ErrorCode.Cancelled => ErrorCodeNames.Cancelled,
+        ErrorCode.Drift => ErrorCodeNames.Drift,
+        ErrorCode.JobFailed => ErrorCodeNames.JobFailed,
+        ErrorCode.Timeout => ErrorCodeNames.Timeout,
+        _ => ErrorCodeNames.Internal,
     };
+}
+
+/// <summary>The envelope's <c>error.code</c> values: <see cref="ExitCodes.Name"/> of each <see cref="ErrorCode"/>.</summary>
+[Protocol.ValueSetName("ErrorCode")]
+public static class ErrorCodeNames
+{
+    public const string Usage = "usage";
+    public const string Internal = "internal";
+    public const string NotFound = "not_found";
+    public const string Refused = "refused";
+    public const string Unreachable = "unreachable";
+    public const string LoginFailed = "login_failed";
+    public const string Timeout = "timeout";
+    public const string Conflict = "conflict";
+    public const string Validation = "validation";
+    public const string Drift = "drift";
+    public const string NeedsSelection = "needs_selection";
+    public const string JobFailed = "job_failed";
+    public const string Cancelled = "cancelled";
 }

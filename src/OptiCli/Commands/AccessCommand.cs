@@ -65,7 +65,7 @@ internal static class AccessCommand
         write.AddCommon(command, publish: false);
         // With any of these it changes the rights (a write); without them it only shows them.
         var changes = ModeCondition.AnyOf(ModeCondition.Set(grant), ModeCondition.Set(user), ModeCondition.Set(revoke), ModeCondition.Set(breakInheritance), ModeCondition.Set(inherit));
-        WriteCommands.Mark(command, changes.Matches);
+        WriteCommands.MarkWhen(command, changes);
 
         CommandRunner.SetHandler(command, options, new ResultModes()
             .When(changes, async (context, cancellationToken) =>

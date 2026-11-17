@@ -97,10 +97,11 @@ internal static class ApplyCommand
         write.AddCommon(command);
         // A sealed run (--seal) refuses everything but production itself, and is its own narrow way past the refusal: the
         // write commands' check before the command runs would stop it first. Every other apply is checked as a write.
-        WriteCommands.Mark(command, parse => parse.GetValue(seal) is null);
+        var sealedRun = ModeCondition.Set(seal);
+        WriteCommands.MarkUnless(command, sealedRun);
 
         CommandRunner.SetHandler(command, options, new ResultModes()
-            .When(ModeCondition.Set(seal), async (context, cancellationToken) =>
+            .When(sealedRun, async (context, cancellationToken) =>
             {
                 var parse = context.Parse;
                 var path = parse.GetValue(file)!;

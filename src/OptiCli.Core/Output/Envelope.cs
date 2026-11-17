@@ -27,4 +27,4 @@ public sealed record Meta(string? Source, string Version, string? Next = null, I
 public sealed record DatabaseMeta(string? Server, string? Name, bool Local, bool Development, Configuration.DatabaseRole? Role = null);
 
 /// <param name="Details">Structured context for some errors (validation issues, log lines, partial plan runs).</param>
-public sealed record ErrorBody(string Code, string Message, string? Hint, object? Details = null);
+public sealed record ErrorBody([property: Protocol.OutputValues(typeof(Errors.ErrorCodeNames))] string Code, string Message, string? Hint, object? Details = null);

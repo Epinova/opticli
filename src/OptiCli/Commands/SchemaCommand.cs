@@ -10,6 +10,7 @@ using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using OptiCli.Cli;
 using OptiCli.Core.Output;
+using OptiCli.Protocol;
 
 namespace OptiCli.Commands;
 
@@ -63,14 +64,18 @@ internal static partial class SchemaCommand
     private static JsonObject DescribeCommand(IReadOnlyList<string> path, Command command, TypeSchemas types)
     {
         var modes = CommandRunner.Results(command)!.Modes;
+        // Per mode: access reads without a change option, apply --seal isn't a write (as the runner sees it).
+        var writes = WriteCommands.WritesPerMode(command, [.. modes.Select(m => m.When)]);
         var entry = new JsonObject
         {
             ["path"] = new JsonArray([.. path.Select(p => (JsonNode)p)]),
             ["description"] = command.Description,
-            ["arguments"] = new JsonArray([.. command.Arguments.Where(a => !a.Hidden).Select(a => (JsonNode)Pruned(DescribeArgument(a)))]),
+            // A hidden argument is still the command's (projects' <project>, left out of its help): a mode may depend on it.
+            ["arguments"] = new JsonArray([.. command.Arguments.Select(a => (JsonNode)Pruned(DescribeArgument(a)))]),
             // --jsonl only changes how a list is printed; a caller that parses the envelope never needs it.
             ["options"] = new JsonArray([.. command.Options.Where(o => !o.Hidden && !o.Recursive && o.Name != "--jsonl" && o is not HelpOption).Select(o => (JsonNode)Pruned(DescribeOption(o)))]),
-            ["writes"] = WriteCommands.IsMarked(command) || WriteCommands.LocalWrite(command) is not null,
+            // As result: the Otherwise mode's; each mode has its own.
+            ["writes"] = writes[^1],
             ["lists"] = command.Options.Any(o => o.Name == "--cursor"),
         };
         if (WriteCommands.LocalWrite(command) is { } note)
@@ -82,10 +87,11 @@ internal static partial class SchemaCommand
         AddResult(entry, fallback.Result, types);
         if (modes.Count > 1)
         {
-            entry["modes"] = new JsonArray([.. modes.Take(modes.Count - 1).Select(m =>
+            entry["modes"] = new JsonArray([.. modes.Take(modes.Count - 1).Select((m, i) =>
             {
                 var mode = new JsonObject { ["when"] = m.When!.Describe() };
                 AddResult(mode, m.Result, types);
+                mode["writes"] = writes[i];
                 return (JsonNode)mode;
             })]);
         }
@@ -167,6 +173,7 @@ internal static partial class SchemaCommand
             ["minimum"] = argument.Arity.MinimumNumberOfValues,
             ["maximum"] = argument.Arity.MaximumNumberOfValues == ArgumentArity.ZeroOrMore.MaximumNumberOfValues ? null : argument.Arity.MaximumNumberOfValues,
             ["description"] = argument.Description,
+            ["hidden"] = argument.Hidden ? true : null,
         };
         if (argument.HelpName is { } helpName)
         {
@@ -223,7 +230,7 @@ internal static partial class SchemaCommand
         private readonly Dictionary<Type, string> _names;
         private readonly HashSet<Type> _defined = [];
 
-        /// <param name="roots">The declared result types; every type they reach gets its name up front, so a name that two types share is qualified in both, whichever is met first.</param>
+        /// <param name="roots">The declared result types; every type they reach gets its name up front, so two types that would share a name fail, whichever is met first.</param>
         public TypeSchemas(XmlDocs docs, IEnumerable<Type> roots)
         {
             _docs = docs;
@@ -237,31 +244,37 @@ internal static partial class SchemaCommand
 
         public JsonObject Definitions { get; } = new();
 
-        /// <summary>The name of each named type: its own (<c>WriteOutput</c>), or, where two types have the same one, qualified by its declaring type or namespace (<c>QueriesProjectInfo</c>).</summary>
+        /// <summary>
+        /// The name of each named type: its own (<c>WriteOutput</c>), or a value set's <see cref="ValueSetNameAttribute"/>.
+        /// A name in <c>$defs</c> is the npm package's TypeScript type name, so it never changes once published: two types
+        /// with one name are an error (rename the newer C# type), never qualified.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">Two types have the same name.</exception>
         private static Dictionary<Type, string> Names(IEnumerable<Type> types)
         {
-            var names = new Dictionary<Type, string>();
-            foreach (var group in types.GroupBy(SimpleName))
-            {
-                foreach (var type in group)
-                {
-                    names[type] = group.Count() == 1 ? group.Key : Qualifier(type) + group.Key;
-                }
-            }
+            var names = types.ToDictionary(t => t, SimpleName);
             if (names.GroupBy(n => n.Value).FirstOrDefault(g => g.Count() > 1) is { } clash)
             {
-                throw new InvalidOperationException($"Output types {string.Join(" and ", clash.Select(c => c.Key.FullName))} would both be named {clash.Key}.");
+                throw new InvalidOperationException(
+                    $"Output types {string.Join(" and ", clash.Select(c => c.Key.FullName))} would both be named {clash.Key} in the schema. A published name never changes: rename the newer C# type.");
             }
             return names;
         }
 
-        private static string Qualifier(Type type) =>
-            type.DeclaringType is { } outer ? SimpleName(outer) : (type.Namespace ?? "").Split('.')[^1];
-
         private static string SimpleName(Type type) =>
-            type.IsGenericType
+            type.GetCustomAttribute<ValueSetNameAttribute>()?.Name
+            ?? (type.IsGenericType
                 ? type.Name[..type.Name.IndexOf('`')] + "Of" + string.Concat(type.GetGenericArguments().Select(SimpleName))
-                : type.Name;
+                : type.Name);
+
+        /// <summary>A class of string constants that <see cref="OutputValuesAttribute"/> names: a static class.</summary>
+        private static bool IsValueSet(Type type) => type is { IsClass: true, IsAbstract: true, IsSealed: true };
+
+        /// <summary>A value set's values: its public <c>const string</c> fields, in order.</summary>
+        public static IReadOnlyList<string> ValueSetValues(Type type) =>
+            [.. type.GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly)
+                .Where(f => f.IsLiteral && f.FieldType == typeof(string))
+                .Select(f => (string)f.GetRawConstantValue()!)];
 
         /// <summary>Whether a type gets a name in <c>$defs</c>.</summary>
         private static bool IsNamed(Type type) =>
@@ -290,6 +303,10 @@ internal static partial class SchemaCommand
             foreach (var property in Properties(type).Where(p => p.GetCustomAttribute<OutputSchemaAttribute>() is null))
             {
                 Reach(property.PropertyType, reached);
+                if (property.GetCustomAttribute<OutputValuesAttribute>() is { } values)
+                {
+                    Reach(values.Values, reached);
+                }
             }
         }
 
@@ -434,10 +451,10 @@ internal static partial class SchemaCommand
                 definition["description"] = summary;
             }
             definition["x-csharp"] = type.FullName?.Replace('+', '.');
-            if (type.IsEnum)
+            if (type.IsEnum || IsValueSet(type))
             {
                 definition["type"] = "string";
-                definition["enum"] = new JsonArray([.. EnumNames(type).Select(n => (JsonNode)n)]);
+                definition["enum"] = new JsonArray([.. (type.IsEnum ? EnumNames(type) : ValueSetValues(type)).Select(n => (JsonNode)n)]);
                 return;
             }
             if (DerivedTypes(type) is { Count: > 0 } cases)
@@ -454,6 +471,8 @@ internal static partial class SchemaCommand
                 var info = _nullability.Create(property);
                 var schema = property.GetCustomAttribute<OutputSchemaAttribute>() is { } stated
                     ? JsonNode.Parse(stated.Json)!
+                    : property.GetCustomAttribute<OutputValuesAttribute>() is { } values
+                    ? ValuesSchema(property, values)
                     : Schema(property.PropertyType, info);
                 if (_docs.Property(property.DeclaringType ?? type, property.Name) is { } doc && schema is JsonObject withDoc)
                 {
@@ -472,6 +491,24 @@ internal static partial class SchemaCommand
             definition["properties"] = properties;
             definition["required"] = required;
             definition["additionalProperties"] = false;
+        }
+
+        /// <summary>
+        /// A string property's known values (<see cref="OutputValuesAttribute"/>): the value set's <c>$ref</c>, or for an open
+        /// set, that or any other string.
+        /// </summary>
+        private JsonObject ValuesSchema(PropertyInfo property, OutputValuesAttribute values)
+        {
+            if (property.PropertyType != typeof(string))
+            {
+                throw new InvalidOperationException($"{property.DeclaringType?.Name}.{property.Name}: [OutputValues] is for string properties.");
+            }
+            if (!values.Values.IsEnum && !IsValueSet(values.Values))
+            {
+                throw new InvalidOperationException($"{property.DeclaringType?.Name}.{property.Name}: [OutputValues] names {values.Values.Name}, which is neither an enum nor a static class of string constants.");
+            }
+            var known = Schema(values.Values, null);
+            return values.Open ? new JsonObject { ["anyOf"] = new JsonArray(known, Simple("string")) } : known.AsObject();
         }
 
         /// <summary>An enum's values as <see cref="JsonStringEnumConverter"/> writes them with <see cref="JsonNamingPolicy.CamelCase"/>.</summary>

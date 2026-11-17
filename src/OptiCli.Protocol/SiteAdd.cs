@@ -123,7 +123,7 @@ public sealed record LanguageBranchesResult
 /// <param name="Code">The branch's code, as the CMS stores it.</param>
 /// <param name="Status"><see cref="LanguageBranchStatus"/>.</param>
 /// <param name="Enabled">Whether the branch is enabled after the change.</param>
-public sealed record LanguageBranchChange(string Code, string Status, bool Enabled);
+public sealed record LanguageBranchChange(string Code, [property: OutputValues(typeof(LanguageBranchStatus))] string Status, bool Enabled);
 
 public static class LanguageBranchStatus
 {

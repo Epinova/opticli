@@ -309,6 +309,7 @@ public static class JobIntervals
 /// Names of the CMS's <c>ScheduledJobExecutionStatus</c> (<c>tblScheduledItem.LastStatus</c>,
 /// <c>tblScheduledItemLog.Status</c>), by value.
 /// </summary>
+[ValueSetName("JobStatus")]
 public static class JobStatuses
 {
     public const string Unknown = "unknown";

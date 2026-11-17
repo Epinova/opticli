@@ -63,7 +63,7 @@ public sealed record AccessList(bool Inherited, string? From, IReadOnlyList<Acce
 /// <param name="Kind">One of <see cref="AccessKinds"/>.</param>
 /// <param name="Levels">Level names (<see cref="AccessLevels.Describe"/>): <c>FullAccess</c>, or the individual levels.</param>
 /// <param name="Mask">The stored <c>AccessLevel</c> bits.</param>
-public sealed record AccessEntry(string Name, string Kind, IReadOnlyList<string> Levels, int Mask)
+public sealed record AccessEntry(string Name, [property: OutputValues(typeof(AccessKinds), Open = true)] string Kind, IReadOnlyList<string> Levels, int Mask)
 {
     /// <summary>A stable order (by name, then kind), so the database read and the CMS's answer compare equal.</summary>
     public static IReadOnlyList<AccessEntry> Sorted(IEnumerable<AccessEntry> entries) =>
@@ -71,6 +71,7 @@ public sealed record AccessEntry(string Name, string Kind, IReadOnlyList<string>
 }
 
 /// <summary>Entry kinds, from <c>SecurityEntityType</c> (stored as <c>tblContentAccess.IsRole</c>).</summary>
+[ValueSetName("AccessKind")]
 public static class AccessKinds
 {
     public const string User = "user";

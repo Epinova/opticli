@@ -34,7 +34,7 @@ public sealed record PlanStepResult(
     int Index,
     string Op,
     string? Id,
-    string Status,
+    [property: Protocol.OutputValues(typeof(PlanStepStatus))] string Status,
     object? Result = null,
     ErrorBody? Error = null,
     string? Undo = null,

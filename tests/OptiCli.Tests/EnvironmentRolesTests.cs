@@ -85,6 +85,16 @@ public sealed class EnvironmentRolesTests : IDisposable
         Assert.False(WriteCommands.Writes(root.Parse("get 1")));
     }
 
+    [Fact]
+    public void A_sealed_run_is_not_checked_as_a_write()
+    {
+        var root = Program.CreateRoot(new GlobalOptions());
+
+        Assert.True(WriteCommands.Writes(root.Parse("apply plan.json")));
+        Assert.True(WriteCommands.Writes(root.Parse("apply plan.json --seal-for prod")));
+        Assert.False(WriteCommands.Writes(root.Parse("apply plan.json --db prod --seal abc")));
+    }
+
     [Theory]
     [MemberData(nameof(WriteCommandLines))]
     public async Task Every_write_command_refuses_production(string line)

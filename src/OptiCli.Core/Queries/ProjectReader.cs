@@ -12,7 +12,7 @@ namespace OptiCli.Core.Queries;
 /// Of <paramref name="Items"/>, the ones marked Ready to publish (their version <c>checkedIn</c>, the content not in the
 /// recycle bin): what <c>projects publish</c> puts live, as the edit UI's "N of M ready" counts.
 /// </param>
-public sealed record ProjectInfo(int Id, string Name, string Status, DateTime? Created, string? CreatedBy, DateTime? PublishAt, int Items, int Ready)
+public sealed record ProjectInfo(int Id, string Name, [property: Protocol.OutputValues(typeof(Protocol.ProjectStatuses), Open = true)] string Status, DateTime? Created, string? CreatedBy, DateTime? PublishAt, int Items, int Ready)
 {
     /// <summary>Not published: a project whose name <c>projects create</c> won't give another.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
@@ -24,7 +24,7 @@ public sealed record ProjectInfo(int Id, string Name, string Status, DateTime? C
 public sealed record ProjectItemInfo(string Ref, string? Version, string? Type, string? Name, string? Language, VersionStatus? Status, string? Category);
 
 /// <summary>A project an item is in, as <c>get</c> shows it.</summary>
-public sealed record ItemProject(int Id, string Name, string Status, string? Version, string? Language);
+public sealed record ItemProject(int Id, string Name, [property: Protocol.OutputValues(typeof(Protocol.ProjectStatuses), Open = true)] string Status, string? Version, string? Language);
 
 /// <summary>Projects from <c>tblProject</c> and <c>tblProjectItem</c>; read-only.</summary>
 public static class ProjectReader
