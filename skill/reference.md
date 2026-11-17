@@ -841,7 +841,8 @@ A scheduled publish or a review request of the master doesn't count as publishin
 
 Plans that run again (a section rebuilt after a database refresh, or repaired after edits):
 - `"guidNamespace": "<GUID>"` next to `"operations"` gives every `create`, `block` and `upload` a GUID derived from its
-  `id` (each such step then needs an `id`); `"guid"` on a step sets one explicitly. The content then has the same GUID,
+  `id` (each such step then needs an `id`; an `upload` with `replace` keeps the media's GUID and takes neither); `"guid"`
+  on a step sets one explicitly. The content then has the same GUID,
   and permanent link `~/link/<guid without dashes>.aspx`, in every database. Each step result shows its `guid`.
 - Without `--update-existing` a step whose GUID exists fails validation with `conflict`, before anything is written.
 - `apply --update-existing`: such a step updates that content (name and properties, as a new draft) instead; content

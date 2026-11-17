@@ -476,7 +476,7 @@ public sealed partial class WritePlan
         operation = operation with
         {
             Id = id,
-            ContentGuid = ContentGuid(reader, op, id, guidNamespace),
+            ContentGuid = operation is UploadOperation { Replace: not null } ? null : ContentGuid(reader, op, id, guidNamespace),
             IncludeDraft = reader.Bool("includeDraft"),
             RequestApproval = reader.Bool("requestApproval"),
             PublishAt = reader.Time("publishAt"),
@@ -509,7 +509,10 @@ public sealed partial class WritePlan
         return null;
     }
 
-    /// <summary>The step's <c>guid</c>, else one derived from the plan's namespace and the step's id.</summary>
+    /// <summary>
+    /// The step's <c>guid</c>, else one derived from the plan's namespace and the step's id. Only for steps that make
+    /// content: an upload that replaces a file (<c>replace</c>) keeps the media's own GUID, so it has neither.
+    /// </summary>
     private static Guid? ContentGuid(StepReader reader, string op, string? id, Guid? guidNamespace)
     {
         if (!CreatingOps.Contains(op))

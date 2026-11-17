@@ -402,7 +402,8 @@ reads production over SQL with its saved read-only login, and writes nothing the
   what it creates): `delete`, `unpublish`, `access`, `discard`, a translation's `remove`, `includeDraft`, `force` and
   version ids are refused (`refused`, exit 3, `details.reason: "sealedPlan"`, every problem listed), and so are content ids
   and URLs (in refs, a ContentArea item's `ref`, the value of a reference property), which name other content in another
-  database. A create or upload needs a fixed GUID (`guid`, or `guidNamespace`), so a second run can't make a copy. An
+  database. A create or upload needs a fixed GUID (`guid`, or `guidNamespace`), so a second run can't make a copy (an
+  upload with `replace` keeps the media's own GUID). An
   `upload` (or `replace`) is only sealed for a site whose build has the CMS's Azure blob provider (`EPiServer.Azure`, on
   CMS 13 `EPiServer.Blobs.Azure`): the run writes files only to production's blob storage, which the user gives it;
 - production's content model must be the build's: compared with the local database's (which holds the build's model)
