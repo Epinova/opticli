@@ -53,8 +53,8 @@ the draft is put in the project. Things to know:
   remembers on its own. If you ask for more changes later, say that they belong in the project too.
 - **The project holds one version of each page per language.** When the assistant changes a page again, the new draft
   takes the place of the earlier one in the project.
-- **A page can only be in one active project.** If the page is already in another project, the save is refused and the
-  assistant tells you which project has it.
+- **A page can only be in one project at a time** (until that project is published). If the page is already in another
+  project, the save is refused and the assistant tells you which project has it.
 - **Your own saves.** Opening the project's link in the CMS makes it your current project in the edit view, so changes
   you then make yourself in the CMS go into it too. The assistant reminds you of that.
 
@@ -147,7 +147,7 @@ you publish from the gadget, check that every page in the project should go live
 
 - **"Projects are turned off on this site".** The CMS has neither the project bar nor the Projects gadget. Ask your
   developer, or let the assistant save the drafts without a project.
-- **"… is in project …".** The page is already in another active project. Save it in that project instead, or take it
+- **"… is in project …".** The page is already in another project that isn't published yet. Save it in that project instead, or take it
   out of the other one first (after checking with whoever runs that project).
 - **"No item of project … is marked Ready to publish".** There is nothing to publish yet. Mark the pages that
   should go live (step 4).

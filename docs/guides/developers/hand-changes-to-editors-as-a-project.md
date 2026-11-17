@@ -35,15 +35,17 @@ its draft Ready to publish. A plan for Alloy's spring campaign:
     {"op": "create", "id": "news", "parent": "/en/about-us/", "type": "ArticlePage",
      "name": "Spring news", "properties": {"TeaserText": "Alloy Plan, Track and Meet get a spring update."}, "ready": true},
     {"op": "block", "id": "teaser", "type": "TeaserBlock", "name": "Spring teaser", "for": "/en/",
-     "properties": {"Heading": "Spring is here", "Text": "See what's new this spring.", "Link": "$news"}, "ready": true},
+     "properties": {"Heading": "Spring is here", "Text": "See what's new this spring.",
+                    "Image": "671c6657-6792-4280-b5a9-b88dffc2f6c7", "Link": "$news"}, "ready": true},
     {"op": "area", "ref": "/en/", "property": "MainContentArea", "action": "add", "item": "$teaser", "ready": true},
     {"op": "set", "ref": "/en/alloy-plan/", "properties": {"TeaserText": "New this spring: plan in half the time."}}
   ]
 }
 ```
 
-The last step has no `ready`: its draft goes into the project but stays behind when the project is published, until
-someone marks it ready. A step's own `"project"` puts it in another project, and `"project": null` leaves it out of
+A teaser needs an image: the GUID is the Alloy Plan image in Alloy's global assets (`opticli get <ref>` gives an
+item's `guid`). The last step has no `ready`: its draft goes into the project but stays behind when the project is
+published, until someone marks it ready. A step's own `"project"` puts it in another project, and `"project": null` leaves it out of
 the plan's.
 
 Or let your coding agent do it. The bundled skill tells it how, and that it publishes nothing unless asked:

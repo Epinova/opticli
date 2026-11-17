@@ -802,7 +802,8 @@ and `valid`. `projects delete --dry-run` checks the project in the database (`me
 **A write joins a project only when it names it**, every time: there is no current project that later saves go into.
 (`--in-project`, not `--project`: that global option names the site's .csproj.) The result's `project` says what
 happened: `id`, `name`, `item` (`added`; `replaced`, with `replaced` the version the project held before; `unchanged`
-when the project holds that version already), `ready`, `editorUi`, and `error` when the save stood but putting it in
+when the project holds that version already; `none` when nothing was saved and the version it was based on isn't a
+draft), `ready`, `editorUi`, and `error` when the save stood but putting it in
 the project failed (also a warning).
 - A project holds one version per content and language, as the edit UI's save in project mode does: a new draft takes
   the place of the content's earlier version in that project and language. Two languages of a page are two items.
@@ -1713,7 +1714,7 @@ existing project or a new one, and asks first. The module follows the same rules
 | Tool | Scope | Does |
 |---|---|---|
 | `list_projects(all, limit)` | read | projects newest first, each with `items` and `ready` (how many are marked Ready to publish): every one that isn't published (active, scheduled, failed), and published ones too with `all`; 50 by default, at most 200, `more` when there are more |
-| `get_project(project)` | read | the project and its items, each with its version, `state` (`draft`, `ready`, `inReview`, `scheduled`, `published`, `deleted`: in the recycle bin, `missing`: the version is gone) and `editUrl`, and `url` for a published one |
+| `get_project(project)` | read | the project and its items, each with its version, `state` (`draft`, `ready`, `inReview`, `scheduled`, `published`, `deleted`: in the recycle bin, `missing`: the version is gone) and `editUrl` |
 | `create_project(name, dryRun)` | write | an active, empty project; a name an unpublished project has is refused |
 | `mark_ready_to_publish(project, items \| all, lang, requestApproval, comment, includeDraft, dryRun)` | write | marks items Ready to publish; under an approval sequence `requestApproval` sends them for review instead |
 | `remove_from_project(project, items, lang, dryRun)` | write | takes items out; their versions stay as they are |
@@ -1728,7 +1729,7 @@ lists the projects that hold a version of the content (`projects`: `id`, `name`,
 
 - **Ready only.** `publish_project` puts live only the items marked Ready to publish; the rest stay as they are, and
   the result lists them (`notReady`, `alreadyPublished`) beside what went live (`published`, or `scheduled`), each item
-  with its `editUrl` and `url`. Every ready item is checked first, as `publish_content` checks one: one problem stops
+  with its `editUrl`, and what went live with its `url` too. Every ready item is checked first, as `publish_content` checks one: one problem stops
   the publish and nothing goes live. The server's instructions tell the assistant to dry-run first, show the editor
   what goes live, whose changes go with it and what stays behind, and publish only when they ask. The result's
   `siteChanges` says what the site's own code did meanwhile, as far as it ran on the publish's own thread (see

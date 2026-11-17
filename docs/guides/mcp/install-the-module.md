@@ -124,7 +124,8 @@ instead, which needs no publishing option at all.
 
 > **Note:** Assistants work with the CMS's projects where editors have them: project mode (the project bar, CMS 12's
 > default) or the Projects gadget (on by default, the only one on CMS 13 unless you turn project mode on with
-> `EPiServer:CmsUI:ProjectUI:ProjectModeEnabled`). With both off, the project tools are refused. Publishing a project
+> `EPiServer:CmsUI:ProjectUI:ProjectModeEnabled`). With both off, every project change (making one, saving
+> into one, marking ready, publishing) is refused; reading projects still works. Publishing a project
 > through the assistant puts live only its items marked Ready to publish; the gadget's own Publish button puts every
 > unpublished item live, ready or not. With project mode on, the assistant gives editors a link to the project
 > (`projectUrl`), and the CMS's own publish puts only ready items live too.
