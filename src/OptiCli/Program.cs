@@ -10,7 +10,7 @@ var options = new GlobalOptions();
 var root = Program.CreateRoot(options);
 
 // A bare `opticli` shows the overview instead of a "required command" error.
-var parse = root.Parse(args.Length == 0 ? ["--help"] : args);
+var parse = Program.Parse(root, args.Length == 0 ? ["--help"] : args);
 if (parse.Errors.Count > 0)
 {
     // Report parse errors in the same envelope as everything else, instead of System.CommandLine's help dump.
@@ -39,6 +39,14 @@ return await parse.InvokeAsync(new InvocationConfiguration { ProcessTerminationT
 
 internal partial class Program
 {
+    /// <summary>
+    /// Parses a command line the way opticli does. Response files are off: a token starting with <c>@</c> is a value
+    /// (<c>opticli search @alloy</c>, a page named <c>@Home</c>), never a file whose lines System.CommandLine splices in.
+    /// <c>Name=@file</c> property values are opticli's own and read the file as before.
+    /// </summary>
+    internal static ParseResult Parse(RootCommand root, IReadOnlyList<string> args) =>
+        root.Parse(args, new ParserConfiguration { ResponseFileTokenReplacer = null });
+
     /// <summary>The whole command tree, with <paramref name="options"/> on every command.</summary>
     internal static RootCommand CreateRoot(GlobalOptions options)
     {
