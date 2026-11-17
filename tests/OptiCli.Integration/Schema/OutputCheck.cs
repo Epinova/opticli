@@ -32,6 +32,16 @@ internal sealed class OutputCheck
            "meta": {"type": "object", "additionalProperties": false, "required": ["version"], "properties": {"version": {"type": "string"}}}}}
         """)!;
 
+    /// <summary>
+    /// npm/src/results.ts: what the hand-written <c>create</c> and <c>set</c> promise beyond <c>WriteOutput</c>
+    /// (<c>CreatedContent</c> for a create that isn't a dry run, <c>SavedContent</c> for every set).
+    /// </summary>
+    private static readonly (string Command, bool DryRunsToo, JsonNode Schema)[] HandWritten =
+    [
+        ("create", false, JsonNode.Parse("""{"required": ["ref", "version", "guid", "type", "name"]}""")!),
+        ("set", true, JsonNode.Parse("""{"required": ["ref"]}""")!),
+    ];
+
     private readonly ITestOutputHelper output;
     private readonly List<string> problems = [];
     private readonly Dictionary<(string Command, string Mode), (int Runs, int WithItems)> seen = [];
@@ -137,6 +147,10 @@ internal sealed class OutputCheck
             else
             {
                 Check(run, declared.Schema, run.Data, $"data ({declared.Mode})");
+                foreach (var (_, _, schema) in HandWritten.Where(h => h.Command == declared.Command && (h.DryRunsToo || !invocation.Options.Contains("--dry-run"))))
+                {
+                    Check(run, schema, run.Data, "the npm package's hand-written result");
+                }
             }
             CollectValueSets(run.Data);
             var items = run.Data is JsonArray array ? array.Count : 1;
