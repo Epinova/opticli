@@ -3,7 +3,7 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
-## 0.33.0 (unreleased)
+## 0.33.0 (17 November 2026)
 
 ### CLI
 
