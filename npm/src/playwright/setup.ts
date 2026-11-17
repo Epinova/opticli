@@ -182,7 +182,7 @@ async function sites(opticli: OptiCli, baseURL: string, addresses: readonly stri
 function describeStep(step: AppliedStep): string {
   const name = `${step.id ?? `#${step.index}`} (${step.op}${step.status === 'saved' ? '' : `, ${step.status}`})`;
   // A site step's changes are lines of text; a content step's are properties.
-  const changes: readonly (string | { property: string })[] = step.result && 'changes' in step.result ? step.result.changes : [];
+  const changes: readonly (string | { property: string })[] = step.result?.changes ?? [];
   const properties = changes.map((c) => (typeof c === 'string' ? c : c.property)).filter(Boolean);
   return properties.length ? `${name}: ${properties.join(', ')}` : name;
 }

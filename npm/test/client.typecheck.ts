@@ -201,10 +201,15 @@ export async function asyncCalls(): Promise<void> {
   const project = run.projects?.[0];
   if (project) expect<Equal<typeof project.status, PlanProjectStatus>>(true);
   const step: AppliedStep | undefined = run.operations[0];
-  if (step?.op === 'create') step.result?.url;
-  if (step?.op === 'move') step.result?.previousParent;
-  // @ts-expect-error: narrow on op first
-  step?.result?.url;
+  if (step?.op === 'create') step.result?.changes.map((c) => c.property);
+  if (step?.op === 'move') step.result?.descendants.toFixed();
+  // @ts-expect-error: a move's result has no url
+  if (step?.op === 'move') step.result?.url.toUpperCase();
+  // Before narrowing, any output's property reads as possibly undefined.
+  const url = step?.result?.url;
+  expect<Equal<typeof url, string | undefined>>(true);
+  const child = run.operations.find((o) => o.id === 'news')!.result!.url!;
+  child.toUpperCase();
   if (step?.status === 'saved' || step?.status === 'notRun') void step;
   // @ts-expect-error: a step's status is one PlanStepStatus
   if (step?.status === 'done') return;
