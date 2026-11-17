@@ -239,7 +239,8 @@ content it shows. `--at` and `--display` only apply to `add`; `--display` is che
 
 - `Prop=value`: a string, parsed by the CMS the way it parses imported values (numbers, booleans, dates, a content
   id for a reference, HTML for rich text).
-- `Prop=` clears the property. `Prop=@file.html` reads the value from a file (`@@` for a literal `@`).
+- `Prop=` clears the property. `Prop=@file.html` reads the value from a file (`@@` for a literal `@`). Any other
+  argument or option value that starts with `@` is plain text (`opticli search @alloy`, `--name @Home`; since 0.34.0).
 - `Block.Prop=value` sets a property of the local block property `Block`.
 - `MainArea[2].Prop=value` sets a property of the inline block at position 2 (zero-based) of the ContentArea `MainArea`
   in the version changed (see [Inline blocks](#inline-blocks-in-contentareas) for where positions come from);

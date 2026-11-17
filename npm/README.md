@@ -128,7 +128,7 @@ playwright.config, or trust it (`dotnet dev-certs https --trust`).
 | Fixture | Scope | |
 |---|---|---|
 | `seed` | worker | `refs` and `urls` of the plan's steps, by `id`; `baseURL`; `sites`. A URL is a path on `baseURL` (`/en/fixtures/`), except for content on another site that the served site answers on a host of its own: then that site's address (`http://alloy-sv.localhost:5199/sv/news/`, see [Several sites](#several-sites)). `sites` maps each such site's name to where to open it. |
-| `cms` | test | Content for one test: `page(type, name, properties?, { parent?, publish?, keep? })` (published by default; returns `ref`, `version` and `url`, as `seed.urls` gives it), `set`, `publish`, `apply(plan, { keep?, ... })`. What `page` and `apply` create goes to the recycle bin after the test, unless `keep`. |
+| `cms` | test | Content for one test: `page(type, name, properties?, { parent?, publish?, keep?, inProject?, ... })` (published by default, unless it goes into a project or is scheduled with `publishAt`; returns what `create` does and `url`, as `seed.urls` gives it), `set`, `publish`, `apply(plan, { keep?, ... })`, `project(name, { keep? })`. What `page` and `apply` create goes to the recycle bin after the test, and the projects the test made are deleted, unless `keep`. See [Projects in tests](#projects-in-tests). |
 | `sandbox` | worker | With the `opticliSandbox` option: the ref of the worker's own page, where `cms.page()` creates content. It goes to the recycle bin when the worker ends, with anything a failed test left. |
 | `opticli` | worker | The `OptiCli` client, for anything else. |
 | `baseURL` | test | The site `opticli serve` runs. |
@@ -142,6 +142,7 @@ test pages), `properties`. Without it, pass `{ parent }` to `cms.page()`.
 |---|---|
 | The seed plan | Stays. The next run repairs what changed. |
 | `cms.page()`, `cms.apply()` | Go after the test. With `keep: true`, stay. |
+| `cms.project()`, a project a plan of `cms.apply()` created | Deleted after the test, after its content. With `keep: true`, stays. A project that was there before always stays. |
 | `cms.set()`, `cms.publish()` | Stay: they change content the test didn't make. On seeded content the next run's seed puts it back, but tests in other workers of the same run see the change. |
 | The sandbox | Goes when the worker ends, with everything below it, whatever made it. |
 | The `opticli` fixture, the Node.js client | Stay: they never remove anything (except below the sandbox, as above). |
@@ -200,25 +201,157 @@ separate origin for the browser, with cookies of its own.
 ```ts
 import { OptiCli, OptiCliError } from '@epinova/opticli';
 
-const cms = new OptiCli({ project: '../src/Site' });
-const page = await cms.create('/en/', 'StandardPage', 'Hello', { MainBody: '<p>Hi</p>' }, { publish: true });
+const cli = new OptiCli({ project: '../src/Site' });
+const page = await cli.create('/en/', 'StandardPage', 'Hello', { MainBody: '<p>Hi</p>' }, { publish: true });
 console.log(page.url); // /en/hello/
 
 try {
-  await cms.get('999999');
+  await cli.get('999999');
 } catch (e) {
   if (e instanceof OptiCliError && e.code === 'not_found') console.log(e.hint);
 }
 ```
 
 The client changes what you tell it to and removes nothing on its own, so it suits scripts that make content to keep.
-Typed methods: `serve`, `serveStatus`, `serveStop`, `sites`, `get`, `url`, `create`, `set`, `publish`, `delete`, `apply`.
-`run(args)` runs any other command and returns its JSON envelope. A failure throws `OptiCliError` with opticli's `code`,
-`exitCode`, `hint`, `details` and `version`; see opticli's
-[exit codes](https://github.com/epinova/opticli#output-and-exit-codes).
-
 Every call runs opticli once (about a second, most of it .NET starting): fine for setup, and a plan (`apply`) does many
 changes in one call.
+
+### The commands as methods
+
+Each command a test or script needs is a method, generated from opticli's own description of its commands, so it
+takes what the command takes and returns what it prints (`data` of its JSON):
+
+- The name is the command's, in camelCase: `get`, `languages`, `whereUsed`, `blockCreate`, `projectsPublish`,
+  `jobsLog`.
+- Arguments are parameters, in the order `opticli <command> --help` gives them, optional ones too; flags are an
+  options object named after them (`--include-draft` → `includeDraft`, a repeatable flag an array). When an optional
+  argument is left out, the options may come first: `cli.whereUsed({ type: 'TeaserBlock' })`. After the options, a
+  run options object: `{ timeoutMs, cwd, input }`.
+- The return type is the command's JSON result. Where an option changes what it prints, the type follows it.
+- Your editor shows each command's and option's help.
+
+```ts
+await cli.languages({ all: true });                  // LanguageInfo[]
+await cli.find({ type: 'ArticlePage', status: 'draft' }); // DraftItem[]
+await cli.whereUsed('123', { pages: true });         // PageUsageRow[]
+await cli.projects();                                // ProjectInfo[]
+await cli.projects('Spring campaign');               // ProjectItemInfo[]: one project's items
+await cli.serve({ status: true });                   // AgentStatus
+await cli.serve({ stop: true });                     // ServeStopOutput
+await cli.publish('123', { dryRun: true });          // WriteOutput
+
+for await (const article of cli.findAll({ type: 'ArticlePage' })) console.log(article.name); // every page
+```
+
+A command that lists gives one page (`limit`, then `cursor`); its `...All` iterator (`findAll`, `childrenAll`,
+`searchAll`, ...) runs it again for each next page and yields every item.
+
+What's generated: reading content (`get`, `children`, `tree`, `ancestors`, `find`, `search`, `resolve`, `url`,
+`versions`, `drafts`, `history`, `whereUsed`, `access`, `trash`), content types and settings (`types`, `type`,
+`allowedIn`, `languages`, `sites`, `categories`, `visitorGroups`, `displayTemplates`), writes (`set`, `create`,
+`area`, `blockCreate`, `composition`, `translate`, `upload`, `publish`, `unpublish`, `move`, `delete`, `restore`,
+`discard`, `apply`, `access` with a change, `languagesEnable`, `languagesDisable`), projects (`projects`,
+`projectsCreate`, `projectsReady`, `projectsRemove`, `projectsPublish`, `projectsReactivate`, `projectsDelete`), jobs
+(`jobs`, `jobsLog`, `jobsRun`, `jobsStop`, `jobsSet`), users (`usersAdd`, `usersRemove`, `usersRoles`), `serve` and
+`sql`. Commands for the terminal or for setting up (`db`, `doctor`, `sync`, `export`, `drift`, `ide`, `env`, ...)
+aren't: `run(['drift'])` runs any command and returns its envelope (`data`, `meta`).
+
+Three are written by hand, to take more than the command line can:
+
+- `create(parent, type, name, properties?, options?)` and `set(ref, properties, options?)` take the property values as
+  an object (`--values`). `create` returns `CreatedContent`, with the new content's `ref`, `version`, `guid`, `type`
+  and `name`; `set` returns `SavedContent`, whose `ref` is always there.
+- `apply(plan, options?)` takes a plan object (sent on stdin) or a plan file's path; `baseDir` is where the plan's files
+  are. For a plan written inline, `result.created` is keyed by its step ids, and each step of `result.operations` has
+  its command's result once you check its `op`:
+
+```ts
+const run = await cli.apply({
+  operations: [
+    { op: 'create', id: 'news', parent: '/en/', type: 'StandardPage', name: 'News' },
+    { op: 'move', ref: '$news', to: '/en/archive/' },
+  ],
+});
+run.created.news; // its ref
+for (const step of run.operations) if (step.op === 'move') console.log(step.result?.previousParent);
+```
+
+### `sql<Row>`: when no command answers
+
+`sql(query)` runs a read-only query (opticli refuses anything else) and gives the rows with their columns as SQL names
+them. You say what a row is; opticli can't check it, and the CMS's tables change between versions, so prefer a
+command where one answers:
+
+```ts
+const { rows } = await cli.sql<{ LanguageID: string; Name: string | null }>('SELECT LanguageID, Name FROM tblLanguageBranch');
+```
+
+### `OptiCliSync`: where you can't await
+
+`OptiCliSync` has the same methods, `create`, `set` and `apply` too, and `runSync()` for any other command; each
+blocks until opticli answers. Use it where nothing can be awaited, such as `playwright.config`, and the async client
+everywhere else. A Playwright project per language the site has enabled:
+
+```ts
+// playwright.config.ts
+import { defineConfig } from '@playwright/test';
+import { OptiCliSync } from '@epinova/opticli';
+
+const languages = new OptiCliSync().languages().filter((language) => language.enabled);
+
+export default defineConfig({
+  projects: languages.map((language) => ({ name: language.code, use: { locale: language.code } })),
+});
+```
+
+Playwright loads the config in every worker too, so the call runs once per process (about a second each).
+
+### Errors
+
+A command that fails throws `OptiCliError` with opticli's `code` (`not_found`, `validation`, `conflict`, ...),
+`exitCode`, `hint`, `details` and `version`; see opticli's
+[exit codes](https://github.com/epinova/opticli#output-and-exit-codes). A command that doesn't answer within
+`timeoutMs` (120 seconds; longer for `serve` starting a site, `apply` and `jobsRun`) is stopped and throws `code`
+`timeout`. Calls that can't be right throw a `TypeError` before opticli runs: an option the command doesn't have (also
+from plain JavaScript, where TypeScript doesn't check), a value of the wrong kind, too many arguments.
+
+### Projects in tests
+
+opticli puts drafts into the CMS's projects (see opticli's
+[CMS projects](https://github.com/epinova/opticli#cms-projects)), and a test can check what editors see in one:
+
+```ts
+test('the campaign page waits in its project', async ({ cms, opticli }) => {
+  await cms.project('Spring campaign test');
+  const page = await cms.page('StandardPage', 'Spring campaign', { MainBody: '<p>Soon</p>' }, { inProject: 'Spring campaign test', ready: true });
+
+  const items = await opticli.projects('Spring campaign test'); // ProjectItemInfo[]
+  expect(items.map((item) => item.ref)).toContain(page.ref);
+});
+```
+
+- `inProject` (a project's id or name) on `create`, `set`, `cms.page()` and `cms.set()` puts the draft in that project,
+  and `ready: true` marks it Ready to publish. `cms.page()` doesn't publish a page that goes into a project.
+- A plan's `project` (or a step's) does the same for its save steps, and creates the project when it doesn't exist.
+- `cms.project(name)` makes a project for the test. A project the test made, with `cms.project()` or through a plan
+  that created it, is deleted after the test, after the test's content, unless `keep: true`. A project that was there
+  before is never deleted. Deleting a project leaves its items' versions as they are.
+- The client itself (`opticli`, the Node.js client) deletes no project on its own.
+
+### Upgrading from 0.33
+
+0.34 generated the client from the CLI, and some names and types changed with it; the
+[CHANGELOG](https://github.com/epinova/opticli/blob/main/CHANGELOG.md) lists every one. What most code meets:
+
+- `serveStatus()` and `serveStop()` are `serve({ status: true })` and `serve({ stop: true })`; `serve()` returns
+  `AgentStatus`, not the envelope.
+- Renamed result types: `ContentItem` → `ContentDocument`, `WriteResult` → `WriteOutput` (`SavedContent` from `set`,
+  `CreatedContent` from `create`), `ApplyResult` → `AppliedPlan`, `ServeResult` → `AgentStatus`, `UrlResult` →
+  `ContentUrls`, `DeleteResult` → `MoveOutput`, `ChangedProperty` → `PropertyChange`. `WriteOptions` is
+  `CreateCallOptions` or `SetCallOptions`.
+- An option a command doesn't have throws a `TypeError` instead of being ignored.
+- In a plan, an `area` step's display option is `display`, and a `publish` or `discard` step's `version` a number:
+  opticli refused the old spellings already.
 
 ### Which opticli, which site
 

@@ -5,6 +5,75 @@ again to update the skill.
 
 ## 0.34.0 (unreleased)
 
+The npm package's client has a typed method for every command a test or script needs, generated from the CLI itself,
+and a blocking twin for `playwright.config`. Its API changes where 0.33's no longer fit: see the breaking changes
+below.
+
+### CLI
+
+- **A value that starts with `@` is plain text.** opticli read such a value as a response file and put that file's
+  contents in its place, or failed with "Response file not found": `opticli search @alloy`, `get @5`, `create ...
+  --name @Home` and `apply @plan.json` didn't do what they said. Now they search for `@alloy`, name the page `@Home`,
+  and so on. `Prop=@file` values (a file's text as a property value) and `@@` (a literal `@`) work as before.
+- **Fixed: a plan with a `guidNamespace` couldn't replace a file.** An `upload` step with `replace` was refused for
+  having no `id`, while `replace` takes no `id` or `guid`. Such a step keeps the media's own GUID now, as without a
+  namespace. This dates from 0.6.0.
+
+### npm package
+
+- **Every command a test or script needs is a method on `OptiCli`**, generated from opticli's description of its
+  commands, with the CLI's shape: arguments as parameters in the CLI's order, flags as an options object named after
+  them, and the command's JSON result as the return type: `cli.languages({ all: true })`, `cli.projects('Spring
+  campaign')`, `cli.whereUsed('123', { pages: true })`, `cli.jobsLog({ failed: true })`. Where the result depends on
+  an option, the type follows it (`serve({ status: true })` gives `AgentStatus`, `find({ type, status: 'draft' })`
+  `DraftItem[]`). Each method carries the command's help as documentation. Commands that list also have an iterator
+  over every page (`for await (const item of cli.findAll({ type: 'ArticlePage' }))`). An optional argument may be
+  `undefined` (`cli.whereUsed(maybeRef, { pages: true })`); run options (`timeoutMs`, `cwd`, `input`) come after the
+  options object (`cli.whereUsed(undefined, undefined, { timeoutMs })`). Not generated: commands for a
+  terminal or for setup (`db`, `sync`, `export`, `drift`, `doctor`, `ide`, ...); `run()` and `runSync()` still run
+  any command.
+- **`OptiCliSync`**: the same methods, blocking, for code that can't await, such as a `playwright.config` that makes a
+  project per enabled language (`new OptiCliSync().languages()`). `runSync()` runs any other command.
+- **`sql<Row>(query)`** types the rows of a read-only query as you say they are, for what no command answers.
+- **CMS projects**: `create`, `set`, `cms.page()` and `cms.set()` take `inProject`, `ready` and `requestApproval`;
+  plans take `project` and `ready`, and the result's `projects` lists them. `cms.project(name)` makes a project for the
+  test, and a project a test made (`cms.project()`, or `cms.apply()` with a plan whose `project` didn't exist) is
+  deleted after the test, after its content, unless `keep`. A project that was there before is never deleted.
+- `PlanStep` has the `composition` and `access` steps and the step fields opticli takes (`variation`, `from`,
+  `baseVersion` and `force` on `set`, `blueprint` on `create`, `replace` on `upload`, `publishAt`, ...).
+- Every result type opticli prints is exported, under the name the CLI's schema gives it (`ContentDocument`,
+  `WriteOutput`, `AgentStatus`, `ProjectInfo`, ...), with its known values as unions (`VersionStatus`,
+  `PlanStepStatus`, `ProjectEditorUi`, ...), and so is each command's options interface (`FindOptions`, ...).
+
+**Breaking changes.** Code that only calls the 0.33 methods and reads their usual fields mostly compiles unchanged;
+the [npm README](https://github.com/Epinova/opticli/blob/main/npm/README.md#upgrading-from-033) shows what to change.
+
+- Result types renamed to the generated names, with no aliases: `ContentItem` → `ContentDocument` (`language`,
+  `parent`, `name`, `saved` and `changedBy` are optional, as opticli leaves them out for a folder, media or the root;
+  `properties` is `Record<string, PropertyOut>`), `WriteResult` → `WriteOutput` (`set` returns `SavedContent`, a
+  `create` that isn't a dry run `CreatedContent`, with `ref`, `version`, `guid`, `type` and `name` always there),
+  `ChangedProperty` → `PropertyChange`, `DeleteResult` → `MoveOutput`, `UrlResult` → `ContentUrls`, `ApplyResult` →
+  `AppliedPlan<P>`, `ServeResult` → `AgentStatus` (whose `state` has no `starting`, and `mode` has `external`),
+  `ServeStopOutput` and `ServeLogs`.
+- Same name, the generated shape: `PlanStepResult` (`result` is `unknown`; `apply`'s steps are `AppliedStep`, whose
+  `result` is typed by `op`), `SiteChange` (`actions` is `string[]`), `SiteInfo`, `PropertyOut` (`value` is
+  `JsonValue`).
+- `serveStatus()` → `serve({ status: true })`, `serveStop()` → `serve({ stop: true })`. `serve()` returns the data
+  (`AgentStatus`), not the envelope; `timeoutSeconds` is `timeout`, and `https: false` passes `--https false`. A
+  start waits up to `timeout` + 600 seconds; status, stop and logs the usual 120.
+- `WriteOptions` → `CreateCallOptions` and `SetCallOptions`, which take every flag of the command; `apply`'s options
+  are `ApplyCallOptions` (every flag of `apply`, and `baseDir`), and `apply` also takes a plan file's path.
+- An option a command doesn't have is a `TypeError`, before opticli runs; 0.33 ignored it.
+- `apply()` and `cms.apply()` with a plan written inline type `created` by the plan's step ids: `result.created.page`
+  compiles, `result.created[someString]` no longer does.
+- `cms.page()` doesn't publish with `inProject` or `publishAt` (the project's or the schedule's publish puts it live;
+  opticli refuses both with `publish`). `cms.publish()` returns `WriteOutput` and takes `publish`'s options;
+  `cms.page()`'s options are `PageOptions`.
+- `PlanStep` takes per op only the fields opticli takes for it: a field that opticli refused as unknown no longer
+  compiles. An `area` step's display option is `display`, as opticli has always read it (`displayOption` was refused;
+  it stays right on ContentArea items), and `version` on `publish` and `discard` steps is a number (a string was
+  refused).
+
 ### MCP module
 
 - **`get_content_type` gives the allowed types an editor descriptor sets.** Many sites set a ContentArea's block types
@@ -16,6 +85,12 @@ again to update the skill.
 - **Writes keep to those types.** The CMS checks only `[AllowedTypes]` on save, so an assistant could put a block in
   such an area that the edit UI wouldn't offer an editor there. Content a write adds that the area's types leave out
   is now a validation error, as for `[AllowedTypes]`, also in a dry run. What the area already holds may stay.
+
+### Documentation
+
+- A new guide for developers, [Read the site from Node.js scripts and
+  playwright.config](https://epinova.github.io/opticli/guides/), with a Playwright project per enabled language.
+  [Seed CMS content for Playwright tests](https://epinova.github.io/opticli/guides/) shows a test's own CMS project.
 
 ## 0.33.0 (17 November 2026)
 

@@ -146,8 +146,10 @@ own and remove it after:
 npm install -D @epinova/opticli
 ```
 
-It runs the opticli CLI, which you install as usual, at the package's version or newer (a local tool manifest pins it
-for CI). See [npm/README.md](npm/README.md).
+Each command a test or script needs is a typed method, generated from the CLI (`cli.languages()`,
+`cli.whereUsed('123', { pages: true })`), and `OptiCliSync` has the same methods, blocking, for a `playwright.config`
+that can't await. It runs the opticli CLI, which you install as usual, at the package's version or newer (a local tool
+manifest pins it for CI). See [npm/README.md](npm/README.md).
 
 ## Which database
 
@@ -740,6 +742,8 @@ with [IDE mode](#running-the-site-from-your-ide-ide-mode) on.
 Every write command takes `--dry-run`. Structured values use `--values`, e.g.
 `--values '{"MainArea":[{"ref":"456"}]}'`; a value may also be given as `get` shows it (`{"type": ..., "value": ...}`;
 a reference in it is written by its GUID, so `get` output from another database names the same content).
+`Prop=@file.html` reads a property's value from a file (`@@` for a literal `@`); any other value that starts with `@`
+is plain text (`--name @Home`, `opticli search @alloy`).
 `set` and `area` check that nobody saved a newer version in the meantime (exit 5 on a conflict). `--base-version <id>` pins the version the change is based on, and `--force` skips the check.
 `--from published` (or `--from <version>`) bases the change on that version instead of the latest, and the check
 stays: newer drafts are left out and stay as they are, and the output lists them (`leftOut`).
@@ -2544,6 +2548,76 @@ OPTICLI_MCP_IT_NO_PREVIEW_LINKS_URL=http://127.0.0.1:5182 OPTICLI_MCP_IT_URL=...
 tests/fixtures/mcp/serve.sh path/to/AlloyMcp --port 5182 --stop
 ```
 
+#### The schema output tests
+
+`opticli schema --json` (a hidden command) describes every command: its arguments, options and, as JSON Schema, the
+JSON result it prints, per mode where an option changes it. The npm package's types are generated from it (see
+[The npm package](#the-npm-package) below). `SchemaOutputTests` in `tests/OptiCli.Integration` checks that the CLI
+prints what it declares: it runs this checkout's `opticli.dll` as a process (`src/OptiCli/bin/<the test's
+configuration>/net8.0/`, built first, or `OPTICLI_IT_CLI`) and validates each JSON result against the schema of the
+same build, with JsonSchema.Net (JSON Schema 2020-12, `uuid` and `date-time` formats asserted), picking the mode as
+opticli does. Errors are checked against `ErrorBody`, the envelope against the npm package's, and so are the npm
+package's own types where the schema is open (`get`'s property values, `sql`'s cells, a plan step's result by its op,
+what `create` and `set` promise). A mismatch fails the test, naming the command line, the place and the value.
+
+- `The_validator_fails_output_that_differs_from_the_declared_type` needs no site: it shows that a wrong type, an
+  undeclared or missing property, a value outside a closed set or a bad format fails. CI runs only this one; the
+  others skip there.
+- `Reads_print_what_the_schema_declares`: every read command in every mode, with refs the site's own output gives, on
+  any site, running or not. It fails for a mode that printed nothing, except where the site has nothing to show (the
+  log names them). It runs `serve --stop` only on a stopped site.
+- `Writes_print_what_the_schema_declares`: every write, dry run and real, on the edge-case site with its agent running.
+  Its content goes to the recycle bin; projects, users, hosts and languages it adds are removed again.
+- `Local_commands_print_what_the_schema_declares`: `db`, `ide`, `env`, `skill install`, `sites primary --save`, and
+  `apply --seal-for`, in a sandbox: a copy of the site's `.csproj` and `appsettings*.json`, and a user config, serve
+  state and home folder of its own in a temporary folder, so your own config, state and site stay as they are.
+
+| Variable | Meaning |
+|---|---|
+| `OPTICLI_IT_PROJECT` | the site, as for the other integration tests |
+| `OPTICLI_IT_CLI` | the `opticli.dll` to run and take the schema from (default: this checkout's build) |
+| `OPTICLI_IT_SEAL_DB` | another local database on the site's SQL Server with the same content model (a copy of the site's database), read only, that the local test's `apply --seal-for` names as production; the site's own can't be, since a role belongs to a server and database. Without it, that check is left out |
+| `OPTICLI_IT_SCHEMA_LOG` | append every command line run, with its mode, to this file |
+
+opticli keys a site's serve state by the project path as you give it, so start the site and run the tests with the
+same path: through a symbolic link and through its target, they are two sites on one database, and the tests don't
+see the agent the other path started.
+
+```sh
+dotnet test tests/OptiCli.Integration --filter "FullyQualifiedName~The_validator"     # no site
+OPTICLI_IT_PROJECT=/demo/Alloy dotnet test tests/OptiCli.Integration --filter "FullyQualifiedName~SchemaOutputTests.Reads"
+opticli serve --project /demo/AlloyEdge13                                             # the same path as below
+OPTICLI_IT_PROJECT=/demo/AlloyEdge13 OPTICLI_IT_SEAL_DB=alloy-edge13-copy OPTICLI_IT_SCHEMA_LOG=/tmp/schema.log \
+  dotnet test tests/OptiCli.Integration --filter "FullyQualifiedName~SchemaOutputTests"
+```
+
+The reads take about 2 minutes, the writes 1 to 1.5, the local commands seconds.
+
+#### The npm package
+
+`npm/` is the `@epinova/opticli` package: `npm ci`, then `npm run typecheck` (the package, and `test/*.typecheck.ts`,
+which pin result types and the calls that mustn't compile) and `npm test` (it builds, then tests against a stand-in
+opticli, `test/fake-opticli.mjs`).
+
+Its command methods, options and result types (`npm/src/generated/`) are generated from `opticli schema --json` by
+`npm/scripts/generate.mjs`; which commands are in is its `include` list, and what C# can't say is in
+`npm/scripts/overrides.mjs`. After changing a command, an option or an output record, build the CLI, regenerate and
+commit the result:
+
+```sh
+dotnet build src/OptiCli/OptiCli.csproj
+cd npm && npm run generate      # the newest build in src/OptiCli/bin; OPTICLI=path/to/opticli.dll for another
+```
+
+CI's npm job builds the CLI, regenerates, and fails when `npm/src/generated` differs from what is committed (an
+untracked file too). The generated files carry no version, so a release doesn't change them.
+
+`test/surface.txt` lists the package's public surface: every exported name, the public members of its classes, the
+properties of its interfaces, and what its type aliases resolve to (the values of a union, each `PlanStep` op's
+fields). `surface.test.mjs` fails when it changes, so nothing is renamed or removed by accident. After a deliberate
+change, `npm run build && node test/surface.mjs --write`, commit `test/surface.txt`, and list a removal in the
+CHANGELOG as a breaking change.
+
 [CI](.github/workflows/ci.yml) runs the unit tests on Linux, Windows and macOS for every push and pull request. On
 Windows it starts SQL Server Express LocalDB (the image's; it installs Microsoft's MSI, checked against a pinned SHA-256,
 only when the image lacks it), and `LocalDbTests` must pass there (`OPTICLI_REQUIRE_LOCALDB` turns its skip into a
@@ -2554,7 +2628,9 @@ reads, also run the integration test against a site you have.
 ### Releasing
 
 Set the new version as `<Version>` in [Directory.Build.props](Directory.Build.props) and as `opticli-version` in
-[skill/SKILL.md](skill/SKILL.md), and add the release to [CHANGELOG.md](CHANGELOG.md). Commit, then push a matching tag:
+[skill/SKILL.md](skill/SKILL.md) (and in its sentence "This file was written for opticli ..."), and add the release to
+[CHANGELOG.md](CHANGELOG.md). The npm package's generated files carry no version: regenerate them only when a command
+changed, which CI checks anyway. Commit, then push a matching tag:
 
 ```sh
 git tag v0.23.1 && git push origin v0.23.1

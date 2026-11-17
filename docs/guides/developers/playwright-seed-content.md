@@ -3,7 +3,7 @@ title: Seed CMS content for Playwright tests
 summary: Use the @epinova/opticli npm package to start the site, seed the content your Playwright tests read, and give each test pages of its own that are cleaned up afterwards.
 audience: developers
 order: 3
-written-for: 0.31.0
+written-for: 0.34.0
 ---
 
 End-to-end tests on an Optimizely site usually depend on content someone made by hand, and break when an editor
@@ -138,6 +138,10 @@ Seeded content costs nothing per test. `cms.page()` creates a published page in 
 the test, also when it fails; pass `keep: true` with a parent outside the sandbox to leave it. `cms.set()` and
 `cms.publish()` on seeded content stay until the next run's seed puts them back, and other workers see them meanwhile.
 
+To test what editors see in a CMS project, `cms.project('Spring campaign test')` makes one for the test, and
+`cms.page(..., { inProject: 'Spring campaign test', ready: true })` saves the page as a draft in it, marked Ready to
+publish. The project is deleted after the test, after its pages; one that was there before stays.
+
 ### 6. Test the errors too
 
 A failed write throws `OptiCliError` with opticli's `code`, `exitCode`, `hint` and `details`, so a test can tell a
@@ -184,5 +188,7 @@ running for the next run. Each call to opticli takes about a second, most of it 
 - [Tests with Playwright and Node.js](https://github.com/Epinova/opticli#tests-with-playwright-and-nodejs)
 - [Plan format](https://github.com/Epinova/opticli/blob/main/skill/reference.md#plans-apply)
 - [Build a test database from scratch](build-a-test-database.md)
+- [Read the site from Node.js scripts and playwright.config](node-scripts-and-playwright-config.md): a Playwright
+  project per enabled language, and every command as a typed method
 - [Find content and the code behind it](find-content-and-code.md)
 - [Work on a restored production database](restored-production-database.md)
