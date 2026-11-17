@@ -41,6 +41,7 @@ internal static class EnvCommand
         command.Options.Add(format);
         command.Options.Add(port);
         command.Options.Add(includeConnection);
+        WriteCommands.MarkLocal(command, "Registers a new token in the project's serve state file (a site started earlier with other variables stops answering writes); needs no running site.");
 
         // --json is the envelope, like everywhere else; it only conflicts with another format asked for by name.
         CommandRunner.SetHandler(command, options, new ResultModes()

@@ -10,7 +10,6 @@ namespace OptiCli.Core.Configuration;
 /// <param name="Output">Site build output DLL, relative to the project directory (used by <c>serve</c>).</param>
 /// <param name="Database">The development database the user chose (<c>opticli db use</c>).</param>
 /// <param name="Https">Run <c>serve</c> with <c>--https</c> by default.</param>
-/// <param name="HttpsPort">The port <c>serve</c>'s HTTPS address listens on (<c>--https-port</c>), which turns HTTPS on; null: the next free one.</param>
 /// <param name="Scheduler">Run <c>serve</c> with <c>--scheduler</c> by default: the site's scheduler stays as the site sets it.</param>
 /// <param name="PrimaryHosts">
 /// The saved <c>sites primary</c> mapping (<c>sites primary --save</c>): <c>Site A</c> or <c>Site A@nb</c> to the host.
@@ -19,6 +18,7 @@ namespace OptiCli.Core.Configuration;
 /// <param name="Databases">The databases added by name (<c>opticli db add</c>), in the file's order.</param>
 public sealed record ProjectSettings(string? Connection, string? Output, int? Port, SavedDatabase? Database = null, bool Https = false, IReadOnlyDictionary<string, SavedPrimaryHost>? PrimaryHosts = null, bool Scheduler = false, IReadOnlyList<NamedDatabase>? Databases = null)
 {
+    /// <summary>The port <c>serve</c>'s HTTPS address listens on (<c>--https-port</c>), which turns HTTPS on; null: the next free one.</summary>
     public int? HttpsPort { get; init; }
 }
 

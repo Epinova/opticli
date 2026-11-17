@@ -21,7 +21,7 @@ namespace OptiCli.Commands;
 /// </summary>
 internal static class DoctorCommand
 {
-    private sealed record Report(
+    private sealed record DoctorReport(
         bool Healthy,
         ToolSection Tool,
         ProjectSection Project,
@@ -54,7 +54,7 @@ internal static class DoctorCommand
         int? CmsMajor = null,
         string? UserSecretsId = null,
         IReadOnlyList<string>? Imports = null,
-        Problem? Error = null);
+        DoctorProblem? Error = null);
 
     /// <param name="Development">The project's development database and how it was found (<c>saved</c>, <c>configured</c>, <c>automatic</c>).</param>
     private sealed record ConnectionSection(
@@ -65,7 +65,7 @@ internal static class DoctorCommand
         SelectionMode? DevelopmentMode,
         SavedDatabase? Saved,
         IReadOnlyList<CandidateView> Candidates,
-        Problem? Error);
+        DoctorProblem? Error);
 
     private sealed record CandidateView(
         string? Id,
@@ -82,9 +82,9 @@ internal static class DoctorCommand
         string? Reason);
 
     /// <param name="CmsMajor">The CMS major the database's schema belongs to (12 or 13), from <paramref name="SchemaVersion"/>.</param>
-    private sealed record DatabaseSection(bool Reachable, string? Server = null, string? Database = null, int? SchemaVersion = null, int? CmsMajor = null, string? SqlServerVersion = null, int? ContentTypes = null, int? ContentItems = null, Problem? Error = null);
+    private sealed record DatabaseSection(bool Reachable, string? Server = null, string? Database = null, int? SchemaVersion = null, int? CmsMajor = null, string? SqlServerVersion = null, int? ContentTypes = null, int? ContentItems = null, DoctorProblem? Error = null);
 
-    private sealed record Problem(string Code, string Message, string? Hint);
+    private sealed record DoctorProblem(string Code, string Message, string? Hint);
 
     public static Command Create(GlobalOptions options)
     {
@@ -99,7 +99,7 @@ internal static class DoctorCommand
             Example: opticli doctor
             """);
 
-        CommandRunner.SetHandler<Report>(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<DoctorReport>(command, options, async (context, cancellationToken) =>
         {
             var warnings = new List<string>();
 
@@ -184,7 +184,7 @@ internal static class DoctorCommand
                     + $"Update it: opticli skill install{(skill.Scope == SkillScope.Repository ? " --repo" : "")} (it asks for --force only if the files were edited).");
             }
 
-            var report = new Report(
+            var report = new DoctorReport(
                 project is not null && databaseSection.Reachable,
                 new ToolSection(ToolInfo.Version, RuntimeInformation.FrameworkDescription),
                 projectSection,
@@ -196,7 +196,7 @@ internal static class DoctorCommand
                 sitesMapping,
                 skills,
                 warnings);
-            return new CommandResult<Report>(report);
+            return new CommandResult<DoctorReport>(report);
         });
         return command;
     }
@@ -391,5 +391,5 @@ internal static class DoctorCommand
         }
     }
 
-    private static Problem ToProblem(OptiCliException ex) => new(ExitCodes.Name(ex.Code), ex.Message, ex.Hint);
+    private static DoctorProblem ToProblem(OptiCliException ex) => new(ExitCodes.Name(ex.Code), ex.Message, ex.Hint);
 }

@@ -42,7 +42,7 @@ internal static class TypesRemoveCommand
         command.Options.Add(write.DryRun);
         WriteCommands.Mark(command);
 
-        CommandRunner.SetHandler<OrphanRemover.Output>(command, options, (context, cancellationToken) =>
+        CommandRunner.SetHandler<OrphanRemover.RemovalOutput>(command, options, (context, cancellationToken) =>
             RunAsync(context, new OrphanRemovalRequest
             {
                 Types = Names(context.Parse.GetValue(names) ?? []),
@@ -78,7 +78,7 @@ internal static class TypesRemoveCommand
         command.Options.Add(write.DryRun);
         WriteCommands.Mark(command);
 
-        CommandRunner.SetHandler<OrphanRemover.Output>(command, options, (context, cancellationToken) =>
+        CommandRunner.SetHandler<OrphanRemover.RemovalOutput>(command, options, (context, cancellationToken) =>
             RunAsync(context, new OrphanRemovalRequest
             {
                 Properties = OrphanRemover.Properties(context.Parse.GetValue(type)!, Names(context.Parse.GetValue(properties) ?? [])),
@@ -114,7 +114,7 @@ internal static class TypesRemoveCommand
         command.Options.Add(write.DryRun);
         WriteCommands.Mark(command);
 
-        CommandRunner.SetHandler<OrphanRemover.Output>(command, options, (context, cancellationToken) =>
+        CommandRunner.SetHandler<OrphanRemover.RemovalOutput>(command, options, (context, cancellationToken) =>
             RunAsync(context, new OrphanRemovalRequest
             {
                 Prune = true,
@@ -147,11 +147,11 @@ internal static class TypesRemoveCommand
         Description = "Remove properties that have stored values; the values are deleted with them, in every version and language, for good. Without it such a property is refused (exit 3). Never implied by anything else: ask the user first.",
     };
 
-    private static async Task<CommandResult<OrphanRemover.Output>> RunAsync(CliContext context, OrphanRemovalRequest request, CancellationToken cancellationToken)
+    private static async Task<CommandResult<OrphanRemover.RemovalOutput>> RunAsync(CliContext context, OrphanRemovalRequest request, CancellationToken cancellationToken)
     {
         OrphanRemover.RequireLocal(!context.UseConnection().IsLocal);
         var agent = await context.ConnectAgentAsync(cancellationToken);
         var (output, warnings) = await OrphanRemover.RunAsync(agent, request, cancellationToken);
-        return new CommandResult<OrphanRemover.Output>(output, Text: OrphanRemover.Text(output), Warnings: warnings.Count > 0 ? warnings : null, Source: WriteExecutor.AgentSource);
+        return new CommandResult<OrphanRemover.RemovalOutput>(output, Text: OrphanRemover.Text(output), Warnings: warnings.Count > 0 ? warnings : null, Source: WriteExecutor.AgentSource);
     }
 }

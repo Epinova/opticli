@@ -16,7 +16,7 @@ namespace OptiCli.Core.Cms;
 public static class OrphanRemover
 {
     /// <summary>What the commands print: the site's answer, its warnings moved to <c>meta.warnings</c>.</summary>
-    public sealed record Output(
+    public sealed record RemovalOutput(
         IReadOnlyList<RemovedContentType> Types,
         IReadOnlyList<RemovedProperty> Properties,
         IReadOnlyList<KeptOrphan>? Kept,
@@ -55,7 +55,7 @@ public static class OrphanRemover
 
     /// <summary>Asks the site; the answer's warnings come back apart from what was removed.</summary>
     /// <exception cref="NotFoundException">The site's agent is older than this opticli (no such route).</exception>
-    public static async Task<(Output Output, IReadOnlyList<string> Warnings)> RunAsync(AgentClient agent, OrphanRemovalRequest request, CancellationToken cancellationToken)
+    public static async Task<(RemovalOutput Output, IReadOnlyList<string> Warnings)> RunAsync(AgentClient agent, OrphanRemovalRequest request, CancellationToken cancellationToken)
     {
         OrphanRemovalResult result;
         try
@@ -66,7 +66,7 @@ public static class OrphanRemover
         {
             throw new NotFoundException("The site's agent is older than this opticli and can't remove content types or properties.", AgentErrors.OutOfDateHint);
         }
-        return (new Output(result.Types, result.Properties, request.Prune ? result.Kept : null, result.Removed, result.DryRun ? true : null) { RecordFile = result.RecordFile },
+        return (new RemovalOutput(result.Types, result.Properties, request.Prune ? result.Kept : null, result.Removed, result.DryRun ? true : null) { RecordFile = result.RecordFile },
             result.Warnings ?? []);
     }
 
@@ -82,7 +82,7 @@ public static class OrphanRemover
     /// The text a terminal gets: every field of every removed (or kept) item, in full. The output is the only record of
     /// what was removed besides the record file, so nothing is cut or put in a table column.
     /// </summary>
-    public static string Text(Output output)
+    public static string Text(RemovalOutput output)
     {
         var text = new StringBuilder();
         var verb = output.DryRun == true ? "Would remove" : output.Removed ? "Removed" : "Nothing removed";

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Text.RegularExpressions;
+using OptiCli.Core.Output;
 using OptiCli.Core.SourceScan;
 using OptiCli.Protocol;
 
@@ -31,7 +32,7 @@ public sealed record JobView(
     DateTime? LastRun,
     string? LastStatus,
     string? LastMessage,
-    object Running,
+    [property: OutputSchema("""{"anyOf": [{"type": "boolean"}, {"const": "stale"}]}""")] object Running,
     bool Stoppable,
     string? Class,
     string? Source,

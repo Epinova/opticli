@@ -65,7 +65,7 @@ public class OrphanRemoverTests
     {
         var description = new string('d', 400);
         var property = new RemovedPropertyDefinition(179, "OldIntro", "LongString", "EPiServer.SpecializedProperties.PropertyXhtmlString", null, true, false, true, true, "Old intro", "Help", "Content", 30);
-        var output = new OrphanRemover.Output(
+        var output = new OrphanRemover.RemovalOutput(
             [new RemovedContentType(31, Guid.Parse("3b0c4a5e-0d1f-4e5a-9c7b-6a1d2e3f4a12"), "OldPage", "Page", "Old page", description, "Example.OldPage, Example", [property with { Id = 180, Name = "Teaser" }]) { AvailableUnder = ["StartPage"] }],
             [new RemovedProperty("ArticlePage", property, new StoredValueCounts(2, 5))],
             null, Removed: true, DryRun: null)

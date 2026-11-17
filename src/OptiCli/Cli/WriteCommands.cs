@@ -19,6 +19,17 @@ internal static class WriteCommands
 
     public static bool IsMarked(Command command) => Marked.TryGetValue(command, out _);
 
+    private static readonly ConditionalWeakTable<Command, string> LocalWrites = new();
+
+    /// <summary>
+    /// A command that changes nothing in the CMS, but writes state another command relies on (<c>env</c> registers a new
+    /// serve token): not refused as a write, but <c>opticli schema</c> reports it as one, with <paramref name="note"/>.
+    /// </summary>
+    public static void MarkLocal(Command command, string note) => LocalWrites.AddOrUpdate(command, note);
+
+    /// <summary>What <see cref="MarkLocal"/> said the command writes; null for any other command.</summary>
+    public static string? LocalWrite(Command command) => LocalWrites.TryGetValue(command, out var note) ? note : null;
+
     /// <summary>True when this invocation writes.</summary>
     public static bool Writes(ParseResult parse) =>
         Marked.TryGetValue(parse.CommandResult.Command, out var writes) && writes(parse);

@@ -24,7 +24,7 @@ public sealed class PropertyNode(int definitionId)
             .Concat(Items.Values.SelectMany(i => i.Properties.Values.SelectMany(p => p.AllRows())));
 }
 
-/// <param name="TypeId">Content type of an inline block, when the scope names it.</param>
+/// <param name="typeId">Content type of an inline block, when the scope names it.</param>
 public sealed class BlockItem(int? typeId)
 {
     public int? TypeId { get; set; } = typeId;

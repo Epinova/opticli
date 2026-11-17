@@ -37,11 +37,11 @@ internal static class ServeCommand
         var scheduler = new Option<bool>("--scheduler")
         {
             Description = "Leave the site's scheduler as the site sets it, so jobs run on their schedule (overdue ones at once). Default: off for every run (\"scheduler\": true in the user config turns it on; --scheduler false off again); `opticli jobs run` runs a job either way. Not against a shared database.",
-        };
+        }.ThreeState();
         var https = new Option<bool>("--https")
         {
             Description = "Also listen on https://localhost:<next free port> with the ASP.NET Core development certificate, to browse a site that redirects to HTTPS. Default: \"https\" in the user config; --https false turns it off.",
-        };
+        }.ThreeState();
         var httpsPort = new Option<int?>("--https-port")
         {
             Description = "The port of the HTTPS address (implies --https), so site hosts with that port stay right from run to run; taken is an error. Default: \"httpsPort\" in the user config, else the next free port.",

@@ -9,7 +9,7 @@ namespace OptiCli.Core.Sites;
 
 /// <summary>One <c>sites primary</c> pair: the host a site (in one language, or every language) should have as its primary host.</summary>
 /// <param name="Language">The enabled language the host is primary for; null for every language.</param>
-/// <param name="Host"><c>name[:port]</c>, normalised (<see cref="HostNames.TryNormalize"/>).</param>
+/// <param name="Host"><c>name[:port]</c>, normalised (<see cref="HostNames.TryNormalize(string?, out string?, out bool?, out string?, bool?)"/>).</param>
 /// <param name="Https">One of <see cref="HostHttps"/>, from the pair's scheme or <c>--https</c>; null leaves an existing host's setting (a port alone, as in <c>localhost:443</c>, gives none).</param>
 public sealed record PrimaryPair(SiteInfo Site, string? Language, string Host, string? Https)
 {

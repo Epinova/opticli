@@ -26,7 +26,7 @@ public sealed class UrlBuilder(CmsDatabase db, CmsModel model)
     }
 
     /// <summary>
-    /// Loads the ancestors of <paramref name="items"/>, and the pages their shortcuts point at, so <see cref="UrlOf"/>
+    /// Loads the ancestors of <paramref name="items"/>, and the pages their shortcuts point at, so <see cref="UrlOf(ContentHeader, LanguageBranch?)"/>
     /// can run without queries.
     /// </summary>
     public async Task PrepareAsync(IEnumerable<ContentHeader> items, CancellationToken cancellationToken)

@@ -89,7 +89,7 @@ public static class CompositionInput
     /// <param name="Blueprint">A section blueprint (ref or name) → its content GUID.</param>
     public sealed record Resolvers(Func<string, Task<string>> Ref, Func<string, Task<Guid>> Blueprint);
 
-    /// <summary>The whole composition of content of <paramref name="ownerTypeId"/>.</summary>
+    /// <summary>A whole composition (<c>"composition"</c> in a create's or set's properties), as the agent takes it.</summary>
     /// <exception cref="UsageException">Unknown fields, a property that isn't the block type's, a value <c>get</c> cut short.</exception>
     public static async Task<CompositionNodeValue> RootAsync(CmsModel model, JsonObject composition, Resolvers resolve)
     {

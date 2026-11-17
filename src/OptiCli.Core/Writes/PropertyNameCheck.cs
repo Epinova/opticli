@@ -30,11 +30,11 @@ public static class PropertyNameCheck
     public static void Check(CmsModel model, int contentTypeId, JsonObject? properties) => Prepare(model, contentTypeId, properties);
 
     /// <summary>
-    /// <see cref="Check"/>, and the values as the agent takes them: ContentArea items as <see cref="AreaItems"/> makes them,
+    /// <see cref="Check(CmsModel, int, JsonObject?)"/>, and the values as the agent takes them: ContentArea items as <see cref="AreaItems"/> makes them,
     /// an inline block's values by position (<c>MainArea[2]</c>) without <c>get</c>'s <c>{type, value}</c>.
     /// </summary>
     /// <returns>A copy of <paramref name="properties"/>; null for null.</returns>
-    /// <exception cref="UsageException">As <see cref="Check"/>, and for ContentArea items that aren't one kind of item or the other.</exception>
+    /// <exception cref="UsageException">As <see cref="Check(CmsModel, int, JsonObject?)"/>, and for ContentArea items that aren't one kind of item or the other.</exception>
     public static JsonObject? Prepare(CmsModel model, int contentTypeId, JsonObject? properties)
     {
         if (properties is null)

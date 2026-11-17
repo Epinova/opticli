@@ -86,7 +86,7 @@ public static class CompositionChanges
     }
 
     /// <summary>
-    /// The agent's changes with the <c>composition</c> pseudo-property replaced by <see cref="Compare"/>'s list; null when
+    /// The agent's changes with the <c>composition</c> pseudo-property replaced by <see cref="Compare(JsonElement?, JsonElement?)"/>'s list; null when
     /// the write didn't change a composition.
     /// </summary>
     public static (IReadOnlyList<PropertyChange> Changes, IReadOnlyList<CompositionChange>? Composition) Split(IReadOnlyList<PropertyChange> changes)

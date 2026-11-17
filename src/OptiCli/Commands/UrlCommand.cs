@@ -7,7 +7,7 @@ namespace OptiCli.Commands;
 
 internal static class UrlCommand
 {
-    private sealed record Urls(string Ref, Guid Guid, string Type, IReadOnlyList<LanguageUrl> Languages, string? Note);
+    private sealed record ContentUrls(string Ref, Guid Guid, string Type, IReadOnlyList<LanguageUrl> Languages, string? Note);
 
     /// <param name="Path">As served on <paramref name="Url"/>'s host (no language prefix when the host is mapped to the language).</param>
     private sealed record LanguageUrl(string? Language, string? Name, string Status, string? Path, string? Url, string? Site);
@@ -22,7 +22,7 @@ internal static class UrlCommand
             """);
         content.AddTo(command);
 
-        CommandRunner.SetHandler<Urls>(command, options, async (context, cancellationToken) =>
+        CommandRunner.SetHandler<ContentUrls>(command, options, async (context, cancellationToken) =>
         {
             await using var session = await context.OpenContentAsync(cancellationToken);
             var located = await content.LocateAsync(context, session, cancellationToken);
@@ -47,7 +47,7 @@ internal static class UrlCommand
                     : header.Blueprint ? "A blueprint is a template new content is made from (CMS 13's Visual Builder), not content visitors see: it has no URL."
                     : $"{(kind is ContentKind.Experience or ContentKind.Element ? "An" : "A")} {kind.Name()} has no URL of its own; only pages{(session.Model.Schema.Compositions ? ", experiences" : "")} and media do."
                 : null;
-            return new CommandResult<Urls>(new Urls(ContentIdentity.RefFor(header.Id), header.Guid, session.Model.TypeName(header.TypeId), languages, note));
+            return new CommandResult<ContentUrls>(new ContentUrls(ContentIdentity.RefFor(header.Id), header.Guid, session.Model.TypeName(header.TypeId), languages, note));
         });
         return command;
     }

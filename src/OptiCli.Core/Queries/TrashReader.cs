@@ -6,9 +6,9 @@ using OptiCli.Core.Data;
 namespace OptiCli.Core.Queries;
 
 /// <param name="Path">The names from below the root down to the parent itself, joined with <c> / </c>.</param>
-/// <param name="Deleted">True when the parent is in the recycle bin too: restore that first, or restore elsewhere.</param>
 public sealed record TrashParent(string Ref, string? Name, string? Type, string Path, string? Url)
 {
+    /// <summary>True when the parent is in the recycle bin too: restore that first, or restore elsewhere.</summary>
     public bool? Deleted { get; init; }
 
     /// <summary>The CMS stored a parent that no longer exists (it was deleted for good).</summary>

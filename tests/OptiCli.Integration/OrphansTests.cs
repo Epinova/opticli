@@ -290,7 +290,7 @@ public sealed class OrphansTests
     private const string OrphansPlannerHint =
         "Page-type property values name it (a page list's type filter, say): the CMS would clear them in every version when it removes the type. `opticli get <ref>` shows the versions listed; change or clear those values first (or discard those drafts), then run it again.";
 
-    private static async Task<(OrphanRemover.Output Output, IReadOnlyList<string> Warnings)> RemoveAsync(SiteUnderTest site, OrphanRemovalRequest request, CancellationToken cancellationToken) =>
+    private static async Task<(OrphanRemover.RemovalOutput Output, IReadOnlyList<string> Warnings)> RemoveAsync(SiteUnderTest site, OrphanRemovalRequest request, CancellationToken cancellationToken) =>
         await OrphanRemover.RunAsync(site.Agent, request, cancellationToken);
 
     /// <summary><c>types --orphaned</c> as the site answers it, without CMS 13's types of unknown origin.</summary>

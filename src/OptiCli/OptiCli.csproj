@@ -17,10 +17,16 @@
     <PackageProjectUrl>https://github.com/epinova/opticli</PackageProjectUrl>
     <RepositoryUrl>https://github.com/epinova/opticli.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
+    <!-- The XML doc comments of the output records, for `opticli schema` (and so the generated npm types' TSDoc).
+         CS1591 (a public member without a comment) and CS1573 (a record that documents some positional parameters, not
+         all) are the norm here; every other doc warning is an error, like any warning. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="System.CommandLine" />
+    <PackageReference Include="System.Text.Json" />
   </ItemGroup>
 
   <ItemGroup>

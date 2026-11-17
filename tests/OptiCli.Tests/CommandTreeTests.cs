@@ -13,7 +13,9 @@ public partial class CommandTreeTests
     public static TheoryData<string> CommandPaths()
     {
         var data = new TheoryData<string>();
-        foreach (var path in Paths(Root, []))
+        // Hidden commands (`schema`, for the npm package's generator) print no help: System.CommandLine leaves them out.
+        // The other tests still check them.
+        foreach (var path in Paths(Root, []).Where(p => !Find(p).Hidden))
         {
             data.Add(string.Join(' ', path));
         }

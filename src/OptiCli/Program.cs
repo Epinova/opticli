@@ -118,6 +118,7 @@ internal partial class Program
         root.Subcommands.Add(UsersCommand.Create(options));
         root.Subcommands.Add(ApplyCommand.Create(options));
         root.Subcommands.Add(SkillCommand.Create(options));
+        root.Subcommands.Add(SchemaCommand.Create(options));
         return root;
     }
 }

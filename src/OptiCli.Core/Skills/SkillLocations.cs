@@ -14,7 +14,7 @@ public static class SkillLocations
 {
     public static string User(OptiCliEnvironment environment) => In(environment.HomeDirectory);
 
-    /// <summary>The skill directory of the repository containing <paramref name="directory"/>.</summary>
+    /// <summary>The skill directory of the repository root <paramref name="repositoryRoot"/>.</summary>
     public static string Repository(string repositoryRoot) => In(repositoryRoot);
 
     /// <summary>

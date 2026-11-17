@@ -33,7 +33,7 @@ public static class HostNames
 
     /// <summary>
     /// The host as typed, only without a scheme and a trailing <c>/</c>, lower case: to find a host a site has under a
-    /// name <see cref="TryNormalize"/> would change (<c>www.site.example:443</c>, from admin mode or SQL).
+    /// name <see cref="TryNormalize(string?, out string?, out bool?, out string?, bool?)"/> would change (<c>www.site.example:443</c>, from admin mode or SQL).
     /// </summary>
     public static string Literal(string input)
     {
