@@ -8,8 +8,9 @@ namespace OptiCli.Integration.Schema;
 /// <summary>
 /// The commands that change the user's opticli config or the project's files, in a sandbox: an empty user config of its
 /// own (<c>XDG_CONFIG_HOME</c>; the serve state is the real one, so a running agent is found). <c>db</c>, <c>sites
-/// primary --forget</c>, <c>apply --seal-for</c> (the site's own database added again as a prod database), <c>ide on|off</c>
-/// (when IDE mode is off, and turned off again), and <c>env --json</c> on a stopped site (then stopped again).
+/// primary --forget</c>, <c>apply --seal-for</c> (another local database added as a prod database), and, on a copy of the
+/// project with a state directory of its own, <c>ide on|off</c> and <c>env --json</c> (then stopped again); <c>skill
+/// install</c> with a home of its own.
 /// </summary>
 internal static class SchemaLocal
 {
@@ -62,26 +63,36 @@ internal static class SchemaLocal
         }
         await check.Fails("sites primary", options: ["--forget", "No such site"]);
 
-        // IDE mode, only when it is off: turned on and off again.
-        var ide = await check.Ok("ide status");
-        if (ide?["on"]?.GetValue<bool>() == false)
+        // skill install writes to ~/.claude/skills/opticli/: a home of its own.
+        var ownHome = check.With(check.Project, new Dictionary<string, string?>(check.Environment ?? new Dictionary<string, string?>())
         {
-            await check.Ok("ide on");
-            await check.Ok("ide off");
-        }
-        else
-        {
-            check.Note("IDE mode is on: ide on/off not run");
-        }
+            ["HOME"] = Directory.CreateDirectory(Path.Combine(scratch, "home")).FullName,
+        });
+        await ownHome.Ok("skill install");
+        await ownHome.Ok("skill install", options: ["--force"]);
 
-        // env registers the project as an external site: only where nothing runs, and stopped again.
-        if (!running)
+        // IDE mode and env change the project's files and opticli's state (a .csproj.user, .git/info/exclude, the agent
+        // copies, which ide on also prunes; the serve state): on a copy of the project, with a state directory of its own,
+        // so the site's project and the user's IDE mode and running sites are never touched. ide on/off, then env, which
+        // registers the copy as an external site, stopped again.
+        var copy = Directory.CreateDirectory(Path.Combine(scratch, "project-copy")).FullName;
+        foreach (var file in Directory.EnumerateFiles(check.Project, "*.csproj").Concat(Directory.EnumerateFiles(check.Project, "appsettings*.json")))
         {
-            await check.Ok("env", options: ["--json"]);
-            await check.Ok("env", options: ["--format", "json"]);
-            await check.Ok("serve", options: ["--status"]);
-            await check.Ok("serve", options: ["--stop"]);
+            File.Copy(file, Path.Combine(copy, Path.GetFileName(file)), overwrite: true);
         }
+        var isolated = check.With(copy, new Dictionary<string, string?>(check.Environment ?? new Dictionary<string, string?>())
+        {
+            ["XDG_STATE_HOME"] = Directory.CreateDirectory(Path.Combine(scratch, "state")).FullName,
+        });
+        if ((await isolated.Ok("ide status"))?["on"]?.GetValue<bool>() == false)
+        {
+            await isolated.Ok("ide on");
+            await isolated.Ok("ide off");
+        }
+        await isolated.Ok("env", options: ["--json"]);
+        await isolated.Ok("env", options: ["--format", "json"]);
+        await isolated.Ok("serve", options: ["--status"]);
+        await isolated.Ok("serve", options: ["--stop"]);
 
         // Another database by name, with a role; with OPTICLI_IT_SEAL_DB it is that database as prod, and a plan is sealed
         // for it. (A role belongs to the server and database, so the site's own database can't be the prod one: it would
@@ -131,10 +142,10 @@ internal static class SchemaLocal
         {
             yield return ("apply", "--seal-for");
         }
-        if (!running)
-        {
-            yield return ("env", "--json | --format json");
-        }
+        yield return ("skill install", "otherwise");
+        yield return ("ide on", "otherwise");
+        yield return ("ide off", "otherwise");
+        yield return ("env", "--json | --format json");
     }
 
     private static string? Text(JsonNode? node) => node is JsonValue value && value.TryGetValue<string>(out var text) ? text : node?.ToString();

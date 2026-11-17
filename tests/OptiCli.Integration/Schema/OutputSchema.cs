@@ -172,9 +172,10 @@ internal sealed class OutputSchema
             return [];
         }
         // List output: every node that failed, with its own errors. anyOf branches fail too when another holds, but then
-        // the anyOf itself is valid and its branches' errors aren't reported upward; keep the leaves of failing paths.
+        // the anyOf itself is valid and its branches' errors aren't reported upward; keep the leaves of failing paths. An
+        // if that doesn't hold (a plan step's result checked by its op: every other op's condition) is no problem.
         var problems = new List<string>();
-        foreach (var detail in result.Details.Where(d => !d.IsValid && d.HasErrors))
+        foreach (var detail in result.Details.Where(d => !d.IsValid && d.HasErrors && !d.EvaluationPath.ToString().Split('/').Contains("if")))
         {
             var at = detail.InstanceLocation.ToString();
             var value = Pick(instance, at);

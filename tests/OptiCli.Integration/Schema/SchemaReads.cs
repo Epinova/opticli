@@ -15,7 +15,7 @@ internal static class SchemaReads
         ["serve [--foreground]"] = "runs until stopped",
         ["apply [--seal]"] = "runs a sealed plan against production: only the user, at a terminal",
         ["serve [otherwise]"] = "starts the site; SchemaWrites checks it on a running one",
-        ["skill install [otherwise]"] = "writes the skill into the user's or the repo's .claude folder",
+        ["skill install [otherwise]"] = "writes the skill into the user's .claude folder: SchemaLocal, with a home of its own",
         ["db use [otherwise]"] = "changes the user config: SchemaLocal, in a sandbox",
         ["db add [otherwise]"] = "changes the user config: SchemaLocal",
         ["db remove [otherwise]"] = "changes the user config: SchemaLocal",
@@ -29,7 +29,8 @@ internal static class SchemaReads
     public static async Task<Dictionary<(string Command, string Mode), string>> RunAsync(OutputCheck check, string scratch)
     {
         var unavailable = new Dictionary<(string Command, string Mode), string>();
-        var running = (await check.Ok("serve", options: ["--status"]))?["state"]?.GetValue<string>() == "running";
+        var state = (await check.Ok("serve", options: ["--status"]))?["state"]?.GetValue<string>();
+        var running = state == "running";
 
         // The site, its languages and content model.
         await check.Ok("doctor");
@@ -238,15 +239,20 @@ internal static class SchemaReads
             await check.Ok("export", [start], ["--out", Path.Combine(scratch, "export-tree"), "--descendants", "--all-languages"]);
         }
 
-        // serve's other modes: logs, and a stop with nothing running (never a running site's).
+        // serve's other modes: logs, and a stop with nothing running (never a site's: one that is starting, paused in a
+        // debugger or runs against another database has a process too).
         await check.Any("serve", options: ["--logs", "--tail", "5"]);
-        if (!running)
+        if (state == "stopped")
         {
             await check.Ok("serve", options: ["--stop"]);
         }
-        else
+        else if (running)
         {
             await check.Ok("serve");
+        }
+        else
+        {
+            unavailable[("serve", "--stop")] = $"the site's agent is {state}: a stop could end a process";
         }
 
         // Errors: the error envelope.

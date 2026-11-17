@@ -43,17 +43,22 @@ internal sealed class OutputCheck
     ];
 
     private readonly ITestOutputHelper output;
-    private readonly List<string> problems = [];
-    private readonly Dictionary<(string Command, string Mode), (int Runs, int WithItems)> seen = [];
-    private readonly List<string> log = [];
-    private readonly SortedDictionary<string, SortedSet<string>> valueSets = new(StringComparer.Ordinal);
+    private readonly List<string> problems;
+    private readonly Dictionary<(string Command, string Mode), (int Runs, int WithItems)> seen;
+    private readonly List<string> log;
+    private readonly SortedDictionary<string, SortedSet<string>> valueSets;
 
-    private OutputCheck(ITestOutputHelper output, OutputSchema schema, string project, IReadOnlyDictionary<string, string?>? environment)
+    private OutputCheck(ITestOutputHelper output, OutputSchema schema, string project, IReadOnlyDictionary<string, string?>? environment, OutputCheck? parent = null)
     {
         this.output = output;
         Schema = schema;
         Project = project;
         Environment = environment;
+        // A check made With another project or environment reports into its parent's results.
+        problems = parent?.problems ?? [];
+        seen = parent?.seen ?? [];
+        log = parent?.log ?? [];
+        valueSets = parent?.valueSets ?? new(StringComparer.Ordinal);
     }
 
     public OutputSchema Schema { get; }
@@ -69,8 +74,11 @@ internal sealed class OutputCheck
     public static async Task<OutputCheck> StartAsync(ITestOutputHelper output, string project, IReadOnlyDictionary<string, string?>? environment = null) =>
         new(output, await OutputSchema.LoadAsync(), project, environment);
 
-    /// <summary>A check against the same site with other environment variables (a sandboxed user config, say).</summary>
-    public OutputCheck With(IReadOnlyDictionary<string, string?> environment) => new(output, Schema, Project, environment) { };
+    /// <summary>
+    /// The same check for another project directory (a copy of the site's) or other environment variables (a sandboxed
+    /// state directory, say): what it runs and finds is reported with this one's, by <see cref="Finish"/>.
+    /// </summary>
+    public OutputCheck With(string project, IReadOnlyDictionary<string, string?>? environment) => new(output, Schema, project, environment, this);
 
     /// <summary>Runs the command; it must succeed, and its data must be what the command declares.</summary>
     /// <param name="command">The command's words, space-separated (<c>"projects ready"</c>).</param>
