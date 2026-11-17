@@ -34,7 +34,7 @@
   <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#editors">For editors</a></p>
   <h1>When someone else has changes on the page</h1>
   <p class="lead">Understand why your assistant stops before publishing a colleague&#x27;s unpublished changes, decide what goes live, and send pages for review where an approval sequence applies.</p>
-  <p class="guide-meta">Written for opticli 0.30.1 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/editors/someone-elses-draft.md">Edit on GitHub</a></p>
+  <p class="guide-meta">Written for opticli 0.33.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/editors/someone-elses-draft.md">Edit on GitHub</a></p>
   <div class="guide-body">
     <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#steps">Steps</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
     <article class="prose">
@@ -105,6 +105,18 @@ in the CMS.</li>
 <li><strong>A page without an approval sequence can't be sent for review.</strong> The assistant tells you, and nothing is saved.
 Publish it as usual, or keep it as a draft.</li>
 </ul>
+<h3 id="6-pages-in-a-project">6. Pages in a project</h3>
+<p>When the page is in a CMS project (see
+<a href="../../editors/collect-changes-in-a-project/">Collect changes in a project and publish them together</a>), marking it <strong>Ready to
+Publish</strong> is what says &quot;this can go live&quot;:</p>
+<ul>
+<li><strong>A colleague marked it ready.</strong> Then their changes on it go live with the project without the assistant asking
+again. The assistant still tells you whose changes they are before you confirm the publish.</li>
+<li><strong>Someone else's changes that nobody marked ready</strong> (an older draft the ready version carries) stop the publish
+until you have said they may go live, as in step 4.</li>
+<li><strong>You ask the assistant to mark a colleague's draft ready.</strong> It asks you first: after that, the CMS records you as the
+one who saved it, and the publish could no longer tell whose changes they are.</li>
+</ul>
 <h2 id="if-something-goes-wrong">If something goes wrong</h2>
 <ul>
 <li><strong>&quot;This site doesn't let assistants publish&quot;.</strong> Review the draft through the edit link the assistant gives you, and
@@ -123,13 +135,14 @@ other people's changes is a safety net, not a replacement for reading what goes 
 <ul>
 <li><a href="../../editors/connect-your-assistant/">Connect your assistant to the CMS</a></li>
 <li><a href="../../editors/translate-a-page/">Translate a page with your assistant</a></li>
+<li><a href="../../editors/collect-changes-in-a-project/">Collect changes in a project and publish them together</a></li>
 <li><a href="https://epinova.github.io/opticli/editors/">Opticli for editors</a></li>
 <li>README: <a href="https://github.com/Epinova/opticli#security-model">Security model</a>, on approval sequences and confirming
 other people's changes</li>
 </ul>
     </article>
   </div>
-  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for editors</h2><div class="file"><ol class="guide-list"><li><a href="../../editors/connect-your-assistant/"><b>Connect your assistant to the CMS</b><span>Connect Claude or another assistant to your Optimizely site, sign in with your own CMS account, and check that it works.</span></a></li><li><a href="../../editors/translate-a-page/"><b>Translate a page with your assistant</b><span>Have your assistant translate a page into another language, review the translation as a draft, and publish it only when you say so.</span></a></li><li><a href="../../editors/image-alt-texts/"><b>Fix image alt texts with your assistant</b><span>Have your assistant look at your images, suggest alt texts or descriptions, and save them as drafts you review first.</span></a></li></ol></div></section>
+  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for editors</h2><div class="file"><ol class="guide-list"><li><a href="../../editors/connect-your-assistant/"><b>Connect your assistant to the CMS</b><span>Connect Claude or another assistant to your Optimizely site, sign in with your own CMS account, and check that it works.</span></a></li><li><a href="../../editors/translate-a-page/"><b>Translate a page with your assistant</b><span>Have your assistant translate a page into another language, review the translation as a draft, and publish it only when you say so.</span></a></li><li><a href="../../editors/image-alt-texts/"><b>Fix image alt texts with your assistant</b><span>Have your assistant look at your images, suggest alt texts or descriptions, and save them as drafts you review first.</span></a></li><li><a href="../../editors/collect-changes-in-a-project/"><b>Collect changes in a project and publish them together</b><span>Have your assistant put the drafts of a campaign or a new section in a CMS project, review them together in the CMS, and publish them in one go, now or at a set time.</span></a></li></ol></div></section>
 </div>
 </main>
 

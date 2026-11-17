@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hand a batch of changes to editors as a project · opticli guides</title>
+<meta name="description" content="Put the drafts a plan or your coding agent makes in a CMS project, so an editor reviews them together in the CMS and they go live in one go, when someone decides they should.">
+<meta property="og:title" content="Hand a batch of changes to editors as a project · opticli guides">
+<meta property="og:description" content="Put the drafts a plan or your coding agent makes in a CMS project, so an editor reviews them together in the CMS and they go live in one go, when someone decides they should.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://epinova.github.io/opticli/guides/developers/hand-changes-to-editors-as-a-project/">
+<meta name="twitter:card" content="summary">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="../../../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../../style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chev" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 20 20"><path d="M8 4.5H4.5v11h11V12M11 4.5h4.5V9M15.2 4.8L9 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href="../../../">opticli<span>.</span></a>
+    <nav aria-label="Pages">
+      <a class="keep" href="../../">All guides</a><span class="sep" aria-hidden="true"></span><a class="page-link" href="../../../editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep page-link" href="../../../">For developers <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<div class="wrap guide">
+  <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#developers">For developers</a></p>
+  <h1>Hand a batch of changes to editors as a project</h1>
+  <p class="lead">Put the drafts a plan or your coding agent makes in a CMS project, so an editor reviews them together in the CMS and they go live in one go, when someone decides they should.</p>
+  <p class="guide-meta">Written for opticli 0.33.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/developers/hand-changes-to-editors-as-a-project.md">Edit on GitHub</a></p>
+  <div class="guide-body">
+    <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#steps">Steps</a></li><li><a href="#running-the-plan-again">Running the plan again</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
+    <article class="prose">
+<p>A feature often comes with content: a new section, a campaign across the start page and a few product pages, a
+restructure. Your coding agent can write all of it with opticli, but someone should look at it before it goes live, and
+it should go live together. A CMS project is made for that: it collects drafts of many items, an editor reviews them in
+the edit UI, and publishing the project puts the ready ones live at once, now or at a set time. This guide puts a plan's
+drafts in a project, hands the project over, and shows how it is published, by the editor or with opticli.</p>
+<h2 id="before-you-start">Before you start</h2>
+<ul>
+<li>opticli 0.33.0 or newer, run from inside the site's repository, with the site running (<code>opticli serve</code>).</li>
+<li>A site whose edit UI has projects: project mode (the project bar; CMS 12's default) or the Projects gadget (CMS 13's
+default). Where both are turned off, project writes are refused with <code>projectsDisabled</code>.</li>
+<li>Someone to review the drafts on a site that uses the same database: your local site (on a restored database, give
+them or yourself a login with <code>opticli users add</code>), or the deployed development site when you work against the
+shared development database.</li>
+</ul>
+<h2 id="steps">Steps</h2>
+<h3 id="1-write-the-plan-with-a-project">1. Write the plan with a project</h3>
+<p><code>&quot;project&quot;</code> next to <code>&quot;operations&quot;</code> puts the draft of every saving step in that project; <code>&quot;ready&quot;: true</code> on a step marks
+its draft Ready to publish. A plan for Alloy's spring campaign:</p>
+<div class="snippet lang-json"><div class="snippet-bar"><span>JSON</span></div><pre><code id="code-1"><span class="t-p">{</span>
+<span class="t-w">  </span><span class="t-nt">&quot;project&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;Spring campaign&quot;</span><span class="t-p">,</span>
+<span class="t-w">  </span><span class="t-nt">&quot;operations&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">[</span>
+<span class="t-w">    </span><span class="t-p">{</span><span class="t-nt">&quot;op&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;create&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;id&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;news&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;parent&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;/en/about-us/&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;type&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;ArticlePage&quot;</span><span class="t-p">,</span>
+<span class="t-w">     </span><span class="t-nt">&quot;name&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;Spring news&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;properties&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-nt">&quot;TeaserText&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;Alloy Plan, Track and Meet get a spring update.&quot;</span><span class="t-p">},</span><span class="t-w"> </span><span class="t-nt">&quot;ready&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-kc">true</span><span class="t-p">},</span>
+<span class="t-w">    </span><span class="t-p">{</span><span class="t-nt">&quot;op&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;block&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;id&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;teaser&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;type&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;TeaserBlock&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;name&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;Spring teaser&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;for&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;/en/&quot;</span><span class="t-p">,</span>
+<span class="t-w">     </span><span class="t-nt">&quot;properties&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-nt">&quot;Heading&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;Spring is here&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;Text&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;See what&#39;s new this spring.&quot;</span><span class="t-p">,</span>
+<span class="t-w">                    </span><span class="t-nt">&quot;Image&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;671c6657-6792-4280-b5a9-b88dffc2f6c7&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;Link&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;$news&quot;</span><span class="t-p">},</span><span class="t-w"> </span><span class="t-nt">&quot;ready&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-kc">true</span><span class="t-p">},</span>
+<span class="t-w">    </span><span class="t-p">{</span><span class="t-nt">&quot;op&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;area&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;ref&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;/en/&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;property&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;MainContentArea&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;action&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;add&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;item&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;$teaser&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;ready&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-kc">true</span><span class="t-p">},</span>
+<span class="t-w">    </span><span class="t-p">{</span><span class="t-nt">&quot;op&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;set&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;ref&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;/en/alloy-plan/&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;properties&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-nt">&quot;TeaserText&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;New this spring: plan in half the time.&quot;</span><span class="t-p">}}</span>
+<span class="t-w">  </span><span class="t-p">]</span>
+<span class="t-p">}</span></code></pre></div>
+<p>A teaser needs an image: the GUID is the Alloy Plan image in Alloy's global assets (<code>opticli get &lt;ref&gt;</code> gives an
+item's <code>guid</code>). The last step has no <code>ready</code>: its draft goes into the project but stays behind when the project is
+published, until someone marks it ready. A step's own <code>&quot;project&quot;</code> puts it in another project, and <code>&quot;project&quot;: null</code> leaves it out of
+the plan's.</p>
+<p>Or let your coding agent do it. The bundled skill tells it how, and that it publishes nothing unless asked:</p>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-2">Copy</button></div><pre><code id="code-2">Write the spring campaign content as an opticli plan, with every draft in a CMS project called &quot;Spring campaign&quot;.
+Mark the news page and the teaser ready, but not the Alloy Plan change. Don&#x27;t publish anything.</code></pre></div>
+<h3 id="2-dry-run-it">2. Dry-run it</h3>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-3">Copy</button></div><pre><code id="code-3">opticli<span class="t-w"> </span>apply<span class="t-w"> </span>spring.plan.json<span class="t-w"> </span>--dry-run</code></pre></div>
+<div class="snippet lang-json"><div class="snippet-bar"><span>JSON</span></div><pre><code id="code-4"><span class="t-p">{</span><span class="t-nt">&quot;dryRun&quot;</span><span class="t-p">:</span><span class="t-kc">true</span><span class="t-p">,</span><span class="t-nt">&quot;operations&quot;</span><span class="t-p">:[</span><span class="t-err">...</span><span class="t-p">],</span><span class="t-nt">&quot;projects&quot;</span><span class="t-p">:[{</span><span class="t-nt">&quot;name&quot;</span><span class="t-p">:</span><span class="t-s2">&quot;Spring campaign&quot;</span><span class="t-p">,</span><span class="t-nt">&quot;status&quot;</span><span class="t-p">:</span><span class="t-s2">&quot;toCreate&quot;</span><span class="t-p">}]}</span></code></pre></div>
+<p>No unpublished project is called &quot;Spring campaign&quot;, so the run will make it before its first save (<code>toCreate</code>). A
+project that exists is <code>existing</code>, and the steps are then checked against it: content that is already in another
+project is a <code>conflict</code> (<code>inOtherProject</code>), and <code>ready</code> under an approval sequence is refused (step 5). For a project
+still to be made, the dry run warns that it can only check content in another project when the plan runs.</p>
+<p>A plan never publishes a project: a step with <code>&quot;publish&quot;</code> or <code>&quot;publishAt&quot;</code> and a project is a plan problem.</p>
+<h3 id="3-run-it">3. Run it</h3>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-5">Copy</button></div><pre><code id="code-5">opticli<span class="t-w"> </span>apply<span class="t-w"> </span>spring.plan.json</code></pre></div>
+<div class="snippet lang-json"><div class="snippet-bar"><span>JSON</span></div><pre><code id="code-6"><span class="t-p">{</span><span class="t-nt">&quot;dryRun&quot;</span><span class="t-p">:</span><span class="t-kc">false</span><span class="t-p">,</span><span class="t-nt">&quot;operations&quot;</span><span class="t-p">:[{</span><span class="t-nt">&quot;index&quot;</span><span class="t-p">:</span><span class="t-mi">0</span><span class="t-p">,</span><span class="t-nt">&quot;op&quot;</span><span class="t-p">:</span><span class="t-s2">&quot;create&quot;</span><span class="t-p">,</span><span class="t-nt">&quot;status&quot;</span><span class="t-p">:</span><span class="t-s2">&quot;saved&quot;</span><span class="t-p">,</span><span class="t-nt">&quot;result&quot;</span><span class="t-p">:{</span><span class="t-nt">&quot;ref&quot;</span><span class="t-p">:</span><span class="t-s2">&quot;212&quot;</span><span class="t-p">,</span><span class="t-nt">&quot;status&quot;</span><span class="t-p">:</span><span class="t-s2">&quot;checkedIn&quot;</span><span class="t-p">,</span>
+<span class="t-nt">&quot;project&quot;</span><span class="t-p">:{</span><span class="t-nt">&quot;id&quot;</span><span class="t-p">:</span><span class="t-mi">31</span><span class="t-p">,</span><span class="t-nt">&quot;name&quot;</span><span class="t-p">:</span><span class="t-s2">&quot;Spring campaign&quot;</span><span class="t-p">,</span><span class="t-nt">&quot;item&quot;</span><span class="t-p">:</span><span class="t-s2">&quot;added&quot;</span><span class="t-p">,</span><span class="t-nt">&quot;ready&quot;</span><span class="t-p">:</span><span class="t-kc">true</span><span class="t-p">,</span><span class="t-nt">&quot;editorUi&quot;</span><span class="t-p">:</span><span class="t-s2">&quot;projectMode&quot;</span><span class="t-p">},</span><span class="t-w"> </span><span class="t-err">...</span><span class="t-p">}},</span><span class="t-w"> </span><span class="t-err">...</span><span class="t-p">],</span>
+<span class="t-nt">&quot;projects&quot;</span><span class="t-p">:[{</span><span class="t-nt">&quot;id&quot;</span><span class="t-p">:</span><span class="t-mi">31</span><span class="t-p">,</span><span class="t-nt">&quot;name&quot;</span><span class="t-p">:</span><span class="t-s2">&quot;Spring campaign&quot;</span><span class="t-p">,</span><span class="t-nt">&quot;status&quot;</span><span class="t-p">:</span><span class="t-s2">&quot;created&quot;</span><span class="t-p">,</span>
+<span class="t-nt">&quot;undo&quot;</span><span class="t-p">:</span><span class="t-s2">&quot;opticli projects delete 31 (the drafts saved into it stay as they are)&quot;</span><span class="t-p">}]}</span></code></pre></div>
+<p>Each step's <code>project</code> says what happened to its draft: <code>added</code>, or <code>replaced</code> when the project held an earlier version
+of that content. A step marked ready whose own content a later step changes (a page created with <code>ready</code>, then an
+<code>area</code> step on that page) is marked ready once the plan has run, so the later step saves into the same draft;
+<code>projects[].markedReady</code> lists those.</p>
+<h3 id="4-check-the-project-and-hand-it-over">4. Check the project and hand it over</h3>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-7">Copy</button></div><pre><code id="code-7">opticli<span class="t-w"> </span>projects<span class="t-w"> </span><span class="t-s2">&quot;Spring campaign&quot;</span></code></pre></div>
+<p>It lists the items: the news page, the teaser and the start page <code>checkedIn</code> (ready), the Alloy Plan page <code>checkedOut</code>
+(a draft). <code>opticli projects</code> shows every project with <code>items</code> and <code>ready</code> counts.</p>
+<p>Tell the editor the project's name and id, and where they find it. <code>editorUi</code> in the results says which:</p>
+<ul>
+<li><code>projectMode</code>: they choose the project in the project bar at the top of the edit view and see its overview.</li>
+<li><code>gadget</code>: they add the Projects gadget to a pane (Add Gadgets) and pick the project. <strong>The gadget's Publish button
+puts every unpublished item of the project live, ready or not</strong>, unlike project mode and opticli, which publish only
+ready items. Tell them, or leave only ready items in the project.</li>
+</ul>
+<p>The editor's own guide is <a href="../../editors/collect-changes-in-a-project/">Collect changes in a project and publish them together</a>.</p>
+<h3 id="5-single-changes-and-marking-ready-later">5. Single changes, and marking ready later</h3>
+<p>A command joins the project with <code>--in-project</code> (not <code>--project</code>, which names the site's .csproj):</p>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-8">Copy</button></div><pre><code id="code-8">opticli<span class="t-w"> </span><span class="t-nb">set</span><span class="t-w"> </span>/en/alloy-track/<span class="t-w"> </span><span class="t-nv">TeaserText</span><span class="t-o">=</span><span class="t-s2">&quot;New this spring: track it all.&quot;</span><span class="t-w"> </span>--in-project<span class="t-w"> </span><span class="t-s2">&quot;Spring campaign&quot;</span><span class="t-w"> </span>--ready
+opticli<span class="t-w"> </span>projects<span class="t-w"> </span>ready<span class="t-w"> </span><span class="t-s2">&quot;Spring campaign&quot;</span><span class="t-w"> </span>/en/alloy-plan/
+opticli<span class="t-w"> </span>projects<span class="t-w"> </span>ready<span class="t-w"> </span><span class="t-s2">&quot;Spring campaign&quot;</span><span class="t-w"> </span>--all<span class="t-w"> </span>--dry-run</code></pre></div>
+<p><code>set</code>, <code>create</code>, <code>area</code>, <code>composition</code>, <code>block create</code>, <code>upload</code> and <code>translate</code> take it. A write joins a project only
+when it names it; a save without <code>--in-project</code> of content that is in the project warns that the new version isn't in
+it. Things that are refused:</p>
+<ul>
+<li><strong>Under an approval sequence</strong>, <code>--ready</code> and <code>projects ready</code> would skip the reviewers (exit 3, <code>approvalSequence</code>).
+<code>--request-approval</code> sends the item for review instead (with <code>--comment</code> on <code>projects ready</code>); once approved it counts
+as ready.</li>
+<li><strong>Someone else's draft.</strong> <code>projects ready</code> of an item whose version a colleague saved is a <code>conflict</code> (<code>pendingDraft</code>)
+until <code>--include-draft</code>: the CMS would record opticli as the one who saved it, and the project's publish could no
+longer tell whose changes go live. Ask them first.</li>
+</ul>
+<p><code>projects remove &quot;Spring campaign&quot; &lt;ref&gt;</code> takes an item out (its draft stays), and <code>projects delete</code> deletes the project
+and leaves its drafts.</p>
+<h3 id="6-publish-it-when-someone-asks-for-it">6. Publish it, when someone asks for it</h3>
+<p>Usually the editor publishes the project in the CMS. To publish it with opticli, dry-run first:</p>
+<div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-9">Copy</button></div><pre><code id="code-9">opticli<span class="t-w"> </span>projects<span class="t-w"> </span>publish<span class="t-w"> </span><span class="t-s2">&quot;Spring campaign&quot;</span><span class="t-w"> </span>--dry-run
+opticli<span class="t-w"> </span>projects<span class="t-w"> </span>publish<span class="t-w"> </span><span class="t-s2">&quot;Spring campaign&quot;</span><span class="t-w"> </span>--at<span class="t-w"> </span><span class="t-m">2027</span>-03-01T06:00Z</code></pre></div>
+<p>Only the items marked ready go live (<code>published</code>, or <code>scheduled</code> with <code>--at</code>); the rest stay drafts (<code>notReady</code>). Every
+ready item is checked first, as <code>publish</code> checks one, and one problem stops it with nothing published. On a terminal it
+shows what goes live, whose changes go with it and what stays behind, and asks. Changes of the colleague who marked an
+item ready (<code>readyBy</code>) need no confirming; anyone else's unpublished changes in a ready item need <code>--include-draft</code>.
+<code>projects reactivate</code> cancels a scheduled publish: the items become drafts again, to mark ready again.</p>
+<h2 id="running-the-plan-again">Running the plan again</h2>
+<p>Run the same plan again after a change: the project is found by its name (<code>existing</code>) and the drafts are saved into it
+again. With <code>&quot;guidNamespace&quot;</code> and <code>apply --update-existing</code>, steps that are already done are <code>unchanged</code>. A project only
+takes changes while it is active: once it is published, a plan that names it makes a new project of that name; while it
+is scheduled, saves into it are refused until it is reactivated.</p>
+<p>Sealed production runs refuse <code>&quot;project&quot;</code>: projects are a review tool on the site you work on, not something to push to
+production.</p>
+<h2 id="if-something-goes-wrong">If something goes wrong</h2>
+<table>
+<thead>
+<tr>
+<th>Message or symptom</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>inOtherProject</code></td>
+<td>The content is in another unpublished project. Take it out there (<code>projects remove</code>), or save it into that project.</td>
+</tr>
+<tr>
+<td><code>projectNotActive</code>, &quot;is scheduled to be published&quot;</td>
+<td><code>opticli projects reactivate &lt;project&gt;</code>, then mark the items ready again after your change.</td>
+</tr>
+<tr>
+<td><code>projectsDisabled</code></td>
+<td>The site's edit UI has neither project mode nor the Projects gadget (<code>EPiServer:CmsUI:ProjectUI</code>). Turn one on, or save without a project.</td>
+</tr>
+<tr>
+<td><code>nothingReady</code></td>
+<td>No item is marked ready: <code>projects ready &lt;project&gt; --all</code>, or mark the ones that should go live.</td>
+</tr>
+<tr>
+<td><code>pendingDraft</code> on <code>projects ready</code> or <code>projects publish</code></td>
+<td>A colleague's unpublished changes. Ask them, then <code>--include-draft</code>.</td>
+</tr>
+<tr>
+<td>A typo in the plan's project name made a second project</td>
+<td>The dry run's <code>projects</code> shows <code>toCreate</code>; check it before the run. Delete the stray one with the <code>undo</code> command.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="related">Related</h2>
+<ul>
+<li><a href="../../editors/collect-changes-in-a-project/">Collect changes in a project and publish them together</a>, for editors</li>
+<li><a href="../../developers/build-a-test-database/">Build a test database from scratch</a></li>
+<li>README: <a href="https://github.com/Epinova/opticli#cms-projects">CMS projects</a>,
+<a href="https://github.com/Epinova/opticli#writing-needs-opticli-serve">Writing</a></li>
+</ul>
+    </article>
+  </div>
+  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for developers</h2><div class="file"><ol class="guide-list"><li><a href="../../developers/restored-production-database/"><b>Work on a restored production database</b><span>Point opticli at a restored copy of production, make its sites answer on localhost, get a local login and keep its scheduled jobs from running.</span></a></li><li><a href="../../developers/find-content-and-code/"><b>Find content and the code behind it</b><span>Go from a URL or a name to the content item, its C# class and Razor view, and every page that uses it.</span></a></li><li><a href="../../developers/playwright-seed-content/"><b>Seed CMS content for Playwright tests</b><span>Use the @epinova/opticli npm package to start the site, seed the content your Playwright tests read, and give each test pages of its own that are cleaned up afterwards.</span></a></li><li><a href="../../developers/pull-from-staging/"><b>Pull content from staging into your local database</b><span>Register a staging or test database by name, bring its content into your local database with sync pull, and keep it current without another restore.</span></a></li><li><a href="../../developers/build-a-test-database/"><b>Build a test database from scratch</b><span>Start from an empty database, and let one seed plan add the languages, the content and the sites, so end-to-end tests run on a database that code builds the same way every time.</span></a></li></ol></div></section>
+</div>
+</main>
+
+<footer class="wrap">
+  <p>opticli and OptiCli.Mcp are open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. They are independent projects, not affiliated with or endorsed by Optimizely.</p>
+</footer>
+<script>
+for (const button of document.querySelectorAll('[data-copy]')) {
+  button.addEventListener('click', async () => {
+    const text = document.getElementById(button.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(text); } catch { getSelection().selectAllChildren(document.getElementById(button.dataset.copy)); return; }
+    button.textContent = 'Copied';
+    button.dataset.done = '';
+    setTimeout(() => { button.textContent = 'Copy'; delete button.dataset.done; }, 1600);
+  });
+}
+</script>
+</body>
+</html>

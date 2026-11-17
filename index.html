@@ -354,6 +354,18 @@ await expect(page.getByText('Hi')).toBeVisible();
   </div>
   <article class="file">
     <ol class="releases">
+      <li><div class="v"><b>0.33.0</b><span>17 November 2026</span></div>
+        <ul>
+          <li><b>Changes collected in a project:</b> drafts can go into the CMS's projects, so editors review many related
+            changes together and publish them in one go. Your assistant can create a project, put its drafts in it, mark
+            them Ready to publish and, where the site allows it, publish or schedule the project. Only items marked ready
+            go live; the rest stay drafts. See the guide
+            <a href="guides/editors/collect-changes-in-a-project/">Collect changes in a project and publish them together</a>.</li>
+          <li><b>On the command line:</b> <code>--in-project</code> and <code>--ready</code> on the writes,
+            <code>"project"</code> in plans, and <code>opticli projects create</code>, <code>ready</code> and
+            <code>publish</code>. See the guide
+            <a href="guides/developers/hand-changes-to-editors-as-a-project/">Hand a batch of changes to editors as a project</a>.</li>
+        </ul></li>
       <li><div class="v"><b>0.32.0</b><span>12 November 2026</span></div>
         <ul>
           <li><b>Sites with assets of their own:</b> a site that <code>opticli sites add</code> or a plan's
@@ -369,16 +381,6 @@ await expect(page.getByText('Hi')).toBeVisible();
           <li><b>What the site's own code changed:</b> when the site's code changes a value during a save, the result
             shows what was stored, not what was asked for, and opticli warns about it.</li>
           <li><b>External links:</b> a page whose shortcut is an external link has that link as its URL again.</li>
-        </ul></li>
-      <li><div class="v"><b>0.31.0</b><span>11 November 2026</span></div>
-        <ul>
-          <li><b>A test database built from code:</b> a plan can now enable languages and create sites, which a database
-            the CMS creates from scratch lacks, so one seed plan builds the whole database. <code>opticli sites add</code>
-            and <code>opticli languages enable</code> do the same on the command line. See the guide
-            <a href="guides/developers/build-a-test-database/">Build a test database from scratch</a>.</li>
-          <li><b>Tests across several sites:</b> pages on another site open on that site's own
-            <code>*.localhost</code> host, <code>serve --https-port</code> keeps the HTTPS port the same on every run, and
-            <code>serve --profile</code> runs the site with a launch profile's settings. See <a href="tests/">For tests</a>.</li>
         </ul></li>
     </ol>
     <p class="earlier"><a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">Older releases are in the changelog</a></p>

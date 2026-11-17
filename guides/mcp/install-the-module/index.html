@@ -34,7 +34,7 @@
   <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#mcp">For the MCP module</a></p>
   <h1>Install the MCP module in your site</h1>
   <p class="lead">Add the opticli MCP module to a CMS 12 or CMS 13 site, decide what assistants may do, and connect a first assistant to check that it works.</p>
-  <p class="guide-meta">Written for opticli 0.30.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/mcp/install-the-module.md">Edit on GitHub</a></p>
+  <p class="guide-meta">Written for opticli 0.33.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/mcp/install-the-module.md">Edit on GitHub</a></p>
   <div class="guide-body">
     <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#install-and-connect">Install and connect</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
     <article class="prose">
@@ -124,9 +124,14 @@ visitors see is off until you turn it on.</p>
 <td>the editor can untick writing on the consent page</td>
 </tr>
 <tr>
-<td>Publish, unpublish, schedule</td>
+<td>Publish, unpublish, schedule; publish, schedule and reactivate a project</td>
 <td>off</td>
 <td><code>AllowPublish = true</code></td>
+</tr>
+<tr>
+<td>Create projects, put drafts in them, mark items Ready to publish</td>
+<td>on, with saving drafts</td>
+<td>the CMS's project mode or Projects gadget; see the note below</td>
 </tr>
 <tr>
 <td>Delete (to the recycle bin), discard others' drafts</td>
@@ -171,6 +176,15 @@ Invalid options stop the site at startup with a message that starts with <code>O
 <p>Even with <code>AllowPublish</code>, the editor still chooses on the consent page whether to grant publishing, their Publish
 rights still apply, and a publish of content under an approval sequence is refused: the assistant sends it for review
 instead, which needs no publishing option at all.</p>
+<blockquote>
+<p><strong>Note:</strong> Assistants work with the CMS's projects where editors have them: project mode (the project bar, CMS 12's
+default) or the Projects gadget (on by default, the only one on CMS 13 unless you turn project mode on with
+<code>EPiServer:CmsUI:ProjectUI:ProjectModeEnabled</code>). With both off, every project change (making one, saving
+into one, marking ready, publishing) is refused; reading projects still works. Publishing a project
+through the assistant puts live only its items marked Ready to publish; the gadget's own Publish button puts every
+unpublished item live, ready or not. With project mode on, the assistant gives editors a link to the project
+(<code>projectUrl</code>), and the CMS's own publish puts only ready items live too.</p>
+</blockquote>
 <blockquote>
 <p><strong>Note:</strong> The module refuses script in rich text and links whatever you configure, but the CMS saves whatever the
 edit UI's TinyMCE or other code gives it. On CMS 12.15 or newer, have the CMS's script parser remove script on every

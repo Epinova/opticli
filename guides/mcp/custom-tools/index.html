@@ -34,9 +34,9 @@
   <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#mcp">For the MCP module</a></p>
   <h1>Write your first site-specific tool</h1>
   <p class="lead">Add a read tool and a write tool of your own to the MCP module, so editors&#x27; assistants can find Alloy product pages without a teaser and fill them in as drafts.</p>
-  <p class="guide-meta">Written for opticli 0.30.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/mcp/custom-tools.md">Edit on GitHub</a></p>
+  <p class="guide-meta">Written for opticli 0.33.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/mcp/custom-tools.md">Edit on GitHub</a></p>
   <div class="guide-body">
-    <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#build-the-tools">Build the tools</a></li><li><a href="#name-and-describe-them-well">Name and describe them well</a></li><li><a href="#try-the-dry-run-and-confirm-flow">Try the dry run and confirm flow</a></li><li><a href="#test-it">Test it</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
+    <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#build-the-tools">Build the tools</a></li><li><a href="#name-and-describe-them-well">Name and describe them well</a></li><li><a href="#try-the-dry-run-and-confirm-flow">Try the dry run and confirm flow</a></li><li><a href="#put-the-drafts-in-a-project">Put the drafts in a project</a></li><li><a href="#test-it">Test it</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
     <article class="prose">
 <p>The module's own tools work on any content, one item at a time. A tool of your own can know your site: which page
 types matter, where they live, what &quot;done&quot; looks like. In this guide you add two tools to an Alloy site. The read
@@ -194,6 +194,27 @@ arguments, <code>dryRun: false</code> and the token. The module plans again, ref
 changed, checks every step again, and saves them in order as drafts, each with an <code>editUrl</code> you can open in the CMS.</p>
 <p>A token runs once and expires after 30 minutes. A run that fails at a step stops there and keeps the steps before it,
 and the result lists what was saved, what failed and why, and what didn't run.</p>
+<h2 id="put-the-drafts-in-a-project">Put the drafts in a project</h2>
+<p>Teasers for every product page are a batch an editor may want to review and publish together, in a CMS project. The
+module's own save tools take a <code>project</code> argument for that; give your tool one too, and pass it to
+<code>ContentPlan.InProject</code> (opticli 0.33.0 or newer):</p>
+<div class="snippet lang-csharp"><div class="snippet-bar"><span>C#</span></div><pre><code id="code-6"><span class="t-k">public</span><span class="t-w"> </span><span class="t-k">sealed</span><span class="t-w"> </span><span class="t-k">record</span><span class="t-w"> </span><span class="t-nf">FillProductTeasersArgs</span><span class="t-p">(</span>
+<span class="t-w">    </span><span class="t-na">[property: Description(&quot;A teaser for each product page to fill, one per page.&quot;)]</span><span class="t-w"> </span><span class="t-n">IReadOnlyList</span><span class="t-o">&lt;</span><span class="t-n">ProductTeaser</span><span class="t-o">&gt;</span><span class="t-w"> </span><span class="t-n">Teasers</span><span class="t-p">,</span>
+<span class="t-w">    </span><span class="t-na">[property: Description(&quot;The CMS project to save the drafts in (its id or exact name), only when the user wants one; list_projects and create_project find or make it.&quot;)]</span><span class="t-w"> </span><span class="t-kt">string?</span><span class="t-w"> </span><span class="t-n">Project</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-k">null</span><span class="t-p">,</span>
+<span class="t-w">    </span><span class="t-na">[property: Description(&quot;With project: mark the drafts Ready to publish, only when the user wants them ready.&quot;)]</span><span class="t-w"> </span><span class="t-kt">bool</span><span class="t-w"> </span><span class="t-n">Ready</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-k">false</span><span class="t-p">);</span></code></pre></div>
+<p>And in <code>PlanAsync</code>, once the plan has its steps:</p>
+<div class="snippet lang-csharp"><div class="snippet-bar"><span>C#</span></div><pre><code id="code-7"><span class="t-k">if</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-o">!</span><span class="t-kt">string</span><span class="t-p">.</span><span class="t-n">IsNullOrWhiteSpace</span><span class="t-p">(</span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Project</span><span class="t-p">))</span>
+<span class="t-p">{</span>
+<span class="t-w">    </span><span class="t-n">plan</span><span class="t-p">.</span><span class="t-n">InProject</span><span class="t-p">(</span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Project</span><span class="t-p">.</span><span class="t-n">Trim</span><span class="t-p">(),</span><span class="t-w"> </span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Ready</span><span class="t-p">);</span>
+<span class="t-p">}</span></code></pre></div>
+<p>Every update and create of the plan then saves its draft into that project, in place of the content's earlier version
+there; moves and trashes aren't in it, and neither is a folder a create makes. The dry run checks each step against the
+project (it must exist and be active, and the content mustn't be in another project), and the plan token covers it, so
+a real run with another project is refused. Where an approval sequence applies, a step with <code>Ready</code> is refused: a plan
+sends nothing for review. Call <code>InProject</code> once per plan; a second call with another project throws.</p>
+<p>Leave the project to the editor: a save joins a project only when the call names it, and the module's instructions tell
+the assistant to ask before putting changes in one. The editor then reviews and publishes the project as described in
+<a href="../../editors/collect-changes-in-a-project/">Collect changes in a project and publish them together</a>.</p>
 <h2 id="test-it">Test it</h2>
 <ul>
 <li><strong>As a restricted editor.</strong> Take Read access on Alloy Meet away from your test editor and run the prompt again.
