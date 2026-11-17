@@ -40,7 +40,18 @@ internal interface IEditUiMetadata
     /// (<see cref="EditUiProperties"/>).
     /// </returns>
     IReadOnlyDictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>? Restricted(IContentData owner);
+
+    /// <summary>
+    /// The types the edit UI lets each property of <paramref name="type"/> hold, from its metadata for a new item of the
+    /// type: what <c>[AllowedTypes]</c> and editor descriptors (a <c>UIHint</c>'s, for one) set, which only the edit UI
+    /// knows of the latter.
+    /// </summary>
+    /// <returns>By property name, the properties the metadata gives allowed or restricted types; null when it can't tell.</returns>
+    IReadOnlyDictionary<string, EditUiTypes>? Types(ContentType type);
 }
+
+/// <summary>A property's allowed and restricted types in the edit UI's metadata, as it names them: lowercase full names.</summary>
+internal sealed record EditUiTypes(IReadOnlyList<string> Allowed, IReadOnlyList<string> Restricted);
 
 /// <summary>
 /// Which properties a caller may see and change: for the developer every one; for an editor what the CMS edit UI shows

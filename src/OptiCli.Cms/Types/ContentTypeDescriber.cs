@@ -20,8 +20,22 @@ namespace OptiCli.Cms.Types;
 /// show them as editable (<see cref="Content.EditUiProperties.Shown(PropertyDefinition, PropertyInfo?)"/>); every one
 /// when null.
 /// </param>
-internal sealed class ContentTypeDescriber(IContentTypeRepository types, ContentTypeAvailabilityService availability, Func<PropertyDefinition, PropertyInfo?, bool>? shown = null)
+/// <param name="editUi">
+/// The CMS UI's own metadata, where the caller has it (the MCP module): the allowed types of a property with a
+/// <c>UIHint</c> and no <c>[AllowedTypes]</c> come from it, as an editor descriptor may set them for the hint.
+/// </param>
+internal sealed class ContentTypeDescriber(
+    IContentTypeRepository types,
+    ContentTypeAvailabilityService availability,
+    Func<PropertyDefinition, PropertyInfo?, bool>? shown = null,
+    Content.IEditUiMetadata? editUi = null)
 {
+    /// <summary>What the edit UI's metadata allows every ContentArea and reference list: any content.</summary>
+    private const string AnyContent = "episerver.core.icontentdata";
+
+    /// <summary>Content type names (or class and interface names) by the lowercase full names the edit UI's metadata uses.</summary>
+    private Dictionary<string, string>? _namesByFullName;
+
     /// <summary>Attributes mapped to dedicated fields, so they aren't repeated in <c>attributes</c>.</summary>
     private static readonly HashSet<Type> Mapped =
     [
@@ -40,6 +54,7 @@ internal sealed class ContentTypeDescriber(IContentTypeRepository types, Content
     public ContentTypeModel Describe(ContentType type)
     {
         var model = type.ModelType;
+        var editUiTypes = editUi?.Types(type);
         return new ContentTypeModel
         {
             Name = type.Name,
@@ -57,7 +72,7 @@ internal sealed class ContentTypeDescriber(IContentTypeRepository types, Content
                 .OrderBy(d => d.FieldOrder)
                 .Select(d => (Definition: d, Member: model?.GetProperty(d.Name, BindingFlags.Public | BindingFlags.Instance)))
                 .Where(p => shown?.Invoke(p.Definition, p.Member) != false)
-                .Select(p => DescribeProperty(p.Definition, p.Member))
+                .Select(p => DescribeProperty(p.Definition, p.Member, editUiTypes))
                 .ToList(),
         };
     }
@@ -77,12 +92,16 @@ internal sealed class ContentTypeDescriber(IContentTypeRepository types, Content
         return new ChildTypeRules(setting.Availability.ToString().ToLowerInvariant(), setting.AllowedContentTypeNames.ToList());
     }
 
-    private PropertyModel DescribeProperty(PropertyDefinition definition, PropertyInfo? member)
+    private PropertyModel DescribeProperty(PropertyDefinition definition, PropertyInfo? member, IReadOnlyDictionary<string, Content.EditUiTypes>? editUiTypes)
     {
         var attributes = member?.GetCustomAttributes(inherit: true).OfType<Attribute>().ToList() ?? [];
         var display = attributes.OfType<DisplayAttribute>().FirstOrDefault();
         var allowed = attributes.OfType<AllowedTypesAttribute>().FirstOrDefault();
         var scaffold = attributes.OfType<ScaffoldColumnAttribute>().FirstOrDefault();
+        var uiHint = NullIfEmpty(attributes.OfType<UIHintAttribute>().FirstOrDefault()?.UIHint ?? definition.EditorHint);
+        // [AllowedTypes] is what the edit UI uses where a property has it (the CMS UI copies it into the metadata). Without
+        // it, an editor descriptor for the property's UIHint may set the types, which only the edit UI's metadata knows.
+        var fromEditUi = allowed is null && uiHint is not null ? FromEditUi(editUiTypes?.GetValueOrDefault(definition.Name)) : null;
 
         var validation = attributes
             .Where(a => a is ValidationAttribute && !Mapped.Contains(a.GetType()))
@@ -107,9 +126,9 @@ internal sealed class ContentTypeDescriber(IContentTypeRepository types, Content
             Description = NullIfEmpty(display?.GetDescription() ?? definition.HelpText),
             Group = NullIfEmpty(display?.GetGroupName() ?? definition.Tab?.Name),
             Order = display?.GetOrder() ?? definition.FieldOrder,
-            UiHint = NullIfEmpty(attributes.OfType<UIHintAttribute>().FirstOrDefault()?.UIHint ?? definition.EditorHint),
-            AllowedTypes = allowed is { AllowedTypes.Length: > 0 } ? allowed.AllowedTypes.Select(ContentTypeName).ToList() : null,
-            RestrictedTypes = allowed is { RestrictedTypes.Length: > 0 } ? allowed.RestrictedTypes.Select(ContentTypeName).ToList() : null,
+            UiHint = uiHint,
+            AllowedTypes = allowed is { AllowedTypes.Length: > 0 } ? allowed.AllowedTypes.Select(ContentTypeName).ToList() : fromEditUi?.Allowed,
+            RestrictedTypes = allowed is { RestrictedTypes.Length: > 0 } ? allowed.RestrictedTypes.Select(ContentTypeName).ToList() : fromEditUi?.Restricted,
             Validation = validation.Count > 0 ? validation : null,
             Attributes = other.Count > 0 ? other : null,
         };
@@ -117,6 +136,50 @@ internal sealed class ContentTypeDescriber(IContentTypeRepository types, Content
 
     /// <summary>Content type name when the CLR type is one, else the class or interface name (e.g. <c>BlockData</c>).</summary>
     private string ContentTypeName(Type type) => types.Load(type)?.Name ?? type.Name;
+
+    /// <summary>
+    /// The edit UI's types for a property, named as <c>[AllowedTypes]</c>'s are; null when it has none, or allows any
+    /// content and restricts none (the CMS's own default for a ContentArea or reference list).
+    /// </summary>
+    private (IReadOnlyList<string>? Allowed, IReadOnlyList<string>? Restricted)? FromEditUi(Content.EditUiTypes? metadata)
+    {
+        if (metadata is null || (metadata.Restricted.Count == 0 && (metadata.Allowed.Count == 0 || metadata.Allowed.All(a => a.Equals(AnyContent, StringComparison.OrdinalIgnoreCase)))))
+        {
+            return null;
+        }
+        return (
+            metadata.Allowed.Count > 0 ? metadata.Allowed.Select(NameOf).Distinct().ToList() : null,
+            metadata.Restricted.Count > 0 ? metadata.Restricted.Select(NameOf).Distinct().ToList() : null);
+    }
+
+    /// <summary>
+    /// A type the edit UI's metadata names by its lowercase full name: the content type's name, or the name of a class or
+    /// interface content types derive from; the full name as given when it is neither.
+    /// </summary>
+    private string NameOf(string fullName)
+    {
+        if (_namesByFullName is null)
+        {
+            _namesByFullName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var models = types.List().Where(t => t.ModelType is not null).ToList();
+            foreach (var type in models)
+            {
+                _namesByFullName.TryAdd(type.ModelType!.FullName ?? type.ModelType.Name, type.Name);
+            }
+            foreach (var model in models.Select(t => t.ModelType!))
+            {
+                for (var basis = model.BaseType; basis is not null; basis = basis.BaseType)
+                {
+                    _namesByFullName.TryAdd(basis.FullName ?? basis.Name, basis.Name);
+                }
+                foreach (var contract in model.GetInterfaces())
+                {
+                    _namesByFullName.TryAdd(contract.FullName ?? contract.Name, contract.Name);
+                }
+            }
+        }
+        return _namesByFullName.GetValueOrDefault(fullName, fullName);
+    }
 
     private static AttributeModel Describe(Attribute attribute)
     {

@@ -82,10 +82,38 @@ public sealed class EditUiRulesTests(SharedSessions sessions)
             Assert.Contains("AdminTab", asAdmin);
             Assert.DoesNotContain("Hidden", asAdmin);
             Assert.DoesNotContain("Locked", asAdmin);
-            var type = (await editor.OkAsync("get_content_type", new { name = "McpFieldsBlock" })).GetProperty("properties").EnumerateArray().Select(p => p.GetProperty("name").GetString()).ToList();
+            var described = (await editor.OkAsync("get_content_type", new { name = "McpFieldsBlock" })).GetProperty("properties").EnumerateArray().ToList();
+            var type = described.Select(p => p.GetProperty("name").GetString()).ToList();
             Assert.Contains("Heading", type);
             Assert.DoesNotContain("Hidden", type);
             Assert.DoesNotContain("Locked", type);
+            // Bottom's allowed types are set by an editor descriptor for its UIHint: the edit UI's metadata gives them. Area
+            // takes any content, as the CMS's own descriptor has it.
+            Assert.Equal(["RestrictedBlock", "McpFieldsBlock"], Strings(described.Single(p => p.GetProperty("name").GetString() == "Bottom"), "allowedTypes")!);
+            Assert.Null(Strings(described.Single(p => p.GetProperty("name").GetString() == "Area"), "allowedTypes"));
+
+            // And writes keep to them: an inline block of a type it takes, but neither another block type nor a page.
+            var allowed = await editor.OkAsync("update_content", new
+            {
+                reference = block,
+                areaOps = new[] { new { op = "add", property = "Bottom", type = "McpFieldsBlock", values = new { Heading = "Inline" } } },
+                dryRun = true,
+            });
+            Assert.True(allowed.GetProperty("valid").GetBoolean());
+            var otherBlock = await editor.OkAsync("update_content", new
+            {
+                reference = block,
+                areaOps = new[] { new { op = "add", property = "Bottom", type = "EditorialBlock", values = new { } } },
+                dryRun = true,
+            });
+            Assert.False(otherBlock.GetProperty("valid").GetBoolean());
+            var issue = otherBlock.GetProperty("validation").EnumerateArray().FirstOrDefault(i => i.TryGetProperty("property", out var p) && p.GetString() == "Bottom");
+            Assert.True(issue.ValueKind == JsonValueKind.Object, otherBlock.GetRawText());
+            Assert.StartsWith("'Bottom' doesn't take EditorialBlock in the CMS edit UI; it takes RestrictedBlock, McpFieldsBlock.", issue.GetProperty("message").GetString());
+            var page = await editor.ErrorAsync("update_content", new { reference = block, properties = new { Bottom = new[] { new { @ref = start } } } });
+            Assert.Contains("'Bottom' doesn't take StartPage in the CMS edit UI", page.GetRawText());
+            // Area, which takes any content, takes the page.
+            Assert.True((await editor.OkAsync("update_content", new { reference = block, properties = new { Area = new[] { new { @ref = start } } }, dryRun = true })).GetProperty("valid").GetBoolean());
 
             foreach (var property in new[] { "Hidden", "Locked", "AdminScripts", "AdminTab" })
             {
@@ -369,4 +397,8 @@ public sealed class EditUiRulesTests(SharedSessions sessions)
     }
 
     private static List<string> Names(JsonElement properties) => [.. properties.EnumerateObject().Select(p => p.Name)];
+
+    /// <summary>A described property's list of names, such as its allowedTypes; null when it has none.</summary>
+    private static string[]? Strings(JsonElement property, string name) =>
+        property.TryGetProperty(name, out var list) && list.ValueKind == JsonValueKind.Array ? SignInTests.Strings(list) : null;
 }

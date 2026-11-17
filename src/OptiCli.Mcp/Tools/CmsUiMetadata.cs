@@ -49,6 +49,46 @@ internal sealed class CmsUiMetadata(IServiceProvider services, ILogger<CmsUiMeta
         }
     }
 
+    public IReadOnlyDictionary<string, EditUiTypes>? Types(EPiServer.DataAbstraction.ContentType type)
+    {
+        if (services.GetService<ExtensibleMetadataProvider>() is not { } provider)
+        {
+            return null;
+        }
+        try
+        {
+            // The edit UI's form for a new item of the type, as for a block that isn't content (AsTheEditUiDoes).
+            var model = services.GetRequiredService<EPiServer.IContentRepository>().GetDefault<IContent>(ContentReference.RootPage, type.ID);
+#if CMS13
+            var properties = PropertiesOf(provider.GetExtendedMetadataForType(typeof(ContentData), () => model));
+#else
+            var properties = provider.GetExtendedMetadataForType(typeof(ContentData), () => model).Properties;
+#endif
+            var types = new Dictionary<string, EditUiTypes>(StringComparer.OrdinalIgnoreCase);
+            foreach (var property in properties)
+            {
+                var allowed = Names(property, "AllowedTypes");
+                var restricted = Names(property, "RestrictedTypes");
+                if (property.PropertyName is { Length: > 0 } name && (allowed.Count > 0 || restricted.Count > 0))
+                {
+                    types[name] = new EditUiTypes(allowed, restricted);
+                }
+            }
+            return types;
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            logger.LogDebug(e, "The CMS edit UI's metadata for a new {Type} couldn't be built; its properties' allowed types are those of [AllowedTypes] only.", type.Name);
+            return null;
+        }
+    }
+
+    /// <summary>The type names an editor setting holds: the edit UI's lowercase full names.</summary>
+    private static IReadOnlyList<string> Names(ExtendedMetadata property, string setting) =>
+        property.EditorConfiguration.TryGetValue(setting, out var value) && value is IEnumerable<string> names
+            ? names.Where(n => !string.IsNullOrEmpty(n)).ToList()
+            : [];
+
     /// <summary>
     /// A block that isn't content (an inline block in a ContentArea, a block list's item) as the edit UI builds its form's
     /// metadata: for a new block of its type (its model accessor's <c>GetDefault</c>), as some editor descriptors need
