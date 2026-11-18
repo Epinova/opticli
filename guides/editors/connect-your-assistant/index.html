@@ -34,7 +34,7 @@
   <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#editors">For editors</a></p>
   <h1>Connect your assistant to the CMS</h1>
   <p class="lead">Connect Claude or another assistant to your Optimizely site, sign in with your own CMS account, and check that it works.</p>
-  <p class="guide-meta">Written for opticli 0.30.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/editors/connect-your-assistant.md">Edit on GitHub</a></p>
+  <p class="guide-meta">Written for opticli 0.34.2 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/editors/connect-your-assistant.md">Edit on GitHub</a></p>
   <div class="guide-body">
     <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#steps">Steps</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
     <article class="prose">
@@ -126,7 +126,9 @@ setting). Claude on the web is allowed by default. Until then, use an assistant 
 as the Claude Desktop extension.</li>
 <li><strong>&quot;No access&quot; and &quot;isn't an editor on this site&quot;.</strong> Your account doesn't have a role that may connect an assistant.
 Ask your CMS administrator.</li>
-<li><strong>&quot;Unknown app&quot;.</strong> Remove the connector or server in your assistant and add it again.</li>
+<li><strong>&quot;Unknown app&quot;.</strong> The site has forgotten your assistant, usually because an earlier sign-in wasn't finished. The
+Claude Desktop extension registers again by itself the next time it starts: turn it off and on again in Settings →
+Extensions. With another assistant, remove the connector or server and add it again.</li>
 <li><strong>A web-based assistant can't reach the site at all.</strong> The site is probably only on your company network. Use the
 Claude Desktop extension, or ask your developer.</li>
 <li><strong>The assistant says it isn't allowed to change or publish anything.</strong> You may have unticked it on the consent page,
