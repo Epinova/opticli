@@ -1117,6 +1117,8 @@ public class SharedAreaBlockTests
             Assert.Contains("Area[1] (a new block)", refused.Message);
             Assert.Contains($"Area[0] (block {draft.ContentLink.ID}, a draft)", refused.Message);
             Assert.Contains("CMS project", refused.Hint);
+            // In a project the blocks are saved as drafts, not ready: the project's publish would leave them behind.
+            Assert.Contains("then mark those blocks ready in it too (opticli projects ready <project> <ref>..., with --request-approval", refused.Hint);
         }
         // Only a draft block the page shows already.
         var titled = site.Flow();
