@@ -323,13 +323,16 @@ public class SharedAreaBlockTests
     {
         public HashSet<int> Offered { get; } = [ItemType, BoxType];
 
+        /// <summary>The types offered for a new block of a content item ("For this page" folder): <see cref="Offered"/> when null.</summary>
+        public HashSet<int>? OfferedForContent { get; set; }
+
         public override AvailableSetting GetSetting(string contentTypeName) => new();
 
         public override bool IsAllowed(string parentContentTypeName, string childContentTypeName) => true;
 
         public override IList<ContentType> ListAvailable(string contentTypeName, IPrincipal user) => Types.Where(t => Offered.Contains(t.ID)).ToList();
 
-        public override IList<ContentType> ListAvailable(IContent content, bool contentFolder, IPrincipal user) => Types.Where(t => Offered.Contains(t.ID)).ToList();
+        public override IList<ContentType> ListAvailable(IContent content, bool contentFolder, IPrincipal user) => Types.Where(t => (OfferedForContent ?? Offered).Contains(t.ID)).ToList();
     }
 
     /// <summary>A site to write to: the store, the CMS's services over it, and the caller.</summary>
@@ -1026,6 +1029,24 @@ public class SharedAreaBlockTests
         Assert.Null(result.SharedBlocks);
         Assert.Equal(VersionStatus.CheckedOut, ((IVersionable)site.Store.Latest(draft.ContentLink.ID)).Status);
         Assert.Contains(result.Validation!, i => (i.Property, i.Severity) == ("Area[0]", "warning") && i.Message.Contains("Publish access"));
+    }
+
+    [Fact]
+    public void An_editor_gets_no_type_the_edit_ui_doesnt_offer_for_a_new_block_of_the_page()
+    {
+        var site = new Site(CmsCaller.Editor);
+        var page = Neutral(site, site.Page(folder: true));
+        site.Availability.OfferedForContent = [BoxType];
+        var flow = site.Flow();
+        var (writable, before) = site.Write(flow, page, """{"Area": [{"type": "ItemBlock", "properties": {"Title": "Hello"}}]}""");
+
+        var dry = site.Save(flow, writable, before, dryRun: true);
+        var refused = Assert.Throws<AgentException>(() => site.Save(flow, writable, before));
+
+        Assert.False(dry.Valid);
+        Assert.Equal(AgentErrorCodes.Validation, refused.Code);
+        Assert.Contains(refused.Validation!, i => i.Property == "Area[0]" && i.Message.Contains("doesn't offer ItemBlock"));
+        Assert.Empty(site.Store.Saves);
     }
 
     /// <summary><paramref name="content"/> with no language of its own (every version), so an editor's language access isn't asked.</summary>
