@@ -3,6 +3,16 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.34.2 (18 November 2026)
+
+### MCP server for editors
+
+- **Fixed: the Claude Desktop extension stuck on "Unknown app".** The module deletes a registered app that nobody has
+  signed in with after a day, but mcp-remote kept its copy of the registration, so after a sign-in that wasn't
+  finished, every later sign-in page said "Unknown app" and Claude Desktop gave up with "Unable to connect to extension
+  server". The extension now drops a saved registration that is over an hour old and never got a sign-in, and registers
+  again.
+
 ## 0.34.1 (17 November 2026)
 
 ### CLI
