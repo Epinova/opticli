@@ -3,7 +3,9 @@
 // (https://www.example.com, which gets the module's default path) or the full MCP endpoint URL.
 
 import { execFileSync } from "node:child_process";
-import { readdirSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 const DEFAULT_PATH = "/episerver/opticli/mcp";
@@ -129,9 +131,31 @@ function importDesktopSession() {
   console.error(`opticli: no display from Claude Desktop, using ${imported.map((n) => `${n}=${found[n]}`).join(" ") || "none"}`);
 }
 
+// The module deletes a registered app that nobody has signed in with after a day, but mcp-remote keeps its copy of the
+// registration for good, and the sign-in page then says "Unknown app" with no way back to mcp-remote, which waits until
+// Claude Desktop gives up. A registration without tokens is only of use to a sign-in under way, which takes minutes, so
+// one older than an hour is dropped and mcp-remote registers again. Its files are <md5 of the URL>_<name> in
+// mcp-remote-v1 (check-mcp-extension.sh fails the build if the packed mcp-remote names them otherwise).
+const UNUSED_REGISTRATION_AGE_MS = 60 * 60 * 1000;
+
+function forgetUnusedRegistration(url) {
+  const dir = join(process.env.MCP_REMOTE_CONFIG_DIR || join(homedir(), ".mcp-auth"), "mcp-remote-v1");
+  const prefix = join(dir, createHash("md5").update(url).digest("hex"));
+  try {
+    const registered = statSync(`${prefix}_client_info.json`, { throwIfNoEntry: false });
+    if (!registered || existsSync(`${prefix}_tokens.json`)) return;
+    if (Date.now() - registered.mtimeMs < UNUSED_REGISTRATION_AGE_MS) return;
+    rmSync(`${prefix}_client_info.json`, { force: true });
+    console.error(`opticli: dropped a registration from ${registered.mtime.toISOString()} that never signed in; registering again`);
+  } catch (error) {
+    console.error(`opticli: couldn't check the saved registration (${error.message})`);
+  }
+}
+
 const url = endpoint(process.argv[2]);
 console.error(`opticli: connecting to ${url}`);
 importDesktopSession();
+forgetUnusedRegistration(url);
 
 // mcp-remote reads its arguments from process.argv when it is imported.
 process.argv = [process.argv[0], process.argv[1], url, "--transport", "http-only", "--enable-proxy"];

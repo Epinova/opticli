@@ -31,3 +31,10 @@ done
 if grep -q '^node_modules/@anthropic-ai/mcpb/' <<<"$files"; then
   fail "$file carries the mcpb packer (a dev dependency)."
 fi
+
+# server/index.js finds mcp-remote's saved registration by these names (forgetUnusedRegistration).
+remote="$(unzip -p "$file" 'node_modules/mcp-remote/dist/*.js')"
+grep -qF 'CONFIG_STORE_VERSION = 1;' <<<"$remote" \
+  || fail "mcp-remote no longer keeps its files in mcp-remote-v1: update forgetUnusedRegistration in server/index.js."
+grep -qF 'createHash("md5").update(parts.join("|"))' <<<"$remote" \
+  || fail "mcp-remote no longer names its files by the md5 of the URL: update forgetUnusedRegistration in server/index.js."

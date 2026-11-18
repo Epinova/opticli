@@ -1658,7 +1658,8 @@ the proxy, and everyone shares one window.
 
 Besides the rate limit, registration stops at 5,000 registered apps that have no connection and no sign-in under way:
 `register` then answers 429 until the cleanup has deleted some. An app that registers and doesn't sign in within a day
-is deleted.
+is deleted. A client that keeps its registration then gets "Unknown app" on the sign-in page until it is removed and
+added again. The Claude Desktop extension itself drops a registration over an hour old that never signed in.
 
 ```json
 {"OptiCli": {"Mcp": {"RateLimits": {"TokenPerAddressPerMinute": 1200}}}}

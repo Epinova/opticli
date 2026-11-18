@@ -3,7 +3,7 @@ title: Connect your assistant to the CMS
 summary: Connect Claude or another assistant to your Optimizely site, sign in with your own CMS account, and check that it works.
 audience: editors
 order: 1
-written-for: 0.30.0
+written-for: 0.34.2
 ---
 
 By the end of this guide your AI assistant is connected to your Optimizely CMS site. It works as you: it sees what you
@@ -104,7 +104,9 @@ in again the same way.
   as the Claude Desktop extension.
 - **"No access" and "isn't an editor on this site".** Your account doesn't have a role that may connect an assistant.
   Ask your CMS administrator.
-- **"Unknown app".** Remove the connector or server in your assistant and add it again.
+- **"Unknown app".** The site has forgotten your assistant, usually because an earlier sign-in wasn't finished. The
+  Claude Desktop extension registers again by itself the next time it starts: turn it off and on again in Settings →
+  Extensions. With another assistant, remove the connector or server and add it again.
 - **A web-based assistant can't reach the site at all.** The site is probably only on your company network. Use the
   Claude Desktop extension, or ask your developer.
 - **The assistant says it isn't allowed to change or publish anything.** You may have unticked it on the consent page,
