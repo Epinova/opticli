@@ -75,7 +75,10 @@ internal sealed class AreaEditor(ContentLocator locator, PropertyWriter writer)
                     break;
 
                 case AreaOps.Remove:
-                    items.RemoveAt(Locate(where, items, op));
+                    var removing = Locate(where, items, op);
+                    // A block this write was to make for it isn't made.
+                    writer.Shared?.Forget(items[removing]);
+                    items.RemoveAt(removing);
                     break;
 
                 case AreaOps.Set:

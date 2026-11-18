@@ -114,6 +114,12 @@ internal static class PublishOperation
             siteError = $"{ex.Message} ({ex.GetType().FullName})";
         }
         var result = flow.Repository.Get<IContent>(saved);
+        // The drafts of the blocks of its "For this page" folder that it shows, where the site's edit UI makes those.
+        var warnings = issues.ToList();
+        var along = publishing || scheduling
+            ? flow.PublishAlong(result, action, othersConfirmed: body.IncludeDraft || (named is not null && call.NamedVersionConfirmsDraft), dryRun: false, warnings)
+            : null;
+        issues = warnings;
         return new WriteResult
         {
             Content = ContentSummaries.Describe(result, flow.Types),
@@ -127,6 +133,7 @@ internal static class PublishOperation
             Validation = issues.Count > 0 ? issues : null,
             PendingDraft = pending,
             PreviouslyPublished = publishing ? previouslyPublished : null,
+            SharedBlocks = along is { Count: > 0 } ? along : null,
         };
     }
 }

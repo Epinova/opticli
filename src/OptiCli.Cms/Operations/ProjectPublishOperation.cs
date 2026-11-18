@@ -62,6 +62,17 @@ internal static class ProjectPublishOperation
             ? Check(call, flow, projects, item, action, body.IncludeDraft)
             : new ItemPlan(item, new ProjectItemResult { Content = projects.Summary(item), Outcome = ProjectRules.PublishOutcome(item.State, scheduling) })).ToList();
         var ready = plans.Where(p => p.Item.State == ProjectItemState.Ready).ToList();
+        // Where the site's edit UI makes new blocks in an area shared: the drafts of the blocks of each item's own "For this
+        // page" folder that it shows go live with it (WriteFlow.PublishAlong), but those that are the project's own items.
+        var readyIds = ready.Select(p => p.Item.Item.ContentLink.ID).ToHashSet();
+        ProjectItemResult Along(ProjectItemResult item, IContent version, bool dryRun)
+        {
+            var warnings = item.Validation?.ToList() ?? [];
+            var along = flow.PublishAlong(version, action, body.IncludeDraft, dryRun, warnings, readyIds, body.PublishAt?.ToLocalTime());
+            return along is { Count: > 0 } || warnings.Count > (item.Validation?.Count ?? 0)
+                ? item with { SharedBlocks = along is { Count: > 0 } ? along : null, Validation = warnings.Count > 0 ? warnings : null }
+                : item;
+        }
         if (ready.Count == 0)
         {
             throw new AgentException(AgentErrorCodes.Conflict,
@@ -93,7 +104,7 @@ internal static class ProjectPublishOperation
         }
         if (body.DryRun)
         {
-            return result;
+            return Lists(result, plans.Select(p => p.Item.State == ProjectItemState.Ready && p.Item.Version is { } version ? Along(p.Result, version, dryRun: true) : p.Result).ToList());
         }
 
         projects.ThrowIfAborted();
@@ -129,7 +140,13 @@ internal static class ProjectPublishOperation
         }
 
         var after = projects.Items(project);
-        var done = plans.Select(plan => plan.Item.State != ProjectItemState.Ready ? plan.Result : Outcome(projects, after, plan, scheduling, siteError)).ToList();
+        var done = plans.Select(plan => plan.Item.State != ProjectItemState.Ready ? plan.Result : Outcome(projects, after, plan, scheduling, siteError))
+            .Select(item => item.Outcome is ProjectItemOutcomes.Published or ProjectItemOutcomes.Scheduled
+                && plans.FirstOrDefault(p => p.Item.State == ProjectItemState.Ready && p.Result.Content.Id == item.Content.Id && p.Result.Content.Language == item.Content.Language) is { } plan
+                && flow.Repository.TryGet<IContent>(plan.Item.Item.ContentLink, out var version)
+                    ? Along(item, version, dryRun: false)
+                    : item)
+            .ToList();
         var types = call.Service<IContentTypeRepository>();
         return Lists(result with
         {

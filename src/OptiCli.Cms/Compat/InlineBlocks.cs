@@ -50,6 +50,15 @@ internal static class InlineBlocks
         }
     }
 
+    /// <summary>Takes the inline block off <paramref name="item"/> (a writable one); nothing on a CMS without inline blocks.</summary>
+    public static void Clear(ContentAreaItem item)
+    {
+        if (Supported)
+        {
+            Property!.SetValue(item, null);
+        }
+    }
+
     /// <exception cref="AgentException"><c>usage</c> on a CMS before 12.20, which has no inline blocks in ContentAreas.</exception>
     public static void Require()
     {

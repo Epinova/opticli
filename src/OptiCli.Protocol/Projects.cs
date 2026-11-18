@@ -328,6 +328,14 @@ public sealed record ProjectItemResult
     /// <summary>For a published item: the version that was live until then, to publish again to go back. Null when it never was.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? PreviouslyPublished { get; init; }
+
+    /// <summary>
+    /// For a publish: the drafts of shared blocks in the item's own "For this page" folder that its published version's
+    /// areas show, published (scheduled) along with it, as a single publish does (<see cref="WriteResult.SharedBlocks"/>).
+    /// For a dry run, those it would publish. Null when there are none.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<SharedBlockResult>? SharedBlocks { get; init; }
 }
 
 /// <summary>Why an item can't take a project operation: the error it would get on its own.</summary>

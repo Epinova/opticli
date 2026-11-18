@@ -44,6 +44,13 @@ public sealed record AgentError(string Code, string Message, string? Hint = null
     /// one): the project and every item, each with its <see cref="ProjectItemResult.Problem"/>, as a dry run reports them.
     /// </summary>
     public ProjectResult? Project { get; init; }
+
+    /// <summary>
+    /// For a write that made shared blocks for its ContentAreas (<see cref="WriteResult.SharedBlocks"/>) and then failed
+    /// to save the content itself: the blocks (and their "For this page" folder) were saved and stay, so a retry can give
+    /// their refs instead of making them again.
+    /// </summary>
+    public IReadOnlyList<SharedBlockResult>? MadeBlocks { get; init; }
 }
 
 /// <summary>Values of <see cref="AgentError.Reason"/>, which the CLI passes on as <c>details.reason</c>.</summary>

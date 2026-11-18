@@ -20,9 +20,30 @@ namespace OptiCli.Cms.Content;
 /// editable (<see cref="EditUiProperties"/>), no script in rich text or links (<see cref="CmsCall.MayWriteScript"/>),
 /// and content references only to content they can read (<see cref="CmsCall.MayReferenceUnchecked"/>).
 /// </remarks>
+/// <param name="sharedBlocks">
+/// The site's edit UI makes new blocks in a ContentArea shared, in the content's "For this page" folder, rather than inline
+/// (<see cref="InlineBlocks.EditUiCreatesThem"/> is false): a new block in an area is then made so too
+/// (<see cref="Shared"/>). Inline blocks an area has already are still changed, moved and removed as they are.
+/// </param>
 internal sealed class PropertyWriter(
-    CmsCall call, ContentLocator locator, BlockFactory blocks, CategoryRepository categories, IFrameRepository frames, DisplayOptions displayOptions)
+    CmsCall call, ContentLocator locator, BlockFactory blocks, CategoryRepository categories, IFrameRepository frames, DisplayOptions displayOptions,
+    bool sharedBlocks = false)
 {
+    /// <summary>
+    /// Where the site's edit UI makes new blocks in a ContentArea shared: the new blocks the writes record, to be saved
+    /// with the content (<see cref="SharedAreaBlocks"/>). Null where it makes them inline, or can't be asked (as before).
+    /// </summary>
+    public SharedAreaBlocks? Shared { get; } = sharedBlocks ? new SharedAreaBlocks(call, locator) : null;
+
+    /// <summary>The content the writes are for: the first one written (<see cref="Apply"/>, <see cref="FindArea"/>), whose folder new shared blocks go in.</summary>
+    private void Own(IContentData content)
+    {
+        if (Shared is { Owner: null } && content is IContent owner)
+        {
+            Shared.Owner = owner;
+        }
+    }
+
     /// <summary>Pseudo-property for the content name in snapshots and diffs.</summary>
     public const string NameKey = "Name";
 
@@ -107,6 +128,7 @@ internal sealed class PropertyWriter(
 
     public void Apply(IContentData content, IReadOnlyDictionary<string, JsonElement>? values)
     {
+        Own(content);
         if (values is null)
         {
             return;
@@ -248,6 +270,7 @@ internal sealed class PropertyWriter(
     /// <exception cref="AgentException"><c>usage</c> for a path that doesn't lead to a ContentArea.</exception>
     public PropertyData FindArea(IContentData content, string path, out Action commit)
     {
+        Own(content);
         var segments = path.Split('.');
         var owner = content;
         var shown = "";
@@ -289,10 +312,20 @@ internal sealed class PropertyWriter(
                     throw AgentException.Usage($"'{shown}' has {area.Items.Count} item(s), so there is no {shown}[{item.Index}] (positions are zero-based).");
                 }
                 var target = area.Items[item.Index];
+                if (Shared?.Of(target) is { } pending)
+                {
+                    // A block this write makes: its areas are set on its values, which are saved with it.
+                    var pendingHolder = property;
+                    commits.Add(() => pendingHolder.Value = area);
+                    owner = pending.Values;
+                    shown += $"[{item.Index}]";
+                    continue;
+                }
                 if (InlineBlocks.Of(target) is not { } block)
                 {
-                    throw AgentException.Usage($"{shown}[{item.Index}] is a shared block, not an inline block, so it has no areas of its own here.",
-                        "Change the shared block itself.");
+                    var link = ContentReference.IsNullOrEmpty(target.ContentLink) ? null : target.ContentLink.ToReferenceWithoutVersion().ToString();
+                    throw AgentException.Usage($"{shown}[{item.Index}] is {(link is null ? "an item without content" : $"the shared block {link}")}, not an inline block, so it has no areas of its own here.",
+                        link is null ? null : call.ForCaller($"Change the shared block itself: opticli area {link} <area> ..., or opticli set {link} Area=[...].", $"Change the shared block itself: update_content on {link}."));
                 }
                 if (block is EPiServer.Data.Entity.IReadOnly { IsReadOnly: true } readOnly)
                 {
@@ -358,11 +391,21 @@ internal sealed class PropertyWriter(
                 call.ForCaller("Read the positions in the version you change: opticli get <ref> --version latest --fields " + property + ".", "Read the positions with get_content (version latest)."));
         }
         var item = items[index];
+        if (Shared?.Of(item) is { } pending)
+        {
+            // A block this write makes (an earlier add): its values and name, as for an inline block.
+            ApplyTo(pending.Values, values, path);
+            if (name is not null)
+            {
+                pending.GivenName = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+            }
+            return;
+        }
         if (InlineBlocks.Of(item) is not { } block)
         {
             var shown = ContentReference.IsNullOrEmpty(item.ContentLink) ? null : item.ContentLink.ToReferenceWithoutVersion().ToString();
             throw AgentException.Usage($"{path} is {(shown is null ? "an item without content" : $"the shared block {shown}")}, not an inline block, so it has no values of its own in the area.",
-                shown is null ? null : call.ForCaller($"Change the block itself: opticli set {shown} Prop=value.", $"Change the block itself (content {shown})."));
+                shown is null ? null : call.ForCaller($"Change the block itself: opticli set {shown} Prop=value.", $"Change the block itself: update_content on {shown}."));
         }
         if (block is EPiServer.Data.Entity.IReadOnly { IsReadOnly: true } readOnly)
         {
@@ -1038,24 +1081,36 @@ internal sealed class PropertyWriter(
         var wanted = items.Select((item, i) => Wanted(item, $"{path}[{i}]")).ToList();
         var currentItems = current?.Items.ToList() ?? [];
         var pairs = AreaItemRules.Pair(currentItems.Select(Key).ToList(), wanted.Select(w => w.Key).ToList(),
-            (i, j) => wanted[i].InlineType is not null && Unchanged(currentItems[j], items[i]),
+            (i, j) => wanted[i].InlineType is not null && Unchanged(InlineBlocks.Of(currentItems[j]), items[i]),
             (i, j) => wanted[i].InlineType is not null && Alike(items[i], currentItems[j]));
+        var owned = TakeOverOwnBlocks(currentItems, pairs, wanted.Select(w => w.InlineType).ToList(), items);
         RequireNothingLostUnseen(currentItems, pairs, items, path);
+        RequireNoOwnBlockLostUnseen(owned, items, path);
         WarnSettingsDropped(currentItems, pairs, wanted.Select(w => w.Key).ToList(), path);
 
         var area = new ContentArea();
         for (var i = 0; i < items.Count; i++)
         {
-            var takenOver = pairs[i].Current < 0 ? null : currentItems[pairs[i].Current];
+            var takenOver = pairs[i].Current >= 0 ? currentItems[pairs[i].Current] : owned[i] is { } ownItem ? currentItems[ownItem.Current] : null;
             ContentAreaItem item;
-            if (wanted[i].InlineType is { } type)
+            if (wanted[i].InlineType is { } ownType && owned[i] is { } own)
+            {
+                // A block of the content's own folder, taken over: left as it is when the item is an exact copy of it,
+                // else a new version of it with what the item gives.
+                item = own.Exact
+                    ? NewAreaItem(own.Block.ContentLink.ToReferenceWithoutVersion(), items[i].DisplayOption, takenOver)
+                    : SharedItem(ownType, items[i].Properties, items[i].Name, items[i].DisplayOption, takenOver, own.Block, $"{path}[{i}]");
+            }
+            else if (wanted[i].InlineType is { } type)
             {
                 if (takenOver is null)
                 {
                     // A new block; a changed item that takes over one is that block, changed.
                     Claim(type, $"{path}[{i}]");
                 }
-                item = InlineItem(type, items[i].Properties, items[i].Name, items[i].DisplayOption, takenOver, keepValues: pairs[i].Exact, $"{path}[{i}]");
+                item = takenOver is null && Shared is not null
+                    ? SharedItem(type, items[i].Properties, items[i].Name, items[i].DisplayOption, null, null, $"{path}[{i}]")
+                    : InlineItem(type, items[i].Properties, items[i].Name, items[i].DisplayOption, takenOver, keepValues: pairs[i].Exact, $"{path}[{i}]");
             }
             else
             {
@@ -1077,6 +1132,139 @@ internal sealed class PropertyWriter(
             area.Items.Add(item);
         }
         return area;
+    }
+
+    /// <summary>
+    /// A current item that a new block item of a whole area takes over as a shared block of the content's own "For this
+    /// page" folder (<see cref="TakeOverOwnBlocks"/>): its position, whether the item is an exact copy of the block, the
+    /// block's latest version, and its values as a block (<see cref="Plain"/>).
+    /// </summary>
+    private sealed record OwnTakeover(int Current, bool Exact, IContent Block, BlockData Values);
+
+    /// <summary>
+    /// Where new blocks are shared (<see cref="Shared"/>): of the items <paramref name="pairs"/> left, each new block item
+    /// (<c>{type, properties}</c>) takes over a current item that shows a shared block of its type from the content's own
+    /// "For this page" folder, paired by the rules for inline blocks (<see cref="AreaItemRules.Pair"/>: an exact copy, then
+    /// the only one of its type left). Writing an area whole again, as a plan run again does, then changes those blocks
+    /// rather than making more. A shared block from anywhere else is never taken over: it stays as its <c>{ref}</c>.
+    /// </summary>
+    /// <param name="types">The type of each new block item; null for an item that shows content.</param>
+    private OwnTakeover?[] TakeOverOwnBlocks(IReadOnlyList<ContentAreaItem> current, IReadOnlyList<AreaItemRules.Pairing> pairs, IReadOnlyList<ContentType?> types,
+        IReadOnlyList<AreaItemValue> items)
+    {
+        var owned = new OwnTakeover?[items.Count];
+        if (Shared is null)
+        {
+            return owned;
+        }
+        var waiting = Enumerable.Range(0, items.Count).Where(i => pairs[i].Current < 0 && types[i] is not null).ToList();
+        var taken = pairs.Where(p => p.Current >= 0).Select(p => p.Current).ToHashSet();
+        var repository = call.Service<IContentTypeRepository>();
+        var candidates = waiting.Count == 0 ? [] : Enumerable.Range(0, current.Count).Where(j => !taken.Contains(j))
+            .Select(j => (Index: j, Block: Shared.OwnBlock(current[j])))
+            .Where(c => c.Block is not null && repository.Load(c.Block.ContentTypeID) is not null)
+            .Select(c => (c.Index, Block: c.Block!, Values: Plain(c.Block!, repository.Load(c.Block!.ContentTypeID)!)))
+            .ToList();
+        if (candidates.Count == 0)
+        {
+            return owned;
+        }
+        var sub = AreaItemRules.Pair(
+            candidates.Select(c => (string?)AreaItemRules.InlineKey(c.Block.ContentTypeID)).ToList(),
+            waiting.Select(i => (string?)AreaItemRules.InlineKey(types[i]!.ID)).ToList(),
+            (i, j) => Unchanged(candidates[j].Values, items[waiting[i]]),
+            (i, j) => string.Equals((items[waiting[i]].Name ?? "").Trim(), candidates[j].Block.Name, StringComparison.Ordinal)
+                && string.Equals(items[waiting[i]].DisplayOption ?? "", PropertyValues.DisplayOption(current[candidates[j].Index]) ?? "", StringComparison.OrdinalIgnoreCase));
+        for (var i = 0; i < waiting.Count; i++)
+        {
+            if (sub[i].Current >= 0)
+            {
+                var (index, block, values) = candidates[sub[i].Current];
+                owned[waiting[i]] = new OwnTakeover(index, sub[i].Exact, block, values);
+            }
+        }
+        return owned;
+    }
+
+    /// <summary>
+    /// <paramref name="block"/>'s values (a shared block's version) on a block of <paramref name="type"/> as the writer
+    /// builds one, to compare and pair with what an item gives as it does an inline block's.
+    /// </summary>
+    private BlockData Plain(IContent block, ContentType type)
+    {
+        var plain = blocks.Create(type);
+        foreach (var property in plain.Property.Where(p => !p.IsMetaData))
+        {
+            if (block.Property[property.Name] is not { } stored)
+            {
+                continue;
+            }
+            if (stored.IsNull)
+            {
+                property.Clear();
+            }
+            else
+            {
+                property.Value = stored.Value;
+            }
+        }
+        return plain;
+    }
+
+    /// <summary>
+    /// For an editor: a shared block of the content's own folder that a changed item takes over gets only what the item
+    /// gives, as a changed inline block does; it mustn't lose values they can't see or change (<see cref="LostUnseen"/>).
+    /// </summary>
+    private void RequireNoOwnBlockLostUnseen(IReadOnlyList<OwnTakeover?> owned, IReadOnlyList<AreaItemValue> items, string path)
+    {
+        if (!call.Properties.Checks)
+        {
+            return;
+        }
+        for (var i = 0; i < owned.Count; i++)
+        {
+            if (owned[i] is not { Exact: false } own)
+            {
+                continue;
+            }
+            var given = items[i].Properties?.Keys.ToList() ?? [];
+            if (LostUnseen(own.Values, Fresh(own.Values), $"{path}[{own.Current}]", path, own.Current, given).FirstOrDefault() is { Value: not null } lost)
+            {
+                var link = own.Block.ContentLink.ToReferenceWithoutVersion();
+                throw new AgentException(AgentErrorCodes.Usage,
+                    $"{path} would lose {lost.Value} of the shared block {link} ('{own.Block.Name}'), which you can't see or change in the CMS edit UI: only an exact copy of the block (as get_content shows it) keeps it.",
+                    $"Give that item back as {{\"ref\": \"{link}\"}} and change the block itself (content {link}), or give its values as get_content shows them. Nothing was saved.")
+                {
+                    Reason = AgentErrorReasons.UnseenValues,
+                };
+            }
+        }
+    }
+
+    /// <summary>
+    /// An item for a shared block in the content's "For this page" folder (<see cref="Shared"/>): a new one (it carries the
+    /// block's GUID until the block is saved), or <paramref name="existing"/> taken over, whose areas pair with what the
+    /// item gives for them. Its values are built as a new inline block's are, and saved with the content. The item has the
+    /// render settings of <paramref name="takenOver"/>; the name, given or not, goes on the block.
+    /// </summary>
+    private ContentAreaItem SharedItem(ContentType type, IReadOnlyDictionary<string, JsonElement>? values, string? name, string? displayOption,
+        ContentAreaItem? takenOver, IContent? existing, string where)
+    {
+        var block = blocks.Create(type);
+        if (existing is not null)
+        {
+            Baseline(block, Plain(existing, type));
+        }
+        ApplyTo(block, values, where);
+        var guid = existing is null ? Guid.NewGuid() : Guid.Empty;
+        // Link only for an existing block; a new one is named by its GUID (a link would be refused on CMS 13 next to it).
+        var item = existing is null ? new ContentAreaItem { ContentGuid = guid } : new ContentAreaItem { ContentLink = existing.ContentLink.ToReferenceWithoutVersion() };
+        Settings(item, displayOption, takenOver);
+        if (_trial == 0)
+        {
+            Shared!.Add(new SharedAreaBlocks.Pending { Path = where, Type = type, Values = block, GivenName = name, Guid = guid, Existing = existing });
+        }
+        return item;
     }
 
     /// <summary>Whether an item gives a current inline block's name and display option (as stored, or by the same name).</summary>
@@ -1211,13 +1399,13 @@ internal sealed class PropertyWriter(
     }
 
     /// <summary>
-    /// Whether <paramref name="item"/> gives <paramref name="current"/>'s inline block as it is: every value it has (that
+    /// Whether <paramref name="item"/> gives <paramref name="block"/> (an inline block, or a shared block's values) as it is: every value it has (that
     /// the caller sees), and those values set on a copy of it change nothing. Its name, display option and personalization
     /// don't count; they are as given either way.
     /// </summary>
-    private bool Unchanged(ContentAreaItem current, AreaItemValue item)
+    private bool Unchanged(BlockData? block, AreaItemValue item)
     {
-        if (InlineBlocks.Of(current) is not { } block)
+        if (block is null)
         {
             return false;
         }
@@ -1286,7 +1474,11 @@ internal sealed class PropertyWriter(
     /// <exception cref="AgentException"><c>usage</c> for a type that isn't a block type; <c>not_found</c> for no such type.</exception>
     private ContentType InlineType(string name, string where)
     {
-        InlineBlocks.Require();
+        if (Shared is null)
+        {
+            // A shared block needs no inline blocks in the CMS.
+            InlineBlocks.Require();
+        }
         var types = call.Service<IContentTypeRepository>();
         var type = int.TryParse(name.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var id)
             ? types.Load(id) ?? throw AgentException.NotFound($"{where}: no content type has the id {id}.")
@@ -1314,6 +1506,19 @@ internal sealed class PropertyWriter(
         IEnumerable<ContentAreaItem>? unlessIn = null)
     {
         var contentType = InlineType(type, where);
+        if (Shared is not null)
+        {
+            // A shared block in the content's folder, as the site's edit UI makes it.
+            var mark = Shared.Count;
+            var shared = SharedItem(contentType, values, name, displayOption, null, null, where);
+            if (unlessIn is not null && HasSharedLike(unlessIn, Shared.Of(shared)!, values, name))
+            {
+                Shared.Truncate(mark);
+                return null;
+            }
+            Claim(contentType, where);
+            return shared;
+        }
         var item = InlineItem(contentType, values, name, displayOption, null, keepValues: false, where);
         if (unlessIn is not null && HasInlineLike(unlessIn, item, values, name))
         {
@@ -1338,11 +1543,44 @@ internal sealed class PropertyWriter(
                 && string.Equals(InlineBlocks.Name(item) ?? "", name.Trim(), StringComparison.Ordinal));
         }
         var wanted = PropertyValues.Snapshot(block);
-        return items.Any(item => InlineBlocks.Of(item) is { } existing && BlockTypeId(existing) == typeId
-            && PropertyValues.Snapshot(existing) is var has
-            && (given ?? new Dictionary<string, JsonElement>()).All(pair =>
-                has.GetValueOrDefault(pair.Key)?.GetRawText() == wanted.GetValueOrDefault(pair.Key)?.GetRawText()
-                || (pair.Value.ValueKind == JsonValueKind.String && StoredAlready(Value(existing, pair.Key), pair.Value.GetString()!))));
+        return items.Any(item => InlineBlocks.Of(item) is { } existing && BlockTypeId(existing) == typeId && SameValues(existing, wanted, given));
+    }
+
+    /// <summary>Whether <paramref name="existing"/> has the values <paramref name="given"/> names as <paramref name="wanted"/> has them (or as the CMS stores them).</summary>
+    private bool SameValues(IContentData existing, IReadOnlyDictionary<string, JsonElement?> wanted, IReadOnlyDictionary<string, JsonElement>? given) =>
+        PropertyValues.Snapshot(existing) is var has
+        && (given ?? new Dictionary<string, JsonElement>()).All(pair =>
+            has.GetValueOrDefault(pair.Key)?.GetRawText() == wanted.GetValueOrDefault(pair.Key)?.GetRawText()
+            || (pair.Value.ValueKind == JsonValueKind.String && StoredAlready(Value(existing, pair.Key), pair.Value.GetString()!)));
+
+    /// <summary>
+    /// Where new blocks are shared: whether <paramref name="items"/> has a block like <paramref name="added"/>, of its type
+    /// with that name when one is given, else with the values of <paramref name="given"/>: a shared block of the content's
+    /// own folder (by its name), an inline block it had already (by its name in the area), or a block this write makes.
+    /// </summary>
+    private bool HasSharedLike(IEnumerable<ContentAreaItem> items, SharedAreaBlocks.Pending added, IReadOnlyDictionary<string, JsonElement>? given, string? name)
+    {
+        var typeId = added.Type.ID;
+        var wanted = PropertyValues.Snapshot(added.Values);
+        foreach (var item in items)
+        {
+            var (candidate, candidateName) = Shared!.Of(item) is { } pending
+                ? (pending.Type.ID == typeId ? pending.Values : null, pending.GivenName)
+                : InlineBlocks.Of(item) is { } inline
+                    ? (BlockTypeId(inline) == typeId ? inline : null, InlineBlocks.Name(item))
+                    : Shared.OwnBlock(item, typeId) is { } own ? ((IContentData?)own, own.Name) : (null, null);
+            if (candidate is null)
+            {
+                continue;
+            }
+            if (!string.IsNullOrWhiteSpace(name)
+                ? string.Equals(candidateName?.Trim() ?? "", name.Trim(), StringComparison.Ordinal)
+                : SameValues(candidate, wanted, given))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static object? Value(IContentData content, string name) =>
@@ -1435,9 +1673,8 @@ internal sealed class PropertyWriter(
     }
 
     /// <summary>
-    /// What a new inline block (not a copy of one the area has) takes: for an editor, the right to create a block of its
-    /// type, as the edit UI offers types for a new block of the content (its "For this page" folder's). Counted for the
-    /// edit UI warning (<see cref="NewInlineBlocks"/>).
+    /// What a new block in an area (not a copy of one the area has) takes: for an editor, the right to create a block of its
+    /// type, as the edit UI offers types for a new block of the content (its "For this page" folder's).
     /// </summary>
     private void Claim(ContentType type, string where)
     {
@@ -1449,7 +1686,6 @@ internal sealed class PropertyWriter(
         {
             throw AgentException.Usage($"{where}: you may not create {type.Name} blocks: the content type's access rights, or those of its group of types, don't allow it.");
         }
-        NewInlineBlocks++;
     }
 
     /// <summary>
@@ -1475,9 +1711,6 @@ internal sealed class PropertyWriter(
             CmsApi.SetRenderSetting(item, PropertyValues.DisplayOptionKey, id);
         }
     }
-
-    /// <summary>How many new inline blocks (not copies of current ones) the writes made.</summary>
-    public int NewInlineBlocks { get; private set; }
 
     /// <summary>The registered display option <paramref name="given"/> names; the one stored on the item it replaces passes as is.</summary>
     private string? DisplayOptionId(string? given, string? stored)

@@ -19,6 +19,7 @@ internal static class DraftOperation
     {
         var flow = new WriteFlow(call);
         flow.Project = Projects.ProjectSave.For(call, body.Project, body.Ready, body.Publish, body.PublishAt);
+        flow.OthersDraftsConfirmed = body.IncludeDraft;
         var link = flow.Locator.Resolve(reference);
         var language = flow.Locator.ContentLanguage(flow.Locator.LoadAnyLanguage(link), body.Lang);
         // CMS 13: the content variation asked for, or the one the ref's version belongs to. Its versions are a branch of

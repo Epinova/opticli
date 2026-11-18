@@ -15,6 +15,16 @@ namespace OptiCli.Cms.Content;
 internal sealed class WriteFlow
 {
     public WriteFlow(CmsCall call)
+        : this(call, Compat.InlineBlocks.EditUiCreatesThem(call.Services) == false)
+    {
+    }
+
+    /// <param name="sharedBlocks">
+    /// New blocks in ContentAreas are shared ones in the content's "For this page" folder, as the site's edit UI makes them
+    /// (<see cref="Compat.InlineBlocks.EditUiCreatesThem"/> is false); else inline, as where it makes those, or can't be
+    /// asked. Tests set it; a site's write asks the site.
+    /// </param>
+    internal WriteFlow(CmsCall call, bool sharedBlocks)
     {
         Call = call;
         Types = call.Service<IContentTypeRepository>();
@@ -22,7 +32,7 @@ internal sealed class WriteFlow
         Locator = new ContentLocator(call);
         Writer = new PropertyWriter(call, Locator, new BlockFactory(
             call.Service<EPiServer.Construction.IContentDataFactory<BlockData>>(), call.Service<EPiServer.Construction.IContentDataBuilder>(), Types),
-            call.Service<CategoryRepository>(), call.Service<IFrameRepository>(), call.Service<EPiServer.Web.DisplayOptions>());
+            call.Service<CategoryRepository>(), call.Service<IFrameRepository>(), call.Service<EPiServer.Web.DisplayOptions>(), sharedBlocks);
         Areas = new AreaEditor(Locator, Writer);
     }
 
@@ -55,6 +65,25 @@ internal sealed class WriteFlow
     /// without one. Set before <see cref="Decide"/>, which it changes for <c>ready</c>.
     /// </summary>
     public ProjectSave? Project { get; set; }
+
+    /// <summary>
+    /// The write's publish puts other people's drafts of the content live too, which the caller confirmed
+    /// (<c>includeDraft</c>): their drafts of the blocks of its "For this page" folder go along as well
+    /// (<see cref="SharedAreaBlocks.PublishAlong"/>).
+    /// </summary>
+    public bool OthersDraftsConfirmed { get; set; }
+
+    /// <summary>
+    /// Where the site's edit UI makes new blocks in a ContentArea shared: after a save that publishes (or schedules) the
+    /// content, the drafts of its own folder's blocks its areas show, published along (<see cref="SharedAreaBlocks.PublishAlong"/>);
+    /// null where it makes them inline, which is as before.
+    /// </summary>
+    /// <param name="at">For a schedule: when; else the published version's start-publish date, which a scheduled save sets.</param>
+    public List<SharedBlockResult>? PublishAlong(IContent published, SaveAction action, bool othersConfirmed, bool dryRun, List<ValidationIssue> warnings,
+        IReadOnlySet<int>? except = null, DateTime? at = null) =>
+        Writer.Shared is { } shared && Kind(action) is SaveAction.Publish or SaveAction.Schedule
+            ? shared.PublishAlong(published, Kind(action), at ?? (published as IVersionable)?.StartPublish, othersConfirmed, dryRun, warnings, except)
+            : null;
 
     /// <summary>New content as stored, if a save got that far.</summary>
     public IContent? Saved(IContent writable) =>
@@ -186,10 +215,17 @@ internal sealed class WriteFlow
         // What is reported: an editor never sees a hidden property's value, also not in a diff.
         var changes = Call.Properties.Shown(writable, diff);
         Project?.Check(writable);
-        // For an editor, also the types the edit UI lets a property hold where an editor descriptor sets them, which the
-        // CMS's own validation doesn't know.
-        var issues = (precheck ?? []).Concat(InlineBlockWarnings()).Concat(Writer.Warnings).Concat(ValidationErrors.Validate(Call, writable, action))
-            .Concat(Call.Properties.Checks ? EditUiTypeRules.Check(Call, writable, before) : []).ToList();
+        // The new shared blocks for its areas: checked with it, so both are valid or nothing is saved.
+        var shared = Writer.Shared is { Count: > 0 } pending ? pending : null;
+        var sharedIssues = shared is null ? [] : shared.Prepare(writable, Project).Concat(shared.PreviewNotes(action)).ToList();
+        List<ValidationIssue> issues;
+        using (shared?.AsInline(writable))
+        {
+            // For an editor, also the types the edit UI lets a property hold where an editor descriptor sets them, which the
+            // CMS's own validation doesn't know.
+            issues = (precheck ?? []).Concat(Writer.Warnings).Concat(sharedIssues).Concat(ValidationErrors.Validate(Call, writable, action))
+                .Concat(Call.Properties.Checks ? EditUiTypeRules.Check(Call, writable, before) : []).ToList();
+        }
         var valid = !ValidationErrors.HasErrors(issues);
         var published = Kind(action) == SaveAction.Publish;
         if (Project is null && !published && ProjectSave.NotInProject(Call, writable, intoVersion) is { } notInProject)
@@ -213,6 +249,7 @@ internal sealed class WriteFlow
                 Project = Project?.Planned(writable, review: Kind(action) == SaveAction.RequestApproval,
                     intoVersion is not null && (diff.Count > 0 || saveUnchanged) ? intoVersion
                     : diff.Count == 0 && !saveUnchanged && writable.ContentLink.WorkID > 0 ? writable.ContentLink.WorkID : null),
+                SharedBlocks = DryRunSharedBlocks(shared, writable, action, issues),
             };
         }
         if (!valid)
@@ -223,6 +260,14 @@ internal sealed class WriteFlow
         // filter could take a refusal for a site failure after a save.
         ThrowIfAborted();
         beforeSave?.Invoke();
+        // The blocks first: the content's areas then show them by their refs.
+        var made = shared?.Save(writable, Project, action, issues) ?? [];
+        if (made.Count > 0)
+        {
+            asked = PropertyValues.Snapshot(writable);
+            diff = PropertyValues.Diff(before, asked);
+            changes = Call.Properties.Shown(writable, diff);
+        }
         if (diff.Count == 0 && !saveUnchanged)
         {
             if (Project is not null && !ContentReference.IsNullOrEmpty(writable.ContentLink) && writable.ContentLink.WorkID > 0)
@@ -239,9 +284,16 @@ internal sealed class WriteFlow
                     Validation = warning is null ? (issues.Count > 0 ? issues : null) : [.. issues, warning],
                     SiteChanges = SiteChanges.Report(Call, Types, Call.TakeSiteEvents(), unchanged, null, published: false),
                     Project = project,
+                    SharedBlocks = made.Count > 0 ? made : null,
                 };
             }
-            return new WriteResult { Content = shown, BaseVersion = baseVersion, Validation = issues.Count > 0 ? issues : null };
+            if (made.Count > 0 && writable.ContentLink is { } based && !ContentReference.IsNullOrEmpty(based)
+                && PublishAlong(Repository.Get<IContent>(based), action, OthersDraftsConfirmed, dryRun: false, issues) is { Count: > 0 } along)
+            {
+                // Nothing of the content changed, but a publish of it was asked for: its blocks' new versions go live with it.
+                made = SharedAreaBlocks.Merge(made, along);
+            }
+            return new WriteResult { Content = shown, BaseVersion = baseVersion, Validation = issues.Count > 0 ? issues : null, SharedBlocks = made.Count > 0 ? made : null };
         }
 
         var isNew = ContentReference.IsNullOrEmpty(writable.ContentLink);
@@ -252,25 +304,33 @@ internal sealed class WriteFlow
         string? siteError = null;
         try
         {
-            saved = Call.Save(writable, action);
+            try
+            {
+                saved = Call.Save(writable, action);
+            }
+            catch (System.ComponentModel.DataAnnotations.ValidationException ex) when (ValidationErrors.MasterNotPublished(writable, action, Repository))
+            {
+                throw ValidationErrors.MasterFirst(ex, Call);
+            }
+            catch (Exception ex) when (ex is not AgentException && intoBefore is not null && SaveInto.NewVersionRequired(action, ex) && SavedInto(intoBefore, before) is null)
+            {
+                // A site handler wants a new version on every save, which a save into the draft can't give.
+                throw SaveInto.NewVersionRequiredError(intoBefore.ContentLink.WorkID);
+            }
+            catch (Exception ex) when (ex is not AgentException
+                && (intoBefore is null ? SavedAnyway(writable, isNew, newestBefore) : SavedInto(intoBefore, before)) is { } stored)
+            {
+                // The CMS raises its post-save events inside Save: a site handler that throws (a search indexer, say) fails
+                // the call after the content was saved. The save stands, so report it, or a plan would lose what it made.
+                Call.SiteFailedAfterSave(stored, ex);
+                saved = stored;
+                siteError = $"{ex.Message} ({ex.GetType().FullName})";
+            }
         }
-        catch (System.ComponentModel.DataAnnotations.ValidationException ex) when (ValidationErrors.MasterNotPublished(writable, action, Repository))
+        catch (Exception ex) when (made.Count > 0)
         {
-            throw ValidationErrors.MasterFirst(ex, Call);
-        }
-        catch (Exception ex) when (ex is not AgentException && intoBefore is not null && SaveInto.NewVersionRequired(action, ex) && SavedInto(intoBefore, before) is null)
-        {
-            // A site handler wants a new version on every save, which a save into the draft can't give.
-            throw SaveInto.NewVersionRequiredError(intoBefore.ContentLink.WorkID);
-        }
-        catch (Exception ex) when (ex is not AgentException
-            && (intoBefore is null ? SavedAnyway(writable, isNew, newestBefore) : SavedInto(intoBefore, before)) is { } stored)
-        {
-            // The CMS raises its post-save events inside Save: a site handler that throws (a search indexer, say) fails
-            // the call after the content was saved. The save stands, so report it, or a plan would lose what it made.
-            Call.SiteFailedAfterSave(stored, ex);
-            saved = stored;
-            siteError = $"{ex.Message} ({ex.GetType().FullName})";
+            // The blocks were saved and stay: the caller gets their refs to retry with.
+            throw SharedAreaBlocks.WithMadeBlocks(ex, made, null);
         }
         var result = Repository.Get<IContent>(saved);
         var overridden = Overridden(diff, writable, result);
@@ -299,6 +359,16 @@ internal sealed class WriteFlow
         }
         var siteChanges = SiteChanges.Report(Call, Types, events, result, askedParent, published,
             Call.Properties.Shown(result, overridden).Select(c => new SiteChangedProperty(c.Property, c.Before, c.After)).ToList());
+        if ((published || Kind(action) == SaveAction.Schedule) && PublishAlong(result, action, OthersDraftsConfirmed, dryRun: false, issues) is { Count: > 0 } publishedAlong)
+        {
+            made = SharedAreaBlocks.Merge(made, publishedAlong);
+        }
+        if (made.Count > 0 && Kind(action) == SaveAction.RequestApproval)
+        {
+            issues.Add(new ValidationIssue(null,
+                "The shared blocks were saved as drafts: the approval of the content publishes it alone, so publish them once it is approved (or publish the content through opticli, which publishes them along).",
+                "warning"));
+        }
         return new WriteResult
         {
             Content = ContentSummaries.Describe(result, Types),
@@ -314,7 +384,19 @@ internal sealed class WriteFlow
             SiteChanges = siteChanges,
             IntoVersion = intoVersion is { } target && saved.WorkID == target,
             Project = inProject,
+            SharedBlocks = made.Count > 0 ? made : null,
         };
+    }
+
+    /// <summary>A dry run's <see cref="WriteResult.SharedBlocks"/>: the blocks it would make or change, and the drafts a publish would publish along.</summary>
+    private List<SharedBlockResult>? DryRunSharedBlocks(SharedAreaBlocks? shared, IContent writable, SaveAction action, List<ValidationIssue> issues)
+    {
+        var planned = shared?.Planned(action) ?? [];
+        if (!ContentReference.IsNullOrEmpty(writable.ContentLink) && PublishAlong(writable, action, OthersDraftsConfirmed, dryRun: true, issues) is { Count: > 0 } along)
+        {
+            planned.AddRange(along.Where(a => !planned.Any(p => p.Ref is not null && a.Ref?.Split('_')[0] == p.Ref.Split('_')[0])));
+        }
+        return planned.Count > 0 ? planned : null;
     }
 
     /// <summary>Properties the CMS fills in on save when they are empty.</summary>
@@ -360,20 +442,6 @@ internal sealed class WriteFlow
             .Select(c => stored.TryGetValue(c.Property, out var value) ? c with { After = value } : c)
             .Where(c => c.Before?.GetRawText() != c.After?.GetRawText())
             .ToList();
-    }
-
-    /// <summary>
-    /// A warning when the write made new inline blocks in ContentAreas and the site's edit UI doesn't make them itself:
-    /// editors see and edit those, but adding a block there gives them a shared one, which may surprise them.
-    /// </summary>
-    private IEnumerable<ValidationIssue> InlineBlockWarnings()
-    {
-        if (Writer.NewInlineBlocks > 0 && Compat.InlineBlocks.EditUiCreatesThem(Call.Services) == false)
-        {
-            yield return new ValidationIssue(null,
-                "The site's CMS edit UI doesn't make inline blocks in ContentAreas (UIOptions.InlineBlocksInContentAreaEnabled is off): editors see and can edit, move or remove this one there, but a block they add is a shared one.",
-                "warning");
-        }
     }
 
     /// <summary>The highest version id of the content; 0 when it has none.</summary>

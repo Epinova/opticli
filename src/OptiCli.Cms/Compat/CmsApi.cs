@@ -133,6 +133,16 @@ internal static class CmsApi
 #endif
     }
 
+    /// <summary>
+    /// The Content Assets root, below which the "For this page" folders are. CMS 12's <c>ContentAssetHelper</c> reads it
+    /// from <c>SiteDefinition.Current.ContentAssetsRoot</c>, CMS 13's from <c>SystemDefinition.Current.ContentAssetsRoot</c>:
+    /// the former only passes the latter on (from 12.0 on), and a request without a site (the agent's, on its own port)
+    /// may have no current site, so <c>SystemDefinition</c> is read on both. The registered instance first, where the
+    /// site's container has one.
+    /// </summary>
+    public static ContentReference ContentAssetsRoot(IServiceProvider services) =>
+        (services.GetService(typeof(EPiServer.Web.SystemDefinition)) as EPiServer.Web.SystemDefinition ?? EPiServer.Web.SystemDefinition.Current).ContentAssetsRoot;
+
     /// <summary>The value a page's <c>PageShortcutLink</c> takes for <paramref name="target"/>: a page reference on CMS 12, a content reference on CMS 13.</summary>
     public static ContentReference ShortcutLink(PageData target) =>
 #if CMS13

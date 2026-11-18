@@ -156,6 +156,61 @@ public sealed record WriteResult
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ProjectSaveResult? Project { get; init; }
+
+    /// <summary>
+    /// Shared blocks in the content's own "For this page" folder that the write made, changed or published along: where the
+    /// site's edit UI makes a new block in a ContentArea a shared one (<c>UIOptions.InlineBlocksInContentAreaEnabled</c>
+    /// off), a new block in an area is made so too, and a block given whole in an area that shows such a block of its type
+    /// changes that block. A publish of the content publishes the drafts of the folder's blocks its areas show. For a dry
+    /// run, what it would do (no <see cref="SharedBlockResult.Ref"/> for a block it would make). Null when there were none.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<SharedBlockResult>? SharedBlocks { get; init; }
+}
+
+/// <summary>A shared block a write made, changed or published along (<see cref="WriteResult.SharedBlocks"/>).</summary>
+public sealed record SharedBlockResult
+{
+    /// <summary>Where it is in the content: the area item, as <c>MainArea[2]</c> (or <c>MainArea[0].Area[1]</c> deeper).</summary>
+    public required string Path { get; init; }
+
+    /// <summary>The block's saved version, as <c>id_version</c>; null for one a dry run would make.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Ref { get; init; }
+
+    public required string Name { get; init; }
+
+    /// <summary>The block's content type.</summary>
+    public required string Type { get; init; }
+
+    /// <summary>The "For this page" folder it is in, by id; null in a dry run when the folder would be made with it.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Folder { get; init; }
+
+    /// <summary>CMS version status of <see cref="Ref"/>, camelCase (for a dry run, the status it would get): <c>checkedOut</c> (draft), <c>published</c>, ...</summary>
+    [OutputValues(ContentSummary.VersionStatusName, Open = true)]
+    public string? Status { get; init; }
+
+    /// <summary>One of <see cref="SharedBlockActions"/>.</summary>
+    [OutputValues(typeof(SharedBlockActions))]
+    public required string Action { get; init; }
+}
+
+/// <summary>What a write did to a shared block (<see cref="SharedBlockResult.Action"/>).</summary>
+[ValueSetName("SharedBlockAction")]
+public static class SharedBlockActions
+{
+    /// <summary>Made new for an area item, in the content's "For this page" folder.</summary>
+    public const string Created = "created";
+
+    /// <summary>
+    /// A new version saved with the values an area item gives, for a block of the folder that the area showed already (a
+    /// whole area written again).
+    /// </summary>
+    public const string Updated = "updated";
+
+    /// <summary>A draft the content's areas show, published (or scheduled) along with the content.</summary>
+    public const string Published = "published";
 }
 
 /// <summary>A change the site's own code made while content was saved: <see cref="WriteResult.SiteChanges"/>.</summary>

@@ -192,6 +192,30 @@ internal sealed class CmsCall(IServiceProvider services, CancellationToken abort
     }
 
     /// <summary>
+    /// Saves a "For this page" folder, or a shared block in one, that a write makes or changes for its content's
+    /// ContentAreas (<see cref="Content.SharedAreaBlocks"/>), without the CMS's access check, as the CMS's own
+    /// <c>ContentAssetHelper.GetOrCreateAssetFolder</c> saves the folder. The caller checks the editor's rights first:
+    /// until a new content item is saved, its folder's access rights fall back to the Content Assets root's, which
+    /// editors usually have none on. Edit access to the language, and the publishing gate for a block's publish, still
+    /// apply; a folder passes the gate, as the CMS publishes folders unasked (nothing of theirs is shown to visitors).
+    /// </summary>
+    /// <remarks>
+    /// The site's events of this save are left out of <see cref="TakeSiteEvents"/>: the blocks are reported as the
+    /// write's own (<c>sharedBlocks</c>), not as the site's changes.
+    /// </remarks>
+    public ContentReference SaveAsset(IContent content, SaveAction action)
+    {
+        RequireLanguageAccess(content);
+        if (content is not ContentFolder)
+        {
+            RequirePublishing(action, content);
+        }
+        var saved = Repository.Save(content, action, AccessLevel.NoAccess);
+        _siteEvents.Clear();
+        return saved;
+    }
+
+    /// <summary>
     /// Publishes, or with <paramref name="delayPublishUntil"/> schedules, the project's <paramref name="items"/> through the
     /// CMS's <see cref="ProjectPublisher"/> (the site's own, if it registers one), which sets the project's status around
     /// it: for an editor with Publish on each item (the CMS checks it per item, with the editor's principal), unchecked for
