@@ -135,6 +135,7 @@
 @epinova/opticli interface ServeOptions
 @epinova/opticli interface ServeStopOutput
 @epinova/opticli interface SetOptions
+@epinova/opticli interface SharedBlockResult
 @epinova/opticli interface ShortcutInfo
 @epinova/opticli interface SiteAssetsInfo
 @epinova/opticli interface SiteChange
@@ -206,6 +207,7 @@
 @epinova/opticli type SchedulerState
 @epinova/opticli type ServeMode
 @epinova/opticli type SetCallOptions
+@epinova/opticli type SharedBlockAction
 @epinova/opticli type SiteHostStatus
 @epinova/opticli type SqlValue
 @epinova/opticli type TypeUsageRow
@@ -1686,6 +1688,7 @@ ProjectItemResult.pendingDraft?
 ProjectItemResult.previouslyPublished?
 ProjectItemResult.problem?
 ProjectItemResult.readyBy?
+ProjectItemResult.sharedBlocks?
 ProjectItemResult.validation?
 ProjectResult.alreadyPublished?
 ProjectResult.created?
@@ -2039,6 +2042,16 @@ SetupOptions.opticli?
 SetupOptions.plan?
 SetupOptions.planDir?
 SetupOptions.publish?
+SharedBlockAction = 'created'
+SharedBlockAction = 'published'
+SharedBlockAction = 'updated'
+SharedBlockResult.action
+SharedBlockResult.folder?
+SharedBlockResult.name
+SharedBlockResult.path
+SharedBlockResult.ref?
+SharedBlockResult.status?
+SharedBlockResult.type
 ShortcutInfo.anchor?
 ShortcutInfo.target?
 ShortcutInfo.to?

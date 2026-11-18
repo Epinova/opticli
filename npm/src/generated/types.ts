@@ -887,6 +887,8 @@ export interface ProjectItemResult {
   readyBy?: string;
   /** For a published item: the version that was live until then, to publish again to go back. Null when it never was. */
   previouslyPublished?: number;
+  /** For a publish: the drafts of shared blocks in the item's own "For this page" folder that its published version's areas show, published (scheduled) along with it, as a single publish does (`sharedBlocks`). For a dry run, those it would publish. Null when there are none. */
+  sharedBlocks?: SharedBlockResult[];
 }
 
 /** Response of every project route, and `project` for one refused over its items. */
@@ -1175,6 +1177,26 @@ export interface ServeStopOutput {
   graceful?: boolean;
   /** Why nothing was stopped. */
   message?: string;
+}
+
+/** What a write did to a shared block (`action`). */
+export type SharedBlockAction = 'created' | 'updated' | 'published';
+
+/** A shared block a write made, changed or published along (`sharedBlocks`). */
+export interface SharedBlockResult {
+  /** Where it is in the content: the area item, as `MainArea[2]` (or `MainArea[0].Area[1]` deeper). */
+  path: string;
+  /** The block's saved version, as `id_version`; null for one a dry run would make. */
+  ref?: string;
+  name: string;
+  /** The block's content type. */
+  type: string;
+  /** The "For this page" folder it is in, by id; null in a dry run when the folder would be made with it. */
+  folder?: string;
+  /** CMS version status of `ref`, camelCase (for a dry run, the status it would get): `checkedOut` (draft), `published`, ... */
+  status?: VersionStatus | (string & {});
+  /** One of `SharedBlockActions`. */
+  action: SharedBlockAction;
 }
 
 /** A page's shortcut, in the shape `set Shortcut` takes (with `to` as an identity). */
