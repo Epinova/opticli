@@ -139,7 +139,8 @@ public sealed record SetTeaserArgs(
     [property: Description("What to plan from: latest (editor.Load, latest), published (editor.Load), or loader (IContentLoader, unchecked).")] string From = "latest",
     [property: Description("The language branch; the master language when left out.")] string? Lang = null,
     [property: Description("Test-only: also add this content id to each page's MainContentArea (an area edit).")] int? AddToArea = null,
-    [property: Description("Test-only: also set each page's MainContentArea to this content id alone (a ContentArea value).")] int? AreaItem = null);
+    [property: Description("Test-only: also set each page's MainContentArea to this content id alone (a ContentArea value).")] int? AreaItem = null,
+    [property: Description("Test-only: also set each page's MainContentArea to one new EditorialBlock with this text (a {type, properties} item).")] string? NewBlock = null);
 
 /// <summary>Update steps: the teaser text of pages, planned from the version <see cref="SetTeaserArgs.From"/> says.</summary>
 [OptiCliWriteTool("fixture_set_teaser", Title = "Fixture: set teaser text", Kinds = ContentPlanKinds.Update)]
@@ -164,6 +165,10 @@ public sealed class FixtureSetTeaserTool(IOptiCliEditor editor, IContentLoader l
                 if (args.AreaItem is { } item)
                 {
                     p.Set("MainContentArea", new[] { new { @ref = new ContentReference(item) } });
+                }
+                if (args.NewBlock is { } text)
+                {
+                    p.Set("MainContentArea", new[] { new { type = "EditorialBlock", name = text, properties = new { MainBody = $"<p>{text}</p>" } } });
                 }
                 if (args.AddToArea is { } added)
                 {

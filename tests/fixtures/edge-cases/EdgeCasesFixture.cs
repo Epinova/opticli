@@ -6,7 +6,9 @@
 // the plan. The sites are made by Cms12Fixture.cs on CMS 12; on CMS 13, Cms13Fixture.cs makes the three hosts sites as
 // applications (with start pages of their own below the root) and no nested site, which CMS 13 can't have.
 // POST /opticli-fixture/hand-over (loopback only) saves a version again as another user, for the tests of someone else's
-// draft (opticli's agent only saves as itself).
+// draft (opticli's agent only saves as itself). GET /opticli-fixture/inline-blocks says how the edit UI makes a new block
+// in a ContentArea (UIOptions.InlineBlocksInContentAreaEnabled), and POST /opticli-fixture/inline-block adds an inline
+// block to a ContentArea through the CMS's API, as another tool may where the edit UI makes none (both loopback only).
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using System.Net;
@@ -251,6 +253,14 @@ public partial class EdgeCasesSetup : IInitializableModule
 /// <para><c>POST /opticli-fixture/approval-comment?required=1</c> (or <c>0</c>), also from the machine itself, turns the
 /// approval root's sequence's "require a comment" on (or off), for the tests of a review request that needs one; they turn
 /// it off again.</para>
+/// <para><c>GET /opticli-fixture/inline-blocks</c> answers <c>inline</c> or <c>shared</c>: how the site's edit UI makes a new
+/// block in a ContentArea (<c>UIOptions.InlineBlocksInContentAreaEnabled</c>, which <c>serve</c>'s environment can set with
+/// <c>EPiServer__CmsUI__UI__InlineBlocksInContentAreaEnabled</c>), or <c>unknown</c>. The tests of each mode skip on a site
+/// in the other.</para>
+/// <para><c>POST /opticli-fixture/inline-block?content=&lt;id&gt;&amp;property=&lt;area&gt;&amp;type=&lt;block type&gt;[&amp;name=&lt;name&gt;][&amp;lang=&lt;code&gt;]</c>
+/// with a JSON object of values (strings, parsed as the CMS parses them) adds an inline block of that type at the end of the
+/// area of the content's latest version, saved as a new draft through the CMS's API, as another tool may put one on a
+/// site whose edit UI makes none (CMS 12.20+). Answers the new version (<c>123_456</c>).</para>
 /// </summary>
 [InitializableModule]
 public class OptiCliHandOverFixture : IConfigurableModule
@@ -258,6 +268,10 @@ public class OptiCliHandOverFixture : IConfigurableModule
     public const string Path = "/opticli-fixture/hand-over";
 
     public const string CommentPath = "/opticli-fixture/approval-comment";
+
+    public const string ModePath = "/opticli-fixture/inline-blocks";
+
+    public const string InlinePath = "/opticli-fixture/inline-block";
 
     public void ConfigureContainer(ServiceConfigurationContext context) =>
         context.Services.AddTransient<IStartupFilter, Endpoint>();
@@ -279,6 +293,16 @@ public class OptiCliHandOverFixture : IConfigurableModule
                 if (context.Request.Path.Equals(CommentPath, StringComparison.OrdinalIgnoreCase))
                 {
                     await RequireComment(context);
+                    return;
+                }
+                if (context.Request.Path.Equals(ModePath, StringComparison.OrdinalIgnoreCase) || context.Request.Path.Equals(InlinePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (context.Connection.RemoteIpAddress is not { } from || !IPAddress.IsLoopback(from))
+                    {
+                        context.Response.StatusCode = StatusCodes.Status404NotFound;
+                        return;
+                    }
+                    await (context.Request.Path.Equals(ModePath, StringComparison.OrdinalIgnoreCase) ? Mode(context) : AddInline(context));
                     return;
                 }
                 if (!context.Request.Path.Equals(Path, StringComparison.OrdinalIgnoreCase))
@@ -320,6 +344,79 @@ public class OptiCliHandOverFixture : IConfigurableModule
             });
             next(app);
         };
+
+        /// <summary>How the edit UI makes a new block in a ContentArea, read as the CMS UI reads it (by reflection: the option exists from EPiServer.CMS.UI 12.2x).</summary>
+        private static async Task Mode(HttpContext context)
+        {
+            var type = Type.GetType("EPiServer.Web.UIOptions, EPiServer.Shell", throwOnError: false);
+            var option = type?.GetProperty("InlineBlocksInContentAreaEnabled");
+            var options = type is null ? null : context.RequestServices.GetService(type);
+            var inline = options is null || option is null ? null : option.GetValue(options) as bool?;
+            context.Response.ContentType = "text/plain";
+            await context.Response.WriteAsync(inline switch { true => "inline", false => "shared", _ => "unknown" });
+        }
+
+        private static async Task AddInline(HttpContext context)
+        {
+            var query = context.Request.Query;
+            var repository = context.RequestServices.GetRequiredService<IContentRepository>();
+            var types = context.RequestServices.GetRequiredService<EPiServer.DataAbstraction.IContentTypeRepository>();
+            var inlineProperty = typeof(ContentAreaItem).GetProperty("InlineBlock");
+            if (!HttpMethods.IsPost(context.Request.Method) || inlineProperty is null
+                || !int.TryParse(query["content"], NumberStyles.None, CultureInfo.InvariantCulture, out var id)
+                || types.Load(query["type"].ToString()) is not { } type
+                || query["property"].ToString() is not { Length: > 0 } property)
+            {
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                return;
+            }
+            var values = await System.Text.Json.JsonSerializer.DeserializeAsync<Dictionary<string, string>>(context.Request.Body) ?? [];
+            var language = query["lang"].ToString() is { Length: > 0 } code ? CultureInfo.GetCultureInfo(code) : null;
+            var versions = context.RequestServices.GetRequiredService<EPiServer.Core.IContentVersionRepository>();
+            var content = language is null ? repository.Get<IContent>(new ContentReference(id)) : repository.Get<IContent>(new ContentReference(id), language);
+            var latest = versions.List(content.ContentLink.ToReferenceWithoutVersion())
+                .Where(v => language is null || v.LanguageBranch == language.Name)
+                .Where(v => content is not ILocale { Language: { } own } || v.LanguageBranch == own.Name)
+                .OrderByDescending(v => v.ContentLink.WorkID).First();
+            var writable = (IContent)((IReadOnly)repository.Get<IContent>(latest.ContentLink)).CreateWritableClone();
+            var factory = context.RequestServices.GetRequiredService<EPiServer.Construction.IContentDataFactory<BlockData>>();
+            var builder = context.RequestServices.GetRequiredService<EPiServer.Construction.IContentDataBuilder>();
+            var block = factory.CreateInstance(type);
+            builder.AddProperties(block, new EPiServer.Construction.BuildingContext(type) { SetPropertyValues = true });
+            typeof(ContentData).GetProperty("ContentTypeID")?.SetValue(block, type.ID);
+            foreach (var (name, value) in values)
+            {
+                block.Property[name].ParseToSelf(value);
+            }
+            var item = new ContentAreaItem();
+            inlineProperty.SetValue(item, block);
+            if (query["name"].ToString() is { Length: > 0 } inlineName)
+            {
+                // CMS 12: IDictionary<string, object>, null until set; CMS 13: IDictionary<string, string>, made on first read.
+                var settings = typeof(ContentAreaItem).GetProperty("RenderSettings")!;
+                var current = settings.GetValue(item);
+                if (current is null)
+                {
+                    current = new Dictionary<string, object>();
+                    settings.SetValue(item, current);
+                }
+                switch (current)
+                {
+                    case IDictionary<string, string> strings:
+                        strings["data-inlineblockname"] = inlineName;
+                        break;
+                    case IDictionary<string, object> objects:
+                        objects["data-inlineblockname"] = inlineName;
+                        break;
+                }
+            }
+            var area = writable.Property[property].Value as ContentArea is { } existing ? existing.CreateWritableClone() : new ContentArea();
+            area.Items.Add(item);
+            writable.Property[property].Value = area;
+            var saved = repository.Save(writable, SaveAction.Save | SaveAction.ForceNewVersion, AccessLevel.NoAccess);
+            context.Response.ContentType = "text/plain";
+            await context.Response.WriteAsync(saved.ToString());
+        }
 
         private static async Task RequireComment(HttpContext context)
         {

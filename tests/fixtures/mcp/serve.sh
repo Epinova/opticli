@@ -2,7 +2,7 @@
 # Starts (or stops) the MCP test site that setup.sh built, on a loopback port, in Development, and waits until the
 # MCP module answers. The site runs in the background; its output goes to App_Data/mcp-site-<port>.log.
 #
-#   serve.sh <site-dir> [--port <port>] [--no-publish] [--no-preview-links] [--stop]
+#   serve.sh <site-dir> [--port <port>] [--no-publish] [--no-preview-links] [--inline-blocks on|off] [--stop]
 #
 # --port              default 5180 (MCP_PORT)
 # --no-publish        start with OptiCli__Mcp__AllowPublish=false and OptiCli__Mcp__AllowDelete=false (the module's
@@ -10,12 +10,15 @@
 #                     another port beside the default one (all use the same database)
 # --no-preview-links  start with OptiCli__Mcp__AllowPreviewLinks=false (the assistant's preview links, on by default,
 #                     turned off): the third configuration, usually on a third port
+# --inline-blocks     on or off: start with EPiServer__CmsUI__UI__InlineBlocksInContentAreaEnabled=true|false, so the
+#                     edit UI (and the module's writes) make a new block in a ContentArea inline or as a shared block in
+#                     the page's "For this page" folder. Without it, the CMS's default: off on CMS 12, on on CMS 13
 # --stop              stop the instance on that port
 # Other OptiCli__Mcp__* settings in the environment (e.g. OptiCli__Mcp__AccessTokenLifetime=00:00:30) are passed on.
 set -euo pipefail
 
 if [ $# -lt 1 ]; then
-  sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 fi
 SITE=$(cd "$1" && pwd)
@@ -24,11 +27,19 @@ PORT=${MCP_PORT:-5180}
 STOP=0
 NO_PUBLISH=0
 NO_PREVIEW_LINKS=0
+INLINE_BLOCKS=
 while [ $# -gt 0 ]; do
   case "$1" in
     --port) PORT=$2; shift 2 ;;
     --no-publish) NO_PUBLISH=1; shift ;;
     --no-preview-links) NO_PREVIEW_LINKS=1; shift ;;
+    --inline-blocks)
+      case "${2:-}" in
+        on) INLINE_BLOCKS=true ;;
+        off) INLINE_BLOCKS=false ;;
+        *) echo "--inline-blocks takes on or off." >&2; exit 1 ;;
+      esac
+      shift 2 ;;
     --stop) STOP=1; shift ;;
     *) echo "Unknown option $1" >&2; exit 1 ;;
   esac
@@ -81,6 +92,9 @@ fi
 if [ "$NO_PREVIEW_LINKS" = 1 ]; then
   settings+=("OptiCli__Mcp__AllowPreviewLinks=false")
 fi
+if [ -n "$INLINE_BLOCKS" ]; then
+  settings+=("EPiServer__CmsUI__UI__InlineBlocksInContentAreaEnabled=$INLINE_BLOCKS")
+fi
 cd "$SITE"
 # setsid: the site outlives this shell (and the container session that ran it).
 env ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS="$URL" "${settings[@]}" \
@@ -108,4 +122,5 @@ if grep -E '\[(mcp-fixture|edge-cases)\] setup failed' -A3 "$LOG" >&2; then
   exit 1
 fi
 publish=$(curl -s "$URL/.well-known/oauth-authorization-server/episerver/opticli" | jq -r '.scopes_supported | index("content:publish") != null')
-echo "running: $URL (pid $(cat "$PIDFILE"), publishing allowed: $publish, log $LOG)"
+blocks=$(curl -s --max-time 5 "$URL/opticli-fixture/inline-blocks" || true)
+echo "running: $URL (pid $(cat "$PIDFILE"), publishing allowed: $publish, new area blocks: ${blocks:-unknown}, log $LOG)"
