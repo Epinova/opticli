@@ -215,7 +215,7 @@ public static class PlanSimulation
         // A GUID is only checked for the step that creates the content: whether it exists already.
         simulated = simulated with { Id = null, ContentGuid = updateExisting || creating.Index != step.Index ? null : creating.Operation.ContentGuid };
         return new Simulation(simulated, target, standIns, skipped, references, areaBlock is null ? null
-            : [$"Dry-run as the shared block operation {creating.Index} adds to {areaBlock.Property} will be: a {areaBlock.Type} made in the \"For this page\" folder of {Place(areaBlock.Ref)}, with every value set on it so far."]);
+            : [$"Dry-run as the shared block operation {creating.Index} adds to {areaBlock.Property} will be: {areaBlock.Type} \"{name ?? "(planned)"}\" made in the \"For this page\" folder of {Place(areaBlock.Ref)}, with every value set on it so far."]);
     }
 
     private static string? Parent(WriteOperation op) => op switch
@@ -334,7 +334,7 @@ public static class PlanSimulation
     }
 
     /// <summary>A step that names a ContentArea item by its position: an area edit by index, a set of <c>MainArea[2]</c>.</summary>
-    private static bool ByPosition(WriteOperation op) => op switch
+    internal static bool ByPosition(WriteOperation op) => op switch
     {
         AreaEdit { Index: not null } => true,
         AreaEdit nested when nested.Property.Contains('[') => true,

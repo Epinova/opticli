@@ -104,8 +104,8 @@ internal sealed class WriteFlow
         throw AgentException.Usage(
             $"{what} would go for review while its ContentAreas show blocks of its \"For this page\" folder that aren't published: {string.Join(", ", unpublished)}. The approval publishes the content alone, so it would go live without those blocks' changes.",
             Call.ForCaller(
-                "Save the change as a draft first (without --request-approval), publish those blocks (sharedBlocks gives their refs: opticli publish <ref>), then send the content for review; or save the content and its blocks in a CMS project (--in-project <project> --ready --request-approval) so they are reviewed and published together. Nothing was saved.",
-                "Save the change as a draft first (without requestApproval), publish those blocks (sharedBlocks gives their refs: publish_content on each), then send the content for review; or save the content and its blocks in a CMS project (project, ready and requestApproval) so they are reviewed and published together. Nothing was saved."));
+                "Save the change as a draft first (without --request-approval), publish those blocks (sharedBlocks gives their refs: opticli publish <ref>, with --request-approval where they need approval too), then send the content for review; or save the content and its blocks in a CMS project (--in-project <project> --ready --request-approval) so they are reviewed and published together. Nothing was saved.",
+                "Save the change as a draft first (without requestApproval), publish those blocks (sharedBlocks gives their refs: publish_content on each, with requestApproval where they need approval too), then send the content for review; or save the content and its blocks in a CMS project (project, ready and requestApproval) so they are reviewed and published together. Nothing was saved."));
     }
 
     /// <summary>New content as stored, if a save got that far.</summary>

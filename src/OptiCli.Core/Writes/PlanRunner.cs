@@ -324,7 +324,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     }
 
     /// <summary>
-    /// For plans that publish, request approval, translate, edit a composition or base a change on another version (<c>from</c>), the existing
+    /// For plans that publish, request approval, translate, edit a composition, base a change on another version (<c>from</c>) or name a ContentArea item by its position, the existing
     /// content (and branch) each step writes, so that a step can be dry-run with what earlier steps change on the same
     /// content (<see cref="PlanSimulation.OnExisting"/>), and the order of publishes checked
     /// (<see cref="PlanSimulation.MasterFirst"/>). Steps whose ref can't be resolved are left out; their own dry run reports why.
@@ -332,7 +332,10 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     private async Task<Dictionary<int, PlanTarget>> TargetsAsync(IReadOnlyList<PlanStep> resolved, IReadOnlyDictionary<string, int> existing, CancellationToken cancellationToken)
     {
         var targets = new Dictionary<int, PlanTarget>();
-        if (!resolved.Any(s => s.Operation is PublishOperation or TranslateOperation or SetOperation { From: not null } or AreaEdit { From: not null } or CompositionEdit || MayPublish(s.Operation)))
+        // Also for a plan that names a ContentArea item by its position: an earlier area step decides which item that is
+        // (and where the site makes new area blocks shared, whether it is one the step can't change that way).
+        if (!resolved.Any(s => s.Operation is PublishOperation or TranslateOperation or SetOperation { From: not null } or AreaEdit { From: not null } or CompositionEdit || MayPublish(s.Operation)
+            || PlanSimulation.ByPosition(s.Operation)))
         {
             return targets;
         }

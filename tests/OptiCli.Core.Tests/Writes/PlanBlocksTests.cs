@@ -56,7 +56,7 @@ public class PlanBlocksTests
         var block = Assert.IsType<BlockCreateOperation>(simulation.Operation);
         Assert.Equal(("TeaserBlock", "Teaser", "100", "Two", "t"), (block.Type, block.Name, block.For, (string?)block.Properties!["Heading"], (string?)block.Properties["Text"]));
         Assert.Equal("teaser", simulation.Target);
-        Assert.Contains("operation 1 adds to MainArea", Assert.Single(simulation.Notes!));
+        Assert.Contains("operation 1 adds to MainArea will be: TeaserBlock \"Teaser\"", Assert.Single(simulation.Notes!));
         // A publish of it, as the block published.
         Assert.True(Assert.IsType<BlockCreateOperation>(PlanSimulation.For(Plan.Steps[4], Plan.Steps, None, updateExisting: false)!.Operation).Publish);
         // On an existing page: in that page's folder.
@@ -99,7 +99,7 @@ public class PlanBlocksTests
         var refused = PlanBlocks.OnPlannedBlock(set, output);
 
         Assert.NotNull(refused);
-        Assert.Contains("MainArea[1] names by its position the block an earlier operation adds", refused.Message);
+        Assert.Contains("MainArea[1] names by its position the new block an earlier operation puts", refused.Message);
         Assert.Contains("\"$<id>\"", refused.Hint);
         Assert.NotNull(PlanBlocks.OnPlannedBlock(new AreaEdit("1", "MainArea", AreaOps.Set, Index: 1) { Values = [] }, output));
         Assert.NotNull(PlanBlocks.OnPlannedBlock(new AreaEdit("1", "MainArea[1].Area", AreaOps.Add) { Type = "TeaserBlock" }, output));

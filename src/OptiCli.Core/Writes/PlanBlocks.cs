@@ -120,8 +120,8 @@ public static class PlanBlocks
                 && (position.Equals(s.Path, StringComparison.OrdinalIgnoreCase) || position.StartsWith(s.Path + ".", StringComparison.OrdinalIgnoreCase))) is { } block)
             {
                 return new UsageException(
-                    $"{position} names by its position the block an earlier operation adds at {block.Path}, which the site makes a shared {block.Type} in the content's \"For this page\" folder (its edit UI makes no inline blocks): once that operation has run, the block is content of its own, and its values can't be changed through the area.",
-                    "Give that area add an \"id\" and change the block with a set on \"$<id>\" (or give its values in the add itself).");
+                    $"{position} names by its position the new block an earlier operation puts at {block.Path}, which the site makes a shared {block.Type} in the content's \"For this page\" folder (its edit UI makes no inline blocks): once that operation has run, the block is content of its own, and its values can't be changed through the area.",
+                    "Give the block its values where it is made; or add it with an area add that has an \"id\", and change it with a set on \"$<id>\".");
             }
         }
         return null;
