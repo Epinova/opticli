@@ -211,6 +211,12 @@ public static class SharedBlockActions
 
     /// <summary>A draft the content's areas show, published (or scheduled) along with the content.</summary>
     public const string Published = "published";
+
+    /// <summary>
+    /// Already in the area: an area add that adds a block only when it is missing (<c>--if-missing</c>, <c>apply
+    /// --update-existing</c>) found this block of the folder there, so nothing was made or saved.
+    /// </summary>
+    public const string Existing = "existing";
 }
 
 /// <summary>A change the site's own code made while content was saved: <see cref="WriteResult.SiteChanges"/>.</summary>

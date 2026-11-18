@@ -298,6 +298,13 @@ internal sealed class EditUiProperties(CmsCall call, bool check)
         }
     }
 
+    /// <summary>
+    /// <paramref name="json"/>, the values of <paramref name="block"/> as a snapshot gives them, without those the caller
+    /// doesn't see (also inside its local blocks and lists); all of them for the developer.
+    /// </summary>
+    public JsonElement ShownValues(IContentData block, JsonElement json) =>
+        !check || json.ValueKind != JsonValueKind.Object ? json : Shown(block, json);
+
     private JsonElement Shown(IContentData block, JsonElement json)
     {
         var shown = new Dictionary<string, JsonElement?>(StringComparer.Ordinal);

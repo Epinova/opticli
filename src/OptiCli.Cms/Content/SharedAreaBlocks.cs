@@ -517,24 +517,98 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     /// <param name="kind"><see cref="SaveAction.Publish"/> or <see cref="SaveAction.Schedule"/>.</param>
     /// <param name="at">For a schedule: when.</param>
     /// <param name="dryRun">Only report what would be published.</param>
-    /// <param name="except">Blocks to leave out (a project publish's own items).</param>
+    /// <param name="inProject">
+    /// For a project publish: whether a block's draft (by content id and language) is an item of the project: null when it
+    /// isn't, else whether the project publishes it (marked Ready to publish). A project's items follow the project's rules,
+    /// so they are never published along; one that stays behind as a draft gets a warning.
+    /// </param>
     public List<SharedBlockResult> PublishAlong(IContent published, SaveAction kind, DateTime? at, bool othersConfirmed, bool dryRun, List<ValidationIssue> warnings,
-        IReadOnlySet<int>? except = null)
+        Func<int, CultureInfo?, bool?>? inProject = null)
     {
         var results = new List<SharedBlockResult>();
-        if (ContentReference.IsNullOrEmpty(published.ContentLink)
-            || call.Service<ContentAssetHelper>().GetAssetFolder(published.ContentLink.ToReferenceWithoutVersion()) is not { } folder)
+        foreach (var (path, block, latest, version, folderId) in OwnBlocksShown(published))
         {
-            return results;
+            if (latest.Status is not (VersionStatus.CheckedOut or VersionStatus.CheckedIn))
+            {
+                continue;
+            }
+            var what = $"The block {latest.ContentLink} ('{version.Name}') at {path}";
+            if (inProject?.Invoke(block.ContentLink.ID, (version as ILocalizable)?.Language) is { } ready)
+            {
+                if (!ready)
+                {
+                    warnings.Add(new ValidationIssue(path,
+                        $"{what} is a draft in the project that isn't marked Ready to publish, so it stays a draft: the content goes live showing the block's published version (or nothing of it, where it was never published). Mark it ready and publish the project to put it live.",
+                        "warning"));
+                }
+                continue;
+            }
+            if (!othersConfirmed && !PendingDrafts.SavedBy(latest.SavedBy, call.UserName))
+            {
+                warnings.Add(new ValidationIssue(path, $"{what} is a draft {(string.IsNullOrWhiteSpace(latest.SavedBy) ? "saved without a user name" : $"{latest.SavedBy} saved")}, so it wasn't published along: those changes aren't yours. Publish it on its own if they should go live.", "warning"));
+                continue;
+            }
+            if (!call.Allows(block, AccessLevel.Publish))
+            {
+                // Published unchecked (SaveAsset): a block with access rights of its own goes live only for someone who may publish it.
+                warnings.Add(new ValidationIssue(path, $"{what} is a draft, and you don't have Publish access to that block, so it wasn't published along. Ask someone who may publish it.", "warning"));
+                continue;
+            }
+            if (Approvals.Applying(call, block.ContentLink) is not null)
+            {
+                warnings.Add(new ValidationIssue(path, $"{what} has an approval sequence, so it wasn't published along; send it for review on its own.", "warning"));
+                continue;
+            }
+            var writable = (IContent)((IReadOnly)version).CreateWritableClone();
+            if (ValidationErrors.Validate(call, writable, kind) is var issues && ValidationErrors.HasErrors(issues))
+            {
+                warnings.Add(new ValidationIssue(path, $"{what} doesn't pass validation, so it wasn't published along: {string.Join(" ", issues.Where(i => i.Severity == "error").Select(i => i.Message))}", "warning"));
+                continue;
+            }
+            if (dryRun)
+            {
+                results.Add(new SharedBlockResult
+                {
+                    Path = path,
+                    Ref = latest.ContentLink.ToString(),
+                    Name = version.Name,
+                    Type = call.Service<IContentTypeRepository>().Load(version.ContentTypeID)?.Name ?? version.ContentTypeID.ToString(CultureInfo.InvariantCulture),
+                    Folder = folderId,
+                    Status = StatusName(kind == SaveAction.Schedule ? VersionStatus.DelayedPublish : VersionStatus.Published),
+                    Action = SharedBlockActions.Published,
+                });
+                continue;
+            }
+            if (kind == SaveAction.Schedule && writable is IVersionable versionable)
+            {
+                versionable.StartPublish = at?.ToLocalTime();
+            }
+            var saved = call.SaveAsset(writable, kind);
+            results.Add(Result(path, locator.Repository.Get<IContent>(saved), null, folderId, SharedBlockActions.Published));
         }
-        var language = published is ILocalizable { Language: { } own } && !CultureInfo.InvariantCulture.Equals(own) ? own : null;
+        return results;
+    }
+
+    /// <summary>
+    /// The blocks of <paramref name="content"/>'s own "For this page" folder that its areas show (and the areas of those
+    /// blocks' latest versions, at any depth), each once: its place, the block, its latest version in the content's
+    /// language, that version, and the folder's id. Blocks from anywhere else aren't walked.
+    /// </summary>
+    private IEnumerable<(string Path, IContent Block, ContentVersion Latest, IContent Version, string FolderId)> OwnBlocksShown(IContent content)
+    {
+        if (ContentReference.IsNullOrEmpty(content.ContentLink)
+            || call.Service<ContentAssetHelper>().GetAssetFolder(content.ContentLink.ToReferenceWithoutVersion()) is not { } folder)
+        {
+            yield break;
+        }
+        var language = content is ILocalizable { Language: { } own } && !CultureInfo.InvariantCulture.Equals(own) ? own : null;
         var folderId = folder.ContentLink.ID.ToString(CultureInfo.InvariantCulture);
         var seen = new HashSet<int>();
-        var queue = new Queue<(IContentData Content, string Path)>([(published, "")]);
+        var queue = new Queue<(IContentData Content, string Path)>([(content, "")]);
         while (queue.Count > 0)
         {
-            var (content, prefix) = queue.Dequeue();
-            foreach (var (item, path, _, _) in Located(content, prefix))
+            var (shown, prefix) = queue.Dequeue();
+            foreach (var (item, path, _, _) in Located(shown, prefix).ToList())
             {
                 if (ContentReference.IsNullOrEmpty(item.ContentLink) || InlineBlocks.Of(item) is not null || !seen.Add(item.ContentLink.ID)
                     || !locator.Repository.TryGet<IContent>(item.ContentLink.ToReferenceWithoutVersion(), new LoaderOptions { LanguageLoaderOption.FallbackWithMaster() }, out var block)
@@ -550,56 +624,123 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
                 var latest = branch[0];
                 var version = locator.Repository.Get<IContent>(latest.ContentLink);
                 queue.Enqueue((version, path));
-                if (latest.Status is not (VersionStatus.CheckedOut or VersionStatus.CheckedIn) || except?.Contains(block.ContentLink.ID) == true)
-                {
-                    continue;
-                }
-                var what = $"The block {latest.ContentLink} ('{version.Name}') at {path}";
-                if (!othersConfirmed && !PendingDrafts.SavedBy(latest.SavedBy, call.UserName))
-                {
-                    warnings.Add(new ValidationIssue(path, $"{what} is a draft {(string.IsNullOrWhiteSpace(latest.SavedBy) ? "saved without a user name" : $"{latest.SavedBy} saved")}, so it wasn't published along: those changes aren't yours. Publish it on its own if they should go live.", "warning"));
-                    continue;
-                }
-                if (!call.Allows(block, AccessLevel.Publish))
-                {
-                    // Published unchecked (SaveAsset): a block with access rights of its own goes live only for someone who may publish it.
-                    warnings.Add(new ValidationIssue(path, $"{what} is a draft, and you don't have Publish access to that block, so it wasn't published along. Ask someone who may publish it.", "warning"));
-                    continue;
-                }
-                if (Approvals.Applying(call, block.ContentLink) is not null)
-                {
-                    warnings.Add(new ValidationIssue(path, $"{what} has an approval sequence, so it wasn't published along; send it for review on its own.", "warning"));
-                    continue;
-                }
-                var writable = (IContent)((IReadOnly)version).CreateWritableClone();
-                if (ValidationErrors.Validate(call, writable, kind) is var issues && ValidationErrors.HasErrors(issues))
-                {
-                    warnings.Add(new ValidationIssue(path, $"{what} doesn't pass validation, so it wasn't published along: {string.Join(" ", issues.Where(i => i.Severity == "error").Select(i => i.Message))}", "warning"));
-                    continue;
-                }
-                if (dryRun)
-                {
-                    results.Add(new SharedBlockResult
-                    {
-                        Path = path,
-                        Ref = latest.ContentLink.ToString(),
-                        Name = version.Name,
-                        Type = call.Service<IContentTypeRepository>().Load(version.ContentTypeID)?.Name ?? version.ContentTypeID.ToString(CultureInfo.InvariantCulture),
-                        Folder = folderId,
-                        Status = StatusName(kind == SaveAction.Schedule ? VersionStatus.DelayedPublish : VersionStatus.Published),
-                        Action = SharedBlockActions.Published,
-                    });
-                    continue;
-                }
-                if (kind == SaveAction.Schedule && writable is IVersionable versionable)
-                {
-                    versionable.StartPublish = at?.ToLocalTime();
-                }
-                var saved = call.SaveAsset(writable, kind);
-                results.Add(Result(path, locator.Repository.Get<IContent>(saved), null, folderId, SharedBlockActions.Published));
+                yield return (path, block, latest, version, folderId);
             }
         }
-        return results;
+    }
+
+    /// <summary>
+    /// What a review request of <paramref name="version"/> would leave unpublished: the blocks this write makes or changes,
+    /// and the drafts (never published, or with a newer draft) of the blocks of its own "For this page" folder that its
+    /// areas show. The approval publishes the content alone.
+    /// </summary>
+    /// <returns>Each as its place and what it is (<c>MainArea[2] (a new block)</c>); empty when there are none.</returns>
+    public List<string> UnpublishedForReview(IContent version)
+    {
+        var listed = new List<string>();
+        var ids = new HashSet<int>();
+        foreach (var pending in _pending)
+        {
+            listed.Add(pending.IsNew ? $"{pending.Path} (a new block)" : $"{pending.Path} (block {pending.Existing!.ContentLink.ToReferenceWithoutVersion()}, changed)");
+            if (!pending.IsNew)
+            {
+                ids.Add(pending.Existing!.ContentLink.ID);
+            }
+        }
+        foreach (var (path, block, latest, _, _) in OwnBlocksShown(version))
+        {
+            if (latest.Status is VersionStatus.CheckedOut or VersionStatus.CheckedIn && ids.Add(block.ContentLink.ID))
+            {
+                listed.Add($"{path} (block {block.ContentLink.ToReferenceWithoutVersion()}, a draft)");
+            }
+        }
+        return listed;
+    }
+
+    /// <summary>The blocks of the folder an area add found already there (<see cref="Find"/>), to report.</summary>
+    private readonly List<IContent> _found = [];
+
+    /// <summary>
+    /// A block of the owner's folder that an area add which adds only what is missing (<c>--if-missing</c>, <c>apply
+    /// --update-existing</c>) found already in the area: listed in the result (<see cref="SharedBlockActions.Existing"/>),
+    /// so a plan run again reaches it by its ref as it did the first time.
+    /// </summary>
+    public void Find(IContent block)
+    {
+        if (!_found.Any(f => f.ContentLink.ID == block.ContentLink.ID))
+        {
+            _found.Add(block);
+        }
+    }
+
+    /// <summary>The blocks <see cref="Find"/> recorded, with their place in <paramref name="owner"/> (as the write leaves it).</summary>
+    public List<SharedBlockResult> Found(IContent owner)
+    {
+        if (_found.Count == 0)
+        {
+            return [];
+        }
+        var places = Located(owner, "").ToList();
+        var folder = Folder()?.ContentLink.ID.ToString(CultureInfo.InvariantCulture);
+        return _found.Select(block => places.FirstOrDefault(p => InlineBlocks.Of(p.Item) is null && !ContentReference.IsNullOrEmpty(p.Item.ContentLink)
+                && p.Item.ContentLink.ID == block.ContentLink.ID) is { Item: not null } place
+                ? Result(place.Path, block, null, folder ?? "", SharedBlockActions.Existing) with { Folder = folder }
+                : null)
+            .OfType<SharedBlockResult>()
+            .ToList();
+    }
+
+    /// <summary>
+    /// A dry run's <paramref name="changes"/> with each block it would make shown as what it will be, not by the GUID its
+    /// item carries until it is saved: <c>{type, name, properties, shared: "planned"}</c>, its values as the caller may see
+    /// them (<see cref="EditUiProperties"/>), also for blocks inside it.
+    /// </summary>
+    public IReadOnlyList<PropertyChange> ShowPlanned(IReadOnlyList<PropertyChange> changes)
+    {
+        if (!_pending.Any(p => p.IsNew))
+        {
+            return changes;
+        }
+        return changes.Select(c => c.After is { ValueKind: JsonValueKind.Array or JsonValueKind.Object } after
+            ? c with { After = JsonSerializer.SerializeToElement(Planned(System.Text.Json.Nodes.JsonNode.Parse(after.GetRawText()))) }
+            : c).ToList();
+    }
+
+    /// <summary>A copy of <paramref name="node"/> with the items of new blocks shown as planned blocks.</summary>
+    private System.Text.Json.Nodes.JsonNode? Planned(System.Text.Json.Nodes.JsonNode? node, int depth = 0)
+    {
+        switch (node)
+        {
+            case System.Text.Json.Nodes.JsonArray array when depth <= MaxDepth:
+                return new System.Text.Json.Nodes.JsonArray(array.Select(item => Planned(item, depth + 1)).ToArray());
+            case System.Text.Json.Nodes.JsonObject item when depth <= MaxDepth:
+                if (item["ref"] is null && item["guid"] is System.Text.Json.Nodes.JsonValue value && value.TryGetValue<string>(out var text) && Guid.TryParse(text, out var guid)
+                    && _pending.FirstOrDefault(p => p.IsNew && p.Guid == guid) is { } pending)
+                {
+                    var values = PropertyValues.Snapshot(pending.Values).Where(p => p.Value is not null).ToDictionary(p => p.Key, p => p.Value);
+                    var shown = call.Properties.ShownValues(pending.Values, JsonSerializer.SerializeToElement(values));
+                    var planned = new System.Text.Json.Nodes.JsonObject
+                    {
+                        ["type"] = pending.Type.Name,
+                        ["name"] = string.IsNullOrEmpty(pending.Name) ? pending.GivenName : pending.Name,
+                        ["properties"] = Planned(System.Text.Json.Nodes.JsonNode.Parse(shown.GetRawText()), depth + 1),
+                    };
+                    foreach (var (key, kept) in item.Where(p => p.Key is not ("guid" or "ref")))
+                    {
+                        planned[key] = kept?.DeepClone();
+                    }
+                    planned["shared"] = "planned";
+                    return planned;
+                }
+                var copy = new System.Text.Json.Nodes.JsonObject();
+                foreach (var (key, inner) in item)
+                {
+                    copy[key] = Planned(inner, depth + 1);
+                }
+                return copy;
+            default:
+                return node?.DeepClone();
+        }
     }
 
     /// <summary>

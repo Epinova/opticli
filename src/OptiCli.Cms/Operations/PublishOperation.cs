@@ -58,6 +58,8 @@ internal static class PublishOperation
         {
             Approvals.RequireNotInReview([.. branch.Where(v => v.ContentLink.WorkID == version.ContentLink.WorkID)], what, versionLanguage?.Name);
         }
+        // The approval would publish it alone: not while it shows blocks of its own folder that aren't published.
+        flow.RequireBlocksPublishedForReview(version, action, what);
         var pending = publishing || scheduling
             ? PendingDrafts.Require(flow.Locator.PendingDraft(branch, version),
                 body.IncludeDraft || (named is not null && call.NamedVersionConfirmsDraft), dryRun: false, what, versionLanguage?.Name)

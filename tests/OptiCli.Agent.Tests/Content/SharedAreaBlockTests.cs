@@ -352,6 +352,15 @@ public class SharedAreaBlockTests
         /// <summary>Raises one of the CMS's content events, as a site handler's own save would.</summary>
         public Action<string, ContentEventArgs> Raise { get; }
 
+        /// <summary>The values a new ItemBlock gets from its type (the CMS's defaults), before a write sets any.</summary>
+        public Action<BlockData>? Defaults { get; set; }
+
+        private BlockData WithDefaults(BlockData block)
+        {
+            Defaults?.Invoke(block);
+            return block;
+        }
+
         public Site(CmsCaller caller = CmsCaller.Developer)
         {
             var handlers = new Dictionary<string, Delegate?>();
@@ -393,7 +402,7 @@ public class SharedAreaBlockTests
             var factory = Recorder<EPiServer.Construction.IContentDataFactory<BlockData>>.Create();
             factory.Recorder.Answer = (method, args) => method.Name != "CreateInstance" ? null
                 : args is [ContentType { ID: BoxType }] ? InlineBlockWriteTests.BoxBlock.Create()
-                : PropertyWriterTests.ItemBlock.Create();
+                : WithDefaults(PropertyWriterTests.ItemBlock.Create());
             var services = new ServiceCollection()
                 .AddSingleton(types)
                 .AddSingleton(repository)
@@ -1075,6 +1084,219 @@ public class SharedAreaBlockTests
             result.SharedBlocks!.Select(s => (s.Path, s.Action, s.Name)));
         Assert.Equal([second.ContentLink.ID, first.ContentLink.ID], Items(writable).Take(2).Select(i => i.ContentLink.ID));
         Assert.Equal(("One changed", "Two changed"), (Title(site.Store.Latest(first.ContentLink.ID)), Title(site.Store.Latest(second.ContentLink.ID))));
+    }
+
+    /// <summary>An item showing an inline <paramref name="type"/> block with that title, named in the area as <paramref name="name"/>.</summary>
+    private static ContentAreaItem Inline(string name, string title, int type = ItemType)
+    {
+        var block = type == BoxType ? (BlockData)InlineBlockWriteTests.BoxBlock.Create() : PropertyWriterTests.ItemBlock.Create();
+        block.Property["Title"].Value = title;
+        var item = new ContentAreaItem();
+        InlineBlocks.Set(item, block, type);
+        CmsApi.SetRenderSetting(item, InlineBlocks.NameKey, name);
+        return item;
+    }
+
+    [Fact]
+    public void A_review_request_is_refused_while_the_page_has_new_or_draft_blocks_of_its_folder()
+    {
+        var site = new Site();
+        var page = site.Page(folder: true);
+        var draft = site.Block(site.Folder(page).ContentLink, "Draft", "Draft", VersionStatus.CheckedOut);
+        page = OwnerOf(site, draft, Ref(draft));
+        site.Store.Saves.Clear();
+        const SaveAction review = SaveAction.RequestApproval | SaveAction.ForceNewVersion;
+
+        // A new block, in a dry run too.
+        foreach (var dryRun in new[] { true, false })
+        {
+            var flow = site.Flow();
+            var (writable, before) = site.Write(flow, page, ops: [new AreaOperation { Op = AreaOps.Add, Property = "Area", Type = "ItemBlock", Values = Values("""{"Title": "New"}""") }]);
+            var refused = Assert.Throws<AgentException>(() => site.Save(flow, writable, before, dryRun, review));
+            Assert.Equal(AgentErrorCodes.Usage, refused.Code);
+            Assert.Contains("Area[1] (a new block)", refused.Message);
+            Assert.Contains($"Area[0] (block {draft.ContentLink.ID}, a draft)", refused.Message);
+            Assert.Contains("CMS project", refused.Hint);
+        }
+        // Only a draft block the page shows already.
+        var titled = site.Flow();
+        var (changed, changedBefore) = site.Write(titled, page, """{"Title": "Changed"}""");
+        Assert.Contains("Area[0] (block", Assert.Throws<AgentException>(() => site.Save(titled, changed, changedBefore, action: review)).Message);
+        Assert.Empty(site.Store.Saves);
+        // The publish operation asks the same of the version it sends for review.
+        Assert.Throws<AgentException>(() => site.Flow().RequireBlocksPublishedForReview(page, review, "page"));
+
+        // In a project, the page and its blocks are reviewed together; and once the block is published, nothing stops it.
+        site.Projects.Add(1, "Launch");
+        var inProject = site.Flow();
+        inProject.Project = ProjectSave.For(site.Call, "Launch", ready: false, publish: false, publishAt: null);
+        inProject.RequireBlocksPublishedForReview(page, review, "page");
+        site.Store.Save((IContent)((IReadOnly)site.Store.Latest(draft.ContentLink.ID)).CreateWritableClone(), SaveAction.Publish, null);
+        site.Flow().RequireBlocksPublishedForReview(page, review, "page");
+        // Where the edit UI makes inline blocks, as before.
+        site.Flow(shared: false).RequireBlocksPublishedForReview(page, review, "page");
+    }
+
+    [Fact]
+    public void A_dry_run_shows_a_planned_block_in_the_changes_as_what_it_will_be()
+    {
+        var site = new Site { Defaults = block => block.Property["Secret"].Value = "from the type" };
+        var page = site.Page(folder: true);
+        var flow = site.Flow();
+        var (writable, before) = site.Write(flow, page,
+            """{"Area": [{"type": "BoxBlock", "name": "Outer", "displayOption": null, "properties": {"Title": "Box", "Area": [{"type": "ItemBlock", "properties": {"Title": "Inner"}}]}}]}""");
+
+        var result = site.Save(flow, writable, before, dryRun: true);
+
+        var item = JsonNodeOf(result.Changes.Single(c => c.Property == "Area").After!.Value)!.AsArray().Single()!.AsObject();
+        Assert.Equal(("BoxBlock", "Outer", "planned", "Box"), ((string?)item["type"], (string?)item["name"], (string?)item["shared"], (string?)item["properties"]!["Title"]));
+        Assert.Null(item["guid"]);
+        var inner = item["properties"]!["Area"]!.AsArray().Single()!.AsObject();
+        Assert.Equal(("ItemBlock", "Home ItemBlock 1", "planned", "Inner"), ((string?)inner["type"], (string?)inner["name"], (string?)inner["shared"], (string?)inner["properties"]!["Title"]));
+        // The developer sees every value; an editor only what the edit UI shows them.
+        Assert.Equal("from the type", (string?)inner["properties"]!["Secret"]);
+
+        var editorSite = new Site(CmsCaller.Editor) { Defaults = block => block.Property["Secret"].Value = "from the type" };
+        var editorPage = Neutral(editorSite, editorSite.Page(folder: true));
+        var editorFlow = editorSite.Flow();
+        var (editorWritable, editorBefore) = editorSite.Write(editorFlow, editorPage, """{"Area": [{"type": "ItemBlock", "properties": {"Title": "Mine"}}]}""");
+        var shown = JsonNodeOf(editorSite.Save(editorFlow, editorWritable, editorBefore, dryRun: true).Changes.Single(c => c.Property == "Area").After!.Value)!.AsArray().Single()!;
+        Assert.Equal("Mine", (string?)shown["properties"]!["Title"]);
+        Assert.Null(shown["properties"]!["Secret"]);
+        Assert.DoesNotContain("from the type", shown.ToJsonString());
+    }
+
+    private static System.Text.Json.Nodes.JsonNode? JsonNodeOf(JsonElement element) => System.Text.Json.Nodes.JsonNode.Parse(element.GetRawText());
+
+    [Fact]
+    public void Inline_blocks_an_area_has_stay_inline_when_written_whole_by_their_names_and_only_new_items_become_shared()
+    {
+        var site = new Site();
+        var page = site.Page(folder: true, Inline("Intro", "One"), Inline("Outro", "Two"));
+        site.Store.Saves.Clear();
+        var flow = site.Flow();
+        // Both changed and a new one of the type: the inline rules alone pair none of them (two blocks, three items).
+        var (writable, before) = site.Write(flow, page, """
+            {"Area": [
+              {"type": "ItemBlock", "name": "Outro", "properties": {"Title": "Two changed"}},
+              {"type": "ItemBlock", "name": "Intro", "properties": {"Title": "One changed"}},
+              {"type": "ItemBlock", "name": "Third", "properties": {"Title": "Three"}}
+            ]}
+            """);
+
+        var result = site.Save(flow, writable, before);
+
+        var items = Items(writable);
+        Assert.Equal(["Outro", "Intro"], items.Take(2).Select(i => InlineBlocks.Name(i)));
+        Assert.Equal(["Two changed", "One changed"], items.Take(2).Select(i => InlineBlocks.Of(i)!.Property["Title"].Value));
+        Assert.Null(InlineBlocks.Of(items[2]));
+        Assert.Equal(("Area[2]", "Third", SharedBlockActions.Created), (Assert.Single(result.SharedBlocks!).Path, result.SharedBlocks![0].Name, result.SharedBlocks![0].Action));
+
+        // Where the edit UI makes inline blocks, as before: three new inline blocks.
+        var inline = site.Flow(shared: false);
+        var (inlineWritable, _) = site.Write(inline, page, """
+            {"Area": [
+              {"type": "ItemBlock", "name": "Outro", "properties": {"Title": "Two changed"}},
+              {"type": "ItemBlock", "name": "Intro", "properties": {"Title": "One changed"}},
+              {"type": "ItemBlock", "name": "Third", "properties": {"Title": "Three"}}
+            ]}
+            """);
+        Assert.All(Items(inlineWritable), i => Assert.NotNull(InlineBlocks.Of(i)));
+    }
+
+    [Fact]
+    public void After_names_the_only_block_of_its_type_left_inline_or_in_the_folder_is_taken_over()
+    {
+        var site = new Site();
+        var page = site.Page(folder: true);
+        var folderBlock = site.Block(site.Folder(page).ContentLink, "Teaser", "Folder");
+        page = OwnerOf(site, folderBlock, Inline("Intro", "One"), Ref(folderBlock), Inline("Spare", "Two"));
+        site.Store.Saves.Clear();
+        var flow = site.Flow();
+        // The folder block and an inline block by their names; then one item and one inline block of the type left.
+        var (writable, before) = site.Write(flow, page, """
+            {"Area": [
+              {"type": "ItemBlock", "name": "Teaser", "properties": {"Title": "Folder changed"}},
+              {"type": "ItemBlock", "name": "Intro", "properties": {"Title": "One changed"}},
+              {"type": "ItemBlock", "name": "Renamed", "properties": {"Title": "Two changed"}}
+            ]}
+            """);
+
+        var result = site.Save(flow, writable, before);
+
+        var items = Items(writable);
+        Assert.Equal(folderBlock.ContentLink.ID, items[0].ContentLink.ID);
+        Assert.Equal(("Intro", "One changed"), (InlineBlocks.Name(items[1]), InlineBlocks.Of(items[1])!.Property["Title"].Value));
+        Assert.Equal(("Renamed", "Two changed"), (InlineBlocks.Name(items[2]), InlineBlocks.Of(items[2])!.Property["Title"].Value));
+        Assert.Equal([("Area[0]", SharedBlockActions.Updated)], result.SharedBlocks!.Select(s => (s.Path, s.Action)));
+        Assert.Equal("Folder changed", Title(site.Store.Latest(folderBlock.ContentLink.ID)));
+    }
+
+    [Fact]
+    public void A_name_two_blocks_have_pairs_neither_and_the_item_becomes_a_new_shared_block()
+    {
+        var site = new Site();
+        var page = site.Page(folder: true, Inline("Same", "One"), Inline("Same", "Two"));
+        var flow = site.Flow();
+        var (writable, before) = site.Write(flow, page, """
+            {"Area": [
+              {"type": "ItemBlock", "name": "Same", "properties": {"Title": "Changed"}},
+              {"type": "ItemBlock", "name": "Other", "properties": {"Title": "New"}}
+            ]}
+            """);
+
+        var result = site.Save(flow, writable, before);
+
+        Assert.All(Items(writable), i => Assert.Null(InlineBlocks.Of(i)));
+        Assert.Equal(2, result.SharedBlocks!.Count(s => s.Action == SharedBlockActions.Created));
+    }
+
+    [Fact]
+    public void A_project_publish_leaves_the_projects_own_block_drafts_to_the_project_and_warns_of_one_left_behind()
+    {
+        var site = new Site();
+        var page = site.Page(folder: true);
+        var folder = site.Folder(page).ContentLink;
+        var notReady = site.Block(folder, "Not ready", "x", VersionStatus.CheckedOut);
+        var ready = site.Block(folder, "Ready", "y", VersionStatus.CheckedOut);
+        var outside = site.Block(folder, "Outside", "z", VersionStatus.CheckedOut);
+        page = OwnerOf(site, notReady, Ref(notReady), Ref(ready), Ref(outside));
+        bool? InProject(int id, CultureInfo? language) => id == notReady.ContentLink.ID ? false : id == ready.ContentLink.ID ? true : null;
+
+        var warnings = new List<ValidationIssue>();
+        var along = site.Flow().PublishAlong(page, SaveAction.Publish, othersConfirmed: false, dryRun: false, warnings, InProject)!;
+
+        Assert.Equal([outside.ContentLink.ID], along.Select(a => ContentReference.Parse(a.Ref!).ID));
+        Assert.Equal(VersionStatus.CheckedOut, ((IVersionable)site.Store.Latest(notReady.ContentLink.ID)).Status);
+        Assert.Equal(VersionStatus.CheckedOut, ((IVersionable)site.Store.Latest(ready.ContentLink.ID)).Status);
+        var warning = Assert.Single(warnings);
+        Assert.Equal(("Area[0]", "warning"), (warning.Property, warning.Severity));
+        Assert.Contains("isn't marked Ready to publish", warning.Message);
+    }
+
+    [Fact]
+    public void An_add_if_missing_that_finds_a_block_of_the_folder_lists_it_as_existing()
+    {
+        var site = new Site();
+        var page = site.Page(folder: true);
+        var own = site.Block(site.Folder(page).ContentLink, "Intro", "Same");
+        page = OwnerOf(site, own, Ref(site.Block(AssetsRoot, "Global", "g")), Ref(own));
+        site.Store.Saves.Clear();
+        AreaOperation[] add = [new AreaOperation { Op = AreaOps.Add, Property = "Area", Type = "ItemBlock", Name = "Intro", Values = Values("""{"Title": "Changed since"}"""), IfMissing = true }];
+
+        var dryFlow = site.Flow();
+        var (dryWritable, dryBefore) = site.Write(dryFlow, page, ops: add);
+        var dry = site.Save(dryFlow, dryWritable, dryBefore, dryRun: true);
+        var flow = site.Flow();
+        var (writable, before) = site.Write(flow, page, ops: add);
+        var result = site.Save(flow, writable, before);
+
+        foreach (var found in new[] { Assert.Single(dry.SharedBlocks!), Assert.Single(result.SharedBlocks!) })
+        {
+            Assert.Equal(("Area[1]", SharedBlockActions.Existing, "Intro", own.ContentLink.ID), (found.Path, found.Action, found.Name, ContentReference.Parse(found.Ref!).ID));
+        }
+        Assert.False(result.Saved);
+        Assert.Empty(site.Store.Saves);
     }
 
     /// <summary><paramref name="content"/> with no language of its own (every version), so an editor's language access isn't asked.</summary>

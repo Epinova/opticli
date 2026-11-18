@@ -63,12 +63,18 @@ internal static class ProjectPublishOperation
             : new ItemPlan(item, new ProjectItemResult { Content = projects.Summary(item), Outcome = ProjectRules.PublishOutcome(item.State, scheduling) })).ToList();
         var ready = plans.Where(p => p.Item.State == ProjectItemState.Ready).ToList();
         // Where the site's edit UI makes new blocks in an area shared: the drafts of the blocks of each item's own "For this
-        // page" folder that it shows go live with it (WriteFlow.PublishAlong), but those that are the project's own items.
-        var readyIds = ready.Select(p => p.Item.Item.ContentLink.ID).ToHashSet();
+        // page" folder that it shows go live with it (WriteFlow.PublishAlong), but those that are the project's own items,
+        // in any state: those follow the project's rules (live only when marked ready), and one left behind gets a warning.
+        bool? InProject(int id, System.Globalization.CultureInfo? language)
+        {
+            var items = all.Where(i => i.Item.ContentLink.ID == id
+                && (language is null || i.Item.Language is null || string.IsNullOrEmpty(i.Item.Language.Name) || string.Equals(i.Item.Language.Name, language.Name, StringComparison.OrdinalIgnoreCase))).ToList();
+            return items.Count == 0 ? null : items.Any(i => i.State == ProjectItemState.Ready);
+        }
         ProjectItemResult Along(ProjectItemResult item, IContent version, bool dryRun)
         {
             var warnings = item.Validation?.ToList() ?? [];
-            var along = flow.PublishAlong(version, action, body.IncludeDraft, dryRun, warnings, readyIds, body.PublishAt?.ToLocalTime());
+            var along = flow.PublishAlong(version, action, body.IncludeDraft, dryRun, warnings, InProject, body.PublishAt?.ToLocalTime());
             return along is { Count: > 0 } || warnings.Count > (item.Validation?.Count ?? 0)
                 ? item with { SharedBlocks = along is { Count: > 0 } ? along : null, Validation = warnings.Count > 0 ? warnings : null }
                 : item;

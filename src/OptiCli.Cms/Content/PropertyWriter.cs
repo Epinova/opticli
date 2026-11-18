@@ -1083,6 +1083,7 @@ internal sealed class PropertyWriter(
         var pairs = AreaItemRules.Pair(currentItems.Select(Key).ToList(), wanted.Select(w => w.Key).ToList(),
             (i, j) => wanted[i].InlineType is not null && Unchanged(InlineBlocks.Of(currentItems[j]), items[i]),
             (i, j) => wanted[i].InlineType is not null && Alike(items[i], currentItems[j]));
+        // Where new blocks are shared: more pairings, with inline blocks (kept inline) and with the folder's own blocks.
         var owned = TakeOverOwnBlocks(currentItems, pairs, wanted.Select(w => w.InlineType).ToList(), items);
         RequireNothingLostUnseen(currentItems, pairs, items, path);
         RequireNoOwnBlockLostUnseen(owned, items, path);
@@ -1142,15 +1143,23 @@ internal sealed class PropertyWriter(
     private sealed record OwnTakeover(int Current, bool Exact, IContent Block, BlockData Values);
 
     /// <summary>
-    /// Where new blocks are shared (<see cref="Shared"/>): of the items <paramref name="pairs"/> left, each new block item
-    /// (<c>{type, properties}</c>) takes over a current item that shows a shared block of its type from the content's own
-    /// "For this page" folder, paired by the rules for inline blocks (<see cref="AreaItemRules.Pair"/>: an exact copy, then
-    /// the only one of its type left), then by the block's name and display option. Writing an area whole again, as a plan
-    /// run again does, then changes those blocks
-    /// rather than making more. A shared block from anywhere else is never taken over: it stays as its <c>{ref}</c>.
+    /// Where new blocks are shared (<see cref="Shared"/>): what the new block items (<c>{type, properties}</c>) of a whole
+    /// area that <paramref name="pairs"/> (the inline rules) left unpaired take over, so writing an area whole again (as a
+    /// plan run again does) changes the blocks it has rather than making more, and an inline block it has stays inline. In
+    /// this order, each pairing unique:
+    /// <list type="number">
+    /// <item>the inline rules (<see cref="AreaItemRules.Pair"/>, done already): an exact copy of an inline block, then the
+    /// only inline block of its type left for the only item of the type left;</item>
+    /// <item>an exact copy of a shared block of its type from the content's own "For this page" folder;</item>
+    /// <item>by name: an inline block of its type with the item's name, or a folder block of its type with the item's name
+    /// and display option, when that is the only one either side has;</item>
+    /// <item>the only one of its type left, inline or in the folder, for the only item of the type left.</item>
+    /// </list>
+    /// An item that pairs with nothing becomes a new shared block. A shared block from anywhere else is never taken over:
+    /// it stays as its <c>{ref}</c>. Inline pairings are added to <paramref name="pairs"/>; folder ones are returned.
     /// </summary>
     /// <param name="types">The type of each new block item; null for an item that shows content.</param>
-    private OwnTakeover?[] TakeOverOwnBlocks(IReadOnlyList<ContentAreaItem> current, IReadOnlyList<AreaItemRules.Pairing> pairs, IReadOnlyList<ContentType?> types,
+    private OwnTakeover?[] TakeOverOwnBlocks(IReadOnlyList<ContentAreaItem> current, AreaItemRules.Pairing[] pairs, IReadOnlyList<ContentType?> types,
         IReadOnlyList<AreaItemValue> items)
     {
         var owned = new OwnTakeover?[items.Count];
@@ -1159,46 +1168,84 @@ internal sealed class PropertyWriter(
             return owned;
         }
         var waiting = Enumerable.Range(0, items.Count).Where(i => pairs[i].Current < 0 && types[i] is not null).ToList();
+        if (waiting.Count == 0)
+        {
+            return owned;
+        }
         var taken = pairs.Where(p => p.Current >= 0).Select(p => p.Current).ToHashSet();
         var repository = call.Service<IContentTypeRepository>();
-        var candidates = waiting.Count == 0 ? [] : Enumerable.Range(0, current.Count).Where(j => !taken.Contains(j))
+        var candidates = Enumerable.Range(0, current.Count).Where(j => !taken.Contains(j))
             .Select(j => (Index: j, Block: Shared.OwnBlock(current[j])))
             .Where(c => c.Block is not null && repository.Load(c.Block.ContentTypeID) is not null)
             .Select(c => (c.Index, Block: c.Block!, Values: Plain(c.Block!, repository.Load(c.Block!.ContentTypeID)!)))
             .ToList();
-        if (candidates.Count == 0)
+        bool FolderAlike(int i, int j) =>
+            string.Equals((items[i].Name ?? "").Trim(), candidates[j].Block.Name, StringComparison.Ordinal)
+            && string.Equals(items[i].DisplayOption ?? "", PropertyValues.DisplayOption(current[candidates[j].Index]) ?? "", StringComparison.OrdinalIgnoreCase);
+        var folderTaken = new HashSet<int>();
+        void TakeFolder(int i, int j, bool exact)
         {
-            return owned;
+            var (index, block, values) = candidates[j];
+            owned[i] = new OwnTakeover(index, exact, block, values);
+            folderTaken.Add(j);
         }
-        bool Alike(int i, int j) =>
-            string.Equals((items[waiting[i]].Name ?? "").Trim(), candidates[j].Block.Name, StringComparison.Ordinal)
-            && string.Equals(items[waiting[i]].DisplayOption ?? "", PropertyValues.DisplayOption(current[candidates[j].Index]) ?? "", StringComparison.OrdinalIgnoreCase);
-        var sub = AreaItemRules.Pair(
-            candidates.Select(c => (string?)AreaItemRules.InlineKey(c.Block.ContentTypeID)).ToList(),
-            waiting.Select(i => (string?)AreaItemRules.InlineKey(types[i]!.ID)).ToList(),
-            (i, j) => Unchanged(candidates[j].Values, items[waiting[i]]),
-            Alike);
-        for (var i = 0; i < waiting.Count; i++)
+
+        // 2. Exact copies of the folder's blocks (those alike first, so identical blocks pair with the one the item names).
+        if (candidates.Count > 0)
         {
-            if (sub[i].Current >= 0)
+            var exact = AreaItemRules.Pair(
+                candidates.Select(c => (string?)AreaItemRules.InlineKey(c.Block.ContentTypeID)).ToList(),
+                waiting.Select(i => (string?)AreaItemRules.InlineKey(types[i]!.ID)).ToList(),
+                (w, j) => Unchanged(candidates[j].Values, items[waiting[w]]),
+                (w, j) => FolderAlike(waiting[w], j));
+            for (var w = 0; w < waiting.Count; w++)
             {
-                var (index, block, values) = candidates[sub[i].Current];
-                owned[waiting[i]] = new OwnTakeover(index, sub[i].Exact, block, values);
+                if (exact[w] is { Current: >= 0, Exact: true } pairing)
+                {
+                    TakeFolder(waiting[w], pairing.Current, exact: true);
+                }
             }
         }
-        // Then alike: unlike an inline block, a shared block has a name of its own. A changed item that gives the name (and
-        // display option) of a block of its type left takes it over when that pairing is the only one either side has, so
-        // an area written whole again with several blocks of a type changed updates them rather than making new ones.
-        var left = Enumerable.Range(0, candidates.Count).Where(j => !sub.Any(p => p.Current == j)).ToList();
-        var unpaired = Enumerable.Range(0, waiting.Count).Where(i => sub[i].Current < 0 && !string.IsNullOrWhiteSpace(items[waiting[i]].Name)).ToList();
-        foreach (var i in unpaired)
+
+        // What is left on either side: the items, the inline blocks no item took over, the folder's blocks.
+        List<int> Unpaired() => waiting.Where(i => pairs[i].Current < 0 && owned[i] is null).ToList();
+        var inlineLeft = Enumerable.Range(0, current.Count).Where(j => !taken.Contains(j) && InlineBlocks.Of(current[j]) is not null).ToList();
+        int InlineType(int j) => BlockTypeId(InlineBlocks.Of(current[j])!);
+        // A candidate on the current side: an inline block by its position (j >= 0), or a folder block (-1 - its candidate index).
+        IEnumerable<int> Left(int typeId) =>
+            inlineLeft.Where(j => !pairs.Any(p => p.Current == j) && InlineType(j) == typeId)
+                .Concat(Enumerable.Range(0, candidates.Count).Where(j => !folderTaken.Contains(j) && candidates[j].Block.ContentTypeID == typeId).Select(j => -1 - j));
+        void Take(int i, int candidate)
         {
-            var named = left.Where(j => candidates[j].Block.ContentTypeID == types[waiting[i]]!.ID && Alike(i, j)).ToList();
-            if (named is [var j] && unpaired.Count(k => types[waiting[k]]!.ID == types[waiting[i]]!.ID && Alike(k, j)) == 1)
+            if (candidate >= 0)
             {
-                var (index, block, values) = candidates[j];
-                owned[waiting[i]] = new OwnTakeover(index, false, block, values);
-                left.Remove(j);
+                pairs[i] = new AreaItemRules.Pairing(candidate, false);
+            }
+            else
+            {
+                TakeFolder(i, -1 - candidate, exact: false);
+            }
+        }
+
+        // 3. By name, where that is unambiguous on both sides.
+        bool Named(int i, int candidate) => !string.IsNullOrWhiteSpace(items[i].Name) && (candidate >= 0
+            ? string.Equals(items[i].Name!.Trim(), InlineBlocks.Name(current[candidate]) ?? "", StringComparison.Ordinal)
+            : FolderAlike(i, -1 - candidate));
+        var named = Unpaired().Select(i => (Item: i, Matches: Left(types[i]!.ID).Where(c => Named(i, c)).ToList())).ToList();
+        foreach (var (i, matches) in named)
+        {
+            if (matches is [var match] && named.Count(n => n.Matches.Contains(match)) == 1)
+            {
+                Take(i, match);
+            }
+        }
+
+        // 4. The only one of its type left, for the only item of the type left.
+        foreach (var group in Unpaired().GroupBy(i => types[i]!.ID).Where(g => g.Count() == 1))
+        {
+            if (Left(group.Key).ToList() is [var only])
+            {
+                Take(group.Single(), only);
             }
         }
         return owned;
@@ -1529,9 +1576,14 @@ internal sealed class PropertyWriter(
             // A shared block in the content's folder, as the site's edit UI makes it.
             var mark = Shared.Count;
             var shared = SharedItem(contentType, values, name, displayOption, null, null, where);
-            if (unlessIn is not null && HasSharedLike(unlessIn, Shared.Of(shared)!, values, name))
+            if (unlessIn is not null && HasSharedLike(unlessIn, Shared.Of(shared)!, values, name) is { } like)
             {
                 Shared.Truncate(mark);
+                if (Shared.OwnBlock(like) is { } found)
+                {
+                    // Reported, so a plan run again reaches the block as it did when the add made it.
+                    Shared.Find(found);
+                }
                 return null;
             }
             Claim(contentType, where);
@@ -1572,11 +1624,12 @@ internal sealed class PropertyWriter(
             || (pair.Value.ValueKind == JsonValueKind.String && StoredAlready(Value(existing, pair.Key), pair.Value.GetString()!)));
 
     /// <summary>
-    /// Where new blocks are shared: whether <paramref name="items"/> has a block like <paramref name="added"/>, of its type
-    /// with that name when one is given, else with the values of <paramref name="given"/>: a shared block of the content's
-    /// own folder (by its name), an inline block it had already (by its name in the area), or a block this write makes.
+    /// Where new blocks are shared: the item of <paramref name="items"/> that shows a block like <paramref name="added"/>, of
+    /// its type with that name when one is given, else with the values of <paramref name="given"/>: a shared block of the
+    /// content's own folder (by its name), an inline block it had already (by its name in the area), or a block this write
+    /// makes. Null when there is none.
     /// </summary>
-    private bool HasSharedLike(IEnumerable<ContentAreaItem> items, SharedAreaBlocks.Pending added, IReadOnlyDictionary<string, JsonElement>? given, string? name)
+    private ContentAreaItem? HasSharedLike(IEnumerable<ContentAreaItem> items, SharedAreaBlocks.Pending added, IReadOnlyDictionary<string, JsonElement>? given, string? name)
     {
         var typeId = added.Type.ID;
         var wanted = PropertyValues.Snapshot(added.Values);
@@ -1595,10 +1648,10 @@ internal sealed class PropertyWriter(
                 ? string.Equals(candidateName?.Trim() ?? "", name.Trim(), StringComparison.Ordinal)
                 : SameValues(candidate, wanted, given))
             {
-                return true;
+                return item;
             }
         }
-        return false;
+        return null;
     }
 
     private static object? Value(IContentData content, string name) =>

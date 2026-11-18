@@ -79,11 +79,34 @@ internal sealed class WriteFlow
     /// null where it makes them inline, which is as before.
     /// </summary>
     /// <param name="at">For a schedule: when; else the published version's start-publish date, which a scheduled save sets.</param>
+    /// <param name="inProject">For a project publish: the project's own items, which are left to it (<see cref="SharedAreaBlocks.PublishAlong"/>).</param>
     public List<SharedBlockResult>? PublishAlong(IContent published, SaveAction action, bool othersConfirmed, bool dryRun, List<ValidationIssue> warnings,
-        IReadOnlySet<int>? except = null, DateTime? at = null) =>
+        Func<int, System.Globalization.CultureInfo?, bool?>? inProject = null, DateTime? at = null) =>
         Writer.Shared is { } shared && Kind(action) is SaveAction.Publish or SaveAction.Schedule
-            ? shared.PublishAlong(published, Kind(action), at ?? (published as IVersionable)?.StartPublish, othersConfirmed, dryRun, warnings, except)
+            ? shared.PublishAlong(published, Kind(action), at ?? (published as IVersionable)?.StartPublish, othersConfirmed, dryRun, warnings, inProject)
             : null;
+
+    /// <summary>
+    /// Where the site's edit UI makes new blocks in an area shared: a review request (an approval sequence's) of
+    /// <paramref name="version"/> is refused while the version shows blocks of its own "For this page" folder that aren't
+    /// published (or that this write makes or changes). The approval publishes the content alone, so it would go live
+    /// showing them as they were, or not at all. In a CMS project the content and its blocks are reviewed and published
+    /// together, so a write with one isn't refused.
+    /// </summary>
+    /// <exception cref="AgentException"><c>usage</c>, with how to go about it instead; also for a dry run.</exception>
+    public void RequireBlocksPublishedForReview(IContent version, SaveAction action, string what)
+    {
+        if (Kind(action) != SaveAction.RequestApproval || Project is not null || Writer.Shared is not { } shared
+            || shared.UnpublishedForReview(version) is not { Count: > 0 } unpublished)
+        {
+            return;
+        }
+        throw AgentException.Usage(
+            $"{what} would go for review while its ContentAreas show blocks of its \"For this page\" folder that aren't published: {string.Join(", ", unpublished)}. The approval publishes the content alone, so it would go live without those blocks' changes.",
+            Call.ForCaller(
+                "Save the change as a draft first (without --request-approval), publish those blocks (sharedBlocks gives their refs: opticli publish <ref>), then send the content for review; or save the content and its blocks in a CMS project (--in-project <project> --ready --request-approval) so they are reviewed and published together. Nothing was saved.",
+                "Save the change as a draft first (without requestApproval), publish those blocks (sharedBlocks gives their refs: publish_content on each), then send the content for review; or save the content and its blocks in a CMS project (project, ready and requestApproval) so they are reviewed and published together. Nothing was saved."));
+    }
 
     /// <summary>New content as stored, if a save got that far.</summary>
     public IContent? Saved(IContent writable) =>
@@ -218,6 +241,7 @@ internal sealed class WriteFlow
         // The new shared blocks for its areas: checked with it, so both are valid or nothing is saved.
         var shared = Writer.Shared is { Count: > 0 } pending ? pending : null;
         var sharedIssues = shared is null ? [] : shared.Prepare(writable, Project).Concat(shared.PreviewNotes(action)).ToList();
+        RequireBlocksPublishedForReview(writable, action, ContentReference.IsNullOrEmpty(writable.ContentLink) ? $"The new content '{writable.Name}'" : $"{writable.ContentLink.ID} ('{writable.Name}')");
         List<ValidationIssue> issues;
         using (shared?.AsInline(writable))
         {
@@ -242,7 +266,8 @@ internal sealed class WriteFlow
                 Valid = valid,
                 ScheduledFor = Kind(action) == SaveAction.Schedule && writable is IVersionable { StartPublish: { } scheduled } ? scheduled.ToUniversalTime() : null,
                 BaseVersion = baseVersion,
-                Changes = changes,
+                // A block it would make shows as what it will be, not by the GUID its item carries until it is saved.
+                Changes = shared?.ShowPlanned(changes) ?? changes,
                 Validation = issues.Count > 0 ? issues : null,
                 IntoVersion = intoVersion is not null && (diff.Count > 0 || saveUnchanged),
                 // The version the save goes into, or (nothing to save) the version the write is based on, which goes in as it is.
@@ -262,7 +287,9 @@ internal sealed class WriteFlow
         beforeSave?.Invoke();
         // The blocks first: the content's areas then show them by their refs.
         var made = shared?.Save(writable, Project, action, issues) ?? [];
-        if (made.Count > 0)
+        // Blocks of its folder an add found already there (--if-missing), listed so a plan run again reaches them.
+        made.AddRange(Writer.Shared?.Found(writable).Where(f => !made.Any(m => SameBlock(m, f))) ?? []);
+        if (made.Any(m => m.Action != SharedBlockActions.Existing))
         {
             asked = PropertyValues.Snapshot(writable);
             diff = PropertyValues.Diff(before, asked);
@@ -287,7 +314,7 @@ internal sealed class WriteFlow
                     SharedBlocks = made.Count > 0 ? made : null,
                 };
             }
-            if (made.Count > 0 && writable.ContentLink is { } based && !ContentReference.IsNullOrEmpty(based)
+            if (made.Any(m => m.Action != SharedBlockActions.Existing) && writable.ContentLink is { } based && !ContentReference.IsNullOrEmpty(based)
                 && PublishAlong(Repository.Get<IContent>(based), action, OthersDraftsConfirmed, dryRun: false, issues) is { Count: > 0 } along)
             {
                 // Nothing of the content changed, but a publish of it was asked for: its blocks' new versions go live with it.
@@ -363,12 +390,6 @@ internal sealed class WriteFlow
         {
             made = SharedAreaBlocks.Merge(made, publishedAlong);
         }
-        if (made.Count > 0 && Kind(action) == SaveAction.RequestApproval)
-        {
-            issues.Add(new ValidationIssue(null,
-                "The shared blocks were saved as drafts: the approval of the content publishes it alone, so publish them once it is approved (or publish the content through opticli, which publishes them along).",
-                "warning"));
-        }
         return new WriteResult
         {
             Content = ContentSummaries.Describe(result, Types),
@@ -392,12 +413,16 @@ internal sealed class WriteFlow
     private List<SharedBlockResult>? DryRunSharedBlocks(SharedAreaBlocks? shared, IContent writable, SaveAction action, List<ValidationIssue> issues)
     {
         var planned = shared?.Planned(action) ?? [];
+        planned.AddRange(Writer.Shared?.Found(writable) ?? []);
         if (!ContentReference.IsNullOrEmpty(writable.ContentLink) && PublishAlong(writable, action, OthersDraftsConfirmed, dryRun: true, issues) is { Count: > 0 } along)
         {
             planned.AddRange(along.Where(a => !planned.Any(p => p.Ref is not null && a.Ref?.Split('_')[0] == p.Ref.Split('_')[0])));
         }
         return planned.Count > 0 ? planned : null;
     }
+
+    private static bool SameBlock(SharedBlockResult a, SharedBlockResult b) =>
+        a.Ref is not null && b.Ref is not null && a.Ref.Split('_')[0] == b.Ref.Split('_')[0];
 
     /// <summary>Properties the CMS fills in on save when they are empty.</summary>
     private static readonly HashSet<string> FilledByCms = new(StringComparer.OrdinalIgnoreCase) { "PageURLSegment", PropertyWriter.StartPublishKey };
