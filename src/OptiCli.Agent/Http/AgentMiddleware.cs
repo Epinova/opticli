@@ -85,7 +85,7 @@ internal static class AgentMiddleware
         [AgentEndpoint.Upload] = Write(r => r.ReadBodyAsync<UploadRequest>(UploadBodyBytes), b => b.DryRun, (r, b) => Created(r, UploadOperation.Run(r.Call, b))),
         [AgentEndpoint.Draft] = Write(r => r.ReadBodyAsync<DraftRequest>(), b => b.DryRun, (r, b) => Written(r, DraftOperation.Run(r.Call, r.Argument, b))),
         [AgentEndpoint.Languages] = Write(r => r.ReadBodyAsync<LanguageBranchRequest>(), b => b.DryRun, (r, b) => Created(r, LanguagesOperation.Run(r.Call, r.Argument, b))),
-        [AgentEndpoint.Publish] = Write(async r => await r.ReadOptionalBodyAsync<PublishRequest>() ?? new PublishRequest(), _ => false, (r, b) => Written(r, PublishOperation.Run(r.Call, r.Argument, b))),
+        [AgentEndpoint.Publish] = Write(async r => await r.ReadOptionalBodyAsync<PublishRequest>() ?? new PublishRequest(), b => b.DryRun, (r, b) => Written(r, PublishOperation.Run(r.Call, r.Argument, b))),
         [AgentEndpoint.RemoveLanguage] = Write(r => r.ReadBodyAsync<RemoveLanguageRequest>(), b => b.DryRun, (r, b) => Ok(RemoveLanguageOperation.Run(r.Call, r.Argument, b))),
         [AgentEndpoint.Unpublish] = Write(async r => await r.ReadOptionalBodyAsync<UnpublishRequest>() ?? new UnpublishRequest(), b => b.DryRun, (r, b) => Written(r, UnpublishOperation.Run(r.Call, r.Argument, b))),
         [AgentEndpoint.Discard] = Write(async r => await r.ReadOptionalBodyAsync<DiscardRequest>() ?? new DiscardRequest(), b => b.DryRun, (r, b) => Written(r, DiscardOperation.Run(r.Call, r.Argument, b))),

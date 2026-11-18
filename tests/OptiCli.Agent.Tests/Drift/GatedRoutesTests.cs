@@ -62,4 +62,25 @@ public class GatedRoutesTests
 
         Assert.Equal(AgentErrorCodes.Drift, ex.Code);
     }
+
+    /// <summary>A dry run saves nothing, so it passes the gate as the CLI's own dry runs do (a review request's publish dry run asks the site).</summary>
+    [Theory]
+    [InlineData(nameof(AgentEndpoint.Publish), """{"requestApproval":true,"dryRun":true}""")]
+    [InlineData(nameof(AgentEndpoint.Draft), """{"name":"x","dryRun":true}""")]
+    public async Task A_dry_run_passes_the_gate_on_drift(string name, string body)
+    {
+        var endpoint = Enum.Parse<AgentEndpoint>(name);
+        var drifted = DriftReport.Create([new DriftItem("NewsPage", DriftAhead.Local, ContentModelComparison.OnlyInCode)], [], [], [], [], []);
+        var services = new ServiceCollection()
+            .AddSingleton(Settings(pinned: Remote, approvedRemote: RemoteApproval))
+            .AddSingleton(new DriftCheck(() => drifted))
+            .BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services };
+        context.Request.Body = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(body));
+
+        // Without CMS services the endpoint itself fails, but not with the drift error: the gate let it through.
+        var ex = await Record.ExceptionAsync(() => AgentMiddleware.Handlers[endpoint].Run(new AgentRequest(context, "123")));
+
+        Assert.False(ex is AgentException { Code: AgentErrorCodes.Drift }, $"{name}'s dry run was stopped by the drift gate.");
+    }
 }
