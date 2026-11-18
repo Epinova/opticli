@@ -969,6 +969,28 @@ public class SharedAreaBlockTests
     }
 
     [Fact]
+    public void A_new_block_in_the_area_of_a_block_taken_over_goes_in_the_pages_folder_and_is_saved_first()
+    {
+        var site = new Site();
+        var page = site.Page(folder: true);
+        var folder = site.Folder(page).ContentLink;
+        var outer = site.Block(folder, "Outer", "Old", type: BoxType);
+        page = OwnerOf(site, outer, Ref(outer));
+        site.Store.Saves.Clear();
+        var flow = site.Flow();
+        var (writable, before) = site.Write(flow, page,
+            """{"Area": [{"type": "BoxBlock", "name": "Outer", "properties": {"Title": "New", "Area": [{"type": "ItemBlock", "properties": {"Title": "Inner"}}]}}]}""");
+
+        var result = site.Save(flow, writable, before);
+
+        Assert.Equal([("Area[0].Area[0]", SharedBlockActions.Created), ("Area[0]", SharedBlockActions.Updated)], result.SharedBlocks!.Select(s => (s.Path, s.Action)));
+        Assert.Equal(outer.ContentLink.ID, Items(writable).Single().ContentLink.ID);
+        var updated = site.Store.Latest(outer.ContentLink.ID);
+        var inner = site.Stored(Items(updated).Single().ContentLink);
+        Assert.Equal(("New", "Inner", folder.ID), (Title(updated), Title(inner), inner.ParentLink.ID));
+    }
+
+    [Fact]
     public void An_editor_cant_change_a_block_of_the_pages_folder_they_may_not_edit_by_writing_the_area_whole()
     {
         var site = new Site(CmsCaller.Editor);

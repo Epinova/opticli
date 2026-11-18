@@ -616,7 +616,16 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
         return merged;
     }
 
-    /// <summary>The items reachable from <paramref name="root"/>'s values, with their place: <c>MainArea[2]</c>, deeper inside inline and local blocks.</summary>
+    /// <summary>A block of the folder this write takes over, which <paramref name="item"/> shows by its ref; null for any other item.</summary>
+    private Pending? TakenOver(ContentAreaItem item) =>
+        ContentReference.IsNullOrEmpty(item.ContentLink) || InlineBlocks.Of(item) is not null
+            ? null
+            : _pending.FirstOrDefault(p => !p.IsNew && p.Existing!.ContentLink.ID == item.ContentLink.ID);
+
+    /// <summary>
+    /// The items reachable from <paramref name="root"/>'s values, with their place: <c>MainArea[2]</c>, deeper inside
+    /// inline and local blocks, the new blocks and the blocks taken over (whose values are saved with the write).
+    /// </summary>
     private IEnumerable<(ContentAreaItem Item, string Path, ContentArea Area, int Index)> Located(IContentData root, string prefix, int depth = 0)
     {
         if (depth > MaxDepth)
@@ -633,7 +642,7 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
                     for (var i = 0; i < items.Count; i++)
                     {
                         yield return (items[i], $"{at}[{i}]", area, i);
-                        var inner = InlineBlocks.Of(items[i]) ?? (IContentData?)Of(items[i])?.Values;
+                        var inner = InlineBlocks.Of(items[i]) ?? (IContentData?)Of(items[i])?.Values ?? TakenOver(items[i])?.Values;
                         if (inner is not null)
                         {
                             foreach (var nested in Located(inner, $"{at}[{i}]", depth + 1))
