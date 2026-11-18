@@ -10,7 +10,12 @@ internal static class McpInstructions
     internal const string SiteHeading = "From this site's developers, about its own tools and content:";
 
     /// <param name="fromSite">The site's own lines, added after the module's under <see cref="SiteHeading"/>.</param>
-    public static string For(OptiCliMcpOptions site, IReadOnlyList<string>? fromSite = null)
+    /// <param name="sharedBlocks">
+    /// The site's edit UI makes a new block in a ContentArea a shared block in the content's "For this page" folder
+    /// (<c>UIOptions.InlineBlocksInContentAreaEnabled</c> off), which the writes follow: the line about those blocks is
+    /// only for such a site.
+    /// </param>
+    public static string For(OptiCliMcpOptions site, IReadOnlyList<string>? fromSite = null, bool sharedBlocks = false)
     {
         var lines = new List<string>
         {
@@ -30,6 +35,10 @@ internal static class McpInstructions
             site.AllowPublish ? ProjectPublishing : ProjectPublishingOff,
             "Errors are JSON with code, message and hint: follow the hint, or tell the user what it says.",
         };
+        if (sharedBlocks)
+        {
+            lines.Insert(lines.Count - 1, site.AllowPublish ? SharedBlocks : SharedBlocksPublishOff);
+        }
         if (!site.AllowDelete)
         {
             lines.Add("Deleting is turned off on this site: the editor deletes content in the CMS.");
@@ -54,6 +63,14 @@ internal static class McpInstructions
     /// <summary>Publishing a project, where the site doesn't let assistants publish.</summary>
     internal const string ProjectPublishingOff =
         "8. This site doesn't let assistants publish projects: mark the items ready when the user wants (mark_ready_to_publish, or ready on the save), and the user publishes the project in the CMS. In project mode that puts live only the items marked ready; the Projects gadget's Publish (sites without project mode) puts every unpublished item live, ready or not, so tell the user which items aren't ready.";
+
+    /// <summary>New blocks in a ContentArea where the site makes them shared, where the site lets assistants publish.</summary>
+    internal const string SharedBlocks =
+        "9. This site makes a new block in a ContentArea ({type, properties}) a shared block in the content's \"For this page\" folder: the result's sharedBlocks lists it with its ref; change it later by that ref, and keep an area's blocks by writing back the {ref} items get_content gives. publish_content of the content also publishes the drafts of those blocks it shows (the CMS's own Publish doesn't); until then its preview shows a changed block's published version (the result says so).";
+
+    /// <summary>New blocks in a ContentArea where the site makes them shared, where the site doesn't let assistants publish.</summary>
+    internal const string SharedBlocksPublishOff =
+        "9. This site makes a new block in a ContentArea ({type, properties}) a shared block in the content's \"For this page\" folder: the result's sharedBlocks lists it with its ref; change it later by that ref, and keep an area's blocks by writing back the {ref} items get_content gives. Those blocks are drafts too, and publishing the content in the CMS doesn't publish them: tell the user to publish them as well. Until then the preview shows a changed block's published version (the result says so).";
 
     /// <summary>A lifetime as the model reads it best: "10 minutes", "1 minute", "90 seconds".</summary>
     internal static string Duration(TimeSpan lifetime) =>

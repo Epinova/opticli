@@ -22,6 +22,9 @@ namespace OptiCli.Mcp.Tests;
 /// </summary>
 public sealed class CustomToolsTests
 {
+    /// <summary>Whether the test site's CMS UI makes new area blocks shared (its <c>UIOptions</c> default), as the module asks it.</summary>
+    private static bool SharedBlocks(TestSite site) => OptiCli.Cms.Compat.InlineBlocks.EditUiCreatesThem(site.Services) == false;
+
     private const string SiteMcp = "http://localhost/site-mcp";
 
     private static void Custom(IOptiCliMcpBuilder module) => module.WithTools<CustomReadTools>();
@@ -97,7 +100,7 @@ public sealed class CustomToolsTests
         await using var client = await ToolTests.Connect(site);
 
         Assert.DoesNotContain(await client.ListToolsAsync(), t => t.Name.StartsWith("custom_", StringComparison.Ordinal));
-        Assert.Equal(McpInstructions.For(site.Options), client.ServerInstructions);
+        Assert.Equal(McpInstructions.For(site.Options, sharedBlocks: SharedBlocks(site)), client.ServerInstructions);
         Assert.DoesNotContain(McpInstructions.SiteHeading, client.ServerInstructions);
         Assert.DoesNotContain(site.Services.GetRequiredService<ModuleTools>().All, e => e.Custom);
     }
@@ -132,7 +135,7 @@ public sealed class CustomToolsTests
         await using var client = await ToolTests.Connect(site);
 
         Assert.Equal(
-            McpInstructions.For(site.Options) + "\n\n" + McpInstructions.SiteHeading + "\nProduct pages live below Products; search them with custom_whoami.\nPrices are in NOK.",
+            McpInstructions.For(site.Options, sharedBlocks: SharedBlocks(site)) + "\n\n" + McpInstructions.SiteHeading + "\nProduct pages live below Products; search them with custom_whoami.\nPrices are in NOK.",
             client.ServerInstructions);
         Assert.Throws<ArgumentException>(() => new ServiceCollection().AddOptiCliMcp().WithInstructions(" "));
     }

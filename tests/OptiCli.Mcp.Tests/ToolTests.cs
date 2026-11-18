@@ -182,6 +182,42 @@ public sealed class ToolTests
     }
 
     [Fact]
+    public async Task New_area_blocks_are_explained_in_the_tools_and_to_a_site_that_makes_them_shared_in_the_instructions()
+    {
+        await using var site = await TestSite.StartAsync();
+        await using var client = await Connect(site);
+        var tools = (await client.ListToolsAsync()).ToDictionary(t => t.Name, t => t.ProtocolTool);
+
+        // {type, properties} is a new block, inline or shared, and the result says which; {ref} items keep an area's blocks.
+        foreach (var name in new[] { "create_content", "update_content" })
+        {
+            var properties = tools[name].InputSchema.GetProperty("properties").GetProperty("properties").GetProperty("description").GetString()!;
+            Assert.Contains("{type, properties} (a new block", properties);
+            Assert.Contains("\"For this page\" folder where the site makes those", properties);
+            Assert.Contains("sharedBlocks says which and gives its ref", properties);
+            Assert.Contains("write back the {ref} items get_content gives", properties);
+            Assert.Contains("change a shared block by its ref", properties);
+        }
+        var areaOps = tools["update_content"].InputSchema.GetProperty("properties").GetProperty("areaOps").GetProperty("description").GetString()!;
+        Assert.Contains("add a new block with type and values", areaOps);
+        Assert.Contains("sharedBlocks gives its ref: change it later by that ref", areaOps);
+        Assert.Contains("\"For this page\" folder that its ContentAreas show (sharedBlocks", tools["publish_content"].Description);
+
+        // The instructions say more only where the site makes them shared, and what publishing does there.
+        Assert.Equal(OptiCli.Cms.Compat.InlineBlocks.EditUiCreatesThem(site.Services) == false, client.ServerInstructions!.Contains("sharedBlocks", StringComparison.Ordinal));
+        var site12 = new OptiCliMcpOptions();
+        var publishing = new OptiCliMcpOptions { AllowPublish = true };
+        Assert.Contains(McpInstructions.SharedBlocksPublishOff, McpInstructions.For(site12, sharedBlocks: true));
+        Assert.Contains("publishing the content in the CMS doesn't publish them", McpInstructions.SharedBlocksPublishOff);
+        Assert.Contains(McpInstructions.SharedBlocks, McpInstructions.For(publishing, sharedBlocks: true));
+        Assert.Contains("publish_content of the content also publishes the drafts", McpInstructions.SharedBlocks);
+        Assert.Contains("preview shows a changed block's published version", McpInstructions.SharedBlocks);
+        Assert.DoesNotContain(McpInstructions.SharedBlocks, McpInstructions.For(publishing));
+        // Before the line about errors, which stays last of the module's own.
+        Assert.EndsWith("tell the user what it says.", McpInstructions.For(new OptiCliMcpOptions { AllowPublish = true, AllowDelete = true }, sharedBlocks: true));
+    }
+
+    [Fact]
     public async Task The_assistant_is_told_about_its_own_preview_links_unless_the_site_turned_them_off()
     {
         await using var site = await TestSite.StartAsync(o => o.AllowPreviewLinks = false);

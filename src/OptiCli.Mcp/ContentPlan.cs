@@ -272,6 +272,13 @@ public sealed class ContentChanges
     /// (<see cref="JsonElement"/>, <see cref="JsonNode"/>). <c>null</c> clears it. Objects are written with camelCase
     /// names, dictionaries with their keys as they are. Setting a property twice keeps the last value.
     /// </summary>
+    /// <remarks>
+    /// A ContentArea item <c>new { type = "TeaserBlock", properties = new { … } }</c> is a new block, as
+    /// <c>update_content</c> makes it: an inline block, or, where the site's edit UI makes a new block in a ContentArea a
+    /// shared one (<c>UIOptions.InlineBlocksInContentAreaEnabled</c> off), a shared block in the content's "For this page"
+    /// folder, saved as a draft with the step (the step's result lists it in <c>sharedBlocks</c>, with its ref). To keep an
+    /// area's blocks, give back their <c>ref</c> items as the content has them.
+    /// </remarks>
     /// <exception cref="ArgumentException">An empty name, or a value of the CMS's own types other than a reference, rich text or a URL (a <c>ContentArea</c>, a block): give those in the forms above.</exception>
     public ContentChanges Set(string property, object? value)
     {
