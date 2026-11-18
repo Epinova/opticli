@@ -6,7 +6,9 @@ namespace OptiCli.Mcp.Integration;
 
 /// <summary>
 /// Inline blocks in a ContentArea (CMS 12.20+) written as the editor: made, changed by position and written back whole,
-/// with the edit UI's rules for their properties and the content type's access rights for a new one.
+/// with the edit UI's rules for their properties and the content type's access rights for a new one. Where the site makes
+/// new area blocks inline (CMS 13's default; <c>serve.sh --inline-blocks on</c>); <see cref="SharedAreaBlockTests"/> covers
+/// the other mode.
 /// </summary>
 [Collection(McpSiteCollection.Name)]
 public sealed class InlineBlockTests(SharedSessions sessions)
@@ -34,7 +36,7 @@ public sealed class InlineBlockTests(SharedSessions sessions)
         var value => value?.DeepClone(),
     })));
 
-    [McpSiteFact]
+    [McpInlineBlockModeFact("inline")]
     public async Task An_editor_adds_and_changes_inline_blocks_as_the_edit_UI_lets_them()
     {
         var editor = await sessions.ForAsync(TestUsers.Editor);
@@ -92,7 +94,7 @@ public sealed class InlineBlockTests(SharedSessions sessions)
         }
     }
 
-    [McpSiteFact]
+    [McpInlineBlockModeFact("inline")]
     public async Task An_editor_cant_drop_values_they_cant_change_by_writing_the_area_whole_but_may_change_one_block()
     {
         var editor = await sessions.ForAsync(TestUsers.Editor);
@@ -125,7 +127,7 @@ public sealed class InlineBlockTests(SharedSessions sessions)
             await WritingTests.DeleteAsync(editor, page);
         }
     }
-    [McpSiteFact]
+    [McpInlineBlockModeFact("inline")]
     public async Task An_editor_cant_drop_values_they_cant_change_inside_an_inline_block_but_may_remove_a_nested_block_on_purpose()
     {
         var editor = await sessions.ForAsync(TestUsers.Editor);
@@ -168,7 +170,7 @@ public sealed class InlineBlockTests(SharedSessions sessions)
         }
     }
 
-    [McpSiteFact]
+    [McpInlineBlockModeFact("inline")]
     public async Task A_tab_that_needs_Administer_on_the_page_hides_an_inline_blocks_values_from_an_editor_but_not_its_local_blocks()
     {
         var editor = await sessions.ForAsync(TestUsers.Editor);

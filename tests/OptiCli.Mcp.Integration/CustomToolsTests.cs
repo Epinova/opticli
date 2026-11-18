@@ -34,7 +34,7 @@ public sealed class CustomToolsTests(SharedSessions sessions)
         var teaser = tools["fixture_set_teaser"];
         Assert.Equal("Fixture: set teaser text", teaser.Title);
         Assert.StartsWith("Test-only: sets the teaser text of the pages given. It saves drafts only", teaser.Description);
-        Assert.Equal(["ids", "text", "from", "lang", "addToArea", "areaItem", "dryRun", "planToken"], teaser.InputSchema.GetProperty("properties").EnumerateObject().Select(p => p.Name));
+        Assert.Equal(["ids", "text", "from", "lang", "addToArea", "areaItem", "newBlock", "dryRun", "planToken"], teaser.InputSchema.GetProperty("properties").EnumerateObject().Select(p => p.Name));
         Assert.False(teaser.InputSchema.GetProperty("additionalProperties").GetBoolean());
         Assert.Equal((false, false), (teaser.Annotations!.ReadOnlyHint, teaser.Annotations.DestructiveHint));
         Assert.True(tools["fixture_build_section"].Annotations!.DestructiveHint);

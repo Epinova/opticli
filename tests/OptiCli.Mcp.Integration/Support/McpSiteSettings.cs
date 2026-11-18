@@ -48,6 +48,33 @@ internal static class McpSiteSettings
             : throw new InvalidOperationException($"No EPiServer.dll below {SiteDirectory}/bin: build the site with tests/fixtures/mcp/setup.sh.");
     });
 
+    /// <summary>
+    /// How the site's edit UI makes a new block in a ContentArea, which the module's writes follow: <c>inline</c> or
+    /// <c>shared</c> (<c>UIOptions.InlineBlocksInContentAreaEnabled</c>, which <c>serve.sh --inline-blocks on|off</c> sets),
+    /// as the edge-case fixture's <c>GET /opticli-fixture/inline-blocks</c> reads it; null when the site doesn't answer it.
+    /// Asked once per test run.
+    /// </summary>
+    public static string? InlineBlocks => inlineBlocks.Value;
+
+    private static readonly Lazy<string?> inlineBlocks = new(() =>
+    {
+        if (Url is not { } url)
+        {
+            return null;
+        }
+        try
+        {
+            using var http = new HttpClient { BaseAddress = url, Timeout = TimeSpan.FromSeconds(30) };
+            using var response = http.GetAsync("opticli-fixture/inline-blocks").GetAwaiter().GetResult();
+            var mode = response.IsSuccessStatusCode ? response.Content.ReadAsStringAsync().GetAwaiter().GetResult().Trim() : null;
+            return mode is "inline" or "shared" ? mode : null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            return null;
+        }
+    });
+
     /// <summary>The CMS edit UI's path, relative to the site: <c>EPiServer/CMS/</c> on CMS 12, <c>Optimizely/CMS/</c> on CMS 13.</summary>
     public static string EditUiPath => CmsMajor >= 13 ? "Optimizely/CMS/" : "EPiServer/CMS/";
 
@@ -115,6 +142,26 @@ public sealed class McpSiteFactAttribute : FactAttribute
         if (McpSiteSettings.Url is null || McpSiteSettings.UsersFile is null)
         {
             Skip = $"Needs the MCP test site: build it with tests/fixtures/mcp/setup.sh, then set {McpSiteSettings.UrlVariable} and {McpSiteSettings.UsersVariable}.";
+        }
+    }
+}
+
+/// <summary>
+/// An <see cref="McpSiteFactAttribute"/> for one of the two ways the site makes a new block in a ContentArea
+/// (<see cref="McpSiteSettings.InlineBlocks"/>): reported as skipped, saying how to restart the site in that mode, on a site
+/// running in the other. A site that can't say (built without this checkout's edge-case fixture) runs the test.
+/// </summary>
+public sealed class McpInlineBlockModeFactAttribute : FactAttribute
+{
+    public McpInlineBlockModeFactAttribute(string mode)
+    {
+        if (McpSiteSettings.Url is null || McpSiteSettings.UsersFile is null)
+        {
+            Skip = $"Needs the MCP test site: build it with tests/fixtures/mcp/setup.sh, then set {McpSiteSettings.UrlVariable} and {McpSiteSettings.UsersVariable}.";
+        }
+        else if (McpSiteSettings.InlineBlocks is { } running && running != mode)
+        {
+            Skip = $"Needs the MCP test site serving new ContentArea blocks {mode} (it serves them {running}): restart it with tests/fixtures/mcp/serve.sh <site> --port <port> --inline-blocks {(mode == "inline" ? "on" : "off")}.";
         }
     }
 }
