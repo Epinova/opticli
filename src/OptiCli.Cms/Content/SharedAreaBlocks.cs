@@ -311,18 +311,18 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
         {
             return null;
         }
-        var shown = Reachable(owner).Concat(_pending.SelectMany(p => Reachable(p.Values))).Select(item => (Item: item, Pending: Of(item)))
-            .Where(s => s.Pending is not null).DistinctBy(s => s.Item, ReferenceEqualityComparer.Instance).ToList();
-        foreach (var (item, pending) in shown)
+        var shown = Slots(owner).Select(slot => (Slot: slot, Pending: Of(slot.Item))).Where(s => s.Pending is not null).ToList();
+        foreach (var ((_, area, index), pending) in shown)
         {
-            InlineBlocks.Set(item, pending!.Values, pending.Type.ID);
+            var inline = Copy(area.Items[index]);
+            InlineBlocks.Set(inline, pending!.Values, pending.Type.ID);
+            area.Items[index] = inline;
         }
         return new Restore(() =>
         {
-            foreach (var (item, pending) in shown)
+            foreach (var ((item, area, index), _) in shown)
             {
-                InlineBlocks.Clear(item);
-                item.ContentGuid = pending!.Guid;
+                area.Items[index] = item;
             }
         });
     }
@@ -459,12 +459,43 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     /// <summary>Points the items that show <paramref name="pending"/> (by its GUID) at the saved block.</summary>
     private void PointAt(IContent owner, Pending pending, ContentReference link)
     {
-        foreach (var item in Reachable(owner).Concat(_pending.SelectMany(p => Reachable(p.Values))).Where(i => ReferenceEquals(Of(i), pending)).ToList())
+        foreach (var (item, area, index) in Slots(owner).Where(s => ReferenceEquals(Of(s.Item), pending)).ToList())
         {
-            // The GUID first: on CMS 12.0 setting the link doesn't clear it, on later versions setting the GUID clears the link.
-            item.ContentGuid = Guid.Empty;
-            item.ContentLink = link.ToReferenceWithoutVersion();
+            var linked = Copy(item);
+            linked.ContentLink = link.ToReferenceWithoutVersion();
+            area.Items[index] = linked;
         }
+    }
+
+    /// <summary>
+    /// The places of the items reachable from the owner and from the new blocks: each item, its area and its position, to
+    /// put another item in its place. An item is replaced, never changed in place: CMS 12's ContentArea keeps a fragment
+    /// per item that it updates from the item's change events by the item's position, which an item a copy of the area
+    /// took the place of no longer has.
+    /// </summary>
+    private List<(ContentAreaItem Item, ContentArea Area, int Index)> Slots(IContent owner) =>
+        Located(owner, "").Concat(_pending.SelectMany(p => Located(p.Values, "")))
+            .DistinctBy(l => l.Item, ReferenceEqualityComparer.Instance)
+            .Select(l => (l.Item, l.Area, l.Index))
+            .ToList();
+
+    /// <summary>A new item with <paramref name="item"/>'s render settings and personalization, and no content yet.</summary>
+    private static ContentAreaItem Copy(ContentAreaItem item)
+    {
+        var copy = new ContentAreaItem();
+        foreach (var (key, value) in CmsApi.RenderSettings(item))
+        {
+            CmsApi.SetRenderSetting(copy, key, value);
+        }
+        if (!string.IsNullOrEmpty(item.ContentGroup))
+        {
+            copy.ContentGroup = item.ContentGroup;
+        }
+        if (item.AllowedRoles?.Any() == true)
+        {
+            copy.AllowedRoles = item.AllowedRoles.ToList();
+        }
+        return copy;
     }
 
     /// <summary>
@@ -494,7 +525,7 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
         while (queue.Count > 0)
         {
             var (content, prefix) = queue.Dequeue();
-            foreach (var (item, path) in Located(content, prefix))
+            foreach (var (item, path, _, _) in Located(content, prefix))
             {
                 if (ContentReference.IsNullOrEmpty(item.ContentLink) || InlineBlocks.Of(item) is not null || !seen.Add(item.ContentLink.ID)
                     || !locator.Repository.TryGet<IContent>(item.ContentLink.ToReferenceWithoutVersion(), new LoaderOptions { LanguageLoaderOption.FallbackWithMaster() }, out var block)
@@ -571,7 +602,7 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     }
 
     /// <summary>The items reachable from <paramref name="root"/>'s values, with their place: <c>MainArea[2]</c>, deeper inside inline and local blocks.</summary>
-    private IEnumerable<(ContentAreaItem Item, string Path)> Located(IContentData root, string prefix, int depth = 0)
+    private IEnumerable<(ContentAreaItem Item, string Path, ContentArea Area, int Index)> Located(IContentData root, string prefix, int depth = 0)
     {
         if (depth > MaxDepth)
         {
@@ -586,7 +617,7 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
                     var items = area.Items.ToList();
                     for (var i = 0; i < items.Count; i++)
                     {
-                        yield return (items[i], $"{at}[{i}]");
+                        yield return (items[i], $"{at}[{i}]", area, i);
                         var inner = InlineBlocks.Of(items[i]) ?? (IContentData?)Of(items[i])?.Values;
                         if (inner is not null)
                         {
