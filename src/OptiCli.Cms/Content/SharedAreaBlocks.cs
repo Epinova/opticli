@@ -408,9 +408,13 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
                     PointAt(owner, pending, link);
                 }
                 var stored = locator.Repository.Get<IContent>(link);
-                if (project?.Add(stored, ownerAction) is { Error: { } error })
+                if (project?.Add(stored, ownerAction) is { } added)
                 {
-                    warnings.Add(new ValidationIssue(pending.Path, $"The block {stored.ContentLink} was saved, but not put in the project: {error}", "warning"));
+                    if (added.Error is { } error)
+                    {
+                        warnings.Add(new ValidationIssue(pending.Path, $"The block {stored.ContentLink} was saved, but not put in the project: {error}", "warning"));
+                    }
+                    // As the project left it: marked ready (checked in) with the content, or as it was saved.
                     stored = locator.Repository.Get<IContent>(link);
                 }
                 results.Add(Result(pending.Path, stored, pending.Type.Name, folderId, pending.IsNew ? SharedBlockActions.Created : SharedBlockActions.Updated));

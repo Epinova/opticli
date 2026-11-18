@@ -749,21 +749,25 @@ public class SharedAreaBlockTests
         Assert.False(site.Save(dry, dryWritable, dryBefore, dryRun: true).Valid);
     }
 
-    [Fact]
-    public void The_blocks_go_in_the_writes_project_with_the_page()
+    [Theory]
+    [InlineData(false, "checkedOut")]
+    [InlineData(true, "checkedIn")]
+    public void The_blocks_go_in_the_writes_project_with_the_page(bool ready, string status)
     {
         var site = new Site();
         site.Projects.Add(1, "Launch");
         var page = site.Page();
         var flow = site.Flow();
-        flow.Project = ProjectSave.For(site.Call, "Launch", ready: false, publish: false, publishAt: null);
+        flow.Project = ProjectSave.For(site.Call, "Launch", ready: ready, publish: false, publishAt: null);
         var (writable, before) = site.Write(flow, page, """{"Area": [{"type": "ItemBlock", "properties": {"Title": "Hello"}}]}""");
 
         var result = site.Save(flow, writable, before);
 
         var block = ContentReference.Parse(Assert.Single(result.SharedBlocks!).Ref!);
         Assert.Equal([block.ToString(), result.Content!.Ref], site.Projects.Items.Select(i => i.ContentLink.ToString()));
-        Assert.Equal("checkedOut", result.SharedBlocks![0].Status);
+        // As the project has it: marked ready (checked in) with the page when the write marks it ready.
+        Assert.Equal(status, result.SharedBlocks![0].Status);
+        Assert.Equal(status, Assert.IsType<IVersionable>(site.Store.Latest(block.ID), exactMatch: false).Status is VersionStatus.CheckedIn ? "checkedIn" : "checkedOut");
     }
 
     [Theory]
