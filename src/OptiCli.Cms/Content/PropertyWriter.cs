@@ -1145,7 +1145,8 @@ internal sealed class PropertyWriter(
     /// Where new blocks are shared (<see cref="Shared"/>): of the items <paramref name="pairs"/> left, each new block item
     /// (<c>{type, properties}</c>) takes over a current item that shows a shared block of its type from the content's own
     /// "For this page" folder, paired by the rules for inline blocks (<see cref="AreaItemRules.Pair"/>: an exact copy, then
-    /// the only one of its type left). Writing an area whole again, as a plan run again does, then changes those blocks
+    /// the only one of its type left), then by the block's name and display option. Writing an area whole again, as a plan
+    /// run again does, then changes those blocks
     /// rather than making more. A shared block from anywhere else is never taken over: it stays as its <c>{ref}</c>.
     /// </summary>
     /// <param name="types">The type of each new block item; null for an item that shows content.</param>
@@ -1169,18 +1170,35 @@ internal sealed class PropertyWriter(
         {
             return owned;
         }
+        bool Alike(int i, int j) =>
+            string.Equals((items[waiting[i]].Name ?? "").Trim(), candidates[j].Block.Name, StringComparison.Ordinal)
+            && string.Equals(items[waiting[i]].DisplayOption ?? "", PropertyValues.DisplayOption(current[candidates[j].Index]) ?? "", StringComparison.OrdinalIgnoreCase);
         var sub = AreaItemRules.Pair(
             candidates.Select(c => (string?)AreaItemRules.InlineKey(c.Block.ContentTypeID)).ToList(),
             waiting.Select(i => (string?)AreaItemRules.InlineKey(types[i]!.ID)).ToList(),
             (i, j) => Unchanged(candidates[j].Values, items[waiting[i]]),
-            (i, j) => string.Equals((items[waiting[i]].Name ?? "").Trim(), candidates[j].Block.Name, StringComparison.Ordinal)
-                && string.Equals(items[waiting[i]].DisplayOption ?? "", PropertyValues.DisplayOption(current[candidates[j].Index]) ?? "", StringComparison.OrdinalIgnoreCase));
+            Alike);
         for (var i = 0; i < waiting.Count; i++)
         {
             if (sub[i].Current >= 0)
             {
                 var (index, block, values) = candidates[sub[i].Current];
                 owned[waiting[i]] = new OwnTakeover(index, sub[i].Exact, block, values);
+            }
+        }
+        // Then alike: unlike an inline block, a shared block has a name of its own. A changed item that gives the name (and
+        // display option) of a block of its type left takes it over when that pairing is the only one either side has, so
+        // an area written whole again with several blocks of a type changed updates them rather than making new ones.
+        var left = Enumerable.Range(0, candidates.Count).Where(j => !sub.Any(p => p.Current == j)).ToList();
+        var unpaired = Enumerable.Range(0, waiting.Count).Where(i => sub[i].Current < 0 && !string.IsNullOrWhiteSpace(items[waiting[i]].Name)).ToList();
+        foreach (var i in unpaired)
+        {
+            var named = left.Where(j => candidates[j].Block.ContentTypeID == types[waiting[i]]!.ID && Alike(i, j)).ToList();
+            if (named is [var j] && unpaired.Count(k => types[waiting[k]]!.ID == types[waiting[i]]!.ID && Alike(k, j)) == 1)
+            {
+                var (index, block, values) = candidates[j];
+                owned[waiting[i]] = new OwnTakeover(index, false, block, values);
+                left.Remove(j);
             }
         }
         return owned;

@@ -1049,6 +1049,34 @@ public class SharedAreaBlockTests
         Assert.Empty(site.Store.Saves);
     }
 
+    [Fact]
+    public void Several_blocks_of_the_pages_folder_of_a_type_given_changed_by_their_names_are_updated_not_made_again()
+    {
+        var site = new Site();
+        var page = site.Page(folder: true);
+        var folder = site.Folder(page).ContentLink;
+        var first = site.Block(folder, "First", "One");
+        var second = site.Block(folder, "Second", "Two");
+        page = OwnerOf(site, first, Ref(first), Ref(second));
+        site.Store.Saves.Clear();
+        var flow = site.Flow();
+        // Both changed, in the other order, and a new one of the type: no "only one of its type left" pairing applies.
+        var (writable, before) = site.Write(flow, page, """
+            {"Area": [
+              {"type": "ItemBlock", "name": "Second", "properties": {"Title": "Two changed"}},
+              {"type": "ItemBlock", "name": "First", "properties": {"Title": "One changed"}},
+              {"type": "ItemBlock", "name": "Third", "properties": {"Title": "Three"}}
+            ]}
+            """);
+
+        var result = site.Save(flow, writable, before);
+
+        Assert.Equal([("Area[0]", SharedBlockActions.Updated, "Second"), ("Area[1]", SharedBlockActions.Updated, "First"), ("Area[2]", SharedBlockActions.Created, "Third")],
+            result.SharedBlocks!.Select(s => (s.Path, s.Action, s.Name)));
+        Assert.Equal([second.ContentLink.ID, first.ContentLink.ID], Items(writable).Take(2).Select(i => i.ContentLink.ID));
+        Assert.Equal(("One changed", "Two changed"), (Title(site.Store.Latest(first.ContentLink.ID)), Title(site.Store.Latest(second.ContentLink.ID))));
+    }
+
     /// <summary><paramref name="content"/> with no language of its own (every version), so an editor's language access isn't asked.</summary>
     private static T Neutral<T>(Site site, T content) where T : IContent
     {
