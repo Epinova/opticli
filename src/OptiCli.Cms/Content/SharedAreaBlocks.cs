@@ -222,6 +222,15 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
             }
             else
             {
+                // Saved unchecked like a new block, but it is a block of its own, which may have access rights of its own:
+                // an editor changes it only where the edit UI would let them.
+                if (!call.Allows(pending.Existing!, AccessLevel.Edit))
+                {
+                    var link = pending.Existing!.ContentLink.ToReferenceWithoutVersion();
+                    throw AgentException.Refused(
+                        $"{pending.Path} changes the shared block {link} ('{pending.Existing.Name}') of the content's \"For this page\" folder, and you don't have Edit access to that block.",
+                        $"Give that item back as {{\"ref\": \"{link}\"}} to keep the block as it is, or ask a CMS administrator for the access. Nothing was saved.");
+                }
                 pending.Name = string.IsNullOrWhiteSpace(pending.GivenName) ? pending.Existing!.Name : pending.GivenName.Trim();
                 pending.Content = (IContent)((IReadOnly)pending.Existing!).CreateWritableClone();
             }
@@ -549,6 +558,12 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
                 if (!othersConfirmed && !PendingDrafts.SavedBy(latest.SavedBy, call.UserName))
                 {
                     warnings.Add(new ValidationIssue(path, $"{what} is a draft {(string.IsNullOrWhiteSpace(latest.SavedBy) ? "saved without a user name" : $"{latest.SavedBy} saved")}, so it wasn't published along: those changes aren't yours. Publish it on its own if they should go live.", "warning"));
+                    continue;
+                }
+                if (!call.Allows(block, AccessLevel.Publish))
+                {
+                    // Published unchecked (SaveAsset): a block with access rights of its own goes live only for someone who may publish it.
+                    warnings.Add(new ValidationIssue(path, $"{what} is a draft, and you don't have Publish access to that block, so it wasn't published along. Ask someone who may publish it.", "warning"));
                     continue;
                 }
                 if (Approvals.Applying(call, block.ContentLink) is not null)

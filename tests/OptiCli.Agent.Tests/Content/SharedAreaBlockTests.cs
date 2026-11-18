@@ -968,5 +968,60 @@ public class SharedAreaBlockTests
         Assert.Equal(indexed.ContentLink, Assert.Single(site.Call.TakeSiteEvents()).Link);
     }
 
+    [Fact]
+    public void An_editor_cant_change_a_block_of_the_pages_folder_they_may_not_edit_by_writing_the_area_whole()
+    {
+        var site = new Site(CmsCaller.Editor);
+        var page = Neutral(site, site.Page(folder: true));
+        var locked = Neutral(site, site.Block(site.Folder(page).ContentLink, "Intro", "Old"));
+        ((Shared)site.Store.Latest(locked.ContentLink.ID)).Access = AccessLevel.Read;
+        page = OwnerOf(site, locked, Ref(locked));
+        site.Store.Saves.Clear();
+        var flow = site.Flow();
+        var (writable, before) = site.Write(flow, page, """{"Area": [{"type": "ItemBlock", "name": "Intro", "properties": {"Title": "New"}}]}""");
+
+        var refused = Assert.Throws<AgentException>(() => site.Save(flow, writable, before));
+
+        Assert.Equal(AgentErrorCodes.Refused, refused.Code);
+        Assert.Empty(site.Store.Saves);
+        Assert.Equal("Old", Title(site.Store.Latest(locked.ContentLink.ID)));
+    }
+
+    [Fact]
+    public void A_publish_doesnt_publish_along_a_block_draft_the_editor_may_not_publish()
+    {
+        var site = new Site(CmsCaller.Editor);
+        var page = Neutral(site, site.Page(folder: true));
+        var draft = Neutral(site, site.Block(site.Folder(page).ContentLink, "Draft", "Draft", VersionStatus.CheckedOut, savedBy: "editor"));
+        ((Shared)site.Store.Latest(draft.ContentLink.ID)).Access = AccessLevel.Read | AccessLevel.Edit;
+        page = OwnerOf(site, draft, Ref(draft));
+        var flow = site.Flow();
+        var (writable, before) = site.Write(flow, page, """{"Title": "Changed"}""");
+
+        var result = site.Save(flow, writable, before, action: SaveAction.Publish | SaveAction.ForceNewVersion);
+
+        Assert.True(result.Published);
+        Assert.Null(result.SharedBlocks);
+        Assert.Equal(VersionStatus.CheckedOut, ((IVersionable)site.Store.Latest(draft.ContentLink.ID)).Status);
+        Assert.Contains(result.Validation!, i => (i.Property, i.Severity) == ("Area[0]", "warning") && i.Message.Contains("Publish access"));
+    }
+
+    /// <summary><paramref name="content"/> with no language of its own (every version), so an editor's language access isn't asked.</summary>
+    private static T Neutral<T>(Site site, T content) where T : IContent
+    {
+        foreach (var (version, _) in site.Store.Items[content.ContentLink.ID])
+        {
+            switch (version)
+            {
+                case Page page:
+                    page.Language = page.MasterLanguage = CultureInfo.InvariantCulture;
+                    break;
+                case Shared block:
+                    block.Language = block.MasterLanguage = CultureInfo.InvariantCulture;
+                    break;
+            }
+        }
+        return (T)site.Store.Latest(content.ContentLink.ID);
+    }
 #endif
 }

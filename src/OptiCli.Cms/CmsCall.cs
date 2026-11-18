@@ -354,6 +354,12 @@ internal sealed class CmsCall(IServiceProvider services, CancellationToken abort
     public bool CanRead(IContent content) => !Checked || HasAccess(content, AccessLevel.Read);
 
     /// <summary>
+    /// Whether the caller has <paramref name="level"/> on <paramref name="content"/>: always the developer. For a save made
+    /// without the CMS's own check (<see cref="SaveAsset"/>) of content that isn't the one the caller asked to change.
+    /// </summary>
+    public bool Allows(IContent content, AccessLevel level) => !Checked || HasAccess(content, level);
+
+    /// <summary>
     /// <see cref="IContentLoader"/> and <see cref="IContentRepository"/> load anything; an editor may only see what they
     /// can read. Content they can't read is reported exactly as content that doesn't exist, as the edit UI does, so its
     /// existence doesn't leak.
