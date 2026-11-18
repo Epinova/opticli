@@ -169,6 +169,36 @@ public class PlanBlocksTests
     }
 
     [Fact]
+    public void Run_again_an_add_whose_dry_run_found_an_inline_block_like_it_is_invalid_when_a_later_step_uses_its_id()
+    {
+        var add = (AreaEdit)Plan.Steps[1].Operation;
+        // The dry run found an inline block like it (--if-missing): no shared block for its area, made or found.
+        Assert.True(PlanBlocks.FoundInline(add, Output()));
+        Assert.True(PlanBlocks.FoundInline(add, Output(Block("MainArea[0].Area[0]", null), Block("MainArea[1]", "7_1", SharedBlockActions.Published))));
+        // A block it would make, or one of the folder it found: $teaser reaches that.
+        Assert.False(PlanBlocks.FoundInline(add, Output(Block("MainArea[1]", null))));
+        Assert.False(PlanBlocks.FoundInline(add, Output(Block("MainArea[1]", "503_4", SharedBlockActions.Existing))));
+        // Nothing to tell by: not dry-run (a step checked when the plan runs), or not a dry run.
+        Assert.False(PlanBlocks.FoundInline(add, null));
+        Assert.False(PlanBlocks.FoundInline(add, Output() with { DryRun = false }));
+        Assert.False(PlanBlocks.FoundInline(add with { Type = null, Item = "9" }, Output()));
+
+        var checkedAdd = new PlanStepResult(1, "area", "teaser", PlanStepStatus.Valid, Output());
+        var (used, failure) = PlanRunner.FoundInline(Plan.Steps[1], Plan.Steps, checkedAdd);
+        Assert.Equal(PlanStepStatus.Invalid, used.Status);
+        Assert.NotNull(failure);
+        Assert.Contains("Operation(s) 2, 3, 4 reach the block this add makes as '$teaser', but MainArea already has an inline block like it", failure.Message);
+        Assert.Contains("by its position", failure.Hint);
+        var unused = WritePlan.Parse("""
+            {"operations": [{"op": "area", "ref": "300", "property": "MainArea", "action": "add", "type": "TeaserBlock", "id": "teaser"}]}
+            """);
+        var (noted, none) = PlanRunner.FoundInline(unused.Steps[0], unused.Steps, checkedAdd);
+        Assert.Null(none);
+        Assert.Equal(PlanStepStatus.Valid, noted.Status);
+        Assert.Contains("MainArea already has an inline block like the one this add makes", Assert.Single(noted.Warnings!));
+    }
+
+    [Fact]
     public void A_plan_that_names_an_area_item_by_its_position_is_dry_run_after_the_steps_before_it()
     {
         // Positional steps: the existing content each step writes is looked up, so earlier area adds are folded in.

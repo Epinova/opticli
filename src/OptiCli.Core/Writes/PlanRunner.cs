@@ -130,13 +130,18 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         var checks = new List<PlanStepResult>();
         OptiCliException? firstFailure = null;
         // Whether the site makes new area blocks inline, which an area add's "id" can't name (asked only where one has an id).
-        var inlineBlocks = steps.Any(s => PlanBlocks.Names(s.Operation)) && await executor.InlineBlocksAsync(cancellationToken) == Protocol.InlineBlockModes.Inline;
+        var blockMode = steps.Any(s => PlanBlocks.Names(s.Operation)) ? await executor.InlineBlocksAsync(cancellationToken) : null;
         foreach (var step in steps)
         {
             var (result, failure) = await ValidateAsync(step, steps, existing, resolved, targets, masters, checks, cancellationToken);
-            if (failure is null && inlineBlocks && PlanBlocks.Names(step.Operation))
+            if (failure is null && blockMode == Protocol.InlineBlockModes.Inline && PlanBlocks.Names(step.Operation))
             {
                 (result, failure) = NamedInline(step, steps, result);
+            }
+            else if (failure is null && blockMode == Protocol.InlineBlockModes.Shared && PlanBlocks.Names(step.Operation)
+                && PlanBlocks.FoundInline((AreaEdit)step.Operation, result.Result as WriteOutput))
+            {
+                (result, failure) = FoundInline(step, steps, result);
             }
             var asPlanned = planned.First(p => p.Index == step.Index);
             if (failure is null && asPlanned.Operation.Ready && projects.ToMake(asPlanned.Operation))
@@ -1062,6 +1067,27 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         var failure = new UsageException(
             $"Operation(s) {string.Join(", ", users)} reach the block this add makes as '${id}', but the site makes new blocks in a ContentArea inline (its edit UI does: UIOptions.InlineBlocksInContentAreaEnabled is on; `opticli serve --status` shows inlineBlocks), and an inline block has no ref.",
             "Change the block by its position instead (\"MainArea[2]\": {...} in a set, or an area set), or give its values in the add, and leave out the add's \"id\".");
+        return (result with { Status = PlanStepStatus.Invalid, Error = Error(failure) }, failure);
+    }
+
+    /// <summary>
+    /// An area add with an <c>id</c> whose dry run found an inline block like it in the area already (a plan run again with
+    /// <c>--update-existing</c>, on a site that makes shared blocks but kept an inline block an earlier run or another tool
+    /// made): the add makes no block, so there is nothing for <c>$id</c> to reach. Invalid when a later step uses it, rather
+    /// than failing halfway through the run; else the id is only noted.
+    /// </summary>
+    internal static (PlanStepResult Result, OptiCliException? Failure) FoundInline(PlanStep step, IReadOnlyList<PlanStep> steps, PlanStepResult result)
+    {
+        var id = step.Operation.Id!;
+        var users = steps.Where(s => s.Index > step.Index && s.DependsOn.Contains(id)).Select(s => s.Index).ToList();
+        var area = ((AreaEdit)step.Operation).Property;
+        if (users.Count == 0)
+        {
+            return (result with { Warnings = [.. result.Warnings ?? [], $"\"id\" '{id}' names nothing here: {area} already has an inline block like the one this add makes, so the add leaves it as it is, and an inline block has no ref."] }, null);
+        }
+        var failure = new UsageException(
+            $"Operation(s) {string.Join(", ", users)} reach the block this add makes as '${id}', but {area} already has an inline block like it (the add only adds what is missing, --update-existing), so the add makes no shared block and '${id}' names nothing. An inline block has no ref.",
+            $"Change that inline block by its position instead (\"{area}[n]\": {{...}} in a set, or an area set), and leave out the add's \"id\"; or remove the inline block from the area first, so the add makes a shared block. Nothing was changed.");
         return (result with { Status = PlanStepStatus.Invalid, Error = Error(failure) }, failure);
     }
 

@@ -37,6 +37,16 @@ public static class PlanBlocks
     }
 
     /// <summary>
+    /// Where the site makes shared blocks: whether the dry run of an area add with a <c>type</c> (<paramref name="output"/>)
+    /// left its area without a shared block for it, neither one it would make nor one of the folder it found (the add found
+    /// an inline block like it there already, <c>--if-missing</c>). False without a dry run to tell (a step checked only
+    /// later).
+    /// </summary>
+    public static bool FoundInline(AreaEdit op, WriteOutput? output) =>
+        op is { Action: AreaOps.Add, Type: not null } && output is { DryRun: true }
+        && !(output.SharedBlocks ?? []).Any(s => s.Action is SharedBlockActions.Created or SharedBlockActions.Existing && ItemOf(s.Path, op.Property));
+
+    /// <summary>
     /// The GUID a step's <paramref name="output"/> gives the content its plan id names, for <c>$id</c>s in rich text
     /// (<see cref="TextRefs"/>): the content's own; null for an area add, whose output is the content it adds to, not the
     /// block it made (whose GUID the output doesn't have).
