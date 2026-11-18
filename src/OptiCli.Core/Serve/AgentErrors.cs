@@ -42,12 +42,14 @@ public static class AgentErrors
             return new DriftException(error.Message, hint) { Details = drift };
         }
         object? details = error.Validation is not null || error.CurrentVersion is not null || error.PendingDraft is not null || error.Reason is not null || error.Removal is not null || error.Project is not null
+            || error.MadeBlocks is { Count: > 0 }
             ? new AgentErrorDetails(error.Validation, error.CurrentVersion)
             {
                 Reason = error.Reason ?? (error.PendingDraft is null ? null : PendingDraft.Reason),
                 Draft = error.PendingDraft,
                 Removed = error.Removal,
                 Project = error.Project,
+                MadeBlocks = error.MadeBlocks is { Count: > 0 } made ? made : null,
             }
             : null;
         return OptiCliException.Create(CodeFor(error.Code), error.Message, hint, details);
@@ -74,4 +76,11 @@ public sealed record AgentErrorDetails(IReadOnlyList<ValidationIssue>? Validatio
     /// and, for a publish, its <c>pendingDraft</c>; nothing was changed.
     /// </summary>
     public ProjectResult? Project { get; init; }
+
+    /// <summary>
+    /// A write that made shared blocks for its ContentAreas (<see cref="Writes.WriteOutput.SharedBlocks"/>) and then failed
+    /// to save the content itself: those blocks (and their "For this page" folder) were saved and stay. A retry gives their
+    /// refs (<c>{"ref": "..."}</c> items) rather than making them again.
+    /// </summary>
+    public IReadOnlyList<SharedBlockResult>? MadeBlocks { get; init; }
 }

@@ -64,6 +64,14 @@ public sealed record AgentStatus(AgentState State, string Message) : ServeForegr
     [Protocol.OutputValues(typeof(SchedulerStates))]
     public string? Scheduler { get; init; }
 
+    /// <summary>
+    /// How the running site makes a new block in a ContentArea, which opticli's writes follow: <c>inline</c>, or
+    /// <c>shared</c> (a shared block in the content's "For this page" folder, where the site's edit UI makes those:
+    /// <c>UIOptions.InlineBlocksInContentAreaEnabled</c> off). Null when no site answers (or its agent is older than the field).
+    /// </summary>
+    [Protocol.OutputValues(typeof(Protocol.InlineBlockModes))]
+    public string? InlineBlocks { get; init; }
+
     public string? Hint { get; init; }
 
     /// <summary>For <see cref="AgentState.Stale"/>: the state file itself is unreadable, so nothing is known about the site.</summary>
@@ -201,7 +209,7 @@ public static class AgentProbe
                 Failure = ex.Code,
             }, null);
         }
-        return (status with { Agent = AgentSummary.From(ping), Database = ping.Database, Scheduler = SchedulerText(ping.Scheduler) }, ping);
+        return (status with { Agent = AgentSummary.From(ping), Database = ping.Database, Scheduler = SchedulerText(ping.Scheduler), InlineBlocks = ping.InlineBlocks }, ping);
     }
 
     private static async Task<(AgentStatus Status, ServeState? State)> ProbeStateFileAsync(StateStore store, VerifiedConnectionString? expected, CancellationToken cancellationToken)

@@ -107,6 +107,14 @@ public sealed record WriteOutput(
     /// </summary>
     public ProjectSaveResult? Project { get; init; }
 
+    /// <summary>
+    /// Where the site's edit UI makes a new block in a ContentArea a shared one (<c>status</c>'s <c>inlineBlocks</c> is
+    /// <c>shared</c>): the shared blocks in the content's "For this page" folder that the write made, changed, found already
+    /// there or published along with it, each with its place in the content (<c>MainArea[2]</c>) and ref. For a dry run,
+    /// what it would do (no ref for a block it would make). Null when there were none.
+    /// </summary>
+    public IReadOnlyList<SharedBlockResult>? SharedBlocks { get; init; }
+
     /// <param name="type">Shown when the agent returns no content (a dry-run create).</param>
     public static WriteOutput From(WriteResult result, string? type = null, string? name = null, string? parent = null)
     {
@@ -143,6 +151,7 @@ public sealed record WriteOutput(
             LeftOut = result.LeftOut is { Count: > 0 } leftOut ? leftOut : null,
             IntoVersion = result.IntoVersion ? true : null,
             Project = result.Project,
+            SharedBlocks = result.SharedBlocks is { Count: > 0 } shared ? shared : null,
         };
     }
 

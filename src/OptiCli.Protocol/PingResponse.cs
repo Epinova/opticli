@@ -32,6 +32,25 @@ public sealed record PingResponse
     /// resolved it). Null from agents older than this field.
     /// </summary>
     public bool? Scheduler { get; init; }
+
+    /// <summary>
+    /// How the site's edit UI makes a new block in a ContentArea, which writes follow (one of <see cref="InlineBlockModes"/>):
+    /// <c>inline</c>, or <c>shared</c> (a shared block in the content's "For this page" folder, where
+    /// <c>UIOptions.InlineBlocksInContentAreaEnabled</c> is off). Null from agents older than this field.
+    /// </summary>
+    [OutputValues(typeof(InlineBlockModes))]
+    public string? InlineBlocks { get; init; }
+}
+
+/// <summary>Values of <see cref="PingResponse.InlineBlocks"/>.</summary>
+[ValueSetName("InlineBlockMode")]
+public static class InlineBlockModes
+{
+    /// <summary>New blocks in a ContentArea are inline blocks, stored in the area (also where the site can't be asked).</summary>
+    public const string Inline = "inline";
+
+    /// <summary>New blocks in a ContentArea are shared blocks in the content's "For this page" folder, as the edit UI makes them.</summary>
+    public const string Shared = "shared";
 }
 
 /// <summary>Response of <see cref="AgentRoutes.Shutdown"/>.</summary>
