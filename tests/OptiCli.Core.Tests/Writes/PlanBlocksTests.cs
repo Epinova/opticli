@@ -136,4 +136,15 @@ public class PlanBlocksTests
         var error = AgentErrors.ToException(new AgentError(AgentErrorCodes.Internal, "The save failed.", "the database") { MadeBlocks = made });
         Assert.Same(made, Assert.IsType<AgentErrorDetails>(error.Details).MadeBlocks);
     }
+
+    [Fact]
+    public void A_later_text_link_to_the_named_block_gets_the_blocks_guid_not_its_pages()
+    {
+        var page = Guid.NewGuid();
+        var output = Output(Block("MainArea[0]", "501_2")) with { Guid = page };
+
+        // An area add's output is the page's: the block's GUID isn't in it, so the runner reads it back.
+        Assert.Null(PlanBlocks.CreatedGuid(Plan.Steps[1].Operation, output));
+        Assert.Equal(page, PlanBlocks.CreatedGuid(Plan.Steps[0].Operation, output));
+    }
 }

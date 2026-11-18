@@ -217,7 +217,10 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                 if (step.Operation.Id is { } id && outcome.CreatedId is { } createdId)
                 {
                     created[id] = createdId;
-                    if (outcome.Output is WriteOutput { Guid: { } guid })
+                    // An area add's output is its content's, not the block's it made: that one's GUID is read back.
+                    if ((PlanBlocks.CreatedGuid(step.Operation, outcome.Output) ?? (PlanBlocks.Names(step.Operation)
+                        ? (await session.HeaderAsync(createdId, cancellationToken)).Guid
+                        : null)) is { } guid)
                     {
                         guids[id] = guid;
                     }

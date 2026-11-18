@@ -36,6 +36,14 @@ public static class PlanBlocks
         return made is [var only] && int.TryParse(only.Ref!.Split('_')[0], NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : null;
     }
 
+    /// <summary>
+    /// The GUID a step's <paramref name="output"/> gives the content its plan id names, for <c>$id</c>s in rich text
+    /// (<see cref="TextRefs"/>): the content's own; null for an area add, whose output is the content it adds to, not the
+    /// block it made (whose GUID the output doesn't have).
+    /// </summary>
+    public static Guid? CreatedGuid(WriteOperation op, object? output) =>
+        op is AreaEdit ? null : (output as WriteOutput)?.Guid;
+
     /// <summary>Whether <paramref name="path"/> (<c>MainArea[2]</c>) is an item of the area <paramref name="property"/> itself.</summary>
     private static bool ItemOf(string path, string property) =>
         path.StartsWith(property + "[", StringComparison.OrdinalIgnoreCase) && path.EndsWith(']')
