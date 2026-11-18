@@ -121,7 +121,8 @@ public static class PlanSimulation
             ? step
             : target is null
                 ? null
-                : Index(steps).ById.TryGetValue(target, out var first) && first.Index < step.Index && first.Operation is CreateOperation or BlockCreateOperation or UploadOperation ? first : null;
+                : Index(steps).ById.TryGetValue(target, out var first) && first.Index < step.Index
+                    && (first.Operation is CreateOperation or BlockCreateOperation or UploadOperation || PlanBlocks.Names(first.Operation)) ? first : null;
         if (creating is null || (target is not null && existing.ContainsKey(target)))
         {
             return null;
@@ -132,15 +133,18 @@ public static class PlanSimulation
             PublishOperation publishing => publishing.Lang,
             _ => null,
         };
-        if (!SameLanguage(branch, LanguageOf(creating.Operation)))
+        // The shared block an area add names (PlanBlocks): dry-run as a block made in its content's "For this page"
+        // folder, with its values and those set on it since.
+        var areaBlock = creating.Operation as AreaEdit;
+        if (!SameLanguage(branch, areaBlock?.Lang ?? LanguageOf(creating.Operation)))
         {
             return null;
         }
 
         // Everything set on the content up to this step, in plan order.
-        var properties = Properties(creating.Operation)?.DeepClone().AsObject() ?? [];
-        var name = NameOf(creating.Operation);
-        var language = LanguageOf(creating.Operation);
+        var properties = (areaBlock is null ? Properties(creating.Operation) : areaBlock.Values)?.DeepClone().AsObject() ?? [];
+        var name = areaBlock is null ? NameOf(creating.Operation) : areaBlock.Name;
+        var language = areaBlock is null ? LanguageOf(creating.Operation) : areaBlock.Lang;
         foreach (var later in Index(steps).Between(creating.Index, step.Index))
         {
             if (later.Operation is SetOperation set && PlanId(set.Ref) == target && SameLanguage(set.Lang, language))
@@ -175,6 +179,7 @@ public static class PlanSimulation
 
         WriteOperation simulated = creating.Operation switch
         {
+            AreaEdit add => new BlockCreateOperation(add.Type!, string.IsNullOrWhiteSpace(name) ? $"{add.Type} (planned)" : name, For: Place(add.Ref), Properties: values, Lang: add.Lang, Publish: publish),
             CreateOperation create when inAssets is not null => create with { Parent = null, For = Place(inAssets), Name = name ?? create.Name, Properties = values, Publish = publish },
             BlockCreateOperation block when inAssets is not null => block with { Parent = null, For = Place(inAssets), Name = name ?? block.Name, Properties = values, Publish = publish },
             UploadOperation upload when inAssets is not null => upload with { Parent = null, For = Place(inAssets), Name = name ?? upload.Name, Properties = values, Publish = publish },
@@ -209,7 +214,8 @@ public static class PlanSimulation
         };
         // A GUID is only checked for the step that creates the content: whether it exists already.
         simulated = simulated with { Id = null, ContentGuid = updateExisting || creating.Index != step.Index ? null : creating.Operation.ContentGuid };
-        return new Simulation(simulated, target, standIns, skipped, references);
+        return new Simulation(simulated, target, standIns, skipped, references, areaBlock is null ? null
+            : [$"Dry-run as the shared block operation {creating.Index} adds to {areaBlock.Property} will be: a {areaBlock.Type} made in the \"For this page\" folder of {Place(areaBlock.Ref)}, with every value set on it so far."]);
     }
 
     private static string? Parent(WriteOperation op) => op switch
@@ -689,6 +695,8 @@ public static class PlanSimulation
             CreateOperation create => create.Type,
             BlockCreateOperation block => block.Type,
             UploadOperation upload => upload.Type,
+            // The shared block an area add names (PlanBlocks), by its type as the step gives it.
+            AreaEdit { Type: { } type } add when PlanBlocks.Names(add) => type,
             _ => null,
         };
 
@@ -814,6 +822,8 @@ public static class PlanSimulation
             CreateOperation create => create.For ?? create.Parent,
             BlockCreateOperation block => block.For ?? block.Parent,
             UploadOperation upload => upload.For ?? upload.Parent,
+            // A shared block an area add makes is in its content's "For this page" folder: the content stands in for it.
+            AreaEdit add when PlanBlocks.Names(add) => add.Ref,
             _ => null,
         };
         if (parent is null || depth > steps.Count)

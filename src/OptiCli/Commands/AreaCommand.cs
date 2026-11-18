@@ -20,15 +20,17 @@ internal static class AreaCommand
         };
         var at = new Option<int?>("--at") { Description = "add: insert at this zero-based position. Default: the end.", HelpName = "n" };
         var display = new Option<string?>("--display") { Description = "add: display option (an id like 'wide', as the site registers them; an unknown one is refused).", HelpName = "option" };
-        var type = new Option<string?>("--type") { Description = "add: a new inline block of this block type (CMS 12.20+), stored in the area, with Prop=value arguments as its values.", HelpName = "type" };
+        var type = new Option<string?>("--type") { Description = "add: a new block of this block type, with Prop=value arguments as its values: an inline block stored in the area (CMS 12.20+), or, where the site's edit UI makes those (`opticli serve --status`: inlineBlocks shared), a shared block in the content's \"For this page\" folder (sharedBlocks in the result gives its ref).", HelpName = "type" };
         var values = new Option<string?>("--values") { Description = "add --type, set: the inline block's values as a JSON object, merged over the Prop=value arguments, as for `opticli set`.", HelpName = "json" };
         var name = new Option<string?>("--name") { Description = "add --type, set: the inline block's name in the area (the edit UI shows it; default: none, shown as its type's name); set --name \"\" removes it.", HelpName = "name" };
         var write = new WriteOptions();
         var command = new Command("area", """
             Add, remove, reorder or change ContentArea items on a new version, a draft unless --publish. Needs `opticli serve`.
             add takes a shared block (its ref), or --type T for a new inline block (CMS 12.20+) stored in the area itself, with
-            its values as Prop=value (and --values). Positions are zero-based; remove and move take a position (2) or the
-            item's content (ref:456); an inline block has no ref, so only its position names it. set <position> changes an
+            its values as Prop=value (and --values); where the site's edit UI makes a new block a shared one in the content's
+            "For this page" folder instead, so does --type (sharedBlocks in the result gives its ref; change it by that ref).
+            Positions are zero-based; remove and move take a position (2) or the item's content (ref:456); an inline block
+            has no ref, so only its position names it. set <position> changes an
             inline block's values (Prop=value, --values) and --name, the rest of it staying as it is (as
             `opticli set <ref> 'MainArea[2].Heading=New'` does). Prints the new version and the area's items before/after.
             Read the positions in the version you change: `opticli get <ref> --version latest --fields <Prop>`. An area inside an

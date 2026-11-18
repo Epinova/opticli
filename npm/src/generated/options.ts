@@ -431,7 +431,7 @@ export interface AreaOptions extends CommonOptions {
   at?: number;
   /** add: display option (an id like 'wide', as the site registers them; an unknown one is refused). */
   display?: string;
-  /** add: a new inline block of this block type (CMS 12.20+), stored in the area, with Prop=value arguments as its values. */
+  /** add: a new block of this block type, with Prop=value arguments as its values: an inline block stored in the area (CMS 12.20+), or, where the site's edit UI makes those (`opticli serve --status`: inlineBlocks shared), a shared block in the content's "For this page" folder (sharedBlocks in the result gives its ref). */
   type?: string;
   /** Property values as an object (sent as JSON): see `Properties`. */
   values?: Properties;

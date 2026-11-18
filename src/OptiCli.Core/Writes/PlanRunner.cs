@@ -129,9 +129,15 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         var masters = await PlannedMastersAsync(resolved, existing, cancellationToken);
         var checks = new List<PlanStepResult>();
         OptiCliException? firstFailure = null;
+        // Whether the site makes new area blocks inline, which an area add's "id" can't name (asked only where one has an id).
+        var inlineBlocks = steps.Any(s => PlanBlocks.Names(s.Operation)) && await executor.InlineBlocksAsync(cancellationToken) == Protocol.InlineBlockModes.Inline;
         foreach (var step in steps)
         {
             var (result, failure) = await ValidateAsync(step, steps, existing, resolved, targets, masters, checks, cancellationToken);
+            if (failure is null && inlineBlocks && PlanBlocks.Names(step.Operation))
+            {
+                (result, failure) = NamedInline(step, steps, result);
+            }
             var asPlanned = planned.First(p => p.Index == step.Index);
             if (failure is null && asPlanned.Operation.Ready && projects.ToMake(asPlanned.Operation))
             {
@@ -194,6 +200,11 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             var operation = WritePlan.Resolve(step, created, guids);
             try
             {
+                // A block an earlier area add was to make shared, where it made none (an inline one).
+                if (PlanBlocks.Unresolved(operation, steps, step.Index) is { } unresolved)
+                {
+                    throw unresolved;
+                }
                 // A change to a branch this run already saved a draft of goes into that draft.
                 var draft = drafts is null ? null : await drafts.ForAsync(operation, session, cancellationToken);
                 if (draft is not null)
@@ -838,6 +849,11 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             var unconfirmed = WriteExecutor.UnconfirmedDraft(draft, op);
             return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Invalid, unconfirmed.Details, Error(unconfirmed), Warnings: notes, Guid: op.ContentGuid), unconfirmed);
         }
+        if (errors.Count == 0 && PlanBlocks.OnPlannedBlock(op, outcome?.Output as WriteOutput) is { } onBlock)
+        {
+            // Dry-run in one write with the steps before it, where a new block's values can still be changed by position.
+            return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Invalid, outcome?.Output, Error(onBlock), Warnings: notes, Guid: op.ContentGuid), onBlock);
+        }
         var messages = errors.Select(v => v.Property is null ? v.Message : $"{v.Property}: {v.Message}").Concat(placements).ToList();
         if (messages.Count > 0)
         {
@@ -1000,6 +1016,8 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             CreateOperation create => create.Type,
             BlockCreateOperation block => block.Type,
             UploadOperation upload => upload.Type,
+            // The block an area add makes, by its type as the site has it (a name, id or GUID).
+            AreaEdit { Type: { } blockType } => InlineTypeName(blockType),
             _ => null,
         };
         // A create from a blueprint (CMS 13) has the blueprint's type, which the site checks.
@@ -1013,6 +1031,25 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         {
             PropertyNameCheck.RequireContentArea(session.Model, type.Id, area);
         }
+    }
+
+    /// <summary>
+    /// An area add with an <c>id</c> on a site that makes new area blocks inline: the block has no ref for later steps to
+    /// reach as <c>$id</c>. Invalid when one does; else the id is only noted.
+    /// </summary>
+    private static (PlanStepResult Result, OptiCliException? Failure) NamedInline(PlanStep step, IReadOnlyList<PlanStep> steps, PlanStepResult result)
+    {
+        var id = step.Operation.Id!;
+        var users = steps.Where(s => s.Index > step.Index && s.DependsOn.Contains(id)).Select(s => s.Index).ToList();
+        var area = ((AreaEdit)step.Operation).Property;
+        if (users.Count == 0)
+        {
+            return (result with { Warnings = [.. result.Warnings ?? [], $"\"id\" '{id}' names nothing here: the site makes new blocks in {area} inline (its edit UI does), and an inline block has no ref."] }, null);
+        }
+        var failure = new UsageException(
+            $"Operation(s) {string.Join(", ", users)} reach the block this add makes as '${id}', but the site makes new blocks in a ContentArea inline (its edit UI does: UIOptions.InlineBlocksInContentAreaEnabled is on; `opticli serve --status` shows inlineBlocks), and an inline block has no ref.",
+            "Change the block by its position instead (\"MainArea[2]\": {...} in a set, or an area set), or give its values in the add, and leave out the add's \"id\".");
+        return (result with { Status = PlanStepStatus.Invalid, Error = Error(failure) }, failure);
     }
 
     private static ErrorBody Error(OptiCliException ex) => new(ExitCodes.Name(ex.Code), ex.Message, ex.Hint);

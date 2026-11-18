@@ -17,7 +17,9 @@ public sealed record PlanStep(int Index, WriteOperation Operation, IReadOnlySet<
 /// <remarks>
 /// <para>Each operation has the fields of the matching command (see <see cref="Fields"/>). A create, block or
 /// upload step may have an <c>id</c>; later steps refer to the content it creates as <c>"$id"</c>, in ref
-/// fields and as a whole string value inside <c>properties</c>.</para>
+/// fields and as a whole string value inside <c>properties</c>. So may an area add with a <c>type</c>, for the block it
+/// makes where the site makes new blocks in a ContentArea shared ones (<see cref="PlanBlocks"/>); an inline block has no
+/// ref.</para>
 /// <para>Parsing checks the whole shape at once and reports every problem: unknown ops and fields, missing
 /// required fields, wrong JSON types, duplicate ids, and <c>$id</c>s that aren't defined by an earlier step.</para>
 /// </remarks>
@@ -28,7 +30,7 @@ public sealed partial class WritePlan
     {
         ["set"] = ["ref*", "properties", "name", "lang", "variation", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force", "project", "ready"],
         ["create"] = ["parent", "for", "type", "blueprint", "name*", "properties", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "id", "guid", "project", "ready"],
-        ["area"] = ["ref*", "property*", "action*", "item", "type", "values", "name", "index", "at", "to", "display", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force", "project", "ready"],
+        ["area"] = ["ref*", "property*", "action*", "item", "type", "values", "name", "index", "at", "to", "display", "lang", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force", "project", "ready", "id"],
         ["composition"] = ["ref*", "action*", "node", "nodeType", "in", "at", "value", "lang", "variation", "publish", "publishAt", "includeDraft", "requestApproval", "from", "baseVersion", "force", "project", "ready"],
         ["block"] = ["type*", "name*", "for", "parent", "properties", "lang", "publish", "includeDraft", "requestApproval", "id", "guid", "project", "ready"],
         ["upload"] = ["file*", "for", "parent", "replace", "name", "type", "properties", "publish", "includeDraft", "requestApproval", "id", "guid", "project", "ready"],
@@ -208,7 +210,7 @@ public sealed partial class WritePlan
                     var reference = $"{found.Attribute}=\"${found.Id}\"";
                     if (!creating.TryGetValue(found.Id, out var target))
                     {
-                        problems.Add($"{where}: {reference} in text is not the id of a create, block or upload operation.");
+                        problems.Add($"{where}: {reference} in text is not the id of a create, block, upload or area add operation.");
                     }
                     else if (target.Index < step.Index)
                     {
@@ -282,7 +284,7 @@ public sealed partial class WritePlan
             {
                 problems.Add(allIds.Contains(id)
                     ? $"operations[{index}]: '{reference}' is created by a later operation; move that one before it."
-                    : $"operations[{index}]: '{reference}' is not the id of an earlier create, block or upload operation.");
+                    : $"operations[{index}]: '{reference}' is not the id of an earlier create, block, upload or area add operation.");
             }
         }
 
@@ -411,6 +413,10 @@ public sealed partial class WritePlan
             {
                 problems.Add($"{reader.Where}: give \"item\" (a shared block) or \"type\" (a new inline block), not both.");
             }
+        }
+        if (operation is AreaEdit && id is not null && (operation is not AreaEdit { Action: "add", Type: not null } || step["item"] is not null))
+        {
+            problems.Add($"{reader.Where}: \"id\" names the block an add with \"type\" makes (a shared block, where the site's edit UI makes those), for later operations to reach as '${id}'; other area operations make nothing to name.");
         }
         if (operation is CompositionEdit edit && CompositionEdits.Problem(edit) is { } compositionProblem && step["action"] is not null)
         {

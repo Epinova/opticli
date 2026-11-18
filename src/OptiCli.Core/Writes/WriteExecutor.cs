@@ -232,7 +232,34 @@ public sealed class WriteExecutor(
             From = op.From?.Request,
             IntoVersion = await IntoVersionAsync(op.IntoVersion, target, language, baseVersion, op.From is not null || op.BaseVersion is not null, null, cancellationToken),
         };
-        return WithWarning(await DraftAsync(target, request, op.From, op.Publishes, cancellationToken), masterFirst);
+        var outcome = WithWarning(await DraftAsync(target, request, op.From, op.Publishes, cancellationToken), masterFirst);
+        // The shared block an add with a type made (where the site makes those), for a plan's "$id".
+        return PlanBlocks.MadeBlock(op, outcome.Output) is { } made ? outcome with { CreatedId = made } : outcome;
+    }
+
+    private string? _inlineBlocks;
+
+    private bool _inlineBlocksAsked;
+
+    /// <summary>
+    /// How the running site makes a new block in a ContentArea (<see cref="Protocol.InlineBlockModes"/>), as its agent
+    /// reports it; asked once. Null when it can't be told (an agent older than the field, or none answers).
+    /// </summary>
+    public async Task<string?> InlineBlocksAsync(CancellationToken cancellationToken)
+    {
+        if (!_inlineBlocksAsked)
+        {
+            _inlineBlocksAsked = true;
+            try
+            {
+                _inlineBlocks = (await (await AgentAsync(cancellationToken)).PingAsync(cancellationToken)).InlineBlocks;
+            }
+            catch (OptiCliException)
+            {
+                // The steps' own dry runs say what is wrong with the site.
+            }
+        }
+        return _inlineBlocks;
     }
 
     internal async Task<WriteOutcome<WriteOutput>> CompositionAsync(CompositionEdit op, bool dryRun, CancellationToken cancellationToken)

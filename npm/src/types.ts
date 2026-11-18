@@ -146,6 +146,11 @@ export type PlanStep =
         /** The display option of an added item. */
         readonly display?: string;
         readonly lang?: string;
+        /**
+         * An add with `type`: later steps reach the block it makes as `"$id"`, where the site makes new area blocks shared
+         * blocks in the content's "For this page" folder (an inline block has no ref; change it by its position).
+         */
+        readonly id?: string;
       })
   | (Saving &
       Scheduling &

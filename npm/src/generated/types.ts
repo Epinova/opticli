@@ -101,6 +101,8 @@ export interface AgentStatus {
   drift?: DriftSummary;
   /** `on` or `off`: whether the site's scheduler starts jobs on their schedule, as the running site reports it. Null when no site answers (or its agent is older than the field). */
   scheduler?: SchedulerState;
+  /** How the running site makes a new block in a ContentArea, which opticli's writes follow: `inline`, or `shared` (a shared block in the content's "For this page" folder, where the site's edit UI makes those: `UIOptions.InlineBlocksInContentAreaEnabled` off). Null when no site answers (or its agent is older than the field). */
+  inlineBlocks?: InlineBlockMode;
   hint?: string;
 }
 
@@ -506,6 +508,9 @@ export interface IncomingReference {
   /** As `kind`: contentArea, contentReference, richTextLink, ... */
   kind: string;
 }
+
+/** Values of `inlineBlocks`. */
+export type InlineBlockMode = 'inline' | 'shared';
 
 /** CMS 13, `where-used --type` of a block type: its inline blocks, which aren't content of their own: every place a branch's primary version holds one (the CMS's index `tblInlineBlockUsage`), Visual Builder sections and elements included. */
 export interface InlineUsages {
@@ -1180,7 +1185,7 @@ export interface ServeStopOutput {
 }
 
 /** What a write did to a shared block (`action`). */
-export type SharedBlockAction = 'created' | 'updated' | 'published';
+export type SharedBlockAction = 'created' | 'updated' | 'published' | 'existing';
 
 /** A shared block a write made, changed or published along (`sharedBlocks`). */
 export interface SharedBlockResult {
@@ -1621,4 +1626,6 @@ export interface WriteOutput {
   intoVersion?: boolean;
   /** For a save into a project (`project`): what it did to the project (would do, for a dry run): `item` added, replaced (with the version it replaced) or unchanged, whether the version is ready, and an error when putting it there failed after the save. Null for a save without a project. */
   project?: ProjectSaveResult;
+  /** Where the site's edit UI makes a new block in a ContentArea a shared one (`status`'s `inlineBlocks` is `shared`): the shared blocks in the content's "For this page" folder that the write made, changed, found already there or published along with it, each with its place in the content (`MainArea[2]`) and ref. For a dry run, what it would do (no ref for a block it would make). Null when there were none. */
+  sharedBlocks?: SharedBlockResult[];
 }

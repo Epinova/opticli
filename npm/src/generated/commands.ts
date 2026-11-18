@@ -1096,8 +1096,10 @@ export abstract class OptiCliCommands {
   /**
    * Add, remove, reorder or change ContentArea items on a new version, a draft unless --publish. Needs `opticli serve`.
    * add takes a shared block (its ref), or --type T for a new inline block (CMS 12.20+) stored in the area itself, with
-   * its values as Prop=value (and --values). Positions are zero-based; remove and move take a position (2) or the
-   * item's content (ref:456); an inline block has no ref, so only its position names it. set <position> changes an
+   * its values as Prop=value (and --values); where the site's edit UI makes a new block a shared one in the content's
+   * "For this page" folder instead, so does --type (sharedBlocks in the result gives its ref; change it by that ref).
+   * Positions are zero-based; remove and move take a position (2) or the item's content (ref:456); an inline block
+   * has no ref, so only its position names it. set <position> changes an
    * inline block's values (Prop=value, --values) and --name, the rest of it staying as it is (as
    * `opticli set <ref> 'MainArea[2].Heading=New'` does). Prints the new version and the area's items before/after.
    * Read the positions in the version you change: `opticli get <ref> --version latest --fields <Prop>`. An area inside an
@@ -1117,8 +1119,10 @@ export abstract class OptiCliCommands {
   /**
    * Add, remove, reorder or change ContentArea items on a new version, a draft unless --publish. Needs `opticli serve`.
    * add takes a shared block (its ref), or --type T for a new inline block (CMS 12.20+) stored in the area itself, with
-   * its values as Prop=value (and --values). Positions are zero-based; remove and move take a position (2) or the
-   * item's content (ref:456); an inline block has no ref, so only its position names it. set <position> changes an
+   * its values as Prop=value (and --values); where the site's edit UI makes a new block a shared one in the content's
+   * "For this page" folder instead, so does --type (sharedBlocks in the result gives its ref; change it by that ref).
+   * Positions are zero-based; remove and move take a position (2) or the item's content (ref:456); an inline block
+   * has no ref, so only its position names it. set <position> changes an
    * inline block's values (Prop=value, --values) and --name, the rest of it staying as it is (as
    * `opticli set <ref> 'MainArea[2].Heading=New'` does). Prints the new version and the area's items before/after.
    * Read the positions in the version you change: `opticli get <ref> --version latest --fields <Prop>`. An area inside an
@@ -1137,8 +1141,10 @@ export abstract class OptiCliCommands {
   /**
    * Add, remove, reorder or change ContentArea items on a new version, a draft unless --publish. Needs `opticli serve`.
    * add takes a shared block (its ref), or --type T for a new inline block (CMS 12.20+) stored in the area itself, with
-   * its values as Prop=value (and --values). Positions are zero-based; remove and move take a position (2) or the
-   * item's content (ref:456); an inline block has no ref, so only its position names it. set <position> changes an
+   * its values as Prop=value (and --values); where the site's edit UI makes a new block a shared one in the content's
+   * "For this page" folder instead, so does --type (sharedBlocks in the result gives its ref; change it by that ref).
+   * Positions are zero-based; remove and move take a position (2) or the item's content (ref:456); an inline block
+   * has no ref, so only its position names it. set <position> changes an
    * inline block's values (Prop=value, --values) and --name, the rest of it staying as it is (as
    * `opticli set <ref> 'MainArea[2].Heading=New'` does). Prints the new version and the area's items before/after.
    * Read the positions in the version you change: `opticli get <ref> --version latest --fields <Prop>`. An area inside an

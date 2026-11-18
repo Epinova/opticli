@@ -190,6 +190,7 @@
 @epinova/opticli type Envelope
 @epinova/opticli type ErrorCode
 @epinova/opticli type HostType
+@epinova/opticli type InlineBlockMode
 @epinova/opticli type JobStatus
 @epinova/opticli type JsonValue
 @epinova/opticli type LanguageBranchStatus
@@ -279,6 +280,7 @@ AgentStatus.browseUrl?
 AgentStatus.database?
 AgentStatus.drift?
 AgentStatus.hint?
+AgentStatus.inlineBlocks?
 AgentStatus.logPath?
 AgentStatus.message
 AgentStatus.mode?
@@ -688,6 +690,7 @@ CreatedContent.ref
 CreatedContent.restored?
 CreatedContent.saved
 CreatedContent.scheduledFor?
+CreatedContent.sharedBlocks?
 CreatedContent.siteChanges?
 CreatedContent.siteError?
 CreatedContent.status?
@@ -721,6 +724,7 @@ CreatedPage.ref
 CreatedPage.restored?
 CreatedPage.saved
 CreatedPage.scheduledFor?
+CreatedPage.sharedBlocks?
 CreatedPage.siteChanges?
 CreatedPage.siteError?
 CreatedPage.status?
@@ -890,6 +894,8 @@ IncomingReference.name?
 IncomingReference.property
 IncomingReference.to
 IncomingReference.type?
+InlineBlockMode = 'inline'
+InlineBlockMode = 'shared'
 InlineUsages.count
 InlineUsages.inline
 InlineUsages.usages
@@ -1487,6 +1493,7 @@ PlanStep[op='area'].baseVersion?
 PlanStep[op='area'].display?
 PlanStep[op='area'].force?
 PlanStep[op='area'].from?
+PlanStep[op='area'].id?
 PlanStep[op='area'].includeDraft?
 PlanStep[op='area'].index?
 PlanStep[op='area'].item?
@@ -1894,6 +1901,7 @@ SavedContent.ref
 SavedContent.restored?
 SavedContent.saved
 SavedContent.scheduledFor?
+SavedContent.sharedBlocks?
 SavedContent.siteChanges?
 SavedContent.siteError?
 SavedContent.status?
@@ -2043,6 +2051,7 @@ SetupOptions.plan?
 SetupOptions.planDir?
 SetupOptions.publish?
 SharedBlockAction = 'created'
+SharedBlockAction = 'existing'
 SharedBlockAction = 'published'
 SharedBlockAction = 'updated'
 SharedBlockResult.action
@@ -2398,6 +2407,7 @@ WriteOutput.ref?
 WriteOutput.restored?
 WriteOutput.saved
 WriteOutput.scheduledFor?
+WriteOutput.sharedBlocks?
 WriteOutput.siteChanges?
 WriteOutput.siteError?
 WriteOutput.status?

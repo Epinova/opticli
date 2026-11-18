@@ -56,6 +56,9 @@ internal static class ApplyCommand
             Plan: {"operations": [ {"op": "...", ...}, ... ]} ("source", which `opticli export` writes, is accepted and not
             read). A create, block or upload operation may have an "id"; later
             operations refer to what it created as "$id", in ref fields and as a whole string value in "properties".
+            So may an area add with "type", for the block it makes where the site makes new area blocks shared blocks in
+            the content's "For this page" folder (`opticli serve --status`: inlineBlocks); an inline block has no ref,
+            and is changed by its position (MainArea[2]) instead. Where they are shared, change one by its "$id".
             A string value "@path" in "properties" is that file's text (e.g. "MainBody": "@texts/article.html"; "@@" for a
             literal @). These files and an upload's "file" are relative to the plan file (the working directory for stdin)
             and must stay inside its folder unless --allow-outside.
@@ -67,7 +70,8 @@ internal static class ApplyCommand
             already done are skipped. Content the plan no longer has is left alone. Each step reports its "guid".
             Operations and fields (* required; the same as the matching command):
             {{{string.Join(Environment.NewLine, WritePlan.Fields.Select(f => $"  {f.Key}: {string.Join(", ", f.Value)}"))}}}
-            area: action is add (item = block ref, at, display), remove (index or item) or move (index or item, to).
+            area: action is add (item = block ref, or type with values, name and id: a new block; at, display), remove
+            (index or item), move (index or item, to) or set (index, values, name).
             set, area: "from": "published" (or a version, 456 or "123_456") bases the change on that version instead of the
             latest, leaving newer drafts out (as --from); later operations on that content and language build on its result.
             CMS 13 (Visual Builder): "composition" in a create's or set's "properties" is the whole composition, as get shows
