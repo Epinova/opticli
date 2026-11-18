@@ -8,6 +8,7 @@ using OptiCli.Core.Properties;
 using OptiCli.Core.Writes;
 using OptiCli.Integration.Comparison;
 using OptiCli.Integration.Sampling;
+using OptiCli.Protocol;
 
 namespace OptiCli.Integration;
 
@@ -15,7 +16,10 @@ namespace OptiCli.Integration;
 /// Inline blocks in a ContentArea (CMS 12.20+ and CMS 13), on an Alloy site (a StandardPage's MainContentArea, Alloy's
 /// TeaserBlock): added, changed by position, written back whole, moved and removed through the agent, read back from the
 /// database the way <c>get</c> reads them, compared with what the CMS loads, and rendered by the site. The page it makes
-/// goes to the recycle bin at the end. On a CMS before 12.20 the write is refused with the version it needs.
+/// goes to the recycle bin at the end. On a CMS before 12.20 the write is refused with the version it needs. They run where
+/// the site makes new area blocks inline (CMS 13's default; on CMS 12 serve it with
+/// <c>EPiServer__CmsUI__UI__InlineBlocksInContentAreaEnabled=true</c>); <see cref="SharedAreaBlockIntegrationTests"/> covers
+/// the other mode.
 /// </summary>
 public sealed class InlineBlockWriteTests
 {
@@ -51,7 +55,7 @@ public sealed class InlineBlockWriteTests
     private static AreaEdit AddInline(string page, string values, string? name = null, int? at = null) =>
         new(page, "MainContentArea", "add", At: at) { Type = "TeaserBlock", Values = JsonNode.Parse(values)!.AsObject(), Name = name };
 
-    [SiteFact]
+    [InlineBlockModeFact(InlineBlockModes.Inline)]
     public async Task An_inline_block_is_added_changed_written_back_moved_and_removed_and_reads_back_as_the_cms_loads_it()
     {
         var cancellationToken = CancellationToken.None;
@@ -169,7 +173,7 @@ public sealed class InlineBlockWriteTests
         return copy;
     }
 
-    [SiteFact]
+    [InlineBlockModeFact(InlineBlockModes.Inline)]
     public async Task Changed_inline_blocks_in_a_whole_area_are_built_from_what_they_give_and_keep_settings_only_when_unambiguous()
     {
         var cancellationToken = CancellationToken.None;
@@ -251,7 +255,7 @@ public sealed class InlineBlockWriteTests
         }
     }
 
-    [SiteFact]
+    [InlineBlockModeFact(InlineBlockModes.Inline)]
     public async Task Area_edits_in_another_language_than_the_master_are_refused_like_set_and_named_adds_rerun_unchanged()
     {
         var cancellationToken = CancellationToken.None;
@@ -298,7 +302,7 @@ public sealed class InlineBlockWriteTests
         }
     }
 
-    [SiteFact]
+    [InlineBlockModeFact(InlineBlockModes.Inline)]
     public async Task A_changed_block_with_an_area_of_its_own_keeps_what_its_area_pairs_with()
     {
         var cancellationToken = CancellationToken.None;
@@ -336,7 +340,7 @@ public sealed class InlineBlockWriteTests
         }
     }
 
-    [SiteFact]
+    [InlineBlockModeFact(InlineBlockModes.Inline)]
     public async Task A_shared_block_by_ref_alone_in_an_inline_blocks_own_area_is_taken_by_create_area_add_and_set()
     {
         var cancellationToken = CancellationToken.None;
@@ -402,7 +406,7 @@ public sealed class InlineBlockWriteTests
         Assert.Contains("is not allowed in", refused.Message);
     }
 
-    [SiteFact]
+    [InlineBlockModeFact(InlineBlockModes.Inline)]
     public async Task With_update_existing_an_inline_block_with_its_name_or_its_values_counts_as_already_there()
     {
         var cancellationToken = CancellationToken.None;

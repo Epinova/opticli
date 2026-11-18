@@ -2393,6 +2393,20 @@ only). Their test of a site with projects turned off runs only against a site se
 `EPiServer__CmsUI__ProjectUI__ProjectModeEnabled=false` and `EPiServer__CmsUI__ProjectUI__ProjectGadgetEnabled=false`
 (`--filter "FullyQualifiedName~Projects_are_refused"`); elsewhere it checks that projects work.
 
+How a write makes a new block in a ContentArea follows the site's edit UI (`UIOptions.InlineBlocksInContentAreaEnabled`,
+`serve --status` shows it as `inlineBlocks`): `InlineBlockWriteTests` run where the site makes inline blocks (CMS 13's
+default), `SharedAreaBlockIntegrationTests` where it makes shared blocks in the page's "For this page" folder (CMS 12's
+default), and each is skipped, saying how to restart the site, on a site in the other mode. The tests don't restart it:
+run the suite once per mode, serving the site with the setting through `serve`'s environment. Inline blocks a page
+already has (as another tool may put on a site whose edit UI makes none) come from the fixture's
+`POST /opticli-fixture/inline-block`, and `GET /opticli-fixture/inline-blocks` says the mode (loopback only).
+
+```sh
+opticli serve --stop --project /demo/AlloyEdge
+EPiServer__CmsUI__UI__InlineBlocksInContentAreaEnabled=true opticli serve --project /demo/AlloyEdge    # inline; false: shared
+OPTICLI_IT_PROJECT=/demo/AlloyEdge OPTICLI_IT_PLAN=tests/fixtures/edge-cases/edge-cases.plan.json dotnet test tests/OptiCli.Integration
+```
+
 `drift.sh` in the same folder runs the shared-database scenario on copies of the edge-case site and its database. It
 reaches the copy through a host name instead of a loopback name (`<hostname>.localhost` resolves to the loopback
 address, but counts as remote), so `serve` runs in shared mode. It then changes the copy's code and checks each step:
@@ -2534,6 +2548,17 @@ second instance of the same site, started with `OptiCli__Mcp__AllowPublish=false
 tests/fixtures/mcp/serve.sh path/to/AlloyMcp --port 5181 --no-publish
 OPTICLI_MCP_IT_NO_PUBLISH_URL=http://127.0.0.1:5181 OPTICLI_MCP_IT_URL=... OPTICLI_MCP_IT_USERS=... dotnet test tests/OptiCli.Mcp.Integration
 tests/fixtures/mcp/serve.sh path/to/AlloyMcp --port 5181 --stop
+```
+
+The site's edit UI makes a new block in a ContentArea inline or as a shared block in the page's "For this page" folder
+(CMS 13's and CMS 12's defaults), and the module follows it. `InlineBlockTests` run in the first mode,
+`SharedAreaBlockTests` mostly in the second, each skipped on a site in the other mode (the edge-case fixture's
+`/opticli-fixture/inline-blocks` says which). Run the suite once per mode, restarting the default instance with
+`serve.sh --inline-blocks on|off`:
+
+```sh
+tests/fixtures/mcp/serve.sh path/to/AlloyMcp --port 5180 --inline-blocks on     # off: shared blocks
+OPTICLI_MCP_IT_URL=http://127.0.0.1:5180 OPTICLI_MCP_IT_USERS=... dotnet test tests/OptiCli.Mcp.Integration
 ```
 
 The assistant's preview links are on by default, so the default instance runs their tests (a draft's link opened
