@@ -200,8 +200,9 @@ internal sealed class CmsCall(IServiceProvider services, CancellationToken abort
     /// apply; a folder passes the gate, as the CMS publishes folders unasked (nothing of theirs is shown to visitors).
     /// </summary>
     /// <remarks>
-    /// The site's events of this save are left out of <see cref="TakeSiteEvents"/>: the blocks are reported as the
-    /// write's own (<c>sharedBlocks</c>), not as the site's changes.
+    /// The site's events of this save aren't recorded for <see cref="TakeSiteEvents"/>: the blocks are reported as the
+    /// write's own (<c>sharedBlocks</c>), not as the site's changes. Those of the content's own <see cref="Save"/> before
+    /// it (a publish whose blocks are published along after it) are kept.
     /// </remarks>
     public ContentReference SaveAsset(IContent content, SaveAction action)
     {
@@ -210,9 +211,7 @@ internal sealed class CmsCall(IServiceProvider services, CancellationToken abort
         {
             RequirePublishing(action, content);
         }
-        var saved = Repository.Save(content, action, AccessLevel.NoAccess);
-        _siteEvents.Clear();
-        return saved;
+        return Repository.Save(content, action, AccessLevel.NoAccess);
     }
 
     /// <summary>

@@ -15,6 +15,7 @@ using OptiCli.Agent.Tests.Projects;
 using OptiCli.Cms;
 using OptiCli.Cms.Compat;
 using OptiCli.Cms.Content;
+using OptiCli.Cms.Operations;
 using OptiCli.Cms.Projects;
 using OptiCli.Protocol;
 
@@ -135,8 +136,20 @@ public class SharedAreaBlockTests
     }
 
     /// <summary>A shared block as the CMS gives it: a block with an identity, of either test type.</summary>
-    public sealed class Shared : BlockData, IContent, IVersionable, ILocalizable
+    public sealed class Shared : BlockData, IContent, IVersionable, ILocalizable, ISecurable
     {
+        /// <summary>What the caller may do on it: everything when null.</summary>
+        public AccessLevel? Access { get; set; }
+
+        public ISecurityDescriptor GetSecurityDescriptor()
+        {
+            var (descriptor, recorder) = Recorder<ISecurityDescriptor>.Create();
+            recorder.Answer = (method, args) => method.Name == nameof(ISecurityDescriptor.HasAccess) && args is [_, AccessLevel level]
+                ? Access is not { } access || (access & level) == level
+                : null;
+            return descriptor;
+        }
+
         public static Shared Create(int type)
         {
             var block = new Shared { ContentTypeID = type };
@@ -197,7 +210,17 @@ public class SharedAreaBlockTests
         /// <summary>Who the next save is recorded as.</summary>
         public string SavedBy { get; set; } = AgentProtocol.PrincipalName;
 
+        /// <summary>A site handler of the CMS's save events: called after each save, with what was stored.</summary>
+        public Action<IContent, SaveAction>? Saved { get; set; }
+
         public ContentReference Save(IContent content, SaveAction action, AccessLevel? access)
+        {
+            var link = Keep(content, action, access);
+            Saved?.Invoke(Get(link)!, action);
+            return link;
+        }
+
+        private ContentReference Keep(IContent content, SaveAction action, AccessLevel? access)
         {
             Saves.Add((content.Name, content.GetType(), action, access));
             if (Failing.Contains(content.Name))
@@ -323,8 +346,26 @@ public class SharedAreaBlockTests
 
         public CmsCall Call { get; }
 
+        /// <summary>Raises one of the CMS's content events, as a site handler's own save would.</summary>
+        public Action<string, ContentEventArgs> Raise { get; }
+
         public Site(CmsCaller caller = CmsCaller.Developer)
         {
+            var handlers = new Dictionary<string, Delegate?>();
+            var (events, eventsRecorder) = Recorder<IContentEvents>.Create();
+            eventsRecorder.Answer = (method, args) =>
+            {
+                if (method.Name.StartsWith("add_", StringComparison.Ordinal))
+                {
+                    handlers[method.Name[4..]] = Delegate.Combine(handlers.GetValueOrDefault(method.Name[4..]), (Delegate)args[0]!);
+                }
+                else if (method.Name.StartsWith("remove_", StringComparison.Ordinal))
+                {
+                    handlers[method.Name[7..]] = Delegate.Remove(handlers.GetValueOrDefault(method.Name[7..]), (Delegate)args[0]!);
+                }
+                return null;
+            };
+            Raise = (name, e) => handlers.GetValueOrDefault(name)?.DynamicInvoke(null, e);
             var (types, typesRecorder) = Recorder<IContentTypeRepository>.Create();
             typesRecorder.Answer = (method, args) => (method.Name, args) switch
             {
@@ -355,6 +396,7 @@ public class SharedAreaBlockTests
                 .AddSingleton(repository)
                 .AddSingleton(versions)
                 .AddSingleton(validation)
+                .AddSingleton(events)
                 .AddSingleton(factory.Proxy)
                 .AddSingleton(Recorder<EPiServer.Construction.IContentDataBuilder>.Create().Proxy)
                 .AddSingleton(Recorder<ILanguageBranchRepository>.Create().Proxy)
@@ -901,5 +943,30 @@ public class SharedAreaBlockTests
         Assert.Contains("Area[0] is the shared block 123", refused.Message);
         Assert.Contains("opticli set 123", refused.Hint);
     }
+
+    [Fact]
+    public void A_block_saved_after_the_page_keeps_the_site_changes_of_the_pages_save()
+    {
+        // PublishOperation publishes the page, then its blocks along (CmsCall.SaveAsset), then reports the site's changes.
+        var site = new Site();
+        var page = site.Page(folder: true);
+        var draft = site.Block(site.Folder(page).ContentLink, "Draft", "Draft", VersionStatus.CheckedOut);
+        // A site handler of the publish events: it publishes other content too (a search index entry, say).
+        var indexed = site.Block(AssetsRoot, "Indexed", "Indexed");
+        site.Store.Saved = (content, action) =>
+        {
+            if ((action & SaveAction.ActionMask) == SaveAction.Publish)
+            {
+                site.Raise("PublishedContent", new ContentEventArgs(indexed.ContentLink, indexed));
+            }
+        };
+
+        site.Call.Save((IContent)((IReadOnly)page).CreateWritableClone(), SaveAction.Publish | SaveAction.ForceNewVersion);
+        site.Call.SaveAsset((IContent)((IReadOnly)draft).CreateWritableClone(), SaveAction.Publish);
+
+        // The page's, not the block's: that one is the write's own (sharedBlocks), not the site's.
+        Assert.Equal(indexed.ContentLink, Assert.Single(site.Call.TakeSiteEvents()).Link);
+    }
+
 #endif
 }
