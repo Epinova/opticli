@@ -90,11 +90,13 @@ internal sealed class WriteFlow
     /// Where the site's edit UI makes new blocks in an area shared: a review request (an approval sequence's) of
     /// <paramref name="version"/> is refused while the version shows blocks of its own "For this page" folder that aren't
     /// published (or that this write makes or changes). The approval publishes the content alone, so it would go live
-    /// showing them as they were, or not at all. In a CMS project the content and its blocks are reviewed and published
-    /// together, so a write with one isn't refused.
+    /// showing them as they were, or not at all. In a CMS project the content's new and changed blocks are marked ready or
+    /// sent for review with it (<see cref="ProjectSave.BlockAction"/>), and the project's publish puts them live together,
+    /// so a write with one isn't refused.
     /// </summary>
+    /// <param name="publishing">A publish of a saved version (<c>publish</c>), not a write: the hint starts from there.</param>
     /// <exception cref="AgentException"><c>usage</c>, with how to go about it instead; also for a dry run.</exception>
-    public void RequireBlocksPublishedForReview(IContent version, SaveAction action, string what)
+    public void RequireBlocksPublishedForReview(IContent version, SaveAction action, string what, bool publishing = false)
     {
         if (Kind(action) != SaveAction.RequestApproval || Project is not null || Writer.Shared is not { } shared
             || shared.UnpublishedForReview(version) is not { Count: > 0 } unpublished)
@@ -103,9 +105,13 @@ internal sealed class WriteFlow
         }
         throw AgentException.Usage(
             $"{what} would go for review while its ContentAreas show blocks of its \"For this page\" folder that aren't published: {string.Join(", ", unpublished)}. The approval publishes the content alone, so it would go live without those blocks' changes.",
-            Call.ForCaller(
-                "Save the change as a draft first (without --request-approval), publish those blocks (sharedBlocks gives their refs: opticli publish <ref>, with --request-approval where they need approval too), then send the content for review; or save the content and its blocks in a CMS project (--in-project <project> --ready --request-approval), then mark those blocks ready in it too (opticli projects ready <project> <ref>..., with --request-approval where they need approval): the blocks aren't marked ready or sent for review with the content, and the project's publish puts only ready items live. Nothing was saved.",
-                "Save the change as a draft first (without requestApproval), publish those blocks (sharedBlocks gives their refs: publish_content on each, with requestApproval where they need approval too), then send the content for review; or save the content and its blocks in a CMS project (project, ready and requestApproval), then mark those blocks ready in it too (mark_ready_to_publish, with requestApproval where they need approval): the blocks aren't marked ready or sent for review with the content, and the project's publish puts only ready items live. Nothing was saved."));
+            publishing
+                ? Call.ForCaller(
+                    "Publish those blocks first (opticli publish <ref> for each, with --request-approval where they need approval too: sharedBlocks of the write that made them, or opticli get on the content, gives their refs), then send the content for review again. Nothing was changed.",
+                    "Publish those blocks first (publish_content on each, with requestApproval where they need approval too: sharedBlocks of the write that made them, or get_content, gives their refs), then send the content for review again. Nothing was changed.")
+                : Call.ForCaller(
+                    "Save the change into a CMS project instead (--in-project <project> --ready --request-approval): its new and changed blocks go in with it, marked ready or sent for review as it is, and the project's publish puts them live together. Or save it as a draft first (without --request-approval), publish those blocks (sharedBlocks gives their refs: opticli publish <ref>, with --request-approval where they need approval too), then send the content for review. Nothing was saved.",
+                    "Save the change into a CMS project instead (project, ready and requestApproval): its new and changed blocks go in with it, marked ready or sent for review as it is, and the project's publish puts them live together. Or save it as a draft first (without requestApproval), publish those blocks (sharedBlocks gives their refs: publish_content on each, with requestApproval where they need approval too), then send the content for review. Nothing was saved."));
     }
 
     /// <summary>New content as stored, if a save got that far.</summary>
@@ -240,7 +246,7 @@ internal sealed class WriteFlow
         Project?.Check(writable);
         // The new shared blocks for its areas: checked with it, so both are valid or nothing is saved.
         var shared = Writer.Shared is { Count: > 0 } pending ? pending : null;
-        var sharedIssues = shared is null ? [] : shared.Prepare(writable, Project).Concat(shared.PreviewNotes(action)).ToList();
+        var sharedIssues = shared is null ? [] : shared.Prepare(writable, Project, action).Concat(shared.PreviewNotes(action)).ToList();
         RequireBlocksPublishedForReview(writable, action, ContentReference.IsNullOrEmpty(writable.ContentLink) ? $"The new content '{writable.Name}'" : $"{writable.ContentLink.ID} ('{writable.Name}')");
         List<ValidationIssue> issues;
         using (shared?.AsInline(writable))
@@ -303,13 +309,20 @@ internal sealed class WriteFlow
                 // With the decided action: a review request isn't marked ready (it is unreachable today, as a request with an
                 // action saves even unchanged, but the item must never be checked in past its reviewers).
                 var (project, warning) = Project.AddUnchanged(Repository.Get<IContent>(writable.ContentLink), action);
+                var unchangedEvents = Call.TakeSiteEvents();
+                if (project.Error is null && Writer.Shared is { } changedBlocks)
+                {
+                    // Its blocks the write changed follow it, as after a save (their saves are the write's own, not the site's changes).
+                    made = changedBlocks.FollowInProject(Project, made, issues);
+                    Call.TakeSiteEvents();
+                }
                 var unchanged = Repository.Get<IContent>(writable.ContentLink);
                 return new WriteResult
                 {
                     Content = ContentSummaries.Describe(unchanged, Types),
                     BaseVersion = baseVersion,
                     Validation = warning is null ? (issues.Count > 0 ? issues : null) : [.. issues, warning],
-                    SiteChanges = SiteChanges.Report(Call, Types, Call.TakeSiteEvents(), unchanged, null, published: false),
+                    SiteChanges = SiteChanges.Report(Call, Types, unchangedEvents, unchanged, null, published: false),
                     Project = project,
                     SharedBlocks = made.Count > 0 ? made : null,
                 };
@@ -379,6 +392,13 @@ internal sealed class WriteFlow
             // Marking it ready is a save of its own, whose events the site's code may act on too.
             inProject = Project.Add(result, action);
             events.AddRange(Call.TakeSiteEvents());
+            if (inProject.Error is null && Writer.Shared is { } blocks)
+            {
+                // Its new and changed blocks follow it in the project: marked ready, or sent for review, as it is. Their saves
+                // are the write's own (sharedBlocks), not the site's changes.
+                made = blocks.FollowInProject(Project, made, issues);
+                Call.TakeSiteEvents();
+            }
             if (inProject.Ready)
             {
                 result = Repository.Get<IContent>(saved);

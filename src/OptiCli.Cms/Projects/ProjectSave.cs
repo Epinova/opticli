@@ -44,6 +44,9 @@ internal sealed class ProjectSave
     /// <summary>The saved version is to be marked Ready to publish.</summary>
     public bool Ready { get; }
 
+    /// <summary>The request asked for a review (<c>requestApproval</c>), as <see cref="RequestApproval"/> was given it.</summary>
+    private bool _reviewRequested;
+
     private CmsCall Call => _projects.Call;
 
     /// <summary>The project a save request names, checked; null for a save without one.</summary>
@@ -85,6 +88,7 @@ internal sealed class ProjectSave
     /// <exception cref="AgentException"><c>refused</c> with <see cref="AgentErrorReasons.ApprovalSequence"/>.</exception>
     public bool RequestApproval(ContentReference link, bool requested, string what)
     {
+        _reviewRequested = requested;
         if (!Ready)
         {
             return requested;
@@ -211,6 +215,65 @@ internal sealed class ProjectSave
         // (ProjectContext.Load): dropped, so the result reads it as stored. A project operation reads its items fresh anyway.
         _projects.Forget(saved.ContentLink);
         return Result(item, replaced, ready: true);
+    }
+
+    /// <summary>
+    /// For a block of the content's "For this page" folder that the write makes or changes, and saves into the project with
+    /// the content (<see cref="SharedAreaBlocks"/>): how it follows the content, when the content is marked ready or sent
+    /// for review, so that "use a CMS project" puts the content and its blocks live together. Marked ready
+    /// (<see cref="SaveAction.CheckIn"/>) where no approval sequence applies to the block; sent for review
+    /// (<see cref="SaveAction.RequestApproval"/>) where one does and the request asked for a review. Checked before
+    /// anything is saved (a dry run's too).
+    /// </summary>
+    /// <param name="link">The block, or for a new block where it goes (the folder, or the content it inherits from).</param>
+    /// <param name="ownerAction">The content's save action (<see cref="WriteFlow.Decide"/>).</param>
+    /// <returns>Null when the content is neither marked ready nor sent for review: the block stays a draft in the project.</returns>
+    /// <exception cref="AgentException">
+    /// <c>refused</c> (<see cref="AgentErrorReasons.ApprovalSequence"/>) for <c>ready</c> without <c>requestApproval</c> where
+    /// a sequence applies to the block, as for the content itself.
+    /// </exception>
+    public SaveAction? BlockAction(ContentReference link, SaveAction ownerAction, string what)
+    {
+        if (!Ready && WriteFlow.Kind(ownerAction) != SaveAction.RequestApproval)
+        {
+            return null;
+        }
+        if (Approvals.Applying(Call, link) is null)
+        {
+            return SaveAction.CheckIn;
+        }
+        return _reviewRequested ? SaveAction.RequestApproval : throw new AgentException(AgentErrorCodes.Refused,
+            $"The block at {what} has an approval sequence, so it isn't marked Ready to publish with the content: that would let it past its reviewers.",
+            Call.ForCaller(
+                "Retry with requestApproval (--request-approval) to send it for review with the content instead; or without ready, to save both in the project as drafts. Nothing was saved.",
+                "Retry with requestApproval to send it for review with the content instead; or without ready, to save both in the project as drafts. Nothing was saved."))
+        {
+            Reason = AgentErrorReasons.ApprovalSequence,
+        };
+    }
+
+    /// <summary>
+    /// After the content's save: a block that went in the project as a draft with it, marked ready or sent for review as
+    /// <see cref="BlockAction"/> decided (a save of the block's version that keeps its id, as the edit UI's "Ready to
+    /// Publish" and "Ready for Review" do).
+    /// </summary>
+    /// <returns>Why the CMS didn't take it; null once done.</returns>
+    public string? Follow(IContent saved, SaveAction action)
+    {
+        try
+        {
+            Call.Save((IContent)((IReadOnly)saved).CreateWritableClone(), action);
+        }
+        catch (Exception ex)
+        {
+            if (Call.OptionalService<ILoggerFactory>() is { } loggers)
+            {
+                loggers.CreateLogger(CmsCall.LogCategory).LogWarning(ex, "Saved {Content} in project {Project}, but couldn't {Action} it.", saved.ContentLink.ToString(), _project.ID, action);
+            }
+            return ex is AgentException ? ex.Message : $"{ex.Message} ({ex.GetType().FullName})";
+        }
+        _projects.Forget(saved.ContentLink);
+        return null;
     }
 
     /// <summary>

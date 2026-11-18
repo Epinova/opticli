@@ -64,6 +64,16 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
         public string Name { get; set; } = "";
 
         public bool IsNew => Existing is null;
+
+        /// <summary>
+        /// In a project write whose content is marked ready or sent for review: how the block follows it once the content
+        /// is saved (<see cref="ProjectSave.BlockAction"/>), <see cref="SaveAction.CheckIn"/> or
+        /// <see cref="SaveAction.RequestApproval"/>; null to leave it a draft in the project.
+        /// </summary>
+        public SaveAction? InProject { get; set; }
+
+        /// <summary>The version <see cref="Save"/> saved.</summary>
+        public ContentReference? Saved { get; set; }
     }
 
     private readonly List<Pending> _pending = [];
@@ -162,7 +172,8 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     /// <c>usage</c> for content that can't have a "For this page" folder; <c>refused</c> without the access; the project's
     /// refusals (<see cref="ProjectSave.Check"/>).
     /// </exception>
-    public List<ValidationIssue> Prepare(IContent owner, ProjectSave? project)
+    /// <param name="ownerAction">The content's save action: in a project, what its blocks follow (<see cref="ProjectSave.BlockAction"/>).</param>
+    public List<ValidationIssue> Prepare(IContent owner, ProjectSave? project, SaveAction ownerAction)
     {
         if (_pending.Count == 0)
         {
@@ -236,7 +247,15 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
             }
             pending.Content.Name = pending.Name;
             Fill(pending.Content, pending.Values);
-            project?.Check(pending.Content);
+            if (project is not null)
+            {
+                project.Check(pending.Content);
+                // The approval sequence that will apply to it: its own (inherited through the folder from the content), or for
+                // a new block the folder's, which inherits the content's (on new content, what the content gets from its parent).
+                pending.InProject = project.BlockAction(
+                    pending.IsNew ? folder?.ContentLink ?? (isNew ? owner.ParentLink : owner.ContentLink) : pending.Existing!.ContentLink,
+                    ownerAction, $"{pending.Path} ({(pending.IsNew ? "a new block" : $"block {pending.Existing!.ContentLink.ToReferenceWithoutVersion()}")})");
+            }
         }
         using (AsInline(owner))
         {
@@ -356,7 +375,12 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
         {
             SaveAction.Publish => VersionStatus.Published,
             SaveAction.Schedule => VersionStatus.DelayedPublish,
-            _ => VersionStatus.CheckedOut,
+            _ => p.InProject switch
+            {
+                SaveAction.CheckIn => VersionStatus.CheckedIn,
+                SaveAction.RequestApproval => VersionStatus.AwaitingApproval,
+                _ => VersionStatus.CheckedOut,
+            },
         }),
         Action = p.IsNew ? SharedBlockActions.Created : SharedBlockActions.Updated,
     }).ToList();
@@ -364,9 +388,11 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     /// <summary>
     /// Saves the folder (made first for new content, as phase 0 settled: its <c>ContentAssetsID</c> is set on the content
     /// before its own save) and the blocks, innermost first (an outer block's area needs the inner block's ref), each a
-    /// draft, into <paramref name="project"/> when the write has one; then points their area items at them.
+    /// draft, into <paramref name="project"/> when the write has one; then points their area items at them. In a project they
+    /// go in as drafts: they follow the content (marked ready, or sent for review) once it is saved
+    /// (<see cref="FollowInProject"/>), when the folder's access rights and approval sequence are the content's.
     /// </summary>
-    /// <param name="ownerAction">The content's save action: a project item is marked ready as the content is.</param>
+    /// <param name="ownerAction">The content's save action.</param>
     /// <param name="warnings">Gets a warning when a block's project step failed (the block is saved all the same).</param>
     /// <exception cref="AgentException">A save that failed, with the blocks saved before it (<see cref="AgentException.MadeBlocks"/>).</exception>
     public List<SharedBlockResult> Save(IContent owner, ProjectSave? project, SaveAction ownerAction, List<ValidationIssue> warnings)
@@ -407,15 +433,12 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
                 {
                     PointAt(owner, pending, link);
                 }
+                pending.Saved = link;
                 var stored = locator.Repository.Get<IContent>(link);
-                if (project?.Add(stored, ownerAction) is { } added)
+                if (project?.Add(stored, ownerAction, markReady: false) is { Error: { } error })
                 {
-                    if (added.Error is { } error)
-                    {
-                        warnings.Add(new ValidationIssue(pending.Path, $"The block {stored.ContentLink} was saved, but not put in the project: {error}", "warning"));
-                    }
-                    // As the project left it: marked ready (checked in) with the content, or as it was saved.
-                    stored = locator.Repository.Get<IContent>(link);
+                    pending.InProject = null;
+                    warnings.Add(new ValidationIssue(pending.Path, $"The block {stored.ContentLink} was saved, but not put in the project: {error}", "warning"));
                 }
                 results.Add(Result(pending.Path, stored, pending.Type.Name, folderId, pending.IsNew ? SharedBlockActions.Created : SharedBlockActions.Updated));
             }
@@ -429,6 +452,38 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
         {
             throw WithMadeBlocks(ex, results, _madeFolder);
         }
+    }
+
+    /// <summary>
+    /// After the content's save into <paramref name="project"/>, which marked it ready or sent it for review: each block the
+    /// write made or changed follows it (<see cref="Pending.InProject"/>), marked ready where no approval sequence applies
+    /// to it and sent for review where one does, so the project's publish (or its reviewers) put the content and its blocks
+    /// live together. A block the CMS doesn't take that way stays a draft in the project, with a warning.
+    /// </summary>
+    /// <param name="made">What <see cref="Save"/> reported; returned with each block's status as it is now.</param>
+    public List<SharedBlockResult> FollowInProject(ProjectSave project, List<SharedBlockResult> made, List<ValidationIssue> warnings)
+    {
+        foreach (var pending in _pending.Where(p => p.InProject is not null && p.Saved is not null))
+        {
+            var link = pending.Saved!;
+            var stored = locator.Repository.Get<IContent>(link);
+            if (stored is not IVersionable { Status: VersionStatus.CheckedOut or VersionStatus.Rejected })
+            {
+                continue;
+            }
+            if (project.Follow(stored, pending.InProject!.Value) is { } error)
+            {
+                warnings.Add(new ValidationIssue(pending.Path,
+                    $"The block {link} is in the project as a draft: it couldn't be {(pending.InProject == SaveAction.CheckIn ? "marked Ready to publish" : "sent for review")} with the content: {error}",
+                    "warning"));
+                continue;
+            }
+            var now = locator.Repository.Get<IContent>(link);
+            made = made.Select(m => m.Ref is not null && m.Ref.Split('_')[0] == link.ID.ToString(CultureInfo.InvariantCulture)
+                ? m with { Ref = now.ContentLink.ToString(), Status = now is IVersionable { Status: var status } ? StatusName(status) : m.Status }
+                : m).ToList();
+        }
+        return made;
     }
 
     /// <summary>The folder made for new content, if this write made one.</summary>

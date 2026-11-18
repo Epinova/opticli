@@ -242,6 +242,7 @@ public class SharedAreaBlockTests
                     SaveAction.Publish => VersionStatus.Published,
                     SaveAction.Schedule => VersionStatus.DelayedPublish,
                     SaveAction.CheckIn => VersionStatus.CheckedIn,
+                    SaveAction.RequestApproval => VersionStatus.AwaitingApproval,
                     _ => VersionStatus.CheckedOut,
                 };
                 if (kind == SaveAction.Publish)
@@ -355,6 +356,9 @@ public class SharedAreaBlockTests
         /// <summary>The values a new ItemBlock gets from its type (the CMS's defaults), before a write sets any.</summary>
         public Action<BlockData>? Defaults { get; set; }
 
+        /// <summary>The content an approval sequence applies to (none by default).</summary>
+        public Func<ContentReference, bool> Sequenced { get; set; } = _ => false;
+
         private BlockData WithDefaults(BlockData block)
         {
             Defaults?.Invoke(block);
@@ -418,7 +422,7 @@ public class SharedAreaBlockTests
                 .AddSingleton<ContentAssetHelper>(new Assets(Store))
                 .AddSingleton<ContentTypeAvailabilityService>(Availability)
                 .AddSingleton<ProjectRepository>(Projects)
-                .AddSingleton(NoApprovals())
+                .AddSingleton(Approvals(this))
                 .AddSingleton(new EPiServer.Web.SystemDefinition(new ContentReference(1), new ContentReference(2), new ContentReference(4), AssetsRoot))
                 .AddSingleton(EditUiPropertiesTests.Tabs())
                 .AddSingleton<IPrincipalAccessor>(new CmsCallTests.PrincipalAccessor(new GenericPrincipal(new GenericIdentity("editor"), [])))
@@ -515,12 +519,29 @@ public class SharedAreaBlockTests
         public IContent Stored(ContentReference link) => Store.Get(link)!;
     }
 
-    /// <summary>No approval sequences anywhere.</summary>
-    private static EPiServer.Approvals.IApprovalDefinitionRepository NoApprovals()
+    /// <summary>The content a content approval reference names (<c>content:///123</c>, maybe with a version).</summary>
+    private static ContentReference ContentOf(Uri reference) =>
+        new(int.Parse(System.Text.RegularExpressions.Regex.Match(reference.ToString(), @"(\d+)(?:_\d+)?\D*$").Groups[1].Value, CultureInfo.InvariantCulture));
+
+    /// <summary>Approval sequences: one applies (its own or inherited) to the content <see cref="Site.Sequenced"/> names, none elsewhere.</summary>
+    private static EPiServer.Approvals.IApprovalDefinitionRepository Approvals(Site site)
     {
         var (approvals, recorder) = Recorder<EPiServer.Approvals.IApprovalDefinitionRepository>.Create();
-        recorder.Answer = (method, _) => method.ReturnType is { IsGenericType: true } task && task.GetGenericTypeDefinition() == typeof(Task<>)
-            ? typeof(Task).GetMethod(nameof(Task.FromResult))!.MakeGenericMethod(task.GetGenericArguments()[0]).Invoke(null, [null])
+        recorder.Answer = (method, args) => method.ReturnType is { IsGenericType: true } task && task.GetGenericTypeDefinition() == typeof(Task<>)
+            ? typeof(Task).GetMethod(nameof(Task.FromResult))!.MakeGenericMethod(task.GetGenericArguments()[0]).Invoke(null,
+                [method.Name == nameof(EPiServer.Approvals.IApprovalDefinitionRepository.ResolveAsync) && args is [Uri reference]
+                    && site.Sequenced(ContentOf(reference))
+                    ? new EPiServer.Approvals.ApprovalDefinitionResolveResult
+                    {
+                        Definition = new EPiServer.Approvals.ContentApprovals.ContentApprovalDefinition
+                        {
+                            ContentLink = new ContentReference(1),
+                            IsEnabled = true,
+                            Steps = [new EPiServer.Approvals.ApprovalDefinitionStep("Review", [new EPiServer.Approvals.ApprovalDefinitionReviewer("WebAdmins", [], EPiServer.Approvals.ApprovalDefinitionReviewerType.Role)])],
+                        },
+                        IsInherited = true,
+                    }
+                    : null])
             : null;
         return approvals;
     }
@@ -768,6 +789,74 @@ public class SharedAreaBlockTests
         // As the project has it: marked ready (checked in) with the page when the write marks it ready.
         Assert.Equal(status, result.SharedBlocks![0].Status);
         Assert.Equal(status, Assert.IsType<IVersionable>(site.Store.Latest(block.ID), exactMatch: false).Status is VersionStatus.CheckedIn ? "checkedIn" : "checkedOut");
+    }
+
+    [Fact]
+    public void A_project_write_marked_ready_or_sent_for_review_takes_its_new_and_changed_blocks_along()
+    {
+        // Ready, no approval sequence: the blocks are marked ready too, once the page is saved (its folder's rights are
+        // then the page's); the dry run says so.
+        var site = new Site();
+        site.Projects.Add(1, "Launch");
+        var page = site.Page(folder: true);
+        var taken = site.Block(site.Folder(page).ContentLink, "Taken", "Old");
+        page = OwnerOf(site, taken, Ref(taken));
+        site.Store.Saves.Clear();
+        WriteResult Write(Site on, bool ready, bool requestApproval, bool dryRun)
+        {
+            var flow = on.Flow();
+            flow.Project = ProjectSave.For(on.Call, "Launch", ready: ready, publish: false, publishAt: null);
+            var action = WriteFlow.DraftAction(flow.Decide(page.ContentLink, publish: false, requestApproval, publishAt: null, "page"));
+            var (writable, before) = on.Write(flow, page, """{"Area": [{"type": "ItemBlock", "name": "Taken", "properties": {"Title": "Changed"}}, {"type": "ItemBlock", "name": "New", "properties": {"Title": "New"}}]}""");
+            return on.Save(flow, writable, before, dryRun, action);
+        }
+
+        Assert.Equal(["checkedIn", "checkedIn"], Write(site, ready: true, requestApproval: false, dryRun: true).SharedBlocks!.Select(b => b.Status));
+        Assert.Empty(site.Store.Saves);
+        var result = Write(site, ready: true, requestApproval: false, dryRun: false);
+        Assert.Equal([(SharedBlockActions.Updated, "checkedIn"), (SharedBlockActions.Created, "checkedIn")], result.SharedBlocks!.Select(b => (b.Action, b.Status)));
+        Assert.True(result.Project!.Ready);
+        // Drafts first, the page saved and marked ready, then the blocks marked ready.
+        Assert.Equal([("Taken", SaveAction.Save), ("New", SaveAction.Save), ("Home", SaveAction.Save), ("Home", SaveAction.CheckIn), ("Taken", SaveAction.CheckIn), ("New", SaveAction.CheckIn)],
+            site.Store.Saves.Select(s => (s.Name, s.Action & SaveAction.ActionMask)));
+        Assert.Equal(3, site.Projects.Items.Count);
+        Assert.All(result.SharedBlocks!, b => Assert.Equal(VersionStatus.CheckedIn, ((IVersionable)site.Store.Get(ContentReference.Parse(b.Ref!))!).Status));
+
+        // Under an approval sequence (the page's, which its folder's blocks inherit), with ready and requestApproval: the
+        // page and its blocks go for review together.
+        var reviewed = new Site();
+        reviewed.Projects.Add(1, "Launch");
+        page = reviewed.Page(folder: true);
+        taken = reviewed.Block(reviewed.Folder(page).ContentLink, "Taken", "Old");
+        page = OwnerOf(reviewed, taken, Ref(taken));
+        reviewed.Sequenced = _ => true;
+        Assert.Equal(["awaitingApproval", "awaitingApproval"], Write(reviewed, ready: true, requestApproval: true, dryRun: true).SharedBlocks!.Select(b => b.Status));
+        // requestApproval alone, as for the page: the same.
+        Assert.Equal(["awaitingApproval", "awaitingApproval"], Write(reviewed, ready: false, requestApproval: true, dryRun: true).SharedBlocks!.Select(b => b.Status));
+        var review = Write(reviewed, ready: true, requestApproval: true, dryRun: false);
+        Assert.True(review.ApprovalRequested);
+        Assert.Equal(["awaitingApproval", "awaitingApproval"], review.SharedBlocks!.Select(b => b.Status));
+        Assert.All(review.SharedBlocks!, b => Assert.Equal(VersionStatus.AwaitingApproval, ((IVersionable)reviewed.Store.Get(ContentReference.Parse(b.Ref!))!).Status));
+
+        // Ready without requestApproval where a sequence applies to the blocks (their folder's) but not to the page: refused
+        // before anything is saved, as the page would be.
+        var folderOnly = new Site();
+        folderOnly.Projects.Add(1, "Launch");
+        page = folderOnly.Page(folder: true);
+        var folder = folderOnly.Folder(page).ContentLink;
+        taken = folderOnly.Block(folder, "Taken", "Old");
+        page = OwnerOf(folderOnly, taken, Ref(taken));
+        folderOnly.Store.Saves.Clear();
+        folderOnly.Sequenced = link => link.ID == folder.ID || link.ID == taken.ContentLink.ID;
+        foreach (var dryRun in new[] { true, false })
+        {
+            var refused = Assert.Throws<AgentException>(() => Write(folderOnly, ready: true, requestApproval: false, dryRun));
+            Assert.Equal((AgentErrorCodes.Refused, AgentErrorReasons.ApprovalSequence), (refused.Code, refused.Reason));
+            Assert.Contains("The block at Area[0] (block", refused.Message);
+        }
+        Assert.Empty(folderOnly.Store.Saves);
+        // Without ready, they stay drafts in the project with the page.
+        Assert.Equal(["checkedOut", "checkedOut"], Write(folderOnly, ready: false, requestApproval: false, dryRun: false).SharedBlocks!.Select(b => b.Status));
     }
 
     [Theory]
@@ -1120,17 +1209,18 @@ public class SharedAreaBlockTests
             Assert.Equal(AgentErrorCodes.Usage, refused.Code);
             Assert.Contains("Area[1] (a new block)", refused.Message);
             Assert.Contains($"Area[0] (block {draft.ContentLink.ID}, a draft)", refused.Message);
-            Assert.Contains("CMS project", refused.Hint);
-            // In a project the blocks are saved as drafts, not ready: the project's publish would leave them behind.
-            Assert.Contains("then mark those blocks ready in it too (opticli projects ready <project> <ref>..., with --request-approval", refused.Hint);
+            // In a project its blocks follow it, marked ready or sent for review with it.
+            Assert.StartsWith("Save the change into a CMS project instead (--in-project <project> --ready --request-approval): its new and changed blocks go in with it", refused.Hint);
         }
         // Only a draft block the page shows already.
         var titled = site.Flow();
         var (changed, changedBefore) = site.Write(titled, page, """{"Title": "Changed"}""");
         Assert.Contains("Area[0] (block", Assert.Throws<AgentException>(() => site.Save(titled, changed, changedBefore, action: review)).Message);
         Assert.Empty(site.Store.Saves);
-        // The publish operation asks the same of the version it sends for review.
-        Assert.Throws<AgentException>(() => site.Flow().RequireBlocksPublishedForReview(page, review, "page"));
+        // The publish operation asks the same of the version it sends for review, which is saved already.
+        var published = Assert.Throws<AgentException>(() => site.Flow().RequireBlocksPublishedForReview(page, review, "page", publishing: true));
+        Assert.StartsWith("Publish those blocks first (opticli publish <ref> for each", published.Hint);
+        Assert.DoesNotContain("Save the change", published.Hint);
 
         // In a project, the page and its blocks are reviewed together; and once the block is published, nothing stops it.
         site.Projects.Add(1, "Launch");
