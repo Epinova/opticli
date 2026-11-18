@@ -873,6 +873,10 @@ public sealed class WriteExecutor(
                 Details = new AgentErrorDetails(null, null) { Reason = AgentErrorReasons.InReview },
             };
         }
+        if (forReview && AsksSiteForReview(await InlineBlocksAsync(cancellationToken)))
+        {
+            await PostAsync<WriteResult>(AgentRoutes.Publish(target.ContentRef), request with { DryRun = true }, cancellationToken);
+        }
         var identity = session.Identities.Describe(target.Header, session.Model.Language(version.LanguageId), version.Id, version.StatusValue, version.Name);
         var output = new WriteOutput(
             WriteOutput.Id(target.Id), version.Ref, identity.Guid, identity.Type, identity.Name, identity.Language, VersionStatuses.Name(identity.Status),
@@ -902,6 +906,15 @@ public sealed class WriteExecutor(
         }
         return new WriteOutcome<WriteOutput>(output, DbSource, null, notes);
     }
+
+    /// <summary>
+    /// Whether a publish's dry run that would send the version for review (an approval sequence applies) asks the site: where
+    /// it makes shared blocks (<paramref name="inlineBlocks"/>, from its agent), it refuses a review request while the
+    /// version shows blocks of its "For this page" folder that aren't published, which the database can't tell. Its agent
+    /// then checks it and saves nothing (<see cref="PublishRequest.DryRun"/>; an agent that reports the mode knows that dry
+    /// run). Every other publish dry run is answered from the database alone, as before.
+    /// </summary>
+    internal static bool AsksSiteForReview(string? inlineBlocks) => inlineBlocks == InlineBlockModes.Shared;
 
     /// <summary>
     /// <see cref="MasterLanguageRule"/> for a write that publishes (or requests approval of) <paramref name="language"/> of

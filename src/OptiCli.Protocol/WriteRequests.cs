@@ -564,6 +564,15 @@ public sealed record PublishRequest
     /// <summary>As <see cref="DraftRequest.PublishAt"/>: schedule the version's publish instead.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public DateTime? PublishAt { get; init; }
+
+    /// <summary>
+    /// Only check what the site decides before it saves (the approval sequence, and a review request's refusal while the
+    /// version shows blocks of its "For this page" folder that aren't published), and save nothing. The CLI asks for it
+    /// only for a review request's dry run, on a site whose agent reports <see cref="PingResponse.InlineBlocks"/> (older
+    /// agents don't know the field, and would save).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool DryRun { get; init; }
 }
 
 /// <summary>Body of <see cref="AgentRoutes.Unpublish"/> (may be empty).</summary>

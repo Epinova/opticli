@@ -113,6 +113,10 @@ public class ProtocolJsonTests
         var review = new PublishRequest { RequestApproval = true };
         Assert.Equal(review, RoundTrip(review, out json));
         Assert.Equal("""{"includeDraft":false,"requestApproval":true}""", json);
+        // A review request's dry run (the CLI asks the site only where it makes shared blocks): also left out unless set.
+        var check = review with { DryRun = true };
+        Assert.Equal(check, RoundTrip(check, out json));
+        Assert.Equal("""{"includeDraft":false,"requestApproval":true,"dryRun":true}""", json);
         Assert.True(RoundTrip(new DraftRequest { Publish = true, IncludeDraft = true }, out _).IncludeDraft);
         Assert.True(RoundTrip(create with { Guid = Guid.NewGuid(), UpdateExisting = true, IncludeDraft = true }, out _).IncludeDraft);
     }

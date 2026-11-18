@@ -60,6 +60,17 @@ internal static class PublishOperation
         }
         // The approval would publish it alone: not while it shows blocks of its own folder that aren't published.
         flow.RequireBlocksPublishedForReview(version, action, what, publishing: true);
+        if (body.DryRun)
+        {
+            // What the site decides before the save, checked; the CLI's dry run reports the rest from the database.
+            return new WriteResult
+            {
+                Content = ContentSummaries.Describe(version, flow.Types),
+                DryRun = true,
+                Valid = true,
+                BaseVersion = versionId,
+            };
+        }
         var pending = publishing || scheduling
             ? PendingDrafts.Require(flow.Locator.PendingDraft(branch, version),
                 body.IncludeDraft || (named is not null && call.NamedVersionConfirmsDraft), dryRun: false, what, versionLanguage?.Name)

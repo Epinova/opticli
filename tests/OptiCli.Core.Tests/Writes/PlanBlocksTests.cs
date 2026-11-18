@@ -199,6 +199,15 @@ public class PlanBlocksTests
     }
 
     [Fact]
+    public void A_publish_dry_run_of_a_review_request_asks_the_site_only_where_it_makes_shared_blocks()
+    {
+        Assert.True(WriteExecutor.AsksSiteForReview(InlineBlockModes.Shared));
+        // Inline, or an agent that doesn't report the mode (and wouldn't know the dry run): from the database, as before.
+        Assert.False(WriteExecutor.AsksSiteForReview(InlineBlockModes.Inline));
+        Assert.False(WriteExecutor.AsksSiteForReview(null));
+    }
+
+    [Fact]
     public void A_plan_that_names_an_area_item_by_its_position_is_dry_run_after_the_steps_before_it()
     {
         // Positional steps: the existing content each step writes is looked up, so earlier area adds are folded in.
