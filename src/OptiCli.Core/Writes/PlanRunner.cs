@@ -335,10 +335,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     private async Task<Dictionary<int, PlanTarget>> TargetsAsync(IReadOnlyList<PlanStep> resolved, IReadOnlyDictionary<string, int> existing, CancellationToken cancellationToken)
     {
         var targets = new Dictionary<int, PlanTarget>();
-        // Also for a plan that names a ContentArea item by its position: an earlier area step decides which item that is
-        // (and where the site makes new area blocks shared, whether it is one the step can't change that way).
-        if (!resolved.Any(s => s.Operation is PublishOperation or TranslateOperation or SetOperation { From: not null } or AreaEdit { From: not null } or CompositionEdit || MayPublish(s.Operation)
-            || PlanSimulation.ByPosition(s.Operation)))
+        if (!NeedsTargets(resolved))
         {
             return targets;
         }
@@ -385,6 +382,16 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         }
         return targets;
     }
+
+    /// <summary>
+    /// Whether a plan's dry run needs the existing content each step writes (<see cref="TargetsAsync"/>): it publishes,
+    /// requests approval, translates, edits a composition or bases a change on another version, or names a ContentArea
+    /// item by its position. Then an earlier area step decides which item that is (and where the site makes new area blocks
+    /// shared, whether it is one the step can't change that way).
+    /// </summary>
+    internal static bool NeedsTargets(IReadOnlyList<PlanStep> steps) =>
+        steps.Any(s => s.Operation is PublishOperation or TranslateOperation or SetOperation { From: not null } or AreaEdit { From: not null } or CompositionEdit
+            || MayPublish(s.Operation) || PlanSimulation.ByPosition(s.Operation));
 
     private static bool MayPublish(WriteOperation op) => op.Publishes || op.RequestApproval;
 
@@ -1043,7 +1050,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     /// An area add with an <c>id</c> on a site that makes new area blocks inline: the block has no ref for later steps to
     /// reach as <c>$id</c>. Invalid when one does; else the id is only noted.
     /// </summary>
-    private static (PlanStepResult Result, OptiCliException? Failure) NamedInline(PlanStep step, IReadOnlyList<PlanStep> steps, PlanStepResult result)
+    internal static (PlanStepResult Result, OptiCliException? Failure) NamedInline(PlanStep step, IReadOnlyList<PlanStep> steps, PlanStepResult result)
     {
         var id = step.Operation.Id!;
         var users = steps.Where(s => s.Index > step.Index && s.DependsOn.Contains(id)).Select(s => s.Index).ToList();

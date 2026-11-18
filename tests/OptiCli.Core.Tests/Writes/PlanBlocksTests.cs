@@ -147,4 +147,51 @@ public class PlanBlocksTests
         Assert.Null(PlanBlocks.CreatedGuid(Plan.Steps[1].Operation, output));
         Assert.Equal(page, PlanBlocks.CreatedGuid(Plan.Steps[0].Operation, output));
     }
+
+    [Fact]
+    public void An_id_on_an_add_where_the_site_makes_inline_blocks_is_invalid_when_a_later_step_uses_it_else_a_warning()
+    {
+        var checkedAdd = new PlanStepResult(1, "area", "teaser", PlanStepStatus.Simulated);
+
+        var (used, failure) = PlanRunner.NamedInline(Plan.Steps[1], Plan.Steps, checkedAdd);
+
+        Assert.Equal(PlanStepStatus.Invalid, used.Status);
+        Assert.NotNull(failure);
+        Assert.Contains("Operation(s) 2, 3, 4 reach the block this add makes as '$teaser'", failure.Message);
+        Assert.Contains("by its position", failure.Hint);
+        var unused = WritePlan.Parse("""
+            {"operations": [{"op": "area", "ref": "300", "property": "MainArea", "action": "add", "type": "TeaserBlock", "id": "teaser"}]}
+            """);
+        var (noted, none) = PlanRunner.NamedInline(unused.Steps[0], unused.Steps, checkedAdd);
+        Assert.Null(none);
+        Assert.Equal(PlanStepStatus.Simulated, noted.Status);
+        Assert.Contains("\"id\" 'teaser' names nothing here", Assert.Single(noted.Warnings!));
+    }
+
+    [Fact]
+    public void A_plan_that_names_an_area_item_by_its_position_is_dry_run_after_the_steps_before_it()
+    {
+        // Positional steps: the existing content each step writes is looked up, so earlier area adds are folded in.
+        Assert.True(PlanRunner.NeedsTargets(WritePlan.Parse("""
+            {"operations": [
+              {"op": "area", "ref": "300", "property": "MainArea", "action": "add", "type": "TeaserBlock"},
+              {"op": "set", "ref": "300", "properties": {"MainArea[1]": {"Heading": "x"}}}
+            ]}
+            """).Steps));
+        Assert.True(PlanRunner.NeedsTargets(WritePlan.Parse("""
+            {"operations": [{"op": "area", "ref": "300", "property": "MainArea", "action": "set", "index": 0, "values": {"Heading": "x"}}]}
+            """).Steps));
+        Assert.True(PlanRunner.NeedsTargets(WritePlan.Parse("""
+            {"operations": [{"op": "area", "ref": "300", "property": "MainArea[0].Area", "action": "add", "item": "9"}]}
+            """).Steps));
+        // A plain plan without one isn't (nor was it before).
+        Assert.False(PlanRunner.NeedsTargets(WritePlan.Parse("""
+            {"operations": [
+              {"op": "area", "ref": "300", "property": "MainArea", "action": "add", "type": "TeaserBlock", "id": "teaser"},
+              {"op": "set", "ref": "$teaser", "properties": {"Heading": "x"}},
+              {"op": "set", "ref": "300", "properties": {"MainArea": [{"ref": "9"}]}}
+            ]}
+            """).Steps));
+        Assert.True(PlanRunner.NeedsTargets(Plan.Steps));
+    }
 }
