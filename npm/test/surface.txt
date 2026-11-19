@@ -1590,6 +1590,8 @@ PlanStep[op='publish'].publishAt?
 PlanStep[op='publish'].ref
 PlanStep[op='publish'].requestApproval?
 PlanStep[op='publish'].version?
+PlanStep[op='publish'].withBlocks?
+PlanStep[op='publish'].withoutBlocks?
 PlanStep[op='restore']
 PlanStep[op='restore'].op
 PlanStep[op='restore'].ref
@@ -1757,6 +1759,8 @@ ProjectsPublishOptions.connectionName?
 ProjectsPublishOptions.db?
 ProjectsPublishOptions.dryRun?
 ProjectsPublishOptions.includeDraft?
+ProjectsPublishOptions.withBlock?
+ProjectsPublishOptions.withoutBlock?
 ProjectsReactivateOptions.acceptDrift?
 ProjectsReactivateOptions.connection?
 ProjectsReactivateOptions.connectionName?
@@ -1823,6 +1827,8 @@ PublishOptions.publishAt?
 PublishOptions.requestApproval?
 PublishOptions.site?
 PublishOptions.version?
+PublishOptions.withBlock?
+PublishOptions.withoutBlock?
 RemoveLanguageOutput.dryRun
 RemoveLanguageOutput.guid
 RemoveLanguageOutput.language

@@ -199,12 +199,43 @@ public class PlanBlocksTests
     }
 
     [Fact]
-    public void A_publish_dry_run_of_a_review_request_asks_the_site_only_where_it_makes_shared_blocks()
+    public void A_publish_dry_run_asks_the_site_only_where_it_makes_shared_blocks()
     {
-        Assert.True(WriteExecutor.AsksSiteForReview(InlineBlockModes.Shared));
+        Assert.True(WriteExecutor.AsksSiteForDryRun(InlineBlockModes.Shared));
         // Inline, or an agent that doesn't report the mode (and wouldn't know the dry run): from the database, as before.
-        Assert.False(WriteExecutor.AsksSiteForReview(InlineBlockModes.Inline));
-        Assert.False(WriteExecutor.AsksSiteForReview(null));
+        Assert.False(WriteExecutor.AsksSiteForDryRun(InlineBlockModes.Inline));
+        Assert.False(WriteExecutor.AsksSiteForDryRun(null));
+    }
+
+    [Fact]
+    public void Blocks_named_for_a_publish_need_a_site_that_publishes_blocks_along()
+    {
+        WriteExecutor.RequireBlocksPublishedAlong(InlineBlockModes.Shared);
+        Assert.Contains("makes new blocks in a ContentArea inline", Assert.Throws<UsageException>(() => WriteExecutor.RequireBlocksPublishedAlong(InlineBlockModes.Inline)).Message);
+        // An older agent would ignore them, and publish without the blocks asked for.
+        Assert.Contains("opticli 0.34 or older", Assert.Throws<UsageException>(() => WriteExecutor.RequireBlocksPublishedAlong(null)).Message);
+    }
+
+    [Fact]
+    public void A_plans_publish_names_blocks_to_take_along_or_keep_back_by_ref_or_plan_id()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "area", "ref": "123", "property": "MainArea", "action": "add", "type": "TeaserBlock", "id": "intro"},
+              {"op": "publish", "ref": "123", "withBlocks": [456, "$intro"], "withoutBlocks": ["789"]}
+            ]}
+            """);
+
+        var publish = Assert.IsType<PublishOperation>(plan.Steps[1].Operation);
+        Assert.Equal(["456", "$intro"], publish.WithBlocks!);
+        Assert.Equal(["789"], publish.WithoutBlocks!);
+        Assert.Equal(["intro"], plan.Steps[1].DependsOn);
+        var resolved = Assert.IsType<PublishOperation>(WritePlan.Resolve(plan.Steps[1], new Dictionary<string, int> { ["intro"] = 1001 }));
+        Assert.Equal(["456", "1001"], resolved.WithBlocks!);
+
+        var problems = Assert.Throws<UsageException>(() => WritePlan.Parse("""{"operations": [{"op": "publish", "ref": "123", "withBlocks": "456", "withoutBlocks": ["$later"]}]}"""));
+        Assert.Contains("\"withBlocks\" must be an array of refs", problems.Message);
+        Assert.Contains("'$later' is not the id of an earlier", problems.Message);
     }
 
     [Fact]

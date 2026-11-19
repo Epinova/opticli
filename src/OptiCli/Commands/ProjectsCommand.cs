@@ -157,7 +157,9 @@ internal static class ProjectsCommand
             details.project, and nothing goes live. On a terminal it shows what goes live, whose changes go with it and what
             stays behind, and asks. Nothing ready is a conflict (exit 5).
             Prints published (or scheduled and scheduledFor), notReady, alreadyPublished, failed (with siteError) and
-            siteChanges: what the site's own code changed meanwhile.
+            siteChanges: what the site's own code changed meanwhile. Where the site makes new area blocks shared, each item
+            takes along the drafts of the never-published blocks of its own "For this page" folder that it shows (its
+            sharedBlocks); --with-block and --without-block choose as for `opticli publish`.
             Example: opticli projects publish 12 --dry-run
             Also:    opticli projects publish "Spring campaign" --at 2026-12-01T07:00Z
             """);
@@ -165,13 +167,15 @@ internal static class ProjectsCommand
         command.Options.Add(at);
         write.AddCommon(command, publish: false);
         write.AddIncludeDraft(command);
+        write.AddBlockChoice(command);
         CommandRunner.SetHandler<Protocol.ProjectResult>(command, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             var when = parse.GetValue(at) is { } text ? PublishTimes.Parse(text, "--at", DateTimeOffset.UtcNow) : (DateTimeOffset?)null;
             await using var session = await context.OpenContentAsync(cancellationToken);
             return Result(await Writes(context, session).PublishAsync(parse.GetValue(project)!, when, parse.GetValue(write.IncludeDraft), parse.GetValue(write.DryRun),
-                DatabasePrompt.CanAsk ? ConfirmPrompt.Ask : null, cancellationToken));
+                DatabasePrompt.CanAsk ? ConfirmPrompt.Ask : null, cancellationToken,
+                WriteOptions.Refs(parse, write.WithBlock), WriteOptions.Refs(parse, write.WithoutBlock)));
         });
         return command;
     }

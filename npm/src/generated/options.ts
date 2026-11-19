@@ -621,6 +621,10 @@ export interface PublishOptions extends CommonOptions {
   requestApproval?: boolean;
   /** Schedule the publish instead of publishing now: an ISO 8601 date and time, UTC unless it has an offset: 2025-03-01T08:00Z or 2025-03-01T09:00+01:00. The version stays a draft (delayedPublish) until the CMS's scheduled job publishes it; the rules for --publish apply (other people's drafts, approval sequences). */
   publishAt?: string;
+  /** Where the site makes new area blocks shared (serve --status: inlineBlocks: shared): also publish the newer draft of this block of the content's own "For this page" folder that it shows, although the block is live already; by default only blocks never published go along, and a live block's draft stays behind with a warning. Any other block is refused (exit 1). Repeatable. */
+  withBlock?: readonly string[];
+  /** Where the site makes new area blocks shared: leave this block of the content's own "For this page" folder that it shows a draft, although it was never published (the content then goes live without it showing). Repeatable. */
+  withoutBlock?: readonly string[];
 }
 
 /** Options of `opticli unpublish`. */
@@ -761,6 +765,10 @@ export interface ProjectsPublishOptions extends CommonOptions {
   acceptDrift?: string;
   /** Also publish the unpublished changes someone else saved after the published version, which ready items carry. Not needed for the changes of whoever marked an item ready (readyBy): marking it ready was their consent. Without it such a publish asks on a terminal, and elsewhere fails with a conflict (exit 5) listing them per item in details.project. */
   includeDraft?: boolean;
+  /** Where the site makes new area blocks shared (serve --status: inlineBlocks: shared): also publish the newer draft of this block of the content's own "For this page" folder that it shows, although the block is live already; by default only blocks never published go along, and a live block's draft stays behind with a warning. Any other block is refused (exit 1). Repeatable. */
+  withBlock?: readonly string[];
+  /** Where the site makes new area blocks shared: leave this block of the content's own "For this page" folder that it shows a draft, although it was never published (the content then goes live without it showing). Repeatable. */
+  withoutBlock?: readonly string[];
 }
 
 /** Options of `opticli projects reactivate`. */

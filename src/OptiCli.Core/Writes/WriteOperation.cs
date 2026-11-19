@@ -478,9 +478,20 @@ public sealed record PublishOperation(string Ref, int? Version = null, string? L
 
     public override bool Publishes => true;
 
-    public override IEnumerable<string?> Refs => [Ref];
+    /// <summary>
+    /// Where the site makes new area blocks shared: blocks of the content's own "For this page" folder that it shows and
+    /// that are live already, whose newer drafts go live with it (<c>--with-block</c>, a plan's <c>withBlocks</c>). By
+    /// default only blocks never published go along.
+    /// </summary>
+    public IReadOnlyList<string>? WithBlocks { get; init; }
 
-    public override WriteOperation MapRefs(Func<string, string> map) => this with { Ref = map(Ref) };
+    /// <summary>Blocks of that folder never published, kept as drafts (<c>--without-block</c>, <c>withoutBlocks</c>).</summary>
+    public IReadOnlyList<string>? WithoutBlocks { get; init; }
+
+    public override IEnumerable<string?> Refs => [Ref, .. WithBlocks ?? [], .. WithoutBlocks ?? []];
+
+    public override WriteOperation MapRefs(Func<string, string> map) =>
+        this with { Ref = map(Ref), WithBlocks = WithBlocks?.Select(map).ToList(), WithoutBlocks = WithoutBlocks?.Select(map).ToList() };
 }
 
 /// <summary>

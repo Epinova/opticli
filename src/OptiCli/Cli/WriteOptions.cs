@@ -137,6 +137,31 @@ internal sealed class WriteOptions
     /// <summary>For commands that publish existing content, which may hold someone else's draft.</summary>
     public void AddIncludeDraft(Command command) => command.Options.Add(IncludeDraft);
 
+    public Option<string[]> WithBlock { get; } = new("--with-block")
+    {
+        Description = "Where the site makes new area blocks shared (serve --status: inlineBlocks: shared): also publish the newer draft of this block of the content's own \"For this page\" folder that it shows, although the block is live already; by default only blocks never published go along, and a live block's draft stays behind with a warning. Any other block is refused (exit 1). Repeatable.",
+        HelpName = "ref",
+        AllowMultipleArgumentsPerToken = false,
+    };
+
+    public Option<string[]> WithoutBlock { get; } = new("--without-block")
+    {
+        Description = "Where the site makes new area blocks shared: leave this block of the content's own \"For this page\" folder that it shows a draft, although it was never published (the content then goes live without it showing). Repeatable.",
+        HelpName = "ref",
+        AllowMultipleArgumentsPerToken = false,
+    };
+
+    /// <summary>For publish and projects publish, which publish the drafts of the content's own blocks along.</summary>
+    public void AddBlockChoice(Command command)
+    {
+        command.Options.Add(WithBlock);
+        command.Options.Add(WithoutBlock);
+    }
+
+    /// <summary>The refs given to <see cref="WithBlock"/> (or <see cref="WithoutBlock"/>); null for none.</summary>
+    public static IReadOnlyList<string>? Refs(ParseResult parse, Option<string[]> option) =>
+        parse.GetValue(option) is { Length: > 0 } refs ? refs : null;
+
     public void AddProperties(Command command)
     {
         command.Arguments.Add(Properties);

@@ -194,6 +194,14 @@ export type PlanStep =
       readonly lang?: string;
       readonly includeDraft?: boolean;
       readonly requestApproval?: boolean;
+      /**
+       * Where the site makes new area blocks shared: blocks of the content's own "For this page" folder that it shows and
+       * that are live already, whose newer drafts go live with it (`--with-block`; refs or `"$id"`). By default only
+       * blocks never published go along.
+       */
+      readonly withBlocks?: readonly ContentRef[];
+      /** Blocks of that folder never published, kept as drafts (`--without-block`). */
+      readonly withoutBlocks?: readonly ContentRef[];
     })
   | { readonly op: 'unpublish'; readonly ref: ContentRef; readonly lang?: string }
   | {

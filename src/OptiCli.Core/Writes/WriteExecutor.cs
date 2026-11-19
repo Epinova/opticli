@@ -832,7 +832,20 @@ public sealed class WriteExecutor(
         }
         var masterFirst = await MasterFirstAsync(target, branch, op, dryRun, cancellationToken);
 
-        var request = new PublishRequest { Version = versionId, Lang = language?.Code, IncludeDraft = op.IncludeDraft, RequestApproval = op.RequestApproval, PublishAt = op.PublishAt?.UtcDateTime };
+        var request = new PublishRequest
+        {
+            Version = versionId,
+            Lang = language?.Code,
+            IncludeDraft = op.IncludeDraft,
+            RequestApproval = op.RequestApproval,
+            PublishAt = op.PublishAt?.UtcDateTime,
+            WithBlocks = await BlockRefsAsync(op.WithBlocks, "--with-block", cancellationToken),
+            WithoutBlocks = await BlockRefsAsync(op.WithoutBlocks, "--without-block", cancellationToken),
+        };
+        if (request.WithBlocks is not null || request.WithoutBlocks is not null)
+        {
+            RequireBlocksPublishedAlong(await InlineBlocksAsync(cancellationToken));
+        }
         if (!dryRun && !updateExisting)
         {
             var result = await PublishingPostAsync(AgentRoutes.Publish(target.ContentRef), request, r => r with { IncludeDraft = true }, cancellationToken);
@@ -873,20 +886,24 @@ public sealed class WriteExecutor(
                 Details = new AgentErrorDetails(null, null) { Reason = AgentErrorReasons.InReview },
             };
         }
-        if (forReview && AsksSiteForReview(await InlineBlocksAsync(cancellationToken)))
-        {
-            await PostAsync<WriteResult>(AgentRoutes.Publish(target.ContentRef), request with { DryRun = true }, cancellationToken);
-        }
+        // Where the site makes shared area blocks, it checks the publish itself and says which blocks go along and which stay
+        // behind, which the database can't tell.
+        var bySite = AsksSiteForDryRun(await InlineBlocksAsync(cancellationToken))
+            ? await PostAsync<WriteResult>(AgentRoutes.Publish(target.ContentRef), request with { DryRun = true }, cancellationToken)
+            : null;
         var identity = session.Identities.Describe(target.Header, session.Model.Language(version.LanguageId), version.Id, version.StatusValue, version.Name);
         var output = new WriteOutput(
             WriteOutput.Id(target.Id), version.Ref, identity.Guid, identity.Type, identity.Name, identity.Language, VersionStatuses.Name(identity.Status),
             target.Header.ParentId is { } parent ? WriteOutput.Id(parent) : null,
-            Saved: false, Published: false, DryRun: true, Valid: true, BaseVersion: version.Ref, Changes: [], Validation: null)
+            Saved: false, Published: false, DryRun: true, Valid: bySite?.Valid ?? true, BaseVersion: version.Ref, Changes: [], Validation: bySite?.Validation)
         {
             // A named version is what the user chose to put live; the latest may hold someone else's draft.
             PendingDraft = versionId is null && !forReview ? await PendingDraftReader.FindAsync(session, version, cancellationToken) : null,
+            SharedBlocks = bySite?.SharedBlocks,
         };
-        List<string> notes = ["Dry-run publish checks only that the version exists and isn't published yet; the CMS validates it when it is actually published."];
+        List<string> notes = [bySite is null
+            ? "Dry-run publish checks only that the version exists and isn't published yet; the CMS validates it when it is actually published."
+            : "Dry-run publish: the site checked it (validation, and the blocks of its \"For this page\" folder it would publish along, in sharedBlocks, or leave behind, in validation's warnings) and saved nothing."];
         if (forReview)
         {
             notes.Add($"It would be sent for review instead of published: its approval sequence ({sequence!.Describe()}) starts, and nothing goes live.");
@@ -908,13 +925,49 @@ public sealed class WriteExecutor(
     }
 
     /// <summary>
-    /// Whether a publish's dry run that would send the version for review (an approval sequence applies) asks the site: where
-    /// it makes shared blocks (<paramref name="inlineBlocks"/>, from its agent), it refuses a review request while the
-    /// version shows blocks of its "For this page" folder that aren't published, which the database can't tell. Its agent
-    /// then checks it and saves nothing (<see cref="PublishRequest.DryRun"/>; an agent that reports the mode knows that dry
-    /// run). Every other publish dry run is answered from the database alone, as before.
+    /// Whether a publish's dry run asks the site: where it makes shared blocks (<paramref name="inlineBlocks"/>, from its
+    /// agent), a publish takes along the drafts of the blocks of the content's "For this page" folder that were never
+    /// published (or that it names) and leaves others behind, and a review request is refused while the version shows
+    /// blocks never published; the database can't tell either. Its agent then checks the publish and saves nothing
+    /// (<see cref="PublishRequest.DryRun"/>; an agent that reports the mode knows that dry run). Elsewhere a publish dry
+    /// run is answered from the database alone, as before.
     /// </summary>
-    internal static bool AsksSiteForReview(string? inlineBlocks) => inlineBlocks == InlineBlockModes.Shared;
+    internal static bool AsksSiteForDryRun(string? inlineBlocks) => inlineBlocks == InlineBlockModes.Shared;
+
+    /// <summary>
+    /// Blocks named for a publish (<c>--with-block</c>, <c>--without-block</c>) need a site that publishes blocks along: one
+    /// whose agent reports <c>inlineBlocks: shared</c>. An agent that makes inline blocks refuses them itself; an older one
+    /// would ignore them, publishing without the blocks asked for.
+    /// </summary>
+    /// <exception cref="UsageException">Any other site.</exception>
+    internal static void RequireBlocksPublishedAlong(string? inlineBlocks)
+    {
+        if (inlineBlocks == InlineBlockModes.Shared)
+        {
+            return;
+        }
+        throw new UsageException(inlineBlocks == InlineBlockModes.Inline
+                ? "This site's edit UI makes new blocks in a ContentArea inline, so a publish publishes no blocks along, and --with-block and --without-block don't apply."
+                : "The site's agent doesn't say how it makes new blocks in a ContentArea (an agent of opticli 0.34 or older, or one that didn't answer), so it may not know --with-block and --without-block, and would publish without them.",
+            inlineBlocks == InlineBlockModes.Inline
+                ? "Publish a block on its own (opticli publish <ref>)."
+                : "Restart the site with this opticli's agent (opticli serve), then try again. Nothing was published.");
+    }
+
+    /// <summary>The blocks a publish names (<c>--with-block</c>, <c>--without-block</c>) as content ids; null for none.</summary>
+    private async Task<IReadOnlyList<string>?> BlockRefsAsync(IReadOnlyList<string>? refs, string option, CancellationToken cancellationToken)
+    {
+        if (refs is not { Count: > 0 })
+        {
+            return null;
+        }
+        var ids = new List<string>();
+        foreach (var reference in refs)
+        {
+            ids.Add(WriteOutput.Id((await EditableAsync(reference, cancellationToken, option)).Id));
+        }
+        return ids;
+    }
 
     /// <summary>
     /// <see cref="MasterLanguageRule"/> for a write that publishes (or requests approval of) <paramref name="language"/> of

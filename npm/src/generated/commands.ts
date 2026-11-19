@@ -150,7 +150,7 @@ const specs: Readonly<Record<string, Readonly<Record<string, Flag>>>> = {
   composition: { lang: '--lang', site: '--site', in: '--in', at: '--at', type: '--type', ref: '--ref', blueprint: '--blueprint', name: '--name', template: '--template', setting: '--setting', node: '--node', values: '--values', variation: '--variation', dryRun: '--dry-run', publish: '--publish', requestApproval: '--request-approval', acceptDrift: '--accept-drift', inProject: '--in-project', ready: '--ready', publishAt: '--publish-at', includeDraft: '--include-draft', from: '--from', baseVersion: '--base-version', force: '--force', connection: '--connection', connectionName: '--connection-name', db: '--db' },
   translate: { lang: '--lang', site: '--site', values: '--values', name: '--name', withBlocks: '--with-blocks', remove: '--remove', confirm: '--confirm', dryRun: '--dry-run', publish: '--publish', requestApproval: '--request-approval', acceptDrift: '--accept-drift', inProject: '--in-project', ready: '--ready', connection: '--connection', connectionName: '--connection-name', db: '--db' },
   upload: { for: '--for', parent: '--parent', name: '--name', type: '--type', guid: '--guid', replace: '--replace', values: '--values', dryRun: '--dry-run', publish: '--publish', requestApproval: '--request-approval', acceptDrift: '--accept-drift', inProject: '--in-project', ready: '--ready', connection: '--connection', connectionName: '--connection-name', db: '--db' },
-  publish: { lang: '--lang', site: '--site', version: '--version', dryRun: '--dry-run', acceptDrift: '--accept-drift', includeDraft: '--include-draft', requestApproval: '--request-approval', publishAt: '--publish-at', connection: '--connection', connectionName: '--connection-name', db: '--db' },
+  publish: { lang: '--lang', site: '--site', version: '--version', dryRun: '--dry-run', acceptDrift: '--accept-drift', includeDraft: '--include-draft', requestApproval: '--request-approval', publishAt: '--publish-at', withBlock: '--with-block', withoutBlock: '--without-block', connection: '--connection', connectionName: '--connection-name', db: '--db' },
   unpublish: { lang: '--lang', site: '--site', dryRun: '--dry-run', acceptDrift: '--accept-drift', connection: '--connection', connectionName: '--connection-name', db: '--db' },
   move: { site: '--site', to: '--to', dryRun: '--dry-run', acceptDrift: '--accept-drift', connection: '--connection', connectionName: '--connection-name', db: '--db' },
   delete: { site: '--site', dryRun: '--dry-run', acceptDrift: '--accept-drift', ignoreReferences: '--ignore-references', connection: '--connection', connectionName: '--connection-name', db: '--db' },
@@ -161,7 +161,7 @@ const specs: Readonly<Record<string, Readonly<Record<string, Flag>>>> = {
   projectsCreate: { dryRun: '--dry-run', acceptDrift: '--accept-drift', connection: '--connection', connectionName: '--connection-name', db: '--db' },
   projectsReady: { all: '--all', lang: '--lang', dryRun: '--dry-run', acceptDrift: '--accept-drift', requestApproval: '--request-approval', comment: '--comment', includeDraft: '--include-draft', connection: '--connection', connectionName: '--connection-name', db: '--db' },
   projectsRemove: { lang: '--lang', dryRun: '--dry-run', acceptDrift: '--accept-drift', connection: '--connection', connectionName: '--connection-name', db: '--db' },
-  projectsPublish: { at: '--at', dryRun: '--dry-run', acceptDrift: '--accept-drift', includeDraft: '--include-draft', connection: '--connection', connectionName: '--connection-name', db: '--db' },
+  projectsPublish: { at: '--at', dryRun: '--dry-run', acceptDrift: '--accept-drift', includeDraft: '--include-draft', withBlock: '--with-block', withoutBlock: '--without-block', connection: '--connection', connectionName: '--connection-name', db: '--db' },
   projectsReactivate: { dryRun: '--dry-run', acceptDrift: '--accept-drift', connection: '--connection', connectionName: '--connection-name', db: '--db' },
   projectsDelete: { dryRun: '--dry-run', acceptDrift: '--accept-drift', connection: '--connection', connectionName: '--connection-name', db: '--db' },
   languagesEnable: { dryRun: '--dry-run', connection: '--connection', connectionName: '--connection-name', db: '--db' },
@@ -1306,11 +1306,16 @@ export abstract class OptiCliCommands {
   /**
    * Publish a version, making it live (default: the latest version in the language). Needs `opticli serve`.
    * The CMS validates it first (e.g. required properties). --dry-run checks that the version exists and isn't published
-   * yet, without asking the site. Without --version, versions someone else saved after the published one need
+   * yet, without asking the site (except as below). Without --version, versions someone else saved after the published one need
    * confirming: a prompt on a terminal, elsewhere a conflict listing them, unless --include-draft. A named version
    * is published as it is. Content with an approval sequence is refused (exit 3); --request-approval sends the
    * version for review instead.
+   * Where the site makes new area blocks shared (serve --status: inlineBlocks: shared), the drafts of the blocks of
+   * the content's own "For this page" folder that it shows and that were never published go live with it
+   * (sharedBlocks); a live block's newer draft stays behind with a warning unless --with-block names it, and
+   * --without-block keeps a new one back. There --dry-run asks the site, which checks the publish and lists both.
    * Example: opticli publish 123_456 --dry-run
+   * Also:    opticli publish 123 --with-block 456
    * @param ref - A ref is a content id (123), id_version (123_456), a content GUID, a URL/path (/en/about/ or https://host/en/about/), or content provider content as get prints it (63__provider).
    */
   async publish(ref: string, options?: PublishOptions, call?: RunOptions): Promise<WriteOutput> {
@@ -1535,7 +1540,9 @@ export abstract class OptiCliCommands {
    * details.project, and nothing goes live. On a terminal it shows what goes live, whose changes go with it and what
    * stays behind, and asks. Nothing ready is a conflict (exit 5).
    * Prints published (or scheduled and scheduledFor), notReady, alreadyPublished, failed (with siteError) and
-   * siteChanges: what the site's own code changed meanwhile.
+   * siteChanges: what the site's own code changed meanwhile. Where the site makes new area blocks shared, each item
+   * takes along the drafts of the never-published blocks of its own "For this page" folder that it shows (its
+   * sharedBlocks); --with-block and --without-block choose as for `opticli publish`.
    * Example: opticli projects publish 12 --dry-run
    * Also:    opticli projects publish "Spring campaign" --at 2026-12-01T07:00Z
    * @param project - The project: its id, or its exact name (`opticli projects` lists them).

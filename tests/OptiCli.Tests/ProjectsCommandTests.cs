@@ -69,6 +69,20 @@ public class ProjectsCommandTests
         Assert.Contains("whose own Publish puts every unpublished item live", flat, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("publish")]
+    [InlineData("projects", "publish")]
+    public async Task A_publish_names_blocks_to_take_along_or_keep_back(params string[] command)
+    {
+        var run = await Opticli.RunAsync([.. command, "--help"]);
+        var flat = string.Join(' ', run.Stdout.Split((char[])[' ', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries));
+
+        Assert.Equal(0, run.ExitCode);
+        Assert.Contains("--with-block <ref>", run.Stdout, StringComparison.Ordinal);
+        Assert.Contains("--without-block <ref>", run.Stdout, StringComparison.Ordinal);
+        Assert.Contains("by default only blocks never published go along", flat, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Apply_documents_the_plans_project()
     {

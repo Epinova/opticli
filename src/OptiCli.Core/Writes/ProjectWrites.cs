@@ -83,11 +83,24 @@ public sealed class ProjectWrites(WriteExecutor executor)
     /// </summary>
     /// <param name="confirm">Asks the summary's question (the summary, then the question); null: no one to ask.</param>
     /// <exception cref="ConflictException">Declined at the prompt; other people's changes without <paramref name="includeDraft"/>; nothing ready.</exception>
+    /// <param name="withBlocks">Live blocks of a ready item's own "For this page" folder whose drafts go along (<c>--with-block</c>).</param>
+    /// <param name="withoutBlocks">Never-published blocks of that folder kept back (<c>--without-block</c>).</param>
     public async Task<ProjectResult> PublishAsync(string project, DateTimeOffset? at, bool includeDraft, bool dryRun, Func<string, string, bool>? confirm,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, IReadOnlyList<string>? withBlocks = null, IReadOnlyList<string>? withoutBlocks = null)
     {
         var route = AgentRoutes.ProjectPublish(project);
-        var request = new ProjectPublishRequest { PublishAt = at?.UtcDateTime, IncludeDraft = includeDraft, DryRun = dryRun };
+        var request = new ProjectPublishRequest
+        {
+            PublishAt = at?.UtcDateTime,
+            IncludeDraft = includeDraft,
+            DryRun = dryRun,
+            WithBlocks = withBlocks is { Count: > 0 } ? (await RefsAsync(withBlocks, cancellationToken)).Select(r => r.Split('_')[0]).ToList() : null,
+            WithoutBlocks = withoutBlocks is { Count: > 0 } ? (await RefsAsync(withoutBlocks, cancellationToken)).Select(r => r.Split('_')[0]).ToList() : null,
+        };
+        if (request.WithBlocks is not null || request.WithoutBlocks is not null)
+        {
+            WriteExecutor.RequireBlocksPublishedAlong(await executor.InlineBlocksAsync(cancellationToken));
+        }
         if (dryRun || confirm is null)
         {
             return await SendAsync(HttpMethod.Post, route, request, dryRun, cancellationToken);

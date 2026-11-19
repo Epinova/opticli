@@ -35,7 +35,7 @@ public sealed partial class WritePlan
         ["block"] = ["type*", "name*", "for", "parent", "properties", "lang", "publish", "includeDraft", "requestApproval", "id", "guid", "project", "ready"],
         ["upload"] = ["file*", "for", "parent", "replace", "name", "type", "properties", "publish", "includeDraft", "requestApproval", "id", "guid", "project", "ready"],
         ["translate"] = ["ref*", "lang*", "name", "properties", "publish", "includeDraft", "requestApproval", "withBlocks", "remove", "confirm", "project", "ready"],
-        ["publish"] = ["ref*", "version", "lang", "publishAt", "includeDraft", "requestApproval"],
+        ["publish"] = ["ref*", "version", "lang", "publishAt", "includeDraft", "requestApproval", "withBlocks", "withoutBlocks"],
         ["unpublish"] = ["ref*", "lang"],
         ["discard"] = ["ref*", "version", "lang", "includeDraft"],
         ["move"] = ["ref*", "to*"],
@@ -377,7 +377,11 @@ public sealed partial class WritePlan
                 Remove = reader.Bool("remove"),
                 Confirm = reader.Bool("confirm"),
             },
-            "publish" => new PublishOperation(reader.Ref("ref"), reader.Int("version"), reader.String("lang")),
+            "publish" => new PublishOperation(reader.Ref("ref"), reader.Int("version"), reader.String("lang"))
+            {
+                WithBlocks = reader.RefList("withBlocks"),
+                WithoutBlocks = reader.RefList("withoutBlocks"),
+            },
             "unpublish" => new UnpublishOperation(reader.Ref("ref"), reader.String("lang")),
             "discard" => new DiscardOperation(reader.Ref("ref"), reader.Int("version"), reader.String("lang")),
             "move" => new MoveOperation(reader.Ref("ref"), reader.Ref("to")),
@@ -571,6 +575,20 @@ public sealed partial class WritePlan
         };
 
         public string Ref(string name) => OptionalRef(name) ?? "";
+
+        /// <summary>A list of refs, each as <see cref="OptionalRef"/> takes it: <c>[123, "456", "$intro"]</c>.</summary>
+        public IReadOnlyList<string>? RefList(string name)
+        {
+            if (step[name] is null)
+            {
+                return null;
+            }
+            if (step[name] is not JsonArray array || array.Any(item => item is not JsonValue value || !(value.TryGetValue<string>(out _) || value.TryGetValue<int>(out _))))
+            {
+                return Problem<IReadOnlyList<string>>(name, "an array of refs (numbers or strings)");
+            }
+            return array.Select(item => item!.AsValue().TryGetValue<string>(out var text) ? text : item!.GetValue<int>().ToString(CultureInfo.InvariantCulture)).ToList();
+        }
 
         /// <summary>What a change is based on: <c>"published"</c>, or a version as a number (<c>456</c>) or string (<c>"123_456"</c>).</summary>
         public FromVersion? From(string name) => step[name] switch
