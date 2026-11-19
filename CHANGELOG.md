@@ -16,6 +16,8 @@ Every section was checked against the code on the way:
   `--disabled` and `--all`, `export --all-languages`, `area --display`, `composition --node`, `block create --parent`,
   `upload --parent` and `--replace`, `translate --remove` and `--confirm`, `access --allow-unknown-role` and
   `apply --allow-outside`.
+- `get --all-properties` and the `skill` commands (`skill install --repo` and `--force`, `skill print`) are in the
+  CLI reference too, and a test now fails when an option of a command isn't named there next to its command.
 - `area add --if-missing` never existed: an add counts a matching block as there already when a plan runs again with
   `apply --update-existing`, or with `ifMissing` in the MCP module's `areaOps` (the skill said so too).
 - opticli runs on .NET 8, or on the next newer runtime when 8 isn't installed, not on the newest one.

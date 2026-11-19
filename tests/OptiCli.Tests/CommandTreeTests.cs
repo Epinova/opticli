@@ -169,6 +169,79 @@ public partial class CommandTreeTests
         return problems;
     }
 
+    /// <summary>Where the reference documents the commands and their options.</summary>
+    private const string ReferencePages = "docs/reference/cli";
+
+    /// <summary>An option on at least this many commands is documented once for all of them (<c>--site</c>, <c>--dry-run</c>).</summary>
+    private const int SharedOptionCommands = 3;
+
+    /// <summary>
+    /// Every option of a visible command, as <c>opticli schema</c> describes them (not recursive, hidden, <c>--help</c> or
+    /// <c>--jsonl</c>), is named in the reference next to its command: in a section (heading to heading, examples
+    /// included) that also names each word of the command's path. An option that many commands share only has to be
+    /// named somewhere in the reference. Global options are documented once, not per command, so they're left out.
+    /// </summary>
+    [Fact]
+    public void Every_option_is_in_the_reference_next_to_its_command()
+    {
+        var sections = Directory.GetFiles(Path.Combine(Opticli.RepositoryRoot(), ReferencePages), "*.md").Order(StringComparer.Ordinal)
+            .SelectMany(file => Sections(File.ReadAllText(file))).ToList();
+        var options = VisiblePaths(Root, []).Where(p => p.Count > 0)
+            .SelectMany(path => Find(path).Options
+                .Where(o => !o.Hidden && !o.Recursive && o.Name != "--jsonl" && o is not System.CommandLine.Help.HelpOption)
+                .Select(o => (Path: path, o.Name)))
+            .ToList();
+        var shared = options.GroupBy(o => o.Name).Where(g => g.Count() >= SharedOptionCommands).Select(g => g.Key).ToHashSet();
+
+        var missing = options
+            .Where(o => !sections.Any(section => Mentions(section, o.Name)
+                && (shared.Contains(o.Name) || o.Path.All(word => Mentions(section, word)))))
+            .Select(o => $"`{string.Join(' ', o.Path)} {o.Name}`")
+            .ToList();
+
+        Assert.True(options.Count > 100, $"Only {options.Count} options found; is the command tree walk broken?");
+        Assert.True(missing.Count == 0,
+            $"Not in a section of {ReferencePages}/*.md that names the command (or, for an option on {SharedOptionCommands} or more commands, anywhere in them):\n{string.Join('\n', missing)}");
+    }
+
+    /// <summary>The page split at its headings (a <c>#</c> in a fenced code block isn't one).</summary>
+    private static IEnumerable<string> Sections(string page)
+    {
+        var section = new List<string>();
+        var fenced = false;
+        foreach (var line in page.Split('\n'))
+        {
+            if (line.TrimStart().StartsWith("```", StringComparison.Ordinal))
+            {
+                fenced = !fenced;
+            }
+            else if (!fenced && line.StartsWith('#') && section.Count > 0)
+            {
+                yield return string.Join('\n', section);
+                section.Clear();
+            }
+            section.Add(line);
+        }
+        yield return string.Join('\n', section);
+    }
+
+    /// <summary>Whether <paramref name="text"/> has <paramref name="word"/> as a whole word (<c>--at</c> isn't in <c>--attach</c>).</summary>
+    private static bool Mentions(string text, string word) =>
+        Regex.IsMatch(text, $@"(?<![\w-]){Regex.Escape(word)}(?![\w-])");
+
+    /// <summary>The paths of the commands <c>opticli schema</c> walks: hidden commands and what's under them left out.</summary>
+    private static IEnumerable<List<string>> VisiblePaths(Command command, List<string> prefix)
+    {
+        yield return prefix;
+        foreach (var subcommand in command.Subcommands.Where(c => !c.Hidden))
+        {
+            foreach (var path in VisiblePaths(subcommand, [.. prefix, subcommand.Name]))
+            {
+                yield return path;
+            }
+        }
+    }
+
     private static string Usage(IEnumerable<Command> path) => string.Join(' ', path.Select(c => c == Root ? "opticli" : c.Name));
 
     /// <summary>Inline code spans (the skill's fenced blocks are JSON, not commands).</summary>

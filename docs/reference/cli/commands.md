@@ -13,7 +13,7 @@
 | `types [--kind] [--unused] [--orphaned] [--sort]` | content types with instance counts and kinds (page, block, media, folder, other; on CMS 13 also experience, section, element, contract); `--orphaned`: types whose class is gone from the code, which the CMS keeps while content uses them (the running site checks every class, `meta.source: agent`; otherwise the site's sources are scanned for its own types, with a warning saying why); see [Orphaned content types](database-maintenance.md#orphaned-content-types-and-properties) for removing them |
 | `type <name>` | properties (type, culture-specific, required, tab, order, source line, `[AllowedTypes]`; one that isn't in the code with how many values it has stored), C# class file, views |
 | `allowed-in <type> [--kind] [--explicit]` | which ContentArea/reference properties accept a type, from `[AllowedTypes]` in code (`--explicit`: only those whose attribute names the type or a base type, not unrestricted ones) |
-| `get <ref> [--lang] [--version] [--fields] [--expand] [--variation]` | one item, typed and decoded (ContentAreas, local blocks, rich-text links; on CMS 13 a Visual Builder composition, and `--variation` for a content variation) |
+| `get <ref> [--lang] [--version] [--fields] [--expand] [--variation] [--all-properties]` | one item, typed and decoded (ContentAreas, local blocks, rich-text links; on CMS 13 a Visual Builder composition, and `--variation` for a content variation); properties without a value are left out unless `--all-properties` (as `null`) |
 | `tree <ref> [--depth]`, `children`, `ancestors` | the content tree (`tree`: 2 levels down unless `--depth`, at most 5000 items, then `capped`) |
 | `find --type T [--where Prop=value] [--under] [--status]` | items of a type, filtered; `--status scheduled` (a version waits to be published: `publishAt`) and `expired` (published, stop-publish date passed: `expiredAt`), in the master language unless `--lang` |
 | `search <text> [--in names\|strings\|all]` | names and text properties containing a string |
@@ -191,3 +191,13 @@ name only it has. Several matches are a `usage` error that lists them.
 `run`, `stop` and `set` take `--dry-run`. Against a shared database they are refused (exit 3), with no override: the
 deployed site's scheduler uses the same jobs, and a job writes to the content everyone shares. `jobs` and `jobs log`
 work there.
+
+## The coding agent skill
+
+`skill install` installs the Claude Code skill bundled with this opticli (`SKILL.md` and `reference.md`) into
+`~/.claude/skills/opticli/`, or with `--repo` into `<repository>/.claude/skills/opticli/` (the git repository around the
+working directory, else the site's solution directory), to share it through git. It replaces a copy it installed
+itself when its files are unedited; `--force` replaces one with local edits, or one installed by an opticli older than
+0.4, which kept no record of it. `skill print [SKILL.md|reference.md]` writes a file of the skill to stdout as-is, for
+other agents' instruction files (`opticli skill print >> AGENTS.md`).
+`doctor` warns when an installed copy was written for an older opticli.

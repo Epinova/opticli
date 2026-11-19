@@ -10,6 +10,9 @@ change touches:
 
 - **[docs/reference/](docs/reference/)**: the reference, one page per area (`cli/` for the CLI, `mcp/` for the MCP
   module). Commands, flags, options, output fields, error codes, limits.
+  `CommandTreeTests.Every_option_is_in_the_reference_next_to_its_command` fails when a visible command's option isn't
+  named in a section of `docs/reference/cli/*.md` that names the command (an option on 3 or more commands: anywhere
+  there).
 - **[README.md](README.md)**: the quickstart and the documentation index. Update it when a change alters what it shows
   (install, quick start, the summaries, supported versions, known limitations) or adds a reference page. It is also the
   NuGet packages' page, so its links are absolute (`https://github.com/Epinova/opticli/blob/main/...`).
