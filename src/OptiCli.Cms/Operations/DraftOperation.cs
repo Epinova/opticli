@@ -21,6 +21,11 @@ internal static class DraftOperation
         flow.Project = Projects.ProjectSave.For(call, body.Project, body.Ready, body.Publish, body.PublishAt);
         flow.OthersDraftsConfirmed = body.IncludeDraft;
         var link = flow.Locator.Resolve(reference);
+        if (body.WithBlocks is { Count: > 0 } || body.WithoutBlocks is { Count: > 0 })
+        {
+            // A plan's publish step dry-run with the steps before it: the blocks it names, checked in the save.
+            flow.Named = flow.Choice(body.WithBlocks, body.WithoutBlocks, "withBlocks", "withoutBlocks", null);
+        }
         var language = flow.Locator.ContentLanguage(flow.Locator.LoadAnyLanguage(link), body.Lang);
         // CMS 13: the content variation asked for, or the one the ref's version belongs to. Its versions are a branch of
         // their own; a variation without any yet is made from the content's published (else latest) version.

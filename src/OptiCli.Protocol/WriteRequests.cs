@@ -132,6 +132,21 @@ public sealed record DraftRequest
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Ready { get; init; }
 
+    /// <summary>
+    /// With <see cref="Publish"/> or <see cref="PublishAt"/>, where the site makes shared area blocks: as
+    /// <see cref="PublishRequest.WithBlocks"/>, besides the blocks the write makes or changes, which go along by themselves.
+    /// The CLI sends it only for a plan's dry run of a <c>publish</c> step checked together with the steps before it (one
+    /// write that publishes), so that dry run takes the same blocks along as the step will. Named blocks must be blocks of
+    /// the content's own "For this page" folder that it shows once changed (<c>usage</c> otherwise, and with a review
+    /// request). Left out when null.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? WithBlocks { get; init; }
+
+    /// <summary>As <see cref="WithBlocks"/>, for <see cref="PublishRequest.WithoutBlocks"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? WithoutBlocks { get; init; }
+
     /// <summary>The <see cref="From"/> value for the published version.</summary>
     public const string FromPublished = "published";
 }
@@ -579,8 +594,11 @@ public sealed record PublishRequest
     /// <summary>
     /// Where the site makes shared area blocks: blocks of the content's own "For this page" folder that its ContentAreas
     /// show, whose drafts go live with it although they have a published version already (refs). By default only blocks
-    /// that were never published in the language go along. Any other ref is refused (<c>usage</c>); the rules for
-    /// another person's draft, access, approval sequences and validation apply to them as to every block published along.
+    /// that were never published in the language go along. Any other ref is refused (<c>usage</c>), and so is naming
+    /// blocks for a publish that goes for review instead (an approval sequence applies); the rules for another person's
+    /// draft, access, approval sequences and validation apply to them as to every block published along. When the version
+    /// is published already, the blocks that go along are published on their own (<see cref="WriteResult.Published"/>
+    /// false, <see cref="WriteResult.SharedBlocks"/> lists them); with none, it is a <c>conflict</c>.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<string>? WithBlocks { get; init; }
@@ -592,6 +610,17 @@ public sealed record PublishRequest
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<string>? WithoutBlocks { get; init; }
+
+    /// <summary>
+    /// A plan's <c>publish</c> step: the block versions that earlier steps of the same run saved (<c>941_5108</c>, from
+    /// their <see cref="WriteResult.SharedBlocks"/>, <c>created</c> or <c>updated</c>). Each goes along unnamed, as the
+    /// blocks a write that publishes changed itself do, while it is still the block's latest version and the version
+    /// published shows the block from the content's own "For this page" folder; any other is ignored (a block a later step
+    /// took out of the area isn't published). <see cref="WithoutBlocks"/> still keeps one back. A review request counts
+    /// them as blocks it would leave unpublished. Left out when null: an older agent refuses fields it doesn't know.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? WrittenBlocks { get; init; }
 }
 
 /// <summary>Body of <see cref="AgentRoutes.Unpublish"/> (may be empty).</summary>

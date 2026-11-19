@@ -42,9 +42,13 @@ internal static class PublishOperation
         call.RequireLanguageAccess(version);
         // The published version taken offline (unpublish) is published again as a new version, without its stop date.
         var expired = version is IVersionable { Status: VersionStatus.Published, StopPublish: { } stop } && stop <= DateTime.Now;
-        if (version is IVersionable { Status: VersionStatus.Published } && !expired)
+        // Published already: where the site makes shared area blocks, the drafts of its blocks that a publish takes along may
+        // still go live on their own (a plan's publish after steps that changed only blocks, or blocks named); else, and
+        // when there are none, there is nothing to publish.
+        var publishedAlready = version is IVersionable { Status: VersionStatus.Published } && !expired;
+        if (publishedAlready && flow.Writer.Shared is null)
         {
-            throw AgentException.Conflict($"Version {version.ContentLink} is already the published version.");
+            throw AgentException.Conflict(AlreadyPublished(version));
         }
 
         var versionLanguage = version is ILocalizable { Language: { } own } ? own : null;
@@ -56,21 +60,36 @@ internal static class PublishOperation
         var action = WriteFlow.Publishing(call, link, publish, body.RequestApproval, body.PublishAt, what) ?? SaveAction.Publish;
         var publishing = action == SaveAction.Publish;
         var scheduling = action == SaveAction.Schedule;
+        // The blocks of its own folder the caller names: taken along although live, or kept back although never published;
+        // and for a plan's publish step, the block drafts earlier steps of the run saved, which go along unnamed.
+        var choice = flow.Choice(body.WithBlocks, body.WithoutBlocks, WithName(call), WithoutName(call), call.ForCaller<Func<string, string>>(
+            block => $"Name it to publish that draft with the content (opticli publish {link.ID} --with-block {block}), or publish it on its own (opticli publish {block}).",
+            block => $"Pass blocks: [\"{block}\"] to publish that draft with the content, or publish the block on its own.")) with
+        {
+            WrittenVersions = flow.Writer.Shared is null ? new HashSet<(int, int)>() : SharedAreaBlocks.AlongChoice.Versions(body.WrittenBlocks),
+        };
+        // A review publishes no blocks along: naming them there is refused, not ignored.
+        flow.RequireNoneNamedForReview(choice, action, WithName(call), WithoutName(call));
+        if (publishedAlready && !(publishing || scheduling))
+        {
+            throw AgentException.Conflict(AlreadyPublished(version));
+        }
         if (action == SaveAction.RequestApproval && version is IVersionable { Status: VersionStatus.AwaitingApproval })
         {
             Approvals.RequireNotInReview([.. branch.Where(v => v.ContentLink.WorkID == version.ContentLink.WorkID)], what, versionLanguage?.Name);
         }
-        // The approval would publish it alone: not while it shows blocks of its own folder that were never published.
-        flow.RequireBlocksPublishedForReview(version, action, what, publishing: true);
-        // The blocks of its own folder the caller names: taken along although live, or kept back although never published.
-        var choice = flow.Choice(body.WithBlocks, body.WithoutBlocks, WithName(call), WithoutName(call), call.ForCaller<Func<string, string>>(
-            block => $"Name it to publish that draft with the content (opticli publish {link.ID} --with-block {block}), or publish it on its own (opticli publish {block}).",
-            block => $"Pass blocks: [\"{block}\"] to publish that draft with the content, or publish the block on its own."));
+        // The approval would publish it alone: not while it shows blocks of its own folder that were never published (or
+        // whose drafts earlier steps of a plan run saved).
+        flow.RequireBlocksPublishedForReview(version, action, what, publishing: true, choice.WrittenVersions);
         if (choice.Names)
         {
             flow.Writer.Shared!.RequireChosen([version], choice, WithName(call), WithoutName(call));
         }
         var othersConfirmed = body.IncludeDraft || (named is not null && call.NamedVersionConfirmsDraft);
+        if (publishedAlready)
+        {
+            return BlocksOnly(call, flow, version, versionId, action, othersConfirmed, choice, body);
+        }
         var pending = publishing || scheduling
             ? PendingDrafts.Require(flow.Locator.PendingDraft(branch, version), othersConfirmed, body.DryRun, what, versionLanguage?.Name)
             : action == SaveAction.RequestApproval && call.ReportsDraftInReview
@@ -168,6 +187,52 @@ internal static class PublishOperation
             PendingDraft = pending,
             PreviouslyPublished = publishing ? previouslyPublished : null,
             SharedBlocks = along is { Count: > 0 } ? along : null,
+        };
+    }
+
+    private static string AlreadyPublished(IContent version) => $"Version {version.ContentLink} is already the published version.";
+
+    /// <summary>
+    /// A publish of a version that is published already, where the site makes shared area blocks: the content has nothing
+    /// new, but the drafts of the blocks of its own "For this page" folder that a publish of it takes along (never
+    /// published, named, or saved by earlier steps of a plan run) go live on their own, as they would have with it. A plan's
+    /// publish after steps that changed only blocks publishes those, as one write that publishes them does.
+    /// </summary>
+    /// <exception cref="AgentException"><c>conflict</c> when no block goes along either: there is nothing to publish.</exception>
+    private static WriteResult BlocksOnly(CmsCall call, WriteFlow flow, IContent version, int versionId, SaveAction action, bool othersConfirmed,
+        SharedAreaBlocks.AlongChoice choice, PublishRequest body)
+    {
+        call.RequirePublishing(action, version);
+        var scheduling = action == SaveAction.Schedule;
+        var at = body.PublishAt?.ToLocalTime();
+        var planned = new List<ValidationIssue>();
+        var along = flow.PublishAlong(version, action, othersConfirmed, dryRun: true, planned, at: at, choice: choice) ?? [];
+        if (along.Count == 0)
+        {
+            throw AgentException.Conflict(
+                $"{AlreadyPublished(version)} No draft of a block of its \"For this page\" folder goes along either, so there is nothing to publish.",
+                planned.Count > 0 ? string.Join(" ", planned.Select(i => i.Message)) : null);
+        }
+        var issues = body.DryRun ? planned : [];
+        if (!body.DryRun)
+        {
+            flow.ThrowIfAborted();
+            along = flow.PublishAlong(version, action, othersConfirmed, dryRun: false, issues, at: at, choice: choice) ?? [];
+            // The blocks' saves are the publish's own, not the site's changes.
+            call.TakeSiteEvents();
+        }
+        issues.Insert(0, new ValidationIssue(null,
+            $"{AlreadyPublished(version)} Only the drafts of the blocks of its \"For this page\" folder in sharedBlocks {(body.DryRun ? "would be" : "were")} {(scheduling ? "scheduled" : "published")}; the content itself stays as it is.",
+            "info"));
+        return new WriteResult
+        {
+            Content = ContentSummaries.Describe(version, flow.Types),
+            DryRun = body.DryRun,
+            Valid = true,
+            ScheduledFor = scheduling ? body.PublishAt!.Value.ToUniversalTime() : null,
+            BaseVersion = versionId,
+            Validation = issues,
+            SharedBlocks = along.Count > 0 ? along : null,
         };
     }
 

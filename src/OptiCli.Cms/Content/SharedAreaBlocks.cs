@@ -295,7 +295,7 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
                 yield return new ValidationIssue(pending.Path,
                     $"The block {block} ('{pending.Name}') is published, and its change is a draft: the preview of the content shows the block's published version until the block is published. "
                     + call.ForCaller(
-                        $"A publish of the content leaves it a draft unless it names the block (opticli publish <content> --with-block {block}), or publish the block on its own (opticli publish {block}).",
+                        $"A publish of the content leaves it a draft unless it names the block (opticli publish {Owner!.ContentLink.ID.ToString(CultureInfo.InvariantCulture)} --with-block {block}), or publish the block on its own (opticli publish {block}).",
                         $"A publish of the content leaves it a draft unless it names the block (publish_content with blocks: [\"{block}\"]), or publish the block on its own."),
                     "info");
             }
@@ -591,10 +591,37 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
         /// <summary>The blocks the write that publishes made or changed itself (content ids): they go along unnamed.</summary>
         public IReadOnlySet<int> Written { get; init; } = new HashSet<int>();
 
+        /// <summary>
+        /// The block versions earlier steps of a plan run saved (content id, version id: <see cref="PublishRequest.WrittenBlocks"/>):
+        /// a block whose latest version is one of them goes along unnamed, as <see cref="Written"/> does.
+        /// </summary>
+        public IReadOnlySet<(int Id, int Version)> WrittenVersions { get; init; } = new HashSet<(int, int)>();
+
         /// <summary>How the caller takes a live block's draft along (given its id): the last sentence of its warning.</summary>
         public Func<string, string>? HowToInclude { get; init; }
 
         public bool Names => With.Count > 0 || Without.Count > 0;
+
+        /// <summary>Whether the publish wrote the block itself: the write that publishes changed it, or an earlier step of the plan run saved its latest version.</summary>
+        public bool Wrote(int id, ContentReference latest) => Written.Contains(id) || WrittenVersions.Contains((id, latest.WorkID));
+
+        /// <summary>
+        /// The block versions earlier steps of a plan run saved (<c>941_5108</c>), as <see cref="WrittenVersions"/>.
+        /// </summary>
+        /// <exception cref="AgentException"><c>usage</c> for one that names no version.</exception>
+        public static HashSet<(int Id, int Version)> Versions(IReadOnlyList<string>? refs)
+        {
+            var versions = new HashSet<(int, int)>();
+            foreach (var reference in refs ?? [])
+            {
+                if (!ContentReference.TryParse(reference?.Trim(), out var link) || link.ID <= 0 || link.WorkID <= 0)
+                {
+                    throw AgentException.Usage($"writtenBlocks: '{reference}' is not a block version (id_version).");
+                }
+                versions.Add((link.ID, link.WorkID));
+            }
+            return versions;
+        }
     }
 
     /// <summary>
@@ -679,11 +706,11 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
                     "warning"));
                 continue;
             }
-            if (live && !choice.With.Contains(id) && !choice.Written.Contains(id))
+            if (live && !choice.With.Contains(id) && !choice.Wrote(id, latest.ContentLink))
             {
                 var reference = id.ToString(CultureInfo.InvariantCulture);
                 warnings.Add(new ValidationIssue(path,
-                    $"{what} is published already, so its newer draft stays a draft: the content goes live showing the block's published version. {choice.HowToInclude?.Invoke(reference) ?? call.ForCaller($"Publish it on its own if that draft should go live (opticli publish {reference}).", $"Publish it on its own if that draft should go live (publish_content on {reference}).")}",
+                    $"{what} is published already, so its newer draft stays a draft: the content goes live showing the block's published version. {choice.HowToInclude?.Invoke(reference) ?? HowToInclude(published, reference)}",
                     "warning"));
                 continue;
             }
@@ -734,6 +761,18 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     }
 
     /// <summary>
+    /// How to put a live block's draft that a publish of <paramref name="content"/> left behind live: by naming it in a
+    /// publish of the content (which, with the content published already, publishes just the blocks), or on its own.
+    /// </summary>
+    private string HowToInclude(IContent content, string block)
+    {
+        var owner = content.ContentLink.ID.ToString(CultureInfo.InvariantCulture);
+        return call.ForCaller(
+            $"Name it to publish that draft with the content (opticli publish {owner} --with-block {block}), or publish it on its own (opticli publish {block}).",
+            $"Publish that draft with the content (publish_content on {owner} with blocks: [\"{block}\"]), or publish the block on its own.");
+    }
+
+    /// <summary>
     /// The blocks of <paramref name="content"/>'s own "For this page" folder that its areas show (and the areas of those
     /// blocks' latest versions, at any depth), each once: its place, the block, its latest version in the content's
     /// language, that version, the folder's id, and whether the block has a published version in that language (a block
@@ -778,10 +817,12 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     /// What a review request of <paramref name="version"/> would leave unpublished: the blocks this write makes or changes,
     /// and the blocks of its own "For this page" folder that its areas show and that were never published (a draft). The
     /// approval publishes the content alone. A live block with a newer draft doesn't count: the content shows its
-    /// published version, as a publish leaves it unless that block is named.
+    /// published version, as a publish leaves it unless that block is named; one whose draft an earlier step of the plan run
+    /// saved does (<paramref name="written"/>), as a block the write changes does.
     /// </summary>
+    /// <param name="written">The block versions earlier steps of a plan run saved (<see cref="AlongChoice.WrittenVersions"/>).</param>
     /// <returns>Each as its place and what it is (<c>MainArea[2] (a new block)</c>); empty when there are none.</returns>
-    public List<string> UnpublishedForReview(IContent version)
+    public List<string> UnpublishedForReview(IContent version, IReadOnlySet<(int Id, int Version)>? written = null)
     {
         var listed = new List<string>();
         var ids = new HashSet<int>();
@@ -795,9 +836,17 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
         }
         foreach (var (path, block, latest, _, _, live) in OwnBlocksShown(version))
         {
-            if (!live && latest.Status is VersionStatus.CheckedOut or VersionStatus.CheckedIn && ids.Add(block.ContentLink.ID))
+            if (latest.Status is not (VersionStatus.CheckedOut or VersionStatus.CheckedIn))
+            {
+                continue;
+            }
+            if (!live && ids.Add(block.ContentLink.ID))
             {
                 listed.Add($"{path} (block {block.ContentLink.ToReferenceWithoutVersion()}, never published)");
+            }
+            else if (written?.Contains((block.ContentLink.ID, latest.ContentLink.WorkID)) == true && ids.Add(block.ContentLink.ID))
+            {
+                listed.Add($"{path} (block {block.ContentLink.ToReferenceWithoutVersion()}, changed)");
             }
         }
         return listed;
