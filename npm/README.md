@@ -153,6 +153,9 @@ below it; `cms` refuses it there before saving anything. A step of `cms.apply()`
 
 Deleted content goes to the recycle bin, as in the CMS: nothing is deleted for good. On a local database that is
 usually fine; empty the recycle bin in the CMS now and then.
+On a site that makes a new block in a ContentArea a shared block in the page's "For this page" folder (`opticli serve
+--status`: `inlineBlocks: shared`), the blocks a test page's areas made stay in that folder, outside the recycle bin,
+until the page is deleted for good there, as the CMS keeps a page's assets.
 
 ### A database built from scratch
 

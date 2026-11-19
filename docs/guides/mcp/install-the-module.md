@@ -3,7 +3,7 @@ title: Install the MCP module in your site
 summary: Add the opticli MCP module to a CMS 12 or CMS 13 site, decide what assistants may do, and connect a first assistant to check that it works.
 audience: mcp
 order: 1
-written-for: 0.33.0
+written-for: 0.35.0
 ---
 
 The MCP module turns your Optimizely site into an MCP server with its own OAuth sign-in. Editors connect an AI
@@ -129,6 +129,12 @@ instead, which needs no publishing option at all.
 > through the assistant puts live only its items marked Ready to publish; the gadget's own Publish button puts every
 > unpublished item live, ready or not. With project mode on, the assistant gives editors a link to the project
 > (`projectUrl`), and the CMS's own publish puts only ready items live too.
+
+> **Note:** New blocks an assistant adds to a content area are made as the site's edit UI makes them: inline blocks,
+> or, where `UIOptions.InlineBlocksInContentAreaEnabled` is off (CMS 12's default), shared blocks in the page's "For
+> this page" folder, saved as drafts. The assistant's publish of a page publishes those block drafts along; the CMS's
+> own Publish publishes the page alone. Without `AllowPublish`, the assistant tells editors to publish the blocks too.
+> See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new-blocks-in-a-contentarea).
 
 > **Note:** The module refuses script in rich text and links whatever you configure, but the CMS saves whatever the
 > edit UI's TinyMCE or other code gives it. On CMS 12.15 or newer, have the CMS's script parser remove script on every

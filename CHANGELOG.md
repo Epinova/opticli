@@ -3,6 +3,72 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.35.0 (unreleased)
+
+New blocks in a ContentArea are made as the site's edit UI makes them. **A change for sites whose edit UI makes no
+inline blocks** (`UIOptions.InlineBlocksInContentAreaEnabled` off: Optimizely's default on CMS 12, and on CMS 13.0.0
+and 13.0.1): opticli and the MCP module made an inline block there with only a warning, which such a site may not
+render (a page built so could fail with HTTP 500). There they now make a shared block in the page's "For this page"
+folder, as the edit UI's "Create a new block" does. Sites with the setting on (CMS 13's default from 13.0.2) work as
+before. See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new-blocks-in-a-contentarea).
+
+### CLI
+
+- **New area blocks follow the site.** Where the edit UI makes shared blocks, `area add --type`, a `{"type",
+  "properties"}` item in a whole area and a plan's `area add` with `type` make a shared block of that type in the "For
+  this page" folder of the content written (the folder is made when needed, for new content too), with the item's
+  values, name and display option, in the language written, as a draft. Every block is validated before anything is
+  saved, and one invalid block saves nothing. There is no option to make inline blocks there instead.
+- **`sharedBlocks` in write results** lists the blocks of the content's own folder that a write made, changed, found or
+  published along: `path` (`MainArea[2]`), `ref`, `name`, `type`, `folder`, `status` and `action` (`created`,
+  `updated`, `published`, `existing`). A dry run lists them without a `ref`, and its `changes` show a planned block as
+  `{"type", "name", "properties", "shared": "planned"}`. When the content's save fails after its blocks were saved,
+  the error's `details.madeBlocks` lists them for a retry.
+- **Inline blocks a page already has stay inline**, and are edited, moved and removed by position as before. A whole
+  area written again pairs its items with the current inline blocks and the blocks of the content's folder (exact copy,
+  then by name, then the only one of its type left), so a run again updates those blocks (`updated`) instead of making
+  new ones; shared blocks from anywhere else are never changed that way. `MainArea[2].X=...` and `area set` on a shared
+  block are refused with its ref, to change it by.
+- **A publish takes the page's block drafts along.** `publish`, a write with `--publish` or `--publish-at`, and
+  `projects publish` also publish (or schedule for the same time) the drafts of the blocks of the content's own folder
+  that its areas show, and list them in `sharedBlocks`. Someone else's draft needs `--include-draft`, and a block under
+  an approval sequence is left with a warning. A project's own items follow the project's rules.
+- **Review requests with unpublished blocks are refused**, as the approval would publish the page alone: the hint says
+  to save into a CMS project, or to publish the blocks first. A write into a project with `--ready` or
+  `--request-approval` takes its new and changed blocks along: marked ready, or sent for review where an approval
+  sequence applies.
+- **Plans: `id` on an `area add` with `type`** names the block it makes, so later steps change it as `$id` and
+  `created` lists it; a run again with `--update-existing` finds it. The dry run refuses a later step that names a
+  planned shared block by its position, an `id` a later step uses on a site that makes inline blocks, and one whose add
+  finds an inline block like it on a run again.
+- **`serve --status` and `doctor` show `inlineBlocks`** (`inline` or `shared`), how the site makes a new block in a
+  ContentArea.
+- **`publish --request-approval --dry-run`** asks the site whether the review would be refused, where it makes shared
+  blocks; other publish dry runs are answered from the database as before.
+- **Fixed: a plan's dry run of a step that names a ContentArea item by its position** (`"MainArea[1].Heading"`, `area
+  set`) ran against the stored area, without the items earlier steps of the plan add, unless the plan published,
+  translated or used `from`. It follows the earlier steps in every plan now, on sites with inline blocks too.
+
+### MCP server for editors
+
+- `create_content`, `update_content` (`{type, properties}` items and `areaOps` adds) and custom tools' `ContentPlan`
+  make shared blocks in the content's "For this page" folder where the site's edit UI does, and only where it would:
+  the editor needs Edit and Create on the content and a block type the edit UI offers there. The results (and custom
+  tools' step results) have `sharedBlocks` with the blocks' refs.
+- `publish_content` publishes the content's own block drafts along, as `publish` does. On a site that makes shared
+  blocks, the server's instructions tell the assistant that the CMS's own Publish doesn't (or, where assistants may not
+  publish, that the editor publishes the blocks too), and to change a block later by its ref.
+- A review request (`requestApproval`) with unpublished blocks is refused with the same hint as the CLI's, and a save
+  into a project with `ready` or `requestApproval` takes the blocks along.
+
+### npm package
+
+- `sharedBlocks` on write results, `inlineBlocks` on `AgentStatus`, and `id` on a plan's `area` step are typed.
+
+### Documentation
+
+- New guide for editors: [Add blocks to a page with your assistant](https://epinova.github.io/opticli/guides/).
+
 ## 0.34.2 (18 November 2026)
 
 ### MCP server for editors

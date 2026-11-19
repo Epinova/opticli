@@ -675,7 +675,9 @@ language, or the language the URL selects. On CMS 13, Visual Builder blueprints 
 These commands write through the running site: the one `opticli serve` started, or the one you run from your IDE
 with [IDE mode](#running-the-site-from-your-ide-ide-mode) on.
 - `set`, `create`, `area` (add, remove or move ContentArea items, shared blocks or, on CMS 12.20+, inline blocks
-  stored in the area), `block create`, `upload` and `translate` save a draft unless `--publish` is given. `upload <file>` adds a PDF, image or other file (up to 50 MB) as media, as the
+  stored in the area; a new block is inline or shared as the site's edit UI makes it, see
+  [New blocks in a ContentArea](#new-blocks-in-a-contentarea)), `block create`, `upload` and `translate` save a draft
+  unless `--publish` is given. `upload <file>` adds a PDF, image or other file (up to 50 MB) as media, as the
   type the site maps its extension to, and prints where the file was stored. `create` doesn't take media types (that
   would be media without a file).
 - `publish`, `unpublish` (takes a published branch offline, as the edit UI's expiry does), `discard` (deletes one
@@ -766,6 +768,140 @@ sequence isn't published directly (exit 3); `--request-approval` sends it for re
 Against a shared database that differs from the build, writes stop with `drift` (exit 5) until `--accept-drift
 <fingerprint>` (`apply --accept-drift` for a whole plan); dry runs don't stop.
 [skill/reference.md](skill/reference.md) documents value syntax and the plan format.
+
+### New blocks in a ContentArea
+
+opticli makes only what an editor could make in the same site's edit UI. There, "Create a new block" in a ContentArea
+makes an inline block, stored in the area, where the CMS UI's `UIOptions.InlineBlocksInContentAreaEnabled` is on, and a
+shared block in the page's "For this page" folder where it is off. Optimizely's default is off on CMS 12 and on on CMS
+13 (from 13.0.2; 13.0.0 and 13.0.1 default to off). Every write that makes a new block in an area follows the site: a
+`{"type", "properties"}` item in a whole area (`set`, `create`), `area add --type`, a plan's `area add` with `type`
+(`apply` of an export and `sync pull` included), and the MCP module's `create_content`, `update_content` and custom
+tools. `serve --status` and `doctor` say which (`inlineBlocks`: `inline` or `shared`). Where the setting can't be read
+(no CMS UI loaded, or a CMS UI without it) writes make inline blocks. There is no option to make inline blocks where the
+edit UI makes none: such a site may not render them. Where the site makes inline blocks, writes are as before (CMS
+12.20+; see [skill/reference.md](skill/reference.md#inline-blocks-in-contentareas)).
+
+```sh
+opticli area 123 MainContentArea add --type EditorialBlock MainBody='<p>Hi</p>' --name Intro
+```
+
+```json
+"sharedBlocks": [{"path": "MainContentArea[1]", "ref": "2691_3623", "name": "Intro", "type": "EditorialBlock",
+                  "folder": "2675", "status": "checkedOut", "action": "created"}]
+```
+
+Where the site makes shared blocks:
+
+- **The block.** A new block is a shared block of the item's type in the "For this page" folder of the content written,
+  also when its area is inside an inline or local block, or inside another new block. The folder is made when the
+  content has none (for new content, before the content is saved). The block gets the item's values (the type's
+  defaults for the rest), and the item keeps its display option and personalization. Its name is the one given
+  (`name`, `--name`), else the CMS's pattern for a block the edit UI makes without one: `<content name> <type name>
+  <n>`. It is made in the language written, which becomes its master language.
+- **Checked first.** Every block is validated as content of its own before anything is saved, in a dry run too: its
+  type in a folder, required values, the site's validators and the area's `[AllowedTypes]`. Problems name the item
+  (`MainArea[1].Heading`), and one invalid block saves nothing.
+- **Drafts.** The blocks are saved as drafts, into the write's project when it has one, before the content, whose items
+  then point at them. The edit UI publishes a new block at once when the editor may publish; opticli publishes only when
+  asked (see Publishing below).
+- **`sharedBlocks`** in the result lists the blocks of the content's own folder that the write made, changed, found or
+  published along. `validation` has an `info` line naming the items that became shared blocks. A dry run's `changes`
+  show a planned block as `{"type", "name", "properties", "shared": "planned"}` (with its display option and
+  personalization); after the save the item is `{"ref"}`.
+
+  | Field | |
+  |---|---|
+  | `path` | the area item: `MainArea[2]`, or `MainArea[0].Area[1]` deeper |
+  | `ref` | the block's saved version; none in a dry run for a block it would make |
+  | `name`, `type` | the block's name and content type |
+  | `folder` | the "For this page" folder's id; none in a dry run when the folder would be made |
+  | `status` | the version's status (`checkedOut` is a draft, `checkedIn` ready, `awaitingApproval`, `published`); in a dry run the one it would get |
+  | `action` | `created`; `updated`, a new version of a block of the folder that a whole area written again takes over (below); `published`, a draft published along with the content; `existing`, found there by an add with `--if-missing` (or a plan run with `--update-existing`) |
+
+- **A failed save.** When the content's own save fails after its blocks were saved, the blocks (and a folder made for
+  them) stay, and the error's `details.madeBlocks` lists them as `sharedBlocks` does, so a retry can give their refs as
+  `{"ref"}` items. For new content they are then in a folder no content owns, so later writes don't treat them as the
+  new content's own.
+- **Inline blocks an area has stay inline.** Another tool may have put inline blocks on the site. They are edited
+  (`MainArea[2].Heading=...`, `area set`), moved and removed by position as before. A whole area written again keeps an
+  inline block for the item it pairs with, and only an item that pairs with no current block becomes a new shared block.
+  Items pair in this order, each pairing only when it is unique on both sides:
+  1. as where the site makes inline blocks: an exact copy of an inline block, then the only changed item of a type with
+     the only inline block of that type left;
+  2. an exact copy of a block of the content's folder: the item stays `{"ref"}`, nothing is saved, and it isn't listed;
+  3. by name: an inline block of the item's type with the item's `name`, or a block of the folder of that type with
+     that name and display option;
+  4. the only block of its type left, inline or of the folder, for the only item of that type left.
+
+  A block of the folder that an item pairs with gets a new draft version with the item's values (`updated`), built as a
+  changed inline block is: only what the item gives, and its name. Shared blocks from anywhere else are never taken
+  over; give them as `{"ref"}` items. Writing back the `{"ref"}` items `get` shows and changing a block by its ref
+  (`opticli set 2691 MainBody='<p>New</p>'`) stays the plain way.
+- **Positions name inline blocks only.** `MainArea[2].Heading=...` and `area set 2` on an item that shows a shared
+  block are refused, with the block's ref in the hint.
+- **`area add --if-missing`** (and plans with `--update-existing`): the add is there already when the area shows a
+  block of its type from the content's own folder, or an inline one, with the add's name (with `--name`) or its values
+  (without). A block of the folder found so is listed as `existing`.
+- A new block in a ContentArea inside a CMS 13 Visual Builder element is refused (`usage`): make it with `block create
+  --for` and add it by its ref.
+
+**Publishing.** A publish of content through opticli (`publish`, a write with `--publish` or `--publish-at`,
+`projects publish`, the MCP module's `publish_content`) also publishes the latest drafts, in its language, of the
+blocks of its own "For this page" folder that the published version's areas show, at any depth, and lists them in
+`sharedBlocks` (`published`). A scheduled publish schedules them for the same time. Blocks from anywhere else are never
+published along. Left as drafts, each with a `warning`: a draft someone else saved (unless `--include-draft`), a block
+under an approval sequence, one that fails validation, and for an editor one they may not publish. The edit UI's own
+Publish publishes the page alone. A block left a draft once the content is published is published by its own ref
+(`publish <block>`): the content's published version can't be published again. Until a changed block is published,
+the CMS's preview of the content shows the block's published version; an `info` line says so. The dry run of a write
+with `--publish` lists what it would publish along; `publish --dry-run` is answered from the database and doesn't.
+
+**Review requests.** An approval publishes the content alone. So where the site makes shared blocks, sending content
+for review (`--request-approval`) is refused (`usage`) while its areas show blocks of its own folder that aren't
+published: drafts, or blocks the write makes or changes. Dry runs are refused too; `publish --request-approval
+--dry-run` asks the site for this. The hint gives two ways: save into a CMS project (below), or save a draft, publish
+the blocks, then send the content for review. Blocks in the folder of content under an approval sequence inherit it,
+so they go for review on their own (`publish <block> --request-approval`); a block awaiting approval no longer stops
+the content's request.
+
+**Projects.** A write with `--in-project` puts its new and changed blocks in the project too, as drafts that then
+follow the content: with `--ready` they are marked Ready to publish, and with `--request-approval` the blocks under an
+approval sequence go for review with the content (the others are marked ready). `--ready` without
+`--request-approval` where a block has an approval sequence is `refused` (`approvalSequence`), in a dry run too. A
+write into a project isn't refused for its blocks. `projects publish` publishes along the block drafts of each page's
+folder that aren't in the project; a block draft that is an item of the project follows the project's rules, and when
+it isn't marked ready, the page's item in the result warns that it stays a draft.
+
+**Plans.** An `area add` with `type` may have an `id`: later steps reach the block it makes as `$id` (a `set` with
+`"ref": "$intro"`, a link in rich text), and `created` lists it. Run again with `--update-existing`, the add finds the
+block (`existing`) and `$intro` names it again. The dry run refuses (`invalid`):
+- a later step that names a planned shared block by its position (`"MainArea[1].Heading"`, `area set`, an area path
+  through it), with a hint to use an `id`;
+- on a site that makes inline blocks, an `id` that a later step uses (an inline block has no ref; an unused one is a
+  warning);
+- with `--update-existing`, an add whose area already has an inline block like it, so it makes no shared block, when a
+  later step uses its `id`.
+
+A run that meets a `$id` naming no block stops there (`usage`).
+
+**Editors' assistants** ([MCP server for editors](#mcp-server-for-editors)) follow the same rules, as the editor: a new
+block needs Edit and Create on the content (Create on its parent for new content) and a block type the edit UI offers
+for a new block there, and changing a block of the folder by writing the area whole needs Edit on that block. The
+tools' descriptions say what a `{type, properties}` item becomes, and on a site that makes shared blocks the server's
+instructions add that `publish_content` publishes them along while the CMS's own Publish doesn't (where assistants
+may not publish: that the editor publishes the blocks too). A custom tool's `ContentPlan` step makes them the same way,
+and its step result lists them in `sharedBlocks`.
+
+**Trying either mode locally.** Set `EPiServer:CmsUI:UI:InlineBlocksInContentAreaEnabled` (`true` or `false`) in the
+site's configuration (CMS 13 ignores `EPiServer:CmsUI:InlineBlocksInContentAreaEnabled`), or for one run in `serve`'s
+environment:
+
+```sh
+opticli serve --stop
+EPiServer__CmsUI__UI__InlineBlocksInContentAreaEnabled=false opticli serve    # shared blocks; true: inline
+opticli serve --status                                                        # inlineBlocks: shared
+```
 
 ### CMS projects
 
@@ -1298,6 +1434,9 @@ agent injected, and returns once the site agent answers.
 - `--stop` asks the site to shut down through the site agent, on every OS, and falls back to SIGTERM on Linux and
   macOS. A site that hasn't exited after 20 s is killed. On Windows that kill is all there is when the agent doesn't
   answer.
+- `--status` (and `doctor`) also say whether the site's scheduler runs (`scheduler`) and how its edit UI makes a new
+  block in a ContentArea, which writes follow (`inlineBlocks`: `inline` or `shared`; see
+  [New blocks in a ContentArea](#new-blocks-in-a-contentarea)).
 - Each start writes a new log. `--logs` reads the latest from its end, and `data.previous` lists the two before it.
 - A state file opticli can't read is treated as stale: `--status` and `--stop` remove it, `doctor` reports it.
 - Two `serve` runs for the same project don't start two sites: the second waits for the first and reports its site.
@@ -1882,7 +2021,7 @@ first and show the user the changes.
 
 | Step | What it does |
 |---|---|
-| `Update(content, p => ...)` | a new draft of the content in its language, as `update_content` saves one: `p.Set(property, value)` (in the forms `update_content` takes), `SetName`, `AddToArea`, `RemoveFromArea` |
+| `Update(content, p => ...)` | a new draft of the content in its language, as `update_content` saves one: `p.Set(property, value)` (in the forms `update_content` takes; a ContentArea item `new { type, properties }` is a new block, inline or a shared block in the content's "For this page" folder as [the site makes them](#new-blocks-in-a-contentarea), listed in the step's `sharedBlocks`), `SetName`, `AddToArea`, `RemoveFromArea` |
 | `Create(parent, type, name, v => ..., lang)` | new content, as a draft, as `create_content` makes it; `CreateFor(content, ...)` makes it in the content's "For this page" folder |
 | `Move(content, destination)` | moves the content, and everything below it, as `move_content` does |
 | `Trash(content)` | moves the content, and everything below it, to the recycle bin, as `delete_content` does |
@@ -2067,6 +2206,9 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   - content references: every one is looked up as the editor, also in rich text (embedded blocks), so an assistant
     can't point to content the edit UI's pickers wouldn't offer, or learn from a dry run that it exists. The CMS's own
     text forms of a ContentArea or a reference list, which skip that, are refused: give an array of refs;
+  - new blocks in a ContentArea: where the edit UI makes them shared blocks in the content's "For this page" folder, so
+    does the module, and only where the edit UI's "Create a new block" would: with Edit and Create on the content and a
+    block type it offers there (see [New blocks in a ContentArea](#new-blocks-in-a-contentarea));
   - restoring from the recycle bin, which the module doesn't do at all (a move out of the recycle bin is refused, with
     a hint to restore it in the CMS, where the editor sees what comes back live).
 - **No script in rich text or links.** The CMS saves rich text as it is given, and the edit UI's TinyMCE only cleans it

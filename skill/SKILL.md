@@ -237,11 +237,21 @@ published version instead, leaving newer drafts out. Workflow:
    `opticli versions <ref> --limit 3`.
 5. `opticli serve --stop` when you're done writing (a site `serve` started; it never stops the IDE's).
 
-Inline blocks in a ContentArea (CMS 12.20+, stored in the area, no ref of their own): add one with
-`opticli area 123 MainArea add --type TeaserBlock Heading=Hi`, change one with `opticli set 123 'MainArea[2].Heading=New'`
-or `opticli area 123 MainArea set 2 Heading=New --name Intro` (its position in the version you change: read it with
-`get <ref> --version latest`), move or remove it by position. Change one block that way, not by rewriting the whole
-area: there an inline item that isn't an exact copy of a block is a new block with only the values it gives.
+A new block in a ContentArea (`opticli area 123 MainArea add --type TeaserBlock Heading=Hi`, or a `{"type", "properties"}`
+item in a whole area) is made as the site's edit UI makes one; `serve --status` says which (`inlineBlocks`):
+- `inline` (CMS 13's default; CMS 12.20+): stored in the area, no ref of its own. Change one with
+  `opticli set 123 'MainArea[2].Heading=New'` or `opticli area 123 MainArea set 2 Heading=New --name Intro` (its position
+  in the version you change: read it with `get <ref> --version latest`), move or remove it by position. Change one block
+  that way, not by rewriting the whole area: there an inline item that isn't an exact copy of a block is a new block
+  with only the values it gives.
+- `shared` (CMS 12's default, `UIOptions.InlineBlocksInContentAreaEnabled` off): a shared block in the page's "For this
+  page" folder, saved as a draft; the result's `sharedBlocks` gives its `ref`. Change it later by that ref
+  (`opticli set <ref> Heading=New`), and to keep an area's blocks write back the `{"ref"}` items `get` shows. Inline blocks
+  the area already has stay inline and are changed by position as above. In a plan, give the `area add` an `"id"` and
+  change the block with a `set` on `"$id"`, never by position. `opticli publish` of the page publishes its folder's block
+  drafts along; the CMS's own Publish doesn't, so tell the user. `--request-approval` is refused while such blocks are
+  unpublished: use `--in-project <p> --ready --request-approval`, or publish the blocks first. Details:
+  [reference.md](reference.md#where-the-site-makes-new-area-blocks-shared).
 
 Structured values (ContentArea items, links, lists) go in `--values '{"MainArea":[{"ref":"456"}]}'`; several related
 writes can run as one validated plan with `opticli apply plan.json`. A plan with `"guidNamespace"` can be run again

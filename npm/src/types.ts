@@ -19,7 +19,11 @@ export type PropertyValue =
   | readonly PropertyValue[]
   | { readonly [property: string]: PropertyValue };
 
-/** A ContentArea item: existing content by ref or GUID, or an inline block (CMS 12.20+). */
+/**
+ * A ContentArea item: existing content by ref or GUID, or a new block (`type`): an inline block (CMS 12.20+), or, where the
+ * site's edit UI makes those (`serve({ status: true })`: `inlineBlocks: 'shared'`), a shared block in the content's "For
+ * this page" folder, which the result's `sharedBlocks` lists with its ref.
+ */
 export type ContentAreaItem =
   | { readonly ref: ContentRef; readonly displayOption?: string; readonly group?: string; readonly visitorGroups?: readonly string[] }
   | { readonly guid: string; readonly displayOption?: string }
@@ -134,7 +138,7 @@ export type PlanStep =
         readonly op: 'area';
         readonly ref: ContentRef;
         readonly property: string;
-        /** add (`item`, or a new inline block's `type`, `values`, `name`), remove (`index` or `item`), move (`index` or `item`, `to`), set (an inline block's `index` and `values` or `name`). */
+        /** add (`item`, or a new block's `type`, `values`, `name`, `id`), remove (`index` or `item`), move (`index` or `item`, `to`), set (an inline block's `index` and `values` or `name`). */
         readonly action: 'add' | 'remove' | 'move' | 'set';
         readonly item?: ContentRef;
         readonly type?: string;

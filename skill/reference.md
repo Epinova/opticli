@@ -43,7 +43,7 @@ production entry's login can write. The one write to production is a sealed appl
 
 | Command | Notes |
 |---|---|
-| `doctor` | Always exits 0. `data.healthy`, `data.warnings`; `connection.candidates`, `database`, `agent` (`scheduler`: `on`/`off` in the running site), `scheduler` (`serve`: what `serve` does, `running`, `overdueJobs`), `skills`, `sitesMapping` (each entry of the saved `sites primary` mapping: `key`, `saved`, `primary`, `status`: `matches`, `differs`, `noSite`, `invalid`). |
+| `doctor` | Always exits 0. `data.healthy`, `data.warnings`; `connection.candidates`, `database`, `agent` (`scheduler`: `on`/`off` in the running site; `inlineBlocks`: `inline`/`shared`, how a new ContentArea block is made), `scheduler` (`serve`: what `serve` does, `running`, `overdueJobs`), `skills`, `sitesMapping` (each entry of the saved `sites primary` mapping: `key`, `saved`, `primary`, `status`: `matches`, `differs`, `noSite`, `invalid`). |
 | `sites` | Hosts (`name`, `type`: undefined, primary, edit, redirectPermanent, redirectTemporary, on CMS 13 also preview, media; `language`, `https`), URL (SiteUrl), start page, master language, assets root. CMS 13 lists applications: no `guid`, plus `application` (its name, the key), `applicationType` (`inProcessWebsite`, `website`), `isDefault` (answers unknown hosts, as `*` did). |
 | `languages [--all]` | Enabled branches (all with `--all`), item counts, which sites use each as master. |
 | `types [--kind page\|block\|media\|folder\|other] [--unused] [--orphaned] [--sort name\|instances]` | CMS 13 kinds too: `experience`, `section`, `element`, `contract` (`--kind page` includes experiences, `block` sections and elements); CMS 13 fields `compositionBehaviors`, `contracts`, `blueprints` (not in `instances`), `inlineUses` (inline blocks in current versions; `--unused` leaves out types used inline, and contracts). `instances` = non-deleted items. Sorted by name unless `--sort instances`. `--orphaned`: types defined in code (the CMS has a class on record, `modelType`) whose class is gone; the CMS keeps such a type while content (or a block property) uses it. Through the running site when `serve` runs (every class it can't load, packages' too; `meta.source: agent`); otherwise a source scan of the site's own assemblies' types (by GUID, then name; on CMS 13 also the GUIDs of the build output's classes), with a warning that says why the site wasn't asked (not running, an older agent, or its error). CMS 13: a type with no class or model-sync version on record and no class in the build with its GUID has `originUnknown: true` (made in admin mode, or a code type a content import overwrote). `types remove|remove-property|prune` remove them: see [Orphaned content types](#orphaned-content-types). |
@@ -144,7 +144,7 @@ directly: see [Approval sequences](#approval-sequences).
 | `set <ref> Prop=value... [--values json] [--name N] [--from published\|<version>]` | `opticli set 123 Heading="New title" --dry-run` |
 | `create <parent-ref> --type T --name N [Prop=value...]` | `opticli create 45 --type ArticlePage --name "News" Heading=Hi` |
 | `area <ref> <Prop> add <block-ref> [--at N] [--display opt]` | `opticli area 123 MainArea add 789 --at 0` |
-| `area <ref> <Prop> add --type T [Prop=value...] [--values json] [--name N] [--at N] [--display opt]` (inline block, CMS 12.20+) | `opticli area 123 MainArea add --type TeaserBlock Heading=Hi --dry-run` (see [Inline blocks](#inline-blocks-in-contentareas)) |
+| `area <ref> <Prop> add --type T [Prop=value...] [--values json] [--name N] [--at N] [--display opt]` (a new block: inline, CMS 12.20+, or shared, as the site makes them) | `opticli area 123 MainArea add --type TeaserBlock Heading=Hi --dry-run` (see [Inline blocks](#inline-blocks-in-contentareas) and [Shared](#where-the-site-makes-new-area-blocks-shared)) |
 | `composition <ref> add\|remove\|move\|set ...` (CMS 13) | `opticli composition 123 add element --in Left --type TextElement Heading=Hi --dry-run` (see [Compositions](#compositions-cms-13)) |
 | `create <parent-ref> --blueprint B --name N` (CMS 13) | `opticli create 45 --blueprint "Landing blueprint" --name "Spring" --dry-run` |
 | `area <ref> <Prop> remove <position\|ref:id>` | `opticli area 123 MainArea remove ref:789` (an inline block only by its position) |
@@ -252,9 +252,11 @@ content it shows. `--at` and `--display` only apply to `add`; `--display` is che
     refused with the list. Personalization: `"group":"g1"` and `"visitorGroups":["<visitor group id>"]`, as `get`
     shows them. An item without them keeps those of the item for the same content it replaces, and that item's other
     render settings: the n-th item for some content keeps the n-th current one's, so inserting, removing or reordering
-    items doesn't move personalization to another item. `"group":""` and `"visitorGroups":[]` remove it. An inline
-    block (CMS 12.20+) is `{"type":"TeaserBlock","properties":{"Heading":"Hi"},"name":"Intro"}` (see
-    [Inline blocks](#inline-blocks-in-contentareas): an inline item keeps a block's values only as an exact copy of it).
+    items doesn't move personalization to another item. `"group":""` and `"visitorGroups":[]` remove it. A new block
+    is `{"type":"TeaserBlock","properties":{"Heading":"Hi"},"name":"Intro"}`: an inline block (CMS 12.20+), or a shared
+    block in the content's "For this page" folder where the site makes those (see
+    [Inline blocks](#inline-blocks-in-contentareas): an inline item keeps a block's values only as an exact copy of it;
+    and [Shared](#where-the-site-makes-new-area-blocks-shared)).
     The ContentArea value `get` shows can be sent back as is, inline blocks included: written back unchanged it changes
     nothing.
   - Local block: `{"Hero":{"Heading":"Hi","Link":"/en/about/"}}`.
@@ -372,10 +374,9 @@ with no `ref`.
   values by position; to remove a block on purpose, use `areaOps` `remove` with the area's path (`MainArea[0].Area`),
   as the edit UI lets them.
 - On a CMS before 12.20 adding or changing one is refused (`usage`) with the version it needs.
-- The CMS 12 edit UI makes new blocks in a ContentArea inline only when the site turns on
-  `UIOptions.InlineBlocksInContentAreaEnabled` (off by default; "Create a new block" then makes a shared block in the
-  page's "For this page" folder instead). Either way it shows the inline blocks an area has, and editors can edit, move
-  and remove them; when the setting is off, a write that adds one has one `warning` in `validation` saying so.
+- Where the site's edit UI makes new blocks shared (`serve --status`: `inlineBlocks: shared`), a new block is a shared
+  block instead: see [the next section](#where-the-site-makes-new-area-blocks-shared). Inline blocks an area has are
+  still edited, moved and removed as above, and stay inline.
 - In a plan: `{"op": "area", "ref": "$page", "property": "MainArea", "action": "add", "type": "TeaserBlock",
   "values": {"Heading": "Hi"}, "name": "Intro"}`, and `"action": "set"` with `"index"`, `"values"` and `"name"`. Steps run
   in order, so `MainArea[0]` in a later `set` is the block an earlier `area add ... "at": 0` made (the dry run follows
@@ -385,8 +386,48 @@ with no `ref`.
   when later steps change it, so the plan runs again unchanged. `area set` changes nothing when the block already has its
   values. A plan's dry run of an `area add` after a whole-area `set` of the same area diffs against the stored area, not
   the one that `set` writes; the plan's result is as the steps say.
+  Where the site makes new area blocks shared, the block an add makes has a ref instead: give the add an `"id"` and
+  change the block with a `set` on `"$id"` (`created` lists it; a run with `--update-existing` finds it again). The dry
+  run refuses a later step that names such a block by its position, and, on a site that makes inline blocks, an `id`
+  that a later step uses (an unused one is a warning), or one whose add finds an inline block like it on a run again.
 - `where-used --type` and `types` count inline blocks on CMS 13 only (`inlineUses`); on CMS 12 `where-used <ref>`,
   `search` and `get` show them.
+
+### Where the site makes new area blocks shared
+
+opticli makes only what the site's edit UI would. With `UIOptions.InlineBlocksInContentAreaEnabled` off (CMS 12's
+default; CMS 13 has it on from 13.0.2) its "Create a new block" makes a shared block in the page's "For this page"
+folder, and so does every write: `area add --type`, a `{"type", "properties"}` item in a whole area, a plan's `area add`
+with `type`, MCP writes. `opticli serve --status` (and `doctor`) shows `inlineBlocks: shared` or `inline`. There is no
+override: such a site may not render inline blocks.
+- The block: the item's type and values, in the "For this page" folder of the content written (also for an area inside
+  an inline or local block), named `--name`/`name` or `<content name> <type> <n>`, in the language written, saved as a
+  **draft** before the content (into its project, if any). Validated first (required values, `[AllowedTypes]`, the
+  site's validators); one invalid block saves nothing.
+- The result's `sharedBlocks`: `[{path, ref, name, type, folder, status, action}]`, `action` `created`, `updated`,
+  `published` or `existing`. Change a block later **by its ref** (`opticli set <ref> Heading=New`): `MainArea[2].X=`
+  and `area set 2` on a shared item are refused. A dry run has no `ref` for a planned block, and its `changes` show
+  the item as `{"type", "name", "properties", "shared": "planned"}`. When the content's save fails after its blocks
+  were saved, `details.madeBlocks` lists them: retry with their refs as `{"ref"}` items.
+- A whole area written again: write back the `{"ref"}` items `get` shows. A `{"type"}` item takes over a current block
+  of the content's own folder or an inline block (exact copy, then by name, then the only one of its type left; each
+  only when unique): an inline block stays inline, a folder block gets a new draft version (`updated`), an exact copy is
+  left as it is. Anything that pairs with nothing is a new block; blocks from elsewhere are never taken over.
+- Publishing the content through opticli (`publish`, `--publish`, `--publish-at`, `projects publish`, MCP
+  `publish_content`) publishes along the drafts of its own folder's blocks that its areas show (`published`; a
+  scheduled publish schedules them too), but not someone else's draft without `--include-draft`, nor a block with an
+  approval sequence. The CMS's own Publish doesn't: tell the user. Until then the content's preview shows a changed
+  block's published version. `publish --dry-run` doesn't list them; a write with `--publish --dry-run` does.
+- `--request-approval` is refused (`usage`) while the content shows unpublished blocks of its folder: save it into a
+  project instead (`--in-project <p> --ready --request-approval`: the blocks go in with it, marked ready or sent for
+  review), or save a draft, publish the blocks (`publish <block> --request-approval` where they have a sequence, as
+  blocks of content under one do), then send the content. `--ready` alone in a project where a block has an approval
+  sequence is `refused`.
+- `--if-missing` (and `apply --update-existing`) counts a block of the folder (or an inline one) with the add's name,
+  or its values without one, as there already (`existing`).
+- A new block in an area inside a CMS 13 Visual Builder element is refused: `block create --for`, then add it by ref.
+- Locally: `opticli serve --stop`, then `EPiServer__CmsUI__UI__InlineBlocksInContentAreaEnabled=false opticli serve`
+  (`true` for inline), or `EPiServer:CmsUI:UI:InlineBlocksInContentAreaEnabled` in the site's configuration.
 
 ### Uploads
 
@@ -781,8 +822,10 @@ arrays): a reference property gets the content, a string property its id as text
   into the folder with its URL as parent, `http://alloy.localhost:5000/siteassets/`, which a dry run reports as `deferred`
 until the site has that host). With `apply --update-existing`
   the site of that name is updated instead of being a `conflict`.
-- An inline block in a ContentArea: `{"op": "area", "ref": "$page", "property": "MainArea", "action": "add", "type": "TeaserBlock", "values": {"Heading": "Hi"}}`
-  (`name` too); see [Inline blocks](#inline-blocks-in-contentareas) for `--update-existing`.
+- A new block in a ContentArea: `{"op": "area", "ref": "$page", "property": "MainArea", "action": "add", "type": "TeaserBlock", "values": {"Heading": "Hi"}}`
+  (`name` too): an inline block, or where the site makes them shared a shared block in the page's "For this page"
+  folder, which an `"id": "intro"` on the step names for later steps (`"$intro"`); see
+  [Inline blocks](#inline-blocks-in-contentareas) for `--update-existing` and positions.
 - CMS 13: `"composition"` in a `create`'s or `set`'s `properties` is the whole composition (`"@file.json"` reads it);
   `create` takes `"blueprint"` instead of `"type"`; `"variation"` on `set` and `composition`.
   `{"op": "composition", "ref": "$page", "action": "add", "nodeType": "element", "in": "Left", "value": {"type": "TextElement", "properties": {"Heading": "Hi"}}}`
@@ -899,7 +942,8 @@ The plan, in order:
 Values are plain (never `get`'s `{type, value}`): references to planned content are `"$id"`, to anything else the GUID
 (never an id), also in local and inline blocks, block lists, ContentReferenceLists, a shortcut's `to` and a
 composition's shared blocks (`ref`). ContentArea items: `{"ref": ..., "displayOption", "group", "visitorGroups"}` or an
-inline block `{"type", "name", "properties"}`. Links and Url values keep their permanent links (`~/link/<guid>.aspx`).
+inline block `{"type", "name", "properties"}` (which a site that makes new area blocks shared makes a shared block in
+the page's "For this page" folder, unless the area has that inline block already). Links and Url values keep their permanent links (`~/link/<guid>.aspx`).
 Rich text: links and images to planned content become `href="$id"` / `src="$id"`, blocks are named by
 `data-contentguid` only (`data-contentlink`, an id, is dropped or turned into the GUID). A string value that starts with
 `@` is written `@@`.
