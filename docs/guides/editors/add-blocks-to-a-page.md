@@ -104,8 +104,14 @@ Publish the Alloy Plan page, but keep the "Spring offer" block as a draft.
 When the page itself has nothing new to publish (it is live as it is), only the blocks you name go live, also a block
 that was never published: a block kept back stays back until you ask for it by name.
 
-A draft of such a block that someone else saved is left out until you confirm their changes may go live (see
-[When someone else has changes on the page](someone-elses-draft.md)), and so is a block that needs a reviewer.
+A draft of such a block that someone else saved is left out, even a block that was never published: the assistant
+tells you whose it is, and it goes live with the page only when you name that block. Agreeing that a colleague's change
+to one block may be replaced doesn't put another colleague's draft of another block live (see
+[When someone else has changes on the page](someone-elses-draft.md)). A block that needs a reviewer is left out too.
+
+```prompt
+Publish the Alloy Plan page, and the colleague's draft of the "Opening hours" block too.
+```
 
 > **Note:** Publishing the page in the CMS publishes the page alone. Blocks of the page's folder that are drafts stay
 > drafts, and visitors don't see them. If you publish in the CMS, publish those blocks too: open each one from
@@ -144,8 +150,11 @@ already doesn't stop it: the page then shows that block as it is live). It tells
 - **"The write would save a new version of the block … over changes saved by …".** A colleague has an unpublished
   change to that block. Tell the assistant whether to replace it; see
   [When someone else has changes on the page](someone-elses-draft.md).
-- **"… wasn't published along".** The page went live without that block's draft: someone else saved it, it needs a
-  reviewer, or it has an error. The assistant says which; publish or send it for review on its own once it is ready.
+- **"… is a draft … saved, so it stays a draft".** A colleague saved that block's draft, so the page went live
+  without it. If their change should go live, ask the assistant to publish the page with that block by name, or to
+  publish the block on its own.
+- **"… wasn't published along".** The page went live without that block's draft: it needs a reviewer, or it has an
+  error. The assistant says which; publish or send it for review on its own once it is ready.
 - **The published page shows a block's old text, or not the new block.** That block is still a draft, for instance
   because the page was published in the CMS. Ask the assistant to publish that block, or publish it in the CMS.
 

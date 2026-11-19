@@ -90,6 +90,14 @@ Yes, replace their change to the "Pricing intro" block.
 Otherwise it can leave that block as it is, or change it on top of their draft by its own name. Their draft stays in
 the block's history either way.
 
+Saying yes here covers that one block only. When the page goes live, other blocks of the page with a colleague's
+unpublished draft stay drafts, and the assistant tells you whose they are. One of them goes live with the page only
+when you name it:
+
+```prompt
+Publish the page, and the colleague's change to the "Opening hours" block too.
+```
+
 ### 6. Pages with an approval sequence
 
 Some pages need a reviewer's approval before they go live. On those, the assistant never publishes. It offers to send
@@ -128,6 +136,8 @@ Publish** is what says "this can go live":
   publish it in the CMS.
 - **"… is in review: version … awaits approval".** A reviewer has to approve or reject it in the CMS first.
 - **"The write would save a new version of the block … over changes saved by …".** See step 5.
+- **"… is a draft … saved, so it stays a draft".** A colleague's draft of one of the page's blocks didn't go live with
+  the page. See step 5 to name it.
 - **"… is not the latest version".** Someone saved in the meantime. Ask the assistant to read the page again and redo
   the change.
 - **"This site doesn't let assistants delete content, or discard what someone else saved".** Discard the draft in the

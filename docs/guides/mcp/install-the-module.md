@@ -136,7 +136,8 @@ instead, which needs no publishing option at all.
 > blocks that were never published along (a live block's newer draft only when the editor asks: `publish_content`'s
 > `blocks`; of a page with nothing new to publish, only the blocks named there); the CMS's own Publish publishes the
 > page alone. Without `AllowPublish`, the assistant tells editors to publish the blocks too. An assistant that would
-> save over a colleague's unpublished change to such a block asks the editor first (`includeDraft`).
+> save over a colleague's unpublished change to such a block asks the editor first (`includeDraft`); a colleague's
+> draft of a block goes live with the page only when the editor names that block (`blocks`), never with `includeDraft`.
 > See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new-blocks-in-a-contentarea).
 
 > **Note:** The module refuses script in rich text and links whatever you configure, but the CMS saves whatever the

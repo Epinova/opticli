@@ -753,7 +753,9 @@ A publish puts the whole version live. When someone else saved unpublished chang
 a terminal; elsewhere it fails with `conflict` and `details.reason: "pendingDraft"`, and `--include-draft` confirms.
 `set ... --from published --publish` publishes a change without them. Where the site makes shared area blocks, a write
 that would save a block's new version over someone else's draft of it is refused the same way, with `details.draft.path`
-naming the area item ([New blocks in a ContentArea](#new-blocks-in-a-contentarea)).
+naming the area item ([New blocks in a ContentArea](#new-blocks-in-a-contentarea)). `--include-draft` doesn't publish
+someone else's drafts of the content's other blocks along: those stay drafts unless a publish names them
+(`--with-block`).
 Write output has the content's public `url` (host-relative, as `get` shows it; for a draft of content never published,
 where it will be; none for blocks and folders), so a script can open the page without asking for it, and
 `canonicalUrl`, the same URL with the host of the content's site for that language, as the CMS links to it: on a
@@ -846,10 +848,12 @@ Where the site makes shared blocks:
   write is refused, as a publish over someone else's draft of the content is: a `conflict` (exit 5) with
   `details.reason: "pendingDraft"` and `details.draft` naming the block's draft (`version`, `savedBy`, `saved`, its
   `changes` since the block's published version) and the item (`path`), in a dry run too. On a terminal opticli asks
-  first. `--include-draft` (a plan step's `includeDraft`, the MCP tools' `includeDraft`; `translate --include-draft` for
-  a new branch's values) confirms it: the block gets its new version over their draft, and a `warning` says whose draft
-  it replaced. Without it, give that item back as `{"ref"}` to leave the block as it is, or change the block by its ref,
-  which builds on their draft. A draft that is the caller's own needs no confirming.
+  first. `--include-draft` (a plan step's `includeDraft`, the MCP tools' `includeDraft`) confirms it: the block gets its
+  new version over their draft, and a `warning` says whose draft it replaced. That version is then the write's own, so
+  a write that publishes takes the block along as its own change. Without it, give that item back as `{"ref"}` to leave
+  the block as it is, or change the block by its ref, which builds on their draft. A draft that is the caller's own needs
+  no confirming. `--include-draft` confirms only this and someone else's draft of the content itself: it never takes
+  someone else's drafts of other blocks along with a publish (below).
 - **Positions name inline blocks only.** `MainArea[2].Heading=...` and `area set 2` on an item that shows a shared
   block are refused, with the block's ref in the hint.
 - **`area add --if-missing`** (and plans with `--update-existing`): the add is there already when the area shows a
@@ -873,7 +877,8 @@ opticli publish 123 --without-block 789           # keep never-published block 7
 ```
 
 - **`--with-block <ref>`** (repeatable; a plan's `withBlocks`, `publish_content`'s `blocks`): a live block whose
-  newer draft goes along too.
+  newer draft goes along too, or a block whose draft someone else saved. Naming a block is the only way another
+  person's draft of it goes live with the content: `--include-draft` doesn't.
 - **`--without-block <ref>`** (repeatable; `withoutBlocks`, `skipBlocks`): a never-published block that stays a draft;
   the warning says the content goes live without it showing.
 - A named ref must be a block of the content's own folder that its areas show; any other ref, or the same ref in both,
@@ -896,9 +901,13 @@ opticli publish 123 --without-block 789           # keep never-published block 7
   change is to blocks of the folder publishes no new version of the content, so as for content published already, only
   its own blocks go along. Writes have no `--with-block`: save a draft, then `publish` with it.
 
-A scheduled publish schedules the blocks for the same time. Blocks from anywhere else are never published along. Also
-left as drafts, each with a `warning`, named or not: a draft someone else saved (unless `--include-draft`; a block the
-write itself takes over is refused instead, see above), a block under
+A scheduled publish schedules the blocks for the same time. Blocks from anywhere else are never published along. A
+block whose latest draft someone else saved stays a draft unless the publish names it, also when it was never
+published, with a `warning` that says who saved it and how to name it (`--with-block`, `withBlocks`, `blocks`):
+`--include-draft` confirms someone else's draft of the content, not of its blocks. So an editor who agrees to replace
+one colleague's draft of a block (a takeover, above) doesn't put another colleague's draft of another block live with
+the same `--include-draft`. A block the write itself takes over is its own change by then and goes along. Also left as
+drafts, each with a `warning`, named or not: a block under
 an approval sequence, one that fails validation, and for an editor one they may not publish. The edit UI's own Publish
 publishes the page alone. A block left a draft once the content is published goes live by its own ref (`publish
 <block>`), or named in a publish of the content (`publish <content> --with-block <block>`, which then publishes just
@@ -953,9 +962,9 @@ has nothing named or written left, so it is `unchanged`. A `publish` with `reque
 review would leave unpublished, as a write that changes them does.
 
 `includeDraft` on the step that writes the area confirms someone else's block draft its items save over (above); the
-`publish` step's own `includeDraft` confirms only the content's drafts it puts live. The dry run, checking such steps
-together, keeps the two apart (the block drafts count as confirmed only when every step that writes the content has
-`includeDraft`; for a new branch a `translate` creates, the `publish` step's too).
+`publish` step's own `includeDraft` confirms only the content's drafts it puts live. Neither takes someone else's draft
+of another block along: only the `publish` step's `withBlocks` does. The dry run, checking such steps together, keeps
+the two apart (the block drafts count as confirmed only when every step that writes the content has `includeDraft`).
 
 The dry run checks a `publish` after other steps on the same content together with them, as one write that publishes
 (nothing is saved yet to publish), with the step's `withBlocks`, `withoutBlocks`, `requestApproval` and `publishAt`:
@@ -971,11 +980,12 @@ its folder (on existing content, one the edit UI offers for a new block there), 
 writing the area whole needs Edit on that block. The tools' descriptions say what a `{type, properties}` item becomes,
 and on a site that makes shared blocks the server's instructions add that `publish_content` of a new version publishes
 the never-published ones along while the CMS's own Publish doesn't, that a live block keeps its newer draft unless named
-in `blocks`, that content with nothing new to publish puts live only the blocks named in `blocks`, and to show the
+in `blocks`, as does a block whose draft a colleague saved (naming it puts their changes live, `includeDraft` doesn't, so
+the assistant asks first), that content with nothing new to publish puts live only the blocks named in `blocks`, and to show the
 editor a `dryRun` of the publish first: which blocks go live with the content and which stay behind (where assistants
 may not publish: that the editor publishes the blocks too). A whole-area write over a colleague's draft of a block of
 the folder is refused with a `pendingDraft` that has a `path`; the instructions tell the assistant to ask the editor
-before retrying with `includeDraft` (`update_content`, `add_language`), as for a publish over a colleague's draft. A
+before retrying with `includeDraft` (`update_content`), as for a publish over a colleague's draft. A
 custom tool's `ContentPlan` step makes them the same way, and its step result lists them in `sharedBlocks` (it has no
 `includeDraft`: such a step is refused).
 
@@ -2366,7 +2376,10 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   version it names (`version`, or a `123_456` reference): unlike the CLI's `publish --version`, where naming the version
   is the developer's choice, the assistant picks it. A review request (`requestApproval`) is never refused for someone
   else's changes, as the reviewer sees the whole version, but its result (and an `update_content` dry run's) names them
-  in `pendingDraft`, so the assistant can tell the editor.
+  in `pendingDraft`, so the assistant can tell the editor. It never puts a colleague's draft of a block of the content's
+  "For this page" folder live along with a publish: such a block stays a draft unless the assistant names it in
+  `publish_content`'s (or `publish_project`'s) `blocks`, which the instructions tell it to do only after asking the
+  editor, and a dry run's warnings say whose draft it is.
 - **In a project, marking an item ready is consent to publish it.** `publish_project` puts live without `includeDraft`
   the changes of whoever marked an item ready (`readyBy`): a colleague who marked their own draft ready in the CMS, the
   reviewer who approved it under an approval sequence (the CMS records the reviewer), or the developer's opticli

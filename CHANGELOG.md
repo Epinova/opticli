@@ -34,8 +34,9 @@ before. See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new
   that is live already keeps its newer draft, with a warning naming it, so an unfinished change to it doesn't go live
   with the page: `--with-block <ref>` (repeatable) takes it along, and `--without-block <ref>` keeps a new block back;
   a ref that isn't a block of the content's own folder that it shows is refused. A write that publishes takes the
-  blocks it made or changed along by itself. Someone else's draft needs `--include-draft`, and a block under an
-  approval sequence is left with a warning. A project's own items follow the project's rules. Naming blocks for a
+  blocks it made or changed along by itself. A block whose draft someone else saved goes along only when
+  `--with-block` names it (a plan's `withBlocks`): `--include-draft` doesn't take it along, so agreeing to one
+  colleague's change never puts another's live unasked. A block under an approval sequence is left with a warning. A project's own items follow the project's rules. Naming blocks for a
   publish that goes for review is refused. Of content published already, `publish` puts live just the block drafts it
   names with `--with-block` (never-published ones too) and, in a plan, those the run saved, so `publish <page>
   --with-block <block>` publishes a block's draft after the page went live without it; a never-published block it
@@ -46,9 +47,9 @@ before. See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new
   takes over a block of the content's own folder whose latest version is a draft someone else saved, the write would
   drop their changes from the block: it is a `conflict` (exit 5) with `details.reason: "pendingDraft"` and
   `details.draft` naming the block's draft, who saved it and the item (`path`), in a dry run too, and on a terminal
-  opticli asks first. `--include-draft` (a plan step's `includeDraft`; `translate` has `--include-draft` now for this)
-  confirms it, and a warning says whose draft was replaced. In a plan, the step that writes the area confirms it, not
-  the `publish` step after it.
+  opticli asks first. `--include-draft` (a plan step's `includeDraft`) confirms it, and a warning says whose draft was
+  replaced; with `--publish` the block goes live as the write's own change. In a plan, the step that writes the area
+  confirms it, not the `publish` step after it.
 - **Plans: a `publish` step takes along the block drafts earlier steps of the run saved** on that content, as one write
   with `"publish": true` does, besides its `withBlocks` (and not its `withoutBlocks`); a block a later step took out of
   the area isn't published. When those blocks are all that changed, the step publishes just them instead of failing
@@ -86,8 +87,9 @@ before. See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new
   the editor needs Edit and Create on the content (Create on its parent for new content) and a block type they may
   create there. The results (and custom tools' step results) have `sharedBlocks` with the blocks' refs.
 - `publish_content` publishes the content's never-published block drafts along, as `publish` does, and takes
-  `blocks` (live blocks whose newer drafts go along too) and `skipBlocks` (new blocks kept back); `publish_project`
-  takes both too. On a site that makes shared blocks, the server's instructions tell the assistant that the CMS's own
+  `blocks` (live blocks whose newer drafts go along too, and blocks whose draft a colleague saved, which go along only
+  when named: `includeDraft` doesn't take them) and `skipBlocks` (new blocks kept back); `publish_project` takes both
+  too. On a site that makes shared blocks, the server's instructions tell the assistant that the CMS's own
   Publish doesn't (or, where assistants may not publish, that the editor publishes the blocks too), and to change a
   block later by its ref.
 - **`publish_content` has `dryRun`**: what would go live, someone else's changes it carries, validation, and the blocks
@@ -99,15 +101,16 @@ before. See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new
   `requestApproval` are refused.
 - `publish_content` of content published already publishes just the block drafts `blocks` names (never-published ones
   too), and is a conflict when there are none, whose hint lists the blocks it could name.
-- A whole-area `update_content` (or `add_language`) over a colleague's unpublished draft of a block of the content's
-  folder is refused with a `pendingDraft` that has a `path`, dry run too; `includeDraft` confirms it (`add_language` has
-  it now), and the server's instructions tell the assistant to ask the editor first, as for a publish.
+- A whole-area `update_content` over a colleague's unpublished draft of a block of the content's folder is refused
+  with a `pendingDraft` that has a `path`, dry run too; `includeDraft` confirms it, and the server's instructions tell
+  the assistant to ask the editor first, as for a publish, and that `includeDraft` never puts a colleague's draft of
+  another block live along (only naming it in `blocks` does).
 
 ### npm package
 
 - `sharedBlocks` on write results, `inlineBlocks` on `AgentStatus`, `id` on a plan's `area` step, `withBlock` and
   `withoutBlock` on `publish` and `projectsPublish`, `withBlocks`/`withoutBlocks` on a plan's `publish` step,
-  `includeDraft` on `translate` and `path` on `PendingDraft` are typed.
+  and `path` on `PendingDraft` are typed.
 
 ### Documentation
 
