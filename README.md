@@ -2343,7 +2343,7 @@ dotnet test tests/OptiCli.Integration
 | `OPTICLI_IT_DRAFTS` | most recent drafts to compare as well (default 10) |
 | `OPTICLI_IT_SEED` | sampling seed (fixed by default, so runs repeat) |
 | `OPTICLI_IT_REPORT` | write the mismatch report here, with every mismatch as `.jsonl` next to it |
-| `OPTICLI_IT_PLAN` | a plan whose content is always compared, on top of the sample (the edge-case plan below) |
+| `OPTICLI_IT_PLAN` | a plan whose content is always compared, on top of the sample (the edge-case plan below); an absolute path, as the tests run in their build folder |
 
 Some differences the database can't reproduce by design, such as URL segments a site drops in code. Those are listed
 with the reason in `tests/OptiCli.Integration/Comparison/KnownDifferences.cs`; any other mismatch fails the run.
@@ -2381,7 +2381,7 @@ the content: the plan is applied with `--update-existing`, and the database copy
 ```sh
 SQLCMDPASSWORD=... tests/fixtures/edge-cases/setup.sh path/to/Alloy path/to/AlloyEdge alloy alloy-edge
 OPTICLI_IT_PROJECT=path/to/AlloyEdge \
-OPTICLI_IT_PLAN=tests/fixtures/edge-cases/edge-cases.plan.json \
+OPTICLI_IT_PLAN=$PWD/tests/fixtures/edge-cases/edge-cases.plan.json \
 dotnet test tests/OptiCli.Integration
 ```
 
@@ -2404,7 +2404,7 @@ already has (as another tool may put on a site whose edit UI makes none) come fr
 ```sh
 opticli serve --stop --project /demo/AlloyEdge
 EPiServer__CmsUI__UI__InlineBlocksInContentAreaEnabled=true opticli serve --project /demo/AlloyEdge    # inline; false: shared
-OPTICLI_IT_PROJECT=/demo/AlloyEdge OPTICLI_IT_PLAN=tests/fixtures/edge-cases/edge-cases.plan.json dotnet test tests/OptiCli.Integration
+OPTICLI_IT_PROJECT=/demo/AlloyEdge OPTICLI_IT_PLAN=$PWD/tests/fixtures/edge-cases/edge-cases.plan.json dotnet test tests/OptiCli.Integration
 ```
 
 `drift.sh` in the same folder runs the shared-database scenario on copies of the edge-case site and its database. It
@@ -2437,7 +2437,7 @@ the fixture is, the rest everywhere):
 SQLCMDPASSWORD=... FRESH=1 tests/fixtures/cms13/setup.sh
 SQLCMDPASSWORD=... FRESH=1 tests/fixtures/edge-cases/setup.sh /demo/Alloy13 /demo/AlloyEdge13 alloy13 alloy-edge13
 (cd /demo/AlloyEdge13 && opticli serve)
-OPTICLI_IT_PROJECT=/demo/AlloyEdge13 OPTICLI_IT_PLAN=tests/fixtures/edge-cases/edge-cases.plan.json dotnet test tests/OptiCli.Integration
+OPTICLI_IT_PROJECT=/demo/AlloyEdge13 OPTICLI_IT_PLAN=$PWD/tests/fixtures/edge-cases/edge-cases.plan.json dotnet test tests/OptiCli.Integration
 ```
 
 Scripts in `tests/fixtures/cms13/` run whole command sets against one site and save each output, with a `summary.tsv`:
