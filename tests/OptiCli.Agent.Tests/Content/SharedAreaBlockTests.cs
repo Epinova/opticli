@@ -1208,7 +1208,7 @@ public class SharedAreaBlockTests
             var refused = Assert.Throws<AgentException>(() => site.Save(flow, writable, before, dryRun, review));
             Assert.Equal(AgentErrorCodes.Usage, refused.Code);
             Assert.Contains("Area[1] (a new block)", refused.Message);
-            Assert.Contains($"Area[0] (block {draft.ContentLink.ID}, a draft)", refused.Message);
+            Assert.Contains($"Area[0] (block {draft.ContentLink.ID}, never published)", refused.Message);
             // In a project its blocks follow it, marked ready or sent for review with it.
             Assert.StartsWith("Save the change into a CMS project instead (--in-project <project> --ready --request-approval): its new and changed blocks go in with it", refused.Hint);
         }
@@ -1393,6 +1393,245 @@ public class SharedAreaBlockTests
         }
         Assert.False(result.Saved);
         Assert.Empty(site.Store.Saves);
+    }
+
+    /// <summary>A block of <paramref name="folder"/> that is published (<paramref name="title"/>) and has a newer draft (<paramref name="draft"/>).</summary>
+    private static IContent LiveWithDraft(Site site, ContentReference folder, string name, string title, string draft)
+    {
+        var block = site.Block(folder, name, title);
+        var writable = (IContent)((IReadOnly)block).CreateWritableClone();
+        writable.Property["Title"].Value = draft;
+        site.Store.Save(writable, SaveAction.Save | SaveAction.ForceNewVersion, null);
+        site.Store.Saves.RemoveAt(site.Store.Saves.Count - 1);
+        return block;
+    }
+
+    /// <summary>
+    /// A page published showing <paramref name="items"/> (the owner of <paramref name="block"/>'s folder), with a newer
+    /// draft to publish; and, from the folder, a block never published, a live block with a newer draft and a block elsewhere.
+    /// </summary>
+    private static (Page Page, IContent Fresh, IContent Live, IContent Global) PageToPublish(Site site)
+    {
+        var page = site.Page(folder: true);
+        var folder = site.Folder(page).ContentLink;
+        var fresh = site.Block(folder, "Fresh", "Fresh", VersionStatus.CheckedOut);
+        var live = LiveWithDraft(site, folder, "Live", "Live", "Live changed");
+        var global = site.Block(AssetsRoot, "Global", "Global", VersionStatus.CheckedOut);
+        page = OwnerOf(site, fresh, Ref(fresh), Ref(live), Ref(global));
+        var draft = (Page)((IReadOnly)page).CreateWritableClone();
+        draft.Property["Title"].Value = "Changed";
+        site.Store.Save(draft, SaveAction.Save | SaveAction.ForceNewVersion, null);
+        site.Store.Saves.Clear();
+        return (page, fresh, live, global);
+    }
+
+    private static VersionStatus StatusOf(Site site, IContent content) => ((IVersionable)site.Store.Latest(content.ContentLink.ID)).Status;
+
+    private static WriteResult Publish(Site site, IContent page, PublishRequest? request = null) =>
+        PublishOperation.Run(site.Call, page.ContentLink.ID.ToString(CultureInfo.InvariantCulture), request ?? new PublishRequest(), site.Flow());
+
+    [Fact]
+    public void A_publish_takes_along_only_blocks_never_published_and_leaves_a_live_blocks_newer_draft_with_a_warning()
+    {
+        var site = new Site();
+        var (page, fresh, live, global) = PageToPublish(site);
+
+        var result = Publish(site, page);
+
+        Assert.True(result.Published);
+        var along = Assert.Single(result.SharedBlocks!);
+        Assert.Equal(("Area[0]", fresh.ContentLink.ID, SharedBlockActions.Published), (along.Path, ContentReference.Parse(along.Ref!).ID, along.Action));
+        Assert.Equal(VersionStatus.Published, StatusOf(site, fresh));
+        Assert.Equal(VersionStatus.CheckedOut, StatusOf(site, live));
+        Assert.Equal("Live", Title(site.Stored(live.ContentLink.ToReferenceWithoutVersion())));
+        Assert.Equal(VersionStatus.CheckedOut, StatusOf(site, global));
+        // The warning names the block (place, ref, name) and how to take it along.
+        var warning = Assert.Single(result.Validation!, i => i.Severity == "warning");
+        Assert.Equal("Area[1]", warning.Property);
+        Assert.Contains($"The block {site.Store.Latest(live.ContentLink.ID).ContentLink} ('Live') at Area[1] is published already", warning.Message);
+        Assert.Contains($"opticli publish {page.ContentLink.ID} --with-block {live.ContentLink.ID}", warning.Message);
+    }
+
+    [Fact]
+    public void A_live_blocks_draft_named_with_the_publish_goes_along()
+    {
+        var site = new Site();
+        var (page, fresh, live, _) = PageToPublish(site);
+
+        var result = Publish(site, page, new PublishRequest { WithBlocks = [live.ContentLink.ID.ToString(CultureInfo.InvariantCulture)] });
+
+        Assert.Equal([fresh.ContentLink.ID, live.ContentLink.ID], result.SharedBlocks!.Select(s => ContentReference.Parse(s.Ref!).ID).Order());
+        Assert.Equal(VersionStatus.Published, StatusOf(site, live));
+        Assert.Equal("Live changed", Title(site.Stored(live.ContentLink.ToReferenceWithoutVersion())));
+        Assert.Null(result.Validation);
+    }
+
+    [Fact]
+    public void A_block_named_with_the_publish_must_be_one_of_its_own_folder_that_the_page_shows()
+    {
+        var site = new Site();
+        var (page, fresh, live, global) = PageToPublish(site);
+        var unshown = site.Block(site.Folder(page).ContentLink, "Unshown", "Unshown", VersionStatus.CheckedOut);
+        site.Store.Saves.Clear();
+
+        foreach (var request in new[]
+        {
+            new PublishRequest { WithBlocks = [global.ContentLink.ID.ToString(CultureInfo.InvariantCulture)] },
+            new PublishRequest { WithoutBlocks = [unshown.ContentLink.ID.ToString(CultureInfo.InvariantCulture)], DryRun = true },
+            new PublishRequest { WithBlocks = [page.ContentLink.ID.ToString(CultureInfo.InvariantCulture)] },
+        })
+        {
+            var refused = Assert.Throws<AgentException>(() => Publish(site, page, request));
+            Assert.Equal(AgentErrorCodes.Usage, refused.Code);
+            Assert.Contains("of the content's own \"For this page\" folder that its ContentAreas show", refused.Message);
+        }
+        // Both ways at once.
+        var both = Assert.Throws<AgentException>(() => Publish(site, page, new PublishRequest
+        {
+            WithBlocks = [fresh.ContentLink.ID.ToString(CultureInfo.InvariantCulture)],
+            WithoutBlocks = [fresh.ContentLink.ID.ToString(CultureInfo.InvariantCulture)],
+        }));
+        Assert.Equal(AgentErrorCodes.Usage, both.Code);
+        Assert.Contains("--with-block and --without-block", both.Message);
+        Assert.Empty(site.Store.Saves);
+        // Where the edit UI makes inline blocks, nothing is published along to name.
+        var inline = Assert.Throws<AgentException>(() => PublishOperation.Run(site.Call, page.ContentLink.ID.ToString(CultureInfo.InvariantCulture),
+            new PublishRequest { WithBlocks = [live.ContentLink.ID.ToString(CultureInfo.InvariantCulture)] }, site.Flow(shared: false)));
+        Assert.Equal(AgentErrorCodes.Usage, inline.Code);
+        Assert.Empty(site.Store.Saves);
+    }
+
+    [Fact]
+    public void A_never_published_block_named_to_stay_behind_stays_a_draft_with_a_warning()
+    {
+        var site = new Site();
+        var (page, fresh, live, _) = PageToPublish(site);
+
+        var result = Publish(site, page, new PublishRequest { WithoutBlocks = [fresh.ContentLink.ID.ToString(CultureInfo.InvariantCulture)] });
+
+        Assert.True(result.Published);
+        Assert.Null(result.SharedBlocks);
+        Assert.Equal(VersionStatus.CheckedOut, StatusOf(site, fresh));
+        Assert.Equal(VersionStatus.CheckedOut, StatusOf(site, live));
+        Assert.Contains(result.Validation!, i => (i.Property, i.Severity) == ("Area[0]", "warning") && i.Message.Contains("was never published, and stays a draft, as asked"));
+    }
+
+    [Fact]
+    public void A_dry_run_of_a_publish_saves_nothing_and_says_which_blocks_go_along_and_which_stay_behind()
+    {
+        var site = new Site();
+        var (page, fresh, live, _) = PageToPublish(site);
+        var theirs = LiveWithDraft(site, site.Folder(page).ContentLink, "Theirs", "Theirs", "Theirs changed");
+        page = OwnerOf(site, fresh, Ref(fresh), Ref(live), Ref(theirs));
+        var draft = (Page)((IReadOnly)page).CreateWritableClone();
+        site.Store.Save(draft, SaveAction.Save | SaveAction.ForceNewVersion, null);
+        site.Store.Saves.Clear();
+
+        var result = Publish(site, page, new PublishRequest { DryRun = true, WithBlocks = [theirs.ContentLink.ID.ToString(CultureInfo.InvariantCulture)] });
+
+        Assert.Empty(site.Store.Saves);
+        Assert.Equal((true, true, false), (result.DryRun, result.Valid, result.Saved));
+        Assert.Equal([(fresh.ContentLink.ID, "published"), (theirs.ContentLink.ID, "published")],
+            result.SharedBlocks!.Select(s => (ContentReference.Parse(s.Ref!).ID, s.Status)).OrderBy(s => s.Item1));
+        Assert.Contains(result.Validation!, i => (i.Property, i.Severity) == ("Area[1]", "warning") && i.Message.Contains("is published already"));
+        Assert.Equal(VersionStatus.CheckedOut, StatusOf(site, fresh));
+        Assert.Equal(VersionStatus.CheckedOut, StatusOf(site, theirs));
+    }
+
+    [Fact]
+    public void A_write_that_publishes_takes_the_blocks_it_changed_along_but_not_another_live_blocks_draft()
+    {
+        var site = new Site();
+        var page = site.Page(folder: true);
+        var folder = site.Folder(page).ContentLink;
+        var changed = site.Block(folder, "Intro", "Old");
+        var other = LiveWithDraft(site, folder, "Other", "Other", "Other changed");
+        page = OwnerOf(site, changed, Ref(changed), Ref(other));
+        site.Store.Saves.Clear();
+        var flow = site.Flow();
+        var (writable, before) = site.Write(flow, page, $$$"""
+            {"Area": [
+              {"type": "ItemBlock", "name": "Intro", "properties": {"Title": "New"}},
+              {"ref": "{{{other.ContentLink.ID}}}"}
+            ]}
+            """);
+
+        var dry = site.Save(flow, writable, before, dryRun: true, action: SaveAction.Publish | SaveAction.ForceNewVersion);
+        flow = site.Flow();
+        (writable, before) = site.Write(flow, page, $$$"""
+            {"Area": [
+              {"type": "ItemBlock", "name": "Intro", "properties": {"Title": "New"}},
+              {"ref": "{{{other.ContentLink.ID}}}"}
+            ]}
+            """);
+        var result = site.Save(flow, writable, before, action: SaveAction.Publish | SaveAction.ForceNewVersion);
+
+        foreach (var shown in new[] { dry, result })
+        {
+            var block = Assert.Single(shown.SharedBlocks!);
+            Assert.Equal((changed.ContentLink.ID, SharedBlockActions.Updated, "published"), (ContentReference.Parse(block.Ref!).ID, block.Action, block.Status));
+            Assert.Contains(shown.Validation!, i => (i.Property, i.Severity) == ("Area[1]", "warning") && i.Message.Contains("is published already") && i.Message.Contains($"opticli publish {other.ContentLink.ID}"));
+        }
+        Assert.Equal(VersionStatus.Published, StatusOf(site, changed));
+        Assert.Equal("New", Title(site.Stored(changed.ContentLink.ToReferenceWithoutVersion())));
+        Assert.Equal(VersionStatus.CheckedOut, StatusOf(site, other));
+    }
+
+    [Fact]
+    public void A_block_published_only_in_another_language_counts_as_never_published_in_the_branch_published()
+    {
+        var site = new Site();
+        var swedish = CultureInfo.GetCultureInfo("sv");
+        var page = site.Page(folder: true);
+        var folder = site.Folder(page).ContentLink;
+        // Published in English; in Swedish only a draft, and a block with a Swedish draft after its Swedish publish.
+        var translated = site.Block(folder, "Translated", "English");
+        var branch = (Shared)((IReadOnly)translated).CreateWritableClone();
+        branch.Language = swedish;
+        branch.Property["Title"].Value = "Svenska";
+        site.Store.Save(branch, SaveAction.Save | SaveAction.ForceNewVersion, null);
+        var liveBranch = site.Block(folder, "Live in sv", "x");
+        foreach (var (title, action) in new[] { ("sv live", SaveAction.Publish), ("sv draft", SaveAction.Save) })
+        {
+            var sv = (Shared)((IReadOnly)site.Store.Latest(liveBranch.ContentLink.ID)).CreateWritableClone();
+            sv.Language = swedish;
+            sv.Property["Title"].Value = title;
+            site.Store.Save(sv, action | SaveAction.ForceNewVersion, null);
+        }
+        page = OwnerOf(site, translated, Ref(translated), Ref(liveBranch));
+        var swedishPage = (Page)((IReadOnly)page).CreateWritableClone();
+        swedishPage.Language = swedish;
+        swedishPage = (Page)site.Store.Get(site.Store.Save(swedishPage, SaveAction.Publish | SaveAction.ForceNewVersion, null))!;
+
+        var warnings = new List<ValidationIssue>();
+        var along = site.Flow().PublishAlong(swedishPage, SaveAction.Publish, othersConfirmed: false, dryRun: false, warnings)!;
+
+        var published = Assert.Single(along);
+        Assert.Equal(translated.ContentLink.ID, ContentReference.Parse(published.Ref!).ID);
+        Assert.Equal("Svenska", Title(site.Stored(ContentReference.Parse(published.Ref!))));
+        Assert.Contains(warnings, i => i.Property == "Area[1]" && i.Message.Contains("is published already"));
+        Assert.Equal(VersionStatus.CheckedOut, StatusOf(site, liveBranch));
+    }
+
+    [Fact]
+    public void A_review_request_isnt_refused_for_a_live_blocks_newer_draft()
+    {
+        var site = new Site();
+        var page = site.Page(folder: true);
+        var live = LiveWithDraft(site, site.Folder(page).ContentLink, "Live", "Live", "Live changed");
+        page = OwnerOf(site, live, Ref(live));
+        const SaveAction review = SaveAction.RequestApproval | SaveAction.ForceNewVersion;
+
+        site.Flow().RequireBlocksPublishedForReview(page, review, "page", publishing: true);
+        var flow = site.Flow();
+        var (writable, before) = site.Write(flow, page, """{"Title": "Changed"}""");
+        site.Save(flow, writable, before, action: review);
+        Assert.Equal(VersionStatus.AwaitingApproval, StatusOf(site, page));
+        // But a block the write changes does count, live or not.
+        var changing = site.Flow();
+        var (changedArea, areaBefore) = site.Write(changing, page, """{"Area": [{"type": "ItemBlock", "name": "Live", "properties": {"Title": "Changed again"}}]}""");
+        var refused = Assert.Throws<AgentException>(() => site.Save(changing, changedArea, areaBefore, dryRun: true, action: review));
+        Assert.Contains($"Area[0] (block {live.ContentLink.ID}, changed)", refused.Message);
     }
 
     /// <summary><paramref name="content"/> with no language of its own (every version), so an editor's language access isn't asked.</summary>

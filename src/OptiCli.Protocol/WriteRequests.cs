@@ -566,13 +566,32 @@ public sealed record PublishRequest
     public DateTime? PublishAt { get; init; }
 
     /// <summary>
-    /// Only check what the site decides before it saves (the approval sequence, and a review request's refusal while the
-    /// version shows blocks of its "For this page" folder that aren't published), and save nothing. The CLI asks for it
-    /// only for a review request's dry run, on a site whose agent reports <see cref="PingResponse.InlineBlocks"/> (older
-    /// agents don't know the field, and would save).
+    /// Check the publish and report what it would put live, and save nothing: the approval sequence, a review request's
+    /// refusal while the version shows blocks of its "For this page" folder that were never published, another person's
+    /// draft it carries (<see cref="WriteResult.PendingDraft"/>), validation, and where the site makes shared area blocks
+    /// the blocks it would publish along (<see cref="WriteResult.SharedBlocks"/>) and leave behind (warnings). The CLI asks
+    /// for it only on a site whose agent reports <see cref="PingResponse.InlineBlocks"/> as <c>shared</c> (older agents
+    /// don't know the field, and would save).
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool DryRun { get; init; }
+
+    /// <summary>
+    /// Where the site makes shared area blocks: blocks of the content's own "For this page" folder that its ContentAreas
+    /// show, whose drafts go live with it although they have a published version already (refs). By default only blocks
+    /// that were never published in the language go along. Any other ref is refused (<c>usage</c>); the rules for
+    /// another person's draft, access, approval sequences and validation apply to them as to every block published along.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? WithBlocks { get; init; }
+
+    /// <summary>
+    /// Where the site makes shared area blocks: blocks of the content's own "For this page" folder that its ContentAreas
+    /// show, left as drafts although they were never published (refs): the content goes live without them showing. A ref
+    /// also in <see cref="WithBlocks"/>, or that isn't such a block, is refused (<c>usage</c>).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? WithoutBlocks { get; init; }
 }
 
 /// <summary>Body of <see cref="AgentRoutes.Unpublish"/> (may be empty).</summary>

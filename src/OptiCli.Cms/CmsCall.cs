@@ -74,6 +74,9 @@ internal sealed class CmsCall(IServiceProvider services, CancellationToken abort
     /// </summary>
     public string ForCaller(string developer, string editor) => Checked ? editor : developer;
 
+    /// <inheritdoc cref="ForCaller(string, string)"/>
+    public T ForCaller<T>(T developer, T editor) => Checked ? editor : developer;
+
     /// <summary>The name the CMS records changes under: the opticli principal's for the developer, the editor's own.</summary>
     public string UserName => Checked ? Service<IPrincipalAccessor>().Principal?.Identity?.Name ?? "" : AgentProtocol.PrincipalName;
 

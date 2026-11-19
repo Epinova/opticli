@@ -71,10 +71,14 @@ internal static class ProjectPublishOperation
                 && (language is null || i.Item.Language is null || string.IsNullOrEmpty(i.Item.Language.Name) || string.Equals(i.Item.Language.Name, language.Name, StringComparison.OrdinalIgnoreCase))).ToList();
             return items.Count == 0 ? null : items.Any(i => i.State == ProjectItemState.Ready);
         }
+        // The blocks the caller names: taken along although live, or kept back although never published (checked below).
+        var choice = flow.Choice(body.WithBlocks, body.WithoutBlocks, PublishOperation.WithName(call), PublishOperation.WithoutName(call), call.ForCaller<Func<string, string>>(
+            block => $"Name it to publish that draft with the project (opticli projects publish {project.ID} --with-block {block}), or publish it on its own (opticli publish {block}).",
+            block => $"Pass blocks: [\"{block}\"] to publish that draft with the project, or publish the block on its own."));
         ProjectItemResult Along(ProjectItemResult item, IContent version, bool dryRun)
         {
             var warnings = item.Validation?.ToList() ?? [];
-            var along = flow.PublishAlong(version, action, body.IncludeDraft, dryRun, warnings, InProject, body.PublishAt?.ToLocalTime());
+            var along = flow.PublishAlong(version, action, body.IncludeDraft, dryRun, warnings, InProject, body.PublishAt?.ToLocalTime(), choice);
             return along is { Count: > 0 } || warnings.Count > (item.Validation?.Count ?? 0)
                 ? item with { SharedBlocks = along is { Count: > 0 } ? along : null, Validation = warnings.Count > 0 ? warnings : null }
                 : item;
@@ -89,6 +93,12 @@ internal static class ProjectPublishOperation
             {
                 Reason = AgentErrorReasons.NothingReady,
             };
+        }
+        if (choice.Names)
+        {
+            // Only blocks of a ready item's own folder that it shows: never a block from anywhere else.
+            flow.Writer.Shared!.RequireChosen(ready.Where(p => p.Item.Version is not null).Select(p => p.Item.Version!).ToList(), choice,
+                PublishOperation.WithName(call), PublishOperation.WithoutName(call));
         }
 
         var result = Lists(new ProjectResult

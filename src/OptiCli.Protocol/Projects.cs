@@ -110,6 +110,18 @@ public sealed record ProjectPublishRequest
     public bool IncludeDraft { get; init; }
 
     public bool DryRun { get; init; }
+
+    /// <summary>
+    /// As <see cref="PublishRequest.WithBlocks"/>, for the ready items: blocks of a ready item's own "For this page" folder
+    /// that it shows, whose drafts go live with it although they have a published version already. A block that is an
+    /// item of the project follows the project's rules either way.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? WithBlocks { get; init; }
+
+    /// <summary>As <see cref="PublishRequest.WithoutBlocks"/>, for the ready items.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? WithoutBlocks { get; init; }
 }
 
 /// <summary>Body of <see cref="AgentRoutes.ProjectReactivate"/> (may be empty): cancel a scheduled project's publish.</summary>

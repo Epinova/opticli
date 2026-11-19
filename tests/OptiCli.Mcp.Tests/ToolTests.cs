@@ -201,7 +201,19 @@ public sealed class ToolTests
         var areaOps = tools["update_content"].InputSchema.GetProperty("properties").GetProperty("areaOps").GetProperty("description").GetString()!;
         Assert.Contains("add a new block with type and values", areaOps);
         Assert.Contains("sharedBlocks gives its ref: change it later by that ref", areaOps);
-        Assert.Contains("\"For this page\" folder that its ContentAreas show (sharedBlocks", tools["publish_content"].Description);
+        // publish_content takes along only blocks never published, names live ones in blocks, keeps new ones back in
+        // skipBlocks, and says so in a dry run first.
+        var publish = tools["publish_content"];
+        Assert.Contains("\"For this page\" folder that its ContentAreas show and that were never published (sharedBlocks", publish.Description);
+        Assert.Contains("keeps its newer draft unless named in blocks", publish.Description);
+        Assert.Contains("call it with dryRun first", publish.Description);
+        var publishParameters = publish.InputSchema.GetProperty("properties");
+        Assert.Contains("blocks it would publish along (sharedBlocks) and those it would leave behind (warnings)", publishParameters.GetProperty("dryRun").GetProperty("description").GetString());
+        Assert.Contains("live already, whose newer drafts should go live with it", publishParameters.GetProperty("blocks").GetProperty("description").GetString());
+        Assert.Contains("never published, to leave as drafts", publishParameters.GetProperty("skipBlocks").GetProperty("description").GetString());
+        var projectParameters = tools["publish_project"].InputSchema.GetProperty("properties");
+        Assert.True(projectParameters.TryGetProperty("blocks", out _));
+        Assert.True(projectParameters.TryGetProperty("skipBlocks", out _));
 
         // The instructions say more only where the site makes them shared, and what publishing does there.
         Assert.Equal(OptiCli.Cms.Compat.InlineBlocks.EditUiCreatesThem(site.Services) == false, client.ServerInstructions!.Contains("sharedBlocks", StringComparison.Ordinal));
@@ -210,8 +222,12 @@ public sealed class ToolTests
         Assert.Contains(McpInstructions.SharedBlocksPublishOff, McpInstructions.For(site12, sharedBlocks: true));
         Assert.Contains("publishing the content in the CMS doesn't publish them", McpInstructions.SharedBlocksPublishOff);
         Assert.Contains(McpInstructions.SharedBlocks, McpInstructions.For(publishing, sharedBlocks: true));
-        Assert.Contains("publish_content of the content also publishes the drafts", McpInstructions.SharedBlocks);
-        Assert.Contains("preview shows a changed block's published version", McpInstructions.SharedBlocks);
+        Assert.Contains("publish_content of the content also publishes the drafts of those blocks it shows that were never published", McpInstructions.SharedBlocks);
+        Assert.Contains("keeps its newer draft (its preview shows the published version) unless you name it in blocks", McpInstructions.SharedBlocks);
+        Assert.Contains("which stay behind (warnings), and pass blocks or skipBlocks as they want", McpInstructions.SharedBlocks);
+        // Every site that lets assistants publish: a dry run of the publish first.
+        Assert.Contains("call publish_content with dryRun: true and show the user what it reports", McpInstructions.For(publishing));
+        Assert.DoesNotContain("publish_content with dryRun", McpInstructions.For(site12));
         Assert.DoesNotContain(McpInstructions.SharedBlocks, McpInstructions.For(publishing));
         // Before the line about errors, which stays last of the module's own.
         Assert.EndsWith("tell the user what it says.", McpInstructions.For(new OptiCliMcpOptions { AllowPublish = true, AllowDelete = true }, sharedBlocks: true));
@@ -277,6 +293,7 @@ public sealed class ToolTests
     [InlineData("upload_media", """{"fileName":"a.png","parent":"123","dryRun":true,"publish":true}""")]
     [InlineData("publish_content", """{"reference":"123"}""")]
     [InlineData("publish_content", """{"reference":"123","requestApproval":true,"publishAt":"2030-01-01T08:00:00Z"}""")]
+    [InlineData("publish_content", """{"reference":"123","dryRun":true,"blocks":["124"]}""")]
     [InlineData("unpublish_content", """{"reference":"123","dryRun":true}""")]
     public async Task Publishing_is_refused_with_a_hint_when_the_site_does_not_allow_it(string tool, string arguments)
     {
@@ -301,6 +318,9 @@ public sealed class ToolTests
 
         Assert.Equal((AgentErrorCodes.Refused, McpErrorReasons.MissingScope), (error.Code, error.Reason));
         Assert.Contains("content:publish", error.Message);
+        // Its dry run asks what the publish asks, as update_content's dry run with publish does.
+        var dryRun = await CallFailing(client, "publish_content", """{"reference":"123","dryRun":true}""");
+        Assert.Equal((AgentErrorCodes.Refused, McpErrorReasons.MissingScope), (dryRun.Code, dryRun.Reason));
     }
 
     [Theory]

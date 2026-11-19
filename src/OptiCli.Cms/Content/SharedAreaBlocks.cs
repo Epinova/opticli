@@ -31,7 +31,9 @@ namespace OptiCli.Cms.Content;
 /// checked here first, as the edit UI checks them before it offers "Create a new block".</para>
 /// <para>Blocks are saved with the owner's save: a draft (into the write's project, if it has one), never published at
 /// creation, unlike the edit UI, which publishes a new block at once when the editor may. A publish of the owner through
-/// opticli publishes the drafts of the folder's blocks its areas show, and only those.</para>
+/// opticli publishes the drafts of the folder's blocks its areas show that were never published, and only those; a live
+/// block's newer draft goes along only when the publish names it, or the write that publishes changed it
+/// (<see cref="AlongChoice"/>).</para>
 /// </remarks>
 internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
 {
@@ -276,8 +278,8 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     /// <summary>
     /// For a write that doesn't publish: a note for each block it changes that has a published version. The CMS's preview
     /// of the content (and its on-page edit) shows a block's published version where it has one, not a newer draft, so
-    /// the content's preview won't show the change until the block is published: a publish of the content through opticli
-    /// publishes it along.
+    /// the content's preview won't show the change until the block is published: on its own, or along with the content
+    /// when its publish names the block (a write that publishes takes the blocks it changed along by itself).
     /// </summary>
     public IEnumerable<ValidationIssue> PreviewNotes(SaveAction ownerAction)
     {
@@ -289,8 +291,12 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
         {
             if (ContentLocator.PublishedVersion(locator.Versions(pending.Existing!.ContentLink, Language)) is not null)
             {
+                var block = pending.Existing.ContentLink.ToReferenceWithoutVersion();
                 yield return new ValidationIssue(pending.Path,
-                    $"The block {pending.Existing.ContentLink.ToReferenceWithoutVersion()} ('{pending.Name}') is published, and its change is a draft: the preview of the content shows the block's published version until the block is published. Publishing the content through opticli publishes it along.",
+                    $"The block {block} ('{pending.Name}') is published, and its change is a draft: the preview of the content shows the block's published version until the block is published. "
+                    + call.ForCaller(
+                        $"A publish of the content leaves it a draft unless it names the block (opticli publish <content> --with-block {block}), or publish the block on its own (opticli publish {block}).",
+                        $"A publish of the content leaves it a draft unless it names the block (publish_content with blocks: [\"{block}\"]), or publish the block on its own."),
                     "info");
             }
         }
@@ -567,11 +573,71 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     }
 
     /// <summary>
+    /// Which drafts of the folder's blocks a publish takes along besides those of blocks never published, and which it
+    /// keeps back (decision 11 of the plan): by default only a block that was never published in the language goes along,
+    /// as it can't show until it is; a block that is live keeps its newer draft, unless the caller names it
+    /// (<see cref="With"/>) or the write that publishes changed it itself (<see cref="Written"/>).
+    /// </summary>
+    internal sealed record AlongChoice
+    {
+        public static readonly AlongChoice Default = new();
+
+        /// <summary>Live blocks whose drafts go along all the same (content ids): <c>--with-block</c>, <c>blocks</c>.</summary>
+        public IReadOnlySet<int> With { get; init; } = new HashSet<int>();
+
+        /// <summary>Blocks kept back although they were never published (content ids): <c>--without-block</c>, <c>skipBlocks</c>.</summary>
+        public IReadOnlySet<int> Without { get; init; } = new HashSet<int>();
+
+        /// <summary>The blocks the write that publishes made or changed itself (content ids): they go along unnamed.</summary>
+        public IReadOnlySet<int> Written { get; init; } = new HashSet<int>();
+
+        /// <summary>How the caller takes a live block's draft along (given its id): the last sentence of its warning.</summary>
+        public Func<string, string>? HowToInclude { get; init; }
+
+        public bool Names => With.Count > 0 || Without.Count > 0;
+    }
+
+    /// <summary>
+    /// The blocks a publish names (<see cref="AlongChoice.With"/>, <see cref="AlongChoice.Without"/>) must be blocks of the
+    /// content's own "For this page" folder that <paramref name="versions"/> show: a publish never puts a block from
+    /// anywhere else live this way. Checked before anything is saved (a dry run too).
+    /// </summary>
+    /// <param name="withName">How the caller names the blocks to take along (<c>--with-block</c>, <c>blocks</c>).</param>
+    /// <param name="withoutName">How the caller names the blocks to keep back.</param>
+    /// <exception cref="AgentException"><c>usage</c> for a block named both ways, or one that isn't such a block.</exception>
+    public void RequireChosen(IReadOnlyList<IContent> versions, AlongChoice choice, string withName, string withoutName)
+    {
+        if (!choice.Names)
+        {
+            return;
+        }
+        if (choice.With.Intersect(choice.Without).OrderBy(i => i).ToList() is { Count: > 0 } both)
+        {
+            throw AgentException.Usage($"{Ids(both)} {(both.Count == 1 ? "is" : "are")} named in both {withName} and {withoutName}.",
+                $"Name each block in one of them only: {withName} publishes a block's draft with the content, {withoutName} keeps it a draft. Nothing was published.");
+        }
+        var shown = versions.SelectMany(v => OwnBlocksShown(v)).Select(b => b.Block.ContentLink.ID).ToHashSet();
+        if (choice.With.Concat(choice.Without).Where(id => !shown.Contains(id)).Distinct().OrderBy(i => i).ToList() is { Count: > 0 } elsewhere)
+        {
+            throw AgentException.Usage(
+                $"{Ids(elsewhere)} {(elsewhere.Count == 1 ? "isn't a block" : "aren't blocks")} of the content's own \"For this page\" folder that its ContentAreas show, so {(elsewhere.Count == 1 ? "it" : "they")} can't be named in {withName} or {withoutName}: only those blocks are published along.",
+                call.ForCaller(
+                    "Name only blocks of the content's own folder that it shows (a dry run of the publish lists them, in sharedBlocks and its warnings); publish any other block on its own (opticli publish <ref>). Nothing was published.",
+                    "Name only blocks of the content's own folder that it shows (a dryRun of the publish lists them, in sharedBlocks and its warnings); publish any other block on its own (publish_content on its ref). Nothing was published."));
+        }
+
+        static string Ids(IReadOnlyList<int> ids) => ids.Count == 1
+            ? $"Block {ids[0].ToString(CultureInfo.InvariantCulture)}"
+            : $"Blocks {string.Join(", ", ids.Select(i => i.ToString(CultureInfo.InvariantCulture)))}";
+    }
+
+    /// <summary>
     /// After a publish (or scheduled publish) of <paramref name="published"/> through opticli: the drafts of the blocks of
     /// its own "For this page" folder that its areas show (and the areas of those blocks show, at any depth), published or
-    /// scheduled along. Only those: a block from anywhere else is never published along. A block's draft another person
-    /// saved goes along only when <paramref name="othersConfirmed"/> (<c>includeDraft</c>); one under an approval sequence,
-    /// or that doesn't pass validation, is left as it is. Each left out gets a warning.
+    /// scheduled along, as <paramref name="choice"/> picks them: by default only blocks never published in the language.
+    /// Only those: a block from anywhere else is never published along. A block's draft another person saved goes along
+    /// only when <paramref name="othersConfirmed"/> (<c>includeDraft</c>); one under an approval sequence, or that doesn't
+    /// pass validation, is left as it is. Each left out gets a warning.
     /// </summary>
     /// <param name="kind"><see cref="SaveAction.Publish"/> or <see cref="SaveAction.Schedule"/>.</param>
     /// <param name="at">For a schedule: when.</param>
@@ -581,11 +647,13 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     /// isn't, else whether the project publishes it (marked Ready to publish). A project's items follow the project's rules,
     /// so they are never published along; one that stays behind as a draft gets a warning.
     /// </param>
+    /// <param name="choice">Which live blocks' drafts go along, and which blocks stay behind; null: <see cref="AlongChoice.Default"/>.</param>
     public List<SharedBlockResult> PublishAlong(IContent published, SaveAction kind, DateTime? at, bool othersConfirmed, bool dryRun, List<ValidationIssue> warnings,
-        Func<int, CultureInfo?, bool?>? inProject = null)
+        Func<int, CultureInfo?, bool?>? inProject = null, AlongChoice? choice = null)
     {
+        choice ??= AlongChoice.Default;
         var results = new List<SharedBlockResult>();
-        foreach (var (path, block, latest, version, folderId) in OwnBlocksShown(published))
+        foreach (var (path, block, latest, version, folderId, live) in OwnBlocksShown(published))
         {
             if (latest.Status is not (VersionStatus.CheckedOut or VersionStatus.CheckedIn))
             {
@@ -600,6 +668,23 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
                         $"{what} is a draft in the project that isn't marked Ready to publish, so it stays a draft: the content goes live showing the block's published version (or nothing of it, where it was never published). Mark it ready and publish the project to put it live.",
                         "warning"));
                 }
+                continue;
+            }
+            var id = block.ContentLink.ID;
+            if (choice.Without.Contains(id))
+            {
+                warnings.Add(new ValidationIssue(path, live
+                    ? $"{what} stays a draft, as asked: the content goes live showing the block's published version."
+                    : $"{what} was never published, and stays a draft, as asked: the content goes live without it (visitors see nothing of the block until it is published).",
+                    "warning"));
+                continue;
+            }
+            if (live && !choice.With.Contains(id) && !choice.Written.Contains(id))
+            {
+                var reference = id.ToString(CultureInfo.InvariantCulture);
+                warnings.Add(new ValidationIssue(path,
+                    $"{what} is published already, so its newer draft stays a draft: the content goes live showing the block's published version. {choice.HowToInclude?.Invoke(reference) ?? call.ForCaller($"Publish it on its own if that draft should go live (opticli publish {reference}).", $"Publish it on its own if that draft should go live (publish_content on {reference}).")}",
+                    "warning"));
                 continue;
             }
             if (!othersConfirmed && !PendingDrafts.SavedBy(latest.SavedBy, call.UserName))
@@ -651,9 +736,10 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     /// <summary>
     /// The blocks of <paramref name="content"/>'s own "For this page" folder that its areas show (and the areas of those
     /// blocks' latest versions, at any depth), each once: its place, the block, its latest version in the content's
-    /// language, that version, and the folder's id. Blocks from anywhere else aren't walked.
+    /// language, that version, the folder's id, and whether the block has a published version in that language (a block
+    /// published only in another language counts as never published here). Blocks from anywhere else aren't walked.
     /// </summary>
-    private IEnumerable<(string Path, IContent Block, ContentVersion Latest, IContent Version, string FolderId)> OwnBlocksShown(IContent content)
+    private IEnumerable<(string Path, IContent Block, ContentVersion Latest, IContent Version, string FolderId, bool Live)> OwnBlocksShown(IContent content)
     {
         if (ContentReference.IsNullOrEmpty(content.ContentLink)
             || call.Service<ContentAssetHelper>().GetAssetFolder(content.ContentLink.ToReferenceWithoutVersion()) is not { } folder)
@@ -683,15 +769,16 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
                 var latest = branch[0];
                 var version = locator.Repository.Get<IContent>(latest.ContentLink);
                 queue.Enqueue((version, path));
-                yield return (path, block, latest, version, folderId);
+                yield return (path, block, latest, version, folderId, ContentLocator.PublishedVersion(branch) is not null);
             }
         }
     }
 
     /// <summary>
     /// What a review request of <paramref name="version"/> would leave unpublished: the blocks this write makes or changes,
-    /// and the drafts (never published, or with a newer draft) of the blocks of its own "For this page" folder that its
-    /// areas show. The approval publishes the content alone.
+    /// and the blocks of its own "For this page" folder that its areas show and that were never published (a draft). The
+    /// approval publishes the content alone. A live block with a newer draft doesn't count: the content shows its
+    /// published version, as a publish leaves it unless that block is named.
     /// </summary>
     /// <returns>Each as its place and what it is (<c>MainArea[2] (a new block)</c>); empty when there are none.</returns>
     public List<string> UnpublishedForReview(IContent version)
@@ -706,11 +793,11 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
                 ids.Add(pending.Existing!.ContentLink.ID);
             }
         }
-        foreach (var (path, block, latest, _, _) in OwnBlocksShown(version))
+        foreach (var (path, block, latest, _, _, live) in OwnBlocksShown(version))
         {
-            if (latest.Status is VersionStatus.CheckedOut or VersionStatus.CheckedIn && ids.Add(block.ContentLink.ID))
+            if (!live && latest.Status is VersionStatus.CheckedOut or VersionStatus.CheckedIn && ids.Add(block.ContentLink.ID))
             {
-                listed.Add($"{path} (block {block.ContentLink.ToReferenceWithoutVersion()}, a draft)");
+                listed.Add($"{path} (block {block.ContentLink.ToReferenceWithoutVersion()}, never published)");
             }
         }
         return listed;

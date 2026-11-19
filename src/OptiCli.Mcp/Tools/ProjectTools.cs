@@ -94,17 +94,21 @@ internal sealed class ProjectPublishTools(IHttpContextAccessor http, IOptions<Op
     internal const string PublishingOffHint = "Mark the items the user wants live ready (mark_ready_to_publish) and give the user the project's projectUrl (or tell them what projectNote says), so they publish or reactivate the project in the CMS. Nothing was changed.";
 
     [McpServerTool(Name = "publish_project", Title = "Publish project", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-    [Description("Publishes a project's items marked Ready to publish, together, now or at publishAt; items that aren't ready stay as they are (notReady), as do items live already (alreadyPublished). Only when the user asked to publish the project: run it with dryRun first, show the user what goes live (published, or scheduled), whose unpublished changes go with it (an item's pendingDraft; readyBy is the colleague who marked it ready, whose own changes go live without includeDraft) and what stays behind, and publish once they confirm. Every ready item is checked first, as publish_content checks one: a problem stops the publish, with each item's in error.project, and nothing goes live. Returns each item's editUrl (and url once it is live), failed (items the CMS didn't publish, with siteError) and siteChanges (what the site's own code did meanwhile).")]
+    [Description("Publishes a project's items marked Ready to publish, together, now or at publishAt; items that aren't ready stay as they are (notReady), as do items live already (alreadyPublished). Only when the user asked to publish the project: run it with dryRun first, show the user what goes live (published, or scheduled), whose unpublished changes go with it (an item's pendingDraft; readyBy is the colleague who marked it ready, whose own changes go live without includeDraft) and what stays behind, and publish once they confirm. Every ready item is checked first, as publish_content checks one: a problem stops the publish, with each item's in error.project, and nothing goes live. Where the site makes new area blocks shared, each item also publishes the drafts of the never-published blocks of its own \"For this page\" folder that it shows (its sharedBlocks); a live block keeps its newer draft unless named in blocks (its warnings say which). Returns each item's editUrl (and url once it is live), failed (items the CMS didn't publish, with siteError) and siteChanges (what the site's own code did meanwhile).")]
     public Task<string> PublishProject(
         [Description(ProjectTools.Project)] string project,
         [Description("Schedule the publish for this time instead (ISO 8601 with offset, e.g. 2026-10-05T08:00:00+02:00): only when the user asked for it.")] DateTime? publishAt = null,
         [Description("Also put live the unpublished changes someone else saved that ready items carry (their pendingDraft), other than those of whoever marked the item ready: only after asking the user.")] bool includeDraft = false,
-        [Description("Only check, and report what would go live and what would stay behind; valid: false, with each ready item's problem, when the publish would be refused.")] bool dryRun = false) =>
+        [Description("Only check, and report what would go live and what would stay behind; valid: false, with each ready item's problem, when the publish would be refused.")] bool dryRun = false,
+        [Description("Refs of blocks of a ready item's own \"For this page\" folder that it shows and that are live already, whose newer drafts should go live with it (a dry run's warnings name them): only when the user wants those changes live too. Any other block is refused.")] string[]? blocks = null,
+        [Description("Refs of blocks of a ready item's own \"For this page\" folder that it shows and that were never published, to leave as drafts: the item then goes live without them showing. Only when the user wants them kept back.")] string[]? skipBlocks = null) =>
         RunAsync(Scopes.Write, call => ProjectPublishOperation.RunAsync(call, project, new ProjectPublishRequest
         {
             PublishAt = publishAt,
             IncludeDraft = includeDraft,
             DryRun = dryRun,
+            WithBlocks = blocks is { Length: > 0 } ? blocks : null,
+            WithoutBlocks = skipBlocks is { Length: > 0 } ? skipBlocks : null,
         }), ResultUrls.SerializeProject, PublishingIf(true, PublishingOffHint));
 
     [McpServerTool(Name = "reactivate_project", Title = "Reactivate project", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]

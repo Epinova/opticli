@@ -80,11 +80,49 @@ internal sealed class WriteFlow
     /// </summary>
     /// <param name="at">For a schedule: when; else the published version's start-publish date, which a scheduled save sets.</param>
     /// <param name="inProject">For a project publish: the project's own items, which are left to it (<see cref="SharedAreaBlocks.PublishAlong"/>).</param>
+    /// <param name="choice">Which live blocks' drafts go along and which blocks stay behind (<see cref="Choice"/>); null: only blocks never published.</param>
     public List<SharedBlockResult>? PublishAlong(IContent published, SaveAction action, bool othersConfirmed, bool dryRun, List<ValidationIssue> warnings,
-        Func<int, System.Globalization.CultureInfo?, bool?>? inProject = null, DateTime? at = null) =>
+        Func<int, System.Globalization.CultureInfo?, bool?>? inProject = null, DateTime? at = null, SharedAreaBlocks.AlongChoice? choice = null) =>
         Writer.Shared is { } shared && Kind(action) is SaveAction.Publish or SaveAction.Schedule
-            ? shared.PublishAlong(published, Kind(action), at ?? (published as IVersionable)?.StartPublish, othersConfirmed, dryRun, warnings, inProject)
+            ? shared.PublishAlong(published, Kind(action), at ?? (published as IVersionable)?.StartPublish, othersConfirmed, dryRun, warnings, inProject, choice)
             : null;
+
+    /// <summary>
+    /// A publish's choice of blocks (<see cref="SharedAreaBlocks.AlongChoice"/>): the refs it names to take along
+    /// (<paramref name="with"/>) and to keep back (<paramref name="without"/>), as content ids.
+    /// </summary>
+    /// <param name="howToInclude">The last sentence of a live block's warning: how this caller names it (given its id).</param>
+    /// <exception cref="AgentException">
+    /// <c>usage</c> for a ref that isn't one, or blocks named where the site makes inline blocks (nothing is published along
+    /// there); <c>not_found</c> for content that doesn't exist (or the caller can't read).
+    /// </exception>
+    public SharedAreaBlocks.AlongChoice Choice(IReadOnlyList<string>? with, IReadOnlyList<string>? without, string withName, string withoutName, Func<string, string>? howToInclude)
+    {
+        if ((with is { Count: > 0 } || without is { Count: > 0 }) && Writer.Shared is null)
+        {
+            throw AgentException.Usage(
+                $"This site's edit UI makes new blocks in a ContentArea inline (UIOptions.InlineBlocksInContentAreaEnabled is on, or can't be read), so a publish publishes no blocks along, and {withName} and {withoutName} don't apply.",
+                Call.ForCaller("Publish a block on its own (opticli publish <ref>). Nothing was published.", "Publish a block on its own (publish_content on its ref). Nothing was published."));
+        }
+        HashSet<int> Ids(IReadOnlyList<string>? refs, string name) =>
+            (refs ?? []).Select(r => Locator.Resolve(r?.Trim(), $"block in {name}").ID).ToHashSet();
+        return new SharedAreaBlocks.AlongChoice
+        {
+            With = Ids(with, withName),
+            Without = Ids(without, withoutName),
+            HowToInclude = howToInclude,
+        };
+    }
+
+    /// <summary>
+    /// The choice of blocks for a write that publishes: the blocks it made or changed itself (<paramref name="made"/>) go
+    /// along unnamed, and a live block's draft it didn't change stays a draft, with a warning saying to publish it on its own.
+    /// </summary>
+    public static SharedAreaBlocks.AlongChoice Written(IEnumerable<SharedBlockResult> made) => new()
+    {
+        Written = made.Where(m => m.Action is SharedBlockActions.Created or SharedBlockActions.Updated && m.Ref is not null)
+            .Select(m => int.Parse(m.Ref!.Split('_')[0], System.Globalization.CultureInfo.InvariantCulture)).ToHashSet(),
+    };
 
     /// <summary>
     /// Where the site's edit UI makes new blocks in an area shared: a review request (an approval sequence's) of
@@ -265,6 +303,8 @@ internal sealed class WriteFlow
 
         if (dryRun)
         {
+            // Before the result takes the issues: what a publish would leave behind adds warnings to them.
+            var plannedBlocks = DryRunSharedBlocks(shared, writable, action, issues);
             return new WriteResult
             {
                 Content = shown,
@@ -280,7 +320,7 @@ internal sealed class WriteFlow
                 Project = Project?.Planned(writable, review: Kind(action) == SaveAction.RequestApproval,
                     intoVersion is not null && (diff.Count > 0 || saveUnchanged) ? intoVersion
                     : diff.Count == 0 && !saveUnchanged && writable.ContentLink.WorkID > 0 ? writable.ContentLink.WorkID : null),
-                SharedBlocks = DryRunSharedBlocks(shared, writable, action, issues),
+                SharedBlocks = plannedBlocks,
             };
         }
         if (!valid)
@@ -328,7 +368,7 @@ internal sealed class WriteFlow
                 };
             }
             if (made.Any(m => m.Action != SharedBlockActions.Existing) && writable.ContentLink is { } based && !ContentReference.IsNullOrEmpty(based)
-                && PublishAlong(Repository.Get<IContent>(based), action, OthersDraftsConfirmed, dryRun: false, issues) is { Count: > 0 } along)
+                && PublishAlong(Repository.Get<IContent>(based), action, OthersDraftsConfirmed, dryRun: false, issues, choice: Written(made)) is { Count: > 0 } along)
             {
                 // Nothing of the content changed, but a publish of it was asked for: its blocks' new versions go live with it.
                 made = SharedAreaBlocks.Merge(made, along);
@@ -406,7 +446,8 @@ internal sealed class WriteFlow
         }
         var siteChanges = SiteChanges.Report(Call, Types, events, result, askedParent, published,
             Call.Properties.Shown(result, overridden).Select(c => new SiteChangedProperty(c.Property, c.Before, c.After)).ToList());
-        if ((published || Kind(action) == SaveAction.Schedule) && PublishAlong(result, action, OthersDraftsConfirmed, dryRun: false, issues) is { Count: > 0 } publishedAlong)
+        // The blocks it made or changed go along; another block of the folder only when it was never published.
+        if ((published || Kind(action) == SaveAction.Schedule) && PublishAlong(result, action, OthersDraftsConfirmed, dryRun: false, issues, choice: Written(made)) is { Count: > 0 } publishedAlong)
         {
             made = SharedAreaBlocks.Merge(made, publishedAlong);
         }
@@ -434,7 +475,9 @@ internal sealed class WriteFlow
     {
         var planned = shared?.Planned(action) ?? [];
         planned.AddRange(Writer.Shared?.Found(writable) ?? []);
-        if (!ContentReference.IsNullOrEmpty(writable.ContentLink) && PublishAlong(writable, action, OthersDraftsConfirmed, dryRun: true, issues) is { Count: > 0 } along)
+        // The blocks it would change go along as those it changes do (the new ones are in planned already).
+        var written = new SharedAreaBlocks.AlongChoice { Written = (shared?.All ?? []).Where(p => !p.IsNew).Select(p => p.Existing!.ContentLink.ID).ToHashSet() };
+        if (!ContentReference.IsNullOrEmpty(writable.ContentLink) && PublishAlong(writable, action, OthersDraftsConfirmed, dryRun: true, issues, choice: written) is { Count: > 0 } along)
         {
             planned.AddRange(along.Where(a => !planned.Any(p => p.Ref is not null && a.Ref?.Split('_')[0] == p.Ref.Split('_')[0])));
         }

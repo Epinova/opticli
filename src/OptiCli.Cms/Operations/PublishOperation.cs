@@ -13,9 +13,11 @@ namespace OptiCli.Cms.Operations;
 /// </summary>
 internal static class PublishOperation
 {
-    public static WriteResult Run(CmsCall call, string reference, PublishRequest body)
+    public static WriteResult Run(CmsCall call, string reference, PublishRequest body) => Run(call, reference, body, new WriteFlow(call));
+
+    /// <param name="flow">The write's flow: tests choose how the site makes new area blocks.</param>
+    internal static WriteResult Run(CmsCall call, string reference, PublishRequest body, WriteFlow flow)
     {
-        var flow = new WriteFlow(call);
         var link = flow.Locator.Resolve(reference);
         if (body.Version is { } explicitVersion && link.WorkID > 0 && explicitVersion != link.WorkID)
         {
@@ -58,22 +60,19 @@ internal static class PublishOperation
         {
             Approvals.RequireNotInReview([.. branch.Where(v => v.ContentLink.WorkID == version.ContentLink.WorkID)], what, versionLanguage?.Name);
         }
-        // The approval would publish it alone: not while it shows blocks of its own folder that aren't published.
+        // The approval would publish it alone: not while it shows blocks of its own folder that were never published.
         flow.RequireBlocksPublishedForReview(version, action, what, publishing: true);
-        if (body.DryRun)
+        // The blocks of its own folder the caller names: taken along although live, or kept back although never published.
+        var choice = flow.Choice(body.WithBlocks, body.WithoutBlocks, WithName(call), WithoutName(call), call.ForCaller<Func<string, string>>(
+            block => $"Name it to publish that draft with the content (opticli publish {link.ID} --with-block {block}), or publish it on its own (opticli publish {block}).",
+            block => $"Pass blocks: [\"{block}\"] to publish that draft with the content, or publish the block on its own."));
+        if (choice.Names)
         {
-            // What the site decides before the save, checked; the CLI's dry run reports the rest from the database.
-            return new WriteResult
-            {
-                Content = ContentSummaries.Describe(version, flow.Types),
-                DryRun = true,
-                Valid = true,
-                BaseVersion = versionId,
-            };
+            flow.Writer.Shared!.RequireChosen([version], choice, WithName(call), WithoutName(call));
         }
+        var othersConfirmed = body.IncludeDraft || (named is not null && call.NamedVersionConfirmsDraft);
         var pending = publishing || scheduling
-            ? PendingDrafts.Require(flow.Locator.PendingDraft(branch, version),
-                body.IncludeDraft || (named is not null && call.NamedVersionConfirmsDraft), dryRun: false, what, versionLanguage?.Name)
+            ? PendingDrafts.Require(flow.Locator.PendingDraft(branch, version), othersConfirmed, body.DryRun, what, versionLanguage?.Name)
             : action == SaveAction.RequestApproval && call.ReportsDraftInReview
                 ? flow.Locator.PendingDraft(branch, version)
                 : null;
@@ -91,7 +90,7 @@ internal static class PublishOperation
         {
             issues = [.. issues, cleared];
         }
-        if (ValidationErrors.HasErrors(issues))
+        if (!body.DryRun && ValidationErrors.HasErrors(issues))
         {
             throw AgentException.Invalid(issues);
         }
@@ -104,6 +103,27 @@ internal static class PublishOperation
             // A media version saved elsewhere: what it would put live under its name, as WriteFlow.Save checks a save.
             UploadOperation.RequireServedSafely(call, media, null,
                 previouslyPublished is { } live && flow.Repository.TryGet<IContent>(new ContentReference(version.ContentLink.ID, live, version.ContentLink.ProviderName), out var published) ? published : null);
+        }
+        if (body.DryRun)
+        {
+            // Everything the publish checks, and what it would put live, without saving: the blocks of its folder that would
+            // go along (and those it leaves behind, as warnings).
+            var planned = issues.ToList();
+            var plannedAlong = publishing || scheduling
+                ? flow.PublishAlong(version, action, othersConfirmed, dryRun: true, planned, at: body.PublishAt?.ToLocalTime(), choice: choice)
+                : null;
+            return new WriteResult
+            {
+                Content = ContentSummaries.Describe(version, flow.Types),
+                DryRun = true,
+                Valid = !ValidationErrors.HasErrors(planned),
+                ScheduledFor = scheduling ? body.PublishAt!.Value.ToUniversalTime() : null,
+                BaseVersion = versionId,
+                Validation = planned.Count > 0 ? planned : null,
+                PendingDraft = pending,
+                PreviouslyPublished = publishing ? previouslyPublished : null,
+                SharedBlocks = plannedAlong is { Count: > 0 } ? plannedAlong : null,
+            };
         }
         flow.ThrowIfAborted();
         ContentReference saved;
@@ -130,7 +150,7 @@ internal static class PublishOperation
         // The drafts of the blocks of its "For this page" folder that it shows, where the site's edit UI makes those.
         var warnings = issues.ToList();
         var along = publishing || scheduling
-            ? flow.PublishAlong(result, action, othersConfirmed: body.IncludeDraft || (named is not null && call.NamedVersionConfirmsDraft), dryRun: false, warnings)
+            ? flow.PublishAlong(result, action, othersConfirmed, dryRun: false, warnings, choice: choice)
             : null;
         issues = warnings;
         return new WriteResult
@@ -149,4 +169,10 @@ internal static class PublishOperation
             SharedBlocks = along is { Count: > 0 } ? along : null,
         };
     }
+
+    /// <summary>How the caller names the blocks to take along: the CLI's flag, or the MCP tool's parameter.</summary>
+    internal static string WithName(CmsCall call) => call.ForCaller("--with-block", "blocks");
+
+    /// <summary>How the caller names the blocks to keep back.</summary>
+    internal static string WithoutName(CmsCall call) => call.ForCaller("--without-block", "skipBlocks");
 }
