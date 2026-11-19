@@ -314,7 +314,14 @@ public static class PlanSimulation
                             WithBlocks = publishStep.WithBlocks,
                             WithoutBlocks = publishStep.WithoutBlocks,
                         }
-                        : published.Operation with { RequestApproval = publishStep.RequestApproval },
+                        : published.Operation is TranslateOperation branch
+                            ? branch with
+                            {
+                                RequestApproval = publishStep.RequestApproval,
+                                PublishWithBlocks = publishStep.WithBlocks,
+                                PublishWithoutBlocks = publishStep.WithoutBlocks,
+                            }
+                            : published.Operation with { RequestApproval = publishStep.RequestApproval },
                 };
             case SetOperation { From: not null } or AreaEdit { From: not null } or CompositionEdit { From: not null } when translate is not null:
                 throw new Errors.UsageException(

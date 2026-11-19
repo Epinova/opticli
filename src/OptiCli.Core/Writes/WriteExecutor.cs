@@ -708,7 +708,14 @@ public sealed class WriteExecutor(
                 Project = op.Project,
                 Ready = op.Ready,
                 DryRun = dryRun,
+                WithBlocks = await BlockRefsAsync(op.PublishWithBlocks, "withBlocks", cancellationToken),
+                WithoutBlocks = await BlockRefsAsync(op.PublishWithoutBlocks, "withoutBlocks", cancellationToken),
             };
+            if (request.WithBlocks is not null || request.WithoutBlocks is not null)
+            {
+                // A plan's publish step of the new branch dry-run with the translate before it, naming blocks: as for the publish itself.
+                RequireBlocksPublishedAlong(await InlineBlocksAsync(cancellationToken));
+            }
             var result = await PostAsync<WriteResult>(AgentRoutes.Languages(target.ContentRef), request, cancellationToken);
             outcome = WithWarning(await WithSimpleAddressCheckAsync(Outcome(WriteOutput.From(result), null), result, target.Header, self: true, cancellationToken), masterFirst);
         }

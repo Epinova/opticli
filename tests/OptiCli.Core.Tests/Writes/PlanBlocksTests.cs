@@ -320,6 +320,28 @@ public class PlanBlocksTests
     }
 
     [Fact]
+    public void A_publish_of_a_branch_a_translate_creates_is_dry_run_naming_the_blocks_the_step_names()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "translate", "ref": "123", "lang": "sv", "name": "Sida"},
+              {"op": "publish", "ref": "123", "lang": "sv", "withBlocks": ["456"], "withoutBlocks": ["789"]}
+            ]}
+            """);
+        var targets = new Dictionary<int, PlanTarget>
+        {
+            [0] = new(123, "sv", "en", false, false),
+            [1] = new(123, "sv", "en", false, false),
+        };
+
+        var branch = Assert.IsType<TranslateOperation>(PlanSimulation.OnExisting(plan.Steps[1], plan.Steps, targets, None, updateExisting: false)!.Operation);
+
+        Assert.True(branch.Publish);
+        Assert.Equal(["456"], branch.PublishWithBlocks!);
+        Assert.Equal(["789"], branch.PublishWithoutBlocks!);
+    }
+
+    [Fact]
     public void A_plan_that_names_an_area_item_by_its_position_is_dry_run_after_the_steps_before_it()
     {
         // Positional steps: the existing content each step writes is looked up, so earlier area adds are folded in.

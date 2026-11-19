@@ -540,6 +540,18 @@ public sealed record LanguageBranchRequest
     /// <summary>As <see cref="DraftRequest.Ready"/>.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Ready { get; init; }
+
+    /// <summary>
+    /// As <see cref="DraftRequest.WithBlocks"/>: the CLI sends it only for a plan's dry run of a <c>publish</c> step of a
+    /// branch an earlier <c>translate</c> step creates, checked together with it (one new branch that is published). Left
+    /// out when null.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? WithBlocks { get; init; }
+
+    /// <summary>As <see cref="WithBlocks"/>, for <see cref="PublishRequest.WithoutBlocks"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? WithoutBlocks { get; init; }
 }
 
 /// <summary>Body of <see cref="AgentRoutes.RemoveLanguage"/>.</summary>

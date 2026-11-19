@@ -462,6 +462,16 @@ public sealed record TranslateOperation(
     /// </summary>
     public bool WithBlocks { get; init; }
 
+    /// <summary>
+    /// Dry run only, as <see cref="SetOperation.WithBlocks"/>: a plan's <c>publish</c> step of the branch this step creates,
+    /// dry-run with it as one new branch that is published (<see cref="PlanSimulation.OnExisting"/>), takes along the
+    /// blocks the step names (<see cref="PublishOperation.WithBlocks"/>), as the step will.
+    /// </summary>
+    internal IReadOnlyList<string>? PublishWithBlocks { get; init; }
+
+    /// <summary>Dry run only: as <see cref="PublishWithBlocks"/>, for <see cref="PublishOperation.WithoutBlocks"/>.</summary>
+    internal IReadOnlyList<string>? PublishWithoutBlocks { get; init; }
+
     /// <summary>Delete the branch with all its versions instead of creating it. It can't be undone.</summary>
     public bool Remove { get; init; }
 
