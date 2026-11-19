@@ -1989,6 +1989,42 @@ public class SharedAreaBlockTests
         Assert.Equal("Area[0]", refusedOther.PendingDraft!.Path);
     }
 
+    [Fact]
+    public void A_nested_takeover_of_a_block_whose_latest_version_someone_else_saved_is_refused_unless_confirmed()
+    {
+        var site = new Site();
+        var page = site.Page(folder: true);
+        var folder = site.Folder(page).ContentLink;
+        var inner = site.Block(folder, "Inner", "Theirs", VersionStatus.CheckedOut, savedBy: "someone");
+        var outer = (IContent)((IReadOnly)site.Block(folder, "Outer", "Old", type: BoxType)).CreateWritableClone();
+        var area = new ContentArea();
+        area.Items.Add(Ref(inner));
+        outer.Property["Area"].Value = area;
+        outer = site.Store.Get(site.Store.Save(outer, SaveAction.Publish | SaveAction.ForceNewVersion, null))!;
+        page = OwnerOf(site, outer, Ref(outer));
+        site.Store.Saves.Clear();
+        const string whole = """{"Area": [{"type": "BoxBlock", "name": "Outer", "properties": {"Title": "New", "Area": [{"type": "ItemBlock", "name": "Inner", "properties": {"Title": "Mine"}}]}}]}""";
+
+        // The block inside the block taken over is taken over too, over their draft: refused, dry run alike, naming its item.
+        foreach (var dryRun in new[] { true, false })
+        {
+            var flow = site.Flow();
+            var (writable, before) = site.Write(flow, page, whole);
+            var refused = Assert.Throws<AgentException>(() => site.Save(flow, writable, before, dryRun));
+            Assert.Equal(AgentErrorCodes.Conflict, refused.Code);
+            Assert.Equal(("someone", "Area[0].Area[0]"), (refused.PendingDraft!.SavedBy, refused.PendingDraft.Path));
+        }
+        Assert.Empty(site.Store.Saves);
+
+        var confirmed = site.Flow();
+        confirmed.BlockDraftsConfirmed = true;
+        var (changed, changedBefore) = site.Write(confirmed, page, whole);
+        var result = site.Save(confirmed, changed, changedBefore);
+        Assert.Contains(result.SharedBlocks!, b => (b.Path, b.Action) == ("Area[0].Area[0]", SharedBlockActions.Updated));
+        Assert.Contains(result.Validation!, i => (i.Property, i.Severity) == ("Area[0].Area[0]", "warning") && i.Message.Contains("as includeDraft confirmed"));
+        Assert.Equal("Mine", Title(site.Store.Latest(inner.ContentLink.ID)));
+    }
+
     /// <summary><paramref name="content"/> with no language of its own (every version), so an editor's language access isn't asked.</summary>
     private static T Neutral<T>(Site site, T content) where T : IContent
     {
