@@ -64,6 +64,9 @@ before. See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new
 - **Fixed: a plan's dry run of a step that names a ContentArea item by its position** (`"MainArea[1].Heading"`, `area
   set`) ran against the stored area, without the items earlier steps of the plan add, unless the plan published,
   translated or used `from`. It follows the earlier steps in every plan now, on sites with inline blocks too.
+- **Fixed: a plan's dry run of a `publish` after steps that change nothing** (a `set` of the values the content has
+  already) passed, while the run failed with `conflict` at the publish ("already the published version"). The
+  dry run now checks such a publish on its own, against the content as it is, and says so too.
 
 ### MCP server for editors
 

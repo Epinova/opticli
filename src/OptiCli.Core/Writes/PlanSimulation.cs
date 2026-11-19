@@ -15,7 +15,14 @@ public sealed record Simulation(
     IReadOnlyDictionary<string, string> StandIns,
     IReadOnlyList<string> Unchecked,
     IReadOnlyList<(string Property, string PlanId)> References,
-    IReadOnlyList<string>? Notes = null);
+    IReadOnlyList<string>? Notes = null)
+{
+    /// <summary>
+    /// For a <c>publish</c> dry-run together with the steps before it (<see cref="PlanSimulation.OnExisting"/>): those
+    /// steps, which <see cref="PlanSimulation.ChangeNothing"/> looks at once the dry run says what they change.
+    /// </summary>
+    public IReadOnlyList<PlanStep>? Folded { get; init; }
+}
 
 /// <summary>The existing content and language branch a plan step writes, as the database has them before the plan runs.</summary>
 /// <param name="Language">The branch: the step's lang, else the one its URL selects, else the master language; null for content without languages.</param>
@@ -305,6 +312,7 @@ public static class PlanSimulation
                 var publishStep = (PublishOperation)step.Operation;
                 return published with
                 {
+                    Folded = since,
                     Operation = published.Operation is SetOperation merged
                         ? merged with
                         {
@@ -456,6 +464,45 @@ public static class PlanSimulation
             operation = new SetOperation(reference, stripped, name, language, publish) { AreaEdits = areas, CompositionEdits = compositions.Count > 0 ? compositions : null, From = from };
         }
         return new Simulation(operation with { IncludeDraft = step.Operation.IncludeDraft }, null, new Dictionary<string, string>(), notChecked.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), references, notes);
+    }
+
+    /// <summary>
+    /// Whether the steps a <c>publish</c> was dry-run together with (<see cref="Simulation.Folded"/>) change nothing, as
+    /// that dry run (<paramref name="output"/>) says: no change of the content's values and no block of its folder made or
+    /// changed. The publish then meets the content as it is today, so its own dry run tells what it does there (a
+    /// <c>conflict</c> for a version published already with nothing to take along), where the dry run as one write that
+    /// publishes would pass, as such a write changes nothing without failing. Only for steps that each write other
+    /// properties (<c>set</c>, <c>area</c>, composition edits): steps that change one property and change it back
+    /// change nothing together, but each saves a version, which the publish then publishes.
+    /// </summary>
+    internal static bool ChangeNothing(Simulation simulation, WriteOutput? output)
+    {
+        if (simulation.Folded is not { Count: > 0 } folded || simulation.Operation is not SetOperation || simulation.Unchecked.Count > 0
+            || output is not { Changes.Count: 0 }
+            || (output.SharedBlocks ?? []).Any(b => b.Action is Protocol.SharedBlockActions.Created or Protocol.SharedBlockActions.Updated))
+        {
+            return false;
+        }
+        var written = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var step in folded)
+        {
+            IEnumerable<string> keys = step.Operation switch
+            {
+                SetOperation set => [.. (set.Properties ?? []).Select(p => p.Key), .. set.Name is null ? [] : (string[])["name"]],
+                AreaEdit area => [area.Property],
+                CompositionEdit => [CompositionInput.Field],
+                _ => [],
+            };
+            if (step.Operation is not (SetOperation or AreaEdit or CompositionEdit)
+                || !keys.Select(Root).Distinct(StringComparer.OrdinalIgnoreCase).All(written.Add))
+            {
+                return false;
+            }
+        }
+        return true;
+
+        // MainArea[2] and MainArea[2].Heading write MainArea; Block.Heading writes Block.
+        static string Root(string key) => key.Split('.', '[')[0];
     }
 
     /// <summary>Steps that save values of the content they target, or publish its latest version.</summary>

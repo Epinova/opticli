@@ -342,6 +342,36 @@ public class PlanBlocksTests
     }
 
     [Fact]
+    public void A_publish_after_steps_that_change_nothing_is_dry_run_on_its_own()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "set", "ref": "123", "name": "Same"},
+              {"op": "set", "ref": "123", "properties": {"Heading": "Same", "MainArea[0]": {"Heading": "Same"}}},
+              {"op": "publish", "ref": "123"},
+              {"op": "set", "ref": "124", "properties": {"Heading": "Changed"}},
+              {"op": "set", "ref": "124", "properties": {"Heading": "Back"}},
+              {"op": "publish", "ref": "124"}
+            ]}
+            """);
+        var targets = Enumerable.Range(0, 6).ToDictionary(i => i, i => new PlanTarget(i < 3 ? 123 : 124, "en", "en", true, false));
+        var simulation = PlanSimulation.OnExisting(plan.Steps[2], plan.Steps, targets, None, updateExisting: false)!;
+        var changed = Output(false) with { Changes = [new PropertyChange("Heading", null, null)] };
+
+        Assert.Equal([0, 1], simulation.Folded!.Select(s => s.Index));
+        Assert.True(PlanSimulation.ChangeNothing(simulation, Output(false)));
+        Assert.True(PlanSimulation.ChangeNothing(simulation, Output(false, Saved("457", SharedBlockActions.Published, "published"))));
+        // Something changes: the content, or a block of its folder the steps make or change.
+        Assert.False(PlanSimulation.ChangeNothing(simulation, changed));
+        Assert.False(PlanSimulation.ChangeNothing(simulation, Output(false, Saved("457", SharedBlockActions.Updated))));
+        Assert.False(PlanSimulation.ChangeNothing(simulation, Output(false, Saved("458", SharedBlockActions.Created))));
+        Assert.False(PlanSimulation.ChangeNothing(simulation with { Unchecked = ["MainArea"] }, Output(false)));
+        Assert.False(PlanSimulation.ChangeNothing(simulation with { Folded = null }, Output(false)));
+        // Two steps that change a value and change it back change nothing together, but each saves a version to publish.
+        Assert.False(PlanSimulation.ChangeNothing(PlanSimulation.OnExisting(plan.Steps[5], plan.Steps, targets, None, updateExisting: false)!, Output(false)));
+    }
+
+    [Fact]
     public void A_plan_that_names_an_area_item_by_its_position_is_dry_run_after_the_steps_before_it()
     {
         // Positional steps: the existing content each step writes is looked up, so earlier area adds are folded in.

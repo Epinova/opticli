@@ -345,6 +345,17 @@ public sealed class WriteRoundTripTests
             Assert.True(Assert.IsType<WriteOutput>(run.Operations[1].Result).Published);
             Assert.Equal("renamed", (await GetAsync(site, int.Parse(media, System.Globalization.CultureInfo.InvariantCulture), VersionSelector.Published, cancellationToken)).Name);
 
+            // Run again, the set changes nothing: the publish meets the version published already, and the dry run says so
+            // as the run does (it passed as one write that publishes, which changes nothing without failing).
+            var unchanged = await Assert.ThrowsAnyAsync<Core.Errors.OptiCliException>(() =>
+                new PlanRunner(site.Session, writes, Path.GetTempPath()).RunAsync(plan, dryRun: true, publishAll: false, cancellationToken));
+            Assert.Equal(Core.Errors.ErrorCode.Conflict, unchanged.Code);
+            Assert.Equal([PlanStepStatus.Valid, PlanStepStatus.Invalid], Assert.IsType<PlanRun>(unchanged.Details).Operations.Select(o => o.Status));
+            var conflict = await Assert.ThrowsAnyAsync<Core.Errors.OptiCliException>(() =>
+                new PlanRunner(site.Session, writes, Path.GetTempPath()).RunAsync(plan, dryRun: false, publishAll: false, cancellationToken));
+            Assert.Equal(Core.Errors.ErrorCode.Conflict, conflict.Code);
+            Assert.Contains("is already the published version", conflict.Message);
+
             var page = site.Session.Model.Types.First(t => t.Kind == Core.Cms.ContentKind.Page && !t.Name.StartsWith("Sys", StringComparison.Ordinal));
             var inFolder = await Assert.ThrowsAsync<Core.Errors.ContentValidationException>(() => writes.RunAsync(new CreateOperation(folder, page.Name, "page in a folder"), dryRun: true, cancellationToken));
             Assert.Contains("pages go in the page tree", inFolder.Message);

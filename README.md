@@ -933,7 +933,9 @@ the review would leave unpublished, as a write that changes them does.
 
 The dry run checks a `publish` after other steps on the same content together with them, as one write that publishes
 (nothing is saved yet to publish), with the step's `withBlocks`, `withoutBlocks`, `requestApproval` and `publishAt`:
-it lists the same blocks going along (`sharedBlocks`) and the same warnings as the run.
+it lists the same blocks going along (`sharedBlocks`) and the same warnings as the run. When those steps change
+nothing (no value of the content, no block of its folder), the `publish` meets the content as it is, so it is dry-run
+on its own: a `conflict` where the version is published already and no block draft goes along, as the run says.
 
 **Editors' assistants** ([MCP server for editors](#mcp-server-for-editors)) follow the same rules, as the editor: a new
 block needs Edit and Create on the content (Create on its parent for new content) and a block type they may create in

@@ -561,7 +561,21 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                 // Earlier steps change this content first; today's database doesn't have their changes yet.
                 if (PlanSimulation.OnExisting(resolvedStep, resolved, targets, existing, executor.UpdateExisting) is { } onExisting)
                 {
-                    return await SimulateAsync(step, onExisting, steps, existing, cancellationToken);
+                    var simulated = await SimulateAsync(step, onExisting, steps, existing, cancellationToken);
+                    if (simulated.Failure is not null || !PlanSimulation.ChangeNothing(onExisting, simulated.Result.Result as WriteOutput))
+                    {
+                        return simulated;
+                    }
+                    // The steps before the publish change nothing, so it meets the content as it is today: dry-run on its own,
+                    // as the run will publish it (a conflict where nothing is left to publish).
+                    var alone = await executor.RunAsync(op, dryRun: true, cancellationToken);
+                    if (alone.Output is WriteOutput { PendingDraft: { } pendingAlone } && !op.IncludeDraft)
+                    {
+                        throw WriteExecutor.UnconfirmedDraft(pendingAlone, op);
+                    }
+                    return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Valid, alone.Output,
+                        Warnings: [$"Operation(s) {string.Join(", ", onExisting.Folded!.Select(s => s.Index))} change nothing of {op.Refs.First()}, so this publish was dry-run on the content as it is.", .. alone.Warnings],
+                        Guid: op.ContentGuid), null);
                 }
                 (op, var moved) = await WhereItIsAsync(op, step.Index, steps, existing, cancellationToken);
                 if (moved is not null)
