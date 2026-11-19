@@ -34,7 +34,7 @@ public partial class CommandRunnerTests
     public async Task Each_error_code_exits_as_the_readme_says(ErrorCode code)
     {
         var name = ExitCodes.Name(code);
-        Assert.True(ReadmeExitCodes().TryGetValue(name, out var expected), $"README.md's exit code table has no `{name}`.");
+        Assert.True(ReadmeExitCodes().TryGetValue(name, out var expected), $"{ExitCodesPage}'s exit code table has no `{name}`.");
         if (code == ErrorCode.NeedsSelection && DatabasePrompt.CanAsk)
         {
             // On a real terminal CommandRunner asks which database to use instead of failing; never under a test runner.
@@ -177,12 +177,15 @@ public partial class CommandRunnerTests
         Assert.Equal("usage", run.Error().GetProperty("code").GetString());
     }
 
-    /// <summary>The exit code table in README.md ("Output and exit codes"): error code name to exit code.</summary>
+    /// <summary>Where the reference documents exit codes.</summary>
+    private const string ExitCodesPage = "docs/reference/cli/output.md";
+
+    /// <summary>The exit code table in the reference ("Output and exit codes"): error code name to exit code.</summary>
     private static Dictionary<string, int> ReadmeExitCodes()
     {
-        var readme = File.ReadAllText(Path.Combine(Opticli.RepositoryRoot(), "README.md"));
+        var readme = File.ReadAllText(Path.Combine(Opticli.RepositoryRoot(), ExitCodesPage));
         var section = readme.IndexOf("## Output and exit codes", StringComparison.Ordinal);
-        Assert.True(section >= 0, "README.md has no \"Output and exit codes\" section.");
+        Assert.True(section >= 0, $"{ExitCodesPage} has no \"Output and exit codes\" section.");
         var next = readme.IndexOf("\n## ", section + 1, StringComparison.Ordinal);
         var text = readme[section..(next < 0 ? readme.Length : next)];
 
@@ -192,7 +195,7 @@ public partial class CommandRunnerTests
             var exit = int.Parse(row.Groups["exit"].Value, System.Globalization.CultureInfo.InvariantCulture);
             foreach (Match code in Code().Matches(row.Groups["codes"].Value))
             {
-                Assert.True(table.TryAdd(code.Groups[1].Value, exit), $"README.md lists `{code.Groups[1].Value}` twice.");
+                Assert.True(table.TryAdd(code.Groups[1].Value, exit), $"{ExitCodesPage} lists `{code.Groups[1].Value}` twice.");
             }
         }
         Assert.NotEmpty(table);

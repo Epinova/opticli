@@ -135,7 +135,7 @@ internal static class Opticli
         return new Run(process.ExitCode, await stdout, await stderr);
     }
 
-    /// <summary>The repository root (where opticli.slnx is), for the README and the skill files.</summary>
+    /// <summary>The repository root (where opticli.slnx is), for the reference docs and the skill files.</summary>
     public static string RepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
