@@ -834,6 +834,58 @@ public sealed class SharedAreaBlockIntegrationTests
     }
 
     [InlineBlockModeFact(InlineBlockModes.Shared)]
+    public async Task A_sealed_run_leaves_a_named_block_someone_else_saved_a_draft_and_goes_on()
+    {
+        await using var alloy = await Alloy.StartAsync();
+        if (alloy is null)
+        {
+            return;
+        }
+        var page = await alloy.PageAsync("sealed named", Alloy.Area(alloy.Teaser("Intro", name: "Intro")));
+        await alloy.RunAsync(new PublishOperation(page));
+        var added = await alloy.RunAsync(new SetOperation(page, Alloy.Area(alloy.Teaser("Intro", name: "Intro"), alloy.Teaser("Block by a colleague", name: "Extra"))));
+        var extraDraft = Assert.Single(added.SharedBlocks!, b => b.Action == SharedBlockActions.Created).Ref!;
+        var extra = Id(ContentId(extraDraft));
+        if (!await alloy.Site.HandOverAsync(extraDraft, CancellationToken.None))
+        {
+            return;
+        }
+        // As a sealed apply (and its seal's dry run) runs it: the plan names the colleague's block, which stays a draft.
+        var sealedWrites = new WriteExecutor(alloy.Site.Session, _ => Task.FromResult(alloy.Site.Agent)) { Sealed = true };
+        var runner = new PlanRunner(alloy.Site.Session, sealedWrites, Path.GetTempPath());
+        var plan = WritePlan.Parse($$$"""
+            {"operations": [
+              {"op": "set", "ref": "{{{page}}}", "properties": {"MetaDescription": "Changed by the run"}},
+              {"op": "publish", "ref": "{{{page}}}", "withBlocks": ["{{{extra}}}"]}
+            ]}
+            """);
+        var dry = await runner.RunAsync(plan, dryRun: true, publishAll: false, CancellationToken.None);
+        var run = await runner.RunAsync(plan, dryRun: false, publishAll: false, CancellationToken.None);
+        Assert.All(run.Operations, o => Assert.Equal(PlanStepStatus.Saved, o.Status));
+        foreach (var step in new[] { dry.Operations[1], run.Operations[1] })
+        {
+            Assert.NotEqual(PlanStepStatus.Invalid, step.Status);
+            Assert.Empty(Live(step));
+            Assert.Contains("so it stays a draft although the publish names it: a sealed apply to production never puts someone else's unpublished changes live",
+                Assert.Single(Warnings(step), w => w.Contains("('Extra')")));
+        }
+        Assert.Equal("checkedOut", await alloy.StatusAsync(extraDraft));
+
+        // The page published already and only that block named: nothing is published, and the step is unchanged rather than
+        // failing the run half-way, dry run alike.
+        var blocksOnly = WritePlan.Parse($$$"""{"operations": [{"op": "publish", "ref": "{{{page}}}", "withBlocks": ["{{{extra}}}"]}]}""");
+        foreach (var dryRun in new[] { true, false })
+        {
+            var step = Assert.Single((await runner.RunAsync(blocksOnly, dryRun, publishAll: false, CancellationToken.None)).Operations);
+            Assert.Equal(dryRun ? PlanStepStatus.Valid : PlanStepStatus.Unchanged, step.Status);
+            Assert.Empty(Live(step));
+            Assert.Single(Warnings(step), w => w.Contains("('Extra')"));
+        }
+        Assert.Equal("checkedOut", await alloy.StatusAsync(extraDraft));
+        Assert.DoesNotContain("Block by a colleague", await alloy.RenderAsync(page));
+    }
+
+    [InlineBlockModeFact(InlineBlockModes.Shared)]
     public async Task A_project_write_marked_ready_takes_its_blocks_along_and_the_projects_publish_puts_them_live()
     {
         await using var alloy = await Alloy.StartAsync();

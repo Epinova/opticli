@@ -464,7 +464,11 @@ option (the seal's are used), and:
    site while it runs in `Development` with the write login;
 7. checks the plan against production (a dry run of every step), checks production once more, right before the first
    save, and applies it. A publish that would put someone else's unpublished changes live is refused, as everywhere
-   (no `--include-draft`).
+   (no `--include-draft`). Where the site makes new area blocks shared, a block a `publish` step names (`withBlocks`)
+   whose latest version is a draft someone else saved stays a draft too, with a `warning`: in a sealed run naming a
+   block takes along only the run's own drafts of it, never a production editor's (sealing's dry run does the same).
+   When that leaves a publish of content published already with nothing to publish, the step is `unchanged` rather
+   than a `conflict`, so the run doesn't stop half-way.
 
 The result says whether production still needs a restart (`restartNeeded`; see the event bus below), and lists every
 uploaded file as found in production's blob storage (`media`).
@@ -906,8 +910,9 @@ block whose latest draft someone else saved stays a draft unless the publish nam
 published, with a `warning` that says who saved it and how to name it (`--with-block`, `withBlocks`, `blocks`):
 `--include-draft` confirms someone else's draft of the content, not of its blocks. So an editor who agrees to replace
 one colleague's draft of a block (a takeover, above) doesn't put another colleague's draft of another block live with
-the same `--include-draft`. A block the write itself takes over is its own change by then and goes along. Also left as
-drafts, each with a `warning`, named or not: a block under
+the same `--include-draft`. A block the write itself takes over is its own change by then and goes along. A sealed
+apply to production never takes someone else's block draft along, named or not ([Writing to
+production](#writing-to-production)). Also left as drafts, each with a `warning`, named or not: a block under
 an approval sequence, one that fails validation, and for an editor one they may not publish. The edit UI's own Publish
 publishes the page alone. A block left a draft once the content is published goes live by its own ref (`publish
 <block>`), or named in a publish of the content (`publish <content> --with-block <block>`, which then publishes just

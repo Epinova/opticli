@@ -118,6 +118,7 @@ internal static class Sealing
 
         // The plan's dry run against the local site, exactly as apply does it (and the sealed run will against production).
         var writes = context.Writes(local, updateExisting: options.UpdateExisting, ask: false);
+        writes.Sealed = true;
         var allowedTypes = new AllowedTypesCheck(local.Model, () => CSharpSourceIndex.Build(project.SourceRoot));
         await new PlanRunner(local, writes, plan.Directory, allowOutside: false, allowedTypes, options.RequestApproval) { Files = plan, MovesFirst = options.MovesFirst }
             .RunAsync(plan.Plan, dryRun: true, options.Publish, cancellationToken);

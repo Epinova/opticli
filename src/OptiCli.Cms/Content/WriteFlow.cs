@@ -84,11 +84,12 @@ internal sealed class WriteFlow
     /// <param name="inProject">For a project publish: the project's own items, which are left to it (<see cref="SharedAreaBlocks.PublishAlong"/>).</param>
     /// <param name="choice">Which live blocks' drafts go along and which blocks stay behind (<see cref="Choice"/>); null: only blocks never published.</param>
     /// <param name="nameable">Gets each block left behind because it wasn't named (<see cref="SharedAreaBlocks.Nameable"/>).</param>
+    /// <param name="keptOthers">Gets each named block a sealed run left behind as someone else's draft (<see cref="SharedAreaBlocks.AlongChoice.KeepOthers"/>).</param>
     public List<SharedBlockResult>? PublishAlong(IContent published, SaveAction action, bool dryRun, List<ValidationIssue> warnings,
         Func<int, System.Globalization.CultureInfo?, bool?>? inProject = null, DateTime? at = null, SharedAreaBlocks.AlongChoice? choice = null,
-        List<SharedAreaBlocks.Nameable>? nameable = null) =>
+        List<SharedAreaBlocks.Nameable>? nameable = null, List<int>? keptOthers = null) =>
         Writer.Shared is { } shared && Kind(action) is SaveAction.Publish or SaveAction.Schedule
-            ? shared.PublishAlong(published, Kind(action), at ?? (published as IVersionable)?.StartPublish, dryRun, warnings, inProject, choice, nameable)
+            ? shared.PublishAlong(published, Kind(action), at ?? (published as IVersionable)?.StartPublish, dryRun, warnings, inProject, choice, nameable, keptOthers)
             : null;
 
     /// <summary>

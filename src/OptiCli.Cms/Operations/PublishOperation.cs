@@ -67,6 +67,7 @@ internal static class PublishOperation
             block => $"Pass blocks: [\"{block}\"] to publish that draft with the content, or publish the block on its own.")) with
         {
             WrittenVersions = flow.Writer.Shared is null ? new HashSet<(int, int)>() : SharedAreaBlocks.AlongChoice.Versions(body.WrittenBlocks),
+            KeepOthers = body.KeepOthersBlockDrafts,
         };
         // A review publishes no blocks along: naming them there is refused, not ignored.
         flow.RequireNoneNamedForReview(choice, action, WithName(call), WithoutName(call));
@@ -213,7 +214,24 @@ internal static class PublishOperation
         var at = body.PublishAt?.ToLocalTime();
         var planned = new List<ValidationIssue>();
         var nameable = new List<SharedAreaBlocks.Nameable>();
-        var along = flow.PublishAlong(version, action, dryRun: true, planned, at: at, choice: choice, nameable: nameable) ?? [];
+        var keptOthers = new List<int>();
+        var along = flow.PublishAlong(version, action, dryRun: true, planned, at: at, choice: choice, nameable: nameable, keptOthers: keptOthers) ?? [];
+        if (along.Count == 0 && keptOthers.Count > 0)
+        {
+            // A sealed apply named blocks whose drafts someone else saved in production: they stay, and so does everything
+            // else. The run goes on (nothing is published, the step is unchanged) rather than stop half-way in production.
+            planned.Insert(0, new ValidationIssue(null,
+                $"{AlreadyPublished(version)} Nothing {(body.DryRun ? "would be" : "was")} published: the blocks the publish names are drafts someone else saved, which a sealed apply leaves as they are.",
+                "info"));
+            return new WriteResult
+            {
+                Content = ContentSummaries.Describe(version, flow.Types),
+                DryRun = body.DryRun,
+                Valid = true,
+                BaseVersion = versionId,
+                Validation = planned,
+            };
+        }
         if (along.Count == 0)
         {
             // The blocks it could name, listed once; the warnings about any other block (a named one that can't go) as they are.

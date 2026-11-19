@@ -150,6 +150,10 @@ public sealed record DraftRequest
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<string>? WithoutBlocks { get; init; }
 
+    /// <summary>As <see cref="PublishRequest.KeepOthersBlockDrafts"/>, with <see cref="WithBlocks"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool KeepOthersBlockDrafts { get; init; }
+
     /// <summary>
     /// Where the site makes shared area blocks: whether a write that saves a new version of a block of the content's own
     /// "For this page" folder (an item of a whole-area write taking it over) may do so over a draft someone else saved,
@@ -568,6 +572,10 @@ public sealed record LanguageBranchRequest
     /// <summary>As <see cref="WithBlocks"/>, for <see cref="PublishRequest.WithoutBlocks"/>.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<string>? WithoutBlocks { get; init; }
+
+    /// <summary>As <see cref="PublishRequest.KeepOthersBlockDrafts"/>, with <see cref="WithBlocks"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool KeepOthersBlockDrafts { get; init; }
 }
 
 /// <summary>Body of <see cref="AgentRoutes.RemoveLanguage"/>.</summary>
@@ -652,6 +660,16 @@ public sealed record PublishRequest
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<string>? WrittenBlocks { get; init; }
+
+    /// <summary>
+    /// A sealed apply to production (and its seal's dry run): a block named in <see cref="WithBlocks"/> whose latest version
+    /// is a draft someone else saved stays a draft all the same, with a warning, as a sealed run never puts someone else's
+    /// unpublished changes live. When that leaves nothing to publish of content published already, the result says so
+    /// (nothing published) instead of a <c>conflict</c>, so the run goes on. The CLI sends it only then, with
+    /// <see cref="WithBlocks"/>. Left out when false: an older agent refuses fields it doesn't know.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool KeepOthersBlockDrafts { get; init; }
 }
 
 /// <summary>Body of <see cref="AgentRoutes.Unpublish"/> (may be empty).</summary>

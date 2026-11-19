@@ -1672,6 +1672,56 @@ public class SharedAreaBlockTests
     }
 
     [Fact]
+    public void In_a_sealed_run_a_named_block_someone_else_saved_stays_a_draft_and_the_run_goes_on()
+    {
+        // A sealed apply to production never puts someone else's unpublished changes live: naming their block there takes
+        // only the run's own drafts along, and leaves theirs with a warning, in the dry run as in the run.
+        var site = new Site();
+        var page = site.Page(folder: true);
+        var folder = site.Folder(page).ContentLink;
+        site.Store.SavedBy = "someone";
+        var live = LiveWithDraft(site, folder, "Live", "Live", "Their change");
+        site.Store.SavedBy = AgentProtocol.PrincipalName;
+        var mine = LiveWithDraft(site, folder, "Mine", "Mine", "My change");
+        var theirs = site.Block(folder, "Theirs", "Theirs", VersionStatus.CheckedOut, savedBy: "someone");
+        page = OwnerOf(site, live, Ref(live), Ref(mine), Ref(theirs));
+        var draft = (Page)((IReadOnly)site.Store.Latest(page.ContentLink.ID)).CreateWritableClone();
+        draft.Property["Title"].Value = "Changed";
+        site.Store.Save(draft, SaveAction.Save | SaveAction.ForceNewVersion, null);
+        site.Store.Saves.Clear();
+        var sealedRun = new PublishRequest { WithBlocks = [Id(live), Id(mine), Id(theirs)], KeepOthersBlockDrafts = true };
+
+        var dry = Publish(site, page, sealedRun with { DryRun = true });
+        Assert.Empty(site.Store.Saves);
+        var result = Publish(site, page, sealedRun);
+        foreach (var shown in new[] { dry, result })
+        {
+            Assert.Equal([mine.ContentLink.ID], shown.SharedBlocks!.Select(b => ContentReference.Parse(b.Ref!).ID));
+            var kept = shown.Validation!.Where(i => i.Severity == "warning").ToList();
+            Assert.Equal(["Area[0]", "Area[2]"], kept.Select(i => i.Property).Order());
+            Assert.All(kept, i => Assert.Contains("is a draft someone saved, so it stays a draft although the publish names it: a sealed apply to production never puts someone else's unpublished changes live", i.Message));
+        }
+        Assert.True(result.Published);
+        Assert.Equal((VersionStatus.CheckedOut, VersionStatus.Published, VersionStatus.CheckedOut), (StatusOf(site, live), StatusOf(site, mine), StatusOf(site, theirs)));
+
+        // The content published already, and only their blocks named: nothing is published, and the run goes on (no
+        // conflict), dry run alike. Outside a sealed run, naming them publishes them.
+        site.Store.Saves.Clear();
+        foreach (var dryRun in new[] { true, false })
+        {
+            var blocksOnly = Publish(site, page, new PublishRequest { WithBlocks = [Id(live), Id(theirs)], KeepOthersBlockDrafts = true, DryRun = dryRun });
+            Assert.False(blocksOnly.Published);
+            Assert.Null(blocksOnly.SharedBlocks);
+            Assert.Contains("Nothing ", Assert.Single(blocksOnly.Validation!, i => i.Severity == "info").Message);
+            Assert.Equal(2, blocksOnly.Validation!.Count(i => i.Severity == "warning"));
+        }
+        Assert.Empty(site.Store.Saves);
+        Assert.Throws<AgentException>(() => Publish(site, page, new PublishRequest { KeepOthersBlockDrafts = true }));
+        var named = Publish(site, page, new PublishRequest { WithBlocks = [Id(live), Id(theirs)] });
+        Assert.Equal([live.ContentLink.ID, theirs.ContentLink.ID], named.SharedBlocks!.Select(b => ContentReference.Parse(b.Ref!).ID).Order());
+    }
+
+    [Fact]
     public void A_live_blocks_newer_draft_someone_else_saved_goes_along_when_named_also_with_the_content_published_already()
     {
         var site = new Site();

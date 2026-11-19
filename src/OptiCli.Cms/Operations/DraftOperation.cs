@@ -26,7 +26,7 @@ internal static class DraftOperation
         if (body.WithBlocks is { Count: > 0 } || body.WithoutBlocks is { Count: > 0 })
         {
             // A plan's publish step dry-run with the steps before it: the blocks it names, checked in the save.
-            flow.Named = flow.Choice(body.WithBlocks, body.WithoutBlocks, "withBlocks", "withoutBlocks", null);
+            flow.Named = flow.Choice(body.WithBlocks, body.WithoutBlocks, "withBlocks", "withoutBlocks", null) with { KeepOthers = body.KeepOthersBlockDrafts };
         }
         var language = flow.Locator.ContentLanguage(flow.Locator.LoadAnyLanguage(link), body.Lang);
         // CMS 13: the content variation asked for, or the one the ref's version belongs to. Its versions are a branch of

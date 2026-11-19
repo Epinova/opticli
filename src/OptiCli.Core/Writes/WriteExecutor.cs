@@ -73,6 +73,13 @@ public sealed class WriteExecutor(
     /// <summary>Whether an uploaded file lands in the project's file blob folder (shown in the result); false when the site writes to production's blob storage.</summary>
     public bool BlobsOnDisk { get; init; } = true;
 
+    /// <summary>
+    /// A sealed apply to production, or its seal's dry run: a block a publish names (<c>withBlocks</c>) whose draft someone
+    /// else saved stays a draft, as a sealed run never puts someone else's unpublished changes live
+    /// (<see cref="PublishRequest.KeepOthersBlockDrafts"/>).
+    /// </summary>
+    public bool Sealed { get; set; }
+
     public const string AgentSource = "agent";
     public const string DbSource = "db";
 
@@ -205,6 +212,7 @@ public sealed class WriteExecutor(
             IntoVersion = await IntoVersionAsync(op.IntoVersion, target, language, baseVersion, op.From is not null || op.BaseVersion is not null, op.Variation, cancellationToken),
             WithBlocks = await BlockRefsAsync(op.WithBlocks, "withBlocks", cancellationToken),
             WithoutBlocks = await BlockRefsAsync(op.WithoutBlocks, "withoutBlocks", cancellationToken),
+            KeepOthersBlockDrafts = Sealed && op.WithBlocks is { Count: > 0 },
             // Only where it differs, and only to an agent that takes over blocks (one that makes shared area blocks).
             IncludeBlockDraft = op.IncludeBlockDraft is { } blockDraft && blockDraft != op.IncludeDraft
                 && await InlineBlocksAsync(cancellationToken) == InlineBlockModes.Shared ? blockDraft : null,
@@ -729,6 +737,7 @@ public sealed class WriteExecutor(
                 DryRun = dryRun,
                 WithBlocks = await BlockRefsAsync(op.PublishWithBlocks, "withBlocks", cancellationToken),
                 WithoutBlocks = await BlockRefsAsync(op.PublishWithoutBlocks, "withoutBlocks", cancellationToken),
+                KeepOthersBlockDrafts = Sealed && op.PublishWithBlocks is { Count: > 0 },
             };
             if (request.WithBlocks is not null || request.WithoutBlocks is not null)
             {
@@ -875,6 +884,7 @@ public sealed class WriteExecutor(
             WithBlocks = await BlockRefsAsync(op.WithBlocks, "--with-block", cancellationToken),
             WithoutBlocks = await BlockRefsAsync(op.WithoutBlocks, "--without-block", cancellationToken),
             WrittenBlocks = op.WrittenBlocks is { Count: > 0 } written ? written : null,
+            KeepOthersBlockDrafts = Sealed && op.WithBlocks is { Count: > 0 },
         };
         if (request.WithBlocks is not null || request.WithoutBlocks is not null)
         {

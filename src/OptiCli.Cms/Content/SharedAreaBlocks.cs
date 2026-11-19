@@ -669,6 +669,14 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
         /// </summary>
         public bool NamedOnly { get; init; }
 
+        /// <summary>
+        /// A sealed apply to production (<see cref="PublishRequest.KeepOthersBlockDrafts"/>): a block named in
+        /// <see cref="With"/> whose latest version is a draft someone else saved stays a draft all the same, with a warning.
+        /// A sealed run never puts someone else's unpublished changes live (it refuses <c>includeDraft</c> too), so naming a
+        /// block there confirms only the run's own drafts of it.
+        /// </summary>
+        public bool KeepOthers { get; init; }
+
         public bool Names => With.Count > 0 || Without.Count > 0;
 
         /// <summary>Whether the publish wrote the block itself: the write that publishes changed it, or an earlier step of the plan run saved its latest version.</summary>
@@ -768,8 +776,9 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     /// </param>
     /// <param name="choice">Which live blocks' drafts go along, and which blocks stay behind; null: <see cref="AlongChoice.Default"/>.</param>
     /// <param name="nameable">Gets each block left behind because it wasn't named (and the publish didn't write it).</param>
+    /// <param name="keptOthers">Gets each named block left behind as someone else's draft in a sealed run (<see cref="AlongChoice.KeepOthers"/>).</param>
     public List<SharedBlockResult> PublishAlong(IContent published, SaveAction kind, DateTime? at, bool dryRun, List<ValidationIssue> warnings,
-        Func<int, CultureInfo?, bool?>? inProject = null, AlongChoice? choice = null, List<Nameable>? nameable = null)
+        Func<int, CultureInfo?, bool?>? inProject = null, AlongChoice? choice = null, List<Nameable>? nameable = null, List<int>? keptOthers = null)
     {
         choice ??= AlongChoice.Default;
         var results = new List<SharedBlockResult>();
@@ -813,12 +822,21 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
             // Someone else's draft goes along only when named: naming the block is the confirmation (decision 15 of the plan),
             // includeDraft isn't. A block the write changes itself (or an earlier step of the plan run saved) goes along as its
             // own latest version; a dry run still sees the draft that version will replace, which a write gets past only with
-            // that draft confirmed (RequireOwnDraft).
-            if (!choice.With.Contains(id) && !choice.Wrote(id, latest.ContentLink) && !PendingDrafts.SavedBy(latest.SavedBy, call.UserName))
+            // that draft confirmed (RequireOwnDraft). In a sealed apply to production, not even naming it puts their draft live.
+            if ((!choice.With.Contains(id) || choice.KeepOthers) && !choice.Wrote(id, latest.ContentLink) && !PendingDrafts.SavedBy(latest.SavedBy, call.UserName))
             {
                 var reference = id.ToString(CultureInfo.InvariantCulture);
+                var whose = string.IsNullOrWhiteSpace(latest.SavedBy) ? "saved without a user name" : $"{latest.SavedBy} saved";
+                if (choice.With.Contains(id))
+                {
+                    keptOthers?.Add(id);
+                    warnings.Add(new ValidationIssue(path,
+                        $"{what} is a draft {whose}, so it stays a draft although the publish names it: a sealed apply to production never puts someone else's unpublished changes live. Publish it in production's edit UI if those changes should go live.",
+                        "warning"));
+                    continue;
+                }
                 warnings.Add(new ValidationIssue(path,
-                    $"{what} is a draft {(string.IsNullOrWhiteSpace(latest.SavedBy) ? "saved without a user name" : $"{latest.SavedBy} saved")}, so it stays a draft: someone else's changes to a block go live with the content only when the publish names the block. {choice.HowToInclude?.Invoke(reference) ?? HowToInclude(published, reference)}",
+                    $"{what} is a draft {whose}, so it stays a draft: someone else's changes to a block go live with the content only when the publish names the block. {choice.HowToInclude?.Invoke(reference) ?? HowToInclude(published, reference)}",
                     "warning"));
                 continue;
             }

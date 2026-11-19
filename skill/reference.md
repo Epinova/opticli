@@ -1076,6 +1076,9 @@ of a reference property), every `create`/`block`/`upload` with a fixed GUID (`gu
 Not `delete`, `unpublish`, `access`, `discard`, `translate` with `remove`, `includeDraft`, `force`,
 `baseVersion`, a version in `publish` or `from` (`"from": "published"` is fine): `refused`, exit 3,
 `details.reason: "sealedPlan"`, `details.problems[]` lists each.
+Where the site makes new area blocks shared, a `publish` step's `withBlocks` takes along only the run's own drafts of
+those blocks in a sealed run: a block whose latest version is a draft someone else saved stays a draft, with a warning,
+in sealing's dry run and in the run (a publish of content published already left with nothing is then `unchanged`).
 
 Sealing dry-runs the plan against the local site, and fails (nothing sealed) when production's content model differs from
 the local database's, or the local site's code differs from its own database: `conflict`, exit 5,

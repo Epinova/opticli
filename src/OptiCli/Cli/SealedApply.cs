@@ -181,6 +181,7 @@ internal static class SealedApply
                         // Uploads send the bytes the run read and hashed, never the file on disk again.
                         Files = plan,
                         BlobsOnDisk = providers?.Providers.Blobs is null,
+                        Sealed = true,
                     };
                     var runner = new PlanRunner(session, executor, plan.Directory, allowOutside: false, allowedTypes, seal.Options.RequestApproval)
                     {

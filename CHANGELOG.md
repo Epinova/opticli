@@ -6,8 +6,9 @@ again to update the skill.
 ## 0.35.0 (unreleased)
 
 New blocks in a ContentArea are made as the site's edit UI makes them. **A change for sites whose edit UI makes no
-inline blocks** (`UIOptions.InlineBlocksInContentAreaEnabled` off: Optimizely's default on CMS 12, and on CMS 13.0.0): opticli and the MCP module made an inline block there with only a warning, which such a site may not
-render (a page built so could fail with HTTP 500). There they now make a shared block in the page's "For this page"
+inline blocks** (`UIOptions.InlineBlocksInContentAreaEnabled` off: Optimizely's default on CMS 12, and on CMS 13.0.0):
+opticli and the MCP module made an inline block there with only a warning, which such a site may not render (a page
+built so could fail with HTTP 500). There they now make a shared block in the page's "For this page"
 folder, as the edit UI's "Create a new block" does. Sites with the setting on (CMS 13's default from 13.0.2) work as
 before. See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new-blocks-in-a-contentarea).
 
@@ -36,13 +37,15 @@ before. See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new
   a ref that isn't a block of the content's own folder that it shows is refused. A write that publishes takes the
   blocks it made or changed along by itself. A block whose draft someone else saved goes along only when
   `--with-block` names it (a plan's `withBlocks`): `--include-draft` doesn't take it along, so agreeing to one
-  colleague's change never puts another's live unasked. A block under an approval sequence is left with a warning. A project's own items follow the project's rules. Naming blocks for a
-  publish that goes for review is refused. Of content published already, `publish` puts live just the block drafts it
-  names with `--with-block` (never-published ones too) and, in a plan, those the run saved, so `publish <page>
-  --with-block <block>` publishes a block's draft after the page went live without it; a never-published block it
-  doesn't name stays back there (someone probably kept it back). With none it is a `conflict` whose hint lists the
-  blocks with drafts it could name; a plan run again with `--update-existing` reports such a publish `unchanged`. A
-  write with `--publish` that changes only blocks takes along only its own.
+  colleague's change never puts another's live unasked. A sealed apply to production leaves such a block a draft even
+  when named (sealing's dry run alike); a publish left with nothing to publish there is `unchanged`, not a conflict,
+  so the run goes on. A block under an approval sequence is left with a warning, and a project's own items follow the
+  project's rules. Naming blocks for a publish that goes for review is refused. Of content published already,
+  `publish` puts live just the block drafts it names with `--with-block` (never-published ones too) and, in a plan,
+  those the run saved, so `publish <page> --with-block <block>` publishes a block's draft after the page went live
+  without it; a never-published block it doesn't name stays back there (someone probably kept it back). With none it
+  is a `conflict` whose hint lists the blocks with drafts it could name; a plan run again with `--update-existing`
+  reports such a publish `unchanged`. A write with `--publish` that changes only blocks takes along only its own.
 - **A write won't save a block's new version over someone else's draft unasked.** Where a whole area written again
   takes over a block of the content's own folder whose latest version is a draft someone else saved, the write would
   drop their changes from the block: it is a `conflict` (exit 5) with `details.reason: "pendingDraft"` and
@@ -63,10 +66,9 @@ before. See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new
   blocks it would publish along and those it would leave behind, saving nothing. Elsewhere publish dry runs are
   answered from the database as before.
 - **Review requests with never-published blocks are refused**, as the approval would publish the page alone (a live
-  block with a newer draft doesn't count): the hint says
-  to save into a CMS project, or to publish the blocks first. A write into a project with `--ready` or
-  `--request-approval` takes its new and changed blocks along: marked ready, or sent for review where an approval
-  sequence applies.
+  block with a newer draft doesn't count): the hint says to save into a CMS project, or to publish the blocks first.
+  A write into a project with `--ready` or `--request-approval` takes its new and changed blocks along: marked ready,
+  or sent for review where an approval sequence applies.
 - **Plans: `id` on an `area add` with `type`** names the block it makes, so later steps change it as `$id` and
   `created` lists it; a run again with `--update-existing` finds it. The dry run refuses a later step that names a
   planned shared block by its position, an `id` a later step uses on a site that makes inline blocks, and one whose add

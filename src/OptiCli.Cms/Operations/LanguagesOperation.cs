@@ -16,7 +16,7 @@ internal static class LanguagesOperation
         if (body.WithBlocks is { Count: > 0 } || body.WithoutBlocks is { Count: > 0 })
         {
             // A plan's publish step of the new branch dry-run with the translate before it: the blocks it names, checked in the save.
-            flow.Named = flow.Choice(body.WithBlocks, body.WithoutBlocks, "withBlocks", "withoutBlocks", null);
+            flow.Named = flow.Choice(body.WithBlocks, body.WithoutBlocks, "withBlocks", "withoutBlocks", null) with { KeepOthers = body.KeepOthersBlockDrafts };
         }
         var culture = flow.Locator.EnabledLanguage(body.Lang);
         call.RequireLanguageAccess(culture);
