@@ -223,6 +223,59 @@ public sealed class SharedAreaBlockTests(SharedSessions sessions)
     }
 
     [McpInlineBlockModeFact(Shared)]
+    public async Task Replacing_a_colleagues_block_draft_with_include_draft_doesnt_publish_their_draft_of_another_block_until_named()
+    {
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var admin = await sessions.ForAsync(TestUsers.Admin);
+        var start = WritingTests.Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        var made = await editor.OkAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = start, properties = new { MainContentArea = new[] { Block("Intro original text", "Intro") } } });
+        var page = WritingTests.Id(made.GetProperty("content"));
+        try
+        {
+            var intro = SharedBlocks(made)[0].GetProperty("ref").GetString()!.Split('_')[0];
+            await editor.OkAsync("publish_content", new { reference = page });
+            // A new block, never published, that the colleague then changes; and the colleague's change of the live block.
+            var added = await editor.OkAsync("update_content", new { reference = page, areaOps = new[] { new { op = "add", property = "MainContentArea", type = "EditorialBlock", name = "Extra", values = new { MainBody = "<p>Extra text</p>" } } } });
+            var extra = SharedBlocks(added)[0].GetProperty("ref").GetString()!.Split('_')[0];
+            foreach (var (block, text) in new[] { (intro, "Colleague's intro text"), (extra, "Colleague's extra text") })
+            {
+                var latest = (await admin.OkAsync("get_content", new { reference = block, version = "latest" })).GetProperty("version").GetInt32();
+                await admin.OkAsync("update_content", new { reference = block, properties = new { MainBody = $"<p>{text}</p>" }, baseVersion = latest });
+            }
+            var area = new { MainContentArea = new object[] { Block("Editor's text", "Intro"), new { @ref = extra } } };
+
+            // The editor agreed to replace the colleague's draft of Intro (includeDraft) and publishes: Intro goes live as the
+            // write's own version, the colleague's draft of Extra stays a draft, dry run and run alike, with a warning naming
+            // who saved it and how to name it in blocks.
+            JsonElement? result = null;
+            foreach (var dryRun in new[] { true, false })
+            {
+                var shown = await editor.OkAsync("update_content", new { reference = page, name = ScratchName(), properties = area, includeDraft = true, publish = true, dryRun });
+                Assert.Equal([intro], SharedBlocks(shown).Where(b => b.GetProperty("status").GetString() == "published").Select(b => b.GetProperty("ref").GetString()!.Split('_')[0]));
+                var left = Assert.Single(shown.GetProperty("validation").EnumerateArray(), v => v.GetProperty("property").GetString() == "MainContentArea[1]").GetProperty("message").GetString()!;
+                Assert.Contains($"('Extra') at MainContentArea[1] is a draft {TestUsers.Admin} saved, so it stays a draft", left);
+                Assert.Contains($"blocks: [\"{extra}\"]", left);
+                Assert.Equal("checkedOut", Status(await editor.OkAsync("get_content", new { reference = extra, version = "latest" })));
+                result = shown;
+            }
+            Assert.Equal("published", Status(await editor.OkAsync("get_content", new { reference = intro, version = "latest" })));
+            var html = await RenderAsync(result!.Value);
+            Assert.Contains("Editor's text", html);
+            Assert.DoesNotContain("Colleague's extra text", html);
+
+            // Named in blocks, the colleague's draft goes live (the page is live already, so it alone).
+            var named = await editor.OkAsync("publish_content", new { reference = page, blocks = new[] { extra } });
+            Assert.Equal([extra], SharedBlocks(named).Select(b => b.GetProperty("ref").GetString()!.Split('_')[0]));
+            Assert.Equal("published", Status(await editor.OkAsync("get_content", new { reference = extra, version = "latest" })));
+            Assert.Contains("Colleague's extra text", await RenderAsync(named));
+        }
+        finally
+        {
+            await WritingTests.DeleteAsync(editor, page);
+        }
+    }
+
+    [McpInlineBlockModeFact(Shared)]
     public async Task An_editor_who_may_not_create_content_on_the_page_gets_no_new_block_in_its_area()
     {
         // The product editor may edit the hidden page, not create content there (McpFixture.cs): the edit UI offers no

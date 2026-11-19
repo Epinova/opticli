@@ -771,6 +771,69 @@ public sealed class SharedAreaBlockIntegrationTests
     }
 
     [InlineBlockModeFact(InlineBlockModes.Shared)]
+    public async Task Replacing_one_colleagues_block_draft_doesnt_publish_another_colleagues_block_draft_until_it_is_named()
+    {
+        await using var alloy = await Alloy.StartAsync();
+        if (alloy is null)
+        {
+            return;
+        }
+        const string ColleagueB = "colleague-b@example.com";
+        var page = await alloy.PageAsync("two colleagues", Alloy.Area(alloy.Teaser("Intro original", name: "Intro")));
+        var intro = Id(ContentId(Assert.Single((await alloy.RunAsync(new PublishOperation(page))).SharedBlocks!).Ref!));
+        // Colleague A's change of the live block Intro, and colleague B's new block Extra, never published.
+        var theirs = (await alloy.RunAsync(new SetOperation(intro, alloy.TeaserValues("Change by A")))).Version!;
+        var added = await alloy.RunAsync(new SetOperation(page, Alloy.Area(new JsonObject { ["ref"] = intro }, alloy.Teaser("Block by B", name: "Extra"))));
+        var extraDraft = Assert.Single(added.SharedBlocks!, b => b.Action == SharedBlockActions.Created).Ref!;
+        var extra = Id(ContentId(extraDraft));
+        if (!await alloy.Site.HandOverAsync(theirs, CancellationToken.None) || !await alloy.Site.HandOverAsync(extraDraft, CancellationToken.None, ColleagueB))
+        {
+            return;
+        }
+
+        // The editor agrees to replace A's draft of Intro (includeDraft on the step that writes the area, and on the publish
+        // too): Intro goes live as the run's own version, while B's draft of Extra stays a draft, dry run and run alike, with
+        // a warning that says whose it is and how to name it.
+        var whole = Alloy.Area(alloy.Teaser("Ours", name: "Intro"), new JsonObject { ["ref"] = extra });
+        whole["MetaDescription"] = "Changed by the editor";
+        var plan = WritePlan.Parse($$$"""
+            {"operations": [
+              {"op": "set", "ref": "{{{page}}}", "properties": {{{whole.ToJsonString()}}}, "includeDraft": true},
+              {"op": "publish", "ref": "{{{page}}}", "includeDraft": true}
+            ]}
+            """);
+        var runner = new PlanRunner(alloy.Site.Session, alloy.Writes, Path.GetTempPath());
+        var dry = await runner.RunAsync(plan, dryRun: true, publishAll: false, CancellationToken.None);
+        Assert.All(dry.Operations, o => Assert.NotEqual(PlanStepStatus.Invalid, o.Status));
+        Assert.Equal(extraDraft, (await Alloy.GetAsync(extra)).Version);
+        var run = await runner.RunAsync(plan, dryRun: false, publishAll: false, CancellationToken.None);
+        Assert.All(run.Operations, o => Assert.Equal(PlanStepStatus.Saved, o.Status));
+        foreach (var step in new[] { dry.Operations[1], run.Operations[1] })
+        {
+            Assert.Equal([intro], Live(step));
+            var left = Assert.Single(Warnings(step), w => w.Contains($"('Extra')"));
+            Assert.Contains($"is a draft {ColleagueB} saved, so it stays a draft", left);
+            Assert.Contains($"--with-block {extra}", left);
+        }
+        Assert.Equal(("published", "checkedOut"), (await alloy.StatusAsync((await Alloy.GetAsync(intro)).Version!), await alloy.StatusAsync(extraDraft)));
+        var html = await alloy.RenderAsync(page);
+        Assert.Contains("Ours", html);
+        Assert.DoesNotContain("Block by B", html);
+
+        // Named, B's draft goes live with the page (published already, so it alone); dry run alike.
+        var namedDry = await alloy.RunAsync(new PublishOperation(page) { WithBlocks = [extra] }, dryRun: true);
+        Assert.Equal("checkedOut", await alloy.StatusAsync(extraDraft));
+        var named = await alloy.RunAsync(new PublishOperation(page) { WithBlocks = [extra] });
+        foreach (var shown in new[] { namedDry, named })
+        {
+            Assert.Equal([extra], shown.SharedBlocks!.Select(b => Id(ContentId(b.Ref!))));
+        }
+        Assert.False(named.Published);
+        Assert.Equal("published", await alloy.StatusAsync(extraDraft));
+        Assert.Contains("Block by B", await alloy.RenderAsync(page));
+    }
+
+    [InlineBlockModeFact(InlineBlockModes.Shared)]
     public async Task A_project_write_marked_ready_takes_its_blocks_along_and_the_projects_publish_puts_them_live()
     {
         await using var alloy = await Alloy.StartAsync();
