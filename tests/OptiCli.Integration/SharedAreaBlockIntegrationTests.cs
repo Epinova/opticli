@@ -553,6 +553,51 @@ public sealed class SharedAreaBlockIntegrationTests
     }
 
     [InlineBlockModeFact(InlineBlockModes.Shared)]
+    public async Task A_projects_publish_takes_a_named_live_blocks_draft_along_and_keeps_a_named_new_block_back()
+    {
+        await using var alloy = await Alloy.StartAsync();
+        if (alloy is null)
+        {
+            return;
+        }
+        // A page published with its block; then a newer draft of that block, a new block never published (neither in the
+        // project), and the page's new draft in the project, marked ready.
+        var page = await alloy.PageAsync("project named", Alloy.Area(alloy.Teaser("Project live original", name: "Live")));
+        var first = await alloy.RunAsync(new PublishOperation(page));
+        var live = Id(ContentId(Assert.Single(first.SharedBlocks!).Ref!));
+        await alloy.RunAsync(new SetOperation(live, alloy.TeaserValues("Project live changed")));
+        var liveDraft = (await Alloy.GetAsync(live)).Version;
+        var added = await alloy.RunAsync(new AreaEdit(page, "MainContentArea", AreaOps.Add) { Type = "TeaserBlock", Name = "Fresh", Values = alloy.TeaserValues("Project fresh block") });
+        var fresh = Assert.Single(added.SharedBlocks!).Ref!;
+        var project = await alloy.ProjectAsync("project named");
+        await alloy.RunAsync(new SetOperation(page, null, alloy.Name("project named again")) { Project = project, Ready = true });
+
+        // Unnamed (dry run): the new block goes along, the live one stays behind with a warning naming the flag.
+        var dry = await alloy.Projects.PublishAsync(project, null, includeDraft: false, dryRun: true, confirm: null, CancellationToken.None);
+        var item = Assert.Single(dry.Published!);
+        Assert.Equal([ContentId(fresh)], item.SharedBlocks!.Select(b => ContentId(b.Ref!)));
+        Assert.Contains(item.Validation!, v => v.Severity == "warning" && v.Message.Contains("is published already")
+            && v.Message.Contains($"projects publish {project} --with-block {live}"));
+
+        // A block that isn't one of a ready item's own folder that it shows can't be named; nothing goes live.
+        var elsewhere = await Assert.ThrowsAsync<UsageException>(() => alloy.Projects.PublishAsync(project, null, includeDraft: false, dryRun: false, confirm: null,
+            CancellationToken.None, withBlocks: [alloy.Start]));
+        Assert.Contains("isn't a block of the content's own \"For this page\" folder", elsewhere.Message);
+        Assert.Equal("checkedOut", await alloy.StatusAsync(fresh));
+
+        // Named: the live block's draft goes live with the project, the new block stays a draft, as asked.
+        var published = await alloy.Projects.PublishAsync(project, null, includeDraft: false, dryRun: false, confirm: null, CancellationToken.None,
+            withBlocks: [live], withoutBlocks: [fresh]);
+        item = Assert.Single(published.Published!);
+        Assert.Equal([ContentId(live)], item.SharedBlocks!.Select(b => ContentId(b.Ref!)));
+        Assert.Contains(item.Validation!, v => v.Severity == "warning" && v.Message.Contains("stays a draft, as asked"));
+        Assert.Equal(("published", "checkedOut"), (await alloy.StatusAsync(liveDraft), await alloy.StatusAsync(fresh)));
+        var html = await alloy.RenderAsync(page);
+        Assert.Contains("Project live changed", html);
+        Assert.DoesNotContain("Project fresh block", html);
+    }
+
+    [InlineBlockModeFact(InlineBlockModes.Shared)]
     public async Task A_block_added_to_a_culture_specific_area_of_another_language_is_made_in_that_language()
     {
         await using var alloy = await Alloy.StartAsync();
