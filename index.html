@@ -354,6 +354,22 @@ await expect(page.getByText('Hi')).toBeVisible();
   </div>
   <article class="file">
     <ol class="releases">
+      <li><div class="v"><b>0.35.0</b><span>19 November 2026</span></div>
+        <ul>
+          <li><b>New blocks follow the site's edit UI:</b> where the site has
+            <code>UIOptions.InlineBlocksInContentAreaEnabled</code> off (Optimizely's default on CMS 12), a new block in a
+            ContentArea is now a shared block in the page's &ldquo;For this page&rdquo; folder, as an editor would make it,
+            instead of an inline block the site may not render. Inline blocks a page already has stay inline, and
+            writing an area again updates its blocks instead of making new ones. The result's <code>sharedBlocks</code>
+            gives each block's ref.</li>
+          <li><b>Publishing takes only what you mean:</b> a publish takes along the page's never-published blocks, but a
+            live block's newer draft, or a colleague's draft, goes live only when you name it
+            (<code>--with-block</code>, <code>blocks</code>). Replacing a colleague's block draft needs
+            <code>--include-draft</code>. <code>publish --dry-run</code> and <code>publish_content</code>'s new
+            <code>dryRun</code> show what goes live.</li>
+          <li><b>For editors:</b> a new guide,
+            <a href="guides/editors/add-blocks-to-a-page/">Add blocks to a page</a>.</li>
+        </ul></li>
       <li><div class="v"><b>0.34.2</b><span>18 November 2026</span></div>
         <ul>
           <li><b>Fixed in the Claude Desktop extension:</b> after a sign-in that wasn't finished, every later sign-in

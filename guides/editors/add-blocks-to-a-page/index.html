@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Add blocks to a page with your assistant · opticli guides</title>
+<meta name="description" content="Have your assistant put new blocks in a page&#x27;s content area, know where the CMS keeps them, review them, and publish the page and its blocks together.">
+<meta property="og:title" content="Add blocks to a page with your assistant · opticli guides">
+<meta property="og:description" content="Have your assistant put new blocks in a page&#x27;s content area, know where the CMS keeps them, review them, and publish the page and its blocks together.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://epinova.github.io/opticli/guides/editors/add-blocks-to-a-page/">
+<meta name="twitter:card" content="summary">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="../../../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../../style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chev" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 20 20"><path d="M8 4.5H4.5v11h11V12M11 4.5h4.5V9M15.2 4.8L9 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href="../../../">opticli<span>.</span></a>
+    <nav aria-label="Pages">
+      <a class="keep" href="../../">All guides</a><span class="sep" aria-hidden="true"></span><a class="page-link" href="../../../editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep page-link" href="../../../">For developers <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<div class="wrap guide">
+  <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#editors">For editors</a></p>
+  <h1>Add blocks to a page with your assistant</h1>
+  <p class="lead">Have your assistant put new blocks in a page&#x27;s content area, know where the CMS keeps them, review them, and publish the page and its blocks together.</p>
+  <p class="guide-meta">Written for opticli 0.35.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/editors/add-blocks-to-a-page.md">Edit on GitHub</a></p>
+  <div class="guide-body">
+    <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#steps">Steps</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
+    <article class="prose">
+<p>A page's content area holds blocks: a text, a teaser, a call to action. Your assistant can add new ones, change them
+and put them in order, as you would with <strong>Create a new block</strong> in the CMS. Where the new block ends up depends on how
+your site is set up, and that matters when you publish. By the end of this guide your assistant has added blocks to a
+page as a draft, you have reviewed them in the CMS, and the page has gone live with its blocks.</p>
+<h2 id="before-you-start">Before you start</h2>
+<ul>
+<li>Your assistant is connected to the site (<a href="../../editors/connect-your-assistant/">Connect your assistant to the CMS</a>).</li>
+<li>You may create and edit content on the page in the CMS. The assistant can add a block only where <strong>Create a new
+block</strong> in the CMS would let you, and only of a type the CMS offers there.</li>
+<li>To publish through the assistant, the site must let assistants publish (it doesn't by default), and you must have
+allowed it on the consent page. Otherwise you publish in the CMS; step 5 says what to look out for.</li>
+</ul>
+<h2 id="steps">Steps</h2>
+<h3 id="1-see-what-the-page-has">1. See what the page has</h3>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-1">Copy</button></div><pre><code id="code-1">Which blocks does the Alloy Plan page show in its main content area, in order?</code></pre></div>
+<p>The assistant lists the blocks with their names and types. Blocks that are content of their own have an id; blocks
+stored in the page itself (inline blocks) have none. Both kinds can be on the same page.</p>
+<h3 id="2-ask-for-the-new-blocks">2. Ask for the new blocks</h3>
+<p>Say what each block should contain and where it goes:</p>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-2">Copy</button></div><pre><code id="code-2">Add a text block after the first block on the Alloy Plan page, named &quot;Pricing intro&quot;, with a short paragraph saying
+that every plan can be tried free for 30 days.</code></pre></div>
+<p>The assistant first shows you a dry run: the area as it will be, with the new block, its name and values. Nothing is
+saved yet. A required field you didn't give, or a block type the area doesn't allow, shows up here, and the assistant
+asks you for what is missing. When you agree, it saves the page as a draft.</p>
+<h3 id="3-know-where-the-new-block-is-kept">3. Know where the new block is kept</h3>
+<p>Your site keeps a new block in one of two places, the same way <strong>Create a new block</strong> does in the CMS. The assistant
+follows the site and can't choose the other:</p>
+<ul>
+<li><strong>In the page itself</strong> (an inline block). It has no id of its own, and you find it only in the page's content area.
+It is saved and published with the page.</li>
+<li><strong>As a block of its own, in the page's &quot;For this page&quot; folder.</strong> You see it in the assets pane when the page is
+open, under <strong>For this page</strong>. The assistant tells you its name and id, and that it was saved as a draft. It is
+published separately from the page (step 5). (<strong>Create a new block</strong> in the CMS publishes such a block at once when
+you may publish; the assistant saves it as a draft, so nothing goes live before you ask.)</li>
+</ul>
+<p>Blocks the page had already stay as they are: an inline block stays inline when the assistant changes it.</p>
+<h3 id="4-review-the-draft">4. Review the draft</h3>
+<p>The assistant gives you an edit link to the page's draft. Open it in the CMS and look at the content area, or open the
+preview link to see the page as visitors will.</p>
+<p>When the assistant changed a block of the page's folder that is already published, the preview still shows that
+block's published version until the block is published too. The assistant tells you when that is the case, and when
+you publish the page (step 5) it asks whether that change should go live with it.</p>
+<p>To change a block later, name it:</p>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-3">Copy</button></div><pre><code id="code-3">On the Alloy Plan page, change the &quot;Pricing intro&quot; block to say 14 days instead of 30.</code></pre></div>
+<p>A block of its own is changed as its own draft; an inline block through a new draft of the page.</p>
+<p>If a colleague has an unpublished change to one of the page's own blocks, and the assistant would replace that block's
+values (rewriting the whole content area, say), it stops and tells you whose change it is. It replaces their change
+only if you say so; otherwise it leaves that block as it is, or changes the block on top of their draft.</p>
+<h3 id="5-publish-the-page-and-its-blocks">5. Publish the page and its blocks</h3>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-4">Copy</button></div><pre><code id="code-4">Publish the Alloy Plan page.</code></pre></div>
+<p>Before it publishes, the assistant checks the publish without saving anything and tells you what goes live, and asks
+you to confirm. When it publishes the page, it also publishes the blocks in the page's &quot;For this page&quot; folder that the
+page shows <strong>and that have never been published</strong>: they can't show until they are. It lists them.</p>
+<p>A block that is already live keeps its newer draft: someone may still be working on that change. The assistant names
+such blocks before you confirm. If their changes should go live with the page, say so:</p>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-5">Copy</button></div><pre><code id="code-5">Publish the Alloy Plan page, and the change to the &quot;Pricing intro&quot; block too.</code></pre></div>
+<p>You can also keep a new block back, so the page goes live without it:</p>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-6">Copy</button></div><pre><code id="code-6">Publish the Alloy Plan page, but keep the &quot;Spring offer&quot; block as a draft.</code></pre></div>
+<p>When the page itself has nothing new to publish (it is live as it is), only the blocks you name go live, also a block
+that was never published: a block kept back stays back until you ask for it by name.</p>
+<p>A draft of such a block that someone else saved is left out, even a block that was never published: the assistant
+tells you whose it is, and it goes live with the page only when you name that block. Agreeing that a colleague's change
+to one block may be replaced doesn't put another colleague's draft of another block live (see
+<a href="../../editors/someone-elses-draft/">When someone else has changes on the page</a>). A block that needs a reviewer is left out too.</p>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-7">Copy</button></div><pre><code id="code-7">Publish the Alloy Plan page, and the colleague&#x27;s draft of the &quot;Opening hours&quot; block too.</code></pre></div>
+<blockquote>
+<p><strong>Note:</strong> Publishing the page in the CMS publishes the page alone. Blocks of the page's folder that are drafts stay
+drafts, and visitors don't see them. If you publish in the CMS, publish those blocks too: open each one from
+<strong>For this page</strong> in the assets pane and publish it, before or after the page.</p>
+</blockquote>
+<p>Where the site doesn't let assistants publish, the assistant tells you which blocks to publish along with the page.</p>
+<h3 id="6-pages-with-an-approval-sequence">6. Pages with an approval sequence</h3>
+<p>A reviewer's approval publishes the page alone. So on a site that keeps new blocks in the page's folder, the
+assistant can't send the page for review while it shows blocks that have never been published (a block that is live
+already doesn't stop it: the page then shows that block as it is live). It tells you so, and offers two ways:</p>
+<ul>
+<li>
+<p><strong>A project.</strong> The assistant saves the page and its new blocks in a CMS project and sends them for review together;
+publishing the project puts them live together. See
+<a href="../../editors/collect-changes-in-a-project/">Collect changes in a project and publish them together</a>.</p>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-8">Copy</button></div><pre><code id="code-8">Put the new blocks on Alloy Plan in the &quot;Pricing&quot; project and send them for review with the page.</code></pre></div>
+</li>
+<li>
+<p><strong>Blocks first.</strong> Keep the page as a draft, publish the blocks (or send them for review: blocks in the folder of a
+page with an approval sequence usually need approval too), then send the page for review.</p>
+</li>
+</ul>
+<h2 id="if-something-goes-wrong">If something goes wrong</h2>
+<ul>
+<li><strong>&quot;You don't have Create access to …&quot; or &quot;The CMS edit UI doesn't offer … for a new block&quot;.</strong> You couldn't make that
+block in the CMS either. Ask your CMS administrator for access, or choose another block type.</li>
+<li><strong>&quot;… would go for review while its ContentAreas show blocks of its &quot;For this page&quot; folder that aren't published&quot;.</strong>
+See step 6.</li>
+<li><strong>&quot;… is published already, so its newer draft stays a draft&quot;.</strong> The block was live before, and the page went live
+showing it as it was. If its change should go live now, ask the assistant to publish the page again with that block
+(the page has nothing new, so only the block goes live), or to publish the block on its own.</li>
+<li><strong>&quot;… No draft of a block … goes along either, so there is nothing to publish&quot;.</strong> The page is live as it is, and you
+named no block. The assistant lists the blocks with unpublished changes it could publish; say which should go live.</li>
+<li><strong>&quot;The write would save a new version of the block … over changes saved by …&quot;.</strong> A colleague has an unpublished
+change to that block. Tell the assistant whether to replace it; see
+<a href="../../editors/someone-elses-draft/">When someone else has changes on the page</a>.</li>
+<li><strong>&quot;… is a draft … saved, so it stays a draft&quot;.</strong> A colleague saved that block's draft, so the page went live
+without it. If their change should go live, ask the assistant to publish the page with that block by name, or to
+publish the block on its own.</li>
+<li><strong>&quot;… wasn't published along&quot;.</strong> The page went live without that block's draft: it needs a reviewer, or it has an
+error. The assistant says which; publish or send it for review on its own once it is ready.</li>
+<li><strong>The published page shows a block's old text, or not the new block.</strong> That block is still a draft, for instance
+because the page was published in the CMS. Ask the assistant to publish that block, or publish it in the CMS.</li>
+</ul>
+<h2 id="related">Related</h2>
+<ul>
+<li><a href="../../editors/connect-your-assistant/">Connect your assistant to the CMS</a></li>
+<li><a href="../../editors/someone-elses-draft/">When someone else has changes on the page</a></li>
+<li><a href="../../editors/collect-changes-in-a-project/">Collect changes in a project and publish them together</a></li>
+<li><a href="https://epinova.github.io/opticli/editors/">Opticli for editors</a></li>
+<li>README: <a href="https://github.com/Epinova/opticli#new-blocks-in-a-contentarea">New blocks in a ContentArea</a> and
+<a href="https://github.com/Epinova/opticli#security-model">Security model</a></li>
+</ul>
+    </article>
+  </div>
+  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for editors</h2><div class="file"><ol class="guide-list"><li><a href="../../editors/connect-your-assistant/"><b>Connect your assistant to the CMS</b><span>Connect Claude or another assistant to your Optimizely site, sign in with your own CMS account, and check that it works.</span></a></li><li><a href="../../editors/translate-a-page/"><b>Translate a page with your assistant</b><span>Have your assistant translate a page into another language, review the translation as a draft, and publish it only when you say so.</span></a></li><li><a href="../../editors/image-alt-texts/"><b>Fix image alt texts with your assistant</b><span>Have your assistant look at your images, suggest alt texts or descriptions, and save them as drafts you review first.</span></a></li><li><a href="../../editors/someone-elses-draft/"><b>When someone else has changes on the page</b><span>Understand why your assistant stops before publishing a colleague&#x27;s unpublished changes, decide what goes live, and send pages for review where an approval sequence applies.</span></a></li><li><a href="../../editors/collect-changes-in-a-project/"><b>Collect changes in a project and publish them together</b><span>Have your assistant put the drafts of a campaign or a new section in a CMS project, review them together in the CMS, and publish them in one go, now or at a set time.</span></a></li></ol></div></section>
+</div>
+</main>
+
+<footer class="wrap">
+  <p>opticli and OptiCli.Mcp are open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. They are independent projects, not affiliated with or endorsed by Optimizely.</p>
+</footer>
+<script>
+for (const button of document.querySelectorAll('[data-copy]')) {
+  button.addEventListener('click', async () => {
+    const text = document.getElementById(button.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(text); } catch { getSelection().selectAllChildren(document.getElementById(button.dataset.copy)); return; }
+    button.textContent = 'Copied';
+    button.dataset.done = '';
+    setTimeout(() => { button.textContent = 'Copy'; delete button.dataset.done; }, 1600);
+  });
+}
+</script>
+</body>
+</html>

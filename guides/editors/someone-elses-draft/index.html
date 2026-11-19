@@ -34,7 +34,7 @@
   <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#editors">For editors</a></p>
   <h1>When someone else has changes on the page</h1>
   <p class="lead">Understand why your assistant stops before publishing a colleague&#x27;s unpublished changes, decide what goes live, and send pages for review where an approval sequence applies.</p>
-  <p class="guide-meta">Written for opticli 0.33.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/editors/someone-elses-draft.md">Edit on GitHub</a></p>
+  <p class="guide-meta">Written for opticli 0.35.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/editors/someone-elses-draft.md">Edit on GitHub</a></p>
   <div class="guide-body">
     <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#steps">Steps</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
     <article class="prose">
@@ -91,10 +91,24 @@ drafts you can always discard.</p>
 </li>
 </ul>
 <p>Your assistant can't publish only your change and leave a colleague's out of a version that holds both.</p>
-<h3 id="5-pages-with-an-approval-sequence">5. Pages with an approval sequence</h3>
+<h3 id="5-a-colleague-s-change-to-one-of-the-page-s-blocks">5. A colleague's change to one of the page's blocks</h3>
+<p>On a site that keeps new blocks in the page's &quot;For this page&quot; folder (see
+<a href="../../editors/add-blocks-to-a-page/">Add blocks to a page with your assistant</a>), those blocks have drafts of their own. When the
+assistant would give such a block new values over a colleague's unpublished change to it (for instance when it
+rewrites the page's whole content area), their change wouldn't be in the new version. So the assistant stops, even
+before it shows you a dry run, and tells you whose change it is, when it was saved and which fields it changed. As in
+step 4, it goes ahead only when you say their change may be replaced:</p>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-4">Copy</button></div><pre><code id="code-4">Yes, replace their change to the &quot;Pricing intro&quot; block.</code></pre></div>
+<p>Otherwise it can leave that block as it is, or change it on top of their draft by its own name. Their draft stays in
+the block's history either way.</p>
+<p>Saying yes here covers that one block only. When the page goes live, other blocks of the page with a colleague's
+unpublished draft stay drafts, and the assistant tells you whose they are. One of them goes live with the page only
+when you name it:</p>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-5">Copy</button></div><pre><code id="code-5">Publish the page, and the colleague&#x27;s change to the &quot;Opening hours&quot; block too.</code></pre></div>
+<h3 id="6-pages-with-an-approval-sequence">6. Pages with an approval sequence</h3>
 <p>Some pages need a reviewer's approval before they go live. On those, the assistant never publishes. It offers to send
 the page for review instead, as <strong>Ready for Review</strong> does in the CMS:</p>
-<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-4">Copy</button></div><pre><code id="code-4">Send the &quot;Alloy Track&quot; page for review.</code></pre></div>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-6">Copy</button></div><pre><code id="code-6">Send the &quot;Alloy Track&quot; page for review.</code></pre></div>
 <p>A review request never publishes anything, so it works even where assistants may not publish. Things to know:</p>
 <ul>
 <li><strong>The reviewer sees the whole version</strong>, a colleague's unpublished changes included. The assistant doesn't stop for
@@ -105,7 +119,7 @@ in the CMS.</li>
 <li><strong>A page without an approval sequence can't be sent for review.</strong> The assistant tells you, and nothing is saved.
 Publish it as usual, or keep it as a draft.</li>
 </ul>
-<h3 id="6-pages-in-a-project">6. Pages in a project</h3>
+<h3 id="7-pages-in-a-project">7. Pages in a project</h3>
 <p>When the page is in a CMS project (see
 <a href="../../editors/collect-changes-in-a-project/">Collect changes in a project and publish them together</a>), marking it <strong>Ready to
 Publish</strong> is what says &quot;this can go live&quot;:</p>
@@ -122,6 +136,9 @@ one who saved it, and the publish could no longer tell whose changes they are.</
 <li><strong>&quot;This site doesn't let assistants publish&quot;.</strong> Review the draft through the edit link the assistant gives you, and
 publish it in the CMS.</li>
 <li><strong>&quot;… is in review: version … awaits approval&quot;.</strong> A reviewer has to approve or reject it in the CMS first.</li>
+<li><strong>&quot;The write would save a new version of the block … over changes saved by …&quot;.</strong> See step 5.</li>
+<li><strong>&quot;… is a draft … saved, so it stays a draft&quot;.</strong> A colleague's draft of one of the page's blocks didn't go live with
+the page. See step 5 to name it.</li>
 <li><strong>&quot;… is not the latest version&quot;.</strong> Someone saved in the meantime. Ask the assistant to read the page again and redo
 the change.</li>
 <li><strong>&quot;This site doesn't let assistants delete content, or discard what someone else saved&quot;.</strong> Discard the draft in the
@@ -142,7 +159,7 @@ other people's changes</li>
 </ul>
     </article>
   </div>
-  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for editors</h2><div class="file"><ol class="guide-list"><li><a href="../../editors/connect-your-assistant/"><b>Connect your assistant to the CMS</b><span>Connect Claude or another assistant to your Optimizely site, sign in with your own CMS account, and check that it works.</span></a></li><li><a href="../../editors/translate-a-page/"><b>Translate a page with your assistant</b><span>Have your assistant translate a page into another language, review the translation as a draft, and publish it only when you say so.</span></a></li><li><a href="../../editors/image-alt-texts/"><b>Fix image alt texts with your assistant</b><span>Have your assistant look at your images, suggest alt texts or descriptions, and save them as drafts you review first.</span></a></li><li><a href="../../editors/collect-changes-in-a-project/"><b>Collect changes in a project and publish them together</b><span>Have your assistant put the drafts of a campaign or a new section in a CMS project, review them together in the CMS, and publish them in one go, now or at a set time.</span></a></li></ol></div></section>
+  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for editors</h2><div class="file"><ol class="guide-list"><li><a href="../../editors/connect-your-assistant/"><b>Connect your assistant to the CMS</b><span>Connect Claude or another assistant to your Optimizely site, sign in with your own CMS account, and check that it works.</span></a></li><li><a href="../../editors/translate-a-page/"><b>Translate a page with your assistant</b><span>Have your assistant translate a page into another language, review the translation as a draft, and publish it only when you say so.</span></a></li><li><a href="../../editors/image-alt-texts/"><b>Fix image alt texts with your assistant</b><span>Have your assistant look at your images, suggest alt texts or descriptions, and save them as drafts you review first.</span></a></li><li><a href="../../editors/collect-changes-in-a-project/"><b>Collect changes in a project and publish them together</b><span>Have your assistant put the drafts of a campaign or a new section in a CMS project, review them together in the CMS, and publish them in one go, now or at a set time.</span></a></li><li><a href="../../editors/add-blocks-to-a-page/"><b>Add blocks to a page with your assistant</b><span>Have your assistant put new blocks in a page&#x27;s content area, know where the CMS keeps them, review them, and publish the page and its blocks together.</span></a></li></ol></div></section>
 </div>
 </main>
 
