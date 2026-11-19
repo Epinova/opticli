@@ -152,5 +152,5 @@ Publish** is what says "this can go live":
 - [Translate a page with your assistant](translate-a-page.md)
 - [Collect changes in a project and publish them together](collect-changes-in-a-project.md)
 - [Opticli for editors](https://epinova.github.io/opticli/editors/)
-- README: [Security model](https://github.com/Epinova/opticli#security-model), on approval sequences and confirming
+- README: [Security model](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/security.md#security-model), on approval sequences and confirming
   other people's changes

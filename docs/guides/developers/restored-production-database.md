@@ -91,7 +91,7 @@ opticli sites host add "Alloy" alloy.localhost:5000 --dry-run
 ```
 
 > **Note:** A site you also run from your IDE keeps the old hosts until you restart it, unless it runs in
-> [IDE mode](https://github.com/Epinova/opticli#running-the-site-from-your-ide-ide-mode).
+> [IDE mode](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/serve.md#running-the-site-from-your-ide-ide-mode).
 
 ### 5. Get a local login
 
@@ -113,7 +113,7 @@ can read. Sign in to the edit UI (`/EPiServer/CMS/` on CMS 12, `/Optimizely/CMS/
 ### 6. Keep the jobs off when you run the site yourself
 
 `serve` keeps the scheduler off, but a site you start from your IDE, with `dotnet run` or with
-[IDE mode](https://github.com/Epinova/opticli#running-the-site-from-your-ide-ide-mode), runs it as the site sets it.
+[IDE mode](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/serve.md#running-the-site-from-your-ide-ide-mode), runs it as the site sets it.
 Before you do that, disable the jobs you noted in step 2 while `serve` still runs:
 
 ```bash
@@ -137,7 +137,7 @@ opticli serve --stop
 `doctor` should now show no warning about the saved site mapping and count the overdue jobs. `resolve` on the local
 address should find the start page. `types --orphaned` lists content types whose class is gone from your code, which
 older production databases tend to collect; see
-[Orphaned content types and properties](https://github.com/Epinova/opticli#orphaned-content-types-and-properties) if
+[Orphaned content types and properties](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/database-maintenance.md#orphaned-content-types-and-properties) if
 you want to remove them. Stop the site when you are done, or leave it running for writes.
 
 ## If something goes wrong
@@ -156,10 +156,10 @@ you want to remove them. Stop the site when you are done, or leave it running fo
 
 ## Related
 
-- [Which database](https://github.com/Epinova/opticli#which-database)
-- [Site hosts after a database restore](https://github.com/Epinova/opticli#site-hosts-after-a-database-restore)
-- [Local users after a database restore](https://github.com/Epinova/opticli#local-users-after-a-database-restore)
-- [Scheduled jobs](https://github.com/Epinova/opticli#scheduled-jobs)
-- [serve and env](https://github.com/Epinova/opticli#serve-and-env)
+- [Which database](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/databases.md#which-database)
+- [Site hosts after a database restore](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/database-maintenance.md#site-hosts-after-a-database-restore)
+- [Local users after a database restore](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/database-maintenance.md#local-users-after-a-database-restore)
+- [Scheduled jobs](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/commands.md#scheduled-jobs)
+- [serve and env](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/serve.md#serve-and-env)
 - [Pull content from staging](pull-from-staging.md), to keep the copy current without another restore
 - [Find content and the code behind it](find-content-and-code.md)

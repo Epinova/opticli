@@ -120,6 +120,6 @@ in again the same way.
 - [Fix image alt texts with your assistant](image-alt-texts.md)
 - [When someone else has changes on the page](someone-elses-draft.md)
 - [Opticli for editors](https://epinova.github.io/opticli/editors/)
-- README: [Connecting an assistant](https://github.com/Epinova/opticli#connecting-an-assistant),
-  [Connecting Claude](https://github.com/Epinova/opticli#connecting-claude) and
-  [Security model](https://github.com/Epinova/opticli#security-model)
+- README: [Connecting an assistant](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/connecting.md#connecting-an-assistant),
+  [Connecting Claude](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/connecting.md#connecting-claude) and
+  [Security model](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/security.md#security-model)

@@ -57,7 +57,7 @@ opticli serve --profile E2E --port 5199 --https-port 5443
 On the first start the CMS creates its schema in the empty database (`CreateDatabaseSchema` is on by default). Site
 hosts carry a port, so the site must listen on the same ports every run: `--https-port` fixes the HTTPS port as
 `--port` fixes the HTTP one, and a port that is taken is an error rather than another port. To set them once, put
-`port` and `httpsPort` in opticli's user config ([Files](https://github.com/Epinova/opticli#files)).
+`port` and `httpsPort` in opticli's user config ([Files](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/output.md#files)).
 
 `opticli sites` now prints `[]`, and `opticli languages` lists `en` and `sv`.
 
@@ -141,7 +141,7 @@ machine.
 
 ## Related
 
-- [A database built from scratch](https://github.com/Epinova/opticli#a-database-built-from-scratch) in the README
-- [serve and env](https://github.com/Epinova/opticli#serve-and-env)
+- [A database built from scratch](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/database-maintenance.md#a-database-built-from-scratch) in the README
+- [serve and env](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/serve.md#serve-and-env)
 - [Plan format](https://github.com/Epinova/opticli/blob/main/skill/reference.md#plans-apply)
 - [Seed CMS content for Playwright tests](playwright-seed-content.md)

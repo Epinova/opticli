@@ -255,7 +255,7 @@ the assistant to ask before putting changes in one. The editor then reviews and 
 
 - [Install the MCP module in your site](install-the-module.md)
 - [Take the MCP module to production](hardening.md)
-- README: [Custom tools](https://github.com/Epinova/opticli#custom-tools), with every `ContentPlan` step (create,
+- README: [Custom tools](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/tools.md#custom-tools), with every `ContentPlan` step (create,
   create in a "For this page" folder, move, trash) and the rules a tool must follow
-- README: [Beside another MCP server](https://github.com/Epinova/opticli#beside-another-mcp-server), if the site runs
+- README: [Beside another MCP server](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/configuration.md#beside-another-mcp-server), if the site runs
   one of its own

@@ -1,4 +1,4 @@
-// What every opticli command prints with --json: the envelope around its data (the README's "Output and exit codes").
+// What every opticli command prints with --json: the envelope around its data ("Output and exit codes" in docs/reference/cli/output.md).
 import type { ErrorBody } from './generated/types.ts';
 
 export interface Meta {

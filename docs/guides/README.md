@@ -1,8 +1,8 @@
 # Guides
 
 Task-based how-to guides, published on the landing page at https://epinova.github.io/opticli/guides/. The
-[README](../../README.md) stays the reference; a guide walks through one task from start to finish and links to the
-README for the details.
+[reference](../reference/) has every detail; a guide walks through one task from start to finish and links to the
+reference for the details.
 
 | Folder | Audience |
 |---|---|
@@ -31,8 +31,8 @@ written-for: 0.30.0
   paragraphs, lists, tables, fenced code blocks and blockquotes (`> **Note:** …`).
 - Fenced code blocks name their language: `bash`, `json`, `csharp`, `ts`, `text`, and `prompt` for something you type
   to an assistant.
-- Link to the README as `https://github.com/Epinova/opticli#<heading-anchor>` and to other guides by relative path
-  (`../mcp/custom-tools.md`); the site build rewrites those to the guide pages.
+- Link to the reference as `https://github.com/Epinova/opticli/blob/main/docs/reference/<area>/<page>.md#<heading-anchor>`
+  and to other guides by relative path (`../mcp/custom-tools.md`); the site build rewrites those to the guide pages.
 - Examples use the Alloy sample site and made-up hosts. Never a client's name, site or data.
 
 Keeping the guides current is part of every change; see [AGENTS.md](../../AGENTS.md).

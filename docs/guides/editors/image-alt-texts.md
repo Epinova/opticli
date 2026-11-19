@@ -97,5 +97,5 @@ by default). If someone else has unpublished changes on the same page or image, 
 - [Connect your assistant to the CMS](connect-your-assistant.md)
 - [When someone else has changes on the page](someone-elses-draft.md)
 - [Opticli for editors](https://epinova.github.io/opticli/editors/)
-- README: [Security model](https://github.com/Epinova/opticli#security-model), which describes what the assistant can
+- README: [Security model](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/security.md#security-model), which describes what the assistant can
   see in images

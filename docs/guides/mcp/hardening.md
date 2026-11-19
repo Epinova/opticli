@@ -105,7 +105,7 @@ endpoints.MapOptiCliMcp();
 Each endpoint then serves only its own server's tools, name and instructions. Registered before `AddOptiCliMcp()`, the
 other server's settings lose to the module's, and with legacy SSE the site fails at startup. Don't replace the SDK's
 `ConfigureSessionOptions` hook in a `PostConfigure` after the module: the module's endpoint then turns itself off and
-the log says why. The details are under [Beside another MCP server](https://github.com/Epinova/opticli#beside-another-mcp-server).
+the log says why. The details are under [Beside another MCP server](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/configuration.md#beside-another-mcp-server).
 
 ### 5. Leave error pages and security headers to the module
 
@@ -140,7 +140,7 @@ Assistants may upload media up to `MaxUploadBytes`, 10 MB by default and 50 MB a
 applies too, whichever is lower (`EPiServer:CmsUI:Upload:FileSizeLimit` on CMS 12, `EPiServer:Cms:MediaFile:FileSizeLimit`
 on CMS 13). Uploads travel as base64, so IIS's `maxAllowedContentLength` (30,000,000 bytes by default) stops anything
 past about 20 MB. Raise it in `web.config` when you raise `MaxUploadBytes`; the README's
-[Uploads on IIS](https://github.com/Epinova/opticli#uploads-on-iis) has the snippet.
+[Uploads on IIS](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/install.md#uploads-on-iis) has the snippet.
 
 ### 7. Bound connections and keep the audit log
 
@@ -218,8 +218,8 @@ runs in the editor's name. If that is more than you want to give away, turn it o
 - [Install the MCP module in your site](install-the-module.md)
 - [Write your first site-specific tool](custom-tools.md)
 - [Connect your assistant](../editors/connect-your-assistant.md), for editors
-- README: [Security model](https://github.com/Epinova/opticli#security-model),
-  [Options](https://github.com/Epinova/opticli#options),
-  [Connecting an assistant](https://github.com/Epinova/opticli#connecting-an-assistant),
-  [Error pages and security headers](https://github.com/Epinova/opticli#error-pages-and-security-headers),
-  [Connections and audit log](https://github.com/Epinova/opticli#connections-and-audit-log)
+- README: [Security model](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/security.md#security-model),
+  [Options](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/configuration.md#options),
+  [Connecting an assistant](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/connecting.md#connecting-an-assistant),
+  [Error pages and security headers](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/security.md#error-pages-and-security-headers),
+  [Connections and audit log](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/configuration.md#connections-and-audit-log)

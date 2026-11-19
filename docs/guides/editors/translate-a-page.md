@@ -110,5 +110,5 @@ happens then depends on the site:
 - [Connect your assistant to the CMS](connect-your-assistant.md)
 - [When someone else has changes on the page](someone-elses-draft.md)
 - [Opticli for editors](https://epinova.github.io/opticli/editors/)
-- README: [MCP server for editors](https://github.com/Epinova/opticli#mcp-server-for-editors) and
-  [Security model](https://github.com/Epinova/opticli#security-model)
+- README: [MCP server for editors](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/install.md#mcp-server-for-editors) and
+  [Security model](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/security.md#security-model)

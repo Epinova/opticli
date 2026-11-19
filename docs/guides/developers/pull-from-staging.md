@@ -140,7 +140,7 @@ Check the export's `externalRefs` (content the plan points at but doesn't create
 `--from prod` works the same way: a pull only reads its source, over a read-only connection. Everything else about
 production is read-only too: `serve`, every write and every dry run against it are refused (exit 3,
 `details.reason: "prodDatabase"`). The one way to get content there is a sealed apply that you run yourself at your
-terminal; see [Writing to production](https://github.com/Epinova/opticli#writing-to-production).
+terminal; see [Writing to production](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/databases.md#writing-to-production).
 
 ## If something goes wrong
 
@@ -155,9 +155,9 @@ terminal; see [Writing to production](https://github.com/Epinova/opticli#writing
 
 ## Related
 
-- [Environments](https://github.com/Epinova/opticli#environments)
-- [Pulling content from another environment](https://github.com/Epinova/opticli#pulling-content-from-another-environment)
-- [Exporting content](https://github.com/Epinova/opticli#exporting-content)
-- [Writing to production](https://github.com/Epinova/opticli#writing-to-production)
+- [Environments](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/databases.md#environments)
+- [Pulling content from another environment](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/databases.md#pulling-content-from-another-environment)
+- [Exporting content](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/databases.md#exporting-content)
+- [Writing to production](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/databases.md#writing-to-production)
 - [Work on a restored production database](restored-production-database.md)
 - [Seed content for Playwright tests](playwright-seed-content.md)

@@ -164,5 +164,5 @@ already doesn't stop it: the page then shows that block as it is live). It tells
 - [When someone else has changes on the page](someone-elses-draft.md)
 - [Collect changes in a project and publish them together](collect-changes-in-a-project.md)
 - [Opticli for editors](https://epinova.github.io/opticli/editors/)
-- README: [New blocks in a ContentArea](https://github.com/Epinova/opticli#new-blocks-in-a-contentarea) and
-  [Security model](https://github.com/Epinova/opticli#security-model)
+- README: [New blocks in a ContentArea](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/content-areas.md#new-blocks-in-a-contentarea) and
+  [Security model](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/security.md#security-model)

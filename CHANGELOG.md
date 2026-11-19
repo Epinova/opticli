@@ -3,6 +3,26 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## Unreleased
+
+**The reference moved out of the README.** The README is now a quickstart with a documentation index (it is also the
+NuGet packages' page). The reference is in [docs/reference/](https://github.com/Epinova/opticli/tree/main/docs/reference),
+one page per area for the CLI (`cli/`) and the MCP module (`mcp/`), and building, testing and releasing are in
+[docs/development.md](https://github.com/Epinova/opticli/blob/main/docs/development.md). The README keeps a short
+section under each of its old top-level headings, so links to them still land.
+
+Every section was checked against the code on the way:
+- 13 options the README never named are documented: `tree --depth`, `allowed-in --explicit`, `jobs --enabled`,
+  `--disabled` and `--all`, `export --all-languages`, `area --display`, `composition --node`, `block create --parent`,
+  `upload --parent` and `--replace`, `translate --remove` and `--confirm`, `access --allow-unknown-role` and
+  `apply --allow-outside`.
+- `area add --if-missing` never existed: an add counts a matching block as there already when a plan runs again with
+  `apply --update-existing`, or with `ifMissing` in the MCP module's `areaOps` (the skill said so too).
+- opticli runs on .NET 8, or on the next newer runtime when 8 isn't installed, not on the newest one.
+- The MCP module's reference lists its own tools, and its security model gives the limits and refusals it left out.
+- Smaller corrections to connection resolution, sealing, `serve` and `env`, the known limitations and the release
+  steps.
+
 ## 0.35.0 (19 November 2026)
 
 New blocks in a ContentArea are made as the site's edit UI makes them. **A change for sites whose edit UI makes no
@@ -10,7 +30,7 @@ inline blocks** (`UIOptions.InlineBlocksInContentAreaEnabled` off: Optimizely's 
 opticli and the MCP module made an inline block there with only a warning, which such a site may not render (a page
 built so could fail with HTTP 500). There they now make a shared block in the page's "For this page"
 folder, as the edit UI's "Create a new block" does. Sites with the setting on (CMS 13's default from 13.0.2) work as
-before. See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new-blocks-in-a-contentarea).
+before. See [New blocks in a ContentArea](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/content-areas.md#new-blocks-in-a-contentarea).
 
 ### CLI
 
@@ -401,7 +421,7 @@ checks with a dry run and saves as drafts. The CLI is unchanged.
   `OptiCliToolException` fails a call with the module's JSON error (`code`, `message`, `hint`); the CMS's own
   not-found and access-denied exceptions become `not_found` and `refused`, as for the module's tools, and anything else
   a tool throws is logged and reaches the assistant as `internal`, without its message. `.WithInstructions("...")` adds the site's own lines to the
-  instructions the server gives assistants. See [Custom tools](https://github.com/epinova/opticli#custom-tools).
+  instructions the server gives assistants. See [Custom tools](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/tools.md#custom-tools).
 - **Custom write tools.** `.WithWriteTool<T>()` takes a class with `[OptiCliWriteTool("name", Title = ..., Kinds = ...)]`
   and `[Description]` that implements `IOptiCliWriteTool<TArgs>`: its `PlanAsync` returns a `ContentPlan`, the steps to
   take (update, create, create in a "For this page" folder, move, move to the recycle bin), where a step can use content

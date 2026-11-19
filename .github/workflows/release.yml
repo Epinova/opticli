@@ -186,6 +186,6 @@ jobs:
           [OptiCli.Mcp $version](https://www.nuget.org/packages/OptiCli.Mcp/$version) for CMS 12 and
           [OptiCli.Mcp.Cms13 $version](https://www.nuget.org/packages/OptiCli.Mcp.Cms13/$version) for CMS 13.
           **opticli-cms.mcpb** below is the Claude Desktop extension for sites that run either; see
-          [Connecting Claude](https://github.com/epinova/opticli#connecting-claude).
+          [Connecting Claude](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/connecting.md#connecting-claude).
           NOTES
           gh release create "$GITHUB_REF_NAME" opticli-cms.mcpb --verify-tag --title "opticli $version" --notes-file notes.md

@@ -408,7 +408,7 @@ public class OptionsTests
         await using var first = await TestSite.StartAsync(services: s => s.AddSingleton<IEndpointRoutingExtension, NoRoutes>());
         Assert.Contains("MapOptiCliMcp() is the site's first endpoint mapping", first.Audit.All);
 
-        // After the site's own endpoints (here its error page), as the README says: nothing to warn about.
+        // After the site's own endpoints (here its error page), as the reference says: nothing to warn about.
         await using var after = await TestSite.StartAsync(services: s => s.AddSingleton<IEndpointRoutingExtension, NoRoutes>(), statusCodePages: true);
         Assert.DoesNotContain("first endpoint mapping", after.Audit.All);
     }

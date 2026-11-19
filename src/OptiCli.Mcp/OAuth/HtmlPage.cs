@@ -33,7 +33,7 @@ internal static class OAuthJson
 /// A site's own security-header middleware usually sets its headers as the response starts, after the module set its
 /// own, and so replaces them; a callback of the module's can't come later than the site's. So the page carries its
 /// policy and referrer policy in <c>meta</c> elements as well, which the browser applies besides any header: the
-/// stricter of the two wins. <c>frame-ancestors</c> and <c>X-Frame-Options</c> only work as headers (see the README).
+/// stricter of the two wins. <c>frame-ancestors</c> and <c>X-Frame-Options</c> only work as headers (see docs/reference/mcp/security.md).
 /// </para>
 /// <para>
 /// What doesn't depend on headers the site may replace: a page a browser asks for to show in a frame

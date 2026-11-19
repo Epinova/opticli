@@ -167,5 +167,5 @@ you publish from the gadget, check that every page in the project should go live
 - [When someone else has changes on the page](someone-elses-draft.md)
 - [Connect your assistant to the CMS](connect-your-assistant.md)
 - [Opticli for editors](https://epinova.github.io/opticli/editors/)
-- README: [Projects for editors' assistants](https://github.com/Epinova/opticli#projects-for-editors-assistants) and
-  [Security model](https://github.com/Epinova/opticli#security-model)
+- README: [Projects for editors' assistants](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/tools.md#projects-for-editors-assistants) and
+  [Security model](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/security.md#security-model)

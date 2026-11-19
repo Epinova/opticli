@@ -142,8 +142,8 @@ reads for questions like these; it changes content only when you ask it to.
 
 ## Related
 
-- [Commands: Reading](https://github.com/Epinova/opticli#reading)
+- [Commands: Reading](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/commands.md#reading)
 - [Using opticli with coding agents](https://github.com/Epinova/opticli#using-opticli-with-coding-agents)
-- [Output and exit codes](https://github.com/Epinova/opticli#output-and-exit-codes)
+- [Output and exit codes](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/output.md#output-and-exit-codes)
 - [Work on a restored production database](restored-production-database.md)
 - [Seed content for Playwright tests](playwright-seed-content.md)

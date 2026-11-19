@@ -189,7 +189,7 @@ test('a property typo fails before anything is saved', async ({ cms }) => {
 ```
 
 `code` is typed (`not_found`, `validation`, `conflict`, ...), with the exit codes from
-[Output and exit codes](https://github.com/Epinova/opticli#output-and-exit-codes).
+[Output and exit codes](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/output.md#output-and-exit-codes).
 
 ### 9. Run it
 

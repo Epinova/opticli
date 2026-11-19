@@ -172,5 +172,5 @@ production.
 
 - [Collect changes in a project and publish them together](../editors/collect-changes-in-a-project.md), for editors
 - [Build a test database from scratch](build-a-test-database.md)
-- README: [CMS projects](https://github.com/Epinova/opticli#cms-projects),
-  [Writing](https://github.com/Epinova/opticli#writing-needs-opticli-serve)
+- README: [CMS projects](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/cms-projects.md#cms-projects),
+  [Writing](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/commands.md#writing-needs-opticli-serve)

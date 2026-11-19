@@ -138,7 +138,7 @@ instead, which needs no publishing option at all.
 > page alone. Without `AllowPublish`, the assistant tells editors to publish the blocks too. An assistant that would
 > save over a colleague's unpublished change to such a block asks the editor first (`includeDraft`); a colleague's
 > draft of a block goes live with the page only when the editor names that block (`blocks`), never with `includeDraft`.
-> See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new-blocks-in-a-contentarea).
+> See [New blocks in a ContentArea](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/content-areas.md#new-blocks-in-a-contentarea).
 
 > **Note:** The module refuses script in rich text and links whatever you configure, but the CMS saves whatever the
 > edit UI's TinyMCE or other code gives it. On CMS 12.15 or newer, have the CMS's script parser remove script on every
@@ -146,7 +146,7 @@ instead, which needs no publishing option at all.
 > default.
 
 The full list of options, with token lifetimes and rate limits, is in the README under
-[Options](https://github.com/Epinova/opticli#options).
+[Options](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/configuration.md#options).
 
 ### 4. Run the site and check the endpoint
 
@@ -170,7 +170,7 @@ curl https://localhost:5001/.well-known/oauth-protected-resource/episerver/optic
 ```
 
 The other paths (authorization server metadata, `register`, `authorize`, `token`, the connections page) are listed in
-the README under [Endpoints](https://github.com/Epinova/opticli#endpoints).
+the README under [Endpoints](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/configuration.md#endpoints).
 
 ### 5. Connect a first assistant
 
@@ -186,7 +186,7 @@ allows, so nothing needs registering on the site first.
 
 Plain http on a loopback address (`http://127.0.0.1:5000/...`) works if your site allows it. Over https, Claude Code
 doesn't trust the ASP.NET Core development certificate: the README's
-[Connecting Claude](https://github.com/Epinova/opticli#connecting-claude) section shows how to make a localhost
+[Connecting Claude](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/connecting.md#connecting-claude) section shows how to make a localhost
 certificate signed by a test CA of your own.
 
 Editors don't use Claude Code. Send them the editors' guide, [Connect your assistant](../editors/connect-your-assistant.md),
@@ -233,6 +233,6 @@ and can revoke it there.
 - [Write your first site-specific tool](custom-tools.md)
 - [Take the MCP module to production](hardening.md)
 - [Connect your assistant](../editors/connect-your-assistant.md), for editors
-- README: [MCP server for editors](https://github.com/Epinova/opticli#mcp-server-for-editors),
-  [Install](https://github.com/Epinova/opticli#install-1), [On CMS 13](https://github.com/Epinova/opticli#on-cms-13),
-  [Security model](https://github.com/Epinova/opticli#security-model)
+- README: [MCP server for editors](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/install.md#mcp-server-for-editors),
+  [Install](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/install.md#install), [On CMS 13](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/install.md#on-cms-13),
+  [Security model](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/security.md#security-model)

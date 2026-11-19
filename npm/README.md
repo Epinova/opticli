@@ -178,7 +178,7 @@ export const seedPlan = {
 The site gets an assets folder of its own (`SysSiteAssets` below the start page, at `/siteassets/`), as one made in
 admin mode does; `siteAssets: 'global'` keeps it on the global assets folder.
 
-See opticli's [A database built from scratch](https://github.com/epinova/opticli#a-database-built-from-scratch).
+See opticli's [A database built from scratch](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/database-maintenance.md#a-database-built-from-scratch).
 
 ### Several sites
 
@@ -313,7 +313,7 @@ Playwright loads the config in every worker too, so the call runs once per proce
 
 A command that fails throws `OptiCliError` with opticli's `code` (`not_found`, `validation`, `conflict`, ...),
 `exitCode`, `hint`, `details` and `version`; see opticli's
-[exit codes](https://github.com/epinova/opticli#output-and-exit-codes). A command that doesn't answer within
+[exit codes](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/output.md#output-and-exit-codes). A command that doesn't answer within
 `timeoutMs` (120 seconds; longer for `serve` starting a site, `apply` and `jobsRun`) is stopped and throws `code`
 `timeout`. Calls that can't be right throw a `TypeError` before opticli runs: an option the command doesn't have (also
 from plain JavaScript, where TypeScript doesn't check), a value of the wrong kind, too many arguments.
@@ -321,7 +321,7 @@ from plain JavaScript, where TypeScript doesn't check), a value of the wrong kin
 ### Projects in tests
 
 opticli puts drafts into the CMS's projects (see opticli's
-[CMS projects](https://github.com/epinova/opticli#cms-projects)), and a test can check what editors see in one:
+[CMS projects](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/cms-projects.md#cms-projects)), and a test can check what editors see in one:
 
 ```ts
 test('the campaign page waits in its project', async ({ cms, opticli }) => {
