@@ -335,6 +335,30 @@ public sealed class SharedAreaBlockIntegrationTests
         Assert.Contains("Inline A again", html);
         Assert.DoesNotContain("Inline B", html);
         Assert.Contains("Shared new", html);
+
+        // Alloy's MainContentArea isn't culture-specific: a Swedish branch changes neither its inline block nor adds a shared
+        // one, by area edit or by set, and nothing is made.
+        if (alloy.Site.Session.Language("sv") is null)
+        {
+            return;
+        }
+        await alloy.Writes.RunAsync(new TranslateOperation(page, "sv"), dryRun: false, CancellationToken.None);
+        var newest = await alloy.NewestIdAsync();
+        foreach (var edit in new WriteOperation<WriteOutput>[]
+        {
+            new AreaEdit(page, "MainContentArea", AreaOps.Set, Index: 0, Lang: "sv") { Values = new JsonObject { ["Heading"] = "SV" } },
+            new AreaEdit(page, "MainContentArea", AreaOps.Remove, Index: 0, Lang: "sv"),
+            new AreaEdit(page, "MainContentArea", AreaOps.Add, Lang: "sv") { Type = "TeaserBlock", Values = alloy.TeaserValues("SV") },
+            new SetOperation(page, JsonNode.Parse("""{"MainContentArea[0]": {"Heading": "SV"}}""")!.AsObject(), Lang: "sv"),
+        })
+        {
+            foreach (var dryRun in new[] { true, false })
+            {
+                var refused = await Assert.ThrowsAnyAsync<OptiCliException>(() => alloy.Writes.RunAsync(edit, dryRun, CancellationToken.None));
+                Assert.Contains("'MainContentArea' is not culture-specific, so it can only be changed on the master language", refused.Message);
+            }
+        }
+        Assert.Equal(newest, await alloy.NewestIdAsync());
     }
 
     [InlineBlockModeFact(InlineBlockModes.Shared)]

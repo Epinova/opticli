@@ -15,10 +15,10 @@ public sealed class InlineBlockTests(SharedSessions sessions)
 {
     private static string ScratchName() => $"opticli-mcp-it {Guid.NewGuid():N}";
 
-    private static JsonElement Area(JsonElement content) => content.GetProperty("properties").GetProperty("MainContentArea").GetProperty("value");
+    internal static JsonElement Area(JsonElement content) => content.GetProperty("properties").GetProperty("MainContentArea").GetProperty("value");
 
     /// <summary>get_content's area as update_content takes it: an inline block's values without their <c>{type, value}</c>.</summary>
-    private static JsonArray Writable(JsonElement area) => new(area.EnumerateArray().Select(item =>
+    internal static JsonArray Writable(JsonElement area) => new(area.EnumerateArray().Select(item =>
     {
         var copy = JsonNode.Parse(item.GetRawText())!.AsObject();
         if (copy["properties"] is JsonObject properties)

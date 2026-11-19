@@ -129,6 +129,47 @@ public sealed class SharedAreaBlockTests(SharedSessions sessions)
                 dryRun,
             });
             Assert.Equal("refused", refused.GetProperty("code").GetString());
+            // For the new block (Create on the page), not for the edit itself, which the product editor may make.
+            Assert.Contains("You don't have Create access to", refused.GetProperty("message").GetString());
+        }
+    }
+
+    [McpInlineBlockModeFact(Shared)]
+    public async Task An_inline_block_a_page_already_has_stays_inline_and_an_editor_cant_drop_its_values_they_cant_change()
+    {
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var admin = await sessions.ForAsync(TestUsers.Admin);
+        var start = WritingTests.Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        var page = WritingTests.Id((await editor.OkAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = start })).GetProperty("content"));
+        try
+        {
+            // An inline block another tool put there (the edge-case fixture, through the CMS's API), with AdminScripts, which
+            // is locked for all but administrators (McpFixture.cs).
+            using (var http = new HttpClient { BaseAddress = McpSiteSettings.Url })
+            using (var body = new StringContent("""{"Heading": "Inline", "AdminScripts": "admin only"}""", System.Text.Encoding.UTF8, "application/json"))
+            using (var response = await http.PostAsync($"opticli-fixture/inline-block?content={page}&property=MainContentArea&type=McpFieldsBlock&name=Kept", body))
+            {
+                Assert.True(response.IsSuccessStatusCode, $"POST /opticli-fixture/inline-block answered {(int)response.StatusCode}: is the site built with this checkout's tests/fixtures/mcp/setup.sh?");
+            }
+
+            // Written whole with the block changed, it would stay inline but lose the value the editor can't see: refused.
+            var area = InlineBlockTests.Writable(InlineBlockTests.Area(await editor.OkAsync("get_content", new { reference = page, version = "latest" })));
+            area[0]!["properties"]!["Heading"] = "Changed whole";
+            var refused = await editor.ErrorAsync("update_content", new { reference = page, properties = new Dictionary<string, System.Text.Json.Nodes.JsonNode> { ["MainContentArea"] = area }, dryRun = true });
+            Assert.Equal("usage", refused.GetProperty("code").GetString());
+            Assert.Contains("MainContentArea would lose MainContentArea[0].AdminScripts", refused.GetProperty("message").GetString());
+
+            // Changed by its position, it stays inline and keeps the rest of its values; no shared block is made.
+            var changed = await editor.OkAsync("update_content", new { reference = page, areaOps = new[] { new { op = "set", property = "MainContentArea", index = 0, values = new { Heading = "Changed" } } } });
+            Assert.Empty(SharedBlocks(changed));
+            var kept = InlineBlockTests.Area(await admin.OkAsync("get_content", new { reference = page, version = "latest" }))[0];
+            Assert.True(kept.GetProperty("inline").GetBoolean());
+            Assert.Equal(("Changed", "admin only"), (kept.GetProperty("properties").GetProperty("Heading").GetProperty("value").GetString(),
+                kept.GetProperty("properties").GetProperty("AdminScripts").GetProperty("value").GetString()));
+        }
+        finally
+        {
+            await WritingTests.DeleteAsync(editor, page);
         }
     }
 
