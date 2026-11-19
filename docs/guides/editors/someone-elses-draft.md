@@ -3,7 +3,7 @@ title: When someone else has changes on the page
 summary: Understand why your assistant stops before publishing a colleague's unpublished changes, decide what goes live, and send pages for review where an approval sequence applies.
 audience: editors
 order: 4
-written-for: 0.33.0
+written-for: 0.35.0
 ---
 
 Publishing in the CMS puts a whole version of a page live, not just the fields you changed. So if a colleague has saved
@@ -74,7 +74,23 @@ You have three choices:
 
 Your assistant can't publish only your change and leave a colleague's out of a version that holds both.
 
-### 5. Pages with an approval sequence
+### 5. A colleague's change to one of the page's blocks
+
+On a site that keeps new blocks in the page's "For this page" folder (see
+[Add blocks to a page with your assistant](add-blocks-to-a-page.md)), those blocks have drafts of their own. When the
+assistant would give such a block new values over a colleague's unpublished change to it (for instance when it
+rewrites the page's whole content area), their change wouldn't be in the new version. So the assistant stops, even
+before it shows you a dry run, and tells you whose change it is, when it was saved and which fields it changed. As in
+step 4, it goes ahead only when you say their change may be replaced:
+
+```prompt
+Yes, replace their change to the "Pricing intro" block.
+```
+
+Otherwise it can leave that block as it is, or change it on top of their draft by its own name. Their draft stays in
+the block's history either way.
+
+### 6. Pages with an approval sequence
 
 Some pages need a reviewer's approval before they go live. On those, the assistant never publishes. It offers to send
 the page for review instead, as **Ready for Review** does in the CMS:
@@ -93,7 +109,7 @@ A review request never publishes anything, so it works even where assistants may
 - **A page without an approval sequence can't be sent for review.** The assistant tells you, and nothing is saved.
   Publish it as usual, or keep it as a draft.
 
-### 6. Pages in a project
+### 7. Pages in a project
 
 When the page is in a CMS project (see
 [Collect changes in a project and publish them together](collect-changes-in-a-project.md)), marking it **Ready to
@@ -111,6 +127,7 @@ Publish** is what says "this can go live":
 - **"This site doesn't let assistants publish".** Review the draft through the edit link the assistant gives you, and
   publish it in the CMS.
 - **"… is in review: version … awaits approval".** A reviewer has to approve or reject it in the CMS first.
+- **"The write would save a new version of the block … over changes saved by …".** See step 5.
 - **"… is not the latest version".** Someone saved in the meantime. Ask the assistant to read the page again and redo
   the change.
 - **"This site doesn't let assistants delete content, or discard what someone else saved".** Discard the draft in the

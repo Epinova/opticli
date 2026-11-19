@@ -33,7 +33,9 @@ namespace OptiCli.Cms.Content;
 /// creation, unlike the edit UI, which publishes a new block at once when the editor may. A publish of the owner through
 /// opticli publishes the drafts of the folder's blocks its areas show that were never published, and only those; a live
 /// block's newer draft goes along only when the publish names it, or the write that publishes changed it
-/// (<see cref="AlongChoice"/>).</para>
+/// (<see cref="AlongChoice"/>); of content whose version is published already, only blocks named or written go along
+/// (<see cref="AlongChoice.NamedOnly"/>). A block the write takes over whose latest version is someone else's draft needs
+/// their draft confirmed (<see cref="RequireOwnDraft"/>).</para>
 /// </remarks>
 internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
 {

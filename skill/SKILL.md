@@ -251,7 +251,10 @@ item in a whole area) is made as the site's edit UI makes one; `serve --status` 
   change the block with a `set` on `"$id"`, never by position. `opticli publish` of the page publishes along the drafts
   of its folder's blocks that were never published; a live block keeps its newer draft (a warning names it) unless the
   user wants it live too: `--with-block <ref>` (`--without-block <ref>` keeps a new one back; on a page published
-  already it publishes just the blocks). In a plan, a `publish` step takes along the block drafts earlier steps saved.
+  already only the blocks named go live, never-published ones too, and with none named it is a `conflict` whose hint
+  lists them). In a plan, a `publish` step takes along the block drafts earlier steps saved. A whole-area write over a
+  block whose latest version is someone else's draft is a `pendingDraft` conflict with `details.draft.path`: ask the
+  user, as below, before `--include-draft`.
   `publish --dry-run` shows both; tell the user before publishing. The CMS's own Publish publishes no blocks, so tell the user.
   `--request-approval` is refused while the page shows never-published blocks: use `--in-project <p> --ready
   --request-approval`, or publish the blocks first. Details:
@@ -319,7 +322,8 @@ or published together; ask before making one, and use the name they give.
   there are any, it fails with `conflict` (exit 5) and `error.details.reason: "pendingDraft"` (a `--dry-run` reports
   `pendingDraft` with a warning). Show the user `details.draft` (`savedBy`, `saved`, `changes`) and **ask whether those changes
   should go live too**. Pass `--include-draft` (in a plan, `"includeDraft": true` on the step) only after they said
-  yes; never on your own initiative. Drafts opticli saved itself don't need this. If they should stay out, don't drop
+  yes; never on your own initiative. The same for a `pendingDraft` with a `path` (a write that would save a block's new
+  version over someone else's draft of it, dry run too): ask whether their change may be replaced. Drafts opticli saved itself don't need this. If they should stay out, don't drop
   your change or rewrite whole values to get around them: base it on the published version, `--from published` (a
   plan step's `"from": "published"`). Their draft then stays a draft and doesn't go live; the warning in
   `meta.warnings` lists what was left out, and the new draft becomes the one edit mode opens, so tell the user.

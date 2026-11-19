@@ -74,6 +74,10 @@ On the Alloy Plan page, change the "Pricing intro" block to say 14 days instead 
 
 A block of its own is changed as its own draft; an inline block through a new draft of the page.
 
+If a colleague has an unpublished change to one of the page's own blocks, and the assistant would replace that block's
+values (rewriting the whole content area, say), it stops and tells you whose change it is. It replaces their change
+only if you say so; otherwise it leaves that block as it is, or changes the block on top of their draft.
+
 ### 5. Publish the page and its blocks
 
 ```prompt
@@ -96,6 +100,9 @@ You can also keep a new block back, so the page goes live without it:
 ```prompt
 Publish the Alloy Plan page, but keep the "Spring offer" block as a draft.
 ```
+
+When the page itself has nothing new to publish (it is live as it is), only the blocks you name go live, also a block
+that was never published: a block kept back stays back until you ask for it by name.
 
 A draft of such a block that someone else saved is left out until you confirm their changes may go live (see
 [When someone else has changes on the page](someone-elses-draft.md)), and so is a block that needs a reviewer.
@@ -132,6 +139,11 @@ already doesn't stop it: the page then shows that block as it is live). It tells
 - **"… is published already, so its newer draft stays a draft".** The block was live before, and the page went live
   showing it as it was. If its change should go live now, ask the assistant to publish the page again with that block
   (the page has nothing new, so only the block goes live), or to publish the block on its own.
+- **"… No draft of a block … goes along either, so there is nothing to publish".** The page is live as it is, and you
+  named no block. The assistant lists the blocks with unpublished changes it could publish; say which should go live.
+- **"The write would save a new version of the block … over changes saved by …".** A colleague has an unpublished
+  change to that block. Tell the assistant whether to replace it; see
+  [When someone else has changes on the page](someone-elses-draft.md).
 - **"… wasn't published along".** The page went live without that block's draft: someone else saved it, it needs a
   reviewer, or it has an error. The assistant says which; publish or send it for review on its own once it is ready.
 - **The published page shows a block's old text, or not the new block.** That block is still a draft, for instance

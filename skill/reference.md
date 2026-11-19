@@ -414,7 +414,12 @@ override: such a site may not render inline blocks.
 - A whole area written again: write back the `{"ref"}` items `get` shows. A `{"type"}` item takes over a current block
   of the content's own folder or an inline block (exact copy, then by name, then the only one of its type left; each
   only when unique): an inline block stays inline, a folder block gets a new draft version (`updated`), an exact copy is
-  left as it is. Anything that pairs with nothing is a new block; blocks from elsewhere are never taken over.
+  left as it is. Anything that pairs with nothing is a new block; blocks from elsewhere are never taken over. When a
+  folder block's latest version is a draft **someone else** saved, its new version would drop their changes: the write
+  is a `conflict` (exit 5) with `details.reason: "pendingDraft"` and `details.draft.path` naming the item (dry run too).
+  Tell the user whose change it is; only if they say it may be replaced, `--include-draft` (a plan step's
+  `includeDraft`, `translate --include-draft`), after which a `warning` says whose draft it replaced. Else give that
+  item back as `{"ref"}`, or change the block by its ref (builds on their draft).
 - Publishing the content through opticli (`publish`, `--publish`, `--publish-at`, `projects publish`, MCP
   `publish_content`) publishes along the drafts of its own folder's blocks that its areas show **and that were never
   published** in its language (`published`; a scheduled publish schedules them too), but not someone else's draft
@@ -425,9 +430,12 @@ override: such a site may not render inline blocks.
   `withoutBlocks` on the `publish` step (refs or `$id`s). Neither with a publish that goes for review (`usage`). A
   write with `--publish` takes the blocks it made or changed along by itself, and so does a plan's `publish` step for
   the block drafts earlier steps of the run saved (not one a later step took out of the area); its dry run lists the
-  same. Of content published already (nothing new on it), `publish` puts just those block drafts live (`published:
-  false`, `sharedBlocks` lists them), and is a `conflict` only when there are none: so `publish <content>
-  --with-block <block>` puts a live block's draft live after the page went live without it. The CMS's own Publish
+  same. Of content published already (nothing new on it), `publish` puts live only the block drafts it names
+  (`--with-block`, a never-published block's too) or the run saved (`published: false`, `sharedBlocks` lists them); an
+  unnamed never-published block stays back (someone kept it back). With none it is a `conflict` whose hint lists the
+  blocks with drafts and the `--with-block` command; a plan run again with `--update-existing` is `unchanged` there.
+  So `publish <content> --with-block <block>` puts a block's draft live after the page went live without it. A write
+  with `--publish` that changes only blocks takes along only its own. The CMS's own Publish
   publishes no blocks: tell the user. Until a changed block is published the content's preview shows its published
   version.
 - Run `publish <ref> --dry-run` first and tell the user what goes live: on such a site it asks the site, and lists the
@@ -702,6 +710,11 @@ and the version that would go live has its changes, these stop unless confirmed:
   `changes` there are in `get`'s value shape.
 - Versions saved by `opticli` itself never need it, so "save a draft, check it, publish" works as before.
 - To go back after a publish: `opticli publish <ref> --version <previouslyPublished>`.
+- Where the site makes shared area blocks, a write (also without `--publish`) whose whole-area item takes over a block
+  of the content's "For this page" folder whose latest version someone else saved stops the same way, with
+  `details.draft.path` (the area item) and `details.draft.changes` (their draft since the block's published version),
+  and here the `--dry-run` fails too. `--include-draft` (`set`, `area`, `translate`; a plan step's `includeDraft` on the
+  step that writes the area) confirms that their change may be replaced; ask first.
 
 ### Drift (shared databases)
 
@@ -1204,7 +1217,7 @@ cache, no restart). Only turn it on or off when the user asks: it edits their `.
 | `job_failed` (exit 7) | The job `jobs run` ran didn't succeed: `error.details.status` and `message` say how it ended; `opticli jobs log <job>` has its earlier runs, `opticli serve --logs` the site's log. Tell the user; don't run it again unasked. |
 | `timeout` (exit 4) from `jobs run` | `--timeout` ran out and the job still runs: `opticli jobs log <job>` later shows how it ended; `opticli jobs stop <job>` only if the user wants it stopped. |
 | `refused` (exit 3) from `jobs run` or `jobs set`, naming what the job deletes | A job that deletes for good (or moves content across the site). Ask the user, naming the job and what it does; only then `--allow-destructive`. |
-| `conflict` (exit 5) | A newer version exists: `opticli versions <ref> --limit 3`, then re-run. With `details.reason: "pendingDraft"`: someone else's unpublished changes would go live too; show `details.draft` and ask the user before `--include-draft`. |
+| `conflict` (exit 5) | A newer version exists: `opticli versions <ref> --limit 3`, then re-run. With `details.reason: "pendingDraft"`: someone else's unpublished changes would go live too (with `details.draft.path`: a block's new version would replace their draft); show `details.draft` and ask the user before `--include-draft`. |
 | Values look cut off | `truncated: true`: use `get <ref> --fields Prop` or `--full`. |
 | `refused` (exit 3): LocalDB "only runs on Windows" | The site's connection string is the CMS template's LocalDB one, which Linux and macOS can't use (the site can't either). Tell the user: point it at a SQL Server database (e.g. in a container), or pass `--connection`. |
 | `validation` with `code: "unresolvedReference"` (CMS 13) | Rich text or a reference points at content that doesn't exist. Link existing content, or create the target first. |

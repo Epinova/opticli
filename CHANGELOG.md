@@ -36,14 +36,25 @@ before. See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new
   a ref that isn't a block of the content's own folder that it shows is refused. A write that publishes takes the
   blocks it made or changed along by itself. Someone else's draft needs `--include-draft`, and a block under an
   approval sequence is left with a warning. A project's own items follow the project's rules. Naming blocks for a
-  publish that goes for review is refused. Of content published already, `publish` puts just those block drafts live
-  (it is a `conflict` only when there are none), so `publish <page> --with-block <block>` publishes a live block's
-  draft after the page went live without it.
+  publish that goes for review is refused. Of content published already, `publish` puts live just the block drafts it
+  names with `--with-block` (never-published ones too) and, in a plan, those the run saved, so `publish <page>
+  --with-block <block>` publishes a block's draft after the page went live without it; a never-published block it
+  doesn't name stays back there (someone probably kept it back). With none it is a `conflict` whose hint lists the
+  blocks with drafts it could name; a plan run again with `--update-existing` reports such a publish `unchanged`. A
+  write with `--publish` that changes only blocks takes along only its own.
+- **A write won't save a block's new version over someone else's draft unasked.** Where a whole area written again
+  takes over a block of the content's own folder whose latest version is a draft someone else saved, the write would
+  drop their changes from the block: it is a `conflict` (exit 5) with `details.reason: "pendingDraft"` and
+  `details.draft` naming the block's draft, who saved it and the item (`path`), in a dry run too, and on a terminal
+  opticli asks first. `--include-draft` (a plan step's `includeDraft`; `translate` has `--include-draft` now for this)
+  confirms it, and a warning says whose draft was replaced. In a plan, the step that writes the area confirms it, not
+  the `publish` step after it.
 - **Plans: a `publish` step takes along the block drafts earlier steps of the run saved** on that content, as one write
   with `"publish": true` does, besides its `withBlocks` (and not its `withoutBlocks`); a block a later step took out of
   the area isn't published. When those blocks are all that changed, the step publishes just them instead of failing
   with `conflict`. Its dry run takes the same blocks along, with the step's `withBlocks`, `withoutBlocks`,
-  `requestApproval` and `publishAt`, and reports the same warnings.
+  `requestApproval` and `publishAt`, and reports the same warnings; its note says "sent for review" for a step with
+  `requestApproval`.
 - **A write that changes only a block of the content's folder says so**: a `set` or area step whose only change is a
   block's new draft reported "Nothing changed" (and a plan counted it as unchanged); it now says the content was left
   as it was and lists the block drafts it saved, and a plan counts the step as saved, with how to discard them.
@@ -86,14 +97,17 @@ before. See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new
 - A review request (`requestApproval`) with never-published blocks is refused with the same hint as the CLI's, and a
   save into a project with `ready` or `requestApproval` takes the blocks along. `blocks` and `skipBlocks` with
   `requestApproval` are refused.
-- `publish_content` of content published already publishes just the block drafts that would go along (those never
-  published, and those `blocks` names), and is a conflict only when there are none.
+- `publish_content` of content published already publishes just the block drafts `blocks` names (never-published ones
+  too), and is a conflict when there are none, whose hint lists the blocks it could name.
+- A whole-area `update_content` (or `add_language`) over a colleague's unpublished draft of a block of the content's
+  folder is refused with a `pendingDraft` that has a `path`, dry run too; `includeDraft` confirms it (`add_language` has
+  it now), and the server's instructions tell the assistant to ask the editor first, as for a publish.
 
 ### npm package
 
 - `sharedBlocks` on write results, `inlineBlocks` on `AgentStatus`, `id` on a plan's `area` step, `withBlock` and
-  `withoutBlock` on `publish` and `projectsPublish`, and `withBlocks`/`withoutBlocks` on a plan's `publish` step are
-  typed.
+  `withoutBlock` on `publish` and `projectsPublish`, `withBlocks`/`withoutBlocks` on a plan's `publish` step,
+  `includeDraft` on `translate` and `path` on `PendingDraft` are typed.
 
 ### Documentation
 
