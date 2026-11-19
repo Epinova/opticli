@@ -382,6 +382,33 @@ public class PlanBlocksTests
     }
 
     [Fact]
+    public void A_publish_of_a_new_branch_is_dry_run_confirming_others_block_drafts_only_with_its_own_include_draft()
+    {
+        // The run's publish takes others' drafts of the folder's blocks along only with its own includeDraft; the new branch's
+        // dry run has one includeDraft for them and for a block its values take over, so it needs both steps' confirmation.
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "translate", "ref": "123", "lang": "sv", "includeDraft": true},
+              {"op": "publish", "ref": "123", "lang": "sv"},
+              {"op": "translate", "ref": "124", "lang": "sv", "includeDraft": true},
+              {"op": "publish", "ref": "124", "lang": "sv", "includeDraft": true}
+            ]}
+            """);
+        var targets = new Dictionary<int, PlanTarget>
+        {
+            [0] = new(123, "sv", "en", false, false),
+            [1] = new(123, "sv", "en", false, false),
+            [2] = new(124, "sv", "en", false, false),
+            [3] = new(124, "sv", "en", false, false),
+        };
+
+        var unconfirmed = Assert.IsType<TranslateOperation>(PlanSimulation.OnExisting(plan.Steps[1], plan.Steps, targets, None, updateExisting: false)!.Operation);
+        var confirmed = Assert.IsType<TranslateOperation>(PlanSimulation.OnExisting(plan.Steps[3], plan.Steps, targets, None, updateExisting: false)!.Operation);
+
+        Assert.Equal((false, true), (unconfirmed.IncludeDraft, confirmed.IncludeDraft));
+    }
+
+    [Fact]
     public void A_publish_after_steps_that_change_nothing_is_dry_run_on_its_own()
     {
         var plan = WritePlan.Parse("""

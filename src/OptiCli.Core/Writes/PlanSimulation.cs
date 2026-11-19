@@ -469,7 +469,9 @@ public static class PlanSimulation
         operation = operation switch
         {
             SetOperation set => set with { IncludeDraft = step.Operation.IncludeDraft, IncludeBlockDraft = blockDrafts },
-            TranslateOperation branch => branch with { IncludeDraft = blockDrafts },
+            // A new branch's one includeDraft also confirms others' drafts of the folder's blocks it publishes along, which the
+            // run's publish step confirms with its own: so both (for any other step, the step is among the writes already).
+            TranslateOperation branch => branch with { IncludeDraft = blockDrafts && step.Operation.IncludeDraft },
             _ => operation with { IncludeDraft = step.Operation.IncludeDraft },
         };
         return new Simulation(operation, null, new Dictionary<string, string>(), notChecked.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), references, notes);

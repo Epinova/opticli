@@ -955,7 +955,7 @@ review would leave unpublished, as a write that changes them does.
 `includeDraft` on the step that writes the area confirms someone else's block draft its items save over (above); the
 `publish` step's own `includeDraft` confirms only the content's drafts it puts live. The dry run, checking such steps
 together, keeps the two apart (the block drafts count as confirmed only when every step that writes the content has
-`includeDraft`).
+`includeDraft`; for a new branch a `translate` creates, the `publish` step's too).
 
 The dry run checks a `publish` after other steps on the same content together with them, as one write that publishes
 (nothing is saved yet to publish), with the step's `withBlocks`, `withoutBlocks`, `requestApproval` and `publishAt`:
