@@ -774,7 +774,7 @@ Against a shared database that differs from the build, writes stop with `drift` 
 opticli makes only what an editor could make in the same site's edit UI. There, "Create a new block" in a ContentArea
 makes an inline block, stored in the area, where the CMS UI's `UIOptions.InlineBlocksInContentAreaEnabled` is on, and a
 shared block in the page's "For this page" folder where it is off. Optimizely's default is off on CMS 12 and on on CMS
-13 (from 13.0.2; 13.0.0 and 13.0.1 default to off). Every write that makes a new block in an area follows the site: a
+13 (from 13.0.2; 13.0.0 defaults to off). Every write that makes a new block in an area follows the site: a
 `{"type", "properties"}` item in a whole area (`set`, `create`), `area add --type`, a plan's `area add` with `type`
 (`apply` of an export and `sync pull` included), and the MCP module's `create_content`, `update_content` and custom
 tools. `serve --status` and `doctor` say which (`inlineBlocks`: `inline` or `shared`). Where the setting can't be read

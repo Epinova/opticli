@@ -6,8 +6,7 @@ again to update the skill.
 ## 0.35.0 (unreleased)
 
 New blocks in a ContentArea are made as the site's edit UI makes them. **A change for sites whose edit UI makes no
-inline blocks** (`UIOptions.InlineBlocksInContentAreaEnabled` off: Optimizely's default on CMS 12, and on CMS 13.0.0
-and 13.0.1): opticli and the MCP module made an inline block there with only a warning, which such a site may not
+inline blocks** (`UIOptions.InlineBlocksInContentAreaEnabled` off: Optimizely's default on CMS 12, and on CMS 13.0.0): opticli and the MCP module made an inline block there with only a warning, which such a site may not
 render (a page built so could fail with HTTP 500). There they now make a shared block in the page's "For this page"
 folder, as the edit UI's "Create a new block" does. Sites with the setting on (CMS 13's default from 13.0.2) work as
 before. See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new-blocks-in-a-contentarea).
