@@ -282,8 +282,9 @@ public class PlanBlocksTests
         var undo = UndoHints.For(new SetOperation("123"), Output(false, Saved("457_8", SharedBlockActions.Updated)))!;
         Assert.Contains("The content itself is unchanged. 457_8 is a new draft of a block", undo);
         Assert.Contains("opticli discard 457 --version 8", undo);
-        Assert.Contains("457_9 of the content's \"For this page\" folder is now published",
-            UndoHints.For(new PublishOperation("123"), Output(false, Saved("457_9", SharedBlockActions.Published, "published"))));
+        var published = UndoHints.For(new PublishOperation("123"), Output(false, Saved("457_9", SharedBlockActions.Published, "published")))!;
+        Assert.Contains("457_9 of the content's \"For this page\" folder is now published", published);
+        Assert.Contains("previously published version (opticli versions 457 lists them)", published);
         Assert.Null(UndoHints.For(new SetOperation("123"), Output(false, Saved("458", SharedBlockActions.Existing))));
     }
 

@@ -88,7 +88,7 @@ public static class UndoHints
         }
         if (published.Count > 0)
         {
-            parts.Add($"{string.Join(", ", published.Select(b => b.Ref))} of the content's \"For this page\" folder {(published.Count == 1 ? "is" : "are")} now {(published.Any(b => b.Status == "delayedPublish") ? "scheduled" : "published")}; to go back, publish {(published.Count == 1 ? "the block's" : "each block's")} previously published version (opticli versions <block> lists them), or unpublish one that was never published before");
+            parts.Add($"{string.Join(", ", published.Select(b => b.Ref))} of the content's \"For this page\" folder {(published.Count == 1 ? "is" : "are")} now {(published.Any(b => b.Status == "delayedPublish") ? "scheduled" : "published")}; to go back, publish {(published.Count == 1 ? "the block's" : "each block's")} previously published version ({string.Join(", ", published.Select(b => $"opticli versions {b.Ref!.Split('_')[0]}"))} lists them), or unpublish one that was never published before");
         }
         return $"The content itself is unchanged. {string.Join(". ", parts)}.";
     }
