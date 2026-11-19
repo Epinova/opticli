@@ -1,14 +1,14 @@
 namespace OptiCli.Tests;
 
-/// <summary><c>area add --type</c> (a new inline block) and its arguments, checked before opticli looks for a project.</summary>
+/// <summary><c>area add --type</c> (a new block) and its arguments, checked before opticli looks for a project.</summary>
 [Collection(ConsoleCollection.Name)]
 public class AreaCommandTests
 {
     [Theory]
     [InlineData("--type only applies to add", "remove", "2", "--type", "TeaserBlock")]
-    [InlineData("--values and --name are a new inline block's: give --type too", "add", "456", "--name", "Intro")]
-    [InlineData("--values and --name are a new inline block's: give --type too", "add", "456", "--values", "{}")]
-    [InlineData("area add takes a block ref or --type (a new inline block), not both ('456')", "add", "456", "--type", "TeaserBlock", "Heading=Hi")]
+    [InlineData("--values and --name are a new block's: give --type too", "add", "456", "--name", "Intro")]
+    [InlineData("--values and --name are a new block's: give --type too", "add", "456", "--values", "{}")]
+    [InlineData("area add takes a block ref or --type (a new block), not both ('456')", "add", "456", "--type", "TeaserBlock", "Heading=Hi")]
     [InlineData("area add takes 1 value(s), got 0.", "add")]
     [InlineData("area set takes the inline block's position, then its values as Prop=value.", "set")]
     [InlineData("area set takes the inline block's position, then its values as Prop=value.", "set", "Heading=Hi")]

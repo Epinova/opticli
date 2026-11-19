@@ -435,7 +435,7 @@ export interface AreaOptions extends CommonOptions {
   type?: string;
   /** Property values as an object (sent as JSON): see `Properties`. */
   values?: Properties;
-  /** add --type, set: the inline block's name in the area (the edit UI shows it; default: none, shown as its type's name); set --name "" removes it. */
+  /** add --type: the new block's name: an inline block's name in the area (the edit UI shows it; default: none, shown as its type's name), or a shared block's (default: "<content name> <type> <n>", as the edit UI names one). set: the inline block's name; set --name "" removes it. */
   name?: string;
   /** Validate and show the before/after diff without saving anything. */
   dryRun?: boolean;

@@ -21,8 +21,8 @@ internal static class AreaCommand
         var at = new Option<int?>("--at") { Description = "add: insert at this zero-based position. Default: the end.", HelpName = "n" };
         var display = new Option<string?>("--display") { Description = "add: display option (an id like 'wide', as the site registers them; an unknown one is refused).", HelpName = "option" };
         var type = new Option<string?>("--type") { Description = "add: a new block of this block type, with Prop=value arguments as its values: an inline block stored in the area (CMS 12.20+), or, where the site's edit UI makes those (`opticli serve --status`: inlineBlocks shared), a shared block in the content's \"For this page\" folder (sharedBlocks in the result gives its ref).", HelpName = "type" };
-        var values = new Option<string?>("--values") { Description = "add --type, set: the inline block's values as a JSON object, merged over the Prop=value arguments, as for `opticli set`.", HelpName = "json" };
-        var name = new Option<string?>("--name") { Description = "add --type, set: the inline block's name in the area (the edit UI shows it; default: none, shown as its type's name); set --name \"\" removes it.", HelpName = "name" };
+        var values = new Option<string?>("--values") { Description = "add --type: the new block's values; set: the inline block's. A JSON object, merged over the Prop=value arguments, as for `opticli set`.", HelpName = "json" };
+        var name = new Option<string?>("--name") { Description = "add --type: the new block's name: an inline block's name in the area (the edit UI shows it; default: none, shown as its type's name), or a shared block's (default: \"<content name> <type> <n>\", as the edit UI names one). set: the inline block's name; set --name \"\" removes it.", HelpName = "name" };
         var write = new WriteOptions();
         var command = new Command("area", """
             Add, remove, reorder or change ContentArea items on a new version, a draft unless --publish. Needs `opticli serve`.
@@ -65,11 +65,11 @@ internal static class AreaCommand
             const string usage = "Usage: area <ref> <Prop> add <block-ref> | add --type T [Prop=value ...] | remove <index|ref:id> | move <from> <to> | set <index> [Prop=value ...] [--name N].";
             if (inlineType is not null && verb != "add")
             {
-                throw new UsageException("--type only applies to add (a new inline block).", "remove, move and set name an inline block by its position.");
+                throw new UsageException("--type only applies to add (a new block).", "remove, move and set name an inline block by its position.");
             }
             if (inlineType is null && verb != "set" && (parse.GetValue(values) is not null || parse.GetValue(name) is not null))
             {
-                throw new UsageException("--values and --name are a new inline block's: give --type too.", usage);
+                throw new UsageException("--values and --name are a new block's: give --type too.", usage);
             }
             var expected = verb == "move" ? 2 : 1;
             if (inlineType is null && verb != "set" && given.Length != expected)
@@ -82,7 +82,7 @@ internal static class AreaCommand
             }
             if (inlineType is not null && given.FirstOrDefault(g => !g.Contains('=')) is { } reference)
             {
-                throw new UsageException($"area add takes a block ref or --type (a new inline block), not both ('{reference}').", "After --type T, give the inline block's values as Prop=value.");
+                throw new UsageException($"area add takes a block ref or --type (a new block), not both ('{reference}').", "After --type T, give the new block's values as Prop=value.");
             }
             if (verb == "set" && (given.Length == 0 || given[0].Contains('=') || given.Skip(1).Any(g => !g.Contains('='))))
             {
