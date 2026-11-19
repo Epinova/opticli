@@ -415,12 +415,7 @@ public sealed class WriteExecutor(
         WriteResult result;
         try
         {
-            // A yes to publishing someone else's draft of the content isn't a yes to saving over their draft of a block: once
-            // the agent can tell them apart (it makes shared area blocks), each is asked about on its own.
-            var apart = confirmDraft is not null && await InlineBlocksAsync(cancellationToken) == InlineBlockModes.Shared;
-            result = await PublishingPostAsync(AgentRoutes.Draft(target.AgentRef), request,
-                r => r with { IncludeDraft = true, IncludeBlockDraft = apart ? r.IncludeBlockDraft ?? r.IncludeDraft : r.IncludeBlockDraft }, cancellationToken,
-                confirmedBlock: r => apart ? r with { IncludeBlockDraft = true } : r with { IncludeDraft = true });
+            result = await PostDraftAsync(AgentRoutes.Draft(target.AgentRef), request, cancellationToken);
         }
         catch (ConflictException ex) when (ex.Details is AgentErrorDetails { CurrentVersion: { } current })
         {
@@ -434,6 +429,20 @@ public sealed class WriteExecutor(
             outcome = outcome with { Warnings = [.. outcome.Warnings, leftOut] };
         }
         return await WithSimpleAddressCheckAsync(outcome, result, target.Header, self: true, cancellationToken);
+    }
+
+    /// <summary>
+    /// Posts a draft write (<see cref="AgentRoutes.Draft"/>); on a terminal, asks about someone else's draft that it was
+    /// refused for and sends it again, confirmed.
+    /// </summary>
+    internal async Task<WriteResult> PostDraftAsync(string route, DraftRequest request, CancellationToken cancellationToken)
+    {
+        // A yes to publishing someone else's draft of the content isn't a yes to saving over their draft of a block: once
+        // the agent can tell them apart (it makes shared area blocks), each is asked about on its own.
+        var apart = confirmDraft is not null && await InlineBlocksAsync(cancellationToken) == InlineBlockModes.Shared;
+        return await PublishingPostAsync(route, request,
+            r => r with { IncludeDraft = true, IncludeBlockDraft = apart ? r.IncludeBlockDraft ?? r.IncludeDraft : r.IncludeBlockDraft }, cancellationToken,
+            confirmedBlock: r => apart ? r with { IncludeBlockDraft = true } : r with { IncludeDraft = true });
     }
 
     /// <summary>What to do when someone saved <paramref name="latest"/> after the version the change expected to be the latest.</summary>
