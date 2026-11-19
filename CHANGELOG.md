@@ -5,6 +5,15 @@ again to update the skill.
 
 ## Unreleased
 
+### CLI
+
+- **`env --connection-name` without `--include-connection` checks the right connection string.** `opticli env` left
+  out `OPTICLI_CONNECTION_NAME` unless the connection was pinned, so the site agent checked `EPiServerDB` instead of the
+  site's own connection string: a site without an `EPiServerDB` string refused to start, and one with both had the
+  wrong string checked. The name is now always passed when it isn't `EPiServerDB`.
+
+### Documentation
+
 **The reference moved out of the README.** The README is now a quickstart with a documentation index (it is also the
 NuGet packages' page). The reference is in [docs/reference/](https://github.com/Epinova/opticli/tree/main/docs/reference),
 one page per area for the CLI (`cli/`) and the MCP module (`mcp/`), and building, testing and releasing are in

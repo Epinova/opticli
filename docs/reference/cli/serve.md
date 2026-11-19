@@ -67,7 +67,7 @@ are often committed, so keep the token out of git.
 | `DOTNET_STARTUP_HOOKS` | always | path to `OptiCli.Agent.dll`, which loads the site agent |
 | `OPTICLI_TOKEN` | always | the per-run token the site agent requires |
 | `OPTICLI_DB` | `serve`, `env --include-connection` | the connection string to pin the site to (read by the CLI, it is the same as `--connection`) |
-| `OPTICLI_CONNECTION_NAME` | `serve`, `env --include-connection`, when not `EPiServerDB` | which connection string to pin |
+| `OPTICLI_CONNECTION_NAME` | `serve`, `env` (with or without `--include-connection`), when not `EPiServerDB` | which connection string the site agent checks, and pins with `OPTICLI_DB` |
 | `ConnectionStrings__<Name>` | `serve`, `env --include-connection` | the same connection string, for code that reads it before the agent's pin; `serve` also removes other spellings of it (`ConnectionStrings:<Name>`, another case, Azure's `SQLCONNSTR_<Name>` and the like) |
 | `OPTICLI_REMOTE_DB` | against a remote development database | the one remote database the site agent accepts; turns on shared-database mode |
 | `OPTICLI_DRIFT_FILE` | `serve`, against a remote development database | what `serve` compared before the start (EF Core migrations, CMS schema version), for the site agent's drift report |

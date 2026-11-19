@@ -70,6 +70,19 @@ public class EnvironmentTests
     }
 
     [Fact]
+    public void Without_a_connection_the_agent_still_learns_which_connection_string_to_check()
+    {
+        // `env --connection-name CmsDb` without --include-connection: the site keeps its own CmsDb, and the agent checks
+        // that one, not EPiServerDB (empty on such a site, or another database).
+        var variables = Build(null, name: "CmsDb");
+
+        Assert.Equal("CmsDb", variables[AgentProtocol.ConnectionNameVariable]);
+        Assert.False(variables.ContainsKey(AgentProtocol.DatabaseVariable));
+        Assert.DoesNotContain(variables.Keys, k => k.StartsWith("ConnectionStrings", StringComparison.Ordinal));
+        Assert.False(Build(null).ContainsKey(AgentProtocol.ConnectionNameVariable));
+    }
+
+    [Fact]
     public void A_remote_development_database_is_approved_for_the_agent_by_server_and_name()
     {
         var remote = ConnectionSafety.Approve("Server=tcp:dev.example.net,1433;Database=ExampleDb;User Id=app;Password=secret");
