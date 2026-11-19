@@ -881,9 +881,34 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             { Details = details ?? outcome?.Output };
             return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Invalid, failure.Details, Error(failure), Warnings: notes, Guid: op.ContentGuid), failure);
         }
+        if (op is PublishOperation publish && PublishAlongNote(publish, outcome?.Output as WriteOutput) is { } along)
+        {
+            notes.Add(along);
+        }
         var warnings = notes.Concat(outcome?.Warnings ?? []).ToList();
         return (new PlanStepResult(step.Index, op.Kind, op.Id, PlanStepStatus.Simulated, outcome?.Output ?? details,
             Warnings: warnings.Count > 0 ? warnings : null, Guid: op.ContentGuid), null);
+    }
+
+    /// <summary>
+    /// A <c>publish</c> dry-run with the steps before it as one write that publishes (<see cref="PlanSimulation.OnExisting"/>):
+    /// that write takes along the blocks of the content's folder it changes, and knows nothing of the step's
+    /// <c>withBlocks</c>/<c>withoutBlocks</c>, while the run's publish takes along only the blocks never published and those
+    /// it names. Where that can differ (the step names blocks, or the earlier steps change one), a note says so.
+    /// </summary>
+    internal static string? PublishAlongNote(PublishOperation publish, WriteOutput? simulated)
+    {
+        var changed = (simulated?.SharedBlocks ?? []).Where(b => b.Action == Protocol.SharedBlockActions.Updated && b.Ref is not null)
+            .Select(b => b.Ref!.Split('_')[0]).Distinct().ToList();
+        var names = publish.WithBlocks is { Count: > 0 } || publish.WithoutBlocks is { Count: > 0 };
+        if (changed.Count == 0 && !names)
+        {
+            return null;
+        }
+        return "This publish is dry-run together with the operations before it as one write that publishes"
+            + (changed.Count > 0 ? $", which takes along the blocks they change ({string.Join(", ", changed)})" : "")
+            + (names ? ", without its withBlocks and withoutBlocks" : "")
+            + ". When the plan runs, the publish takes along only the blocks of the content's folder never published and those withBlocks names (not those withoutBlocks names): a block that is live already stays a draft unless withBlocks names it (or the step that changes it has \"publish\": true).";
     }
 
     private static bool Left(string? property, IReadOnlyList<string> skipped) =>

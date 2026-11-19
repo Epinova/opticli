@@ -913,6 +913,13 @@ block (`existing`) and `$intro` names it again. The dry run refuses (`invalid`):
 
 A run that meets a `$id` naming no block stops there (`usage`).
 
+A `publish` step takes `withBlocks` and `withoutBlocks` (arrays of refs or `$id`s), as `--with-block` and
+`--without-block`. It is a publish of its own, not part of the steps before it: a live block that an earlier step
+changes goes along only when `withBlocks` names it, or when that step has `"publish": true`. The dry run, though,
+checks a `publish` after other steps on the same content together with them, as one write that publishes (nothing is
+saved yet to publish): it shows the blocks they change going along, and leaves `withBlocks` and `withoutBlocks` out.
+The step's warnings then say so.
+
 **Editors' assistants** ([MCP server for editors](#mcp-server-for-editors)) follow the same rules, as the editor: a new
 block needs Edit and Create on the content (Create on its parent for new content) and a block type they may create in
 its folder (on existing content, one the edit UI offers for a new block there), and changing a block of the folder by

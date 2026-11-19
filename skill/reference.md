@@ -423,7 +423,8 @@ override: such a site may not render inline blocks.
   takes such a draft along when the user wants it live too; `--without-block <block>` keeps a never-published one back.
   Both only for blocks of the content's own folder that it shows (else `usage`); in a plan, `withBlocks` /
   `withoutBlocks` on the `publish` step (refs or `$id`s). A write with `--publish` takes the blocks it made or changed
-  along by itself. The CMS's own Publish publishes no blocks: tell the user. Until a changed block is published the
+  along by itself; a plan's separate `publish` step doesn't (name a live block an earlier step changed in `withBlocks`,
+  or give that step `"publish": true`), though its dry run after those steps shows them going along (a warning says so). The CMS's own Publish publishes no blocks: tell the user. Until a changed block is published the
   content's preview shows its published version.
 - Run `publish <ref> --dry-run` first and tell the user what goes live: on such a site it asks the site, and lists the
   blocks it would publish along (`sharedBlocks`) and those it leaves behind (`validation` warnings).

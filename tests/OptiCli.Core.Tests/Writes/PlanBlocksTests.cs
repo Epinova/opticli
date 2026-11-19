@@ -239,6 +239,31 @@ public class PlanBlocksTests
     }
 
     [Fact]
+    public void A_publish_dry_run_with_the_steps_before_it_says_where_the_run_takes_other_blocks_along()
+    {
+        static WriteOutput Simulated(params SharedBlockResult[] blocks) =>
+            new("123", "123_14", null, "ArticlePage", "Page", "en", "published", "5", Saved: false, Published: false, DryRun: true, Valid: true,
+                BaseVersion: "123_13", Changes: [], Validation: null) { SharedBlocks = blocks.Length > 0 ? blocks : null };
+        static SharedBlockResult Block(string reference, string action) =>
+            new() { Path = "MainArea[0]", Ref = reference, Name = "Teaser", Type = "TeaserBlock", Folder = "130", Status = "published", Action = action };
+
+        // Nothing it could differ in: a never-published block goes along both ways.
+        Assert.Null(PlanRunner.PublishAlongNote(new PublishOperation("123"), Simulated(Block("456_7", SharedBlockActions.Published))));
+        Assert.Null(PlanRunner.PublishAlongNote(new PublishOperation("123"), null));
+
+        // An earlier step changes a block: the dry run takes it along as a write with publish does, the run only when named.
+        var changed = PlanRunner.PublishAlongNote(new PublishOperation("123"), Simulated(Block("456_8", SharedBlockActions.Updated), Block("457_9", SharedBlockActions.Published)))!;
+        Assert.Contains("which takes along the blocks they change (456)", changed);
+        Assert.Contains("a block that is live already stays a draft unless withBlocks names it", changed);
+        Assert.DoesNotContain("without its withBlocks", changed);
+
+        // Blocks named on the step aren't part of the dry run.
+        var named = PlanRunner.PublishAlongNote(new PublishOperation("123") { WithBlocks = ["456"] }, Simulated())!;
+        Assert.Contains("without its withBlocks and withoutBlocks", named);
+        Assert.Contains("without its withBlocks", PlanRunner.PublishAlongNote(new PublishOperation("123") { WithoutBlocks = ["789"] }, null));
+    }
+
+    [Fact]
     public void A_plan_that_names_an_area_item_by_its_position_is_dry_run_after_the_steps_before_it()
     {
         // Positional steps: the existing content each step writes is looked up, so earlier area adds are folded in.
