@@ -716,7 +716,8 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     /// publish of the content takes along when named.
     /// </summary>
     /// <param name="Live">The block has a published version (its newer draft stays); else it was never published.</param>
-    internal sealed record Nameable(string Path, int Id, string Name, bool Live);
+    /// <param name="SavedBy">Who saved the draft, when it is someone else's (naming the block puts their changes live); else null.</param>
+    internal sealed record Nameable(string Path, int Id, string Name, bool Live, string? SavedBy = null);
 
     /// <summary>
     /// The hint of a publish of content published already that took nothing along: the blocks of its folder it could take
@@ -727,7 +728,7 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
         var owner = content.ContentLink.ID.ToString(CultureInfo.InvariantCulture);
         var ids = blocks.Select(b => b.Id.ToString(CultureInfo.InvariantCulture)).ToList();
         var listed = string.Join("; ", blocks.Select(b =>
-            $"{b.Id.ToString(CultureInfo.InvariantCulture)} ('{b.Name}') at {b.Path}, {(b.Live ? "published, with a newer draft" : "never published")}"));
+            $"{b.Id.ToString(CultureInfo.InvariantCulture)} ('{b.Name}') at {b.Path}, {(b.Live ? "published, with a newer draft" : "never published")}{(b.SavedBy is { } who ? $", a draft {who} saved" : "")}"));
         return $"Drafts of blocks of its \"For this page\" folder that it shows, which go along when named: {listed}. " + call.ForCaller(
             $"To publish those that should go live: opticli publish {owner} {string.Join(" ", ids.Select(i => $"--with-block {i}"))} (name only those), or publish a block on its own (opticli publish <ref>).",
             $"To publish those that should go live: publish_content on {owner} with blocks: [{string.Join(", ", ids.Select(i => $"\"{i}\""))}] (name only those), or publish_content on a block's ref.");
@@ -822,7 +823,8 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
             {
                 var reference = id.ToString(CultureInfo.InvariantCulture);
                 var how = choice.HowToInclude?.Invoke(reference) ?? HowToInclude(published, reference);
-                nameable?.Add(new Nameable(path, id, version.Name, live));
+                nameable?.Add(new Nameable(path, id, version.Name, live,
+                    PendingDrafts.SavedBy(latest.SavedBy, call.UserName) ? null : string.IsNullOrWhiteSpace(latest.SavedBy) ? "someone without a user name" : latest.SavedBy));
                 warnings.Add(new ValidationIssue(path, live
                     ? $"{what} is published already, so its newer draft stays a draft: the content {(choice.NamedOnly ? "shows" : "goes live showing")} the block's published version. {how}"
                     : $"{what} was never published, and stays a draft: the content is published already, so a publish of it takes along only the blocks it names (or that the same plan run saved), and visitors see nothing of this block until it is published. {how}",

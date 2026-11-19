@@ -896,7 +896,7 @@ opticli publish 123 --without-block 789           # keep never-published block 7
   warning: it isn't new with this publish, so someone probably kept it back. The content gets no new version;
   `published` is false, `sharedBlocks` lists the blocks, and an `info` line says so. With no such block it is a
   `conflict`, as before, whose hint lists the blocks of the folder it shows that have drafts (never published, or live
-  with a newer draft) and the command that names them (`opticli publish 123 --with-block 456 --with-block 789`; for
+  with a newer draft, and who saved the draft when it is someone else's) and the command that names them (`opticli publish 123 --with-block 456 --with-block 789`; for
   the MCP module `publish_content` with `blocks`). A plan run again with `--update-existing` reports such a publish
   `unchanged`.
 - **A write that publishes** (`--publish`, `--publish-at`) takes along the blocks it made or changed itself (`created`,

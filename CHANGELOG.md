@@ -44,8 +44,9 @@ before. See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new
   `publish` puts live just the block drafts it names with `--with-block` (never-published ones too) and, in a plan,
   those the run saved, so `publish <page> --with-block <block>` publishes a block's draft after the page went live
   without it; a never-published block it doesn't name stays back there (someone probably kept it back). With none it
-  is a `conflict` whose hint lists the blocks with drafts it could name; a plan run again with `--update-existing`
-  reports such a publish `unchanged`. A write with `--publish` that changes only blocks takes along only its own.
+  is a `conflict` whose hint lists the blocks with drafts it could name (and who saved a draft that is someone
+  else's); a plan run again with `--update-existing` reports such a publish `unchanged`. A write with `--publish` that
+  changes only blocks takes along only its own.
 - **A write won't save a block's new version over someone else's draft unasked.** Where a whole area written again
   takes over a block of the content's own folder whose latest version is a draft someone else saved, the write would
   drop their changes from the block: it is a `conflict` (exit 5) with `details.reason: "pendingDraft"` and

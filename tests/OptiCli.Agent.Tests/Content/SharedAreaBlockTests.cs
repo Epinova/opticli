@@ -1733,6 +1733,10 @@ public class SharedAreaBlockTests
         page = OwnerOf(site, live, Ref(live));
         site.Store.Saves.Clear();
 
+        // Unnamed, nothing goes; the hint that lists it says whose draft naming it would put live.
+        var unnamed = Assert.Throws<AgentException>(() => Publish(site, page, new PublishRequest { IncludeDraft = true, DryRun = true }));
+        Assert.Contains($"{Id(live)} ('Live') at Area[0], published, with a newer draft, a draft someone saved", unnamed.Hint);
+
         var result = Publish(site, page, new PublishRequest { WithBlocks = [Id(live)] });
 
         Assert.False(result.Published);
@@ -1859,8 +1863,8 @@ public class SharedAreaBlockTests
             var conflict = Assert.Throws<AgentException>(() => Publish(site, page, new PublishRequest { DryRun = dryRun }));
             Assert.Equal(AgentErrorCodes.Conflict, conflict.Code);
             Assert.Contains("No draft of a block of its \"For this page\" folder goes along either", conflict.Message);
-            Assert.Contains($"{Id(fresh)} ('Fresh') at Area[0], never published", conflict.Hint);
-            Assert.Contains($"{Id(live)} ('Live') at Area[1], published, with a newer draft", conflict.Hint);
+            Assert.Contains($"{Id(fresh)} ('Fresh') at Area[0], never published;", conflict.Hint);
+            Assert.Contains($"{Id(live)} ('Live') at Area[1], published, with a newer draft.", conflict.Hint);
             Assert.Contains($"opticli publish {Id(page)} --with-block {Id(fresh)} --with-block {Id(live)}", conflict.Hint);
         }
         Assert.Empty(site.Store.Saves);
