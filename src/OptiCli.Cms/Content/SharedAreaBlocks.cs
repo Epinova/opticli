@@ -714,7 +714,9 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
                     "warning"));
                 continue;
             }
-            if (!othersConfirmed && !PendingDrafts.SavedBy(latest.SavedBy, call.UserName))
+            // A block the write changes itself goes along as the write saves it, its own latest version; a dry run still sees
+            // the draft that version will replace, someone else's or not.
+            if (!othersConfirmed && !(dryRun && choice.Written.Contains(id)) && !PendingDrafts.SavedBy(latest.SavedBy, call.UserName))
             {
                 warnings.Add(new ValidationIssue(path, $"{what} is a draft {(string.IsNullOrWhiteSpace(latest.SavedBy) ? "saved without a user name" : $"{latest.SavedBy} saved")}, so it wasn't published along: those changes aren't yours. Publish it on its own if they should go live.", "warning"));
                 continue;

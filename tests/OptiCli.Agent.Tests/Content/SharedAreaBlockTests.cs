@@ -1578,6 +1578,38 @@ public class SharedAreaBlockTests
     }
 
     [Fact]
+    public void A_write_that_publishes_a_block_it_changes_over_someone_elses_draft_says_so_alike_in_its_dry_run_and_its_run()
+    {
+        var site = new Site();
+        var page = site.Page(folder: true);
+        var folder = site.Folder(page).ContentLink;
+        site.Store.SavedBy = "someone";
+        var changed = LiveWithDraft(site, folder, "Intro", "Old", "Theirs");
+        site.Store.SavedBy = AgentProtocol.PrincipalName;
+        page = OwnerOf(site, changed, Ref(changed));
+        site.Store.Saves.Clear();
+        const string area = """{"Area": [{"type": "ItemBlock", "name": "Intro", "properties": {"Title": "New"}}]}""";
+        var flow = site.Flow();
+        var (writable, before) = site.Write(flow, page, area);
+
+        var dry = site.Save(flow, writable, before, dryRun: true, action: SaveAction.Publish | SaveAction.ForceNewVersion);
+        Assert.Empty(site.Store.Saves);
+        flow = site.Flow();
+        (writable, before) = site.Write(flow, page, area);
+        var result = site.Save(flow, writable, before, action: SaveAction.Publish | SaveAction.ForceNewVersion);
+
+        // The write's own version replaces their draft and goes live; the dry run doesn't warn that it stays behind.
+        foreach (var shown in new[] { dry, result })
+        {
+            var block = Assert.Single(shown.SharedBlocks!);
+            Assert.Equal((changed.ContentLink.ID, SharedBlockActions.Updated, "published"), (ContentReference.Parse(block.Ref!).ID, block.Action, block.Status));
+            Assert.DoesNotContain(shown.Validation ?? [], i => i.Severity == "warning");
+        }
+        Assert.Equal(VersionStatus.Published, StatusOf(site, changed));
+        Assert.Equal("New", Title(site.Stored(changed.ContentLink.ToReferenceWithoutVersion())));
+    }
+
+    [Fact]
     public void A_block_published_only_in_another_language_counts_as_never_published_in_the_branch_published()
     {
         var site = new Site();
