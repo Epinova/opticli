@@ -535,8 +535,13 @@ public sealed class SharedAreaBlockIntegrationTests
     private static List<string> Live(PlanStepResult step) =>
         (Assert.IsType<WriteOutput>(step.Result).SharedBlocks ?? []).Where(b => b.Status == "published").Select(b => b.Ref is null ? "new" : Id(ContentId(b.Ref))).Order().ToList();
 
+    /// <summary>
+    /// The warnings of a step's result about blocks of the folder its publish leaves behind (a dry run's also has the
+    /// write's own validation warnings, such as CMS 13's about an image in another content's assets folder).
+    /// </summary>
     private static List<string> Warnings(PlanStepResult step) =>
-        (Assert.IsType<WriteOutput>(step.Result).Validation ?? []).Where(v => v.Severity == "warning").Select(v => v.Message).ToList();
+        (Assert.IsType<WriteOutput>(step.Result).Validation ?? []).Where(v => v.Severity == "warning" && v.Message.StartsWith("The block ", StringComparison.Ordinal))
+            .Select(v => v.Message).ToList();
 
     [InlineBlockModeFact(InlineBlockModes.Shared)]
     public async Task A_plans_publish_after_an_area_rewrite_that_takes_over_a_live_block_takes_it_along_in_the_dry_run_and_the_run()
