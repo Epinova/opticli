@@ -3,7 +3,7 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
-## 0.35.0 (unreleased)
+## 0.35.0 (19 November 2026)
 
 New blocks in a ContentArea are made as the site's edit UI makes them. **A change for sites whose edit UI makes no
 inline blocks** (`UIOptions.InlineBlocksInContentAreaEnabled` off: Optimizely's default on CMS 12, and on CMS 13.0.0):
