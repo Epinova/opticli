@@ -6,6 +6,7 @@ using Microsoft.Data.SqlClient;
 using OptiCli.Core.Content;
 using OptiCli.Core.Errors;
 using OptiCli.Core.Properties;
+using OptiCli.Core.Serve;
 using OptiCli.Core.Writes;
 using OptiCli.Protocol;
 
@@ -651,6 +652,122 @@ public sealed class SharedAreaBlockIntegrationTests
             var review = await Assert.ThrowsAsync<UsageException>(() => alloy.Writes.RunAsync(new PublishOperation(reviewed) { WithBlocks = [block], RequestApproval = true }, dryRun, CancellationToken.None));
             Assert.Contains("goes for review instead", review.Message);
         }
+    }
+
+    [InlineBlockModeFact(InlineBlockModes.Shared)]
+    public async Task A_publish_of_a_live_page_publishes_only_the_blocks_it_names_and_run_again_stays_unchanged()
+    {
+        await using var alloy = await Alloy.StartAsync();
+        if (alloy is null)
+        {
+            return;
+        }
+        // A live page showing a block kept back when it was published (never published) and a live block with a newer draft.
+        var page = await alloy.PageAsync("live page names", Alloy.Area(alloy.Teaser("Live original", name: "Live")));
+        var live = Id(ContentId(Assert.Single((await alloy.RunAsync(new PublishOperation(page))).SharedBlocks!).Ref!));
+        await alloy.RunAsync(new SetOperation(live, alloy.TeaserValues("Live changed")));
+        var added = await alloy.RunAsync(new AreaEdit(page, "MainContentArea", AreaOps.Add) { Type = "TeaserBlock", Name = "Kept", Values = alloy.TeaserValues("Kept back block") });
+        var kept = Id(ContentId(Assert.Single(added.SharedBlocks!).Ref!));
+        var keptBack = await alloy.RunAsync(new PublishOperation(page) { WithoutBlocks = [kept] });
+        Assert.True(keptBack.Published);
+        Assert.Null(keptBack.SharedBlocks);
+        var keptDraft = (await Alloy.GetAsync(kept)).Version!;
+        var liveDraft = (await Alloy.GetAsync(live)).Version!;
+
+        // Published again, unnamed: neither block goes along, so there is nothing to publish (dry run alike); the hint lists
+        // both, and how to name them.
+        foreach (var dryRun in new[] { true, false })
+        {
+            var conflict = await Assert.ThrowsAsync<ConflictException>(() => alloy.Writes.RunAsync(new PublishOperation(page), dryRun, CancellationToken.None));
+            Assert.Contains("No draft of a block", conflict.Message);
+            Assert.Contains($"{kept} ('Kept') at MainContentArea[1], never published", conflict.Hint);
+            Assert.Contains($"{live} ('Live') at MainContentArea[0], published, with a newer draft", conflict.Hint);
+            Assert.Contains($"opticli publish {page} --with-block {live} --with-block {kept}", conflict.Hint);
+        }
+        // A plan run again with --update-existing: its publish has nothing named or written, so it stays unchanged.
+        var plan = WritePlan.Parse($$$"""{"operations": [{"op": "publish", "ref": "{{{page}}}"}]}""");
+        var again = new WriteExecutor(alloy.Site.Session, _ => Task.FromResult(alloy.Site.Agent), updateExisting: true);
+        var runner = new PlanRunner(alloy.Site.Session, again, Path.GetTempPath());
+        var dryRerun = Assert.Single((await runner.RunAsync(plan, dryRun: true, publishAll: false, CancellationToken.None)).Operations);
+        Assert.NotEqual(PlanStepStatus.Invalid, dryRerun.Status);
+        Assert.Contains(dryRerun.Warnings!, w => w.Contains("is already published; nothing to do"));
+        Assert.Equal(PlanStepStatus.Unchanged, Assert.Single((await runner.RunAsync(plan, dryRun: false, publishAll: false, CancellationToken.None)).Operations).Status);
+        Assert.Equal(("checkedOut", "checkedOut"), (await alloy.StatusAsync(keptDraft), await alloy.StatusAsync(liveDraft)));
+
+        // Named, the block kept back goes live on its own, the live block's draft staying behind; dry run alike.
+        var dry = await alloy.RunAsync(new PublishOperation(page) { WithBlocks = [kept] }, dryRun: true);
+        var named = await alloy.RunAsync(new PublishOperation(page) { WithBlocks = [kept] });
+        foreach (var shown in new[] { dry, named })
+        {
+            Assert.Equal([kept], shown.SharedBlocks!.Select(b => Id(ContentId(b.Ref!))));
+            Assert.Contains(shown.Validation!, v => v.Severity == "warning" && v.Property == "MainContentArea[0]" && v.Message.Contains("is published already"));
+        }
+        Assert.False(named.Published);
+        Assert.Equal(("published", "checkedOut"), (await alloy.StatusAsync(keptDraft), await alloy.StatusAsync(liveDraft)));
+        var html = await alloy.RenderAsync(page);
+        Assert.Contains("Kept back block", html);
+        Assert.DoesNotContain("Live changed", html);
+    }
+
+    [InlineBlockModeFact(InlineBlockModes.Shared)]
+    public async Task A_whole_area_write_over_someone_elses_draft_of_a_folder_block_is_refused_until_include_draft()
+    {
+        await using var alloy = await Alloy.StartAsync();
+        if (alloy is null)
+        {
+            return;
+        }
+        var page = await alloy.PageAsync("their draft", Alloy.Area(alloy.Teaser("Intro original", name: "Intro")));
+        var intro = Id(ContentId(Assert.Single((await alloy.RunAsync(new PublishOperation(page))).SharedBlocks!).Ref!));
+        // Another editor's change of the block in progress.
+        var theirs = (await alloy.RunAsync(new SetOperation(intro, alloy.TeaserValues("Their change")))).Version!;
+        if (!await alloy.Site.HandOverAsync(theirs, CancellationToken.None))
+        {
+            return;
+        }
+        var whole = Alloy.Area(alloy.Teaser("Ours", name: "Intro"));
+
+        // The area written whole would save the block's new version over their draft: refused, dry run too, a plan as well.
+        foreach (var dryRun in new[] { true, false })
+        {
+            var refused = await Assert.ThrowsAsync<ConflictException>(() => alloy.Writes.RunAsync(new SetOperation(page, whole), dryRun, CancellationToken.None));
+            var draft = Assert.IsType<AgentErrorDetails>(refused.Details).Draft!;
+            Assert.Equal((theirs, SiteUnderTest.SomeoneElse, "MainContentArea[0]"), (draft.Version, draft.SavedBy, draft.Path));
+            Assert.Contains("Heading", draft.Changes.Select(c => c.Property));
+            Assert.Contains($"the block {intro} ('Intro')", refused.Message);
+            Assert.Contains("--include-draft", refused.Hint);
+        }
+        var plan = WritePlan.Parse($$$"""
+            {"operations": [
+              {"op": "set", "ref": "{{{page}}}", "properties": {{{whole.ToJsonString()}}}},
+              {"op": "publish", "ref": "{{{page}}}"}
+            ]}
+            """);
+        var runner = new PlanRunner(alloy.Site.Session, alloy.Writes, Path.GetTempPath());
+        var refusedPlan = await Assert.ThrowsAsync<ConflictException>(() => runner.RunAsync(plan, dryRun: true, publishAll: false, CancellationToken.None));
+        Assert.Contains("operation(s) 0, 1", refusedPlan.Message);
+        Assert.Contains($"over changes saved by {SiteUnderTest.SomeoneElse} in {theirs}", refusedPlan.Message);
+        Assert.Equal(theirs, (await Alloy.GetAsync(intro)).Version);
+
+        // With includeDraft on the step that writes the area (not on the publish), the dry run and the run agree: the
+        // block's new version replaces their draft, the result says whose, and the publish puts it live.
+        var confirmed = WritePlan.Parse($$$"""
+            {"operations": [
+              {"op": "set", "ref": "{{{page}}}", "properties": {{{whole.ToJsonString()}}}, "includeDraft": true},
+              {"op": "publish", "ref": "{{{page}}}"}
+            ]}
+            """);
+        var dry = await runner.RunAsync(confirmed, dryRun: true, publishAll: false, CancellationToken.None);
+        Assert.All(dry.Operations, o => Assert.NotEqual(PlanStepStatus.Invalid, o.Status));
+        Assert.Contains(intro, Live(dry.Operations[1]));
+        var run = await runner.RunAsync(confirmed, dryRun: false, publishAll: false, CancellationToken.None);
+        Assert.All(run.Operations, o => Assert.Equal(PlanStepStatus.Saved, o.Status));
+        Assert.Contains(Assert.IsType<WriteOutput>(run.Operations[0].Result).Validation!,
+            v => v.Severity == "warning" && v.Message.Contains($"over changes saved by {SiteUnderTest.SomeoneElse} in {theirs}") && v.Message.Contains("as includeDraft confirmed"));
+        Assert.Contains(intro, Live(run.Operations[1]));
+        var html = await alloy.RenderAsync(page);
+        Assert.Contains("Ours", html);
+        Assert.DoesNotContain("Their change", html);
     }
 
     [InlineBlockModeFact(InlineBlockModes.Shared)]

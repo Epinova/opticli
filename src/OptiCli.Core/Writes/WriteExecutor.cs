@@ -1598,7 +1598,7 @@ public sealed class WriteExecutor(
                 var block = draft.Path is not null;
                 if (confirmDraft is null)
                 {
-                    throw new ConflictException(ex.Message, block ? BlockDraftHint : discarding ? DiscardDraftHint : PendingDraftHint) { Details = ex.Details };
+                    throw new ConflictException(ex.Message, block ? BlockDraftHint(draft) : discarding ? DiscardDraftHint : PendingDraftHint) { Details = ex.Details };
                 }
                 if (!confirmDraft(ex.Message, draft, block ? "Save the block's new version over their draft?" : question))
                 {
@@ -1614,9 +1614,12 @@ public sealed class WriteExecutor(
         }
     }
 
-    /// <summary>What to do about a write that would save a block's new version over someone else's draft.</summary>
-    public const string BlockDraftHint =
-        "details.draft shows the block's draft (version, who saved it, what it changed) and the area item that takes the block over (path). The write gives all of the block's values, so their changes wouldn't be in its new version: ask the user, and only if they may be replaced run again with --include-draft (in a plan: \"includeDraft\": true on the step). To leave the block as it is, give that item back as {\"ref\": \"<block>\"}; to change it on top of their draft, set the block by its ref (opticli set <block> ...). Nothing was saved.";
+    /// <summary>What to do about a write that would save a block's new version over someone else's draft (<paramref name="draft"/>).</summary>
+    public static string BlockDraftHint(PendingDraft draft)
+    {
+        var block = draft.Version.Split('_')[0];
+        return $"details.draft shows the block's draft (version, who saved it, what it changed) and the area item that takes the block over (path). The write gives all of the block's values, so their changes wouldn't be in its new version: ask the user, and only if they may be replaced run again with --include-draft (in a plan: \"includeDraft\": true on the step that writes the area). To leave the block as it is, give that item back as {{\"ref\": \"{block}\"}}; to change it on top of their draft, set the block by its ref (opticli set {block} ...). Nothing was saved.";
+    }
 
     public const string ReferencedHint =
         "details.references lists what references it (`opticli where-used <ref>` shows more). Ask the user whether to delete it anyway, and only if so run again with --ignore-references (in a plan: \"ignoreReferences\": true on the step); or first remove the references (`opticli area <ref> <Prop> remove ref:<id>`, `opticli set`).";

@@ -153,12 +153,68 @@ public sealed class SharedAreaBlockTests(SharedSessions sessions)
             Assert.DoesNotContain("Live changed text", html);
             Assert.Contains("Fresh text", html);
 
+            // The page is live now: publishing it again puts nothing live unnamed (a conflict whose hint names the live
+            // block), dry run alike; named, its draft would go live on its own.
+            foreach (var dryRun in new[] { true, false })
+            {
+                var nothing = await editor.ErrorAsync("publish_content", new { reference = page, dryRun });
+                Assert.Equal("conflict", nothing.GetProperty("code").GetString());
+                Assert.Contains($"{live} ('Live') at MainContentArea[0], published, with a newer draft", nothing.GetProperty("hint").GetString());
+                Assert.Contains($"publish_content on {page} with blocks: [\"{live}\"]", nothing.GetProperty("hint").GetString());
+            }
+            var alone = await editor.OkAsync("publish_content", new { reference = page, blocks = new[] { live }, dryRun = true });
+            Assert.Equal([live], SharedBlocks(alone).Select(b => b.GetProperty("ref").GetString()!.Split('_')[0]));
+            Assert.Equal("checkedOut", Status(await editor.OkAsync("get_content", new { reference = live, version = "latest" })));
+
             // Named in blocks, its draft goes live with the page's next publish.
             var pageBase = (await editor.OkAsync("get_content", new { reference = page, version = "latest" })).GetProperty("version").GetInt32();
             await editor.OkAsync("update_content", new { reference = page, name = ScratchName(), baseVersion = pageBase });
             var named = await editor.OkAsync("publish_content", new { reference = page, blocks = new[] { live } });
             Assert.Equal([live], SharedBlocks(named).Select(b => b.GetProperty("ref").GetString()!.Split('_')[0]));
             Assert.Contains("Live changed text", await RenderAsync(named));
+        }
+        finally
+        {
+            await WritingTests.DeleteAsync(editor, page);
+        }
+    }
+
+    [McpInlineBlockModeFact(Shared)]
+    public async Task A_whole_area_write_over_a_colleagues_draft_of_a_folder_block_needs_include_draft()
+    {
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var admin = await sessions.ForAsync(TestUsers.Admin);
+        var start = WritingTests.Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        var made = await editor.OkAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = start, properties = new { MainContentArea = new[] { Block("Intro original text", "Intro") } } });
+        var page = WritingTests.Id(made.GetProperty("content"));
+        try
+        {
+            var intro = SharedBlocks(made)[0].GetProperty("ref").GetString()!.Split('_')[0];
+            await editor.OkAsync("publish_content", new { reference = page });
+            // A colleague's change of the block in progress.
+            var introBase = (await admin.OkAsync("get_content", new { reference = intro, version = "latest" })).GetProperty("version").GetInt32();
+            var theirs = await admin.OkAsync("update_content", new { reference = intro, properties = new { MainBody = "<p>Colleague's text</p>" }, baseVersion = introBase });
+            var theirVersion = theirs.GetProperty("content").GetProperty("ref").GetString();
+            var area = new { MainContentArea = new[] { Block("Editor's text", "Intro") } };
+
+            // Written whole, the area would save the block's new version over their draft: refused, the dry run too.
+            foreach (var dryRun in new[] { true, false })
+            {
+                var refused = await editor.ErrorAsync("update_content", new { reference = page, properties = area, dryRun });
+                Assert.Equal(("conflict", "pendingDraft"), (refused.GetProperty("code").GetString(), refused.GetProperty("reason").GetString()));
+                var draft = refused.GetProperty("pendingDraft");
+                Assert.Equal((theirVersion, TestUsers.Admin, "MainContentArea[0]"),
+                    (draft.GetProperty("version").GetString(), draft.GetProperty("savedBy").GetString(), draft.GetProperty("path").GetString()));
+                Assert.Contains("retry with includeDraft", refused.GetProperty("hint").GetString());
+            }
+            Assert.Equal(theirVersion, $"{intro}_{(await editor.OkAsync("get_content", new { reference = intro, version = "latest" })).GetProperty("version").GetInt32()}");
+
+            // Confirmed: saved over their draft, and the result says whose it was.
+            var saved = await editor.OkAsync("update_content", new { reference = page, properties = area, includeDraft = true });
+            Assert.Equal("updated", Assert.Single(SharedBlocks(saved)).GetProperty("action").GetString());
+            Assert.Contains(saved.GetProperty("validation").EnumerateArray(), v => v.GetProperty("severity").GetString() == "warning"
+                && v.GetProperty("message").GetString()!.Contains($"over changes saved by {TestUsers.Admin} in {theirVersion}"));
+            Assert.Contains("Editor's text", (await editor.OkAsync("get_content", new { reference = intro, version = "latest" })).GetProperty("properties").GetProperty("MainBody").GetRawText());
         }
         finally
         {
