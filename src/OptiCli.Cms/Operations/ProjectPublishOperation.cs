@@ -63,7 +63,8 @@ internal static class ProjectPublishOperation
             : new ItemPlan(item, new ProjectItemResult { Content = projects.Summary(item), Outcome = ProjectRules.PublishOutcome(item.State, scheduling) })).ToList();
         var ready = plans.Where(p => p.Item.State == ProjectItemState.Ready).ToList();
         // Where the site's edit UI makes new blocks in an area shared: the drafts of the blocks of each item's own "For this
-        // page" folder that it shows go live with it (WriteFlow.PublishAlong), but those that are the project's own items,
+        // page" folder that it shows and that were never published (or that the caller names) go live with it
+        // (WriteFlow.PublishAlong), but those that are the project's own items,
         // in any state: those follow the project's rules (live only when marked ready), and one left behind gets a warning.
         bool? InProject(int id, System.Globalization.CultureInfo? language)
         {

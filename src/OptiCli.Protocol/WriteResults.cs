@@ -161,8 +161,10 @@ public sealed record WriteResult
     /// Shared blocks in the content's own "For this page" folder that the write made, changed or published along: where the
     /// site's edit UI makes a new block in a ContentArea a shared one (<c>UIOptions.InlineBlocksInContentAreaEnabled</c>
     /// off), a new block in an area is made so too, and a block given whole in an area that shows such a block of its type
-    /// changes that block. A publish of the content publishes the drafts of the folder's blocks its areas show. For a dry
-    /// run, what it would do (no <see cref="SharedBlockResult.Ref"/> for a block it would make). Null when there were none.
+    /// changes that block. A publish of the content publishes the drafts of the folder's blocks its areas show that were
+    /// never published (a live block's newer draft only when the publish names it, or the write that publishes changed it).
+    /// For a dry run, what it would do (no <see cref="SharedBlockResult.Ref"/> for a block it would make). Null when there
+    /// were none.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<SharedBlockResult>? SharedBlocks { get; init; }

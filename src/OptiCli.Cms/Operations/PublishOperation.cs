@@ -147,7 +147,8 @@ internal static class PublishOperation
             siteError = $"{ex.Message} ({ex.GetType().FullName})";
         }
         var result = flow.Repository.Get<IContent>(saved);
-        // The drafts of the blocks of its "For this page" folder that it shows, where the site's edit UI makes those.
+        // The drafts of the blocks of its "For this page" folder that it shows, where the site's edit UI makes those: those
+        // never published, and those the caller names (choice).
         var warnings = issues.ToList();
         var along = publishing || scheduling
             ? flow.PublishAlong(result, action, othersConfirmed, dryRun: false, warnings, choice: choice)
