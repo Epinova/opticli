@@ -32,6 +32,8 @@ internal static class TranslateCommand
         command.Options.Add(remove);
         command.Options.Add(confirm);
         write.AddCommon(command);
+        write.IncludeDraft.Description = WriteOptions.IncludeDraftTranslate;
+        write.AddIncludeDraft(command);
         write.AddProject(command);
 
         // The operation as the options give it; --in-project and --ready are checked with the other options, before the
@@ -42,6 +44,7 @@ internal static class TranslateCommand
             var operation = new TranslateOperation(parse.GetValue(content.Ref)!, parse.GetValue(content.Lang)!, parse.GetValue(name), write.ParseProperties(context), parse.GetValue(write.Publish))
             {
                 WithBlocks = parse.GetValue(withBlocks),
+                IncludeDraft = parse.GetValue(write.IncludeDraft),
                 Remove = parse.GetValue(remove),
                 Confirm = parse.GetValue(confirm),
             };

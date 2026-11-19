@@ -203,6 +203,9 @@ public sealed class WriteExecutor(
             IntoVersion = await IntoVersionAsync(op.IntoVersion, target, language, baseVersion, op.From is not null || op.BaseVersion is not null, op.Variation, cancellationToken),
             WithBlocks = await BlockRefsAsync(op.WithBlocks, "withBlocks", cancellationToken),
             WithoutBlocks = await BlockRefsAsync(op.WithoutBlocks, "withoutBlocks", cancellationToken),
+            // Only where it differs, and only to an agent that takes over blocks (one that makes shared area blocks).
+            IncludeBlockDraft = op.IncludeBlockDraft is { } blockDraft && blockDraft != op.IncludeDraft
+                && await InlineBlocksAsync(cancellationToken) == InlineBlockModes.Shared ? blockDraft : null,
         };
         if (request.Properties is null && request.Name is null && request.Composition is null && op.AreaEdits is null && op.CompositionEdits is null)
         {
@@ -412,7 +415,12 @@ public sealed class WriteExecutor(
         WriteResult result;
         try
         {
-            result = await PublishingPostAsync(AgentRoutes.Draft(target.AgentRef), request, r => r with { IncludeDraft = true }, cancellationToken);
+            // A yes to publishing someone else's draft of the content isn't a yes to saving over their draft of a block: once
+            // the agent can tell them apart (it makes shared area blocks), each is asked about on its own.
+            var apart = confirmDraft is not null && await InlineBlocksAsync(cancellationToken) == InlineBlockModes.Shared;
+            result = await PublishingPostAsync(AgentRoutes.Draft(target.AgentRef), request,
+                r => r with { IncludeDraft = true, IncludeBlockDraft = apart ? r.IncludeBlockDraft ?? r.IncludeDraft : r.IncludeBlockDraft }, cancellationToken,
+                confirmedBlock: r => apart ? r with { IncludeBlockDraft = true } : r with { IncludeDraft = true });
         }
         catch (ConflictException ex) when (ex.Details is AgentErrorDetails { CurrentVersion: { } current })
         {
@@ -705,6 +713,8 @@ public sealed class WriteExecutor(
                 Properties = PropertyArguments.ToRequest(properties),
                 Publish = op.Publish,
                 RequestApproval = op.RequestApproval,
+                // It only confirms block drafts of the content's folder, which only an agent that makes shared area blocks takes over.
+                IncludeDraft = op.IncludeDraft && await InlineBlocksAsync(cancellationToken) == InlineBlockModes.Shared,
                 Project = op.Project,
                 Ready = op.Ready,
                 DryRun = dryRun,
@@ -1566,31 +1576,47 @@ public sealed class WriteExecutor(
     /// whose hint names the option that confirms.
     /// </summary>
     /// <param name="question">What the prompt asks, and the hint says when the answer is no.</param>
+    /// <param name="confirmedBlock">
+    /// The request once the user confirmed saving a block's new version over someone else's draft (a conflict whose
+    /// <see cref="PendingDraft.Path"/> is set), where that is confirmed apart from the content's own drafts; null: as
+    /// <paramref name="confirmed"/>.
+    /// </param>
     private async Task<WriteResult> PublishingPostAsync<TRequest>(string route, TRequest request, Func<TRequest, TRequest> confirmed, CancellationToken cancellationToken,
-        string question = "Publish these changes too?", string declined = "Not published, as answered; nothing was saved.")
+        string question = "Publish these changes too?", string declined = "Not published, as answered; nothing was saved.", Func<TRequest, TRequest>? confirmedBlock = null)
         where TRequest : notnull
     {
-        try
+        // A write may be refused for the content's own draft and then for a block's: each is asked about once.
+        for (var asked = 0; ; asked++)
         {
-            return await PostAsync<WriteResult>(route, request, cancellationToken);
-        }
-        catch (ConflictException ex) when (ex.Details is AgentErrorDetails { Draft: { } draft })
-        {
-            var discarding = request is DiscardRequest;
-            if (confirmDraft is null)
+            try
             {
-                throw new ConflictException(ex.Message, discarding ? DiscardDraftHint : PendingDraftHint) { Details = ex.Details };
+                return await PostAsync<WriteResult>(route, request, cancellationToken);
             }
-            if (!confirmDraft(ex.Message, draft, question))
+            catch (ConflictException ex) when (ex.Details is AgentErrorDetails { Draft: { } draft } && asked < 2)
             {
-                throw new ConflictException(declined, discarding
-                    ? "The version stays as it is."
-                    : "Without --publish the change is saved as a draft and nothing goes live; `opticli publish <ref> --version <id>` publishes one version as it is.")
-                { Details = ex.Details };
+                var discarding = request is DiscardRequest;
+                var block = draft.Path is not null;
+                if (confirmDraft is null)
+                {
+                    throw new ConflictException(ex.Message, block ? BlockDraftHint : discarding ? DiscardDraftHint : PendingDraftHint) { Details = ex.Details };
+                }
+                if (!confirmDraft(ex.Message, draft, block ? "Save the block's new version over their draft?" : question))
+                {
+                    throw new ConflictException(block ? "Not saved, as answered: the block's draft stays as it is." : declined, block
+                        ? $"Give that item back as {{\"ref\": \"{draft.Version.Split('_')[0]}\"}} to leave the block as it is, or change the block itself (opticli set {draft.Version.Split('_')[0]} ...), which keeps their changes."
+                        : discarding
+                            ? "The version stays as it is."
+                            : "Without --publish the change is saved as a draft and nothing goes live; `opticli publish <ref> --version <id>` publishes one version as it is.")
+                    { Details = ex.Details };
+                }
+                request = block ? (confirmedBlock ?? confirmed)(request) : confirmed(request);
             }
-            return await PostAsync<WriteResult>(route, confirmed(request), cancellationToken);
         }
     }
+
+    /// <summary>What to do about a write that would save a block's new version over someone else's draft.</summary>
+    public const string BlockDraftHint =
+        "details.draft shows the block's draft (version, who saved it, what it changed) and the area item that takes the block over (path). The write gives all of the block's values, so their changes wouldn't be in its new version: ask the user, and only if they may be replaced run again with --include-draft (in a plan: \"includeDraft\": true on the step). To leave the block as it is, give that item back as {\"ref\": \"<block>\"}; to change it on top of their draft, set the block by its ref (opticli set <block> ...). Nothing was saved.";
 
     public const string ReferencedHint =
         "details.references lists what references it (`opticli where-used <ref>` shows more). Ask the user whether to delete it anyway, and only if so run again with --ignore-references (in a plan: \"ignoreReferences\": true on the step); or first remove the references (`opticli area <ref> <Prop> remove ref:<id>`, `opticli set`).";

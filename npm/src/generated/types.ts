@@ -776,6 +776,8 @@ export interface PendingDraft {
   saved: string;
   /** Every property that differs between the published version and the version the publish is based on. */
   changes: PropertyChange[];
+  /** For a block's draft a write would save a new version over: the area item that shows the block (`MainContentArea[0]`). Null for the content's own changes a publish would put live. Left out when null. */
+  path?: string;
 }
 
 /** A project an `apply` plan saves into (`projects`). */

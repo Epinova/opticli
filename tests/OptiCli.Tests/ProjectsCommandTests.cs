@@ -84,6 +84,22 @@ public class ProjectsCommandTests
     }
 
     [Fact]
+    public async Task Writes_and_translate_confirm_someone_elses_block_draft_with_include_draft_and_publish_names_blocks_of_live_content()
+    {
+        static string Flat(string text) => string.Join(' ', text.Split((char[])[' ', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries));
+        foreach (var command in new[] { "set", "area", "translate" })
+        {
+            var run = await Opticli.RunAsync(command, "--help");
+            Assert.Equal(0, run.ExitCode);
+            Assert.Contains("--include-draft", run.Stdout, StringComparison.Ordinal);
+            Assert.Contains("over a draft someone else saved", Flat(run.Stdout), StringComparison.Ordinal);
+        }
+        var publish = Flat((await Opticli.RunAsync("publish", "--help")).Stdout);
+        Assert.DoesNotContain("over a draft someone else saved", publish, StringComparison.Ordinal);
+        Assert.Contains("When the version is published already, only the drafts of the blocks --with-block names go live, never-published ones too", publish, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Apply_documents_the_plans_project()
     {
         var run = await Opticli.RunAsync("apply", "--help");

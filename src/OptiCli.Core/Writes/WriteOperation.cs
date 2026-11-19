@@ -27,7 +27,9 @@ public abstract record WriteOperation
     /// <summary>
     /// For an operation that publishes: also publish the unpublished changes someone other than opticli saved after the
     /// published version (<c>--include-draft</c>, a plan's <c>includeDraft</c>). Without it such a publish fails with a
-    /// <c>conflict</c> whose details say what they are.
+    /// <c>conflict</c> whose details say what they are. Where the site makes shared area blocks, it also lets a write that
+    /// takes over a block of the content's "For this page" folder save the block's new version over a draft someone else
+    /// saved (refused without it, a <c>conflict</c> whose <c>details.draft.path</c> names the area item).
     /// </summary>
     public bool IncludeDraft { get; init; }
 
@@ -226,6 +228,13 @@ public sealed record SetOperation(
 
     /// <summary>Dry run only: as <see cref="WithBlocks"/>, for <see cref="PublishOperation.WithoutBlocks"/>.</summary>
     internal IReadOnlyList<string>? WithoutBlocks { get; init; }
+
+    /// <summary>
+    /// Dry run only (<see cref="Protocol.DraftRequest.IncludeBlockDraft"/>): steps checked together as one write
+    /// (<see cref="PlanSimulation.OnExisting"/>) confirm someone else's block drafts their area items would save over with
+    /// their own <c>includeDraft</c>, which isn't the publishing step's. Null: as <see cref="WriteOperation.IncludeDraft"/>.
+    /// </summary>
+    internal bool? IncludeBlockDraft { get; init; }
 
     public override IEnumerable<string?> Refs => [Ref];
 

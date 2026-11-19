@@ -59,7 +59,11 @@ interface Saving {
    * single write).
    */
   readonly requestApproval?: boolean;
-  /** Publishing would put someone else's unpublished draft live too: do it anyway (only when the user said so). */
+  /**
+   * Publishing would put someone else's unpublished draft live too: do it anyway (only when the user said so). Where the
+   * site makes new area blocks shared, it also lets an item of a whole area take over a block of the content's "For this
+   * page" folder whose latest version is a draft someone else saved, saving over it (opticli 0.35 and newer).
+   */
   readonly includeDraft?: boolean;
   /**
    * The project (its id or exact name) the saved draft goes into, instead of the plan's `project`; `null` for none. Not
@@ -197,7 +201,8 @@ export type PlanStep =
       /**
        * Where the site makes new area blocks shared: blocks of the content's own "For this page" folder that it shows and
        * that are live already, whose newer drafts go live with it (`--with-block`; refs or `"$id"`). By default only
-       * blocks never published go along, and the block drafts earlier steps of the run saved on that content.
+       * blocks never published go along, and the block drafts earlier steps of the run saved on that content. Of content
+       * published already, only these and the run's block drafts go along, never-published blocks named here too.
        */
       readonly withBlocks?: readonly ContentRef[];
       /** Blocks of that folder never published, kept as drafts (`--without-block`). */

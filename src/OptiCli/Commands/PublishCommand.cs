@@ -26,14 +26,16 @@ internal static class PublishCommand
             the content's own "For this page" folder that it shows and that were never published go live with it
             (sharedBlocks); a live block's newer draft stays behind with a warning unless --with-block names it, and
             --without-block keeps a new one back (neither with a review: usage). There --dry-run asks the site, which
-            checks the publish and lists both. When the version is published already, only those blocks' drafts go
-            live (a conflict when there are none).
+            checks the publish and lists both. When the version is published already, only the drafts of the blocks
+            --with-block names go live, never-published ones too (a conflict when none is named, whose hint lists those
+            it could name).
             Example: opticli publish 123_456 --dry-run
             Also:    opticli publish 123 --with-block 456
             """);
         content.AddTo(command);
         command.Options.Add(version);
         write.AddCommon(command, publish: false);
+        write.IncludeDraft.Description = WriteOptions.IncludeDraftPublishing;
         write.AddIncludeDraft(command);
         write.AddRequestApproval(command);
         write.AddPublishAt(command);

@@ -30,6 +30,8 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
 
     internal const string IncludeDraft = "Also put live the unpublished changes someone else saved (the pendingDraft of a refused call): only after asking the user.";
 
+    internal const string IncludeDraftWrite = "Confirms someone else's unpublished changes that the call was refused for (its pendingDraft), only after asking the user: with publish, they go live too; a pendingDraft with a path is a draft of a block of the content's \"For this page\" folder that a whole-area write would save the block's new version over, replacing their changes.";
+
     internal const string Project = "Put the saved draft in this CMS project (its id or exact name; create_project makes one), in place of the content's earlier version there, so the user reviews it with the project's other items and it goes live with them. Only when the user wants it in that project: name it on every save that should go there. Not with publish or publishAt.";
 
     internal const string Ready = "With project: mark the saved draft Ready to publish in the project, so publishing the project puts it live. Only when the user wants it ready. Where an approval sequence applies it is refused, unless requestApproval, which sends it for review instead.";
@@ -80,7 +82,7 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
         [Description(Publish)] bool publish = false,
         [Description(RequestApproval)] bool requestApproval = false,
         [Description(PublishAt)] DateTime? publishAt = null,
-        [Description(IncludeDraft)] bool includeDraft = false,
+        [Description(IncludeDraftWrite)] bool includeDraft = false,
         [Description(Project)] string? project = null,
         [Description(Ready)] bool ready = false) =>
         Write(Scopes.Write, call => DraftOperation.Run(call, reference, new DraftRequest
@@ -110,7 +112,8 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
         [Description(RequestApproval)] bool requestApproval = false,
         [Description(DryRun)] bool dryRun = false,
         [Description(Project)] string? project = null,
-        [Description(Ready)] bool ready = false) =>
+        [Description(Ready)] bool ready = false,
+        [Description("Confirms a pendingDraft the call was refused for, only after asking the user: a draft someone else saved of a block of the content's \"For this page\" folder (its path) that the new branch's area would save the block's new version over, replacing their changes.")] bool includeDraft = false) =>
         Write(Scopes.Write, call => LanguagesOperation.Run(call, reference, new LanguageBranchRequest
         {
             Lang = lang,
@@ -118,6 +121,7 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
             Properties = properties,
             Publish = publish,
             RequestApproval = requestApproval,
+            IncludeDraft = includeDraft,
             DryRun = dryRun,
             Project = Blank(project),
             Ready = ready,

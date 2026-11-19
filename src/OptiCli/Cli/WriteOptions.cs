@@ -48,9 +48,13 @@ internal sealed class WriteOptions
         Description = "Skip the concurrency check (save even if someone saved a newer version meanwhile).",
     };
 
+    /// <summary><c>--include-draft</c> of a command that only publishes.</summary>
+    public const string IncludeDraftPublishing =
+        "Also publish unpublished changes someone else saved after the published version. Without it such a publish asks on a terminal, and elsewhere fails with a conflict (exit 5) that lists them.";
+
     public Option<bool> IncludeDraft { get; } = new("--include-draft")
     {
-        Description = "Also publish unpublished changes someone else saved after the published version. Without it such a publish asks on a terminal, and elsewhere fails with a conflict (exit 5) that lists them.",
+        Description = IncludeDraftPublishing + " Where the site makes new area blocks shared, it also lets an item of a whole-area write that takes over a block of the content's \"For this page\" folder save the block's new version over a draft someone else saved (without it: a conflict, exit 5, whose details.draft.path names the item).",
     };
 
     public Option<bool> RequestApproval { get; } = new("--request-approval")
@@ -137,9 +141,13 @@ internal sealed class WriteOptions
     /// <summary>For commands that publish existing content, which may hold someone else's draft.</summary>
     public void AddIncludeDraft(Command command) => command.Options.Add(IncludeDraft);
 
+    /// <summary><c>translate</c>'s <c>--include-draft</c>: a new branch has no drafts of its own, only its folder's blocks may.</summary>
+    public const string IncludeDraftTranslate =
+        "Where the site makes new area blocks shared: let an item of a whole-area value that takes over a block of the content's \"For this page\" folder save the block's new version over a draft someone else saved, and with --publish, publish others' drafts of those blocks along. Without it that fails with a conflict (exit 5) whose details.draft names the block's draft and item (path).";
+
     public Option<string[]> WithBlock { get; } = new("--with-block")
     {
-        Description = "Where the site makes new area blocks shared (serve --status: inlineBlocks: shared): also publish the newer draft of this block of the content's own \"For this page\" folder that it shows, although the block is live already; by default only blocks never published go along, and a live block's draft stays behind with a warning. A publish of content published already publishes just the blocks' drafts. Any other block, and a publish that goes for review, is refused (exit 1). Repeatable.",
+        Description = "Where the site makes new area blocks shared (serve --status: inlineBlocks: shared): also publish the newer draft of this block of the content's own \"For this page\" folder that it shows, although the block is live already; by default only blocks never published go along, and a live block's draft stays behind with a warning. A publish of content published already publishes just the drafts of the blocks it names, a never-published block's too (none named: a conflict whose hint lists them). Any other block, and a publish that goes for review, is refused (exit 1). Repeatable.",
         HelpName = "ref",
         AllowMultipleArgumentsPerToken = false,
     };

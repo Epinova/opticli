@@ -101,7 +101,7 @@ public static class SealedPlan
             }
             if (op.IncludeDraft)
             {
-                problems.Add($"{where} has includeDraft: it would publish someone else's unpublished changes.");
+                problems.Add($"{where} has includeDraft: it would publish someone else's unpublished changes, or save over their draft of a block.");
             }
             if (op is SetOperation { Force: true } or AreaEdit { Force: true } or CompositionEdit { Force: true })
             {

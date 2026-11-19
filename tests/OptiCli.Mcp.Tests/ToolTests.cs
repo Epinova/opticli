@@ -206,11 +206,12 @@ public sealed class ToolTests
         var publish = tools["publish_content"];
         Assert.Contains("\"For this page\" folder that its ContentAreas show and that were never published (sharedBlocks", publish.Description);
         Assert.Contains("keeps its newer draft unless named in blocks", publish.Description);
-        Assert.Contains("When the version is published already, it publishes just those block drafts (a conflict when there are none)", publish.Description);
+        // Of a version published already, only the blocks named (decision 13), never-published ones too.
+        Assert.Contains("When the version is published already, it publishes just the drafts of the blocks named in blocks, never-published ones too (a conflict when none is named, whose hint lists those it could name)", publish.Description);
         Assert.Contains("call it with dryRun first", publish.Description);
         var publishParameters = publish.InputSchema.GetProperty("properties");
         Assert.Contains("blocks it would publish along (sharedBlocks) and those it would leave behind (warnings)", publishParameters.GetProperty("dryRun").GetProperty("description").GetString());
-        Assert.Contains("live already, whose newer drafts should go live with it", publishParameters.GetProperty("blocks").GetProperty("description").GetString());
+        Assert.Contains("a live block's newer draft, or, when the content itself is published already, any block's draft", publishParameters.GetProperty("blocks").GetProperty("description").GetString());
         Assert.Contains("never published, to leave as drafts", publishParameters.GetProperty("skipBlocks").GetProperty("description").GetString());
         var projectParameters = tools["publish_project"].InputSchema.GetProperty("properties");
         Assert.True(projectParameters.TryGetProperty("blocks", out _));
@@ -223,8 +224,9 @@ public sealed class ToolTests
         Assert.Contains(McpInstructions.SharedBlocksPublishOff, McpInstructions.For(site12, sharedBlocks: true));
         Assert.Contains("publishing the content in the CMS doesn't publish them", McpInstructions.SharedBlocksPublishOff);
         Assert.Contains(McpInstructions.SharedBlocks, McpInstructions.For(publishing, sharedBlocks: true));
-        Assert.Contains("publish_content of the content also publishes the drafts of those blocks it shows that were never published", McpInstructions.SharedBlocks);
-        Assert.Contains("keeps its newer draft (its preview shows the published version) unless you name it in blocks, which also works when the content itself has nothing new to publish", McpInstructions.SharedBlocks);
+        Assert.Contains("publish_content of a new version of the content also publishes the drafts of those blocks it shows that were never published", McpInstructions.SharedBlocks);
+        Assert.Contains("keeps its newer draft (its preview shows the published version) unless you name it in blocks", McpInstructions.SharedBlocks);
+        Assert.Contains("When the content itself has nothing new to publish, publish_content puts live only the block drafts you name in blocks (a conflict whose hint lists them, when you name none)", McpInstructions.SharedBlocks);
         Assert.Contains("which stay behind (warnings), and pass blocks or skipBlocks as they want", McpInstructions.SharedBlocks);
         // Every site that lets assistants publish: a dry run of the publish first.
         Assert.Contains("call publish_content with dryRun: true and show the user what it reports", McpInstructions.For(publishing));
@@ -232,6 +234,27 @@ public sealed class ToolTests
         Assert.DoesNotContain(McpInstructions.SharedBlocks, McpInstructions.For(publishing));
         // Before the line about errors, which stays last of the module's own.
         Assert.EndsWith("tell the user what it says.", McpInstructions.For(new OptiCliMcpOptions { AllowPublish = true, AllowDelete = true }, sharedBlocks: true));
+    }
+
+    [Fact]
+    public async Task Someone_elses_block_draft_a_write_would_save_over_needs_includeDraft_and_the_assistant_asks_first()
+    {
+        await using var site = await TestSite.StartAsync();
+        await using var client = await Connect(site);
+        var tools = (await client.ListToolsAsync()).ToDictionary(t => t.Name, t => t.ProtocolTool);
+
+        // update_content and add_language confirm it with includeDraft, a pendingDraft with a path.
+        foreach (var name in new[] { "update_content", "add_language" })
+        {
+            var includeDraft = tools[name].InputSchema.GetProperty("properties").GetProperty("includeDraft").GetProperty("description").GetString()!;
+            Assert.Contains("only after asking the user", includeDraft);
+            Assert.Contains("\"For this page\" folder", includeDraft);
+            Assert.Contains("replacing their changes", includeDraft);
+        }
+        Assert.Contains("a pendingDraft with a path", tools["update_content"].InputSchema.GetProperty("properties").GetProperty("includeDraft").GetProperty("description").GetString());
+        // The instructions: ask the user before retrying with includeDraft, for a block's draft as for the content's.
+        var instructions = McpInstructions.For(new OptiCliMcpOptions());
+        Assert.Contains("when it has a path, a write would save a new version of a block over a draft someone else saved, replacing their changes), tell the user whose changes they are and ask before retrying with includeDraft", instructions);
     }
 
     [Fact]

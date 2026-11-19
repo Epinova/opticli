@@ -76,7 +76,12 @@ internal static class ApplyCommand
             page" folder, as --with-block and --without-block: where the site makes new area blocks shared, a live block
             whose newer draft goes along, or a never-published one kept a draft. The block drafts earlier operations of the
             run saved on that content (their sharedBlocks, created or updated) go along without naming them, as with one
-            write that publishes; when they are all that changed, the publish publishes just them.
+            write that publishes; when they are all that changed, the publish publishes just them. Of content published
+            already, a publish takes along only those and the blocks "withBlocks" names, never-published ones too (none:
+            a conflict, or unchanged with --update-existing).
+            "includeDraft" on a set, area, create or translate operation also confirms, where the site makes new area blocks
+            shared, an item of a whole area that takes over a block of the content's folder whose latest version is a draft
+            someone else saved (without it: a conflict whose details.draft.path names the item).
             set, area: "from": "published" (or a version, 456 or "123_456") bases the change on that version instead of the
             latest, leaving newer drafts out (as --from); later operations on that content and language build on its result.
             CMS 13 (Visual Builder): "composition" in a create's or set's "properties" is the whole composition, as get shows

@@ -62,7 +62,11 @@ public sealed record AgentErrorDetails(IReadOnlyList<ValidationIssue>? Validatio
     /// <summary>What kind of refusal or conflict, when it isn't a newer version: one of <see cref="AgentErrorReasons"/>.</summary>
     public string? Reason { get; init; }
 
-    /// <summary>For <see cref="PendingDraft.Reason"/>: the changes by someone else the publish would put live.</summary>
+    /// <summary>
+    /// For <see cref="PendingDraft.Reason"/>: the changes by someone else the publish would put live; with
+    /// <see cref="PendingDraft.Path"/>, a draft of a block of the content's folder that the write would save the block's new
+    /// version over.
+    /// </summary>
     public PendingDraft? Draft { get; init; }
 
     /// <summary>

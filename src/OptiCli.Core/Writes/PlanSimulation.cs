@@ -306,7 +306,7 @@ public static class PlanSimulation
                         "Remove this publish, or the earlier step's \"publish\": true.");
                 }
                 var published = Merged(step, since, target, translate, reference, publish: true, steps, existing,
-                    $"Dry-run as {reference}{In(target)} will be after operation(s) {string.Join(", ", since.Select(s => s.Index))}, {(step.Operation.PublishAt is not null ? "scheduled" : "published")} (their changes aren't saved yet){Based(restart, from)}.", from);
+                    $"Dry-run as {reference}{In(target)} will be after operation(s) {string.Join(", ", since.Select(s => s.Index))}, {(step.Operation.PublishAt is not null ? "scheduled" : step.Operation.RequestApproval ? "sent for review (published, where no approval sequence applies)" : "published")} (their changes aren't saved yet){Based(restart, from)}.", from);
                 // As the step publishes: scheduled, or sent for review where a sequence applies; and taking along the blocks
                 // it names (besides those the steps before it change, which a write that publishes takes along itself).
                 var publishStep = (PublishOperation)step.Operation;
@@ -463,7 +463,16 @@ public static class PlanSimulation
             var language = string.Equals(target.Language, target.Master, StringComparison.OrdinalIgnoreCase) ? null : target.Language;
             operation = new SetOperation(reference, stripped, name, language, publish) { AreaEdits = areas, CompositionEdits = compositions.Count > 0 ? compositions : null, From = from };
         }
-        return new Simulation(operation with { IncludeDraft = step.Operation.IncludeDraft }, null, new Dictionary<string, string>(), notChecked.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), references, notes);
+        // A block draft of someone else's that an area item takes over is confirmed by the steps that write the area, each by
+        // its own includeDraft (all of them, as the dry run can't tell which step takes which block over), not by the publish's.
+        var blockDrafts = writes.Where(w => w.Operation is not PublishOperation).All(w => w.Operation.IncludeDraft);
+        operation = operation switch
+        {
+            SetOperation set => set with { IncludeDraft = step.Operation.IncludeDraft, IncludeBlockDraft = blockDrafts },
+            TranslateOperation branch => branch with { IncludeDraft = blockDrafts },
+            _ => operation with { IncludeDraft = step.Operation.IncludeDraft },
+        };
+        return new Simulation(operation, null, new Dictionary<string, string>(), notChecked.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), references, notes);
     }
 
     /// <summary>

@@ -321,6 +321,45 @@ public class PlanBlocksTests
     }
 
     [Fact]
+    public void Steps_dry_run_as_one_write_confirm_block_drafts_by_their_own_include_draft_and_a_review_says_so()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "set", "ref": "123", "properties": {"MainArea": [{"type": "TeaserBlock", "name": "Intro", "properties": {"Heading": "New"}}]}, "includeDraft": true},
+              {"op": "publish", "ref": "123"},
+              {"op": "set", "ref": "124", "properties": {"MainArea": [{"type": "TeaserBlock", "name": "Intro", "properties": {"Heading": "New"}}]}},
+              {"op": "publish", "ref": "124", "includeDraft": true, "requestApproval": true},
+              {"op": "translate", "ref": "125", "lang": "sv", "includeDraft": true},
+              {"op": "set", "ref": "125", "lang": "sv", "properties": {"Heading": "Ny"}},
+              {"op": "publish", "ref": "125", "lang": "sv"}
+            ]}
+            """);
+        var targets = new Dictionary<int, PlanTarget>
+        {
+            [0] = new(123, "en", "en", true, false),
+            [1] = new(123, "en", "en", true, false),
+            [2] = new(124, "en", "en", true, false),
+            [3] = new(124, "en", "en", true, false),
+            [4] = new(125, "sv", "en", false, false),
+            [5] = new(125, "sv", "en", false, false),
+            [6] = new(125, "sv", "en", false, false),
+        };
+
+        // The area step confirmed someone else's block draft; the publish confirmed nothing of the content's.
+        var first = Assert.IsType<SetOperation>(PlanSimulation.OnExisting(plan.Steps[1], plan.Steps, targets, None, updateExisting: false)!.Operation);
+        Assert.Equal((false, (bool?)true), (first.IncludeDraft, first.IncludeBlockDraft));
+        // And the other way round: the publish's includeDraft doesn't confirm a block draft the area step would save over.
+        var second = PlanSimulation.OnExisting(plan.Steps[3], plan.Steps, targets, None, updateExisting: false)!;
+        var reviewed = Assert.IsType<SetOperation>(second.Operation);
+        Assert.Equal((true, (bool?)false), (reviewed.IncludeDraft, reviewed.IncludeBlockDraft));
+        Assert.Contains("sent for review (published, where no approval sequence applies)", Assert.Single(second.Notes!));
+        Assert.DoesNotContain(", published (their", Assert.Single(second.Notes!));
+        // A new branch: confirmed only when every step that writes it is.
+        var branch = Assert.IsType<TranslateOperation>(PlanSimulation.OnExisting(plan.Steps[6], plan.Steps, targets, None, updateExisting: false)!.Operation);
+        Assert.False(branch.IncludeDraft);
+    }
+
+    [Fact]
     public void A_publish_of_a_branch_a_translate_creates_is_dry_run_naming_the_blocks_the_step_names()
     {
         var plan = WritePlan.Parse("""
