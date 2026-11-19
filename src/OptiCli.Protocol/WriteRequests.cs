@@ -152,8 +152,9 @@ public sealed record DraftRequest
     /// "For this page" folder (an item of a whole-area write taking it over) may do so over a draft someone else saved,
     /// the block's latest version. Without it that is refused (<c>conflict</c> with <see cref="AgentError.PendingDraft"/>,
     /// whose <see cref="PendingDraft.Path"/> names the area item), dry run too. Null: as <see cref="IncludeDraft"/>, which
-    /// confirms both. The CLI sends it only for a plan's dry run of steps checked together as one write, where the steps
-    /// that change the blocks and the step that publishes confirm each their own. Left out when null.
+    /// confirms both. The CLI sends it for a plan's dry run of steps checked together as one write, where the steps that
+    /// change the blocks and the step that publishes confirm each their own, and after asking at a terminal, where a yes to
+    /// one of the two drafts doesn't confirm the other. Left out when null.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? IncludeBlockDraft { get; init; }

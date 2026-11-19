@@ -113,7 +113,7 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
         [Description(DryRun)] bool dryRun = false,
         [Description(Project)] string? project = null,
         [Description(Ready)] bool ready = false,
-        [Description("Confirms a pendingDraft the call was refused for, only after asking the user: a draft someone else saved of a block of the content's \"For this page\" folder (its path) that the new branch's area would save the block's new version over, replacing their changes.")] bool includeDraft = false) =>
+        [Description("Confirms a pendingDraft the call was refused for, only after asking the user: a draft someone else saved of a block of the content's \"For this page\" folder (its path) that the new branch's area would save the block's new version over, replacing their changes. With publish, someone else's drafts of the folder's blocks the branch shows go live along too.")] bool includeDraft = false) =>
         Write(Scopes.Write, call => LanguagesOperation.Run(call, reference, new LanguageBranchRequest
         {
             Lang = lang,

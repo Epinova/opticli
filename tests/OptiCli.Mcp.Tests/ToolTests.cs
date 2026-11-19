@@ -252,6 +252,9 @@ public sealed class ToolTests
             Assert.Contains("replacing their changes", includeDraft);
         }
         Assert.Contains("a pendingDraft with a path", tools["update_content"].InputSchema.GetProperty("properties").GetProperty("includeDraft").GetProperty("description").GetString());
+        // add_language's also lets others' drafts of the folder's blocks go along with publish (LanguagesOperation), as update_content's says.
+        Assert.Contains("With publish, someone else's drafts of the folder's blocks the branch shows go live along too", tools["add_language"].InputSchema.GetProperty("properties").GetProperty("includeDraft").GetProperty("description").GetString());
+        Assert.Contains("with publish, they go live too", tools["update_content"].InputSchema.GetProperty("properties").GetProperty("includeDraft").GetProperty("description").GetString());
         // The instructions: ask the user before retrying with includeDraft, for a block's draft as for the content's.
         var instructions = McpInstructions.For(new OptiCliMcpOptions());
         Assert.Contains("when it has a path, a write would save a new version of a block over a draft someone else saved, replacing their changes), tell the user whose changes they are and ask before retrying with includeDraft", instructions);
