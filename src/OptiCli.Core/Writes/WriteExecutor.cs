@@ -921,7 +921,7 @@ public sealed class WriteExecutor(
         {
             notes.Add(masterFirst);
         }
-        return new WriteOutcome<WriteOutput>(output, DbSource, null, notes);
+        return new WriteOutcome<WriteOutput>(output, bySite is null ? DbSource : AgentSource, null, notes);
     }
 
     /// <summary>
