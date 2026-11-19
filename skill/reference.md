@@ -357,8 +357,9 @@ with no `ref`.
 - Area edits, like `set`, change an area that isn't culture-specific only in the master language: in another branch
   they are refused (`usage`).
 - A whole area (`--values '{"MainArea": [...]}'`) replaces the area: an item with `type` (or `inline: true`) is an inline
-  block, one with `ref` or `guid` a shared one (`get`'s `type` and `name` beside a `ref` are about that content and are
-  left out). An inline item that is an exact copy of a block the area has (every value, as `get` shows it) keeps that
+  block (where the site makes new area blocks shared, see [the next section](#where-the-site-makes-new-area-blocks-shared)),
+  one with `ref` or `guid` a shared one (`get`'s `type` and `name` beside a `ref` are about that content and are left
+  out). An inline item that is an exact copy of a block the area has (every value, as `get` shows it) keeps that
   block; of identical blocks, the one with the item's name and display option first. Any other inline item is a new block
   with only the values it gives (the type's defaults for the rest): no value carries over from the block it replaces. It
   takes over that block only when which block it replaces is unambiguous (the only changed item of its type, and the only

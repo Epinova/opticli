@@ -53,8 +53,8 @@ before. See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new
 
 - `create_content`, `update_content` (`{type, properties}` items and `areaOps` adds) and custom tools' `ContentPlan`
   make shared blocks in the content's "For this page" folder where the site's edit UI does, and only where it would:
-  the editor needs Edit and Create on the content and a block type the edit UI offers there. The results (and custom
-  tools' step results) have `sharedBlocks` with the blocks' refs.
+  the editor needs Edit and Create on the content (Create on its parent for new content) and a block type they may
+  create there. The results (and custom tools' step results) have `sharedBlocks` with the blocks' refs.
 - `publish_content` publishes the content's own block drafts along, as `publish` does. On a site that makes shared
   blocks, the server's instructions tell the assistant that the CMS's own Publish doesn't (or, where assistants may not
   publish, that the editor publishes the blocks too), and to change a block later by its ref.

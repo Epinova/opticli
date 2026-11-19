@@ -3,7 +3,7 @@ title: Translate a page with your assistant
 summary: Have your assistant translate a page into another language, review the translation as a draft, and publish it only when you say so.
 audience: editors
 order: 2
-written-for: 0.30.0
+written-for: 0.35.0
 ---
 
 By the end of this guide a page has a new language version, written by your assistant and saved as a draft. You see
@@ -45,8 +45,9 @@ Some things to know about what it can translate:
   images, links to other pages and settings) keep the English version's value. The CMS locks those outside the main
   language, and so does the assistant.
 - **Fields the assistant leaves out keep the English text.** Ask it to translate every text field, or check the list.
-- **Blocks that are shared between pages are content of their own.** Translating the page doesn't translate them. Ask
-  for them separately; each gets a draft of its own.
+- **Blocks that are content of their own aren't translated with the page**: blocks shared between pages, and the
+  blocks in the page's "For this page" folder (where your site keeps new blocks there, see
+  [Add blocks to a page](add-blocks-to-a-page.md)). Ask for them separately; each gets a draft of its own.
 
 ### 3. Adjust the wording
 

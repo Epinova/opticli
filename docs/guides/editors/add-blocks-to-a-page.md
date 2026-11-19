@@ -52,7 +52,8 @@ follows the site and can't choose the other:
   It is saved and published with the page.
 - **As a block of its own, in the page's "For this page" folder.** You see it in the assets pane when the page is
   open, under **For this page**. The assistant tells you its name and id, and that it was saved as a draft. It is
-  published separately from the page (step 5).
+  published separately from the page (step 5). (**Create a new block** in the CMS publishes such a block at once when
+  you may publish; the assistant saves it as a draft, so nothing goes live before you ask.)
 
 Blocks the page had already stay as they are: an inline block stays inline when the assistant changes it.
 
@@ -108,7 +109,7 @@ ways:
 
 ## If something goes wrong
 
-- **"… you don't have Create access …" or "The CMS edit UI doesn't offer … for a new block".** You couldn't make that
+- **"You don't have Create access to …" or "The CMS edit UI doesn't offer … for a new block".** You couldn't make that
   block in the CMS either. Ask your CMS administrator for access, or choose another block type.
 - **"… would go for review while its ContentAreas show blocks of its "For this page" folder that aren't published".**
   See step 6.

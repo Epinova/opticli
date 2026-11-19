@@ -816,7 +816,7 @@ Where the site makes shared blocks:
   | `ref` | the block's saved version; none in a dry run for a block it would make |
   | `name`, `type` | the block's name and content type |
   | `folder` | the "For this page" folder's id; none in a dry run when the folder would be made |
-  | `status` | the version's status (`checkedOut` is a draft, `checkedIn` ready, `awaitingApproval`, `published`); in a dry run the one it would get |
+  | `status` | the version's status (`checkedOut` is a draft, `checkedIn` ready, `awaitingApproval`, `delayedPublish` scheduled, `published`); in a dry run the one it would get |
   | `action` | `created`; `updated`, a new version of a block of the folder that a whole area written again takes over (below); `published`, a draft published along with the content; `existing`, found there by an add with `--if-missing` (or a plan run with `--update-existing`) |
 
 - **A failed save.** When the content's own save fails after its blocks were saved, the blocks (and a folder made for
@@ -886,16 +886,16 @@ block (`existing`) and `$intro` names it again. The dry run refuses (`invalid`):
 A run that meets a `$id` naming no block stops there (`usage`).
 
 **Editors' assistants** ([MCP server for editors](#mcp-server-for-editors)) follow the same rules, as the editor: a new
-block needs Edit and Create on the content (Create on its parent for new content) and a block type the edit UI offers
-for a new block there, and changing a block of the folder by writing the area whole needs Edit on that block. The
-tools' descriptions say what a `{type, properties}` item becomes, and on a site that makes shared blocks the server's
-instructions add that `publish_content` publishes them along while the CMS's own Publish doesn't (where assistants
-may not publish: that the editor publishes the blocks too). A custom tool's `ContentPlan` step makes them the same way,
-and its step result lists them in `sharedBlocks`.
+block needs Edit and Create on the content (Create on its parent for new content) and a block type they may create in
+its folder (on existing content, one the edit UI offers for a new block there), and changing a block of the folder by
+writing the area whole needs Edit on that block. The tools' descriptions say what a `{type, properties}` item becomes,
+and on a site that makes shared blocks the server's instructions add that `publish_content` publishes them along while
+the CMS's own Publish doesn't (where assistants may not publish: that the editor publishes the blocks too). A custom
+tool's `ContentPlan` step makes them the same way, and its step result lists them in `sharedBlocks`.
 
 **Trying either mode locally.** Set `EPiServer:CmsUI:UI:InlineBlocksInContentAreaEnabled` (`true` or `false`) in the
-site's configuration (CMS 13 ignores `EPiServer:CmsUI:InlineBlocksInContentAreaEnabled`), or for one run in `serve`'s
-environment:
+site's configuration (not `EPiServer:CmsUI:InlineBlocksInContentAreaEnabled`, which neither CMS 12 nor 13 reads), or for
+one run in `serve`'s environment:
 
 ```sh
 opticli serve --stop
@@ -2207,8 +2207,9 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
     can't point to content the edit UI's pickers wouldn't offer, or learn from a dry run that it exists. The CMS's own
     text forms of a ContentArea or a reference list, which skip that, are refused: give an array of refs;
   - new blocks in a ContentArea: where the edit UI makes them shared blocks in the content's "For this page" folder, so
-    does the module, and only where the edit UI's "Create a new block" would: with Edit and Create on the content and a
-    block type it offers there (see [New blocks in a ContentArea](#new-blocks-in-a-contentarea));
+    does the module, with the rights the edit UI's "Create a new block" needs: Edit and Create on the content (Create on
+    its parent for new content) and a block type it offers there (on new content, one they may create in its folder;
+    see [New blocks in a ContentArea](#new-blocks-in-a-contentarea));
   - restoring from the recycle bin, which the module doesn't do at all (a move out of the recycle bin is refused, with
     a hint to restore it in the CMS, where the editor sees what comes back live).
 - **No script in rich text or links.** The CMS saves rich text as it is given, and the edit UI's TinyMCE only cleans it
