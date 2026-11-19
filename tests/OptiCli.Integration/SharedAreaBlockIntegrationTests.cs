@@ -476,6 +476,62 @@ public sealed class SharedAreaBlockIntegrationTests
     }
 
     [InlineBlockModeFact(InlineBlockModes.Shared)]
+    public async Task A_live_blocks_newer_draft_stays_a_draft_when_its_page_is_published_and_goes_along_when_named()
+    {
+        await using var alloy = await Alloy.StartAsync();
+        if (alloy is null)
+        {
+            return;
+        }
+        // A page published with its block; then a newer draft of that block (an editor's change in progress), a new block
+        // never published, and a new draft of the page.
+        var page = await alloy.PageAsync("live block", Alloy.Area(alloy.Teaser("Live original", name: "Live")));
+        var first = await alloy.RunAsync(new PublishOperation(page));
+        var live = Id(ContentId(Assert.Single(first.SharedBlocks!).Ref!));
+        await alloy.RunAsync(new SetOperation(live, alloy.TeaserValues("Live changed")));
+        var added = await alloy.RunAsync(new AreaEdit(page, "MainContentArea", AreaOps.Add) { Type = "TeaserBlock", Name = "Fresh", Values = alloy.TeaserValues("Fresh block") });
+        var fresh = Id(ContentId(Assert.Single(added.SharedBlocks!).Ref!));
+        var liveDraft = (await Alloy.GetAsync(live)).Version;
+
+        // The dry run asks the site: the new block goes along, the live one stays behind with a warning naming it.
+        var dry = await alloy.RunAsync(new PublishOperation(page), dryRun: true);
+        Assert.True(dry.Valid);
+        Assert.Equal([(fresh, SharedBlockActions.Published)], dry.SharedBlocks!.Select(b => (Id(ContentId(b.Ref!)), b.Action)));
+        var warning = Assert.Single(dry.Validation!, v => v.Severity == "warning");
+        Assert.Equal("MainContentArea[0]", warning.Property);
+        Assert.Contains($"('Live') at MainContentArea[0] is published already", warning.Message);
+        Assert.Contains($"--with-block {live}", warning.Message);
+        Assert.Equal(("checkedOut", "checkedOut"), (await alloy.StatusAsync(liveDraft), await alloy.StatusAsync(Assert.Single(added.SharedBlocks!).Ref!)));
+
+        // A block that isn't one of the page's own folder that it shows can't be named.
+        var elsewhere = await Assert.ThrowsAsync<UsageException>(() => alloy.Writes.RunAsync(new PublishOperation(page) { WithBlocks = [alloy.Start] }, dryRun: false, CancellationToken.None));
+        Assert.Contains("isn't a block of the content's own \"For this page\" folder that its ContentAreas show", elsewhere.Message);
+
+        // Published: the page goes live with the new block and the live block as it was published.
+        var published = await alloy.RunAsync(new PublishOperation(page));
+        Assert.Equal([fresh], published.SharedBlocks!.Select(b => Id(ContentId(b.Ref!))));
+        Assert.Equal("checkedOut", await alloy.StatusAsync(liveDraft));
+        Assert.Contains(published.Validation!, v => v.Severity == "warning" && v.Message.Contains("is published already"));
+        var html = await alloy.RenderAsync(page);
+        Assert.Contains("Live original", html);
+        Assert.DoesNotContain("Live changed", html);
+        Assert.Contains("Fresh block", html);
+
+        // Named, in a plan's publish step after a change of the page, the live block's draft goes along.
+        var plan = WritePlan.Parse($$$"""
+            {"operations": [
+              {"op": "set", "ref": "{{{page}}}", "name": "{{{alloy.Name("live block again")}}}"},
+              {"op": "publish", "ref": "{{{page}}}", "withBlocks": [{{{live}}}]}
+            ]}
+            """);
+        var run = await new PlanRunner(alloy.Site.Session, alloy.Writes, Path.GetTempPath()).RunAsync(plan, dryRun: false, publishAll: false, CancellationToken.None);
+        var along = Assert.IsType<WriteOutput>(run.Operations[1].Result);
+        Assert.Equal([live], along.SharedBlocks!.Select(b => Id(ContentId(b.Ref!))));
+        Assert.Equal("published", await alloy.StatusAsync(liveDraft));
+        Assert.Contains("Live changed", await alloy.RenderAsync(page));
+    }
+
+    [InlineBlockModeFact(InlineBlockModes.Shared)]
     public async Task A_project_write_marked_ready_takes_its_blocks_along_and_the_projects_publish_puts_them_live()
     {
         await using var alloy = await Alloy.StartAsync();

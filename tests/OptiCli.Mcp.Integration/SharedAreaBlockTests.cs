@@ -115,6 +115,58 @@ public sealed class SharedAreaBlockTests(SharedSessions sessions)
     }
 
     [McpInlineBlockModeFact(Shared)]
+    public async Task Publish_content_leaves_a_live_blocks_newer_draft_behind_unless_named_and_its_dry_run_says_which()
+    {
+        var editor = await sessions.ForAsync(TestUsers.Editor);
+        var start = WritingTests.Id((await editor.OkAsync("resolve_url", new { url = "/en/" })).GetProperty("content"));
+        var made = await editor.OkAsync("create_content", new { type = "StandardPage", name = ScratchName(), parent = start, properties = new { MainContentArea = new[] { Block("Live original text", "Live") } } });
+        var page = WritingTests.Id(made.GetProperty("content"));
+        try
+        {
+            var live = SharedBlocks(made)[0].GetProperty("ref").GetString()!.Split('_')[0];
+            await editor.OkAsync("publish_content", new { reference = page });
+            // The editor's change to the live block in progress, a new block never published, and a new draft of the page.
+            var liveBase = (await editor.OkAsync("get_content", new { reference = live, version = "latest" })).GetProperty("version").GetInt32();
+            await editor.OkAsync("update_content", new { reference = live, properties = new { MainBody = "<p>Live changed text</p>" }, baseVersion = liveBase });
+            var added = await editor.OkAsync("update_content", new { reference = page, areaOps = new[] { new { op = "add", property = "MainContentArea", type = "EditorialBlock", name = "Fresh", values = new { MainBody = "<p>Fresh text</p>" } } } });
+            var fresh = SharedBlocks(added)[0].GetProperty("ref").GetString()!.Split('_')[0];
+
+            // The dry run: the new block goes along, the live one stays behind, named in a warning; nothing is saved.
+            var dry = await editor.OkAsync("publish_content", new { reference = page, dryRun = true });
+            Assert.True(dry.GetProperty("dryRun").GetBoolean());
+            Assert.Equal([fresh], SharedBlocks(dry).Select(b => b.GetProperty("ref").GetString()!.Split('_')[0]));
+            var warning = Assert.Single(dry.GetProperty("validation").EnumerateArray(), v => v.GetProperty("severity").GetString() == "warning");
+            Assert.Contains("('Live') at MainContentArea[0] is published already", warning.GetProperty("message").GetString());
+            Assert.Contains($"blocks: [\"{live}\"]", warning.GetProperty("message").GetString());
+            Assert.Equal("checkedOut", Status(await editor.OkAsync("get_content", new { reference = fresh, version = "latest" })));
+
+            // A block from elsewhere can't be named.
+            var elsewhere = await editor.ErrorAsync("publish_content", new { reference = page, blocks = new[] { start } });
+            Assert.Equal("usage", elsewhere.GetProperty("code").GetString());
+
+            // Published: the live block's change stays a draft.
+            var published = await editor.OkAsync("publish_content", new { reference = page });
+            Assert.Equal([fresh], SharedBlocks(published).Select(b => b.GetProperty("ref").GetString()!.Split('_')[0]));
+            Assert.Equal("checkedOut", Status(await editor.OkAsync("get_content", new { reference = live, version = "latest" })));
+            var html = await RenderAsync(published);
+            Assert.Contains("Live original text", html);
+            Assert.DoesNotContain("Live changed text", html);
+            Assert.Contains("Fresh text", html);
+
+            // Named in blocks, its draft goes live with the page's next publish.
+            var pageBase = (await editor.OkAsync("get_content", new { reference = page, version = "latest" })).GetProperty("version").GetInt32();
+            await editor.OkAsync("update_content", new { reference = page, name = ScratchName(), baseVersion = pageBase });
+            var named = await editor.OkAsync("publish_content", new { reference = page, blocks = new[] { live } });
+            Assert.Equal([live], SharedBlocks(named).Select(b => b.GetProperty("ref").GetString()!.Split('_')[0]));
+            Assert.Contains("Live changed text", await RenderAsync(named));
+        }
+        finally
+        {
+            await WritingTests.DeleteAsync(editor, page);
+        }
+    }
+
+    [McpInlineBlockModeFact(Shared)]
     public async Task An_editor_who_may_not_create_content_on_the_page_gets_no_new_block_in_its_area()
     {
         // The product editor may edit the hidden page, not create content there (McpFixture.cs): the edit UI offers no
