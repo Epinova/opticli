@@ -22,6 +22,19 @@ public class ComparisonTests
         Assert.Equal(sample, Stratified.Take(candidates, 6, seed: 1));
     }
 
+    [Theory]
+    [InlineData(9997306, "2026-11-18T13:55:20Z")]
+    [InlineData(9994999, "2026-11-18T13:55:19Z")]
+    [InlineData(0, "2026-11-18T13:55:19Z")]
+    public void A_time_compares_at_the_database_readers_millisecond_whatever_its_ticks(int ticks, string expected)
+    {
+        // The CMS has the saved time to the tick; the database reader rounds it to the millisecond (CMS 12's datetime).
+        var cms = new DateTime(2026, 11, 18, 13, 55, 19, DateTimeKind.Utc).AddTicks(ticks);
+        var db = OptiCli.Core.Data.SqlReaderExtensions.ToMilliseconds(cms);
+
+        Assert.Equal((expected, expected), (ItemComparer.DbDate(db), ItemComparer.AgentDate(cms)));
+    }
+
     [Fact]
     public void Db_and_cms_shapes_of_the_same_value_are_equal_when_canonical()
     {

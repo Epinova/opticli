@@ -120,11 +120,16 @@ internal sealed class ItemComparer(SiteUnderTest site)
     }
 
     /// <summary>As the CLI prints it.</summary>
-    private static string? DbDate(DateTime? value) =>
+    internal static string? DbDate(DateTime? value) =>
         value is null ? null : Canonical.Date(JsonOutput.ToNode(value))?.GetValue<string>();
 
-    private static string? AgentDate(DateTime? value) =>
-        value?.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+    /// <summary>
+    /// At the database reader's precision (<see cref="OptiCli.Core.Data.SqlReaderExtensions.ToMilliseconds"/>, rounded to the
+    /// millisecond), then to the second as <see cref="DbDate"/>: a CMS 13 time within half a millisecond of the next second
+    /// (saved at 13:55:19.9997306) is that second in both.
+    /// </summary>
+    internal static string? AgentDate(DateTime? value) =>
+        value is null ? null : OptiCli.Core.Data.SqlReaderExtensions.ToMilliseconds(value.Value.ToUniversalTime()).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
 
     /// <summary>
     /// The agent answers host-relative URLs, as <c>get</c> shows them, except an external shortcut's link. Absolute URLs
