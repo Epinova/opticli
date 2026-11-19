@@ -248,9 +248,12 @@ item in a whole area) is made as the site's edit UI makes one; `serve --status` 
   page" folder, saved as a draft; the result's `sharedBlocks` gives its `ref`. Change it later by that ref
   (`opticli set <ref> Heading=New`), and to keep an area's blocks write back the `{"ref"}` items `get` shows. Inline blocks
   the area already has stay inline and are changed by position as above. In a plan, give the `area add` an `"id"` and
-  change the block with a `set` on `"$id"`, never by position. `opticli publish` of the page publishes its folder's block
-  drafts along; the CMS's own Publish doesn't, so tell the user. `--request-approval` is refused while such blocks are
-  unpublished: use `--in-project <p> --ready --request-approval`, or publish the blocks first. Details:
+  change the block with a `set` on `"$id"`, never by position. `opticli publish` of the page publishes along the drafts
+  of its folder's blocks that were never published; a live block keeps its newer draft (a warning names it) unless the
+  user wants it live too: `--with-block <ref>` (`--without-block <ref>` keeps a new one back). `publish --dry-run` shows
+  both; tell the user before publishing. The CMS's own Publish publishes no blocks, so tell the user.
+  `--request-approval` is refused while the page shows never-published blocks: use `--in-project <p> --ready
+  --request-approval`, or publish the blocks first. Details:
   [reference.md](reference.md#where-the-site-makes-new-area-blocks-shared).
 
 Structured values (ContentArea items, links, lists) go in `--values '{"MainArea":[{"ref":"456"}]}'`; several related

@@ -817,7 +817,7 @@ Where the site makes shared blocks:
   | `name`, `type` | the block's name and content type |
   | `folder` | the "For this page" folder's id; none in a dry run when the folder would be made |
   | `status` | the version's status (`checkedOut` is a draft, `checkedIn` ready, `awaitingApproval`, `delayedPublish` scheduled, `published`); in a dry run the one it would get |
-  | `action` | `created`; `updated`, a new version of a block of the folder that a whole area written again takes over (below); `published`, a draft published along with the content; `existing`, found there by an add with `--if-missing` (or a plan run with `--update-existing`) |
+  | `action` | `created`; `updated`, a new version of a block of the folder that a whole area written again takes over (below); `published`, a draft published along with the content (see Publishing below); `existing`, found there by an add with `--if-missing` (or a plan run with `--update-existing`) |
 
 - **A failed save.** When the content's own save fails after its blocks were saved, the blocks (and a folder made for
   them) stay, and the error's `details.madeBlocks` lists them as `sharedBlocks` does, so a retry can give their refs as
@@ -848,30 +848,58 @@ Where the site makes shared blocks:
 
 **Publishing.** A publish of content through opticli (`publish`, a write with `--publish` or `--publish-at`,
 `projects publish`, the MCP module's `publish_content`) also publishes the latest drafts, in its language, of the
-blocks of its own "For this page" folder that the published version's areas show, at any depth, and lists them in
-`sharedBlocks` (`published`). A scheduled publish schedules them for the same time. Blocks from anywhere else are never
-published along. Left as drafts, each with a `warning`: a draft someone else saved (unless `--include-draft`), a block
-under an approval sequence, one that fails validation, and for an editor one they may not publish. The edit UI's own
-Publish publishes the page alone. A block left a draft once the content is published is published by its own ref
-(`publish <block>`): the content's published version can't be published again. Until a changed block is published,
-the CMS's preview of the content shows the block's published version; an `info` line says so. The dry run of a write
-with `--publish` lists what it would publish along; `publish --dry-run` is answered from the database and doesn't.
+blocks of its own "For this page" folder that the published version's areas show, at any depth, **that were never
+published in that language** (a block published only in another language counts as never published), and lists them in
+`sharedBlocks` (`published`). They can't show until they are published. A block that is live already keeps its newer
+draft, with a `warning` that names it (place, ref, name) and how to take it along: the content goes live showing the
+block's published version, so an editor's unfinished change to a live block doesn't go live with the page.
+
+```sh
+opticli publish 123 --dry-run                     # the site checks it: sharedBlocks goes along, warnings stay behind
+opticli publish 123 --with-block 456              # also the newer draft of live block 456
+opticli publish 123 --without-block 789           # keep never-published block 789 a draft
+```
+
+- **`--with-block <ref>`** (repeatable; a plan's `withBlocks`, `publish_content`'s `blocks`): a live block whose
+  newer draft goes along too.
+- **`--without-block <ref>`** (repeatable; `withoutBlocks`, `skipBlocks`): a never-published block that stays a draft;
+  the warning says the content goes live without it showing.
+- A named ref must be a block of the content's own folder that its areas show; any other ref, or the same ref in both,
+  is `usage`, and nothing is published. On a site that makes inline blocks (nothing is published along there) they are
+  `usage` too, and so they are against an agent of opticli 0.34 or older, which would ignore them. `projects publish`
+  takes both, for the blocks of any ready item.
+- **A write that publishes** (`--publish`, `--publish-at`) takes along the blocks it made or changed itself (`created`,
+  `updated`) without naming them, and the never-published blocks the content shows; another live block's newer draft
+  stays, with a warning to publish it on its own. Writes have no `--with-block`: save a draft, then `publish` with it.
+
+A scheduled publish schedules the blocks for the same time. Blocks from anywhere else are never published along. Also
+left as drafts, each with a `warning`, named or not: a draft someone else saved (unless `--include-draft`), a block under
+an approval sequence, one that fails validation, and for an editor one they may not publish. The edit UI's own Publish
+publishes the page alone. A block left a draft once the content is published is published by its own ref (`publish
+<block>`): the content's published version can't be published again. Until a changed block is published, the CMS's
+preview of the content shows the block's published version; an `info` line says so.
+
+Where the site makes shared blocks, `publish --dry-run` asks the site (as the MCP module's `publish_content` with
+`dryRun` does): it validates the version and lists the blocks it would publish along (`sharedBlocks`) and leave behind
+(`validation` warnings), saving nothing. Elsewhere, and against an older agent, it is answered from the database as
+before. The dry run of a write with `--publish` lists what it would publish along too.
 
 **Review requests.** An approval publishes the content alone. So where the site makes shared blocks, sending content
-for review (`--request-approval`) is refused (`usage`) while its areas show blocks of its own folder that aren't
-published: drafts, or blocks the write makes or changes. Dry runs are refused too; `publish --request-approval
---dry-run` asks the site for this. The hint gives two ways: save into a CMS project (below), or save a draft, publish
-the blocks, then send the content for review. Blocks in the folder of content under an approval sequence inherit it,
-so they go for review on their own (`publish <block> --request-approval`); a block awaiting approval no longer stops
-the content's request.
+for review (`--request-approval`) is refused (`usage`) while its areas show blocks of its own folder that were never
+published (drafts), or blocks the write makes or changes. A live block with a newer draft doesn't stop it: the content
+goes live showing that block's published version, as a publish leaves it. Dry runs are refused too. The hint gives two
+ways: save into a CMS project (below), or save a draft, publish the blocks, then send the content for review. Blocks in
+the folder of content under an approval sequence inherit it, so they go for review on their own (`publish <block>
+--request-approval`); a block awaiting approval no longer stops the content's request.
 
 **Projects.** A write with `--in-project` puts its new and changed blocks in the project too, as drafts that then
 follow the content: with `--ready` they are marked Ready to publish, and with `--request-approval` the blocks under an
 approval sequence go for review with the content (the others are marked ready). `--ready` without
 `--request-approval` where a block has an approval sequence is `refused` (`approvalSequence`), in a dry run too. A
-write into a project isn't refused for its blocks. `projects publish` publishes along the block drafts of each page's
-folder that aren't in the project; a block draft that is an item of the project follows the project's rules, and when
-it isn't marked ready, the page's item in the result warns that it stays a draft.
+write into a project isn't refused for its blocks. `projects publish` publishes along the never-published block drafts of
+each page's folder that aren't in the project (and the live ones `--with-block` names); a block draft that is an item of
+the project follows the project's rules, and when it isn't marked ready, the page's item in the result warns that it
+stays a draft.
 
 **Plans.** An `area add` with `type` may have an `id`: later steps reach the block it makes as `$id` (a `set` with
 `"ref": "$intro"`, a link in rich text), and `created` lists it. Run again with `--update-existing`, the add finds the
@@ -889,8 +917,10 @@ A run that meets a `$id` naming no block stops there (`usage`).
 block needs Edit and Create on the content (Create on its parent for new content) and a block type they may create in
 its folder (on existing content, one the edit UI offers for a new block there), and changing a block of the folder by
 writing the area whole needs Edit on that block. The tools' descriptions say what a `{type, properties}` item becomes,
-and on a site that makes shared blocks the server's instructions add that `publish_content` publishes them along while
-the CMS's own Publish doesn't (where assistants may not publish: that the editor publishes the blocks too). A custom
+and on a site that makes shared blocks the server's instructions add that `publish_content` publishes the never-published
+ones along while the CMS's own Publish doesn't, that a live block keeps its newer draft unless named in `blocks`, and to
+show the editor a `dryRun` of the publish first: which blocks go live with the content and which stay behind (where
+assistants may not publish: that the editor publishes the blocks too). A custom
 tool's `ContentPlan` step makes them the same way, and its step result lists them in `sharedBlocks`.
 
 **Trying either mode locally.** Set `EPiServer:CmsUI:UI:InlineBlocksInContentAreaEnabled` (`true` or `false`) in the
@@ -933,7 +963,7 @@ items marked ready or taken out, and publish; a published project is a `conflict
 | `<write> --in-project <project> [--ready]` | `set`, `create`, `area`, `composition`, `block create`, `upload` and `translate` (with `--with-blocks`, the translated blocks too) put the draft they save in the project; `--ready` marks it Ready to publish |
 | `projects ready <project> <ref>... \| --all [--lang] [--request-approval [--comment <text>]] [--include-draft]` | marks items Ready to publish, as the edit UI's Ready to Publish does. Refs are content (every item of it, in `--lang` if given) or versions; `--all` takes every item that is a draft |
 | `projects remove <project> <ref>... [--lang]` | takes items out; their versions stay as they are |
-| `projects publish <project> [--at <time>] [--include-draft]` | publishes (or schedules) the items marked Ready to publish, together |
+| `projects publish <project> [--at <time>] [--include-draft] [--with-block <ref>]... [--without-block <ref>]...` | publishes (or schedules) the items marked Ready to publish, together; where the site makes shared area blocks, with the never-published blocks of each item's own folder (the block options choose as for [`publish`](#new-blocks-in-a-contentarea)) |
 | `projects reactivate <project>` | cancels a scheduled project's publish |
 | `projects delete <project>` | deletes the project, as the edit UI's Delete Project does; its drafts stay drafts. Not while it is scheduled, being published or reactivated |
 
@@ -1864,7 +1894,7 @@ existing project or a new one, and asks first. The module follows the same rules
 | `create_project(name, dryRun)` | write | an active, empty project; a name an unpublished project has is refused |
 | `mark_ready_to_publish(project, items \| all, lang, requestApproval, comment, includeDraft, dryRun)` | write | marks items Ready to publish; under an approval sequence `requestApproval` sends them for review instead |
 | `remove_from_project(project, items, lang, dryRun)` | write | takes items out; their versions stay as they are |
-| `publish_project(project, publishAt, includeDraft, dryRun)` | publish | publishes or schedules the items marked ready |
+| `publish_project(project, publishAt, includeDraft, dryRun, blocks, skipBlocks)` | publish | publishes or schedules the items marked ready (with the blocks of their own folders, as `publish_content`) |
 | `reactivate_project(project, dryRun)` | publish | cancels a scheduled project's publish; its items are drafts again |
 
 A project is named by its id or its exact name. `create_content`, `update_content`, `add_language` and `upload_media`

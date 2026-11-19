@@ -132,8 +132,10 @@ instead, which needs no publishing option at all.
 
 > **Note:** New blocks an assistant adds to a content area are made as the site's edit UI makes them: inline blocks,
 > or, where `UIOptions.InlineBlocksInContentAreaEnabled` is off (CMS 12's default), shared blocks in the page's "For
-> this page" folder, saved as drafts. The assistant's publish of a page publishes those block drafts along; the CMS's
-> own Publish publishes the page alone. Without `AllowPublish`, the assistant tells editors to publish the blocks too.
+> this page" folder, saved as drafts. The assistant's publish of a page publishes the drafts of those blocks that were
+> never published along (a live block's newer draft only when the editor asks: `publish_content`'s `blocks`); the
+> CMS's own Publish publishes the page alone. Without `AllowPublish`, the assistant tells editors to publish the blocks
+> too.
 > See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new-blocks-in-a-contentarea).
 
 > **Note:** The module refuses script in rich text and links whatever you configure, but the CMS saves whatever the

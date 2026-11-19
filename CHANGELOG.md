@@ -28,11 +28,20 @@ before. See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new
   then by name, then the only one of its type left), so a run again updates those blocks (`updated`) instead of making
   new ones; shared blocks from anywhere else are never changed that way. `MainArea[2].X=...` and `area set` on a shared
   block are refused with its ref, to change it by.
-- **A publish takes the page's block drafts along.** `publish`, a write with `--publish` or `--publish-at`, and
+- **A publish takes the page's new blocks along.** `publish`, a write with `--publish` or `--publish-at`, and
   `projects publish` also publish (or schedule for the same time) the drafts of the blocks of the content's own folder
-  that its areas show, and list them in `sharedBlocks`. Someone else's draft needs `--include-draft`, and a block under
-  an approval sequence is left with a warning. A project's own items follow the project's rules.
-- **Review requests with unpublished blocks are refused**, as the approval would publish the page alone: the hint says
+  that its areas show **and that were never published** in its language, and list them in `sharedBlocks`. A block
+  that is live already keeps its newer draft, with a warning naming it, so an unfinished change to it doesn't go live
+  with the page: `--with-block <ref>` (repeatable) takes it along, and `--without-block <ref>` keeps a new block back;
+  a ref that isn't a block of the content's own folder that it shows is refused. A write that publishes takes the
+  blocks it made or changed along by itself. Someone else's draft needs `--include-draft`, and a block under an
+  approval sequence is left with a warning. A project's own items follow the project's rules. Plans: `withBlocks` and
+  `withoutBlocks` on a `publish` step.
+- **`publish --dry-run` asks the site** where it makes shared blocks: the site validates the version and lists the
+  blocks it would publish along and those it would leave behind, saving nothing. Elsewhere publish dry runs are
+  answered from the database as before.
+- **Review requests with never-published blocks are refused**, as the approval would publish the page alone (a live
+  block with a newer draft doesn't count): the hint says
   to save into a CMS project, or to publish the blocks first. A write into a project with `--ready` or
   `--request-approval` takes its new and changed blocks along: marked ready, or sent for review where an approval
   sequence applies.
@@ -42,8 +51,6 @@ before. See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new
   finds an inline block like it on a run again.
 - **`serve --status` and `doctor` show `inlineBlocks`** (`inline` or `shared`), how the site makes a new block in a
   ContentArea.
-- **`publish --request-approval --dry-run`** asks the site whether the review would be refused, where it makes shared
-  blocks; other publish dry runs are answered from the database as before.
 - **Fixed: a plan's dry run of a step that names a ContentArea item by its position** (`"MainArea[1].Heading"`, `area
   set`) ran against the stored area, without the items earlier steps of the plan add, unless the plan published,
   translated or used `from`. It follows the earlier steps in every plan now, on sites with inline blocks too.
@@ -54,15 +61,23 @@ before. See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new
   make shared blocks in the content's "For this page" folder where the site's edit UI does, and only where it would:
   the editor needs Edit and Create on the content (Create on its parent for new content) and a block type they may
   create there. The results (and custom tools' step results) have `sharedBlocks` with the blocks' refs.
-- `publish_content` publishes the content's own block drafts along, as `publish` does. On a site that makes shared
-  blocks, the server's instructions tell the assistant that the CMS's own Publish doesn't (or, where assistants may not
-  publish, that the editor publishes the blocks too), and to change a block later by its ref.
-- A review request (`requestApproval`) with unpublished blocks is refused with the same hint as the CLI's, and a save
-  into a project with `ready` or `requestApproval` takes the blocks along.
+- `publish_content` publishes the content's never-published block drafts along, as `publish` does, and takes
+  `blocks` (live blocks whose newer drafts go along too) and `skipBlocks` (new blocks kept back); `publish_project`
+  takes both too. On a site that makes shared blocks, the server's instructions tell the assistant that the CMS's own
+  Publish doesn't (or, where assistants may not publish, that the editor publishes the blocks too), and to change a
+  block later by its ref.
+- **`publish_content` has `dryRun`**: what would go live, someone else's changes it carries, validation, and the blocks
+  it would publish along or leave behind, saving nothing. It needs what the publish needs (`AllowPublish` and the
+  `content:publish` scope, unless it is a review request). The server's instructions ask the assistant to dry-run a
+  publish and show the editor what goes live first.
+- A review request (`requestApproval`) with never-published blocks is refused with the same hint as the CLI's, and a
+  save into a project with `ready` or `requestApproval` takes the blocks along.
 
 ### npm package
 
-- `sharedBlocks` on write results, `inlineBlocks` on `AgentStatus`, and `id` on a plan's `area` step are typed.
+- `sharedBlocks` on write results, `inlineBlocks` on `AgentStatus`, `id` on a plan's `area` step, `withBlock` and
+  `withoutBlock` on `publish` and `projectsPublish`, and `withBlocks`/`withoutBlocks` on a plan's `publish` step are
+  typed.
 
 ### Documentation
 

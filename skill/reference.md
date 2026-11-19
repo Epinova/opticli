@@ -228,8 +228,9 @@ allows (`[AvailableContentTypes]`, admin mode's settings, as the CMS's availabil
 media types: `upload` makes media.
 As in the CMS, `delete` leaves the "For this page" folders of the item and its descendants where they are (they go
 when the recycle bin is emptied, and are there if the item is restored); a warning lists them.
-`--dry-run` on `publish` and `delete` checks the arguments and the item without asking the site; `move --dry-run`
-asks the site, which checks the type below the new parent.
+`--dry-run` on `publish` and `delete` checks the arguments and the item without asking the site (`publish` asks it
+where the site makes new area blocks shared: see below); `move --dry-run` asks the site, which checks the type below
+the new parent.
 
 Positions in `area` are zero-based; a plain number is a position, `ref:789` (or a GUID) names the item by the
 content it shows. `--at` and `--display` only apply to `add`; `--display` is checked like `displayOption` below.
@@ -415,11 +416,19 @@ override: such a site may not render inline blocks.
   only when unique): an inline block stays inline, a folder block gets a new draft version (`updated`), an exact copy is
   left as it is. Anything that pairs with nothing is a new block; blocks from elsewhere are never taken over.
 - Publishing the content through opticli (`publish`, `--publish`, `--publish-at`, `projects publish`, MCP
-  `publish_content`) publishes along the drafts of its own folder's blocks that its areas show (`published`; a
-  scheduled publish schedules them too), but not someone else's draft without `--include-draft`, nor a block with an
-  approval sequence. The CMS's own Publish doesn't: tell the user. Until then the content's preview shows a changed
-  block's published version. `publish --dry-run` doesn't list them; a write with `--publish --dry-run` does.
-- `--request-approval` is refused (`usage`) while the content shows unpublished blocks of its folder: save it into a
+  `publish_content`) publishes along the drafts of its own folder's blocks that its areas show **and that were never
+  published** in its language (`published`; a scheduled publish schedules them too), but not someone else's draft
+  without `--include-draft`, nor a block with an approval sequence. A **live** block keeps its newer draft (a
+  `warning` names it): the user may be in the middle of changing it. `publish <ref> --with-block <block>` (repeatable)
+  takes such a draft along when the user wants it live too; `--without-block <block>` keeps a never-published one back.
+  Both only for blocks of the content's own folder that it shows (else `usage`); in a plan, `withBlocks` /
+  `withoutBlocks` on the `publish` step (refs or `$id`s). A write with `--publish` takes the blocks it made or changed
+  along by itself. The CMS's own Publish publishes no blocks: tell the user. Until a changed block is published the
+  content's preview shows its published version.
+- Run `publish <ref> --dry-run` first and tell the user what goes live: on such a site it asks the site, and lists the
+  blocks it would publish along (`sharedBlocks`) and those it leaves behind (`validation` warnings).
+- `--request-approval` is refused (`usage`) while the content shows never-published blocks of its folder (a live block
+  with a newer draft doesn't count): save it into a
   project instead (`--in-project <p> --ready --request-approval`: the blocks go in with it, marked ready or sent for
   review), or save a draft, publish the blocks (`publish <block> --request-approval` where they have a sequence, as
   blocks of content under one do), then send the content. `--ready` alone in a project where a block has an approval

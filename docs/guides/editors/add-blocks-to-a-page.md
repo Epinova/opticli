@@ -63,7 +63,8 @@ The assistant gives you an edit link to the page's draft. Open it in the CMS and
 preview link to see the page as visitors will.
 
 When the assistant changed a block of the page's folder that is already published, the preview still shows that
-block's published version until the block is published too. The assistant tells you when that is the case.
+block's published version until the block is published too. The assistant tells you when that is the case, and when
+you publish the page (step 5) it asks whether that change should go live with it.
 
 To change a block later, name it:
 
@@ -79,9 +80,24 @@ A block of its own is changed as its own draft; an inline block through a new dr
 Publish the Alloy Plan page.
 ```
 
-The assistant tells you what goes live and asks you to confirm. When it publishes the page, it also publishes the drafts
-of the blocks in the page's "For this page" folder that the page shows, and lists them. A draft of such a block that
-someone else saved is left out until you confirm their changes may go live (see
+Before it publishes, the assistant checks the publish without saving anything and tells you what goes live, and asks
+you to confirm. When it publishes the page, it also publishes the blocks in the page's "For this page" folder that the
+page shows **and that have never been published**: they can't show until they are. It lists them.
+
+A block that is already live keeps its newer draft: someone may still be working on that change. The assistant names
+such blocks before you confirm. If their changes should go live with the page, say so:
+
+```prompt
+Publish the Alloy Plan page, and the change to the "Pricing intro" block too.
+```
+
+You can also keep a new block back, so the page goes live without it:
+
+```prompt
+Publish the Alloy Plan page, but keep the "Spring offer" block as a draft.
+```
+
+A draft of such a block that someone else saved is left out until you confirm their changes may go live (see
 [When someone else has changes on the page](someone-elses-draft.md)), and so is a block that needs a reviewer.
 
 > **Note:** Publishing the page in the CMS publishes the page alone. Blocks of the page's folder that are drafts stay
@@ -93,8 +109,8 @@ Where the site doesn't let assistants publish, the assistant tells you which blo
 ### 6. Pages with an approval sequence
 
 A reviewer's approval publishes the page alone. So on a site that keeps new blocks in the page's folder, the
-assistant can't send the page for review while it shows blocks that aren't published. It tells you so, and offers two
-ways:
+assistant can't send the page for review while it shows blocks that have never been published (a block that is live
+already doesn't stop it: the page then shows that block as it is live). It tells you so, and offers two ways:
 
 - **A project.** The assistant saves the page and its new blocks in a CMS project and sends them for review together;
   publishing the project puts them live together. See
@@ -113,6 +129,8 @@ ways:
   block in the CMS either. Ask your CMS administrator for access, or choose another block type.
 - **"… would go for review while its ContentAreas show blocks of its "For this page" folder that aren't published".**
   See step 6.
+- **"… is published already, so its newer draft stays a draft".** The block was live before, and the page went live
+  showing it as it was. Ask the assistant to publish that block on its own if its change should go live now.
 - **"… wasn't published along".** The page went live without that block's draft: someone else saved it, it needs a
   reviewer, or it has an error. The assistant says which; publish or send it for review on its own once it is ready.
 - **The published page shows a block's old text, or not the new block.** That block is still a draft, for instance
