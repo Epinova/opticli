@@ -254,7 +254,8 @@ item in a whole area) is made as the site's edit UI makes one; `serve --status` 
   already only the blocks named go live, never-published ones too, and with none named it is a `conflict` whose hint
   lists them). In a plan, a `publish` step takes along the block drafts earlier steps saved. A whole-area write over a
   block whose latest version is someone else's draft is a `pendingDraft` conflict with `details.draft.path`: ask the
-  user, as below, before `--include-draft`.
+  user, as below, before `--include-draft`. A block whose draft someone else saved goes along with a publish only when
+  `--with-block` names it (`--include-draft` doesn't take it along): the dry run's warning says whose it is; ask first.
   `publish --dry-run` shows both; tell the user before publishing. The CMS's own Publish publishes no blocks, so tell the user.
   `--request-approval` is refused while the page shows never-published blocks: use `--in-project <p> --ready
   --request-approval`, or publish the blocks first. Details:

@@ -5,8 +5,10 @@ using OptiCli.Protocol;
 namespace OptiCli.Cli;
 
 /// <summary>
-/// Asks a person at a terminal whether a publish should also put live the unpublished changes someone else saved, or a
-/// discard delete them.
+/// Asks a person at a terminal whether a publish should also put live the unpublished changes someone else saved of the
+/// content, whether a write may save a block's new version over their draft of it (a takeover), or a discard delete them.
+/// Each is asked on its own. Someone else's drafts of other blocks never go along with a publish on a yes here: only
+/// naming them does (<c>--with-block</c>).
 /// Agents never see this: their stdin/stdout aren't terminals, so they get the <c>conflict</c> with
 /// <c>details.reason: "pendingDraft"</c> instead, and ask the user.
 /// </summary>

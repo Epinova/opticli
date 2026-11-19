@@ -464,14 +464,13 @@ public static class PlanSimulation
             operation = new SetOperation(reference, stripped, name, language, publish) { AreaEdits = areas, CompositionEdits = compositions.Count > 0 ? compositions : null, From = from };
         }
         // A block draft of someone else's that an area item takes over is confirmed by the steps that write the area, each by
-        // its own includeDraft (all of them, as the dry run can't tell which step takes which block over), not by the publish's.
+        // its own includeDraft (all of them, as the dry run can't tell which step takes which block over), not by the publish's,
+        // which confirms the content's own draft going live. Others' drafts of blocks the steps don't change go along only when
+        // the publish names them (withBlocks), in the dry run as in the run: no includeDraft confirms those.
         var blockDrafts = writes.Where(w => w.Operation is not PublishOperation).All(w => w.Operation.IncludeDraft);
         operation = operation switch
         {
             SetOperation set => set with { IncludeDraft = step.Operation.IncludeDraft, IncludeBlockDraft = blockDrafts },
-            // A new branch's one includeDraft also confirms others' drafts of the folder's blocks it publishes along, which the
-            // run's publish step confirms with its own: so both (for any other step, the step is among the writes already).
-            TranslateOperation branch => branch with { IncludeDraft = blockDrafts && step.Operation.IncludeDraft },
             _ => operation with { IncludeDraft = step.Operation.IncludeDraft },
         };
         return new Simulation(operation, null, new Dictionary<string, string>(), notChecked.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), references, notes);

@@ -147,7 +147,7 @@ internal static class ProjectsCommand
         var project = ProjectArgument();
         var at = new Option<string?>("--at") { Description = $"Schedule the publish instead: {PublishTimes.Syntax}. The ready items become delayedPublish and the project delayedPublished until then; `opticli projects reactivate` cancels it.", HelpName = "time" };
         var write = new WriteOptions();
-        write.IncludeDraft.Description = "Also publish the unpublished changes someone else saved after the published version, which ready items carry. Not needed for the changes of whoever marked an item ready (readyBy): marking it ready was their consent. Without it such a publish asks on a terminal, and elsewhere fails with a conflict (exit 5) listing them per item in details.project.";
+        write.IncludeDraft.Description = "Also publish the unpublished changes someone else saved after the published version, which ready items carry. Not needed for the changes of whoever marked an item ready (readyBy): marking it ready was their consent. Without it such a publish asks on a terminal, and elsewhere fails with a conflict (exit 5) listing them per item in details.project. Someone else's drafts of an item's blocks go along only when --with-block names them.";
         var command = new Command("publish", """
             Publish a project: its items marked Ready to publish go live together (or at --at), through the CMS's own project
             publisher. Needs `opticli serve`. Items that aren't ready (drafts, in review) stay as they are and are listed in

@@ -24,8 +24,8 @@ internal static class PublishCommand
             version for review instead.
             Where the site makes new area blocks shared (serve --status: inlineBlocks: shared), the drafts of the blocks of
             the content's own "For this page" folder that it shows and that were never published go live with it
-            (sharedBlocks); a live block's newer draft stays behind with a warning unless --with-block names it, and
-            --without-block keeps a new one back (neither with a review: usage). There --dry-run asks the site, which
+            (sharedBlocks); a live block's newer draft, and a draft someone else saved, stays behind with a warning unless
+            --with-block names it (--include-draft doesn't take it along), and --without-block keeps a new one back (neither with a review: usage). There --dry-run asks the site, which
             checks the publish and lists both. When the version is published already, only the drafts of the blocks
             --with-block names go live, never-published ones too (a conflict when none is named, whose hint lists those
             it could name).
@@ -35,7 +35,7 @@ internal static class PublishCommand
         content.AddTo(command);
         command.Options.Add(version);
         write.AddCommon(command, publish: false);
-        write.IncludeDraft.Description = WriteOptions.IncludeDraftPublishing;
+        write.IncludeDraft.Description = WriteOptions.IncludeDraftPublishing + " It doesn't publish someone else's drafts of the content's blocks along: --with-block names those.";
         write.AddIncludeDraft(command);
         write.AddRequestApproval(command);
         write.AddPublishAt(command);

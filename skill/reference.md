@@ -418,14 +418,17 @@ override: such a site may not render inline blocks.
   folder block's latest version is a draft **someone else** saved, its new version would drop their changes: the write
   is a `conflict` (exit 5) with `details.reason: "pendingDraft"` and `details.draft.path` naming the item (dry run too).
   Tell the user whose change it is; only if they say it may be replaced, `--include-draft` (a plan step's
-  `includeDraft`, `translate --include-draft`), after which a `warning` says whose draft it replaced. Else give that
-  item back as `{"ref"}`, or change the block by its ref (builds on their draft).
+  `includeDraft`), after which a `warning` says whose draft it replaced (and a write that publishes takes the block
+  along as its own change). Else give that item back as `{"ref"}`, or change the block by its ref (builds on their
+  draft).
 - Publishing the content through opticli (`publish`, `--publish`, `--publish-at`, `projects publish`, MCP
   `publish_content`) publishes along the drafts of its own folder's blocks that its areas show **and that were never
-  published** in its language (`published`; a scheduled publish schedules them too), but not someone else's draft
-  without `--include-draft`, nor a block with an approval sequence. A **live** block keeps its newer draft (a
-  `warning` names it): the user may be in the middle of changing it. `publish <ref> --with-block <block>` (repeatable)
-  takes such a draft along when the user wants it live too; `--without-block <block>` keeps a never-published one back.
+  published** in its language (`published`; a scheduled publish schedules them too), but not a block with an approval
+  sequence, and not a block whose draft **someone else** saved unless the publish names it (`--include-draft` never
+  takes it along: it confirms only the content's own draft and a takeover; the `warning` says who saved it). A **live**
+  block keeps its newer draft (a `warning` names it): the user may be in the middle of changing it. `publish <ref>
+  --with-block <block>` (repeatable) takes such a draft along, or someone else's, when the user wants it live too (tell
+  them whose it is first); `--without-block <block>` keeps a never-published one back.
   Both only for blocks of the content's own folder that it shows (else `usage`); in a plan, `withBlocks` /
   `withoutBlocks` on the `publish` step (refs or `$id`s). Neither with a publish that goes for review (`usage`). A
   write with `--publish` takes the blocks it made or changed along by itself, and so does a plan's `publish` step for
@@ -713,8 +716,9 @@ and the version that would go live has its changes, these stop unless confirmed:
 - Where the site makes shared area blocks, a write (also without `--publish`) whose whole-area item takes over a block
   of the content's "For this page" folder whose latest version someone else saved stops the same way, with
   `details.draft.path` (the area item) and `details.draft.changes` (their draft since the block's published version),
-  and here the `--dry-run` fails too. `--include-draft` (`set`, `area`, `translate`; a plan step's `includeDraft` on the
-  step that writes the area) confirms that their change may be replaced; ask first.
+  and here the `--dry-run` fails too. `--include-draft` (`set`, `area`; a plan step's `includeDraft` on the step that
+  writes the area) confirms that their change may be replaced; ask first. It never publishes someone else's drafts of
+  the content's other blocks along: name those with `publish --with-block` (a plan's `withBlocks`), after asking.
 
 ### Drift (shared databases)
 

@@ -84,19 +84,29 @@ public class ProjectsCommandTests
     }
 
     [Fact]
-    public async Task Writes_and_translate_confirm_someone_elses_block_draft_with_include_draft_and_publish_names_blocks_of_live_content()
+    public async Task Writes_confirm_someone_elses_block_draft_with_include_draft_and_publish_names_blocks_of_live_content()
     {
         static string Flat(string text) => string.Join(' ', text.Split((char[])[' ', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries));
-        foreach (var command in new[] { "set", "area", "translate" })
+        foreach (var command in new[] { "set", "area" })
         {
             var run = await Opticli.RunAsync(command, "--help");
             Assert.Equal(0, run.ExitCode);
             Assert.Contains("--include-draft", run.Stdout, StringComparison.Ordinal);
             Assert.Contains("over a draft someone else saved", Flat(run.Stdout), StringComparison.Ordinal);
+            // It never takes others' drafts of other blocks along with --publish: naming them does.
+            Assert.Contains("Someone else's drafts of other blocks never go along with --publish: name those in `opticli publish <ref> --with-block`", Flat(run.Stdout), StringComparison.Ordinal);
         }
+        // translate has no --include-draft (decision 15): a new branch has no draft of its own and takes no block over.
+        var translate = await Opticli.RunAsync("translate", "--help");
+        Assert.Equal(0, translate.ExitCode);
+        Assert.DoesNotContain("--include-draft", translate.Stdout, StringComparison.Ordinal);
         var publish = Flat((await Opticli.RunAsync("publish", "--help")).Stdout);
         Assert.DoesNotContain("over a draft someone else saved", publish, StringComparison.Ordinal);
         Assert.Contains("When the version is published already, only the drafts of the blocks --with-block names go live, never-published ones too", publish, StringComparison.Ordinal);
+        // Someone else's block draft goes along only when --with-block names it.
+        Assert.Contains("and a draft someone else saved, stays behind with a warning unless --with-block names it (--include-draft doesn't take it along)", publish, StringComparison.Ordinal);
+        Assert.Contains("It doesn't publish someone else's drafts of the content's blocks along: --with-block names those.", publish, StringComparison.Ordinal);
+        Assert.Contains("or although someone else saved that draft (naming it is what confirms their changes going live; --include-draft doesn't)", publish, StringComparison.Ordinal);
     }
 
     [Fact]

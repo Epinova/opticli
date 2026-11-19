@@ -10,7 +10,8 @@ namespace OptiCli.Core.Tests.Writes;
 
 /// <summary>
 /// On a terminal, a write refused for someone else's draft of the content and for their draft of a block of its folder
-/// asks about each on its own: a yes to one never confirms the other.
+/// that it takes over asks about each on its own: a yes to one never confirms the other. Neither names a block, so no yes
+/// takes someone else's drafts of other blocks along with a publish (only naming them does, decision 15).
 /// </summary>
 public class BlockDraftPromptTests
 {
@@ -39,6 +40,8 @@ public class BlockDraftPromptTests
         // The write sent after the first yes still left the other unconfirmed: the agent refused it, and only the last is both.
         Assert.Equal(contentFirst ? (true, false) : (false, true), (agent.Requests[1].IncludeDraft, agent.Requests[1].IncludeBlockDraft ?? agent.Requests[1].IncludeDraft));
         Assert.Equal((true, true), (agent.Requests[2].IncludeDraft, agent.Requests[2].IncludeBlockDraft ?? agent.Requests[2].IncludeDraft));
+        // No answer names blocks to take along.
+        Assert.All(agent.Requests, r => Assert.Null(r.WithBlocks));
     }
 
     [Fact]

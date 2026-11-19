@@ -326,12 +326,9 @@ public class PlanBlocksTests
         var plan = WritePlan.Parse("""
             {"operations": [
               {"op": "set", "ref": "123", "properties": {"MainArea": [{"type": "TeaserBlock", "name": "Intro", "properties": {"Heading": "New"}}]}, "includeDraft": true},
-              {"op": "publish", "ref": "123"},
+              {"op": "publish", "ref": "123", "withBlocks": ["456"]},
               {"op": "set", "ref": "124", "properties": {"MainArea": [{"type": "TeaserBlock", "name": "Intro", "properties": {"Heading": "New"}}]}},
-              {"op": "publish", "ref": "124", "includeDraft": true, "requestApproval": true},
-              {"op": "translate", "ref": "125", "lang": "sv", "includeDraft": true},
-              {"op": "set", "ref": "125", "lang": "sv", "properties": {"Heading": "Ny"}},
-              {"op": "publish", "ref": "125", "lang": "sv"}
+              {"op": "publish", "ref": "124", "includeDraft": true, "requestApproval": true}
             ]}
             """);
         var targets = new Dictionary<int, PlanTarget>
@@ -340,23 +337,19 @@ public class PlanBlocksTests
             [1] = new(123, "en", "en", true, false),
             [2] = new(124, "en", "en", true, false),
             [3] = new(124, "en", "en", true, false),
-            [4] = new(125, "sv", "en", false, false),
-            [5] = new(125, "sv", "en", false, false),
-            [6] = new(125, "sv", "en", false, false),
         };
 
-        // The area step confirmed someone else's block draft; the publish confirmed nothing of the content's.
+        // The area step confirmed someone else's block draft; the publish confirmed nothing of the content's. Someone else's
+        // drafts of other blocks go along only as the publish names them (withBlocks), in the dry run as in the run.
         var first = Assert.IsType<SetOperation>(PlanSimulation.OnExisting(plan.Steps[1], plan.Steps, targets, None, updateExisting: false)!.Operation);
         Assert.Equal((false, (bool?)true), (first.IncludeDraft, first.IncludeBlockDraft));
+        Assert.Equal(["456"], first.WithBlocks!);
         // And the other way round: the publish's includeDraft doesn't confirm a block draft the area step would save over.
         var second = PlanSimulation.OnExisting(plan.Steps[3], plan.Steps, targets, None, updateExisting: false)!;
         var reviewed = Assert.IsType<SetOperation>(second.Operation);
         Assert.Equal((true, (bool?)false), (reviewed.IncludeDraft, reviewed.IncludeBlockDraft));
         Assert.Contains("sent for review (published, where no approval sequence applies)", Assert.Single(second.Notes!));
         Assert.DoesNotContain(", published (their", Assert.Single(second.Notes!));
-        // A new branch: confirmed only when every step that writes it is.
-        var branch = Assert.IsType<TranslateOperation>(PlanSimulation.OnExisting(plan.Steps[6], plan.Steps, targets, None, updateExisting: false)!.Operation);
-        Assert.False(branch.IncludeDraft);
     }
 
     [Fact]
@@ -379,33 +372,6 @@ public class PlanBlocksTests
         Assert.True(branch.Publish);
         Assert.Equal(["456"], branch.PublishWithBlocks!);
         Assert.Equal(["789"], branch.PublishWithoutBlocks!);
-    }
-
-    [Fact]
-    public void A_publish_of_a_new_branch_is_dry_run_confirming_others_block_drafts_only_with_its_own_include_draft()
-    {
-        // The run's publish takes others' drafts of the folder's blocks along only with its own includeDraft; the new branch's
-        // dry run has one includeDraft for them and for a block its values take over, so it needs both steps' confirmation.
-        var plan = WritePlan.Parse("""
-            {"operations": [
-              {"op": "translate", "ref": "123", "lang": "sv", "includeDraft": true},
-              {"op": "publish", "ref": "123", "lang": "sv"},
-              {"op": "translate", "ref": "124", "lang": "sv", "includeDraft": true},
-              {"op": "publish", "ref": "124", "lang": "sv", "includeDraft": true}
-            ]}
-            """);
-        var targets = new Dictionary<int, PlanTarget>
-        {
-            [0] = new(123, "sv", "en", false, false),
-            [1] = new(123, "sv", "en", false, false),
-            [2] = new(124, "sv", "en", false, false),
-            [3] = new(124, "sv", "en", false, false),
-        };
-
-        var unconfirmed = Assert.IsType<TranslateOperation>(PlanSimulation.OnExisting(plan.Steps[1], plan.Steps, targets, None, updateExisting: false)!.Operation);
-        var confirmed = Assert.IsType<TranslateOperation>(PlanSimulation.OnExisting(plan.Steps[3], plan.Steps, targets, None, updateExisting: false)!.Operation);
-
-        Assert.Equal((false, true), (unconfirmed.IncludeDraft, confirmed.IncludeDraft));
     }
 
     [Fact]

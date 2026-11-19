@@ -2152,7 +2152,6 @@ TranslateOptions.connectionName?
 TranslateOptions.db?
 TranslateOptions.dryRun?
 TranslateOptions.inProject?
-TranslateOptions.includeDraft?
 TranslateOptions.lang
 TranslateOptions.name?
 TranslateOptions.publish?

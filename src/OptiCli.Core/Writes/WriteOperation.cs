@@ -29,7 +29,9 @@ public abstract record WriteOperation
     /// published version (<c>--include-draft</c>, a plan's <c>includeDraft</c>). Without it such a publish fails with a
     /// <c>conflict</c> whose details say what they are. Where the site makes shared area blocks, it also lets a write that
     /// takes over a block of the content's "For this page" folder save the block's new version over a draft someone else
-    /// saved (refused without it, a <c>conflict</c> whose <c>details.draft.path</c> names the area item).
+    /// saved (refused without it, a <c>conflict</c> whose <c>details.draft.path</c> names the area item). It never takes
+    /// someone else's drafts of the content's blocks along with a publish: only naming them does (<c>--with-block</c>,
+    /// <c>withBlocks</c>).
     /// </summary>
     public bool IncludeDraft { get; init; }
 
@@ -232,7 +234,8 @@ public sealed record SetOperation(
     /// <summary>
     /// Dry run only (<see cref="Protocol.DraftRequest.IncludeBlockDraft"/>): steps checked together as one write
     /// (<see cref="PlanSimulation.OnExisting"/>) confirm someone else's block drafts their area items would save over with
-    /// their own <c>includeDraft</c>, which isn't the publishing step's. Null: as <see cref="WriteOperation.IncludeDraft"/>.
+    /// their own <c>includeDraft</c>, while the publishing step's confirms only the content's own draft going live. Null: as
+    /// <see cref="WriteOperation.IncludeDraft"/>.
     /// </summary>
     internal bool? IncludeBlockDraft { get; init; }
 
