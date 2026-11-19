@@ -15,9 +15,13 @@ namespace OptiCli.Cms.Operations;
 /// </summary>
 internal static class DraftOperation
 {
-    public static WriteResult Run(CmsCall call, string reference, DraftRequest body)
+    /// <param name="blockDraftsConfirmable">
+    /// False for a site tool's plan step (<c>ContentPlan</c> has no <c>includeDraft</c>): a takeover over someone else's
+    /// block draft is refused with a hint that doesn't offer one (<see cref="WriteFlow.BlockDraftsConfirmable"/>).
+    /// </param>
+    public static WriteResult Run(CmsCall call, string reference, DraftRequest body, bool blockDraftsConfirmable = true)
     {
-        var flow = new WriteFlow(call);
+        var flow = new WriteFlow(call) { BlockDraftsConfirmable = blockDraftsConfirmable };
         flow.Project = Projects.ProjectSave.For(call, body.Project, body.Ready, body.Publish, body.PublishAt);
         // A block of its folder the write takes over may get its new version over someone else's draft: includeDraft, unless a
         // plan's dry run of steps checked together confirms that apart from the publish (IncludeBlockDraft).

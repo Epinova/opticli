@@ -181,7 +181,11 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     /// <c>includeDraft</c>: a block taken over may get its new version over a draft someone else saved
     /// (<see cref="RequireOwnDraft"/>); the result then says whose draft it replaced.
     /// </param>
-    public List<ValidationIssue> Prepare(IContent owner, ProjectSave? project, SaveAction ownerAction, bool othersConfirmed = false)
+    /// <param name="confirmable">
+    /// Whether the caller has a way to give that confirmation; false for a new language branch (<c>translate</c>,
+    /// <c>add_language</c>) and a site tool's plan step, whose refusal then doesn't offer one.
+    /// </param>
+    public List<ValidationIssue> Prepare(IContent owner, ProjectSave? project, SaveAction ownerAction, bool othersConfirmed = false, bool confirmable = true)
     {
         if (_pending.Count == 0)
         {
@@ -250,7 +254,7 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
                         $"{pending.Path} changes the shared block {link} ('{pending.Existing.Name}') of the content's \"For this page\" folder, and you don't have Edit access to that block.",
                         $"Give that item back as {{\"ref\": \"{link}\"}} to keep the block as it is, or ask a CMS administrator for the access. Nothing was saved.");
                 }
-                if (RequireOwnDraft(pending, othersConfirmed) is { } replaced)
+                if (RequireOwnDraft(pending, othersConfirmed, confirmable) is { } replaced)
                 {
                     issues.Add(replaced);
                 }
@@ -291,9 +295,10 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     /// a publish would put someone else's draft of the content live. So, as for that publish, it needs the caller's
     /// confirmation (<c>includeDraft</c>); a dry run is refused alike, so the assistant asks before it shows the change.
     /// </summary>
+    /// <param name="confirmable">Whether the caller can confirm it at all; else the hint offers only the other ways.</param>
     /// <returns>With the confirmation, a warning saying whose draft the write replaces; null when the draft is the caller's own.</returns>
     /// <exception cref="AgentException"><c>conflict</c> with <see cref="AgentException.PendingDraft"/> (its <see cref="PendingDraft.Path"/> set).</exception>
-    private ValidationIssue? RequireOwnDraft(Pending pending, bool confirmed)
+    private ValidationIssue? RequireOwnDraft(Pending pending, bool confirmed, bool confirmable)
     {
         var existing = pending.Existing!;
         var branch = locator.Versions(existing.ContentLink, Language);
@@ -317,9 +322,14 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
         {
             throw new AgentException(AgentErrorCodes.Conflict,
                 $"The write would save a new version of {what} over {draft.Describe()}: the area item gives all of the block's values, so their changes wouldn't be in it.",
-                call.ForCaller(
-                    $"Ask whether their changes may be replaced; if so, retry with --include-draft (in a plan: \"includeDraft\": true on the step). To leave the block as it is, give that item back as {{\"ref\": \"{block}\"}}; to change it on top of their draft, set it by its ref (opticli set {block} ...). Nothing was saved.",
-                    $"Ask whether their changes may be replaced; if so, retry with includeDraft. To leave the block as it is, give that item back as {{\"ref\": \"{block}\"}}; to change it on top of their draft, update_content on {block}. Nothing was saved."))
+                confirmable
+                    ? call.ForCaller(
+                        $"Ask whether their changes may be replaced; if so, retry with --include-draft (in a plan: \"includeDraft\": true on the step). To leave the block as it is, give that item back as {{\"ref\": \"{block}\"}}; to change it on top of their draft, set it by its ref (opticli set {block} ...). Nothing was saved.",
+                        $"Ask whether their changes may be replaced; if so, retry with includeDraft. To leave the block as it is, give that item back as {{\"ref\": \"{block}\"}}; to change it on top of their draft, update_content on {block}. Nothing was saved.")
+                    // A new language branch (translate, add_language) or a site tool's step: no includeDraft to retry with.
+                    : call.ForCaller(
+                        $"This write can't replace their changes (a new language branch can't confirm that). To leave the block as it is, give that item back as {{\"ref\": \"{block}\"}}; to change it on top of their draft, set it by its ref (opticli set {block} ...); or ask them to publish or discard their draft first. Nothing was saved.",
+                        $"This call can't replace their changes, as it can't confirm that: tell the user whose draft it is. To change the block on top of their draft, update_content on {block}; or they publish or discard that draft in the CMS first. Nothing was saved."))
             {
                 PendingDraft = draft,
             };

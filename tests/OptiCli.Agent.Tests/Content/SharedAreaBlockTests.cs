@@ -2155,6 +2155,36 @@ public class SharedAreaBlockTests
     }
 
     [Fact]
+    public void A_takeover_refused_where_the_caller_has_no_include_draft_doesnt_offer_it()
+    {
+        // A new language branch (translate, add_language) and a site tool's step have no includeDraft: their refusal says
+        // how else to go on, for the CLI and for an editor's assistant alike.
+        foreach (var caller in new[] { CmsCaller.Developer, CmsCaller.Editor })
+        {
+            var site = new Site(caller);
+            var page = site.Page(folder: true);
+            var draftOnly = site.Block(site.Folder(page).ContentLink, "Draft", "Theirs", VersionStatus.CheckedOut, savedBy: "someone");
+            page = OwnerOf(site, draftOnly, Ref(draftOnly));
+            if (caller == CmsCaller.Editor)
+            {
+                page = Neutral(site, page);
+                Neutral(site, draftOnly);
+            }
+            var flow = site.Flow();
+            flow.BlockDraftsConfirmable = false;
+            var (writable, before) = site.Write(flow, page, """{"Area": [{"type": "ItemBlock", "name": "Draft", "properties": {"Title": "Mine"}}]}""");
+
+            var refused = Assert.Throws<AgentException>(() => site.Save(flow, writable, before, dryRun: true));
+
+            Assert.Equal("Area[0]", refused.PendingDraft!.Path);
+            Assert.DoesNotContain("--include-draft", refused.Hint);
+            Assert.DoesNotContain("retry with includeDraft", refused.Hint);
+            Assert.Contains("can't replace their changes", refused.Hint);
+            Assert.Contains(caller == CmsCaller.Developer ? $"opticli set {Id(draftOnly)}" : $"update_content on {Id(draftOnly)}", refused.Hint);
+        }
+    }
+
+    [Fact]
     public void A_nested_takeover_of_a_block_whose_latest_version_someone_else_saved_is_refused_unless_confirmed()
     {
         var site = new Site();

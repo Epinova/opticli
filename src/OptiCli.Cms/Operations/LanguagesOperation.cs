@@ -12,6 +12,9 @@ internal static class LanguagesOperation
     {
         var flow = new WriteFlow(call);
         flow.Project = Projects.ProjectSave.For(call, body.Project, body.Ready, body.Publish, publishAt: null);
+        // A new branch has no includeDraft (decision 15 of the plan): a takeover over someone else's block draft, if its values
+        // ever made one, is refused with no way to confirm it here.
+        flow.BlockDraftsConfirmable = false;
         var link = flow.Locator.ResolveContent(reference);
         if (body.WithBlocks is { Count: > 0 } || body.WithoutBlocks is { Count: > 0 })
         {

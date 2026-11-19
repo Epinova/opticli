@@ -57,7 +57,7 @@ internal sealed class CmsPlanSteps(IHttpContextAccessor http, IOptions<OptiCliMc
             case UpdateStep update:
             {
                 var baseVersion = facts?["baseVersion"] is JsonValue version ? version.GetValue<int>() : (int?)null;
-                var result = DraftOperation.Run(Call, Reference(update.Content), Draft(update, baseVersion, dryRun: false));
+                var result = DraftOperation.Run(Call, Reference(update.Content), Draft(update, baseVersion, dryRun: false), blockDraftsConfirmable: false);
                 return new StepOutcome(Json(ResultUrls.Serialize(result, result.Content, Context, preview: result.Saved)))
                 {
                     Status = result.Saved ? "saved" : "unchanged",
@@ -108,7 +108,7 @@ internal sealed class CmsPlanSteps(IHttpContextAccessor http, IOptions<OptiCliMc
         WriteResult result;
         try
         {
-            result = DraftOperation.Run(call, Reference(update.Content), Draft(update, baseVersion, dryRun: true));
+            result = DraftOperation.Run(call, Reference(update.Content), Draft(update, baseVersion, dryRun: true), blockDraftsConfirmable: false);
         }
         catch (AgentException e) when (e.Code == AgentErrorCodes.Conflict && e.CurrentVersion is not null && update.Content.WorkID == 0)
         {

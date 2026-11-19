@@ -76,6 +76,13 @@ internal sealed class WriteFlow
     public bool BlockDraftsConfirmed { get; set; }
 
     /// <summary>
+    /// Whether the caller has a way to confirm <see cref="BlockDraftsConfirmed"/> at all: not a new language branch
+    /// (<c>translate</c>, <c>add_language</c>, which have no <c>includeDraft</c>) nor a site tool's plan step. The refusal's
+    /// hint then offers only the other ways.
+    /// </summary>
+    public bool BlockDraftsConfirmable { get; set; } = true;
+
+    /// <summary>
     /// Where the site's edit UI makes new blocks in a ContentArea shared: after a save that publishes (or schedules) the
     /// content, the drafts of its own folder's blocks its areas show, published along (<see cref="SharedAreaBlocks.PublishAlong"/>);
     /// null where it makes them inline, which is as before.
@@ -318,7 +325,7 @@ internal sealed class WriteFlow
         Project?.Check(writable);
         // The new shared blocks for its areas: checked with it, so both are valid or nothing is saved.
         var shared = Writer.Shared is { Count: > 0 } pending ? pending : null;
-        var sharedIssues = shared is null ? [] : shared.Prepare(writable, Project, action, BlockDraftsConfirmed).Concat(shared.PreviewNotes(action)).ToList();
+        var sharedIssues = shared is null ? [] : shared.Prepare(writable, Project, action, BlockDraftsConfirmed, BlockDraftsConfirmable).Concat(shared.PreviewNotes(action)).ToList();
         RequireNoneNamedForReview(Named, action, "withBlocks", "withoutBlocks");
         if (Named?.Names == true && Writer.Shared is { } naming)
         {
