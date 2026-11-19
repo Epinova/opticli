@@ -173,7 +173,7 @@ missing page from values the CMS refused:</p>
 <span class="t-w">  </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-nx">expect</span><span class="t-p">(</span><span class="t-nx">write</span><span class="t-p">).</span><span class="t-nx">rejects</span><span class="t-p">.</span><span class="t-nx">toMatchObject</span><span class="t-p">({</span><span class="t-w"> </span><span class="t-nx">code</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-s1">&#39;usage&#39;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nx">hint</span><span class="t-o">:</span><span class="t-w"> </span><span class="t-kt">expect.stringContaining</span><span class="t-p">(</span><span class="t-s1">&#39;MainBody&#39;</span><span class="t-p">)</span><span class="t-w"> </span><span class="t-p">});</span>
 <span class="t-p">});</span></code></pre></div>
 <p><code>code</code> is typed (<code>not_found</code>, <code>validation</code>, <code>conflict</code>, ...), with the exit codes from
-<a href="https://github.com/Epinova/opticli#output-and-exit-codes">Output and exit codes</a>.</p>
+<a href="https://github.com/Epinova/opticli/blob/main/docs/reference/cli/output.md#output-and-exit-codes">Output and exit codes</a>.</p>
 <h3 id="9-run-it">9. Run it</h3>
 <div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-10">Copy</button></div><pre><code id="code-10">npx<span class="t-w"> </span>playwright<span class="t-w"> </span><span class="t-nb">test</span></code></pre></div>
 <p>Before the tests, setup logs what the seed plan did. The first run lists the steps it saved; later runs print

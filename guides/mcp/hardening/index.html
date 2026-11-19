@@ -106,7 +106,7 @@ CMS 13. Register it after <code>AddOptiCliMcp()</code> and map it at a path of i
 <p>Each endpoint then serves only its own server's tools, name and instructions. Registered before <code>AddOptiCliMcp()</code>, the
 other server's settings lose to the module's, and with legacy SSE the site fails at startup. Don't replace the SDK's
 <code>ConfigureSessionOptions</code> hook in a <code>PostConfigure</code> after the module: the module's endpoint then turns itself off and
-the log says why. The details are under <a href="https://github.com/Epinova/opticli#beside-another-mcp-server">Beside another MCP server</a>.</p>
+the log says why. The details are under <a href="https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/configuration.md#beside-another-mcp-server">Beside another MCP server</a>.</p>
 <h3 id="5-leave-error-pages-and-security-headers-to-the-module">5. Leave error pages and security headers to the module</h3>
 <p>The module switches off the site's status code pages for its own requests, so its 401 keeps the <code>WWW-Authenticate</code>
 header that tells the client where to sign in. Check that nothing in front of the site rewrites errors either.</p>
@@ -132,7 +132,7 @@ every save, the edit UI's included: <code>&quot;EPiServer&quot;: {&quot;Cms&quot
 applies too, whichever is lower (<code>EPiServer:CmsUI:Upload:FileSizeLimit</code> on CMS 12, <code>EPiServer:Cms:MediaFile:FileSizeLimit</code>
 on CMS 13). Uploads travel as base64, so IIS's <code>maxAllowedContentLength</code> (30,000,000 bytes by default) stops anything
 past about 20 MB. Raise it in <code>web.config</code> when you raise <code>MaxUploadBytes</code>; the README's
-<a href="https://github.com/Epinova/opticli#uploads-on-iis">Uploads on IIS</a> has the snippet.</p>
+<a href="https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/install.md#uploads-on-iis">Uploads on IIS</a> has the snippet.</p>
 <h3 id="7-bound-connections-and-keep-the-audit-log">7. Bound connections and keep the audit log</h3>
 <p>An access token works for <code>AccessTokenLifetime</code> (1 hour), and the editor's roles and account are checked again at
 every refresh. For an external login (Entra ID, Opti ID) the CMS never hears that an account was disabled, so set
@@ -193,11 +193,11 @@ module itself means the file is over <code>MaxUploadBytes</code>.</li>
 <li><a href="../../mcp/install-the-module/">Install the MCP module in your site</a></li>
 <li><a href="../../mcp/custom-tools/">Write your first site-specific tool</a></li>
 <li><a href="../../editors/connect-your-assistant/">Connect your assistant</a>, for editors</li>
-<li>README: <a href="https://github.com/Epinova/opticli#security-model">Security model</a>,
-<a href="https://github.com/Epinova/opticli#options">Options</a>,
-<a href="https://github.com/Epinova/opticli#connecting-an-assistant">Connecting an assistant</a>,
-<a href="https://github.com/Epinova/opticli#error-pages-and-security-headers">Error pages and security headers</a>,
-<a href="https://github.com/Epinova/opticli#connections-and-audit-log">Connections and audit log</a></li>
+<li>README: <a href="https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/security.md#security-model">Security model</a>,
+<a href="https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/configuration.md#options">Options</a>,
+<a href="https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/connecting.md#connecting-an-assistant">Connecting an assistant</a>,
+<a href="https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/security.md#error-pages-and-security-headers">Error pages and security headers</a>,
+<a href="https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/configuration.md#connections-and-audit-log">Connections and audit log</a></li>
 </ul>
     </article>
   </div>

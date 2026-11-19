@@ -194,7 +194,7 @@ blocks that were never published along (a live block's newer draft only when the
 page alone. Without <code>AllowPublish</code>, the assistant tells editors to publish the blocks too. An assistant that would
 save over a colleague's unpublished change to such a block asks the editor first (<code>includeDraft</code>); a colleague's
 draft of a block goes live with the page only when the editor names that block (<code>blocks</code>), never with <code>includeDraft</code>.
-See <a href="https://github.com/Epinova/opticli#new-blocks-in-a-contentarea">New blocks in a ContentArea</a>.</p>
+See <a href="https://github.com/Epinova/opticli/blob/main/docs/reference/cli/content-areas.md#new-blocks-in-a-contentarea">New blocks in a ContentArea</a>.</p>
 </blockquote>
 <blockquote>
 <p><strong>Note:</strong> The module refuses script in rich text and links whatever you configure, but the CMS saves whatever the
@@ -203,7 +203,7 @@ save too: <code>&quot;EPiServer&quot;: {&quot;Cms&quot;: {&quot;ScriptParser&quo
 default.</p>
 </blockquote>
 <p>The full list of options, with token lifetimes and rate limits, is in the README under
-<a href="https://github.com/Epinova/opticli#options">Options</a>.</p>
+<a href="https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/configuration.md#options">Options</a>.</p>
 <h3 id="4-run-the-site-and-check-the-endpoint">4. Run the site and check the endpoint</h3>
 <p>Start the site as you normally do. With the default <code>BasePath</code>, the MCP endpoint is <code>/episerver/opticli/mcp</code>. A request
 without a token must get a 401 that points to the OAuth metadata, never a redirect to the login page:</p>
@@ -214,7 +214,7 @@ WWW-Authenticate: Bearer resource_metadata=&quot;https://localhost:5001/.well-kn
 that the site answers it:</p>
 <div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-7">Copy</button></div><pre><code id="code-7">curl<span class="t-w"> </span>https://localhost:5001/.well-known/oauth-protected-resource/episerver/opticli/mcp</code></pre></div>
 <p>The other paths (authorization server metadata, <code>register</code>, <code>authorize</code>, <code>token</code>, the connections page) are listed in
-the README under <a href="https://github.com/Epinova/opticli#endpoints">Endpoints</a>.</p>
+the README under <a href="https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/configuration.md#endpoints">Endpoints</a>.</p>
 <h3 id="5-connect-a-first-assistant">5. Connect a first assistant</h3>
 <p>Add the endpoint to Claude Code, then sign in from Claude Code's <code>/mcp</code> menu:</p>
 <div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-8">Copy</button></div><pre><code id="code-8">claude<span class="t-w"> </span>mcp<span class="t-w"> </span>add<span class="t-w"> </span>--transport<span class="t-w"> </span>http<span class="t-w"> </span>cms<span class="t-w"> </span>https://localhost:5001/episerver/opticli/mcp</code></pre></div>
@@ -223,7 +223,7 @@ Allow it, and Claude Code has a connection. Claude Code returns to a loopback ad
 allows, so nothing needs registering on the site first.</p>
 <p>Plain http on a loopback address (<code>http://127.0.0.1:5000/...</code>) works if your site allows it. Over https, Claude Code
 doesn't trust the ASP.NET Core development certificate: the README's
-<a href="https://github.com/Epinova/opticli#connecting-claude">Connecting Claude</a> section shows how to make a localhost
+<a href="https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/connecting.md#connecting-claude">Connecting Claude</a> section shows how to make a localhost
 certificate signed by a test CA of your own.</p>
 <p>Editors don't use Claude Code. Send them the editors' guide, <a href="../../editors/connect-your-assistant/">Connect your assistant</a>,
 which covers the Claude Desktop extension and custom connectors. Web assistants such as claude.ai call the site from
@@ -257,9 +257,9 @@ the consent page. Change the option, then have them connect again.</li>
 <li><a href="../../mcp/custom-tools/">Write your first site-specific tool</a></li>
 <li><a href="../../mcp/hardening/">Take the MCP module to production</a></li>
 <li><a href="../../editors/connect-your-assistant/">Connect your assistant</a>, for editors</li>
-<li>README: <a href="https://github.com/Epinova/opticli#mcp-server-for-editors">MCP server for editors</a>,
-<a href="https://github.com/Epinova/opticli#install-1">Install</a>, <a href="https://github.com/Epinova/opticli#on-cms-13">On CMS 13</a>,
-<a href="https://github.com/Epinova/opticli#security-model">Security model</a></li>
+<li>README: <a href="https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/install.md#mcp-server-for-editors">MCP server for editors</a>,
+<a href="https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/install.md#install">Install</a>, <a href="https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/install.md#on-cms-13">On CMS 13</a>,
+<a href="https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/security.md#security-model">Security model</a></li>
 </ul>
     </article>
   </div>
