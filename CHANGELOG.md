@@ -35,8 +35,18 @@ before. See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new
   with the page: `--with-block <ref>` (repeatable) takes it along, and `--without-block <ref>` keeps a new block back;
   a ref that isn't a block of the content's own folder that it shows is refused. A write that publishes takes the
   blocks it made or changed along by itself. Someone else's draft needs `--include-draft`, and a block under an
-  approval sequence is left with a warning. A project's own items follow the project's rules. Plans: `withBlocks` and
-  `withoutBlocks` on a `publish` step.
+  approval sequence is left with a warning. A project's own items follow the project's rules. Naming blocks for a
+  publish that goes for review is refused. Of content published already, `publish` puts just those block drafts live
+  (it is a `conflict` only when there are none), so `publish <page> --with-block <block>` publishes a live block's
+  draft after the page went live without it.
+- **Plans: a `publish` step takes along the block drafts earlier steps of the run saved** on that content, as one write
+  with `"publish": true` does, besides its `withBlocks` (and not its `withoutBlocks`); a block a later step took out of
+  the area isn't published. When those blocks are all that changed, the step publishes just them instead of failing
+  with `conflict`. Its dry run takes the same blocks along, with the step's `withBlocks`, `withoutBlocks`,
+  `requestApproval` and `publishAt`, and reports the same warnings.
+- **A write that changes only a block of the content's folder says so**: a `set` or area step whose only change is a
+  block's new draft reported "Nothing changed" (and a plan counted it as unchanged); it now says the content was left
+  as it was and lists the block drafts it saved, and a plan counts the step as saved, with how to discard them.
 - **`publish --dry-run` asks the site** where it makes shared blocks: the site validates the version and lists the
   blocks it would publish along and those it would leave behind, saving nothing. Elsewhere publish dry runs are
   answered from the database as before.
@@ -71,7 +81,10 @@ before. See [New blocks in a ContentArea](https://github.com/Epinova/opticli#new
   `content:publish` scope, unless it is a review request). The server's instructions ask the assistant to dry-run a
   publish and show the editor what goes live first.
 - A review request (`requestApproval`) with never-published blocks is refused with the same hint as the CLI's, and a
-  save into a project with `ready` or `requestApproval` takes the blocks along.
+  save into a project with `ready` or `requestApproval` takes the blocks along. `blocks` and `skipBlocks` with
+  `requestApproval` are refused.
+- `publish_content` of content published already publishes just the block drafts that would go along (those never
+  published, and those `blocks` names), and is a conflict only when there are none.
 
 ### npm package
 

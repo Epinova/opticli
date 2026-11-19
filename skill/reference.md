@@ -422,10 +422,14 @@ override: such a site may not render inline blocks.
   `warning` names it): the user may be in the middle of changing it. `publish <ref> --with-block <block>` (repeatable)
   takes such a draft along when the user wants it live too; `--without-block <block>` keeps a never-published one back.
   Both only for blocks of the content's own folder that it shows (else `usage`); in a plan, `withBlocks` /
-  `withoutBlocks` on the `publish` step (refs or `$id`s). A write with `--publish` takes the blocks it made or changed
-  along by itself; a plan's separate `publish` step doesn't (name a live block an earlier step changed in `withBlocks`,
-  or give that step `"publish": true`), though its dry run after those steps shows them going along (a warning says so). The CMS's own Publish publishes no blocks: tell the user. Until a changed block is published the
-  content's preview shows its published version.
+  `withoutBlocks` on the `publish` step (refs or `$id`s). Neither with a publish that goes for review (`usage`). A
+  write with `--publish` takes the blocks it made or changed along by itself, and so does a plan's `publish` step for
+  the block drafts earlier steps of the run saved (not one a later step took out of the area); its dry run lists the
+  same. Of content published already (nothing new on it), `publish` puts just those block drafts live (`published:
+  false`, `sharedBlocks` lists them), and is a `conflict` only when there are none: so `publish <content>
+  --with-block <block>` puts a live block's draft live after the page went live without it. The CMS's own Publish
+  publishes no blocks: tell the user. Until a changed block is published the content's preview shows its published
+  version.
 - Run `publish <ref> --dry-run` first and tell the user what goes live: on such a site it asks the site, and lists the
   blocks it would publish along (`sharedBlocks`) and those it leaves behind (`validation` warnings).
 - `--request-approval` is refused (`usage`) while the content shows never-published blocks of its folder (a live block

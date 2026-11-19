@@ -866,8 +866,14 @@ opticli publish 123 --without-block 789           # keep never-published block 7
   the warning says the content goes live without it showing.
 - A named ref must be a block of the content's own folder that its areas show; any other ref, or the same ref in both,
   is `usage`, and nothing is published. On a site that makes inline blocks (nothing is published along there) they are
-  `usage` too, and so they are against an agent of opticli 0.34 or older, which would ignore them. `projects publish`
-  takes both, for the blocks of any ready item.
+  `usage` too, and so they are against an agent of opticli 0.34 or older, which would ignore them. So are both with a
+  publish that goes for review instead (`--request-approval` where an approval sequence applies; MCP `requestApproval`),
+  dry run too: the approval publishes the content alone. `projects publish` takes both, for the blocks of any ready item.
+- **Content published already.** When the version to publish is the published one already (the content has nothing
+  new), the publish still puts live the block drafts that would have gone along with it: never-published ones, those
+  `--with-block` names, and in a plan those the run's earlier steps saved (below). The content gets no new version;
+  `published` is false, `sharedBlocks` lists the blocks, and an `info` line says so. With no such block it is a
+  `conflict`, as before, whose hint names a live block's draft that `--with-block` could take along.
 - **A write that publishes** (`--publish`, `--publish-at`) takes along the blocks it made or changed itself (`created`,
   `updated`) without naming them, and the never-published blocks the content shows; another live block's newer draft
   stays, with a warning to publish it on its own. Writes have no `--with-block`: save a draft, then `publish` with it.
@@ -875,9 +881,10 @@ opticli publish 123 --without-block 789           # keep never-published block 7
 A scheduled publish schedules the blocks for the same time. Blocks from anywhere else are never published along. Also
 left as drafts, each with a `warning`, named or not: a draft someone else saved (unless `--include-draft`), a block under
 an approval sequence, one that fails validation, and for an editor one they may not publish. The edit UI's own Publish
-publishes the page alone. A block left a draft once the content is published is published by its own ref (`publish
-<block>`): the content's published version can't be published again. Until a changed block is published, the CMS's
-preview of the content shows the block's published version; an `info` line says so.
+publishes the page alone. A block left a draft once the content is published goes live by its own ref (`publish
+<block>`), or named in a publish of the content (`publish <content> --with-block <block>`, which then publishes just
+the block). Until a changed block is published, the CMS's preview of the content shows the block's published version;
+an `info` line says so, with both commands.
 
 Where the site makes shared blocks, `publish --dry-run` asks the site (as the MCP module's `publish_content` with
 `dryRun` does): it validates the version and lists the blocks it would publish along (`sharedBlocks`) and leave behind
@@ -914,11 +921,19 @@ block (`existing`) and `$intro` names it again. The dry run refuses (`invalid`):
 A run that meets a `$id` naming no block stops there (`usage`).
 
 A `publish` step takes `withBlocks` and `withoutBlocks` (arrays of refs or `$id`s), as `--with-block` and
-`--without-block`. It is a publish of its own, not part of the steps before it: a live block that an earlier step
-changes goes along only when `withBlocks` names it, or when that step has `"publish": true`. The dry run, though,
-checks a `publish` after other steps on the same content together with them, as one write that publishes (nothing is
-saved yet to publish): it shows the blocks they change going along, and leaves `withBlocks` and `withoutBlocks` out.
-The step's warnings then say so.
+`--without-block`. Besides those, it takes along the block drafts that **earlier steps of the same run** saved (their
+`sharedBlocks`, `created` or `updated`), as one write with `"publish": true` takes along the blocks it changes: a live
+block an area step rewrote goes live with the page without naming it. `withoutBlocks` still keeps one back. Blocks an
+add only found there (`existing`) weren't changed by the run, so they follow the default rule. A block a later step
+took out of the area again isn't published (its draft stays), and neither is one whose newer draft someone saved after
+the run's. When those blocks are all that changed (an area step whose only change is to a block of the folder: it
+reports the block draft it saved, `saved` with `sharedBlocks`, though the content got no new version), the `publish`
+step publishes just them instead of failing with `conflict`. A `publish` with `requestApproval` counts them as blocks
+the review would leave unpublished, as a write that changes them does.
+
+The dry run checks a `publish` after other steps on the same content together with them, as one write that publishes
+(nothing is saved yet to publish), with the step's `withBlocks`, `withoutBlocks`, `requestApproval` and `publishAt`:
+it lists the same blocks going along (`sharedBlocks`) and the same warnings as the run.
 
 **Editors' assistants** ([MCP server for editors](#mcp-server-for-editors)) follow the same rules, as the editor: a new
 block needs Edit and Create on the content (Create on its parent for new content) and a block type they may create in

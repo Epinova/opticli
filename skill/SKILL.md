@@ -250,8 +250,9 @@ item in a whole area) is made as the site's edit UI makes one; `serve --status` 
   the area already has stay inline and are changed by position as above. In a plan, give the `area add` an `"id"` and
   change the block with a `set` on `"$id"`, never by position. `opticli publish` of the page publishes along the drafts
   of its folder's blocks that were never published; a live block keeps its newer draft (a warning names it) unless the
-  user wants it live too: `--with-block <ref>` (`--without-block <ref>` keeps a new one back). `publish --dry-run` shows
-  both; tell the user before publishing. The CMS's own Publish publishes no blocks, so tell the user.
+  user wants it live too: `--with-block <ref>` (`--without-block <ref>` keeps a new one back; on a page published
+  already it publishes just the blocks). In a plan, a `publish` step takes along the block drafts earlier steps saved.
+  `publish --dry-run` shows both; tell the user before publishing. The CMS's own Publish publishes no blocks, so tell the user.
   `--request-approval` is refused while the page shows never-published blocks: use `--in-project <p> --ready
   --request-approval`, or publish the blocks first. Details:
   [reference.md](reference.md#where-the-site-makes-new-area-blocks-shared).

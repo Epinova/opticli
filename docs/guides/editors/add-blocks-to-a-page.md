@@ -130,7 +130,8 @@ already doesn't stop it: the page then shows that block as it is live). It tells
 - **"… would go for review while its ContentAreas show blocks of its "For this page" folder that aren't published".**
   See step 6.
 - **"… is published already, so its newer draft stays a draft".** The block was live before, and the page went live
-  showing it as it was. Ask the assistant to publish that block on its own if its change should go live now.
+  showing it as it was. If its change should go live now, ask the assistant to publish the page again with that block
+  (the page has nothing new, so only the block goes live), or to publish the block on its own.
 - **"… wasn't published along".** The page went live without that block's draft: someone else saved it, it needs a
   reviewer, or it has an error. The assistant says which; publish or send it for review on its own once it is ready.
 - **The published page shows a block's old text, or not the new block.** That block is still a draft, for instance

@@ -197,7 +197,7 @@ export type PlanStep =
       /**
        * Where the site makes new area blocks shared: blocks of the content's own "For this page" folder that it shows and
        * that are live already, whose newer drafts go live with it (`--with-block`; refs or `"$id"`). By default only
-       * blocks never published go along.
+       * blocks never published go along, and the block drafts earlier steps of the run saved on that content.
        */
       readonly withBlocks?: readonly ContentRef[];
       /** Blocks of that folder never published, kept as drafts (`--without-block`). */
