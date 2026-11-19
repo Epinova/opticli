@@ -22,7 +22,7 @@ public static class PlanBlocks
     public static bool Names(WriteOperation op) => op is AreaEdit { Action: AreaOps.Add, Type: not null, Id: not null };
 
     /// <summary>
-    /// The content id of the shared block an area add with a <c>type</c> made (or, run again with <c>--if-missing</c>, found
+    /// The content id of the shared block an area add with a <c>type</c> made (or, run again with <c>apply --update-existing</c>, found
     /// there already): the one <see cref="WriteOutput.SharedBlocks"/> entry for an item of the add's area itself (not one
     /// inside it). Null where it made an inline block, or the result can't tell which.
     /// </summary>
@@ -39,7 +39,7 @@ public static class PlanBlocks
     /// <summary>
     /// Where the site makes shared blocks: whether the dry run of an area add with a <c>type</c> (<paramref name="output"/>)
     /// left its area without a shared block for it, neither one it would make nor one of the folder it found (the add found
-    /// an inline block like it there already, <c>--if-missing</c>). False without a dry run to tell (a step checked only
+    /// an inline block like it there already, run again). False without a dry run to tell (a step checked only
     /// later).
     /// </summary>
     public static bool FoundInline(AreaEdit op, WriteOutput? output) =>

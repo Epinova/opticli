@@ -215,8 +215,8 @@ public static class SharedBlockActions
     public const string Published = "published";
 
     /// <summary>
-    /// Already in the area: an area add that adds a block only when it is missing (<c>--if-missing</c>, <c>apply
-    /// --update-existing</c>) found this block of the folder there, so nothing was made or saved.
+    /// Already in the area: an area add that adds a block only when it is missing (<c>apply --update-existing</c>,
+    /// MCP <c>ifMissing</c>) found this block of the folder there, so nothing was made or saved.
     /// </summary>
     public const string Existing = "existing";
 }

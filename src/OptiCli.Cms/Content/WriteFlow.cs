@@ -382,7 +382,7 @@ internal sealed class WriteFlow
         beforeSave?.Invoke();
         // The blocks first: the content's areas then show them by their refs.
         var made = shared?.Save(writable, Project, action, issues) ?? [];
-        // Blocks of its folder an add found already there (--if-missing), listed so a plan run again reaches them.
+        // Blocks of its folder an add found already there (an add run again), listed so a plan run again reaches them.
         made.AddRange(Writer.Shared?.Found(writable).Where(f => !made.Any(m => SameBlock(m, f))) ?? []);
         if (made.Any(m => m.Action != SharedBlockActions.Existing))
         {

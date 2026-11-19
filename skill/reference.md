@@ -449,7 +449,7 @@ override: such a site may not render inline blocks.
   review), or save a draft, publish the blocks (`publish <block> --request-approval` where they have a sequence, as
   blocks of content under one do), then send the content. `--ready` alone in a project where a block has an approval
   sequence is `refused`.
-- `--if-missing` (and `apply --update-existing`) counts a block of the folder (or an inline one) with the add's name,
+- An add run again (`apply --update-existing`) counts a block of the folder (or an inline one) with the add's name,
   or its values without one, as there already (`existing`).
 - A new block in an area inside a CMS 13 Visual Builder element is refused: `block create --for`, then add it by ref.
 - Locally: `opticli serve --stop`, then `EPiServer__CmsUI__UI__InlineBlocksInContentAreaEnabled=false opticli serve`

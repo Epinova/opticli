@@ -990,8 +990,8 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     private readonly List<IContent> _found = [];
 
     /// <summary>
-    /// A block of the owner's folder that an area add which adds only what is missing (<c>--if-missing</c>, <c>apply
-    /// --update-existing</c>) found already in the area: listed in the result (<see cref="SharedBlockActions.Existing"/>),
+    /// A block of the owner's folder that an area add which adds only what is missing (<c>apply --update-existing</c>,
+    /// MCP <c>ifMissing</c>) found already in the area: listed in the result (<see cref="SharedBlockActions.Existing"/>),
     /// so a plan run again reaches it by its ref as it did the first time.
     /// </summary>
     public void Find(IContent block)
