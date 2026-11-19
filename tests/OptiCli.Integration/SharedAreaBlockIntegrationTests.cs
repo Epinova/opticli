@@ -531,6 +531,123 @@ public sealed class SharedAreaBlockIntegrationTests
         Assert.Contains("Live changed", await alloy.RenderAsync(page));
     }
 
+    /// <summary>The ids of the blocks a step's result lists as going (or gone) live, in order.</summary>
+    private static List<string> Live(PlanStepResult step) =>
+        (Assert.IsType<WriteOutput>(step.Result).SharedBlocks ?? []).Where(b => b.Status == "published").Select(b => b.Ref is null ? "new" : Id(ContentId(b.Ref))).Order().ToList();
+
+    private static List<string> Warnings(PlanStepResult step) =>
+        (Assert.IsType<WriteOutput>(step.Result).Validation ?? []).Where(v => v.Severity == "warning").Select(v => v.Message).ToList();
+
+    [InlineBlockModeFact(InlineBlockModes.Shared)]
+    public async Task A_plans_publish_after_an_area_rewrite_that_takes_over_a_live_block_takes_it_along_in_the_dry_run_and_the_run()
+    {
+        await using var alloy = await Alloy.StartAsync();
+        if (alloy is null)
+        {
+            return;
+        }
+        var page = await alloy.PageAsync("plan rewrite", Alloy.Area(alloy.Teaser("Intro original", name: "Intro")));
+        var intro = Id(ContentId(Assert.Single((await alloy.RunAsync(new PublishOperation(page))).SharedBlocks!).Ref!));
+        // The area written whole: the live block taken over by its name, and a new block.
+        var plan = WritePlan.Parse($$$"""
+            {"operations": [
+              {"op": "set", "ref": "{{{page}}}", "properties": {{{Alloy.Area(alloy.Teaser("Intro rewritten", name: "Intro"), alloy.Teaser("Added by the plan", name: "Added")).ToJsonString()}}}},
+              {"op": "publish", "ref": "{{{page}}}"}
+            ]}
+            """);
+        var runner = new PlanRunner(alloy.Site.Session, alloy.Writes, Path.GetTempPath());
+
+        var dry = await runner.RunAsync(plan, dryRun: true, publishAll: false, CancellationToken.None);
+        var run = await runner.RunAsync(plan, dryRun: false, publishAll: false, CancellationToken.None);
+
+        // The dry run takes the live block along as the run does (and lists the new one, which has no ref yet).
+        Assert.Equal(new[] { intro, "new" }.Order(), Live(dry.Operations[1]));
+        Assert.Equal([PlanStepStatus.Saved, PlanStepStatus.Saved], run.Operations.Select(o => o.Status));
+        var published = Assert.IsType<WriteOutput>(run.Operations[1].Result);
+        Assert.True(published.Published);
+        Assert.Contains(intro, Live(run.Operations[1]));
+        Assert.Equal(2, Live(run.Operations[1]).Count);
+        Assert.Equal(Warnings(dry.Operations[1]), Warnings(run.Operations[1]));
+        Assert.Empty(Warnings(run.Operations[1]));
+        Assert.Equal("published", await alloy.StatusAsync((await Alloy.GetAsync(intro)).Version!));
+        var html = await alloy.RenderAsync(page);
+        Assert.Contains("Intro rewritten", html);
+        Assert.Contains("Added by the plan", html);
+        Assert.DoesNotContain("Intro original", html);
+
+        // A block a later step takes out of the area again isn't published: the run leaves its draft, as the dry run says.
+        var removing = WritePlan.Parse($$$"""
+            {"operations": [
+              {"op": "set", "ref": "{{{page}}}", "properties": {{{Alloy.Area(alloy.Teaser("Intro dropped", name: "Intro"), alloy.Teaser("Added by the plan", name: "Added")).ToJsonString()}}}},
+              {"op": "area", "ref": "{{{page}}}", "property": "MainContentArea", "action": "remove", "item": "{{{intro}}}"},
+              {"op": "publish", "ref": "{{{page}}}"}
+            ]}
+            """);
+        var dryRemoving = await runner.RunAsync(removing, dryRun: true, publishAll: false, CancellationToken.None);
+        Assert.DoesNotContain(intro, Live(dryRemoving.Operations[2]));
+        var runRemoving = await runner.RunAsync(removing, dryRun: false, publishAll: false, CancellationToken.None);
+        Assert.All(runRemoving.Operations, o => Assert.Equal(PlanStepStatus.Saved, o.Status));
+        Assert.DoesNotContain(intro, Live(runRemoving.Operations[2]));
+        Assert.Equal("checkedOut", await alloy.StatusAsync((await Alloy.GetAsync(intro)).Version!));
+        Assert.DoesNotContain("Intro dropped", await alloy.RenderAsync(page));
+    }
+
+    [InlineBlockModeFact(InlineBlockModes.Shared)]
+    public async Task A_plans_publish_after_a_step_that_changed_only_a_block_publishes_that_block_and_the_named_one()
+    {
+        await using var alloy = await Alloy.StartAsync();
+        if (alloy is null)
+        {
+            return;
+        }
+        var page = await alloy.PageAsync("plan block only", Alloy.Area(alloy.Teaser("Only original", name: "Only"), alloy.Teaser("Other original", name: "Other")));
+        var blocks = (await alloy.RunAsync(new PublishOperation(page))).SharedBlocks!.Select(b => Id(ContentId(b.Ref!))).ToList();
+        var (only, other) = (blocks[0], blocks[1]);
+        // An editor's change of the other block in progress, which the plan's publish names.
+        await alloy.RunAsync(new SetOperation(other, alloy.TeaserValues("Other changed")));
+        var plan = WritePlan.Parse($$$"""
+            {"operations": [
+              {"op": "set", "ref": "{{{page}}}", "properties": {{{Alloy.Area(alloy.Teaser("Only changed", name: "Only"), new JsonObject { ["ref"] = other }).ToJsonString()}}}},
+              {"op": "publish", "ref": "{{{page}}}", "withBlocks": [{{{other}}}]}
+            ]}
+            """);
+        var runner = new PlanRunner(alloy.Site.Session, alloy.Writes, Path.GetTempPath());
+
+        var dry = await runner.RunAsync(plan, dryRun: true, publishAll: false, CancellationToken.None);
+        var run = await runner.RunAsync(plan, dryRun: false, publishAll: false, CancellationToken.None);
+
+        Assert.Equal(new[] { only, other }.Order(), Live(dry.Operations[1]));
+        // The area step saved only the block's draft, and says so; the publish puts both blocks live, the page as it was.
+        Assert.Equal([PlanStepStatus.Saved, PlanStepStatus.Saved], run.Operations.Select(o => o.Status));
+        var set = Assert.IsType<WriteOutput>(run.Operations[0].Result);
+        Assert.False(set.Saved);
+        Assert.Equal((only, SharedBlockActions.Updated), (Id(ContentId(Assert.Single(set.SharedBlocks!).Ref!)), Assert.Single(set.SharedBlocks!).Action));
+        Assert.Contains(run.Operations[0].Warnings!, w => w.StartsWith("The content itself was left as it was"));
+        Assert.Contains("is a new draft of a block", run.Operations[0].Undo);
+        var published = Assert.IsType<WriteOutput>(run.Operations[1].Result);
+        Assert.False(published.Published);
+        Assert.Equal(new[] { only, other }.Order(), Live(run.Operations[1]));
+        Assert.Contains(published.Validation!, v => v.Severity == "info" && v.Message.Contains("is already the published version. Only the drafts of the blocks"));
+        Assert.Equal(Warnings(dry.Operations[1]), Warnings(run.Operations[1]));
+        var html = await alloy.RenderAsync(page);
+        Assert.Contains("Only changed", html);
+        Assert.Contains("Other changed", html);
+
+        // Run again, there is nothing to publish: the dry run and the run both say so.
+        var again = await Assert.ThrowsAnyAsync<OptiCliException>(() => alloy.Writes.RunAsync(new PublishOperation(page), dryRun: true, CancellationToken.None));
+        Assert.Equal(ErrorCode.Conflict, again.Code);
+        Assert.Contains("No draft of a block", again.Message);
+        // Blocks named for a publish that goes for review are refused, as a review publishes none along: dry run too.
+        var root = Id((await EdgeFixture.FindAsync(alloy.Site, EdgeFixture.ApprovalRoot, CancellationToken.None))!.Id);
+        var reviewed = await alloy.PageAsync("plan block only review", Alloy.Area(alloy.Teaser("Reviewed")), parent: root);
+        var block = Id(ContentId((string)Alloy.AreaOf(await Alloy.GetAsync(reviewed))[0]!["ref"]!));
+        foreach (var dryRun in new[] { true, false })
+        {
+            var review = await Assert.ThrowsAsync<UsageException>(() => alloy.Writes.RunAsync(new PublishOperation(reviewed) { WithBlocks = [block], RequestApproval = true }, dryRun, CancellationToken.None));
+            Assert.Contains("goes for review instead", review.Message);
+        }
+    }
+
     [InlineBlockModeFact(InlineBlockModes.Shared)]
     public async Task A_project_write_marked_ready_takes_its_blocks_along_and_the_projects_publish_puts_them_live()
     {
