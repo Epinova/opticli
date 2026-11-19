@@ -12,6 +12,7 @@ public static class UndoHints
             $"{restored.Ref} was moved back out of the recycle bin (opticli delete {restored.Ref} returns it there){(restored.Saved ? $"; {Version(restored)}" : ".")}",
         (DiscardOperation, WriteOutput { Discarded: true } discarded) =>
             $"None: {discarded.Version} was deleted for good, and opticli can't bring it back (changes shows what it held).",
+        (_, WriteOutput { Saved: false, DryRun: false } blocksOnly) when BlocksOnly(blocksOnly) is { } blocks => blocks,
         (_, WriteOutput { Saved: false }) or (_, MoveOutput { Moved: false }) or (_, RestoreOutput { Restored: false }) or (_, AccessOutput { Saved: false }) => null,
         (UnpublishOperation, WriteOutput { Unpublished: true } offline) =>
             $"{offline.Ref} is offline{In(offline)}; to put it back, publish the version that was live: opticli publish {offline.Ref} --version {VersionId(offline.PreviouslyPublished)}",
@@ -65,6 +66,31 @@ public static class UndoHints
         }
         // Published, scheduled or sent for review: its own undo, which also reverses what the earlier operations saved into it.
         return $"Saved into {into.Version}, the draft operation {into.Operation} made, so what follows covers the changes saved into it before this one too: {For(operation, output)}";
+    }
+
+    /// <summary>
+    /// A write or publish that saved no version of the content, only of blocks of its "For this page" folder (a write that
+    /// changed only such a block, or a publish of a version published already that published just its blocks).
+    /// </summary>
+    private static string? BlocksOnly(WriteOutput output)
+    {
+        var blocks = (output.SharedBlocks ?? []).Where(b => b.Action != SharedBlockActions.Existing && b.Ref is not null).ToList();
+        if (blocks.Count == 0)
+        {
+            return null;
+        }
+        var published = blocks.Where(b => b.Action == SharedBlockActions.Published || b.Status is "published" or "delayedPublish").ToList();
+        var drafts = blocks.Except(published).ToList();
+        var parts = new List<string>();
+        if (drafts.Count > 0)
+        {
+            parts.Add($"{string.Join(", ", drafts.Select(b => b.Ref))} {(drafts.Count == 1 ? "is a new draft" : "are new drafts")} of {(drafts.Count == 1 ? "a block" : "blocks")} of the content's \"For this page\" folder, so nothing live changed; to drop {(drafts.Count == 1 ? "it" : "them")}: {string.Join("; ", drafts.Select(b => $"opticli discard {b.Ref!.Split('_')[0]} --version {VersionId(b.Ref)}"))}");
+        }
+        if (published.Count > 0)
+        {
+            parts.Add($"{string.Join(", ", published.Select(b => b.Ref))} of the content's \"For this page\" folder {(published.Count == 1 ? "is" : "are")} now {(published.Any(b => b.Status == "delayedPublish") ? "scheduled" : "published")}; to go back, publish {(published.Count == 1 ? "the block's" : "each block's")} previously published version (opticli versions <block> lists them), or unpublish one that was never published before");
+        }
+        return $"The content itself is unchanged. {string.Join(". ", parts)}.";
     }
 
     private static string Version(WriteOutput saved) => saved.Published

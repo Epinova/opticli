@@ -206,6 +206,7 @@ public sealed class ToolTests
         var publish = tools["publish_content"];
         Assert.Contains("\"For this page\" folder that its ContentAreas show and that were never published (sharedBlocks", publish.Description);
         Assert.Contains("keeps its newer draft unless named in blocks", publish.Description);
+        Assert.Contains("When the version is published already, it publishes just those block drafts (a conflict when there are none)", publish.Description);
         Assert.Contains("call it with dryRun first", publish.Description);
         var publishParameters = publish.InputSchema.GetProperty("properties");
         Assert.Contains("blocks it would publish along (sharedBlocks) and those it would leave behind (warnings)", publishParameters.GetProperty("dryRun").GetProperty("description").GetString());
@@ -223,7 +224,7 @@ public sealed class ToolTests
         Assert.Contains("publishing the content in the CMS doesn't publish them", McpInstructions.SharedBlocksPublishOff);
         Assert.Contains(McpInstructions.SharedBlocks, McpInstructions.For(publishing, sharedBlocks: true));
         Assert.Contains("publish_content of the content also publishes the drafts of those blocks it shows that were never published", McpInstructions.SharedBlocks);
-        Assert.Contains("keeps its newer draft (its preview shows the published version) unless you name it in blocks", McpInstructions.SharedBlocks);
+        Assert.Contains("keeps its newer draft (its preview shows the published version) unless you name it in blocks, which also works when the content itself has nothing new to publish", McpInstructions.SharedBlocks);
         Assert.Contains("which stay behind (warnings), and pass blocks or skipBlocks as they want", McpInstructions.SharedBlocks);
         // Every site that lets assistants publish: a dry run of the publish first.
         Assert.Contains("call publish_content with dryRun: true and show the user what it reports", McpInstructions.For(publishing));

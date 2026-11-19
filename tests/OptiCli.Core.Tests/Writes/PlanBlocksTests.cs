@@ -238,29 +238,85 @@ public class PlanBlocksTests
         Assert.Contains("'$later' is not the id of an earlier", problems.Message);
     }
 
+    private static WriteOutput Output(bool saved, params SharedBlockResult[] blocks) =>
+        new("123", "123_14", null, "ArticlePage", "Page", "en", saved ? "checkedOut" : "published", "5", Saved: saved, Published: false, DryRun: false, Valid: true,
+            BaseVersion: "123_13", Changes: [], Validation: null) { SharedBlocks = blocks.Length > 0 ? blocks : null };
+
+    private static SharedBlockResult Saved(string reference, string action, string status = "checkedOut") =>
+        new() { Path = "MainArea[0]", Ref = reference, Name = "Teaser", Type = "TeaserBlock", Folder = "130", Status = status, Action = action };
+
     [Fact]
-    public void A_publish_dry_run_with_the_steps_before_it_says_where_the_run_takes_other_blocks_along()
+    public void A_publish_step_takes_along_the_block_versions_earlier_steps_of_the_run_saved()
     {
-        static WriteOutput Simulated(params SharedBlockResult[] blocks) =>
-            new("123", "123_14", null, "ArticlePage", "Page", "en", "published", "5", Saved: false, Published: false, DryRun: true, Valid: true,
-                BaseVersion: "123_13", Changes: [], Validation: null) { SharedBlocks = blocks.Length > 0 ? blocks : null };
-        static SharedBlockResult Block(string reference, string action) =>
-            new() { Path = "MainArea[0]", Ref = reference, Name = "Teaser", Type = "TeaserBlock", Folder = "130", Status = "published", Action = action };
+        PlanStepResult Step(int index, object? output) => new(index, "set", null, PlanStepStatus.Saved, output);
 
-        // Nothing it could differ in: a never-published block goes along both ways.
-        Assert.Null(PlanRunner.PublishAlongNote(new PublishOperation("123"), Simulated(Block("456_7", SharedBlockActions.Published))));
-        Assert.Null(PlanRunner.PublishAlongNote(new PublishOperation("123"), null));
+        var written = PlanRunner.WrittenBlocks([
+            Step(0, Output(true, Saved("456_7", SharedBlockActions.Created), Saved("457_8", SharedBlockActions.Updated))),
+            // Found already there by --update-existing: the run didn't change it. Published along by a step that published: live.
+            Step(1, Output(false, Saved("458", SharedBlockActions.Existing), Saved("459_9", SharedBlockActions.Published, "published"))),
+            // A later step saved another version of the same block: both are the run's (the site takes the latest).
+            Step(2, Output(false, Saved("457_10", SharedBlockActions.Updated))),
+            Step(3, Output(true, Saved("457_10", SharedBlockActions.Updated))),
+            Step(4, new MoveOutput("1", Guid.Empty, null, null, null, null, null, null, true, false, 0)),
+        ]);
 
-        // An earlier step changes a block: the dry run takes it along as a write with publish does, the run only when named.
-        var changed = PlanRunner.PublishAlongNote(new PublishOperation("123"), Simulated(Block("456_8", SharedBlockActions.Updated), Block("457_9", SharedBlockActions.Published)))!;
-        Assert.Contains("which takes along the blocks they change (456)", changed);
-        Assert.Contains("a block that is live already stays a draft unless withBlocks names it", changed);
-        Assert.DoesNotContain("without its withBlocks", changed);
+        Assert.Equal(["456_7", "457_8", "457_10"], written!);
+        Assert.Null(PlanRunner.WrittenBlocks([Step(0, Output(true)), Step(1, null)]));
+    }
 
-        // Blocks named on the step aren't part of the dry run.
-        var named = PlanRunner.PublishAlongNote(new PublishOperation("123") { WithBlocks = ["456"] }, Simulated())!;
-        Assert.Contains("without its withBlocks and withoutBlocks", named);
-        Assert.Contains("without its withBlocks", PlanRunner.PublishAlongNote(new PublishOperation("123") { WithoutBlocks = ["789"] }, null));
+    [Fact]
+    public void A_step_that_saved_or_published_only_blocks_of_the_folder_counts_as_saved()
+    {
+        Assert.True(PlanRunner.Changed(Output(false, Saved("457_8", SharedBlockActions.Updated))));
+        Assert.True(PlanRunner.Changed(Output(false, Saved("457_9", SharedBlockActions.Published, "published"))));
+        Assert.False(PlanRunner.Changed(Output(false, Saved("458", SharedBlockActions.Existing))));
+        Assert.False(PlanRunner.Changed(Output(false)));
+        Assert.True(PlanRunner.Changed(Output(true)));
+
+        // What the step's warnings and undo say: the content was left as it was, the blocks weren't.
+        Assert.Equal("the block draft(s) 457_8 of its \"For this page\" folder were saved (sharedBlocks)",
+            WriteExecutor.BlocksSaved(Output(false, Saved("457_8", SharedBlockActions.Updated), Saved("458", SharedBlockActions.Existing))));
+        Assert.Equal("the block(s) 457_9 of its \"For this page\" folder were published (sharedBlocks)",
+            WriteExecutor.BlocksSaved(Output(false, Saved("457_9", SharedBlockActions.Published, "published"))));
+        Assert.Null(WriteExecutor.BlocksSaved(Output(false, Saved("458", SharedBlockActions.Existing))));
+        var undo = UndoHints.For(new SetOperation("123"), Output(false, Saved("457_8", SharedBlockActions.Updated)))!;
+        Assert.Contains("The content itself is unchanged. 457_8 is a new draft of a block", undo);
+        Assert.Contains("opticli discard 457 --version 8", undo);
+        Assert.Contains("457_9 of the content's \"For this page\" folder is now published",
+            UndoHints.For(new PublishOperation("123"), Output(false, Saved("457_9", SharedBlockActions.Published, "published"))));
+        Assert.Null(UndoHints.For(new SetOperation("123"), Output(false, Saved("458", SharedBlockActions.Existing))));
+    }
+
+    [Fact]
+    public void A_publish_dry_run_with_the_steps_before_it_names_the_blocks_the_step_names_and_publishes_as_the_step_does()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "set", "ref": "123", "properties": {"MainArea": [{"type": "TeaserBlock", "name": "Intro", "properties": {"Heading": "New"}}]}},
+              {"op": "publish", "ref": "123", "withBlocks": ["456"], "withoutBlocks": ["789"], "requestApproval": true},
+              {"op": "set", "ref": "124", "properties": {"Heading": "Later"}},
+              {"op": "publish", "ref": "124", "publishAt": "2099-01-01T00:00:00Z"}
+            ]}
+            """);
+        var targets = new Dictionary<int, PlanTarget>
+        {
+            [0] = new(123, "en", "en", true, false),
+            [1] = new(123, "en", "en", true, false),
+            [2] = new(124, "en", "en", true, false),
+            [3] = new(124, "en", "en", true, false),
+        };
+
+        var named = Assert.IsType<SetOperation>(PlanSimulation.OnExisting(plan.Steps[1], plan.Steps, targets, None, updateExisting: false)!.Operation);
+        Assert.Equal((true, true, (DateTimeOffset?)null), (named.Publish, named.RequestApproval, named.PublishAt));
+        Assert.Equal(["456"], named.WithBlocks!);
+        Assert.Equal(["789"], named.WithoutBlocks!);
+        // A scheduled publish is dry-run scheduled, not published now.
+        var scheduled = PlanSimulation.OnExisting(plan.Steps[3], plan.Steps, targets, None, updateExisting: false)!;
+        var later = Assert.IsType<SetOperation>(scheduled.Operation);
+        Assert.Equal((false, false), (later.Publish, later.RequestApproval));
+        Assert.NotNull(later.PublishAt);
+        Assert.Null(later.WithBlocks);
+        Assert.Contains("scheduled (their changes aren't saved yet)", Assert.Single(scheduled.Notes!));
     }
 
     [Fact]

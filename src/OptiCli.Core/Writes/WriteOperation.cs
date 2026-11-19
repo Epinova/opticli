@@ -217,6 +217,16 @@ public sealed record SetOperation(
     /// </summary>
     internal int? IntoVersion { get; init; }
 
+    /// <summary>
+    /// Dry run only, as <see cref="AreaEdits"/>: a plan's <c>publish</c> step dry-run as one write that publishes with the
+    /// steps before it (<see cref="PlanSimulation.OnExisting"/>) takes along the blocks the step names
+    /// (<see cref="PublishOperation.WithBlocks"/>), and keeps back those it names to keep back, as the step will.
+    /// </summary>
+    internal IReadOnlyList<string>? WithBlocks { get; init; }
+
+    /// <summary>Dry run only: as <see cref="WithBlocks"/>, for <see cref="PublishOperation.WithoutBlocks"/>.</summary>
+    internal IReadOnlyList<string>? WithoutBlocks { get; init; }
+
     public override IEnumerable<string?> Refs => [Ref];
 
     public override WriteOperation MapRefs(Func<string, string> map) => this with { Ref = map(Ref), Properties = MapValues(Properties, map) };
@@ -487,6 +497,13 @@ public sealed record PublishOperation(string Ref, int? Version = null, string? L
 
     /// <summary>Blocks of that folder never published, kept as drafts (<c>--without-block</c>, <c>withoutBlocks</c>).</summary>
     public IReadOnlyList<string>? WithoutBlocks { get; init; }
+
+    /// <summary>
+    /// A plan run's <c>publish</c> step: the block versions earlier steps of the run saved (<c>941_5108</c>, their
+    /// <c>sharedBlocks</c> <c>created</c> and <c>updated</c>), which go along unnamed where the content still shows them
+    /// (<see cref="Protocol.PublishRequest.WrittenBlocks"/>). Not an option or a plan field: <see cref="PlanRunner"/> sets it.
+    /// </summary>
+    internal IReadOnlyList<string>? WrittenBlocks { get; init; }
 
     public override IEnumerable<string?> Refs => [Ref, .. WithBlocks ?? [], .. WithoutBlocks ?? []];
 

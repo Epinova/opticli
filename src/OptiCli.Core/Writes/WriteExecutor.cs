@@ -201,10 +201,17 @@ public sealed class WriteExecutor(
             BaseVersion = baseVersion,
             From = op.From?.Request,
             IntoVersion = await IntoVersionAsync(op.IntoVersion, target, language, baseVersion, op.From is not null || op.BaseVersion is not null, op.Variation, cancellationToken),
+            WithBlocks = await BlockRefsAsync(op.WithBlocks, "withBlocks", cancellationToken),
+            WithoutBlocks = await BlockRefsAsync(op.WithoutBlocks, "withoutBlocks", cancellationToken),
         };
         if (request.Properties is null && request.Name is null && request.Composition is null && op.AreaEdits is null && op.CompositionEdits is null)
         {
             throw new UsageException("Nothing to set.", $"Give properties ({PropertyArguments.Syntax}), --values or --name.");
+        }
+        if (request.WithBlocks is not null || request.WithoutBlocks is not null)
+        {
+            // A plan's publish step dry-run with the steps before it, naming blocks: as for the publish itself.
+            RequireBlocksPublishedAlong(await InlineBlocksAsync(cancellationToken));
         }
         return WithWarning(await DraftAsync(target, request, op.From, op.Publishes, cancellationToken), masterFirst);
     }
@@ -841,6 +848,7 @@ public sealed class WriteExecutor(
             PublishAt = op.PublishAt?.UtcDateTime,
             WithBlocks = await BlockRefsAsync(op.WithBlocks, "--with-block", cancellationToken),
             WithoutBlocks = await BlockRefsAsync(op.WithoutBlocks, "--without-block", cancellationToken),
+            WrittenBlocks = op.WrittenBlocks is { Count: > 0 } written ? written : null,
         };
         if (request.WithBlocks is not null || request.WithoutBlocks is not null)
         {
@@ -848,6 +856,8 @@ public sealed class WriteExecutor(
         }
         if (!dryRun && !updateExisting)
         {
+            // Of a version published already, the site publishes just the drafts of its blocks that go along, where it has
+            // any (else a conflict).
             var result = await PublishingPostAsync(AgentRoutes.Publish(target.ContentRef), request, r => r with { IncludeDraft = true }, cancellationToken);
             return WithWarning(Outcome(WriteOutput.From(result), null), masterFirst);
         }
@@ -865,6 +875,26 @@ public sealed class WriteExecutor(
         }
         if (version.StatusValue == VersionStatus.Published && !(version.StopPublish <= DateTime.UtcNow))
         {
+            // Where the site makes shared area blocks, the drafts of the blocks a publish takes along still go live on their
+            // own: the site says which, or that there are none (a conflict).
+            if (AsksSiteForDryRun(await InlineBlocksAsync(cancellationToken)))
+            {
+                try
+                {
+                    if (!dryRun)
+                    {
+                        var blocks = await PublishingPostAsync(AgentRoutes.Publish(target.ContentRef), request, r => r with { IncludeDraft = true }, cancellationToken);
+                        return WithWarning(Outcome(WriteOutput.From(blocks), null), masterFirst);
+                    }
+                    var planned = await PostAsync<WriteResult>(AgentRoutes.Publish(target.ContentRef), request with { DryRun = true }, cancellationToken);
+                    return WithWarning(new WriteOutcome<WriteOutput>(WriteOutput.From(planned), AgentSource, null,
+                        ["Dry-run publish: the site checked it and saved nothing. The version is published already, so only the drafts of its blocks in sharedBlocks would go live."]), masterFirst);
+                }
+                catch (ConflictException) when (updateExisting)
+                {
+                    // Nothing goes along either.
+                }
+            }
             if (updateExisting)
             {
                 return Unchanged(target, version, dryRun, $"{version.Ref} is already published; nothing to do.");
@@ -1386,7 +1416,9 @@ public sealed class WriteExecutor(
         var warnings = new List<string>();
         if (!output.DryRun && !output.Saved)
         {
-            warnings.Add("Nothing changed, so no new version was saved.");
+            warnings.Add(BlocksSaved(output) is { } blocks
+                ? $"The content itself was left as it was (no new version of it was saved or published); {blocks}."
+                : "Nothing changed, so no new version was saved.");
         }
         if (output.SiteError is { } siteError)
         {
@@ -1401,6 +1433,27 @@ public sealed class WriteExecutor(
             warnings.Add($"{output.Version ?? output.Ref} was saved, but putting it in project {project.Id} ('{project.Name}'){(project.Item is ProjectSaveItems.Added or ProjectSaveItems.Replaced ? " worked and marking it ready" : "")} failed: {projectError}. The save stands; `opticli projects {project.Id}` shows what the project holds, and `opticli projects ready {project.Id} {output.Ref}` marks it ready.");
         }
         return new WriteOutcome<WriteOutput>(output, AgentSource, createdId, warnings);
+    }
+
+    /// <summary>
+    /// For a write or publish that saved no version of the content: what it did to the blocks of its "For this page" folder
+    /// (<see cref="WriteOutput.SharedBlocks"/>): the drafts it saved and the drafts it published; null when nothing.
+    /// </summary>
+    internal static string? BlocksSaved(WriteOutput output)
+    {
+        var blocks = output.SharedBlocks ?? [];
+        var saved = blocks.Where(b => b.Action is SharedBlockActions.Created or SharedBlockActions.Updated && b.Status is not ("published" or "delayedPublish")).Select(b => b.Ref).OfType<string>().ToList();
+        var published = blocks.Where(b => (b.Action == SharedBlockActions.Published || b.Status is "published" or "delayedPublish") && b.Action != SharedBlockActions.Existing).Select(b => b.Ref).OfType<string>().ToList();
+        var parts = new List<string>();
+        if (saved.Count > 0)
+        {
+            parts.Add($"the block draft(s) {string.Join(", ", saved)} of its \"For this page\" folder were saved (sharedBlocks)");
+        }
+        if (published.Count > 0)
+        {
+            parts.Add($"the block(s) {string.Join(", ", published)} of its \"For this page\" folder were {(blocks.Any(b => b.Status == "delayedPublish") ? "scheduled" : "published")} (sharedBlocks)");
+        }
+        return parts.Count > 0 ? string.Join(", and ", parts) : null;
     }
 
     /// <summary>

@@ -298,8 +298,24 @@ public static class PlanSimulation
                         $"Operation {earlier[^1].Index} already publishes {reference}{In(target)}, and nothing is saved in between, so this publish would find nothing to publish.",
                         "Remove this publish, or the earlier step's \"publish\": true.");
                 }
-                return Merged(step, since, target, translate, reference, publish: true, steps, existing,
-                    $"Dry-run as {reference}{In(target)} will be after operation(s) {string.Join(", ", since.Select(s => s.Index))}, published (their changes aren't saved yet){Based(restart, from)}.", from);
+                var published = Merged(step, since, target, translate, reference, publish: true, steps, existing,
+                    $"Dry-run as {reference}{In(target)} will be after operation(s) {string.Join(", ", since.Select(s => s.Index))}, {(step.Operation.PublishAt is not null ? "scheduled" : "published")} (their changes aren't saved yet){Based(restart, from)}.", from);
+                // As the step publishes: scheduled, or sent for review where a sequence applies; and taking along the blocks
+                // it names (besides those the steps before it change, which a write that publishes takes along itself).
+                var publishStep = (PublishOperation)step.Operation;
+                return published with
+                {
+                    Operation = published.Operation is SetOperation merged
+                        ? merged with
+                        {
+                            Publish = publishStep.PublishAt is null,
+                            PublishAt = publishStep.PublishAt,
+                            RequestApproval = publishStep.RequestApproval,
+                            WithBlocks = publishStep.WithBlocks,
+                            WithoutBlocks = publishStep.WithoutBlocks,
+                        }
+                        : published.Operation with { RequestApproval = publishStep.RequestApproval },
+                };
             case SetOperation { From: not null } or AreaEdit { From: not null } or CompositionEdit { From: not null } when translate is not null:
                 throw new Errors.UsageException(
                     $"Operation {translate.Index} creates the '{target.Language}' branch of {reference}, so it has no version from before the plan for this operation's \"from\" to base the change on.",

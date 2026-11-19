@@ -74,7 +74,9 @@ internal static class ApplyCommand
             (index or item), move (index or item, to) or set (index, values, name).
             publish: "withBlocks" and "withoutBlocks" are arrays of refs (or "$id"s) of blocks of the content's own "For this
             page" folder, as --with-block and --without-block: where the site makes new area blocks shared, a live block
-            whose newer draft goes along, or a never-published one kept a draft.
+            whose newer draft goes along, or a never-published one kept a draft. The block drafts earlier operations of the
+            run saved on that content (their sharedBlocks, created or updated) go along without naming them, as with one
+            write that publishes; when they are all that changed, the publish publishes just them.
             set, area: "from": "published" (or a version, 456 or "123_456") bases the change on that version instead of the
             latest, leaving newer drafts out (as --from); later operations on that content and language build on its result.
             CMS 13 (Visual Builder): "composition" in a create's or set's "properties" is the whole composition, as get shows
