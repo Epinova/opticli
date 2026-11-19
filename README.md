@@ -35,7 +35,8 @@ In this README, "site agent" means that injected assembly. "Coding agent" means 
 
 ## Requirements
 
-- The **.NET 8 SDK** or newer to install opticli. It runs on the newest .NET runtime installed.
+- The **.NET 8 SDK** or newer to install opticli. It runs on .NET 8, or on the next newer .NET runtime when 8 isn't
+  installed.
 - An **Optimizely CMS 12 or 13** site (`EPiServer.CMS.AspNetCore` or `EPiServer.CMS` 12.x or 13.x) whose repository
   you have checked out. What differs on CMS 13 is under [CMS 13](#cms-13).
 - Its database on **SQL Server**: a local instance, LocalDB (Windows), a container, or a remote development database
@@ -65,7 +66,8 @@ opticli --version
 
 To update, run `dotnet tool update -g OptiCli`. [CHANGELOG.md](CHANGELOG.md) lists what changed in each release.
 
-To install from source instead, build the package and install it from the output folder:
+To install from source instead, build the package and install it from the output folder. That needs the .NET 10 SDK
+(the site agent is built for .NET 8 and .NET 10):
 
 ```sh
 git clone https://github.com/epinova/opticli.git && cd opticli
@@ -87,7 +89,7 @@ under [Which database](#which-database).
 opticli doctor                                      # what was found and where; does the database answer?
 opticli types --kind page                           # page types and how many pages use each
 opticli type ArticlePage                            # properties, C# class file, views
-opticli resolve https://www.example.com/en/news/    # which content a URL shows
+opticli resolve https://alloy.example.com/en/news/  # which content a URL shows
 opticli get 123 --fields Heading,MainArea           # one item, decoded
 opticli where-used 456                              # every page and block that references content 456
 ```
@@ -106,7 +108,7 @@ When stdout is redirected, every command prints a single JSON line:
 
 ```json
 {"ok":true,"data":{"ref":"123","type":"ArticlePage","name":"News","status":"published","url":"/en/news/",
- "properties":{"Heading":{"type":"String","value":"Hello"}}},"meta":{"source":"db","version":"0.23.1"}}
+ "properties":{"Heading":{"type":"String","value":"Hello"}}},"meta":{"source":"db","version":"0.35.0"}}
 ```
 
 ## Using opticli with coding agents
@@ -156,10 +158,15 @@ manifest pins it for CI). See [npm/README.md](npm/README.md).
 opticli works with the project's **development database**: the one the site uses when you run it locally in
 `Development`.
 
+For one run, `--connection` (or `OPTICLI_DB`), `--db` or `--profile` picks the database, only one of them. Otherwise
+opticli uses the development database chosen with `db use`, else `"connection"` for the project in the user config
+(see [Files](#files)), else:
+
 1. opticli reads the connection string (`EPiServerDB` unless `--connection-name` says otherwise) from the site's
    Development configuration, in ASP.NET Core's order. The first source that has it wins:
    - launch profiles;
-   - `ConnectionStrings__EPiServerDB` (or `ConnectionStrings:EPiServerDB`) exported in the shell, shown as source
+   - `ConnectionStrings__EPiServerDB` (or `ConnectionStrings:EPiServerDB`, in any case, or an App Service
+     `SQLCONNSTR_EPiServerDB` and the like) exported in the shell, shown as source
      `environment`. A launch profile that sets the same variable replaces it when the site runs with that profile,
      so profiles come first;
    - user secrets;
@@ -207,10 +214,11 @@ warning, and so does a production database.
 
 `serve` runs the site only against a local database or the chosen development database. Any other remote
 database is refused (exit 3), also one passed with `--connection` or `OPTICLI_DB`, and such a string can't be chosen:
-only one in the site's configuration can. To run the site against it, add it to a launch profile in
+one in the site's configuration, or one added with `db add`, can. To run the site against it, add it to a launch profile in
 `Properties/launchSettings.json` (`environmentVariables`, `ConnectionStrings__EPiServerDB`; mind the password in a
 committed file), user secrets or `appsettings.Development.json`, then choose it from `opticli db list` with
-`opticli db use <id>`. `serve` then runs against it without `--connection`.
+`opticli db use <id>`, or add it with `opticli db add <name> --role dev` and run `opticli db use <name>`. `serve` then
+runs against it without `--connection`.
 
 `serve` sets `ConnectionStrings__<Name>` to the database it runs against and removes other spellings of it inherited
 from the shell, so an exported one can't win over the pin. It turns the site's scheduler off for every run (see
@@ -219,12 +227,13 @@ from the shell, so an exported one can't win over the pin. It turns the site's s
 - content type sync;
 - the remapping of Dynamic Data Store types whose properties changed.
 
-So the CMS doesn't change a shared database just because a local build starts. `serve` also checks, before it
-starts the site:
+So the CMS doesn't change a shared database just because a local build starts. Against a remote database, `serve`
+also checks before it starts the site:
 - EF Core migrations. A migration in the build that the database's `__EFMigrationsHistory` lacks would be applied
-  by a site that migrates at startup, so `serve` refuses (exit 3) unless `--allow-pending-migrations`.
+  by a site that migrates at startup, so `serve` refuses (exit 3, `details.reason: "pendingMigrations"`) unless
+  `--allow-pending-migrations`.
 - The CMS schema version. When the database's doesn't fit the build's EPiServer packages, the CMS won't start, and
-  `serve` says which side to update. EPiServer.Framework 12.17 and later accept a schema one version newer; earlier
+  `serve` refuses (exit 3, `details.reason: "schemaVersion"`) and says which side to update. EPiServer.Framework 12.17 and later accept a schema one version newer; earlier
   ones (and a version opticli can't read) are taken not to.
 
 Once the site answers, `serve` reports drift: what differs between the build and the database (see
@@ -243,20 +252,21 @@ opticli db remove test             # forget the entry; its role stays
 opticli get /en/about/ --db prod   # read production for one run
 ```
 
-A database added by name is listed by `db list` and used only when a command asks for it with `--db <name>`. The
+A database added by name is listed by `db list` and used only when a command names it (`--db <name>`, `sync pull
+--from`, `--seal-for`), or once `db use <name>` makes it the development database (never a `prod` one). The
 connection string is kept in the user config (see [Files](#files)), with its password, so **save only a read-only
 login for production** (`db_datareader`): `opticli doctor` warns when a production entry's login can write (it checks
 `db_owner`, `db_datawriter` and INSERT/UPDATE on `tblContent`, and says nothing when it may not ask or can't connect).
 Run `db add` at your own terminal rather than having an agent pass `--connection`, which puts the password in the
 command line.
 
-The roles are `local`, `dev`, `test` and `prod`. A database on this machine is `local` until it is given another; a
-remote one has none until it is given one, and behaves as remote databases always have (`dev` and `test` do too:
+The roles are `local`, `dev`, `test` and `prod`. A database on this machine is `local` until it is given another (and only one on this
+machine can be `local`); a remote one has none until it is given one, and behaves as remote databases always have (`dev` and `test` do too:
 shared mode and the drift gate, see [Shared databases](#shared-databases)). A role belongs to the **server and
 database**, not to an entry: once a database is `prod`, every entry, setting and connection string that points at it
-is production, in every project. The server is compared as SqlClient reads it, ignoring case, a `tcp:` prefix, the
-default port 1433, leading zeros in a port, an instance name beside a port (SqlClient ignores it), the default
-instance's name `MSSQLSERVER` and the loopback names (`localhost`, `127.0.0.1`, `.`, `(local)`, `::1` are one
+is production, in every project. The server is compared as SqlClient reads it, ignoring case, a `tcp:` (or `np:`, `lpc:`,
+`admin:`) prefix, a trailing dot, the default port 1433, leading zeros in a port, an instance name beside a port (SqlClient ignores it), the default
+instance's name `MSSQLSERVER` and the loopback names (`localhost`, `127.0.0.1`, `.`, `(local)`, `::1`, `[::1]` are one
 server); another name for the same server (an IP address, an alias) is another server. A connection string whose
 `Failover Partner` is a production database is production too. Giving a database a weaker role than it has
 (`prod` to `test`, say, by `db role` or by a second `db add`) needs a terminal, where you confirm by typing the
@@ -288,7 +298,7 @@ opticli apply about-us/plan.json --update-existing --dry-run    # against the de
   everything below it, the site's assets and the global assets; `--all` every site. Blocks, media and folders in a "For
   this page" folder go with the content they belong to (a folder there is made with `create --for`), and what is in such
   a folder with that folder. Never the root, the recycle bin, the asset roots themselves or content in the recycle bin.
-  Every language branch, or `--languages en,sv` (an item's master branch always).
+  Every language branch (`--all-languages`, the default), or `--languages en,sv` (an item's master branch always).
 - **The folder** (`--out`, default `export-<database>-<time>`; an earlier export's folder is written over, any other
   that isn't empty is refused, also one with a plan of its own): `plan.json`, `files/` with the media files, and `texts/` with rich text
   longer than 4000 characters, which the plan reads as `@file` values.
@@ -308,7 +318,8 @@ opticli apply about-us/plan.json --update-existing --dry-run    # against the de
   never shown), or, for a local database, from the project's file blob folder (`EPiServer:Cms:FileBlobProvider:Path`,
   also from the environment). Media whose file isn't found is left out and listed; `--no-media` leaves all media out.
   Applied again, an upload whose file changed gets the new file.
-- **The result** counts items, steps, kinds, types, languages and files, and lists `skipped` items, newer `drafts` left
+- **The result** counts items, steps, kinds, types, languages, files and `texts`, and `heldBack` (values a later `set`
+  writes, where content refers to content the plan creates after it), and lists `skipped` items, newer `drafts` left
   out, `externalRefs` (content the plan refers to but doesn't create, with its name and whether it is missing or in
   the source's recycle bin: the target must have it, or the dry run fails with `not_found`), `visitorGroups`
   personalized values show to, `dropped` values that can't be written to another database (a value of a property the
@@ -366,11 +377,12 @@ opticli sync pull --from prod /en/news/            # a ref (or several) and ever
 - **Output**: `counts` and lists per action (`created`, `updated`, `moved`, `restored`, `trashed`, `conflicts`, `kept`,
   `gone`, `skipped` with reasons), `dropped`, `drafts` (refs are the source's), `model`, the media `files`, the number of
   plan `steps` and `run`, `apply`'s report with each step's status and undo hints. An empty diff applies nothing:
-  `steps` is 0 and `run` null. Progress goes to stderr on a terminal. `--out <dir>` keeps the plan the pull applied.
+  `steps` is 0 and `run` null. `baseline` is true on the first pull from a source, and `state` is the sync state's
+  file. `--languages en,sv` limits a pull as it does `export`. Progress goes to stderr on a terminal. `--out <dir>` keeps the plan the pull applied.
 - **Ctrl+C** (or a failed step) stops the plan; the sync state records only what was saved, so the next pull carries on
   where it stopped, and the error's `details.run` lists what was saved with undo hints.
-- **Where it may write**: only a database with the role `local` (refused for `dev`, `test` and `prod`, exit 3,
-  `details.reason: "syncTarget"`): a shared database is other people's, and in shared mode its database doesn't hold
+- **Where it may write**: only a database with the role `local` (refused for `dev`, `test`, `prod` and a remote
+  database without a role, exit 3, `details.reason: "syncTarget"`): a shared database is other people's, and in shared mode its database doesn't hold
   the build's model. `--from` is picked like `--db` (a name from `db add`, an id or a database name); `--connection` and
   `OPTICLI_DB` name the local database.
 - **Not synced**: access rights, other versions and who saved them when (the local history says the sync wrote it),
@@ -401,8 +413,8 @@ opticli apply /path/to/plan.json --db prod --seal 7f3a9c1e0b7d4e55  # the user, 
 dry run, as `apply --dry-run` does; the development database must be `local`, with its site running on this build),
 reads production over SQL with its saved read-only login, and writes nothing there:
 - the plan may only create, change, move, translate and publish content, and upload media files, by GUID (or `$id` of
-  what it creates): `delete`, `unpublish`, `access`, `discard`, a translation's `remove`, `includeDraft`, `force` and
-  version ids are refused (`refused`, exit 3, `details.reason: "sealedPlan"`, every problem listed), and so are content ids
+  what it creates): `delete`, `unpublish`, `access`, `discard`, `site`, `language`, a translation's `remove`,
+  `includeDraft`, `force`, `"project"`, version ids and a blueprint not named by GUID are refused (`refused`, exit 3, `details.reason: "sealedPlan"`, every problem listed), and so are content ids
   and URLs (in refs, a ContentArea item's `ref`, the value of a reference property), which name other content in another
   database. A create or upload needs a fixed GUID (`guid`, or `guidNamespace`), so a second run can't make a copy (an
   upload with `replace` keeps the media's own GUID). An
@@ -422,6 +434,10 @@ reads production over SQL with its saved read-only login, and writes nothing the
   every item the plan touches, and whether the items it only names are there. It is `seals/<id>.json` in the user config
   folder, with a MAC (HMAC-SHA256, keyed with `seal.key` there), and is good for 24 hours, once.
 
+Sealing takes no plan from stdin, `--allow-outside`, `--accept-drift` or `--version-per-step`. A development database
+that isn't `local` is `refused` (`details.reason: "sealValidation"`), and so is a `--seal-for` database that isn't
+`prod` (`"sealTarget"`).
+
 `sync push --to <name> (<ref>... | --site <name> | --all)` builds such a plan from the local database and seals it: an
 export of the local content, compared with production by GUID, with only what differs (created, updated, moved, or
 restored from production's recycle bin). It leaves out media (listed, unless production has it as it is here: in the same
@@ -438,8 +454,9 @@ command has run.
 option (the seal's are used), and:
 1. checks the seal: its MAC and that it wasn't used, the database `--db` names (production, the same server and database),
    the project, the plan file and its hash (read once: the plan runs from those bytes, so a file swapped afterwards isn't
-   what runs), the build, and its age. Another target, project or plan file is `refused`; an expired seal, a changed plan
-   or build is a `conflict` (exit 5): seal again;
+   what runs), the build, and its age. Another target, project or plan file is `refused` (`details.reason`: `sealTarget`,
+   `sealProject`, `sealPlan`; also a saved production string with a `Failover Partner`); an expired seal, a changed
+   plan or build is a `conflict` (exit 5; `sealExpired`, `planChanged`, `buildChanged`): seal again;
 2. shows what the plan does (counted from the plan it read: steps, types, new and existing content, publishes, and steps
    that set an expiry that has passed), the target, the build (and its git commit), and asks for the database's name.
    From here on the run names the target as `--db` does (a staging database with the role `prod`, say), not as
@@ -498,7 +515,8 @@ nothing.
   written; the seal is used).
 - **Blob storage** (when the plan uploads): an Azure Storage connection string (account name and key, or a blob endpoint
   with a SAS token) and the container (offered from `EPiServer:Cms:AzureBlobProvider:ContainerName`, else `mysitemedia`).
-  The container must exist before the seal is used; Enter refuses the uploads (`sealedPlan`) with the seal unused. The site
+  The container must exist before the seal is used (else `refused`, `details.reason: "blobStorage"`; the event bus's
+  problems are `"eventBus"`); Enter refuses the uploads (`sealedPlan`) with the seal unused. The site
   must use the Azure provider with that connection and container as its default before anything is written; uploads send
   the bytes the run read and hashed, never the file again. After the run every uploaded file is looked up where
   production's database now points (`<content GUID>/<file>` in the container); one that isn't there with its size, or
@@ -542,7 +560,7 @@ apply or not: give production a read-only SQL login for reads and a separate log
 
 | Rule | Enforced by |
 |---|---|
-| A remote database is used only when the user chose it as the development database, or for one run with `--db` or `--connection`, with a warning on every response. Only literal loopback names (`localhost`, `127.0.0.1`, `::1`, `.`, `(local)`) and LocalDB count as local. A host name that resolves to 127.0.0.1 counts as remote. | CLI, before connecting |
+| A remote database is used only when the user chose it as the development database, or for one run with `--db`, `--connection` (`OPTICLI_DB`), `--profile` or `sync pull --from`, with a warning on every response. Only literal loopback names (`localhost`, `127.0.0.1`, `::1`, `.`, `(local)`) and LocalDB count as local. A host name that resolves to 127.0.0.1 counts as remote. | CLI, before connecting |
 | `export` only reads (over SQL, never through a site), so it works on production; it writes nothing but its own folder. | CLI |
 | `sync pull` only reads its source (over SQL, read-only intent for production) and writes only to a database with the role `local` (refused otherwise, exit 3, `details.reason: "syncTarget"`), through its site, as `apply --update-existing` does. It never deletes for good: `--delete` moves content to the recycle bin. A local change to content the source changed too is a conflict, left alone unless `--overwrite-local`. | CLI, then the site agent |
 | A database with the role `prod` is only read, and only when a run picks it: it is never the development database (`db use` and a saved choice that became production are refused), and `serve`, `env` and every write are refused (exit 3, `details.reason: "prodDatabase"`), whether it was picked by name, id, database name, `--connection`, `--profile`, `OPTICLI_DB` or an exported connection string. Roles belong to a server and database, and a weaker one needs a person at a terminal. Reads connect with `ApplicationIntent=ReadOnly`. The only exception is a sealed apply (next row). | CLI before anything is read, again on the way to the site, and when starting it |
@@ -596,7 +614,8 @@ is deployed, or deploy first). `database`: the database has what your build lack
 code than your checkout (pull and build), or a class or property was removed from code and the CMS kept its content
 type or property for the content that uses it (`opticli types --orphaned` lists such types); pulling doesn't change
 those. When only EF Core migrations or the CMS schema version are on the database's side, that is newer code (pull and
-build). `unknown`: they differ, and the database doesn't say which side changed. Required, display names, sort order,
+build). `unknown`: they differ, and the database doesn't say which side changed. The report's `ahead` is `both` when
+differences go each way. Required, display names, sort order,
 tabs and `[AllowedTypes]` aren't stored for a model: the running code decides them, so they never show as drift. On
 CMS 13, content types of unknown origin (see [CMS 13](#cms-13)) are listed with `informational: true` and don't stop
 writes.
@@ -647,9 +666,9 @@ add-ons need first.
 | `sites`, `languages` | site definitions (CMS 13: applications) and hosts; language branches (`--all` with the disabled ones) |
 | `types [--kind] [--unused] [--orphaned] [--sort]` | content types with instance counts and kinds (page, block, media, folder, other; on CMS 13 also experience, section, element, contract); `--orphaned`: types whose class is gone from the code, which the CMS keeps while content uses them (the running site checks every class, `meta.source: agent`; otherwise the site's sources are scanned for its own types, with a warning saying why); see [Orphaned content types](#orphaned-content-types-and-properties) for removing them |
 | `type <name>` | properties (type, culture-specific, required, tab, order, source line, `[AllowedTypes]`; one that isn't in the code with how many values it has stored), C# class file, views |
-| `allowed-in <type>` | which ContentArea/reference properties accept a type, from `[AllowedTypes]` in code |
+| `allowed-in <type> [--kind] [--explicit]` | which ContentArea/reference properties accept a type, from `[AllowedTypes]` in code (`--explicit`: only those whose attribute names the type or a base type, not unrestricted ones) |
 | `get <ref> [--lang] [--version] [--fields] [--expand] [--variation]` | one item, typed and decoded (ContentAreas, local blocks, rich-text links; on CMS 13 a Visual Builder composition, and `--variation` for a content variation) |
-| `tree`, `children`, `ancestors` | the content tree |
+| `tree <ref> [--depth]`, `children`, `ancestors` | the content tree (`tree`: 2 levels down unless `--depth`, at most 5000 items, then `capped`) |
 | `find --type T [--where Prop=value] [--under] [--status]` | items of a type, filtered; `--status scheduled` (a version waits to be published: `publishAt`) and `expired` (published, stop-publish date passed: `expiredAt`), in the master language unless `--lang` |
 | `search <text> [--in names\|strings\|all]` | names and text properties containing a string |
 | `where-used <ref> [--pages]`, `where-used --type T` | ContentAreas, references, links and rich text pointing at an item (`--pages`: through nested blocks up to pages); `--type`: for every instance of a type |
@@ -659,10 +678,10 @@ add-ons need first.
 | `categories`, `visitor-groups` | the category tree (names `set` takes, selectable, how many items use each); visitor groups (ids ContentAreas store, names, how criteria combine), without their criteria or notes |
 | `projects [<id\|name>]` | projects, with how many items each has and how many are marked Ready to publish (`ready`); with a project, its items and each version's status (see [CMS projects](#cms-projects)) |
 | `trash [--since] [--by] [--type]` | what is in the recycle bin: who deleted it and when, what came along (`descendants`), and `originalParent`, where `restore` puts it back (asked of the site while `serve` runs, `meta.source: agent`; otherwise read from the database, with a warning saying why) |
-| `jobs [--failed]`, `jobs log [<job>] [--failed] [--since]` | scheduled jobs: schedule, next and last run, how it ended, overdue, running; their runs with status and message (see [Scheduled jobs](#scheduled-jobs)) |
+| `jobs [--failed] [--enabled\|--disabled] [--all]`, `jobs log [<job>] [--failed] [--since]` | scheduled jobs: schedule, next and last run, how it ended, overdue, running; their runs with status and message (see [Scheduled jobs](#scheduled-jobs)) |
 | `display-templates [--type T]` | CMS 13: Visual Builder display templates and their settings, the styles a composition's nodes can use |
 | `blob <ref>` | where a media file lives on disk |
-| `export <ref>... [--descendants]`, `export --site <name>\|--all` | content of any database, production too, as a plan folder that `apply --update-existing` brings into another one (see [Exporting content](#exporting-content)) |
+| `export <ref>... [--descendants] [--languages]`, `export --site <name>\|--all` | content of any database, production too, as a plan folder that `apply --update-existing` brings into another one (see [Exporting content](#exporting-content)) |
 | `drift` | what differs between the build and a shared database (needs `serve`; see [Shared databases](#shared-databases)) |
 | `access <ref>` | who may read and edit an item: its access rights, and the ancestor they are inherited from |
 | `sql "<SELECT …>"` | anything else, read-only |
@@ -684,6 +703,15 @@ with [IDE mode](#running-the-site-from-your-ide-ide-mode) on.
   unless `--publish` is given. `upload <file>` adds a PDF, image or other file (up to 50 MB) as media, as the
   type the site maps its extension to, and prints where the file was stored. `create` doesn't take media types (that
   would be media without a file).
+- `area <ref> <Prop> add <block-ref>|--type T [--at n] [--display <option>]`, `remove <n|ref:id>`, `move <n|ref:id>
+  <to>` and `set <n>`: positions are zero-based. `--display` is a display option as the site registers it; an unknown
+  one is refused.
+- `block create --type T --name N` and `upload <file>` take `--for <ref>` (that content's "For this page" folder, made
+  if missing) or `--parent <folder>`. `upload --replace <media>` gives existing media a new file instead: a new version
+  of the same media type, which must accept the extension (no `--for`, `--parent` or `--type`).
+- `translate <ref> --lang <code>` makes a language branch (`--with-blocks`: the blocks of its "For this page" folder
+  too). `translate --remove` deletes the branch with all its versions instead (not the master language, nor a start
+  page) and can't be undone: it asks on a terminal, and elsewhere is a `conflict` (exit 5) without `--confirm`.
 - `publish`, `unpublish` (takes a published branch offline, as the edit UI's expiry does), `discard` (deletes one
   unpublished version; it can't be undone), `move` and `delete` (to the recycle bin). `delete` stops when other content
   references what it deletes, unless `--ignore-references`.
@@ -700,7 +728,8 @@ with [IDE mode](#running-the-site-from-your-ide-ide-mode) on.
   Access rights aren't versioned, so the output shows them before and after. The root, the recycle bin, start pages
   and asset roots are refused, and so is a change that leaves no role with Administer. A "For this page" folder and
   the content in it have the access rights of the content that owns the folder (`assetsOf`), so they are refused as
-  well, as in the edit UI: change the owner instead.
+  well, as in the edit UI: change the owner instead. A `--grant` role the site doesn't know is a `usage` error;
+  `--allow-unknown-role` accepts one, such as a role an identity provider creates on first sign-in.
 - `composition` (CMS 13) adds, moves, changes and removes the sections, rows, columns and elements of a Visual Builder
   experience; `set` and `create` also take a whole composition, `create --blueprint` makes content from a blueprint,
   and `--variation` writes a content variation. See [Visual Builder](#visual-builder).
@@ -728,7 +757,8 @@ with [IDE mode](#running-the-site-from-your-ide-ide-mode) on.
   and create sites (`language` and `site`; see [A database built from scratch](#a-database-built-from-scratch)), and
   put its drafts in a CMS project (`"project"`; see [CMS projects](#cms-projects)). A
   property value `"@texts/body.html"` is that file's text, as `Prop=@file` is on the command
-  line. Files in a plan are relative to the plan file and must stay inside its folder. With `"guidNamespace"`, what a
+  line. Files in a plan are relative to the plan file (the working directory for a plan read from stdin, `-`) and
+  must stay inside its folder unless `--allow-outside` (which a sealed run refuses). With `"guidNamespace"`, what a
   plan creates gets the same GUIDs in every database, and `apply --update-existing` runs it again: existing content is
   updated (and moved back out of the recycle bin; an upload's file replaced when the bytes differ), and steps that are
   already done change nothing. A plan that stops
@@ -745,12 +775,12 @@ with [IDE mode](#running-the-site-from-your-ide-ide-mode) on.
   as earlier versions did; use it on a site whose own code asks for a new version on every save (a saving-event
   handler that sets `RequireNewVersion`), where saving into the draft fails with a `conflict` that says so.
 
-Every write command takes `--dry-run`. Structured values use `--values`, e.g.
+Every write command takes `--dry-run` (`sync push` only ever prepares a sealed plan). Structured values use `--values`, e.g.
 `--values '{"MainArea":[{"ref":"456"}]}'`; a value may also be given as `get` shows it (`{"type": ..., "value": ...}`;
 a reference in it is written by its GUID, so `get` output from another database names the same content).
 `Prop=@file.html` reads a property's value from a file (`@@` for a literal `@`); any other value that starts with `@`
 is plain text (`--name @Home`, `opticli search @alloy`).
-`set` and `area` check that nobody saved a newer version in the meantime (exit 5 on a conflict). `--base-version <id>` pins the version the change is based on, and `--force` skips the check.
+`set`, `area` and `composition` check that nobody saved a newer version in the meantime (exit 5 on a conflict). `--base-version <id>` pins the version the change is based on, and `--force` skips the check.
 `--from published` (or `--from <version>`) bases the change on that version instead of the latest, and the check
 stays: newer drafts are left out and stay as they are, and the output lists them (`leftOut`).
 A publish puts the whole version live. When someone else saved unpublished changes in it, opticli shows them and asks on
@@ -825,7 +855,7 @@ Where the site makes shared blocks:
   | `name`, `type` | the block's name and content type |
   | `folder` | the "For this page" folder's id; none in a dry run when the folder would be made |
   | `status` | the version's status (`checkedOut` is a draft, `checkedIn` ready, `awaitingApproval`, `delayedPublish` scheduled, `published`); in a dry run the one it would get |
-  | `action` | `created`; `updated`, a new version of a block of the folder that a whole area written again takes over (below); `published`, a draft published along with the content (see Publishing below); `existing`, found there by an add with `--if-missing` (or a plan run with `--update-existing`) |
+  | `action` | `created`; `updated`, a new version of a block of the folder that a whole area written again takes over (below); `published`, a draft published along with the content (see Publishing below); `existing`, found there by an add run again (`apply --update-existing`, or `ifMissing` in the MCP module's `areaOps`) |
 
 - **A failed save.** When the content's own save fails after its blocks were saved, the blocks (and a folder made for
   them) stay, and the error's `details.madeBlocks` lists them as `sharedBlocks` does, so a retry can give their refs as
@@ -860,9 +890,9 @@ Where the site makes shared blocks:
   someone else's drafts of other blocks along with a publish (below).
 - **Positions name inline blocks only.** `MainArea[2].Heading=...` and `area set 2` on an item that shows a shared
   block are refused, with the block's ref in the hint.
-- **`area add --if-missing`** (and plans with `--update-existing`): the add is there already when the area shows a
-  block of its type from the content's own folder, or an inline one, with the add's name (with `--name`) or its values
-  (without). A block of the folder found so is listed as `existing`.
+- **Adds run again** (`apply --update-existing`, or `ifMissing` in the MCP module's `areaOps`): the add is there
+  already when the area shows a block of its type from the content's own folder, or an inline one, with the add's name
+  (with a name) or its values (without). A block of the folder found so is listed as `existing`.
 - A new block in a ContentArea inside a CMS 13 Visual Builder element is refused (`usage`): make it with `block create
   --for` and add it by its ref.
 
@@ -1038,7 +1068,7 @@ items marked ready or taken out, and publish; a published project is a `conflict
 | `projects reactivate <project>` | cancels a scheduled project's publish |
 | `projects delete <project>` | deletes the project, as the edit UI's Delete Project does; its drafts stay drafts. Not while it is scheduled, being published or reactivated |
 
-Every write takes `--dry-run` and prints the project (`id`, `name`, `status`, `items`, `ready`), `editorUi`, `dryRun`
+Every write takes `--dry-run` and prints the project (`id`, `name`, `status`, `scheduledFor` when scheduled, `items`, `ready`), `editorUi`, `dryRun`
 and `valid`. `projects delete --dry-run` checks the project in the database (`meta.source: db`).
 
 **A write joins a project only when it names it**, every time: there is no current project that later saves go into.
@@ -1096,7 +1126,7 @@ from the gadget than from opticli.
   published, as answered"). Elsewhere it publishes as asked, and other people's changes need `--include-draft`.
 - It publishes through the site's `ProjectPublisher` (a site's own one too) and waits until every item has been tried.
   The result has `published[]` (or `scheduled[]` and `scheduledFor`), `notReady[]`, `alreadyPublished[]`, `failed[]`
-  with the CMS's messages in `siteError`, and per item `previouslyPublished`. When an item fails, the others still go
+  (each with the CMS's message in `error`; the publish's own in `siteError`), and per item `previouslyPublished`. When an item fails, the others still go
   live and the project is `publishFailed`; publishing it again tries the rest.
 - `siteChanges` lists what the site's own code did while the project was published (content its handlers created,
   published, moved or deleted). The CMS publishes a project on a background thread of its own, so opticli records the
@@ -1291,7 +1321,9 @@ Reading (`jobs`, `jobs log`) comes from the database (`tblScheduledItem`, `tblSc
 running. A job in the site's code (a `[ScheduledPlugIn]` or, on CMS 13, `[ScheduledJob]` class) has its file and line
 as `source`, and one the database doesn't have yet is listed with `registered: false`: the site registers jobs when it
 starts. `running: "stale"` means the job is marked as running but the process that ran it stopped pinging. A run's
-`finished` is when the CMS logged it, and `started` that less its duration.
+`finished` is when the CMS logged it, and `started` that less its duration. A job of the site's own assemblies whose
+class is gone has `inCode: false` (the CMS keeps a removed job's row). `--all` adds the jobs the CMS hides from the
+admin UI (`hidden`).
 
 A `<job>` is its id (GUID), its name, its class (`EPiServer.Util.BlobCleanupJob` or `BlobCleanupJob`), or a part of its
 name only it has. Several matches are a `usage` error that lists them.
@@ -1475,6 +1507,7 @@ opticli composition 104 add element --in Left --ref 103          # a shared bloc
 opticli composition 104 set Hero --setting background=light      # --setting key= removes one, --template "" clears
 opticli composition 104 move <element key> --in Right --at 0
 opticli composition 104 remove Hero
+opticli composition 104 add section --node @section.json         # a whole node as get shows it, children included
 opticli set 104 composition=@composition.json --dry-run          # the whole composition, as get shows it
 opticli create 6 --type LandingExperience --name Spring composition=@composition.json
 ```
@@ -1507,8 +1540,8 @@ opticli doesn't make or change blueprints or display templates.
 - A site has visitor groups only if it registers them (`services.AddVisitorGroupsMvc()`); without that, a ContentArea
   item with `visitorGroups` is refused ("No visitor group has the id ...").
 - The CMS refuses a save whose rich text or references point at content that doesn't exist (a `validation` issue with
-  `code: "unresolvedReference"`). So `apply` refuses up front a plan whose rich text links to content a later step
-  creates: reorder it, or add the link in a later `set`.
+  `code: "unresolvedReference"`). So `apply` refuses up front a plan whose rich text links to content the same or a
+  later step creates: reorder it, or add the link in a later `set`.
 - The edit UI is at `/Optimizely/CMS/`.
 - The MCP server for editors is the `OptiCli.Mcp.Cms13` package on CMS 13: see
   [MCP server for editors](#mcp-server-for-editors).
@@ -1520,7 +1553,7 @@ agent injected, and returns once the site agent answers.
 
 | Option | Default |
 |---|---|
-| `--output <dll>` | the newest `bin/{Debug,Release}/<tfm>/<AssemblyName>.dll` (also below a `<rid>/` folder, under the project's `OutputPath`/`BaseOutputPath`, or under `artifacts/` with `UseArtifactsOutput`), or `output` from the user config |
+| `--output <dll>` | `output` from the user config (relative to the project), else the newest `bin/{Debug,Release}/<tfm>/<AssemblyName>.dll` (also below a `<rid>/` folder, under the project's `OutputPath`/`BaseOutputPath`, or under `artifacts/` with `UseArtifactsOutput`) |
 | `--port <n>` | `port` from the user config, else 5199, else the first free port up to 5299 |
 | `--build` | off: opticli warns when sources (the site's or a referenced project's) are newer than the build, and `--build` runs `dotnet build` first |
 | `--timeout <s>` | 180 seconds to wait for the site to answer |
@@ -1542,7 +1575,8 @@ agent injected, and returns once the site agent answers.
 - A state file opticli can't read is treated as stale: `--status` and `--stop` remove it, `doctor` reports it.
 - Two `serve` runs for the same project don't start two sites: the second waits for the first and reports its site.
   `serve`s for different sites started at the same moment don't pick the same free port either (best effort: they
-  share their claims through `$XDG_RUNTIME_DIR`, else `~/.local/state/opticli/ports`, so `serve`s run with different
+  share their claims through `$XDG_RUNTIME_DIR/opticli-ports`, else `~/.local/state/opticli/ports`, on Windows
+  `%TEMP%\opticli-ports`, so `serve`s run with different
   values of those don't see each other's).
 - Ctrl+C while `serve` waits for the site stops the site again.
 - A site that configures `Kestrel:Endpoints` ignores `ASPNETCORE_URLS`. `serve` and `env` then add opticli's address
@@ -1557,6 +1591,8 @@ To run the site yourself (IDE, `dotnet run`, hot reload), `opticli env` prints t
 - The site's scheduler stays as the site sets it (`OPTICLI_SCHEDULER=on`): that run is yours.
 - `OPTICLI_*` variables that this run leaves out but the shell still exports (from an earlier `opticli env`) are set
   to empty, so they can't pin or approve another database.
+- Each run makes a new token, so a site started with an earlier run's variables stops taking writes: restart it.
+  `env` is refused while `serve` runs the site, and `serve` while a site started with `env`'s variables runs.
 
 The connection string is left out unless `--include-connection` is given. Without it the site uses its own
 configuration, which is still checked to be local (or the approved development database) and the same database
@@ -1573,11 +1609,14 @@ are often committed, so keep the token out of git.
 
 | Variable | Set by `serve`/`env` for the site | Meaning |
 |---|---|---|
+| `ASPNETCORE_ENVIRONMENT` | always | `Development` |
+| `ASPNETCORE_URLS` | always (not `--format launchSettings`) | `http://127.0.0.1:<port>`, and the HTTPS address with `--https` |
+| `ASPNETCORE_HTTPS_PORT` | `--https` | where the site's HTTPS redirection sends browsers |
 | `DOTNET_STARTUP_HOOKS` | always | path to `OptiCli.Agent.dll`, which loads the site agent |
 | `OPTICLI_TOKEN` | always | the per-run token the site agent requires |
 | `OPTICLI_DB` | `serve`, `env --include-connection` | the connection string to pin the site to (read by the CLI, it is the same as `--connection`) |
-| `OPTICLI_CONNECTION_NAME` | when not `EPiServerDB` | which connection string to pin |
-| `ConnectionStrings__<Name>` | `serve`, `env --include-connection` | the same connection string, for code that reads it before the agent's pin; `serve` also removes other spellings of it (`ConnectionStrings:<Name>`, another case) |
+| `OPTICLI_CONNECTION_NAME` | `serve`, `env --include-connection`, when not `EPiServerDB` | which connection string to pin |
+| `ConnectionStrings__<Name>` | `serve`, `env --include-connection` | the same connection string, for code that reads it before the agent's pin; `serve` also removes other spellings of it (`ConnectionStrings:<Name>`, another case, Azure's `SQLCONNSTR_<Name>` and the like) |
 | `OPTICLI_REMOTE_DB` | against a remote development database | the one remote database the site agent accepts; turns on shared-database mode |
 | `OPTICLI_DRIFT_FILE` | `serve`, against a remote development database | what `serve` compared before the start (EF Core migrations, CMS schema version), for the site agent's drift report |
 | `OPTICLI_REMOVALS_FILE` | never (the edge-case test site sets it) | another file for the record of `types remove`, `remove-property` and `prune`, instead of `removals.jsonl` in opticli's state directory |
@@ -1639,8 +1678,12 @@ for the CMS the project builds against (else the one its database's schema belon
    access options;
 2. fails the start if the effective connection string is neither local nor the approved development database;
 3. turns the scheduler off (`SchedulerOptions.Enabled`, as a `PostConfigure`) unless `OPTICLI_SCHEDULER=on`; a site
-   that turns it on in a `PostConfigure` of its own wins, and `serve --status` then says `scheduler: on`;
+   that turns it on in a `PostConfigure` of its own wins, and `serve --status` then says `scheduler: on`. Against a
+   shared database it also turns off automatic schema updates, content type sync and store remapping;
 4. maps `/_opticli/v1/*` ahead of the site's own middleware.
+
+A site run with a pinned connection string and `ASPNETCORE_PREVENTHOSTINGSTARTUP=true` fails to start, since there
+would be no pin. In a .NET process that isn't an ASP.NET Core host (opticli itself, build tools), the hook does nothing.
 
 The site agent is compiled against `EPiServer.CMS.Core` 12.0 (.NET 8) and 13.0 (.NET 10), one build each, and binds to
 the site's own, newer CMS assemblies at runtime. It ships no copies of them.
@@ -1650,11 +1693,12 @@ the site's own, newer CMS assemblies at runtime. It ships no copies of them.
 - Redirected stdout gets compact JSON:
   `{"ok": true, "data": …, "meta": {"source", "version", "next", "warnings", "database"}}`.
   - `source` is `db` for reads, `agent` for writes and `cli` for local commands.
-  - `database` is present only when the database is remote.
+  - `database` is present when the database is remote, or has a role other than `local` (`server`, `name`, `local`,
+    `development`, `role`).
 - A terminal gets tables. `--json` and `--text` force either.
 - `--jsonl` on list commands prints one item per line. A final `{"meta": {…}}` line follows only when there is a
   next page or warnings.
-- Lists return 50 items by default (`sql`: 100 rows). Pass `meta.next` as `--cursor` for the next page, or raise
+- Lists return 50 items by default (`jobs log`: 20 runs, `sql`: 100 rows). Pass `meta.next` as `--cursor` for the next page, or raise
   `--limit`. There is no total count.
 - Strings over 300 characters are cut (`truncated: true, length: N`); `--full` or `--fields` gives them whole.
   Dates are UTC (`…Z`).
@@ -1680,7 +1724,7 @@ the site's own, newer CMS assemblies at runtime. It ships no copies of them.
 | What | Linux / macOS | Windows |
 |---|---|---|
 | User config | `$XDG_CONFIG_HOME/opticli/config.json` (default `~/.config/opticli/config.json`) | `%APPDATA%\opticli\config.json` |
-| `serve` state, start lock and logs (the last 3 runs) | `$XDG_STATE_HOME/opticli/` (default `~/.local/state/opticli/`) | `%LOCALAPPDATA%\opticli\` |
+| `serve` state, start lock, logs (the last 3 runs) and, against a shared database, what `serve` compared before the start | `$XDG_STATE_HOME/opticli/` (default `~/.local/state/opticli/`) | `%LOCALAPPDATA%\opticli\` |
 | IDE mode: where the IDE's site says it listens, with its token (`<project>.ide.json`, written and removed by the site), and opticli's copies of the agent that builds name as their startup hook (`agent/`) | `$XDG_STATE_HOME/opticli/`, readable by you only | `%LOCALAPPDATA%\opticli\` |
 | Generated passwords of `users add` | `$XDG_STATE_HOME/opticli/users/<project>/<name>.txt`, readable by you only (the folders too) | `%LOCALAPPDATA%\opticli\users\<project>\<name>.txt`, in your user profile, which other users can't read by default (opticli sets no ACL of its own) |
 | What `types remove`, `remove-property` and `prune` removed (one JSON line each, never rotated) | `$XDG_STATE_HOME/opticli/removals.jsonl`, readable by you only | `%LOCALAPPDATA%\opticli\removals.jsonl` |
@@ -1688,7 +1732,7 @@ the site's own, newer CMS assemblies at runtime. It ships no copies of them.
 | Seals for production, their key, and the mark that one was run | `$XDG_CONFIG_HOME/opticli/seals/<id>.json` and `<id>.used`, `$XDG_CONFIG_HOME/opticli/seal.key`, readable by you only | `%APPDATA%\opticli\seals\`, `%APPDATA%\opticli\seal.key` |
 | A sealed apply's site log and what was compared before it started | `$XDG_STATE_HOME/opticli/sealed/<id>.log`, `<id>.drift.json`, readable by you only | `%LOCALAPPDATA%\opticli\sealed\` |
 
-You can set per-project defaults in the user config (`output`, `port`, `https`, `httpsPort` and `scheduler` for `serve`).
+You can set per-project defaults in the user config (`connection`, the development database; `output`, `port`, `https`, `httpsPort` and `scheduler` for `serve`).
 `opticli db use` adds the chosen `database` there, `opticli db add` an entry to `databases` (and its role to `roles`,
 which holds the roles of every project's databases), and `opticli sites primary --save` the `sites.primary` mapping.
 opticli keeps the file's permissions when it rewrites it, and creates it readable by you only on Linux and macOS. A
@@ -1713,7 +1757,8 @@ opticli keeps the file's permissions when it rewrites it, and creates it readabl
   development database.
 - Not supported:
   - CMS 11, Commerce, Forms data and search indexes;
-  - writes to environments other than development (test, staging, production).
+  - writes to test and staging databases; production only through a sealed plan the user runs (see
+    [Writing to production](#writing-to-production)).
 
 ## Known limitations
 
@@ -1726,7 +1771,6 @@ opticli keeps the file's permissions when it rewrites it, and creates it readabl
   - `type` lists views, but not controllers.
 - Content types are matched to C# classes by GUID or name with a lightweight source scan, not a compiler. Unusual
   declarations may be missed.
-- `where-used` works per item: there is no type-wide usage in one call.
 - `serve` runs the existing build output; it doesn't build unless `--build` is given.
 - Output field names may still change before 1.0.
 
@@ -1795,7 +1839,8 @@ protected with the site's Data Protection keys, which every instance of a load-b
 login cookies.
 
 `AddOptiCliMcp` returns a builder, on which a site can add tools of its own to the module's server: see
-[Custom tools](#custom-tools).
+[Custom tools](#custom-tools). Call it once, with all the options: a second call throws. Where the site has no
+`UIRoleProvider`, the module logs a warning and goes by the roles in the editor's login.
 
 Requirements: `OptiCli.Mcp` needs .NET 8 or newer, `EPiServer.CMS.Core` 12.12.1 or newer and `EPiServer.CMS.UI.Core`
 12.16.1 or newer (the first CMS 12 versions whose dependencies allow the MCP SDK's `Microsoft.Extensions` 10.x
@@ -1905,6 +1950,10 @@ added again. The Claude Desktop extension itself drops a registration over an ho
 {"OptiCli": {"Mcp": {"RateLimits": {"TokenPerAddressPerMinute": 1200}}}}
 ```
 
+The options are checked at startup, and a site with a bad value doesn't start (`OptiCli:Mcp: …`): lifetimes positive,
+`AccessTokenLifetime` at most `RefreshTokenLifetime` and at most `ConnectionLifetime`, `RefreshTokenReuseGrace` from 0
+(every reuse revokes) to `AccessTokenLifetime`, rate limits positive.
+
 ### Endpoints
 
 With the default `BasePath`, on the site's own host:
@@ -1919,7 +1968,8 @@ With the default `BasePath`, on the site's own host:
 | `/episerver/opticli/preview/{payload}` | the assistant's preview links, unless `AllowPreviewLinks` is turned off |
 
 The site's own `/.well-known` documents at the root are left alone. A request to the MCP endpoint without a token
-gets a 401 that points to the metadata, never a redirect to the login page.
+gets a 401 that points to the metadata, never a redirect to the login page; a token without `content:read` gets a 403
+(`insufficient_scope`). With `BasePath = ""`, the root `/.well-known/oauth-protected-resource` is the module's too.
 
 ### Beside another MCP server
 
@@ -1951,6 +2001,20 @@ module sees to it that each endpoint serves only its own server:
   those tools there. A tool of the other server's that has the name of one of the module's tools stays on that server,
   whichever is registered first.
 
+### Tools
+
+The module's own tools, which the assistant works with as the editor. Every tool's name is taken: a site's own tools
+need others (see [Custom tools](#custom-tools)).
+
+| Tool | Scope | Does |
+|---|---|---|
+| `whoami` | `content:read` | who the editor is, the scopes they approved, and what the site allows (publishing, deleting, upload size, preview links) |
+| `get_content`, `list_children`, `resolve_url`, `find_content`, `get_content_type`, `list_versions`, `view_media` | `content:read` | read content, content types, versions and images as the editor |
+| `create_content`, `update_content`, `add_language`, `upload_media`, `move_content`, `discard_draft` | `content:write` | change content, as a draft unless told otherwise, with a dry run first |
+| `publish_content`, `unpublish_content` | `content:publish` | offered on every site, refused without `AllowPublish` (`publishingOff`) |
+| `delete_content` | `content:write` | to the recycle bin; offered only with `AllowDelete` |
+| `list_projects`, `get_project`, `create_project`, `mark_ready_to_publish`, `remove_from_project`, `publish_project`, `reactivate_project` | see [Projects](#projects-for-editors-assistants) | CMS projects |
+
 ### Projects for editors' assistants
 
 An editor's assistant can collect drafts in a CMS project, so the editor reviews them together in the CMS and they go
@@ -1964,8 +2028,8 @@ existing project or a new one, and asks first. The module follows the same rules
 | `get_project(project)` | read | the project and its items, each with its version, `state` (`draft`, `ready`, `inReview`, `scheduled`, `published`, `deleted`: in the recycle bin, `missing`: the version is gone) and `editUrl` |
 | `create_project(name, dryRun)` | write | an active, empty project; a name an unpublished project has is refused |
 | `mark_ready_to_publish(project, items \| all, lang, requestApproval, comment, includeDraft, dryRun)` | write | marks items Ready to publish; under an approval sequence `requestApproval` sends them for review instead |
-| `remove_from_project(project, items, lang, dryRun)` | write | takes items out; their versions stay as they are |
-| `publish_project(project, publishAt, includeDraft, dryRun, blocks, skipBlocks)` | publish | publishes or schedules the items marked ready (with the blocks of their own folders, as `publish_content`) |
+| `remove_from_project(project, items, lang, dryRun)` | write | takes items out of an active project; their versions stay as they are |
+| `publish_project(project, publishAt, includeDraft, dryRun, blocks, skipBlocks)` | publish | publishes or schedules the items marked ready (with the blocks of their own folders, as `publish_content`); `failed` lists items the CMS didn't publish, with `siteError` |
 | `reactivate_project(project, dryRun)` | publish | cancels a scheduled project's publish; its items are drafts again |
 
 A project is named by its id or its exact name. `create_content`, `update_content`, `add_language` and `upload_media`
@@ -2111,7 +2175,7 @@ public sealed class ReplaceInDescriptionsTool(IOptiCliEditor editor, IContentLoa
 ```
 
 The assistant sees a tool with `TArgs`' properties as its arguments, camelCase, plus two the module adds, `dryRun` and
-`planToken`. An argument the type doesn't have, a missing required one, or `null` for one that can't be null is refused
+`planToken` (so `TArgs` may not have properties of those names, in any case). An argument the type doesn't have, a missing required one, or `null` for one that can't be null is refused
 before the tool runs (in a project without nullable reference types, as Alloy's, a `string` may be `null`, so check).
 With `dryRun: true` the module calls `PlanAsync`, checks every step as the editor with its own dry runs (access rights,
 the edit UI's rules, validation, `baseVersion`, the delete gate), and answers with each step's changes, a `planToken`
@@ -2363,7 +2427,8 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   applies, it is refused (`noApprovalSequence`) and nothing is saved.
 - **Publishing and deleting are opt-in** (`AllowPublish`, `AllowDelete`). Without `AllowPublish` the consent page
   doesn't offer the `content:publish` scope, and every publish is refused with a hint to save a draft instead; with it,
-  the editor still chooses on the consent page, and their Publish rights still apply. Besides each tool's own check,
+  the editor still chooses on the consent page, and their Publish rights still apply. Turning `AllowPublish` off later
+  refuses publishing at once, and existing connections lose `content:publish` at their next refresh. Besides each tool's own check,
   every save that would publish or schedule is checked against the same gate, and so is every other change that puts
   something live at once: moving content that has a published version or anything below it (its URLs change, it takes
   the access rights of its new parent; the CMS itself only asks for Publish on the destination when the moved item is
@@ -2404,12 +2469,12 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   token from a confused client; but not from the same client within `RefreshTokenReuseGrace` of the refresh that
   replaced it, which is a client refreshing twice at once or retrying after a lost answer: that is only refused, and
   the connection keeps the tokens the other refresh got. Older refresh tokens are just refused. A refresh may ask for fewer scopes: the access token
-  gets those, and the connection keeps what the editor approved. Tokens are bound to the MCP endpoint and checked
+  gets those, and the connection keeps what the editor approved. Tokens are bound to the MCP endpoint's URL as the editor connected to it (scheme, host and port) and checked
   against their connection on every use, so revoking one cuts the client off at once (another instance of a
   load-balanced site notices within 30 seconds). Codes, secrets and refresh tokens are stored as hashes only. Redirect
-  URIs must match exactly (any port on loopback), and be on a loopback address or one of `AllowedRedirectHosts`. The
+  URIs must match exactly (any port for http on a loopback address), and be on a loopback address or one of `AllowedRedirectHosts`. The
   consent page can't be framed and checks an antiforgery token. Client metadata documents are only fetched from public
-  addresses, checked on the connected socket, without redirects. Registration, authorization and token requests are
+  addresses (in Development also over http from a loopback address), checked on the connected socket, without redirects. Registration, authorization and token requests are
   rate-limited (`RateLimits`). Registered clients without a connection are deleted a day after they registered, and
   registration stops at 5,000 of them; the cleanup runs in the background, a bounded amount at a time.
 - **Load-balanced sites:** the Dynamic Data Store has no conditional update, so a refresh's compare-and-swap is
@@ -2420,18 +2485,20 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   `parent` id, which they can't open), and that a ContentArea or content reference they can read points to something
   (its id, which they can't open). Both are by design: a bare id, never the content's name, type or values.
   `list_children`'s cursor counts only what the editor can read, so paging tells nothing of what lies between, and
-  `find_content` counts only what they can read too; it stops after loading 20,000 items in all, hidden ones included
-  (or after 20 seconds), and then says `truncated`: a search below a great deal of hidden content can still tell that
+  `find_content` counts only what they can read too; it stops after 5,000 items they can read or 20,000 loaded in all,
+  hidden ones included (or after 20 seconds), and then says `truncated`: a search below a great deal of hidden content can still tell that
   much.
 - **Uploads follow the site's own upload rules** as well as `MaxUploadBytes`: the CMS UI's size limit
   (`EPiServer:CmsUI:Upload:FileSizeLimit`, the lower of the two applies) and, from CMS UI 12.33, its list of allowed
   file extensions (`AllowedFileExtensions`), so a site that keeps SVG out of its uploads keeps it out here too. On CMS
   13 these are the CMS's `MediaFileOptions`, and the CMS's script parser applies too (see [On CMS 13](#on-cms-13)).
 - **Images:** `view_media` shows the assistant a media item's image, with the editor's read access like every read.
-  JPEG, PNG, GIF and WebP files up to 1568 pixels on the longest side and 1 MB are sent as they are stored. Larger ones
+  JPEG, PNG, GIF and WebP files up to 1568 pixels on the longest side (or a smaller `maxSize`, at least 64) and 1 MB
+  are sent as they are stored. Larger ones
   are scaled down with the site's own image service, the one that makes the edit UI's thumbnails (built into CMS 12
   before 12.17, then `EPiServer.ImageLibrary.ImageSharp`, which `EPiServer.CMS` brings, on CMS 13 too). An image of
-  more than 64 million pixels isn't decoded, and other files (PDF and the like) aren't shown. SVG is sent as its markup. Text in an
+  more than 64 million pixels isn't decoded, and other files (PDF and the like) aren't shown. SVG is sent as its markup, up to 256 KB; files over 50 MB
+  aren't read. Text in an
   image is content like any other, with the same risk of prompt injection.
 - **Host names:** the module builds its issuer, resource and metadata URLs from the request's host, as the site's own
   login does, and its metadata documents are never cached (`Cache-Control: no-store`). Still, limit which hosts the site
@@ -2465,7 +2532,8 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   the same bytes, no padding) and no query; anything else below `{BasePath}/preview` is refused. It drops the request's
   body and every header but `Host`, `Accept`, `Accept-Encoding`, `Accept-Language`, `User-Agent` and the forwarded
   headers (so its cookies and `Authorization` too), and sends no cookie, no redirect, no sign-in challenge and no error
-  page back (anything but a success is a plain 404, or 500 for an error or any failure), with `Cache-Control:
+  page back (anything but a success is a plain 404, or 500 for an error, a failure or a page larger than 10 MB; 405
+  for other methods, 429 over a rate limit), with `Cache-Control:
   no-store`, `X-Robots-Tag: noindex, nofollow` and `Referrer-Policy: no-referrer`. The module itself changes nothing,
   but the site's own code for that page runs as the editor, as when the editor previews the draft in the CMS: code that
   writes something when a page is viewed does so in the editor's name.
@@ -2504,9 +2572,11 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
   own requests, and its errors all have a body, so the site's error page never replaces them. That matters most for
   the MCP endpoint's 401: re-executed as a POST to a GET-only error page, it would reach the client as a 405 without the
   `WWW-Authenticate` header that tells it where to sign in.
-- **Security headers:** the consent and connections pages send `X-Frame-Options: DENY`, a `Content-Security-Policy`
-  with `frame-ancestors 'none'` and a `form-action` limited to the module and the client's redirect, and
-  `Referrer-Policy: no-referrer`. Middleware that sets a site's own security headers as the response starts replaces
+- **Security headers:** the module's pages (consent, connections, its error pages) send `X-Frame-Options: DENY`, a
+  `Content-Security-Policy` with `default-src 'none'`, `frame-ancestors 'none'` and a `form-action` limited to the
+  module and the client's redirect, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff` and
+  `Cache-Control: no-store`. Neither page takes a CMS preview token (`preview_token`) as a sign-in: such a request
+  gets a 400. Middleware that sets a site's own security headers as the response starts replaces
   them, and the module can't set its own later than that. The page also carries its policy and referrer policy in
   `meta` elements, which the browser applies besides the site's header, but `frame-ancestors` and `X-Frame-Options`
   only work as headers. So have such middleware leave `{BasePath}` (`/episerver/opticli`) alone, or only set headers
@@ -2519,12 +2589,15 @@ an issuer with one, and the root `/.well-known` documents on that host are the m
 ### Connections and audit log
 
 At `/episerver/opticli/connections` an editor sees the assistants they connected (app, the scopes they allowed, when
-connected and last used) and can revoke them. WebAdmins and CmsAdmins see and revoke everyone's.
+connected and last used, which is updated at most once a minute) and can revoke them. WebAdmins and CmsAdmins see and
+revoke everyone's.
 
-Every authorization decision, token issue, refresh, revocation, tool call and opened preview link is logged in the
+Every authorization decision, token issue, refused token request, refresh, revocation, tool call (and each step of a
+site's write tool) and opened preview link is logged in the
 `OptiCli.Mcp.Audit` category at Information level, with the user, the client, the tool, the content refs and the
 outcome; never tokens, links, secrets or property values. A site that logs Warning and up by default needs
-`"Logging": {"LogLevel": {"OptiCli.Mcp.Audit": "Information"}}` to keep them.
+`"Logging": {"LogLevel": {"OptiCli.Mcp.Audit": "Information"}}` to keep them. Errors (a tool that failed, a preview
+that couldn't render) are logged in the `OptiCli.Mcp` category.
 
 ### Uploads on IIS
 
@@ -2554,7 +2627,7 @@ cd npm && npm ci && npm test    # the npm package, against a stand-in opticli
 ```
 
 The EPiServer packages come from Optimizely's public NuGet feed, which [nuget.config](nuget.config) already lists.
-Building needs the .NET 8 and .NET 10 SDKs: the site agent, `OptiCli.Cms` and `OptiCli.Agent.Tests` build twice, for
+Building needs the .NET 10 SDK and the .NET 8 runtime (CI installs both SDKs): the site agent, `OptiCli.Cms` and `OptiCli.Agent.Tests` build twice, for
 CMS 12 (net8.0, `EPiServer.CMS.Core` 12.0.3) and CMS 13 (net10.0, 13.0.0, with `CMS13` defined), and CMS-specific code
 stays in their `Compat/` adapter files. The MCP module builds the same way, as two packages (`OptiCli.Mcp` for CMS 12
 from 12.12.1, `OptiCli.Mcp.Cms13` for CMS 13), and `OptiCli.Mcp.Tests` runs against each.
@@ -2569,7 +2642,10 @@ from 12.12.1, `OptiCli.Mcp.Cms13` for CMS 13), and `OptiCli.Mcp.Tests` runs agai
 | `src/OptiCli.Mcp.Cms13` | the `OptiCli.Mcp.Cms13` package: the same sources built for CMS 13 (net10.0, `CMS13` defined), with the same assembly name and public API |
 | `src/OptiCli.Protocol` | request and response types shared by the CLI, the site agent and the MCP module (source-linked) |
 | `skill/` | the coding-agent skill, embedded in `opticli.dll` |
-| `tests/` | unit tests for Core, the site agent and the MCP module (both on both CMS majors); `OptiCli.Integration` and `OptiCli.Mcp.Integration`, tests against a real site |
+| `npm/` | the `@epinova/opticli` package: a typed Node.js API and Playwright fixtures (see [The npm package](#the-npm-package)) |
+| `mcp-extension/` | the Claude Desktop extension for the MCP module (`opticli-cms.mcpb`), attached to each GitHub release |
+| `docs/` | the reference pages and the how-to guides on the landing page |
+| `tests/` | unit tests for the CLI (`OptiCli.Tests`), Core, the site agent and the MCP module (both on both CMS majors); `OptiCli.Integration` and `OptiCli.Mcp.Integration`, tests against a real site; `fixtures/`, the test sites' scripts |
 
 The unit tests use generic fixtures and need no database or site, also for CMS 13 (one, `LocalDbTests`, needs LocalDB
 and skips itself elsewhere). The integration test is an oracle. It samples content
@@ -2598,7 +2674,8 @@ with the reason in `tests/OptiCli.Integration/Comparison/KnownDifferences.cs`; a
 
 #### The edge-case site
 
-A sample site lacks much of what real sites have: fetch-data pages, a site whose start page is under another site's,
+A sample site lacks much of what real sites have: fetch-data pages, a site whose start page is under another site's (CMS 12 only: CMS
+13 refuses it),
 simple addresses on several sites, culture-specific properties in shared and local blocks, personalized ContentAreas,
 an approval sequence, language fallback settings, a media type for PDF files, three sites whose hosts the site host
 tests change (and put back), CMS projects (one with an item marked Ready to publish and one that isn't), and a scheduled
@@ -2666,9 +2743,14 @@ alike.
 SQLCMDPASSWORD=... tests/fixtures/edge-cases/drift.sh path/to/AlloyEdge path/to/AlloyDrift
 ```
 
+`drift.sh` keeps opticli's config and state for the copy in `<copy>/.opticli` and chooses the copy's database there,
+so start the copy and run `DriftTests` with the same `XDG_CONFIG_HOME` and `XDG_STATE_HOME` (the script prints both
+commands at the end; the site needs `serve --allow-pending-migrations`). Its databases default to CMS 12's; on CMS 13
+name them: `drift.sh path/to/AlloyEdge13 path/to/AlloyDrift13 alloy-edge13 alloy-edge13-shared`.
+
 #### The CMS 13 test sites
 
-`tests/fixtures/cms13/setup.sh` builds two CMS 13 Alloy sites: a fresh one (`dotnet new epi-alloy-mvc`, EPiServer.Templates
+`tests/fixtures/cms13/setup.sh [fresh|upgraded|both]` (default both) builds two CMS 13 Alloy sites: a fresh one (`dotnet new epi-alloy-mvc`, EPiServer.Templates
 2.0.1, on an empty database the CMS fills at its first start; `/demo/Alloy13`, `alloy13` by default) and an upgraded one
 (the same code on a copy of a CMS 12 Alloy site's database and media, which CMS 13 upgrades at its first start;
 `/demo/Alloy13Up`, `alloy13-upgraded`). The CMS 12 site and database it copies are only read. Both get
@@ -2709,7 +2791,7 @@ shifted): the baseline (a page in the target's recycle bin restored), then make-
 `sync-changes.plan.json`'s (a folder in a "For this page" folder, a page scheduled for 2030, a page of a type the target
 lacks) pulled with `--delete` and compared item by item as round-trip.sh compares them, a second pull that applies
 nothing, a conflict and `--overwrite-local`, a local change kept, a local trash that is a conflict until
-`--overwrite-local` restores it, a language branch made in both, and a local draft behind values found the same. They all stop the sites they start; `round-trip.sh` drops its target unless
+`--overwrite-local` restores it, a language branch made in both, and a local draft behind values found the same. They stop the sites they start, unless told to keep them; `round-trip.sh` drops its target unless
 `KEEP_TARGET=1`, `sync-pull.sh` both copies unless `KEEP=1`. Each script's comment lists its modes and settings
 (`OPTICLI` picks the opticli to run, e.g. a wrapper around this checkout's build).
 
@@ -2770,13 +2852,16 @@ revocation on the connections page, and a removed role or a disabled account cau
 the test site's own database and changes it back). For the site's own tools: hidden content kept out of their results
 and plans, dry runs and runs with planned content, a run that stops midway, a token refused after a change, a replay,
 another editor's or tool's use, or 30 minutes, the published-version rule, `MaxPlanSteps`, the scopes and gates, the
-per-step audit lines, and none of them at `/site-mcp`. `McpFixture.cs` also adds `RestrictedBlock`, a block type only
+per-step audit lines, and none of them at `/site-mcp`. CMS projects (`ProjectTests`): making, filling, marking ready
+and publishing them, a colleague's ready item, the publish scope, and site tools' plans into a project. `McpFixture.cs` also adds `RestrictedBlock`, a block type only
 WebAdmins may create; `McpFieldsBlock`, with a property not shown in edit mode, a read-only one, one an editor
 descriptor locks for all but WebAdmins and one on a tab that needs Administer, plus rich text, link, URL, ContentArea
 and reference properties (one ContentArea with allowed types an editor descriptor sets for its UIHint), a local block and a block list (`McpInnerBlock`, with a property locked for all but
 WebAdmins and one on the tab that needs Administer); an "opticli write-back fixture" block with a video's `<iframe>` and
 an sms: link; the language `de`, enabled and editable by administrators only; and a folder "opticli find fixture" in the
-global assets with one folder editors see and one only administrators see. `setup.sh` gives the site high `RateLimits`,
+global assets with one folder editors see and one only administrators see; save handlers of the site's own that file a
+page named "opticli-filed …" under an "opticli archive" page they create and publish, and clear a teaser text, for the
+`siteChanges` tests; and an "opticli inert fixture" block with script inside a `<textarea>`. `setup.sh` gives the site high `RateLimits`,
 as the tests sign in many times a minute, and a `RefreshTokenReuseGrace` of 3 seconds, so the reuse test needn't wait a
 minute. The tests are skipped unless the site is configured, and delete the content they create:
 
@@ -2822,6 +2907,11 @@ OPTICLI_MCP_IT_NO_PREVIEW_LINKS_URL=http://127.0.0.1:5182 OPTICLI_MCP_IT_URL=...
 tests/fixtures/mcp/serve.sh path/to/AlloyMcp --port 5182 --stop
 ```
 
+A CMS 13 site served with `EPiServer__CmsUI__ProjectUI__ProjectModeEnabled=true` needs
+`OPTICLI_MCP_IT_EDITOR_UI=projectMode`. `tests/fixtures/projects/check-mcp.sh [--all] [--project-mode] <site>:<port> ...`
+rebuilds MCP test sites with this checkout's module and fixtures and runs `ProjectTests` (or, with `--all`, everything)
+on `<port>` and on `<port>+1` with publishing off.
+
 #### The schema output tests
 
 `opticli schema --json` (a hidden command) describes every command: its arguments, options and, as JSON Schema, the
@@ -2842,14 +2932,15 @@ what `create` and `set` promise). A mismatch fails the test, naming the command 
   log names them). It runs `serve --stop` only on a stopped site.
 - `Writes_print_what_the_schema_declares`: every write, dry run and real, on the edge-case site with its agent running.
   Its content goes to the recycle bin; projects, users, hosts and languages it adds are removed again.
-- `Local_commands_print_what_the_schema_declares`: `db`, `ide`, `env`, `skill install`, `sites primary --save`, and
-  `apply --seal-for`, in a sandbox: a copy of the site's `.csproj` and `appsettings*.json`, and a user config, serve
-  state and home folder of its own in a temporary folder, so your own config, state and site stay as they are.
+- `Local_commands_print_what_the_schema_declares`: `db`, `sites primary` and `apply --seal-for` with a user config of
+  their own (the serve state is the real one, so a running agent is found); `ide` and `env` on a copy of the site's
+  `.csproj` and `appsettings*.json` with a state folder of its own; `skill install` with a home folder of its own. Your
+  own config, state and site stay as they are.
 
 | Variable | Meaning |
 |---|---|
 | `OPTICLI_IT_PROJECT` | the site, as for the other integration tests |
-| `OPTICLI_IT_CLI` | the `opticli.dll` to run and take the schema from (default: this checkout's build) |
+| `OPTICLI_IT_CLI` | the opticli to run and take the schema from: an `opticli.dll` or a command (default: this checkout's build) |
 | `OPTICLI_IT_SEAL_DB` | another local database on the site's SQL Server with the same content model (a copy of the site's database), read only, that the local test's `apply --seal-for` names as production; the site's own can't be, since a role belongs to a server and database. Without it, that check is left out |
 | `OPTICLI_IT_SCHEMA_LOG` | append every command line run, with its mode, to this file |
 
@@ -2892,7 +2983,10 @@ fields). `surface.test.mjs` fails when it changes, so nothing is renamed or remo
 change, `npm run build && node test/surface.mjs --write`, commit `test/surface.txt`, and list a removal in the
 CHANGELOG as a breaking change.
 
-[CI](.github/workflows/ci.yml) runs the unit tests on Linux, Windows and macOS for every push and pull request. On
+### CI and contributing
+
+[CI](.github/workflows/ci.yml) runs the unit tests on Linux, Windows and macOS for every push to `main` and every pull
+request, packs and checks the NuGet packages and the Claude Desktop extension, and checks the npm package (above). On
 Windows it starts SQL Server Express LocalDB (the image's; it installs Microsoft's MSI, checked against a pinned SHA-256,
 only when the image lacks it), and `LocalDbTests` must pass there (`OPTICLI_REQUIRE_LOCALDB` turns its skip into a
 failure).
@@ -2903,8 +2997,10 @@ reads, also run the integration test against a site you have.
 
 Set the new version as `<Version>` in [Directory.Build.props](Directory.Build.props) and as `opticli-version` in
 [skill/SKILL.md](skill/SKILL.md) (and in its sentence "This file was written for opticli ..."), and add the release to
-[CHANGELOG.md](CHANGELOG.md). The npm package's generated files carry no version: regenerate them only when a command
-changed, which CI checks anyway. Commit, then push a matching tag:
+[CHANGELOG.md](CHANGELOG.md) under a heading `## X.Y.Z (date)`. `SkillTests` fails when either version in SKILL.md
+differs. npm/package.json and mcp-extension/manifest.json stay at 0.0.0: their builds take the version from
+Directory.Build.props. The npm package's generated files carry no version: regenerate them only when a command
+changed, which CI checks anyway. Commit on `main` and push it, then push a matching tag:
 
 ```sh
 git tag v0.23.1 && git push origin v0.23.1
@@ -2912,7 +3008,9 @@ git tag v0.23.1 && git push origin v0.23.1
 
 The [release workflow](.github/workflows/release.yml) checks that the tag matches both versions and is on `main`,
 runs the unit tests, checks that the CLI package holds both site agent builds and starts, and publishes it to nuget.org together
-with `OptiCli.Mcp` and `OptiCli.Mcp.Cms13` at the same version.
+with `OptiCli.Mcp` and `OptiCli.Mcp.Cms13` at the same version (trusted publishing, environment `nuget`). Then it
+creates the GitHub release, with the version's CHANGELOG section as its notes (the job fails without a heading
+`## X.Y.Z (date)`) and the Claude Desktop extension `opticli-cms.mcpb` attached.
 
 The npm package `@epinova/opticli` ([npm/](npm)), in the npm organization `epinova`, follows with the same version,
 through npm trusted publishing, once the repository variable `NPM_PUBLISH` is `true`. Trusted publishing needs the package to exist, so the first version is published by hand:
