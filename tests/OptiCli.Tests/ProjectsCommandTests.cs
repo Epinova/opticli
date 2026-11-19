@@ -80,7 +80,7 @@ public class ProjectsCommandTests
         Assert.Equal(0, run.ExitCode);
         Assert.Contains("--with-block <ref>", run.Stdout, StringComparison.Ordinal);
         Assert.Contains("--without-block <ref>", run.Stdout, StringComparison.Ordinal);
-        Assert.Contains("by default only blocks never published go along", flat, StringComparison.Ordinal);
+        Assert.Contains("by default only blocks never published whose drafts you saved go along", flat, StringComparison.Ordinal);
     }
 
     [Fact]
