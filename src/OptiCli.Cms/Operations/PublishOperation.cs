@@ -194,24 +194,33 @@ internal static class PublishOperation
 
     /// <summary>
     /// A publish of a version that is published already, where the site makes shared area blocks: the content has nothing
-    /// new, but the drafts of the blocks of its own "For this page" folder that a publish of it takes along (never
-    /// published, named, or saved by earlier steps of a plan run) go live on their own, as they would have with it. A plan's
-    /// publish after steps that changed only blocks publishes those, as one write that publishes them does.
+    /// new, but the drafts of the blocks of its own "For this page" folder that the publish names, or that earlier steps of
+    /// a plan run saved, go live on their own, as they would have with it. A plan's publish after steps that changed only
+    /// blocks publishes those, as one write that publishes them does. A block never published goes along only when named
+    /// too (decision 13 of the plan): it isn't new with this publish, so someone probably kept it back.
     /// </summary>
-    /// <exception cref="AgentException"><c>conflict</c> when no block goes along either: there is nothing to publish.</exception>
+    /// <exception cref="AgentException">
+    /// <c>conflict</c> when no block goes along either: there is nothing to publish. Its hint lists the blocks a publish
+    /// takes along when named, and how to name them.
+    /// </exception>
     private static WriteResult BlocksOnly(CmsCall call, WriteFlow flow, IContent version, int versionId, SaveAction action, bool othersConfirmed,
         SharedAreaBlocks.AlongChoice choice, PublishRequest body)
     {
         call.RequirePublishing(action, version);
+        choice = choice with { NamedOnly = true };
         var scheduling = action == SaveAction.Schedule;
         var at = body.PublishAt?.ToLocalTime();
         var planned = new List<ValidationIssue>();
-        var along = flow.PublishAlong(version, action, othersConfirmed, dryRun: true, planned, at: at, choice: choice) ?? [];
+        var nameable = new List<SharedAreaBlocks.Nameable>();
+        var along = flow.PublishAlong(version, action, othersConfirmed, dryRun: true, planned, at: at, choice: choice, nameable: nameable) ?? [];
         if (along.Count == 0)
         {
+            // The blocks it could name, listed once; the warnings about any other block (a named one that can't go) as they are.
+            var others = planned.Where(i => !nameable.Any(n => n.Path == i.Property)).Select(i => i.Message).ToList();
+            var hint = string.Join(" ", (nameable.Count > 0 ? [flow.Writer.Shared!.NameableHint(version, nameable)] : Array.Empty<string>()).Concat(others));
             throw AgentException.Conflict(
-                $"{AlreadyPublished(version)} No draft of a block of its \"For this page\" folder goes along either, so there is nothing to publish.",
-                planned.Count > 0 ? string.Join(" ", planned.Select(i => i.Message)) : null);
+                $"{AlreadyPublished(version)} No draft of a block of its \"For this page\" folder goes along either (with the content published already, only the blocks a publish names go along, or those the same plan run saved), so there is nothing to publish.",
+                hint.Length > 0 ? hint : null);
         }
         var issues = body.DryRun ? planned : [];
         if (!body.DryRun)

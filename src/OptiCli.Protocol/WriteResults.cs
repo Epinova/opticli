@@ -251,8 +251,21 @@ public sealed record SiteChangedProperty(string Property, JsonElement? Asked, Js
 /// <param name="SavedBy">Who saved it, as the CMS recorded it; empty when nobody was signed in (a scheduled job or import).</param>
 /// <param name="Saved">When it was saved, UTC.</param>
 /// <param name="Changes">Every property that differs between the published version and the version the publish is based on.</param>
+/// <remarks>
+/// Also a draft of a block of the content's own "For this page" folder that a write would save a new version over (an item
+/// of a whole-area write taking the block over), where the site makes shared area blocks: then <see cref="Path"/> names
+/// the area item, <see cref="Version"/> is the block's draft, and <see cref="Changes"/> what that draft changed since the
+/// block's published version (all its values, when it was never published).
+/// </remarks>
 public sealed record PendingDraft(string Version, string? SavedBy, DateTime Saved, IReadOnlyList<PropertyChange> Changes)
 {
+    /// <summary>
+    /// For a block's draft a write would save a new version over: the area item that shows the block
+    /// (<c>MainContentArea[0]</c>). Null for the content's own changes a publish would put live. Left out when null.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Path { get; init; }
+
     /// <summary>The CLI's <c>details.reason</c> for the conflict.</summary>
     public const string Reason = "pendingDraft";
 

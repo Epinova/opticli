@@ -99,6 +99,7 @@ internal static class ExistingContent
             : branch is null ? flow.Repository.Get<IContent>(link) : flow.Repository.Get<IContent>(link, branch);
 
         flow.OthersDraftsConfirmed = includeDraft;
+        flow.BlockDraftsConfirmed = includeDraft;
         var before = PropertyValues.Snapshot(current);
         var writable = (IContent)((IReadOnly)current).CreateWritableClone();
         writable.Name = name;

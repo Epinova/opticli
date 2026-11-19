@@ -175,7 +175,11 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     /// refusals (<see cref="ProjectSave.Check"/>).
     /// </exception>
     /// <param name="ownerAction">The content's save action: in a project, what its blocks follow (<see cref="ProjectSave.BlockAction"/>).</param>
-    public List<ValidationIssue> Prepare(IContent owner, ProjectSave? project, SaveAction ownerAction)
+    /// <param name="othersConfirmed">
+    /// <c>includeDraft</c>: a block taken over may get its new version over a draft someone else saved
+    /// (<see cref="RequireOwnDraft"/>); the result then says whose draft it replaced.
+    /// </param>
+    public List<ValidationIssue> Prepare(IContent owner, ProjectSave? project, SaveAction ownerAction, bool othersConfirmed = false)
     {
         if (_pending.Count == 0)
         {
@@ -244,6 +248,10 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
                         $"{pending.Path} changes the shared block {link} ('{pending.Existing.Name}') of the content's \"For this page\" folder, and you don't have Edit access to that block.",
                         $"Give that item back as {{\"ref\": \"{link}\"}} to keep the block as it is, or ask a CMS administrator for the access. Nothing was saved.");
                 }
+                if (RequireOwnDraft(pending, othersConfirmed) is { } replaced)
+                {
+                    issues.Add(replaced);
+                }
                 pending.Name = string.IsNullOrWhiteSpace(pending.GivenName) ? pending.Existing!.Name : pending.GivenName.Trim();
                 pending.Content = (IContent)((IReadOnly)pending.Existing!).CreateWritableClone();
             }
@@ -273,6 +281,50 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
                 "info"));
         }
         return issues;
+    }
+
+    /// <summary>
+    /// A block taken over gets a new version based on its latest one, with every value the area item gives: when that
+    /// latest version is a draft someone else saved, the write would save over their changes (decision 14 of the plan), as
+    /// a publish would put someone else's draft of the content live. So, as for that publish, it needs the caller's
+    /// confirmation (<c>includeDraft</c>); a dry run is refused alike, so the assistant asks before it shows the change.
+    /// </summary>
+    /// <returns>With the confirmation, a warning saying whose draft the write replaces; null when the draft is the caller's own.</returns>
+    /// <exception cref="AgentException"><c>conflict</c> with <see cref="AgentException.PendingDraft"/> (its <see cref="PendingDraft.Path"/> set).</exception>
+    private ValidationIssue? RequireOwnDraft(Pending pending, bool confirmed)
+    {
+        var existing = pending.Existing!;
+        var branch = locator.Versions(existing.ContentLink, Language);
+        if (branch.FirstOrDefault(v => v.ContentLink.WorkID == existing.ContentLink.WorkID) is not { } latest
+            || latest.Status is VersionStatus.Published or VersionStatus.PreviouslyPublished
+            || PendingDrafts.SavedBy(latest.SavedBy, call.UserName))
+        {
+            return null;
+        }
+        var block = existing.ContentLink.ToReferenceWithoutVersion().ToString();
+        var published = ContentLocator.PublishedVersion(branch) is { } publishedId
+            ? PropertyValues.Snapshot(locator.Repository.Get<IContent>(new ContentReference(existing.ContentLink.ID, publishedId)))
+            : new Dictionary<string, JsonElement?>();
+        var draft = new PendingDraft(latest.ContentLink.ToString(), latest.SavedBy, latest.Saved.ToUniversalTime(),
+            call.Properties.Shown(existing, PropertyValues.Diff(published, PropertyValues.Snapshot(existing))))
+        {
+            Path = pending.Path,
+        };
+        var what = $"the block {block} ('{existing.Name}') of the content's \"For this page\" folder at {pending.Path}";
+        if (!confirmed)
+        {
+            throw new AgentException(AgentErrorCodes.Conflict,
+                $"The write would save a new version of {what} over {draft.Describe()}: the area item gives all of the block's values, so their changes wouldn't be in it.",
+                call.ForCaller(
+                    $"Ask whether their changes may be replaced; if so, retry with --include-draft (in a plan: \"includeDraft\": true on the step). To leave the block as it is, give that item back as {{\"ref\": \"{block}\"}}; to change it on top of their draft, set it by its ref (opticli set {block} ...). Nothing was saved.",
+                    $"Ask whether their changes may be replaced; if so, retry with includeDraft. To leave the block as it is, give that item back as {{\"ref\": \"{block}\"}}; to change it on top of their draft, update_content on {block}. Nothing was saved."))
+            {
+                PendingDraft = draft,
+            };
+        }
+        return new ValidationIssue(pending.Path,
+            $"The block {block} ('{existing.Name}') gets its new version over {draft.Describe()}, as includeDraft confirmed: their changes stay only in that version, in the block's history.",
+            "warning");
     }
 
     /// <summary>
@@ -600,6 +652,14 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
         /// <summary>How the caller takes a live block's draft along (given its id): the last sentence of its warning.</summary>
         public Func<string, string>? HowToInclude { get; init; }
 
+        /// <summary>
+        /// A publish of content whose version is published already (decision 13 of the plan): only the blocks named
+        /// (<see cref="With"/>) or written (<see cref="Wrote"/>) go along. A block never published stays a draft as well:
+        /// it isn't new with this publish, so someone probably kept it back. A publish of a new version of the content keeps
+        /// the default, which takes those along.
+        /// </summary>
+        public bool NamedOnly { get; init; }
+
         public bool Names => With.Count > 0 || Without.Count > 0;
 
         /// <summary>Whether the publish wrote the block itself: the write that publishes changed it, or an earlier step of the plan run saved its latest version.</summary>
@@ -622,6 +682,28 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
             }
             return versions;
         }
+    }
+
+    /// <summary>
+    /// A block of the folder whose draft a publish left behind because it wasn't named (<see cref="PublishAlong"/>): one a
+    /// publish of the content takes along when named.
+    /// </summary>
+    /// <param name="Live">The block has a published version (its newer draft stays); else it was never published.</param>
+    internal sealed record Nameable(string Path, int Id, string Name, bool Live);
+
+    /// <summary>
+    /// The hint of a publish of content published already that took nothing along: the blocks of its folder it could take
+    /// along when named, and how to name them.
+    /// </summary>
+    public string NameableHint(IContent content, IReadOnlyList<Nameable> blocks)
+    {
+        var owner = content.ContentLink.ID.ToString(CultureInfo.InvariantCulture);
+        var ids = blocks.Select(b => b.Id.ToString(CultureInfo.InvariantCulture)).ToList();
+        var listed = string.Join("; ", blocks.Select(b =>
+            $"{b.Id.ToString(CultureInfo.InvariantCulture)} ('{b.Name}') at {b.Path}, {(b.Live ? "published, with a newer draft" : "never published")}"));
+        return $"Drafts of blocks of its \"For this page\" folder that it shows, which go along when named: {listed}. " + call.ForCaller(
+            $"To publish those that should go live: opticli publish {owner} {string.Join(" ", ids.Select(i => $"--with-block {i}"))} (name only those), or publish a block on its own (opticli publish <ref>).",
+            $"To publish those that should go live: publish_content on {owner} with blocks: [{string.Join(", ", ids.Select(i => $"\"{i}\""))}] (name only those), or publish_content on a block's ref.");
     }
 
     /// <summary>
@@ -675,8 +757,9 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     /// so they are never published along; one that stays behind as a draft gets a warning.
     /// </param>
     /// <param name="choice">Which live blocks' drafts go along, and which blocks stay behind; null: <see cref="AlongChoice.Default"/>.</param>
+    /// <param name="nameable">Gets each block left behind because it wasn't named (and the publish didn't write it).</param>
     public List<SharedBlockResult> PublishAlong(IContent published, SaveAction kind, DateTime? at, bool othersConfirmed, bool dryRun, List<ValidationIssue> warnings,
-        Func<int, CultureInfo?, bool?>? inProject = null, AlongChoice? choice = null)
+        Func<int, CultureInfo?, bool?>? inProject = null, AlongChoice? choice = null, List<Nameable>? nameable = null)
     {
         choice ??= AlongChoice.Default;
         var results = new List<SharedBlockResult>();
@@ -706,16 +789,21 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
                     "warning"));
                 continue;
             }
-            if (live && !choice.With.Contains(id) && !choice.Wrote(id, latest.ContentLink))
+            if ((live || choice.NamedOnly) && !choice.With.Contains(id) && !choice.Wrote(id, latest.ContentLink))
             {
                 var reference = id.ToString(CultureInfo.InvariantCulture);
-                warnings.Add(new ValidationIssue(path,
-                    $"{what} is published already, so its newer draft stays a draft: the content goes live showing the block's published version. {choice.HowToInclude?.Invoke(reference) ?? HowToInclude(published, reference)}",
+                var how = choice.HowToInclude?.Invoke(reference) ?? HowToInclude(published, reference);
+                nameable?.Add(new Nameable(path, id, version.Name, live));
+                warnings.Add(new ValidationIssue(path, live
+                    ? $"{what} is published already, so its newer draft stays a draft: the content {(choice.NamedOnly ? "shows" : "goes live showing")} the block's published version. {how}"
+                    : $"{what} was never published, and stays a draft: the content is published already, so a publish of it takes along only the blocks it names (or that the same plan run saved), and visitors see nothing of this block until it is published. {how}",
                     "warning"));
                 continue;
             }
             // A block the write changes itself goes along as the write saves it, its own latest version; a dry run still sees
-            // the draft that version will replace, someone else's or not.
+            // the draft that version will replace. A write gets this far over someone else's draft only with their draft
+            // confirmed (RequireOwnDraft), and in a plan's dry run that confirmation may be the steps' that change the block
+            // rather than the publish's own (DraftRequest.IncludeBlockDraft).
             if (!othersConfirmed && !(dryRun && choice.Written.Contains(id)) && !PendingDrafts.SavedBy(latest.SavedBy, call.UserName))
             {
                 warnings.Add(new ValidationIssue(path, $"{what} is a draft {(string.IsNullOrWhiteSpace(latest.SavedBy) ? "saved without a user name" : $"{latest.SavedBy} saved")}, so it wasn't published along: those changes aren't yours. Publish it on its own if they should go live.", "warning"));

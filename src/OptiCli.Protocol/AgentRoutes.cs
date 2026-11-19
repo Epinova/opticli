@@ -188,15 +188,18 @@ public static class AgentRoutes
     /// becomes the primary (common) draft, the version edit mode opens.
     /// Errors: <c>conflict</c> 409 when <see cref="DraftRequest.BaseVersion"/> is not the latest
     /// (<see cref="AgentError.CurrentVersion"/> says which is), or when a publish would include someone else's
-    /// unpublished changes without <see cref="DraftRequest.IncludeDraft"/> (<see cref="AgentError.PendingDraft"/>);
-    /// <c>validation</c> 422, <c>usage</c> 400.
+    /// unpublished changes without <see cref="DraftRequest.IncludeDraft"/> (<see cref="AgentError.PendingDraft"/>), or, where
+    /// the site makes shared area blocks, when an item of a whole-area write would save a new version of a block of the
+    /// content's own "For this page" folder over a draft someone else saved (<see cref="PendingDraft.Path"/> set; dry run
+    /// too); <c>validation</c> 422, <c>usage</c> 400.
     /// </summary>
     public static string Draft(string contentRef) => $"{Content(contentRef)}/draft";
 
     /// <summary>
     /// <c>POST /v1/content/{ref}/languages</c>. Body: <see cref="LanguageBranchRequest"/>. Response:
-    /// <see cref="WriteResult"/> (201). Errors: <c>conflict</c> when the branch already exists,
-    /// <c>usage</c> when the language is not enabled, <c>validation</c> 422.
+    /// <see cref="WriteResult"/> (201). Errors: <c>conflict</c> when the branch already exists, or when its values would save
+    /// a block's new version over someone else's draft without <see cref="LanguageBranchRequest.IncludeDraft"/> (as for
+    /// <see cref="Draft"/>), <c>usage</c> when the language is not enabled, <c>validation</c> 422.
     /// </summary>
     public static string Languages(string contentRef) => $"{Content(contentRef)}/languages";
 
@@ -211,7 +214,10 @@ public static class AgentRoutes
     /// <summary>
     /// <c>POST /v1/content/{ref}/publish</c>. Body: <see cref="PublishRequest"/> (optional). Publishes the
     /// given version, the ref's version, or the latest version in the language. Response: <see cref="WriteResult"/>.
-    /// Errors: <c>conflict</c> when that version is already published, or when the latest version includes someone
+    /// Where the site makes shared area blocks, a version published already publishes just the drafts of the blocks of its
+    /// "For this page" folder that <see cref="PublishRequest.WithBlocks"/> names or <see cref="PublishRequest.WrittenBlocks"/>
+    /// lists (not those never published, unnamed), with <see cref="WriteResult.Published"/> false.
+    /// Errors: <c>conflict</c> when that version is already published (and no block goes along), or when the latest version includes someone
     /// else's unpublished changes and neither a version nor <see cref="PublishRequest.IncludeDraft"/> was given
     /// (<see cref="AgentError.PendingDraft"/>); <c>validation</c> 422.
     /// </summary>
