@@ -550,7 +550,7 @@ apply or not: give production a read-only SQL login for reads and a separate log
 | The site started by `serve` is pinned to the database the CLI reads. It refuses to start against any remote database except the approved development one. There it runs without scheduler, schema updates, content type sync or store remapping, and `serve` refuses a build with EF Core migrations the database lacks. If the site turns hosting startups off in its code, so the pin can't run, it refuses to start. | CLI + site agent at startup |
 | The site agent answers only loopback callers that send the per-run token, and only in `Development`. The token is kept in a state file only your user can read. | Site agent, per request |
 | Writes create drafts; publishing needs `--publish` (or `publish`). Saves are attributed to the user `opticli`. | CLI + site agent |
-| A publish that would also put live changes someone else saved after the published version stops: on a terminal it shows who saved what and asks, elsewhere it fails with `conflict` (exit 5) listing them. `--include-draft` (a plan step's `"includeDraft": true`) confirms; `publish --version <id>` publishes that version as it is (an editor's assistant naming a version through the MCP module still needs `includeDraft`); `--from published` bases the change on the published version, leaving them out. | Site agent |
+| A publish that would also put live changes someone else saved after the published version stops: on a terminal it shows who saved what and asks, elsewhere it fails with `conflict` (exit 5) listing them. `--include-draft` (a plan step's `"includeDraft": true`) confirms; `publish --version <id>` publishes that version as it is (an editor's assistant naming a version through the MCP module still needs `includeDraft`); `--from published` bases the change on the published version, leaving them out. Where the site makes shared area blocks, `--include-draft` never takes someone else's drafts of the content's blocks along: only naming a block (`--with-block`) does, and in a sealed apply not even that. | Site agent |
 | A write joins a CMS project only when it names it (`--in-project`, a plan's `"project"`), and never publishes while it does. Publishing a project puts live only its items marked Ready to publish, after every one passed `publish`'s checks; one problem stops it with nothing published. Marking an item ready counts as its marker's consent to publish their changes, so marking someone else's draft ready needs `--include-draft`. Sealed production runs refuse projects. | Site agent, CLI first |
 | Against a shared database, writes stop while the build and the database differ (drift): on a terminal it shows the differences and asks, elsewhere it fails with `drift` (exit 5). `--accept-drift <fingerprint>` confirms; the fingerprint stops counting when the differences change. | Site agent, CLI first |
 | Against a shared database, `sites add`, `sites primary`, `sites host remove` and `languages enable\|disable` are refused (exit 3), and `sites host add` only adds hosts of type undefined: the deployed site uses the same site definitions and language branches. Sealed plans never have `site` or `language` steps. There is no override; change those sites in their own admin UI. Site definitions are never reachable from the MCP module. | Site agent, CLI first |
@@ -986,13 +986,13 @@ writing the area whole needs Edit on that block. The tools' descriptions say wha
 and on a site that makes shared blocks the server's instructions add that `publish_content` of a new version publishes
 the never-published ones along while the CMS's own Publish doesn't, that a live block keeps its newer draft unless named
 in `blocks`, as does a block whose draft a colleague saved (naming it puts their changes live, `includeDraft` doesn't, so
-the assistant asks first), that content with nothing new to publish puts live only the blocks named in `blocks`, and to show the
-editor a `dryRun` of the publish first: which blocks go live with the content and which stay behind (where assistants
-may not publish: that the editor publishes the blocks too). A whole-area write over a colleague's draft of a block of
-the folder is refused with a `pendingDraft` that has a `path`; the instructions tell the assistant to ask the editor
-before retrying with `includeDraft` (`update_content`), as for a publish over a colleague's draft. A
-custom tool's `ContentPlan` step makes them the same way, and its step result lists them in `sharedBlocks` (it has no
-`includeDraft`: such a step is refused).
+the assistant asks first), that content with nothing new to publish puts live only the blocks named in `blocks`, and
+to show the editor a `dryRun` of the publish first: which blocks go live with the content and which stay behind (where
+assistants may not publish: that the editor publishes the blocks too). A whole-area write over a colleague's draft of a
+block of the folder is refused with a `pendingDraft` that has a `path`; the instructions tell the assistant to ask the
+editor before retrying with `includeDraft` (`update_content`), as for a publish over a colleague's draft. A custom
+tool's `ContentPlan` step makes them the same way, and its step result lists them in `sharedBlocks` (it has no
+`includeDraft`: such a step is refused, and the hint says how else to go on).
 
 **Trying either mode locally.** Set `EPiServer:CmsUI:UI:InlineBlocksInContentAreaEnabled` (`true` or `false`) in the
 site's configuration (not `EPiServer:CmsUI:InlineBlocksInContentAreaEnabled`, which neither CMS 12 nor 13 reads), or for
