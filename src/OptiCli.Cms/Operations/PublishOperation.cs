@@ -85,11 +85,12 @@ internal static class PublishOperation
         {
             flow.Writer.Shared!.RequireChosen([version], choice, WithName(call), WithoutName(call));
         }
-        var othersConfirmed = body.IncludeDraft || (named is not null && call.NamedVersionConfirmsDraft);
         if (publishedAlready)
         {
-            return BlocksOnly(call, flow, version, versionId, action, othersConfirmed, choice, body);
+            return BlocksOnly(call, flow, version, versionId, action, choice, body);
         }
+        // Someone else's draft of the content goes live only confirmed; their drafts of its blocks only when named (choice).
+        var othersConfirmed = body.IncludeDraft || (named is not null && call.NamedVersionConfirmsDraft);
         var pending = publishing || scheduling
             ? PendingDrafts.Require(flow.Locator.PendingDraft(branch, version), othersConfirmed, body.DryRun, what, versionLanguage?.Name)
             : action == SaveAction.RequestApproval && call.ReportsDraftInReview
@@ -129,7 +130,7 @@ internal static class PublishOperation
             // go along (and those it leaves behind, as warnings).
             var planned = issues.ToList();
             var plannedAlong = publishing || scheduling
-                ? flow.PublishAlong(version, action, othersConfirmed, dryRun: true, planned, at: body.PublishAt?.ToLocalTime(), choice: choice)
+                ? flow.PublishAlong(version, action, dryRun: true, planned, at: body.PublishAt?.ToLocalTime(), choice: choice)
                 : null;
             return new WriteResult
             {
@@ -170,7 +171,7 @@ internal static class PublishOperation
         // never published, and those the caller names (choice).
         var warnings = issues.ToList();
         var along = publishing || scheduling
-            ? flow.PublishAlong(result, action, othersConfirmed, dryRun: false, warnings, choice: choice)
+            ? flow.PublishAlong(result, action, dryRun: false, warnings, choice: choice)
             : null;
         issues = warnings;
         return new WriteResult
@@ -203,7 +204,7 @@ internal static class PublishOperation
     /// <c>conflict</c> when no block goes along either: there is nothing to publish. Its hint lists the blocks a publish
     /// takes along when named, and how to name them.
     /// </exception>
-    private static WriteResult BlocksOnly(CmsCall call, WriteFlow flow, IContent version, int versionId, SaveAction action, bool othersConfirmed,
+    private static WriteResult BlocksOnly(CmsCall call, WriteFlow flow, IContent version, int versionId, SaveAction action,
         SharedAreaBlocks.AlongChoice choice, PublishRequest body)
     {
         call.RequirePublishing(action, version);
@@ -212,7 +213,7 @@ internal static class PublishOperation
         var at = body.PublishAt?.ToLocalTime();
         var planned = new List<ValidationIssue>();
         var nameable = new List<SharedAreaBlocks.Nameable>();
-        var along = flow.PublishAlong(version, action, othersConfirmed, dryRun: true, planned, at: at, choice: choice, nameable: nameable) ?? [];
+        var along = flow.PublishAlong(version, action, dryRun: true, planned, at: at, choice: choice, nameable: nameable) ?? [];
         if (along.Count == 0)
         {
             // The blocks it could name, listed once; the warnings about any other block (a named one that can't go) as they are.
@@ -226,7 +227,7 @@ internal static class PublishOperation
         if (!body.DryRun)
         {
             flow.ThrowIfAborted();
-            along = flow.PublishAlong(version, action, othersConfirmed, dryRun: false, issues, at: at, choice: choice) ?? [];
+            along = flow.PublishAlong(version, action, dryRun: false, issues, at: at, choice: choice) ?? [];
             // The blocks' saves are the publish's own, not the site's changes.
             call.TakeSiteEvents();
         }

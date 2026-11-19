@@ -19,7 +19,6 @@ internal static class DraftOperation
     {
         var flow = new WriteFlow(call);
         flow.Project = Projects.ProjectSave.For(call, body.Project, body.Ready, body.Publish, body.PublishAt);
-        flow.OthersDraftsConfirmed = body.IncludeDraft;
         // A block of its folder the write takes over may get its new version over someone else's draft: includeDraft, unless a
         // plan's dry run of steps checked together confirms that apart from the publish (IncludeBlockDraft).
         flow.BlockDraftsConfirmed = body.IncludeBlockDraft ?? body.IncludeDraft;

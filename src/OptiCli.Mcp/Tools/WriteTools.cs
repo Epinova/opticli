@@ -30,7 +30,7 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
 
     internal const string IncludeDraft = "Also put live the unpublished changes someone else saved (the pendingDraft of a refused call): only after asking the user.";
 
-    internal const string IncludeDraftWrite = "Confirms someone else's unpublished changes that the call was refused for (its pendingDraft), only after asking the user: with publish, they go live too; a pendingDraft with a path is a draft of a block of the content's \"For this page\" folder that a whole-area write would save the block's new version over, replacing their changes.";
+    internal const string IncludeDraftWrite = "Confirms someone else's unpublished changes that the call was refused for (its pendingDraft), only after asking the user: with publish, they go live too; a pendingDraft with a path is a draft of a block of the content's \"For this page\" folder that a whole-area write would save the block's new version over, replacing their changes. It never puts someone else's draft of another block live along with a publish: only naming the block in publish_content's blocks does.";
 
     internal const string Project = "Put the saved draft in this CMS project (its id or exact name; create_project makes one), in place of the content's earlier version there, so the user reviews it with the project's other items and it goes live with them. Only when the user wants it in that project: name it on every save that should go there. Not with publish or publishAt.";
 
@@ -112,8 +112,7 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
         [Description(RequestApproval)] bool requestApproval = false,
         [Description(DryRun)] bool dryRun = false,
         [Description(Project)] string? project = null,
-        [Description(Ready)] bool ready = false,
-        [Description("Confirms a pendingDraft the call was refused for, only after asking the user: a draft someone else saved of a block of the content's \"For this page\" folder (its path) that the new branch's area would save the block's new version over, replacing their changes. With publish, someone else's drafts of the folder's blocks the branch shows go live along too.")] bool includeDraft = false) =>
+        [Description(Ready)] bool ready = false) =>
         Write(Scopes.Write, call => LanguagesOperation.Run(call, reference, new LanguageBranchRequest
         {
             Lang = lang,
@@ -121,7 +120,6 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
             Properties = properties,
             Publish = publish,
             RequestApproval = requestApproval,
-            IncludeDraft = includeDraft,
             DryRun = dryRun,
             Project = Blank(project),
             Ready = ready,

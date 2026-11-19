@@ -79,7 +79,7 @@ internal static class ProjectPublishOperation
         ProjectItemResult Along(ProjectItemResult item, IContent version, bool dryRun)
         {
             var warnings = item.Validation?.ToList() ?? [];
-            var along = flow.PublishAlong(version, action, body.IncludeDraft, dryRun, warnings, InProject, body.PublishAt?.ToLocalTime(), choice);
+            var along = flow.PublishAlong(version, action, dryRun, warnings, InProject, body.PublishAt?.ToLocalTime(), choice);
             return along is { Count: > 0 } || warnings.Count > (item.Validation?.Count ?? 0)
                 ? item with { SharedBlocks = along is { Count: > 0 } ? along : null, Validation = warnings.Count > 0 ? warnings : null }
                 : item;

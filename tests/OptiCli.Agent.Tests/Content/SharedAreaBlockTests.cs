@@ -1360,7 +1360,7 @@ public class SharedAreaBlockTests
         bool? InProject(int id, CultureInfo? language) => id == notReady.ContentLink.ID ? false : id == ready.ContentLink.ID ? true : null;
 
         var warnings = new List<ValidationIssue>();
-        var along = site.Flow().PublishAlong(page, SaveAction.Publish, othersConfirmed: false, dryRun: false, warnings, InProject)!;
+        var along = site.Flow().PublishAlong(page, SaveAction.Publish, dryRun: false, warnings, InProject)!;
 
         Assert.Equal([outside.ContentLink.ID], along.Select(a => ContentReference.Parse(a.Ref!).ID));
         Assert.Equal(VersionStatus.CheckedOut, ((IVersionable)site.Store.Latest(notReady.ContentLink.ID)).Status);
@@ -1617,6 +1617,121 @@ public class SharedAreaBlockTests
     }
 
     [Fact]
+    public void Someone_elses_draft_of_a_never_published_block_goes_along_only_when_named_never_by_include_draft()
+    {
+        var site = new Site();
+        var page = site.Page(folder: true);
+        var folder = site.Folder(page).ContentLink;
+        var mine = site.Block(folder, "Mine", "Mine", VersionStatus.CheckedOut);
+        var theirs = site.Block(folder, "Theirs", "Theirs", VersionStatus.CheckedOut, savedBy: "someone");
+        page = OwnerOf(site, mine, Ref(mine), Ref(theirs));
+        void NewDraft(string title)
+        {
+            var draft = (Page)((IReadOnly)site.Store.Latest(page.ContentLink.ID)).CreateWritableClone();
+            draft.Property["Title"].Value = title;
+            site.Store.Save(draft, SaveAction.Save | SaveAction.ForceNewVersion, null);
+        }
+        NewDraft("Changed");
+        site.Store.Saves.Clear();
+
+        // includeDraft confirms someone else's draft of the content, not of its blocks: theirs stays behind, dry run alike,
+        // with a warning that says how to name it.
+        var dry = Publish(site, page, new PublishRequest { IncludeDraft = true, DryRun = true });
+        Assert.Empty(site.Store.Saves);
+        var result = Publish(site, page, new PublishRequest { IncludeDraft = true });
+        foreach (var shown in new[] { dry, result })
+        {
+            Assert.Equal([mine.ContentLink.ID], shown.SharedBlocks!.Select(b => ContentReference.Parse(b.Ref!).ID));
+            var warning = Assert.Single(shown.Validation!, i => i.Severity == "warning");
+            Assert.Equal("Area[1]", warning.Property);
+            Assert.Contains($"The block {site.Store.Latest(theirs.ContentLink.ID).ContentLink} ('Theirs') at Area[1] is a draft someone saved, so it stays a draft", warning.Message);
+            Assert.Contains($"opticli publish {Id(page)} --with-block {Id(theirs)}", warning.Message);
+        }
+        Assert.Equal(VersionStatus.Published, StatusOf(site, mine));
+        Assert.Equal(VersionStatus.CheckedOut, StatusOf(site, theirs));
+
+        // Named, it goes along with a new version of the content: naming it is the confirmation.
+        NewDraft("Changed again");
+        var named = Publish(site, page, new PublishRequest { WithBlocks = [Id(theirs)] });
+        Assert.Equal([theirs.ContentLink.ID], named.SharedBlocks!.Select(b => ContentReference.Parse(b.Ref!).ID));
+        Assert.Null(named.Validation);
+        Assert.Equal(VersionStatus.Published, StatusOf(site, theirs));
+
+        // An editor's assistant is told to name it in blocks.
+        var editor = new Site(CmsCaller.Editor);
+        var editorPage = editor.Page(folder: true);
+        var editorTheirs = editor.Block(editor.Folder(editorPage).ContentLink, "Theirs", "Theirs", VersionStatus.CheckedOut, savedBy: "someone");
+        editorPage = Neutral(editor, OwnerOf(editor, editorTheirs, Ref(editorTheirs)));
+        Neutral(editor, editorTheirs);
+        var draft = (Page)((IReadOnly)editorPage).CreateWritableClone();
+        draft.Property["Title"].Value = "Changed";
+        editor.Store.Save(draft, SaveAction.Save | SaveAction.ForceNewVersion, null);
+        var mcp = Publish(editor, editorPage, new PublishRequest { IncludeDraft = true, DryRun = true });
+        Assert.Null(mcp.SharedBlocks);
+        Assert.Contains($"Pass blocks: [\"{Id(editorTheirs)}\"] to publish that draft with the content", Assert.Single(mcp.Validation!, i => i.Property == "Area[0]").Message);
+    }
+
+    [Fact]
+    public void A_live_blocks_newer_draft_someone_else_saved_goes_along_when_named_also_with_the_content_published_already()
+    {
+        var site = new Site();
+        var page = site.Page(folder: true);
+        var folder = site.Folder(page).ContentLink;
+        site.Store.SavedBy = "someone";
+        var live = LiveWithDraft(site, folder, "Live", "Live", "Their change");
+        site.Store.SavedBy = AgentProtocol.PrincipalName;
+        page = OwnerOf(site, live, Ref(live));
+        site.Store.Saves.Clear();
+
+        var result = Publish(site, page, new PublishRequest { WithBlocks = [Id(live)] });
+
+        Assert.False(result.Published);
+        Assert.Equal([live.ContentLink.ID], result.SharedBlocks!.Select(b => ContentReference.Parse(b.Ref!).ID));
+        Assert.Equal("Their change", Title(site.Stored(live.ContentLink.ToReferenceWithoutVersion())));
+    }
+
+    [Fact]
+    public void A_write_that_publishes_over_one_colleagues_block_draft_takes_along_that_block_and_not_another_colleagues()
+    {
+        // Colleague A has a draft of the live block Intro, colleague B the only (never published) version of Extra. The editor
+        // agrees to replace A's draft (includeDraft) and publishes: Intro goes live as the write's own version, while B's
+        // draft of Extra stays a draft, in the dry run as in the run.
+        var site = new Site();
+        var page = site.Page(folder: true);
+        var folder = site.Folder(page).ContentLink;
+        site.Store.SavedBy = "colleague-a";
+        var intro = LiveWithDraft(site, folder, "Intro", "Old", "A's change");
+        site.Store.SavedBy = AgentProtocol.PrincipalName;
+        var extra = site.Block(folder, "Extra", "B's block", VersionStatus.CheckedOut, savedBy: "colleague-b");
+        page = OwnerOf(site, intro, Ref(intro), Ref(extra));
+        site.Store.Saves.Clear();
+        // The page itself changes too, so the publish is of a new version of it (not of blocks alone).
+        var area = $$$"""{"Title": "Changed", "Area": [{"type": "ItemBlock", "name": "Intro", "properties": {"Title": "New"}}, {"ref": "{{{Id(extra)}}}"}]}""";
+
+        var results = new List<WriteResult>();
+        foreach (var dryRun in new[] { true, false })
+        {
+            var flow = site.Flow();
+            flow.BlockDraftsConfirmed = true;
+            var (writable, before) = site.Write(flow, page, area);
+            results.Add(site.Save(flow, writable, before, dryRun, SaveAction.Publish | SaveAction.ForceNewVersion));
+        }
+
+        foreach (var shown in results)
+        {
+            var block = Assert.Single(shown.SharedBlocks!);
+            Assert.Equal((intro.ContentLink.ID, SharedBlockActions.Updated, "published"), (ContentReference.Parse(block.Ref!).ID, block.Action, block.Status));
+            Assert.Contains(shown.Validation!, i => (i.Property, i.Severity) == ("Area[0]", "warning") && i.Message.Contains("saved by colleague-a") && i.Message.Contains("as includeDraft confirmed"));
+            var left = Assert.Single(shown.Validation!, i => i.Property == "Area[1]");
+            Assert.Contains("is a draft colleague-b saved, so it stays a draft", left.Message);
+            Assert.Contains($"--with-block {Id(extra)}", left.Message);
+        }
+        Assert.Equal(VersionStatus.Published, StatusOf(site, intro));
+        Assert.Equal("New", Title(site.Stored(intro.ContentLink.ToReferenceWithoutVersion())));
+        Assert.Equal(VersionStatus.CheckedOut, StatusOf(site, extra));
+    }
+
+    [Fact]
     public void A_block_published_only_in_another_language_counts_as_never_published_in_the_branch_published()
     {
         var site = new Site();
@@ -1643,7 +1758,7 @@ public class SharedAreaBlockTests
         swedishPage = (Page)site.Store.Get(site.Store.Save(swedishPage, SaveAction.Publish | SaveAction.ForceNewVersion, null))!;
 
         var warnings = new List<ValidationIssue>();
-        var along = site.Flow().PublishAlong(swedishPage, SaveAction.Publish, othersConfirmed: false, dryRun: false, warnings)!;
+        var along = site.Flow().PublishAlong(swedishPage, SaveAction.Publish, dryRun: false, warnings)!;
 
         var published = Assert.Single(along);
         Assert.Equal(translated.ContentLink.ID, ContentReference.Parse(published.Ref!).ID);

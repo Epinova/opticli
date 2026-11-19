@@ -197,9 +197,8 @@ public static class AgentRoutes
 
     /// <summary>
     /// <c>POST /v1/content/{ref}/languages</c>. Body: <see cref="LanguageBranchRequest"/>. Response:
-    /// <see cref="WriteResult"/> (201). Errors: <c>conflict</c> when the branch already exists, or when its values would save
-    /// a block's new version over someone else's draft without <see cref="LanguageBranchRequest.IncludeDraft"/> (as for
-    /// <see cref="Draft"/>), <c>usage</c> when the language is not enabled, <c>validation</c> 422.
+    /// <see cref="WriteResult"/> (201). Errors: <c>conflict</c> when the branch already exists,
+    /// <c>usage</c> when the language is not enabled, <c>validation</c> 422.
     /// </summary>
     public static string Languages(string contentRef) => $"{Content(contentRef)}/languages";
 
@@ -216,7 +215,8 @@ public static class AgentRoutes
     /// given version, the ref's version, or the latest version in the language. Response: <see cref="WriteResult"/>.
     /// Where the site makes shared area blocks, a version published already publishes just the drafts of the blocks of its
     /// "For this page" folder that <see cref="PublishRequest.WithBlocks"/> names or <see cref="PublishRequest.WrittenBlocks"/>
-    /// lists (not those never published, unnamed), with <see cref="WriteResult.Published"/> false.
+    /// lists (not those never published, unnamed), with <see cref="WriteResult.Published"/> false. A block's draft someone
+    /// else saved goes along only when named, never by <see cref="PublishRequest.IncludeDraft"/>.
     /// Errors: <c>conflict</c> when that version is already published (and no block goes along), or when the latest version includes someone
     /// else's unpublished changes and neither a version nor <see cref="PublishRequest.IncludeDraft"/> was given
     /// (<see cref="AgentError.PendingDraft"/>); <c>validation</c> 422.

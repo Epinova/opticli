@@ -61,7 +61,10 @@ public sealed record DraftRequest
     /// <summary>
     /// With <see cref="Publish"/>: also publish the unpublished changes that someone other than opticli saved after the
     /// published version (see <see cref="PendingDraft"/>). Without it such a publish fails with <c>conflict</c> and
-    /// <see cref="AgentError.PendingDraft"/>; a dry run reports them in <see cref="WriteResult.PendingDraft"/>.
+    /// <see cref="AgentError.PendingDraft"/>; a dry run reports them in <see cref="WriteResult.PendingDraft"/>. Where the
+    /// site makes shared area blocks, it also confirms a takeover over someone else's block draft (as
+    /// <see cref="IncludeBlockDraft"/>), but never lets another person's draft of a block go live along with the publish:
+    /// only naming the block in a publish does (<see cref="PublishRequest.WithBlocks"/>).
     /// </summary>
     public bool IncludeDraft { get; init; }
 
@@ -152,9 +155,10 @@ public sealed record DraftRequest
     /// "For this page" folder (an item of a whole-area write taking it over) may do so over a draft someone else saved,
     /// the block's latest version. Without it that is refused (<c>conflict</c> with <see cref="AgentError.PendingDraft"/>,
     /// whose <see cref="PendingDraft.Path"/> names the area item), dry run too. Null: as <see cref="IncludeDraft"/>, which
-    /// confirms both. The CLI sends it for a plan's dry run of steps checked together as one write, where the steps that
-    /// change the blocks and the step that publishes confirm each their own, and after asking at a terminal, where a yes to
-    /// one of the two drafts doesn't confirm the other. Left out when null.
+    /// confirms both this and someone else's draft of the content going live. The CLI sends it for a plan's dry run of
+    /// steps checked together as one write, where the steps that change the blocks and the step that publishes (the
+    /// content's draft) confirm each their own, and after asking at a terminal, where a yes to one of the two drafts doesn't
+    /// confirm the other. Left out when null.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? IncludeBlockDraft { get; init; }
@@ -543,15 +547,6 @@ public sealed record LanguageBranchRequest
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool RequestApproval { get; init; }
 
-    /// <summary>
-    /// A new branch has no drafts of its own to confirm, but its values may take over a block of the content's own "For
-    /// this page" folder whose latest version in the language is a draft someone else saved: as
-    /// <see cref="DraftRequest.IncludeBlockDraft"/>, which this confirms. With <see cref="Publish"/>, it also lets those
-    /// people's drafts of the folder's blocks go along. Left out when false.
-    /// </summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public bool IncludeDraft { get; init; }
-
     public bool DryRun { get; init; }
 
     /// <summary>As <see cref="DraftRequest.Project"/>.</summary>
@@ -626,10 +621,12 @@ public sealed record PublishRequest
 
     /// <summary>
     /// Where the site makes shared area blocks: blocks of the content's own "For this page" folder that its ContentAreas
-    /// show, whose drafts go live with it although they have a published version already (refs). By default only blocks
-    /// that were never published in the language go along. Any other ref is refused (<c>usage</c>), and so is naming
-    /// blocks for a publish that goes for review instead (an approval sequence applies); the rules for another person's
-    /// draft, access, approval sequences and validation apply to them as to every block published along. When the version
+    /// show, whose drafts go live with it although they have a published version already, or although someone else saved
+    /// them (refs): naming a block is what confirms another person's draft of it going live (<see cref="IncludeDraft"/>
+    /// doesn't). By default only blocks that were never published in the language, with the caller's own drafts, go along.
+    /// Any other ref is refused (<c>usage</c>), and so is naming blocks for a publish that goes for review instead (an
+    /// approval sequence applies); access, approval sequences and validation apply to them as to every block published
+    /// along. When the version
     /// is published already, only the blocks named here (never-published ones too) and those in <see cref="WrittenBlocks"/>
     /// go along, published on their own (<see cref="WriteResult.Published"/> false, <see cref="WriteResult.SharedBlocks"/>
     /// lists them); with none, it is a <c>conflict</c> whose hint lists the blocks that could be named.

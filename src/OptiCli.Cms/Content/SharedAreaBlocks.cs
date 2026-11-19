@@ -630,13 +630,17 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     /// Which drafts of the folder's blocks a publish takes along besides those of blocks never published, and which it
     /// keeps back (decision 11 of the plan): by default only a block that was never published in the language goes along,
     /// as it can't show until it is; a block that is live keeps its newer draft, unless the caller names it
-    /// (<see cref="With"/>) or the write that publishes changed it itself (<see cref="Written"/>).
+    /// (<see cref="With"/>) or the write that publishes changed it itself (<see cref="Written"/>). A draft someone else saved
+    /// goes along only when named, or as the write's own change (decision 15).
     /// </summary>
     internal sealed record AlongChoice
     {
         public static readonly AlongChoice Default = new();
 
-        /// <summary>Live blocks whose drafts go along all the same (content ids): <c>--with-block</c>, <c>blocks</c>.</summary>
+        /// <summary>
+        /// Blocks whose drafts go along all the same (content ids): <c>--with-block</c>, <c>blocks</c>. Live, or whose draft
+        /// someone else saved: naming it confirms their changes going live.
+        /// </summary>
         public IReadOnlySet<int> With { get; init; } = new HashSet<int>();
 
         /// <summary>Blocks kept back although they were never published (content ids): <c>--without-block</c>, <c>skipBlocks</c>.</summary>
@@ -651,7 +655,10 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
         /// </summary>
         public IReadOnlySet<(int Id, int Version)> WrittenVersions { get; init; } = new HashSet<(int, int)>();
 
-        /// <summary>How the caller takes a live block's draft along (given its id): the last sentence of its warning.</summary>
+        /// <summary>
+        /// How the caller takes along a block's draft the publish left behind unnamed (given its id): a live block's, or one
+        /// someone else saved. The last sentence of its warning.
+        /// </summary>
         public Func<string, string>? HowToInclude { get; init; }
 
         /// <summary>
@@ -747,8 +754,9 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     /// its own "For this page" folder that its areas show (and the areas of those blocks show, at any depth), published or
     /// scheduled along, as <paramref name="choice"/> picks them: by default only blocks never published in the language.
     /// Only those: a block from anywhere else is never published along. A block's draft another person saved goes along
-    /// only when <paramref name="othersConfirmed"/> (<c>includeDraft</c>); one under an approval sequence, or that doesn't
-    /// pass validation, is left as it is. Each left out gets a warning.
+    /// only when the publish names it (<see cref="AlongChoice.With"/>) or it is the write's own change (decision 15 of the
+    /// plan: naming it is the confirmation, <c>includeDraft</c> isn't); one under an approval sequence, or that doesn't pass
+    /// validation, is left as it is. Each left out gets a warning.
     /// </summary>
     /// <param name="kind"><see cref="SaveAction.Publish"/> or <see cref="SaveAction.Schedule"/>.</param>
     /// <param name="at">For a schedule: when.</param>
@@ -760,7 +768,7 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     /// </param>
     /// <param name="choice">Which live blocks' drafts go along, and which blocks stay behind; null: <see cref="AlongChoice.Default"/>.</param>
     /// <param name="nameable">Gets each block left behind because it wasn't named (and the publish didn't write it).</param>
-    public List<SharedBlockResult> PublishAlong(IContent published, SaveAction kind, DateTime? at, bool othersConfirmed, bool dryRun, List<ValidationIssue> warnings,
+    public List<SharedBlockResult> PublishAlong(IContent published, SaveAction kind, DateTime? at, bool dryRun, List<ValidationIssue> warnings,
         Func<int, CultureInfo?, bool?>? inProject = null, AlongChoice? choice = null, List<Nameable>? nameable = null)
     {
         choice ??= AlongChoice.Default;
@@ -802,13 +810,16 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
                     "warning"));
                 continue;
             }
-            // A block the write changes itself goes along as the write saves it, its own latest version; a dry run still sees
-            // the draft that version will replace. A write gets this far over someone else's draft only with their draft
-            // confirmed (RequireOwnDraft), and in a plan's dry run that confirmation may be the steps' that change the block
-            // rather than the publish's own (DraftRequest.IncludeBlockDraft).
-            if (!othersConfirmed && !(dryRun && choice.Written.Contains(id)) && !PendingDrafts.SavedBy(latest.SavedBy, call.UserName))
+            // Someone else's draft goes along only when named: naming the block is the confirmation (decision 15 of the plan),
+            // includeDraft isn't. A block the write changes itself (or an earlier step of the plan run saved) goes along as its
+            // own latest version; a dry run still sees the draft that version will replace, which a write gets past only with
+            // that draft confirmed (RequireOwnDraft).
+            if (!choice.With.Contains(id) && !choice.Wrote(id, latest.ContentLink) && !PendingDrafts.SavedBy(latest.SavedBy, call.UserName))
             {
-                warnings.Add(new ValidationIssue(path, $"{what} is a draft {(string.IsNullOrWhiteSpace(latest.SavedBy) ? "saved without a user name" : $"{latest.SavedBy} saved")}, so it wasn't published along: those changes aren't yours. Publish it on its own if they should go live.", "warning"));
+                var reference = id.ToString(CultureInfo.InvariantCulture);
+                warnings.Add(new ValidationIssue(path,
+                    $"{what} is a draft {(string.IsNullOrWhiteSpace(latest.SavedBy) ? "saved without a user name" : $"{latest.SavedBy} saved")}, so it stays a draft: someone else's changes to a block go live with the content only when the publish names the block. {choice.HowToInclude?.Invoke(reference) ?? HowToInclude(published, reference)}",
+                    "warning"));
                 continue;
             }
             if (!call.Allows(block, AccessLevel.Publish))
@@ -853,8 +864,9 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     }
 
     /// <summary>
-    /// How to put a live block's draft that a publish of <paramref name="content"/> left behind live: by naming it in a
-    /// publish of the content (which, with the content published already, publishes just the blocks), or on its own.
+    /// How to put a block's draft that a publish of <paramref name="content"/> left behind unnamed (a live block's, or one
+    /// someone else saved) live: by naming it in a publish of the content (which, with the content published already,
+    /// publishes just the blocks), or on its own.
     /// </summary>
     private string HowToInclude(IContent content, string block)
     {

@@ -29,9 +29,11 @@ namespace OptiCli.Core.Writes;
 /// a <c>publish</c> of a published version and a <c>delete</c> of deleted content change nothing.
 /// </param>
 /// <param name="confirmDraft">
-/// Asks a person at a terminal whether a publish should also put live the unpublished changes someone else saved, or a
-/// discard delete them (the agent's message, <see cref="PendingDraft"/> and the question); true sends the write again, confirmed. Null: such a publish
-/// fails with a <c>conflict</c> whose details list the changes.
+/// Asks a person at a terminal whether a publish should also put live the unpublished changes someone else saved of the
+/// content, a write save a block's new version over their draft of it (a <see cref="PendingDraft"/> with a path), or a
+/// discard delete them (the agent's message, <see cref="PendingDraft"/> and the question); true sends the write again,
+/// confirmed. Null: such a write fails with a <c>conflict</c> whose details list the changes. No answer here takes someone
+/// else's drafts of the content's blocks along with a publish: only naming them does.
 /// </param>
 /// <param name="confirmReferences">
 /// Asks a person at a terminal whether to delete content that other content references (the message and the
@@ -722,8 +724,6 @@ public sealed class WriteExecutor(
                 Properties = PropertyArguments.ToRequest(properties),
                 Publish = op.Publish,
                 RequestApproval = op.RequestApproval,
-                // It only confirms block drafts of the content's folder, which only an agent that makes shared area blocks takes over.
-                IncludeDraft = op.IncludeDraft && await InlineBlocksAsync(cancellationToken) == InlineBlockModes.Shared,
                 Project = op.Project,
                 Ready = op.Ready,
                 DryRun = dryRun,

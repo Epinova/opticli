@@ -211,7 +211,7 @@ public sealed class ToolTests
         Assert.Contains("call it with dryRun first", publish.Description);
         var publishParameters = publish.InputSchema.GetProperty("properties");
         Assert.Contains("blocks it would publish along (sharedBlocks) and those it would leave behind (warnings)", publishParameters.GetProperty("dryRun").GetProperty("description").GetString());
-        Assert.Contains("a live block's newer draft, or, when the content itself is published already, any block's draft", publishParameters.GetProperty("blocks").GetProperty("description").GetString());
+        Assert.Contains("a live block's newer draft, a draft someone else saved, or, when the content itself is published already, any block's draft", publishParameters.GetProperty("blocks").GetProperty("description").GetString());
         Assert.Contains("never published, to leave as drafts", publishParameters.GetProperty("skipBlocks").GetProperty("description").GetString());
         var projectParameters = tools["publish_project"].InputSchema.GetProperty("properties");
         Assert.True(projectParameters.TryGetProperty("blocks", out _));
@@ -237,27 +237,38 @@ public sealed class ToolTests
     }
 
     [Fact]
-    public async Task Someone_elses_block_draft_a_write_would_save_over_needs_includeDraft_and_the_assistant_asks_first()
+    public async Task Someone_elses_block_draft_a_write_would_save_over_needs_includeDraft_and_their_other_block_drafts_go_along_only_when_named()
     {
         await using var site = await TestSite.StartAsync();
         await using var client = await Connect(site);
         var tools = (await client.ListToolsAsync()).ToDictionary(t => t.Name, t => t.ProtocolTool);
 
-        // update_content and add_language confirm it with includeDraft, a pendingDraft with a path.
-        foreach (var name in new[] { "update_content", "add_language" })
-        {
-            var includeDraft = tools[name].InputSchema.GetProperty("properties").GetProperty("includeDraft").GetProperty("description").GetString()!;
-            Assert.Contains("only after asking the user", includeDraft);
-            Assert.Contains("\"For this page\" folder", includeDraft);
-            Assert.Contains("replacing their changes", includeDraft);
-        }
-        Assert.Contains("a pendingDraft with a path", tools["update_content"].InputSchema.GetProperty("properties").GetProperty("includeDraft").GetProperty("description").GetString());
-        // add_language's also lets others' drafts of the folder's blocks go along with publish (LanguagesOperation), as update_content's says.
-        Assert.Contains("With publish, someone else's drafts of the folder's blocks the branch shows go live along too", tools["add_language"].InputSchema.GetProperty("properties").GetProperty("includeDraft").GetProperty("description").GetString());
-        Assert.Contains("with publish, they go live too", tools["update_content"].InputSchema.GetProperty("properties").GetProperty("includeDraft").GetProperty("description").GetString());
-        // The instructions: ask the user before retrying with includeDraft, for a block's draft as for the content's.
+        // update_content confirms a takeover with includeDraft, a pendingDraft with a path; it never publishes others' drafts of
+        // other blocks along: naming them in publish_content's blocks does.
+        var includeDraft = tools["update_content"].InputSchema.GetProperty("properties").GetProperty("includeDraft").GetProperty("description").GetString()!;
+        Assert.Contains("only after asking the user", includeDraft);
+        Assert.Contains("a pendingDraft with a path is a draft of a block of the content's \"For this page\" folder", includeDraft);
+        Assert.Contains("replacing their changes", includeDraft);
+        Assert.Contains("with publish, they go live too", includeDraft);
+        Assert.Contains("It never puts someone else's draft of another block live along with a publish: only naming the block in publish_content's blocks does", includeDraft);
+        // add_language has no includeDraft (decision 15): a new branch has no draft of its own and takes no block over.
+        Assert.False(tools["add_language"].InputSchema.GetProperty("properties").TryGetProperty("includeDraft", out _));
+        // publish_content and publish_project: someone else's block draft goes along when named, never by includeDraft.
+        var publish = tools["publish_content"];
+        Assert.Contains("as does a block whose draft someone else saved (includeDraft doesn't put that live; naming it does)", publish.Description);
+        var publishParameters = publish.InputSchema.GetProperty("properties");
+        Assert.Contains("Not their drafts of the content's blocks: those go along only when named in blocks", publishParameters.GetProperty("includeDraft").GetProperty("description").GetString());
+        Assert.Contains("a draft someone else saved", publishParameters.GetProperty("blocks").GetProperty("description").GetString());
+        Assert.Contains("after telling the user whose it is", publishParameters.GetProperty("blocks").GetProperty("description").GetString());
+        var project = tools["publish_project"];
+        Assert.Contains("as does a block whose draft someone else saved (includeDraft doesn't put that live; naming it does)", project.Description);
+        Assert.Contains("or a draft someone else saved", project.InputSchema.GetProperty("properties").GetProperty("blocks").GetProperty("description").GetString());
+        // The instructions: ask the user before retrying with includeDraft, for a block's draft as for the content's; and
+        // others' drafts of the content's blocks go along only when named.
         var instructions = McpInstructions.For(new OptiCliMcpOptions());
         Assert.Contains("when it has a path, a write would save a new version of a block over a draft someone else saved, replacing their changes), tell the user whose changes they are and ask before retrying with includeDraft", instructions);
+        Assert.Contains("includeDraft never puts someone else's drafts of the content's blocks live along with it: a dry run's warnings name those, and only naming them in publish_content's blocks does", instructions);
+        Assert.Contains("and so does a block whose draft someone else saved: naming it in blocks is what puts their changes live, includeDraft doesn't, so ask the user first", McpInstructions.SharedBlocks);
     }
 
     [Fact]
