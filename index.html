@@ -354,6 +354,21 @@ await expect(page.getByText('Hi')).toBeVisible();
   </div>
   <article class="file">
     <ol class="releases">
+      <li><div class="v"><b>0.35.2</b><span>23 November 2026</span></div>
+        <ul>
+          <li><b>Fixes from a review of every write and the MCP module:</b> <code>unpublish</code> no longer publishes a
+            page's never-published blocks along with it, a block whose draft holds a colleague's changes goes live with
+            a page only when named, and a block published along has a passed stop date cleared.</li>
+          <li><b>Plans don't stop half-way:</b> a later step's <code>publishAt</code> and <code>requestApproval</code>,
+            one content in two projects, and a <code>publish</code> after an upload's new file are now checked in the
+            dry run. A link out of the plan's folder is refused, also in a sealed run.</li>
+          <li><b>For editors' assistants:</b> a save into a project needs Edit even with nothing to change, renaming a
+            folder with content below it needs publishing allowed, and blocks or content an editor can't read are named
+            nowhere. A site tool with <code>[Authorize]</code> stops the site at startup instead of being open to
+            every editor.</li>
+          <li><b>New:</b> <code>serve</code> warns when no site answers on its address, and says which port or command
+            makes one answer.</li>
+        </ul></li>
       <li><div class="v"><b>0.35.1</b><span>19 November 2026</span></div>
         <ul>
           <li><b>Fixed:</b> <code>opticli env --connection-name</code> without <code>--include-connection</code> now

@@ -34,7 +34,7 @@
   <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#developers">For developers</a></p>
   <h1>Build a test database from scratch</h1>
   <p class="lead">Start from an empty database, and let one seed plan add the languages, the content and the sites, so end-to-end tests run on a database that code builds the same way every time.</p>
-  <p class="guide-meta">Written for opticli 0.32.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/developers/build-a-test-database.md">Edit on GitHub</a></p>
+  <p class="guide-meta">Written for opticli 0.35.2 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/developers/build-a-test-database.md">Edit on GitHub</a></p>
   <div class="guide-body">
     <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#steps">Steps</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
     <article class="prose">
@@ -154,7 +154,7 @@ machine.</p>
 </tr>
 <tr>
 <td>A page answers 404 on a host</td>
-<td>The host's port isn't the one the site listens on. Use fixed ports (step 2).</td>
+<td>The host's port isn't the one the site listens on. Use fixed ports (step 2). When no site answers on serve's address at all, <code>serve</code> warns and names the hosts the sites have, and the port to start it on where a site has a <code>localhost</code> host.</td>
 </tr>
 <tr>
 <td>Requests to <code>/</code> redirect to a registration page</td>
