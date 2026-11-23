@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Both Commerce agent builds: net8.0 against Commerce 14, net10.0 against Commerce 15 (Directory.Packages.props). -->
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <RollForward>Major</RollForward>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- Old Commerce and CMS packages ask for older versions of what the newer ones bring; the tests never connect. -->
+    <NoWarn>$(NoWarn);NU1608;NU1603</NoWarn>
+    <NuGetAuditMode>direct</NuGetAuditMode>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <DefineConstants>$(DefineConstants);CMS13</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <!-- At runtime too, for the Commerce types the agent's pure parts take; no site starts. -->
+    <PackageReference Include="EPiServer.Commerce.Core" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OptiCli.Agent.Commerce\OptiCli.Agent.Commerce.csproj" />
+    <ProjectReference Include="..\..\src\OptiCli.Agent\OptiCli.Agent.csproj" />
+  </ItemGroup>
+
+</Project>

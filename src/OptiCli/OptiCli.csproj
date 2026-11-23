@@ -42,6 +42,9 @@
          serve injects the one that matches the site's CMS major. -->
     <ProjectReference Include="..\OptiCli.Agent\OptiCli.Agent.csproj" ReferenceOutputAssembly="false" SetTargetFramework="TargetFramework=net8.0" SkipGetTargetFrameworkProperties="true" OutputItemType="OptiCliAgentCms12" />
     <ProjectReference Include="..\OptiCli.Agent\OptiCli.Agent.csproj" ReferenceOutputAssembly="false" SetTargetFramework="TargetFramework=net10.0" SkipGetTargetFrameworkProperties="true" OutputItemType="OptiCliAgentCms13" />
+    <!-- The Commerce agent, the same way: each build beside the CMS agent of its major, which loads it into Commerce sites. -->
+    <ProjectReference Include="..\OptiCli.Agent.Commerce\OptiCli.Agent.Commerce.csproj" ReferenceOutputAssembly="false" SetTargetFramework="TargetFramework=net8.0" SkipGetTargetFrameworkProperties="true" OutputItemType="OptiCliAgentCms12" />
+    <ProjectReference Include="..\OptiCli.Agent.Commerce\OptiCli.Agent.Commerce.csproj" ReferenceOutputAssembly="false" SetTargetFramework="TargetFramework=net10.0" SkipGetTargetFrameworkProperties="true" OutputItemType="OptiCliAgentCms13" />
   </ItemGroup>
 
   <ItemGroup>

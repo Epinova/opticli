@@ -20,6 +20,16 @@ public static class PackageVersions
     public static string? FindCms(CsprojFile project) =>
         Find(project, CsprojFile.CmsPackage) ?? FindResolved(project, CsprojFile.CmsPackage) ?? Find(project, CmsCorePackage);
 
+    /// <summary>Optimizely Commerce's core package: a project that has it is a Commerce site.</summary>
+    public const string CommerceCorePackage = "EPiServer.Commerce.Core";
+
+    /// <summary>
+    /// The Commerce version the project builds against, as restore resolved <see cref="CommerceCorePackage"/> (the
+    /// EPiServer.Commerce meta package has the same version); null for a project without Commerce, or not restored.
+    /// </summary>
+    public static string? FindCommerce(CsprojFile project) =>
+        FindResolved(project, CommerceCorePackage) ?? Find(project, CommerceCorePackage);
+
     /// <summary>The major version of a package version (<c>13.3.0</c> → 13); null when there is none or it doesn't parse.</summary>
     public static int? Major(string? version) =>
         version?.Trim().Split('.', '-', '+')[0] is { Length: > 0 } major && int.TryParse(major, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var value)

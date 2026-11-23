@@ -42,6 +42,9 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="OptiCli.Agent.Tests" />
+    <!-- The Commerce agent: an extension of this agent, loaded beside it into Commerce sites (Extensions/AgentExtensions.cs). -->
+    <InternalsVisibleTo Include="OptiCli.Agent.Commerce" />
+    <InternalsVisibleTo Include="OptiCli.Agent.Commerce.Tests" />
   </ItemGroup>
 
 </Project>

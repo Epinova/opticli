@@ -56,6 +56,8 @@ public sealed class AgentHostingStartup : IHostingStartup
     public void Configure(IWebHostBuilder builder)
     {
         HostingStartupCheck.MarkConfigured();
+        // The Commerce agent, into a site whose build has Commerce (and only there).
+        Extensions.AgentExtensions.Load();
         Configure(builder, AgentSettings.FromEnvironment());
     }
 

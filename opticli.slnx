@@ -3,6 +3,7 @@
     <Project Path="src/OptiCli/OptiCli.csproj" />
     <Project Path="src/OptiCli.Core/OptiCli.Core.csproj" />
     <Project Path="src/OptiCli.Agent/OptiCli.Agent.csproj" />
+    <Project Path="src/OptiCli.Agent.Commerce/OptiCli.Agent.Commerce.csproj" />
     <Project Path="src/OptiCli.Cms/OptiCli.Cms.csproj" />
     <Project Path="src/OptiCli.Mcp/OptiCli.Mcp.csproj" />
     <Project Path="src/OptiCli.Mcp.Cms13/OptiCli.Mcp.Cms13.csproj" />
@@ -10,6 +11,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/OptiCli.Core.Tests/OptiCli.Core.Tests.csproj" />
     <Project Path="tests/OptiCli.Agent.Tests/OptiCli.Agent.Tests.csproj" />
+    <Project Path="tests/OptiCli.Agent.Commerce.Tests/OptiCli.Agent.Commerce.Tests.csproj" />
     <Project Path="tests/OptiCli.Mcp.Tests/OptiCli.Mcp.Tests.csproj" />
     <Project Path="tests/OptiCli.Mcp.Integration/OptiCli.Mcp.Integration.csproj" />
     <Project Path="tests/OptiCli.Tests/OptiCli.Tests.csproj" />

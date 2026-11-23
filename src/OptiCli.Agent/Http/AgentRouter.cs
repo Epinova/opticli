@@ -43,10 +43,14 @@ internal enum AgentEndpoint
     ProjectPublish,
     ProjectReactivate,
     ProjectDelete,
+
+    /// <summary>A route of a loaded extension (<see cref="Extensions.AgentExtension"/>): /commerce/... on a Commerce site.</summary>
+    Extension,
 }
 
 /// <param name="Argument">The <c>{name}</c> or <c>{ref}</c> segment, when the route has one.</param>
-internal sealed record RouteMatch(AgentEndpoint Endpoint, string? Argument = null);
+/// <param name="Extension">For <see cref="AgentEndpoint.Extension"/>: the extension's endpoint.</param>
+internal sealed record RouteMatch(AgentEndpoint Endpoint, string? Argument = null, Extensions.ExtensionRoute? Extension = null);
 
 /// <summary>
 /// Maps a method and a path below <see cref="AgentProtocol.BasePath"/> to an endpoint. Hand-rolled
@@ -78,6 +82,13 @@ internal static partial class AgentRouter
                     "The CLI and the agent injected into the site are different versions. Restart the site with the same opticli version (opticli serve --stop, then serve).");
             }
             throw NotFound(shown);
+        }
+
+        if (segments.Length > 1 && Extensions.AgentExtensions.Find(segments[1]) is { } extension)
+        {
+            return extension.Route(method, segments[2..]) is { } found
+                ? new RouteMatch(AgentEndpoint.Extension, found.Argument, found)
+                : throw AgentException.NotFound($"No agent route for {shown}. This agent speaks opticli protocol v{AgentProtocol.Version}.", $"Routes: {extension.RouteList}.");
         }
 
         var (endpoint, argument) = segments[1..] switch

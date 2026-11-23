@@ -17,11 +17,14 @@ public class GatedRoutesTests
     /// </summary>
     private static readonly AgentEndpoint[] UngatedWrites = [AgentEndpoint.Shutdown, AgentEndpoint.SealedEventsFlush];
 
+    /// <summary>An extension's routes (the Commerce agent's) have their methods and handlers in the extension, which tests them.</summary>
+    private static IEnumerable<AgentEndpoint> OwnEndpoints => Enum.GetValues<AgentEndpoint>().Where(e => e != AgentEndpoint.Extension).Order();
+
     [Fact]
     public void Every_endpoint_has_a_method_and_a_handler()
     {
-        Assert.Equal(Enum.GetValues<AgentEndpoint>().Order(), AgentRouter.Methods.Keys.Order());
-        Assert.Equal(Enum.GetValues<AgentEndpoint>().Order(), AgentMiddleware.Handlers.Keys.Order());
+        Assert.Equal(OwnEndpoints, AgentRouter.Methods.Keys.Order());
+        Assert.Equal(OwnEndpoints, AgentMiddleware.Handlers.Keys.Order());
     }
 
     [Fact]

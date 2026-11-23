@@ -58,6 +58,14 @@ public static class AgentProtocol
     public const string SchedulerOn = "on";
 
     /// <summary>
+    /// Environment variable of the site process that turns the Commerce agent off when it is <see cref="CommerceOff"/>. The
+    /// agent loads it into every site whose build has EPiServer.Commerce.Core otherwise.
+    /// </summary>
+    public const string CommerceVariable = "OPTICLI_COMMERCE";
+
+    public const string CommerceOff = "off";
+
+    /// <summary>
     /// Environment variable that tells the agent to read its secrets from the site's stdin instead of the environment, when
     /// it is <see cref="SecretsFromStdin"/>: one line, a JSON object of variables (<see cref="TokenVariable"/>,
     /// <see cref="DatabaseVariable"/> and <c>ConnectionStrings__&lt;name&gt;</c>) that the startup hook sets in the process

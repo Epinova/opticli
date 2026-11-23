@@ -36,6 +36,7 @@ internal sealed class AgentStartupFilter(AgentSettings settings) : IStartupFilte
     {
         app.Map(AgentProtocol.BasePath, branch => branch.Run(agent));
         Console.Error.WriteLine($"[opticli] agent {AgentInfo.Version} (protocol v{AgentProtocol.Version}) mapped at {AgentProtocol.BasePath}");
+        Extensions.AgentExtensions.Start(app.ApplicationServices);
         if (sealedRun)
         {
             // The configuration and the agent's settings have read them by now.

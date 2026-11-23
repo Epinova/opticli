@@ -17,6 +17,7 @@ from 12.12.1, `OptiCli.Mcp.Cms13` for CMS 13), and `OptiCli.Mcp.Tests` runs agai
 | `src/OptiCli` | the `opticli` command line: commands, options, help text |
 | `src/OptiCli.Core` | everything the CLI does: discovery, connection resolution and safety, SQL readers, decoders, output, `serve` |
 | `src/OptiCli.Agent` | the site agent, loaded into the site process; built for CMS 12 and CMS 13, both copied into the tool package (`agent/cms12/`, `agent/cms13/`) |
+| `src/OptiCli.Agent.Commerce` | the Commerce agent: the site agent's routes below `/commerce` (catalog refs by code, prices, warehouses, stock, markets). Built for Commerce 14 (net8.0, `EPiServer.Commerce.Core` 14.0.3) and 15 (net10.0, 15.0.0), each copied next to the site agent of its major; the site agent loads it only into a site whose `.deps.json` has `EPiServer.Commerce.Core` (`OPTICLI_COMMERCE=off` in the site's environment turns it off) |
 | `src/OptiCli.Cms` | the content operations (read, create, draft, publish, ...) the site agent and the MCP module run, for a developer or a signed-in editor; source-linked into both |
 | `src/OptiCli.Mcp` | the MCP server for editors, the `OptiCli.Mcp` package (CMS 12): OAuth authorization server, tools, connections page |
 | `src/OptiCli.Mcp.Cms13` | the `OptiCli.Mcp.Cms13` package: the same sources built for CMS 13 (net10.0, `CMS13` defined), with the same assembly name and public API |
@@ -127,6 +128,28 @@ SQLCMDPASSWORD=... tests/fixtures/edge-cases/drift.sh path/to/AlloyEdge path/to/
 so start the copy and run `DriftTests` with the same `XDG_CONFIG_HOME` and `XDG_STATE_HOME` (the script prints both
 commands at the end; the site needs `serve --allow-pending-migrations`). Its databases default to CMS 12's; on CMS 13
 name them: `drift.sh path/to/AlloyEdge13 path/to/AlloyDrift13 alloy-edge13 alloy-edge13-shared`.
+
+## The Commerce test sites
+
+`tests/fixtures/commerce/setup.sh [12|13|both]` builds two Commerce sites from Optimizely's template (`dotnet new
+epi-commerce-empty`): `/demo/Commerce12` (CMS 12, Commerce 14.48.0, net8.0) and `/demo/Commerce13` (CMS 13, Commerce
+15.5.0, net10.0), each on two empty databases of its own, the CMS's and Commerce's (`opticli-commerce12` and
+`opticli-commerce12-ecf`, `opticli-commerce13` and `opticli-commerce13-ecf`), which the CMS and Commerce fill at the first
+start. `CommerceFixture.cs` gives both a small content model: a start page with `Catalog` and `FeaturedProduct`
+references, an image media type, and a catalog model (`FashionNode`, `FashionProduct` with a `MainImage`,
+`FashionVariant`, `FashionBundle`). There is no content: the tests make theirs. `FRESH=1` makes both again from nothing
+(it drops the databases, and refuses any not named `opticli-commerce...`); the comment at the top lists the versions,
+folders, databases and ports.
+
+The Commerce tests are `[CommerceSiteFact]`s: they run where `OPTICLI_IT_PROJECT` is a site whose restored project has
+`EPiServer.Commerce.Core`, and skip elsewhere. Run them alone (the other integration tests need the edge-case site's
+content), with the project path as `serve` was given it:
+
+```sh
+SQLCMDPASSWORD=... FRESH=1 tests/fixtures/commerce/setup.sh
+opticli serve --project /demo/Commerce12
+OPTICLI_IT_PROJECT=/demo/Commerce12 dotnet test tests/OptiCli.Integration --filter "FullyQualifiedName~Commerce"
+```
 
 ## The CMS 13 test sites
 

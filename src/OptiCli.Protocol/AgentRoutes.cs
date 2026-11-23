@@ -367,6 +367,19 @@ public static class AgentRoutes
     public static string ProjectDelete(string project) => Project(project);
 
     private static string Project(string project) => $"{Projects}/{Uri.EscapeDataString(project)}";
+
+    /// <summary>
+    /// <c>GET /v1/commerce</c>. Response: <see cref="CommerceInfo"/>. Only on a Commerce site whose Commerce agent loaded
+    /// (<see cref="PingResponse.Commerce"/>); elsewhere every <c>/v1/commerce</c> route is <c>not_found</c>.
+    /// </summary>
+    public static readonly string Commerce = $"{Prefix}/commerce";
+
+    /// <summary>
+    /// <c>POST /v1/commerce/refs</c>, body <see cref="CatalogRefsRequest"/>. Response: <see cref="CatalogRefsResponse"/>:
+    /// each ref resolved to catalog content, or not found. Read-only. Catalog content isn't in the CMS database, so the CLI
+    /// resolves catalog refs here, then passes the agent's content routes their <c>id__CatalogContent</c> ref.
+    /// </summary>
+    public static readonly string CommerceRefs = $"{Commerce}/refs";
 }
 
 /// <summary>Query parameters of <see cref="AgentRoutes.Read"/>.</summary>

@@ -38,6 +38,7 @@ internal static class PingEndpoint
             Scheduler = request.Service<IOptions<SchedulerOptions>>().Value.Enabled,
             // As writes decide it (WriteFlow): shared only where the edit UI says it makes no inline blocks.
             InlineBlocks = OptiCli.Cms.Compat.InlineBlocks.EditUiCreatesThem(request.Context.RequestServices) == false ? InlineBlockModes.Shared : InlineBlockModes.Inline,
+            Commerce = Extensions.AgentExtensions.Commerce,
         };
     }
 

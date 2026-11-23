@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Built per major as the CMS agent is: net8.0 against Commerce 14 (CMS 12), net10.0 against Commerce 15 (CMS 13,
+         CMS13 defined). The CLI ships each build next to the CMS agent of the same major (agent/cms12/, agent/cms13/),
+         and the CMS agent loads it only into a site whose build has EPiServer.Commerce.Core. -->
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <RootNamespace>OptiCli.Agent.Commerce</RootNamespace>
+    <!-- Loaded into a foreign process: never ship our own copies of the host's assemblies. -->
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <IsPackable>false</IsPackable>
+    <!-- As the CMS agent: audit only what is referenced here; Commerce's own graph runs on the site's copies. -->
+    <NuGetAuditMode>direct</NuGetAuditMode>
+    <!-- Commerce 14.0's packages ask for older versions of what the CMS brings (SqlClient and co.); compile-time only. -->
+    <NoWarn>$(NoWarn);NU1608</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <DefineConstants>$(DefineConstants);CMS13</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <!-- Compile against the oldest Commerce of the major (14.0.3, 15.0.0); the site's own newer copy is what runs. -->
+    <PackageReference Include="EPiServer.Commerce.Core" ExcludeAssets="runtime" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The CMS agent this extends: its request, error and write helpers (it gives this assembly its internals). At
+         runtime it is the very agent the site already loaded, never a copy: Private=false. -->
+    <ProjectReference Include="..\OptiCli.Agent\OptiCli.Agent.csproj" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OptiCli.Agent.Commerce.Tests" />
+  </ItemGroup>
+
+</Project>

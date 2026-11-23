@@ -46,7 +46,9 @@ internal static class AgentMiddleware
 
             using (OptiCliPrincipal.Enter(context))
             {
-                var (status, data) = await DispatchAsync(new AgentRequest(context, route.Argument), route.Endpoint);
+                var (status, data) = route.Extension is { } extension
+                    ? await extension.Handler.Run(new AgentRequest(context, route.Argument))
+                    : await DispatchAsync(new AgentRequest(context, route.Argument), route.Endpoint);
                 await WriteAsync(context, status, new AgentResponse<object>(true, data, Meta));
             }
         }
@@ -133,13 +135,13 @@ internal static class AgentMiddleware
     internal sealed record EndpointHandler(bool Gated, Func<AgentRequest, Task<(int Status, object Data)>> Run);
 
     /// <summary>An endpoint that changes nothing in the content (or, for shutdown, in the database).</summary>
-    private static EndpointHandler Read(Func<AgentRequest, object> handle) => new(false, request => Task.FromResult((200, handle(request))));
+    internal static EndpointHandler Read(Func<AgentRequest, object> handle) => new(false, request => Task.FromResult((200, handle(request))));
 
     /// <summary>A write: its body is read, <see cref="DriftGate"/> checked (dry runs pass), then it runs.</summary>
-    private static EndpointHandler Write<T>(Func<AgentRequest, Task<T>> read, Func<T, bool> dryRun, Func<AgentRequest, T, (int, object)> handle) =>
+    internal static EndpointHandler Write<T>(Func<AgentRequest, Task<T>> read, Func<T, bool> dryRun, Func<AgentRequest, T, (int, object)> handle) =>
         Write(read, dryRun, (request, body) => Task.FromResult(handle(request, body)));
 
-    private static EndpointHandler Write<T>(Func<AgentRequest, Task<T>> read, Func<T, bool> dryRun, Func<AgentRequest, T, Task<(int, object)>> handle) =>
+    internal static EndpointHandler Write<T>(Func<AgentRequest, Task<T>> read, Func<T, bool> dryRun, Func<AgentRequest, T, Task<(int, object)>> handle) =>
         new(true, async request =>
         {
             var body = await read(request);

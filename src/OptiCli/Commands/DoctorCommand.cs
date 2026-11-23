@@ -43,6 +43,7 @@ internal static class DoctorCommand
 
     /// <param name="Imports">The files besides the project file read for its properties (Directory.Build.props and imports).</param>
     /// <param name="CmsMajor">The CMS major the project builds against (12 or 13), from <paramref name="CmsVersion"/>.</param>
+    /// <param name="CommerceVersion">The Optimizely Commerce version the project builds against (EPiServer.Commerce.Core); null without Commerce. The site agent loads opticli's Commerce agent into such a site.</param>
     private sealed record ProjectSection(
         bool Found,
         string? Path = null,
@@ -52,6 +53,7 @@ internal static class DoctorCommand
         string? TargetFramework = null,
         string? CmsVersion = null,
         int? CmsMajor = null,
+        string? CommerceVersion = null,
         string? UserSecretsId = null,
         IReadOnlyList<string>? Imports = null,
         DoctorProblem? Error = null);
@@ -116,6 +118,7 @@ internal static class DoctorCommand
                     project.Project.TargetFramework,
                     cmsVersion,
                     PackageVersions.Major(cmsVersion),
+                    PackageVersions.FindCommerce(project.Project),
                     project.Project.UserSecretsId,
                     project.Project.Imports.Count > 0 ? project.Project.Imports : null);
             warnings.AddRange(project?.Project.Warnings ?? []);

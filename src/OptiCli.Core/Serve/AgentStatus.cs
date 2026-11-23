@@ -72,6 +72,12 @@ public sealed record AgentStatus(AgentState State, string Message) : ServeForegr
     [Protocol.OutputValues(typeof(Protocol.InlineBlockModes))]
     public string? InlineBlocks { get; init; }
 
+    /// <summary>
+    /// The running site's Optimizely Commerce, and whether opticli's Commerce agent loaded into it (the <c>commerce</c>
+    /// commands and catalog refs need it). Null for a site without Commerce, or when no site answers.
+    /// </summary>
+    public Protocol.CommerceStatus? Commerce { get; init; }
+
     public string? Hint { get; init; }
 
     /// <summary>For <see cref="AgentState.Stale"/>: the state file itself is unreadable, so nothing is known about the site.</summary>
@@ -209,7 +215,7 @@ public static class AgentProbe
                 Failure = ex.Code,
             }, null);
         }
-        return (status with { Agent = AgentSummary.From(ping), Database = ping.Database, Scheduler = SchedulerText(ping.Scheduler), InlineBlocks = ping.InlineBlocks }, ping);
+        return (status with { Agent = AgentSummary.From(ping), Database = ping.Database, Scheduler = SchedulerText(ping.Scheduler), InlineBlocks = ping.InlineBlocks, Commerce = ping.Commerce }, ping);
     }
 
     private static async Task<(AgentStatus Status, ServeState? State)> ProbeStateFileAsync(StateStore store, VerifiedConnectionString? expected, CancellationToken cancellationToken)
