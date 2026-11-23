@@ -74,7 +74,9 @@ public class MediaFilesTests
 
         var refused = Assert.Throws<UsageException>(() => MediaFiles.ForPlan("f", root.Combine("plan"), allowOutside: false));
 
-        Assert.Contains($"links to {root.Combine("elsewhere/secret")}", refused.Message);
+        // The path as the OS resolves it: on macOS the temp folder is below /private, which /var links to.
+        Assert.Contains("links to ", refused.Message);
+        Assert.Contains(Path.Combine("elsewhere", "secret") + ", outside the plan's folder", refused.Message);
     }
 
     [Fact]
