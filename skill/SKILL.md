@@ -1,7 +1,7 @@
 ---
 name: opticli
 description: Inspect and change content of an Optimizely CMS 12 or 13 (EPiServer) site the user develops locally (against its local or development database) with the opticli CLI instead of hand-written SQL or guessing from code. Use when you need to know what CMS content exists (pages, blocks, media, folders), what a page or block contains (properties, ContentArea items, rich text, a CMS 13 Visual Builder experience's sections and elements), which page type or block type something is and which C# class and Razor view render it, where a block or page is used, which content a URL shows, what drafts and versions exist, or when the user asks you to create or edit CMS content (set properties, add a block to a ContentArea or an element to a Visual Builder section, create a page or block, translate, publish, or collect drafts in a CMS project and publish them together) in their development site, or to point the sites of a restored database at localhost (their host names). Also for scheduled jobs: which exist, whether a job (an import, a sync) ran and how it ended, and running or rescheduling one. And for the recycle bin: what was deleted, by whom, and bringing it back; a local login for a restored database; and content types and properties that removed code left in the database.
-opticli-version: 0.35.1
+opticli-version: 0.35.2
 ---
 
 # opticli: Optimizely CMS content from the command line
@@ -16,7 +16,7 @@ The database says what *does* exist (content items, their values, where blocks a
 opticli for the second kind of question, and to find the code: `opticli type <Name>` gives the class file, views and
 per-property `allowedTypes`; `opticli allowed-in <Type>` answers "where may this block go" across all types.
 
-This file was written for opticli 0.35.1 (`opticli --version`). Longer material (every command and option, value
+This file was written for opticli 0.35.2 (`opticli --version`). Longer material (every command and option, value
 syntax, plan files, output fields, troubleshooting) is in [reference.md](reference.md): read it when you write, or
 when a command below doesn't cover your question.
 
@@ -370,6 +370,9 @@ or published together; ask before making one, and use the name they give.
   `opticli sites primary --from-config`; `--forget <site>` drops a saved site that is gone). Site definitions aren't
   versioned: report the `changes` from the output. Tell the user to restart the site if it also runs elsewhere (their
   IDE), as `meta.warnings` says; not when the IDE's site is the one that saved (IDE mode). Against a shared database they are refused (exit 3): don't work around it.
+- When `serve` warns that no site answers on its address (every page is a 404 there), tell the user. Start it on a port
+  the warning names (`--port`, `--https-port`), or, if they ask, point a site at serve's address (`sites primary`, as
+  above). Don't take the 404s for a broken site.
 - Never create sites or enable or disable languages (`sites add`, `languages enable|disable`, a plan's `site` and
   `language` steps) unless the user asked to build or seed a database that lacks them, and dry-run first. Which host
   and start page go with which site is the user's call. Disabling a language hides its content: report the warnings.
