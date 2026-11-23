@@ -44,6 +44,12 @@ public sealed partial class WritePlan
         ["access"] = ["ref*", "grant", "grantUsers", "revoke", "breakInheritance", "inherit", "allowUnknownRole"],
         ["site"] = ["name*", "startPage*", "hosts*", "https", "siteAssets"],
         ["language"] = ["lang*", "enabled"],
+        // Optimizely Commerce (the site's Commerce agent).
+        ["relation"] = ["parent*", "child*", "remove", "quantity", "sortOrder"],
+        ["price"] = ["entry*", "market*", "currency*", "amount", "priceType", "priceCode", "minQuantity", "validFrom", "validUntil", "remove"],
+        ["warehouse"] = ["code*", "name", "active", "primary", "fulfillmentCenter", "pickupLocation", "deliveryLocation", "sortOrder"],
+        ["inventory"] = ["entry*", "warehouse*", "inStock", "backorder", "preorder", "tracked"],
+        ["market"] = ["market*", "name", "enabled", "currencies", "defaultCurrency", "languages", "defaultLanguage", "countries", "description", "pricesIncludeTax"],
     };
 
     /// <summary>
@@ -395,6 +401,49 @@ public sealed partial class WritePlan
                 step["hosts"] is null ? [] : Sites.SiteHostSpecs.FromJson(step["hosts"], reader.Where, problems), reader.OptionalBool("https"),
                 SiteAssets(reader.String("siteAssets"), reader.Where, problems)),
             "language" => new LanguageOperation(reader.Strings("lang") ?? [], reader.OptionalBool("enabled") ?? true),
+            "relation" => new RelationOperation(reader.Ref("parent"), reader.Ref("child"), reader.Bool("remove"))
+            {
+                Quantity = reader.Decimal("quantity"),
+                SortOrder = reader.Int("sortOrder"),
+            },
+            "price" => new PriceOperation(reader.Ref("entry"), reader.String("market") ?? "", reader.String("currency") ?? "", reader.Decimal("amount"))
+            {
+                PriceType = reader.String("priceType"),
+                PriceCode = reader.String("priceCode"),
+                MinQuantity = reader.Decimal("minQuantity"),
+                ValidFrom = reader.Time("validFrom"),
+                ValidUntil = reader.Time("validUntil"),
+                Remove = reader.Bool("remove"),
+            },
+            "warehouse" => new WarehouseOperation(reader.String("code") ?? "")
+            {
+                Name = reader.String("name"),
+                Active = reader.OptionalBool("active"),
+                Primary = reader.OptionalBool("primary"),
+                FulfillmentCenter = reader.OptionalBool("fulfillmentCenter"),
+                PickupLocation = reader.OptionalBool("pickupLocation"),
+                DeliveryLocation = reader.OptionalBool("deliveryLocation"),
+                SortOrder = reader.Int("sortOrder"),
+            },
+            "inventory" => new InventoryOperation(reader.Ref("entry"), reader.String("warehouse") ?? "")
+            {
+                InStock = reader.Decimal("inStock"),
+                Backorder = reader.Decimal("backorder"),
+                Preorder = reader.Decimal("preorder"),
+                Tracked = reader.OptionalBool("tracked"),
+            },
+            "market" => new MarketOperation(reader.String("market") ?? "")
+            {
+                Name = reader.String("name"),
+                Enabled = reader.OptionalBool("enabled"),
+                Currencies = reader.Strings("currencies"),
+                DefaultCurrency = reader.String("defaultCurrency"),
+                Languages = reader.Strings("languages"),
+                DefaultLanguage = reader.String("defaultLanguage"),
+                Countries = reader.Strings("countries"),
+                Description = reader.String("description"),
+                PricesIncludeTax = reader.OptionalBool("pricesIncludeTax"),
+            },
             _ => new DeleteOperation(reader.Ref("ref"), reader.Bool("ignoreReferences")),
         };
 
@@ -600,6 +649,15 @@ public sealed partial class WritePlan
             JsonValue value when value.TryGetValue<int>(out var number) && number > 0 => new FromVersion(number),
             JsonValue value when value.TryGetValue<string>(out var text) && FromVersion.TryParse(text, out var from) => from,
             _ => Problem<FromVersion>(name, FromVersion.Syntax),
+        };
+
+        /// <summary>A number, or a string that is one: <c>49.9</c>, <c>"49.90"</c>.</summary>
+        public decimal? Decimal(string name) => step[name] switch
+        {
+            null => null,
+            JsonValue value when value.TryGetValue<decimal>(out var number) => number,
+            JsonValue value when value.TryGetValue<string>(out var text) && decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed) => parsed,
+            _ => Problem<decimal?>(name, "a number"),
         };
 
         public int? Int(string name) => step[name] switch

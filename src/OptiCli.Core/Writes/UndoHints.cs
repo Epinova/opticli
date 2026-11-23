@@ -14,6 +14,7 @@ public static class UndoHints
             $"None: {discarded.Version} was deleted for good, and opticli can't bring it back (changes shows what it held).",
         (_, WriteOutput { Saved: false, DryRun: false } blocksOnly) when BlocksOnly(blocksOnly) is { } blocks => blocks,
         (_, WriteOutput { Saved: false }) or (_, MoveOutput { Moved: false }) or (_, RestoreOutput { Restored: false }) or (_, AccessOutput { Saved: false }) => null,
+        (_, RelationResult or PriceResult or WarehouseResult or InventoryResult or MarketResult) => CommerceUndo(output),
         // Commerce's catalog content: opticli only creates and sets it.
         (CreateOperation, WriteOutput { Existing: not true } catalog) when WriteOutput.ProviderOf(catalog.Version) is not null =>
             $"None in opticli: {catalog.Ref} is catalog content, which opticli doesn't delete; delete it in Commerce's catalog UI (or start again from an empty database).",
@@ -164,4 +165,28 @@ public static class UndoHints
 
     private static string VersionId(string? versionRef) =>
         versionRef?.Split('_') is [_, var version] ? version : "<id>";
+
+    /// <summary>How to reverse a Commerce write; null when it changed nothing.</summary>
+    private static string? CommerceUndo(object output) => output switch
+    {
+        RelationResult { Status: CommerceWriteStatus.Created } relation => $"opticli commerce relation remove {relation.Parent} {relation.Child}",
+        RelationResult { Status: CommerceWriteStatus.Removed } relation => $"opticli commerce relation add {relation.Parent} {relation.Child}{(relation.Quantity is { } quantity ? $" --quantity {quantity.ToString(System.Globalization.CultureInfo.InvariantCulture)}" : "")}",
+        RelationResult { Status: CommerceWriteStatus.Updated } relation => $"Set its quantity and sort order back with `opticli commerce relation add {relation.Parent} {relation.Child} --quantity <n> --sort-order <n>`.",
+        PriceResult { Status: CommerceWriteStatus.Created } price => $"opticli commerce price remove {price.Entry} {PriceKey(price.Price)}",
+        PriceResult { Status: CommerceWriteStatus.Removed } price => $"opticli commerce price set {price.Entry} {PriceKey(price.Price)} --amount {price.Price.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+        PriceResult { Status: CommerceWriteStatus.Updated, Before: { } before } price => $"opticli commerce price set {price.Entry} {PriceKey(before)} --amount {before.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+        InventoryResult { Status: CommerceWriteStatus.Updated, Before: { } before } stock => $"opticli commerce inventory set {stock.Entry} --warehouse {before.Warehouse} --in-stock {before.InStock.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+        InventoryResult { Status: CommerceWriteStatus.Created } stock => $"None in opticli: set the stock to 0 (opticli commerce inventory set {stock.Entry} --warehouse {stock.Stock.Warehouse} --in-stock 0), or delete the record in Commerce's catalog UI.",
+        WarehouseResult { Status: CommerceWriteStatus.Created } warehouse => $"None in opticli: deactivate it (opticli commerce warehouse set {warehouse.Warehouse.Code} --active false), or delete it in Commerce's admin UI.",
+        MarketResult { Status: CommerceWriteStatus.Created } market => $"None in opticli: disable it (opticli commerce market set {market.Market.Id} --enabled false), or delete it in Commerce's admin UI.",
+        WarehouseResult { Status: CommerceWriteStatus.Updated } warehouse => $"Set {string.Join(", ", warehouse.Changes)} back with `opticli commerce warehouse set {warehouse.Warehouse.Code} ...`.",
+        MarketResult { Status: CommerceWriteStatus.Updated } market => $"Set {string.Join(", ", market.Changes)} back with `opticli commerce market set {market.Market.Id} ...`.",
+        _ => null,
+    };
+
+    private static string PriceKey(CommercePrice price) =>
+        $"--market {price.Market} --currency {price.Currency}"
+        + (price.PriceType == PriceTypes.All ? "" : $" --price-type {price.PriceType} --price-code {price.PriceCode}")
+        + (price.MinQuantity == 0 ? "" : $" --min-quantity {price.MinQuantity.ToString(System.Globalization.CultureInfo.InvariantCulture)}")
+        + $" --valid-from {price.ValidFrom.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture)}";
 }

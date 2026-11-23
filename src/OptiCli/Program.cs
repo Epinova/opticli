@@ -126,6 +126,7 @@ internal partial class Program
         root.Subcommands.Add(RestoreCommand.Create(options));
         root.Subcommands.Add(AccessCommand.Create(options));
         root.Subcommands.Add(UsersCommand.Create(options));
+        root.Subcommands.Add(CommerceCommand.Create(options));
         root.Subcommands.Add(ApplyCommand.Create(options));
         root.Subcommands.Add(SkillCommand.Create(options));
         root.Subcommands.Add(SchemaCommand.Create(options));

@@ -11,6 +11,17 @@ public class CommerceRoutesTests
     [Theory]
     [InlineData("GET", "", false)]
     [InlineData("POST", "refs", false)]
+    [InlineData("GET", "children", false)]
+    [InlineData("GET", "relations", false)]
+    [InlineData("POST", "relations", true)]
+    [InlineData("GET", "prices", false)]
+    [InlineData("POST", "prices", true)]
+    [InlineData("GET", "warehouses", false)]
+    [InlineData("POST", "warehouses", true)]
+    [InlineData("GET", "inventory", false)]
+    [InlineData("POST", "inventory", true)]
+    [InlineData("GET", "markets", false)]
+    [InlineData("POST", "markets", true)]
     public void Every_route_has_its_method_and_only_writes_pass_the_drift_gate(string method, string path, bool gated)
     {
         var route = _commerce.Route(method, Segments(path));
@@ -22,6 +33,8 @@ public class CommerceRoutesTests
     [Theory]
     [InlineData("POST", "")]
     [InlineData("GET", "refs")]
+    [InlineData("DELETE", "prices")]
+    [InlineData("PUT", "markets")]
     public void Another_method_is_a_usage_error_naming_the_routes(string method, string path)
     {
         var ex = Assert.Throws<AgentException>(() => _commerce.Route(method, Segments(path)));

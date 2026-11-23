@@ -60,6 +60,13 @@ public sealed class EnvironmentRolesTests : IDisposable
         "projects publish Spring",
         "projects reactivate Spring",
         "projects delete Spring",
+        "commerce relation add code:P-1 code:V-1",
+        "commerce relation remove code:P-1 code:V-1",
+        "commerce price set code:V-1 --market DEFAULT --currency USD --amount 10",
+        "commerce price remove code:V-1 --market DEFAULT --currency USD",
+        "commerce warehouse set oslo",
+        "commerce inventory set code:V-1 --warehouse default --in-stock 1",
+        "commerce market set NORDIC --currencies SEK --languages en",
     ];
 
     public static TheoryData<string> WriteCommandLines() => new(WriteLines);

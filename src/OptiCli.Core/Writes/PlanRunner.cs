@@ -525,6 +525,11 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         Sites.SiteHostsView site => site.Status != Protocol.SiteHostStatus.Unchanged,
         LanguagesOutput languages => languages.Saved,
         RemoveLanguageOutput removed => removed.Removed,
+        Protocol.RelationResult relation => Protocol.CommerceWriteStatus.Changed(relation.Status),
+        Protocol.PriceResult price => Protocol.CommerceWriteStatus.Changed(price.Status),
+        Protocol.WarehouseResult warehouse => Protocol.CommerceWriteStatus.Changed(warehouse.Status),
+        Protocol.InventoryResult inventory => Protocol.CommerceWriteStatus.Changed(inventory.Status),
+        Protocol.MarketResult market => Protocol.CommerceWriteStatus.Changed(market.Status),
         _ => true,
     };
 
