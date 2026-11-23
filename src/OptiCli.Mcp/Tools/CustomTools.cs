@@ -63,6 +63,7 @@ internal sealed partial class CustomTools
     public void AddReadTools(Type type)
     {
         RefuseTwice(type);
+        RefuseAuthorize(type, $"WithTools<{type.FullName}>()");
         var methods = ToolMethods(type).ToList();
         if (methods.Count == 0)
         {
@@ -74,6 +75,7 @@ internal sealed partial class CustomTools
         {
             var tool = method.GetCustomAttribute<McpServerToolAttribute>()!;
             var where = $"WithTools<{type.FullName}>(), method {method.Name}";
+            RefuseAuthorize(method, where);
             if (string.IsNullOrEmpty(tool.Name))
             {
                 // The SDK would make one up from the method's name; the module needs it now, to check it against the others.
@@ -112,6 +114,7 @@ internal sealed partial class CustomTools
     public void AddWriteTool(Type type)
     {
         RefuseTwice(type);
+        RefuseAuthorize(type, $"WithWriteTool<{type.FullName}>()");
         var tool = WriteToolTypes.Of(type, CheckName);
         _names.Add(tool.Name, type.FullName!);
         _types.Add(type);
@@ -137,6 +140,23 @@ internal sealed partial class CustomTools
         if (_names.TryGetValue(name, out var other))
         {
             throw new InvalidOperationException($"{where}: '{name}' is already the name of the site's tool {other}. Give each tool a name of its own.");
+        }
+    }
+
+    /// <summary>
+    /// Refuses a tool restricted with ASP.NET Core authorization (<c>[Authorize]</c>, a policy or a requirement): the
+    /// module's server has none of the MCP SDK's filters, which would apply it, so every editor connected to the module
+    /// could call such a tool. Refused at startup rather than offered open.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The class (or a base class) or the method carries such an attribute.</exception>
+    private static void RefuseAuthorize(System.Reflection.MemberInfo member, string where)
+    {
+        if (member.GetCustomAttributes(inherit: true).FirstOrDefault(a => a is Microsoft.AspNetCore.Authorization.IAuthorizeData
+            or Microsoft.AspNetCore.Authorization.IAuthorizationRequirementData) is { } attribute)
+        {
+            throw new InvalidOperationException(
+                $"{where}: [{attribute.GetType().Name.Replace("Attribute", "", StringComparison.Ordinal)}] restricts who may call the tool, and the opticli module doesn't apply ASP.NET Core authorization to its tools: every editor connected to it could call this one. "
+                + "Every tool of the module runs as the signed-in editor, with their CMS access rights: leave the attribute out and check what the tool needs in the tool itself, or register the tool with another MCP server.");
         }
     }
 

@@ -104,7 +104,7 @@ internal sealed class PlanRunner(
     public CallToolResult DryRun(ContentPlan plan, JsonNode arguments)
     {
         Validate(plan);
-        var checks = CheckAll(plan);
+        var checks = RefuseHidden(CheckAll(plan));
         var runnable = checks.All(c => c.Runnable);
         var result = new JsonObject
         {
@@ -135,7 +135,7 @@ internal sealed class PlanRunner(
         }
 
         // Every step checked again before the first is saved.
-        var checks = CheckAll(plan);
+        var checks = RefuseHidden(CheckAll(plan));
         if (checks.FirstOrDefault(c => !c.Runnable) is { } refused)
         {
             var error = refused.Error ?? new AgentError(AgentErrorCodes.Validation, "The step's values don't pass the site's validation (the step's validation says why).");
@@ -243,6 +243,19 @@ internal sealed class PlanRunner(
         }
         return checks;
     }
+
+    /// <summary>
+    /// A plan with a step on content the editor can't read (or that doesn't exist) is refused whole, naming no step or
+    /// content: per step, a site's tool that planned from content it didn't check would tell which of the ids it was given
+    /// are hidden from the editor, and how many.
+    /// </summary>
+    /// <exception cref="ToolErrors.ToolError"><c>not_found</c>.</exception>
+    private static List<Checked> RefuseHidden(List<Checked> checks) =>
+        checks.Any(c => c.Error?.Code == AgentErrorCodes.NotFound)
+            ? throw ToolErrors.From(new AgentError(AgentErrorCodes.NotFound,
+                "The site's tool planned a change to content that doesn't exist or that you can't read, so the plan can't run. Nothing was changed.",
+                "Tell the user the tool can't do this for them; they can ask whoever looks after the site's tools."))
+            : checks;
 
     /// <summary>
     /// Whether <paramref name="step"/> uses content below content an earlier step trashes (the same content

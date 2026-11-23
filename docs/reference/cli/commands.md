@@ -53,7 +53,8 @@ with [IDE mode](serve.md#running-the-site-from-your-ide-ide-mode) on.
   <to>` and `set <n>`: positions are zero-based. `--display` is a display option as the site registers it; an unknown
   one is refused.
 - `block create --type T --name N` and `upload <file>` take `--for <ref>` (that content's "For this page" folder, made
-  if missing) or `--parent <folder>`. `upload --replace <media>` gives existing media a new file instead: a new version
+  if missing) or `--parent <folder>`. Content that can't have such a folder (it isn't `IResourceable`, as a site's
+  settings content often isn't) is a `usage` error for `--for`, in a dry run too: use `--parent`. `upload --replace <media>` gives existing media a new file instead: a new version
   of the same media type, which must accept the extension (no `--for`, `--parent` or `--type`).
 - `translate <ref> --lang <code>` makes a language branch (`--with-blocks`: the blocks of its "For this page" folder
   too). `translate --remove` deletes the branch with all its versions instead (not the master language, nor a start
@@ -65,14 +66,17 @@ with [IDE mode](serve.md#running-the-site-from-your-ide-ide-mode) on.
   it had before it was deleted, which the CMS stores for every move (`trash` shows it as `originalParent`), or below
   `--to <parent>`. It keeps its versions, so what was published is live again. Name it by id or GUID: content in the
   recycle bin has no URL. Something below deleted content can't be
-  restored on its own (restore what was deleted), and a parent that is in the recycle bin too is a `conflict`.
+  restored on its own (restore what was deleted), and a parent that is in the recycle bin too is a `conflict`. A
+  warning says what is live again: the content when it was published, and how many items came back below it. `move`
+  of content in the recycle bin also brings it back (as `sync pull` does), with the same warnings.
 - `create`, `block create`, `upload` and `move` put content only where it can go: pages below pages, blocks, media and
   folders in asset folders, and only where the parent type allows the type (`[AvailableContentTypes]` and admin mode's
   settings, as the CMS answers it).
 - `access <ref>` with `--grant Role=Levels`, `--user Name=Levels`, `--revoke Name`, `--break-inheritance` or
   `--inherit` changes one item's access rights. Children that inherit follow; nothing is applied to descendants.
   Access rights aren't versioned, so the output shows them before and after. The root, the recycle bin, start pages
-  and asset roots are refused, and so is a change that leaves no role with Administer. A "For this page" folder and
+  and asset roots are refused, and so is content that contains a start page or asset root (they may inherit from it)
+  and a change that leaves no role with Administer. A "For this page" folder and
   the content in it have the access rights of the content that owns the folder (`assetsOf`), so they are refused as
   well, as in the edit UI: change the owner instead. A `--grant` role the site doesn't know is a `usage` error;
   `--allow-unknown-role` accepts one, such as a role an identity provider creates on first sign-in.
@@ -123,7 +127,9 @@ with [IDE mode](serve.md#running-the-site-from-your-ide-ide-mode) on.
 
 Every write command takes `--dry-run` (`sync push` only ever prepares a sealed plan). Structured values use `--values`, e.g.
 `--values '{"MainArea":[{"ref":"456"}]}'`; a value may also be given as `get` shows it (`{"type": ..., "value": ...}`;
-a reference in it is written by its GUID, so `get` output from another database names the same content).
+a reference in it is written by its GUID, so `get` output from another database names the same content). A list
+property is given as an array of its items, not as JSON text in a string: a property type that can't be set from text
+(some of Optimizely Forms' lists) is a `usage` error that says so.
 `Prop=@file.html` reads a property's value from a file (`@@` for a literal `@`); any other value that starts with `@`
 is plain text (`--name @Home`, `opticli search @alloy`).
 `set`, `area` and `composition` check that nobody saved a newer version in the meantime (exit 5 on a conflict). `--base-version <id>` pins the version the change is based on, and `--force` skips the check.

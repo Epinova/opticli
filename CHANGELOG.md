@@ -3,6 +3,98 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.35.2 (23 November 2026)
+
+Fixes from a review of the write path, and of the rest of the writes, and from building an E2E suite with opticli. The first four apply where the
+site's edit UI makes new blocks in a ContentArea shared blocks in the "For this page" folder
+(`UIOptions.InlineBlocksInContentAreaEnabled` off).
+
+### CLI and MCP module
+
+- **`unpublish` no longer publishes block drafts.** Taking content offline (`opticli unpublish`, the MCP module's
+  `unpublish_content`) published, along with it, the drafts of the blocks in its "For this page" folder that were never
+  published, as a publish does. Taking content offline now puts nothing live, and its dry run lists no blocks.
+- **A publish says when a block's draft in review, rejected or scheduled stays behind.** If the latest version of such a
+  block was waiting for review, rejected by its reviewers, or scheduled on its own, a publish left the block out
+  without a word, also when `--with-block` named it. Where the block would otherwise have gone along (it was never
+  published, it was named, or the write or plan run saved it), a `warning` now says why it stayed behind.
+- **A block published along with a passed stop date has the date cleared.** A block's draft saved after the block
+  was taken offline carries the stop-publish date that has passed. Published along with the content, it went live
+  already expired, so nothing of it showed, although `sharedBlocks` said `published`. The date is now cleared, with a
+  `warning`, as it already was for the content itself.
+- **A failed reschedule is no longer reported as saved.** `publish <version> --publish-at <time>` on a version that
+  was scheduled already, where the save failed before storing anything (a site validator, the database), was reported
+  as saved with a `siteError` and the new time, while the version kept its old schedule. Now the error is reported as
+  it is. A site handler that fails after the save is still reported as a `siteError` on a save that stands.
+- **A failed block save names the folder it made.** When saving a new block failed on existing content that had no
+  "For this page" folder yet, the error didn't mention that the folder had been made and stays. Now it does, as it
+  already did for new content.
+- **`block create --for` on content that can't have a "For this page" folder is refused.** On content that isn't
+  `IResourceable`, such as a site's settings content, the run failed with a `NullReferenceException` in the agent,
+  although the dry run had passed. Both now give a `usage` error that says to use `--parent` (in a plan, `parent`;
+  in the MCP module, `create_content` with `parent`).
+- **A list property given as text it can't parse is a `usage` error.** A string for a list property whose type can't
+  be set from text (`PropertyList<T>` without `ParseItem`, as in some of Optimizely Forms' lists) failed with a
+  `NotImplementedException` from the CMS. It is now a `usage` error that asks for the items as a JSON array.
+
+- **An access change on content that contains a start page or asset root is refused.** The root, start pages and
+  asset roots themselves were refused, but not a container above a start page. Revoking `Everyone` there could take
+  every site below it offline for visitors. It is now refused as a move of such content is.
+- **A site tool with `[Authorize]` stops the site at startup.** The module's server runs none of the MCP SDK's
+  filters, so `[Authorize]` on a tool registered with `WithTools` or `WithWriteTool` was ignored, and every connected
+  editor could call a tool the site meant for some. Such a tool is now refused at registration, with a message saying
+  why.
+- **Publish results no longer name blocks the editor can't read.** A block in the page's "For this page" folder with
+  access rights of its own showed, with its ref, name and who saved it, in a publish's warnings and hints, and could be
+  named in `blocks`. It is now left out, and naming it is `not_found`, as for content that doesn't exist.
+- **Renaming a folder with content below it needs publishing allowed.** The new name changes the URLs of the media
+  below it at once, as moving the folder does, but it passed without the publishing gate (`AllowPublish`), also in a
+  site tool's plan. It now passes the same gate as the move.
+- **A site tool's plan that touches hidden content is refused whole.** Each step's own `not_found` said which ids of a
+  plan were hidden from the editor, and a trash step's `moreDescendants` counted hidden items too. A plan with such a
+  step is now one `not_found` that names no step or id, and `moreDescendants` only counts what the editor can read.
+- **A save into a project with nothing to change needs Edit.** A write with a project and no changes puts the version
+  it is based on in the project as it is, replacing the project's item for that content. That changed the project with
+  no access check, so an editor who may only read a page (or an assistant steered by text it read) could swap which
+  version a project publishes. Every save into a project, dry run too, now needs Edit on the content, as
+  `remove_from_project` does.
+- **A block's draft that holds a colleague's earlier changes goes along with a publish only when named.** Whether a
+  block's draft was someone else's was told by who saved its latest version alone. A colleague's never-published changes
+  in an earlier draft went live with the page once someone else saved the block again. Now they count as that
+  colleague's, as a publish of the block itself asks about them, and the block stays a draft with a warning unless
+  the publish names it.
+- **An editor's move dry run checks the access the move needs.** `move_content` with `dryRun` (and a plan's dry run)
+  passed for an editor without Delete on the content, or without Publish where published content goes, and the move
+  then failed. Both now check what the CMS's move checks: Delete on the content, Create below the destination, and
+  Publish there for published content.
+
+### CLI
+
+- **A plan can't read a file outside its folder through a link's `..`.** A link whose target climbs out through another
+  link (`f -> s/../secret`, with `s` linking elsewhere) passed the folder check, because `..` was resolved as text. A
+  sealed run (`apply --seal-for`, `sync push`) then read the file outside the folder. Links are now followed part by
+  part, as the OS does, and a loop of links is a `usage` error instead of a crash.
+- **A plan's dry run checks a later step's schedule and review request on content the plan creates.** A `set` or
+  `publish` of planned content was dry-run with the creating step's `publishAt` and `requestApproval`, not its own. A
+  `publishAt` in the past passed the dry run and failed the run after the create was saved, and a step sending the page
+  for review was refused by the dry run where an approval sequence applies. The step's own are now checked.
+- **A plan that saves the same content into two projects is refused before anything is saved.** Content is in one
+  project at a time, so the run saved the first step and refused the second, with half the plan saved.
+- **A `publish` after an `upload` with `replace` is dry-run with the new file.** The publish was dry-run alone, against
+  the media's published version, and refused as "already the published version", although the run would publish the
+  new file.
+- **`move` of content in the recycle bin says that it brings it back.** `opticli move` takes deleted content out of the
+  recycle bin (`sync pull` relies on that), but said nothing. Now it warns, as `restore` does, when the content is live
+  again, and how many items below it came back.
+- **`restore` of a folder says what comes back below it.** Content without versions, such as a block folder, has no
+  status, so restoring it gave no warning, although its published blocks show again wherever they are used. A restore
+  now says how many items came back with it.
+- **`serve` warns when no site answers on its address.** With a database restored with production host names, or
+  hosts on another port (a launch profile's `applicationUrl`, which `serve` doesn't use), every page on serve's address
+  was a 404 with nothing to say why. `serve` now warns when no site has a host there (or the `*` host). The warning
+  names the sites' hosts, and either the `--port`/`--https-port` of a `localhost` host a site has or the `sites
+  primary` command that points a site at serve's address.
+
 ## 0.35.1 (19 November 2026)
 
 ### CLI

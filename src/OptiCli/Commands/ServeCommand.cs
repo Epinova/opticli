@@ -274,6 +274,10 @@ internal static class ServeCommand
                 $"Stop what listens there, or give another --https-port{(start.HttpsPort is null ? " (the user config's \"httpsPort\" asked for this one)" : "")}.");
         }
         int? httpsListen = fixedHttps ?? ((start.Https ?? settings?.Https == true) ? PortSelector.Select(null, null, p => p != httpPort && free(p)) : null);
+        if (await SiteHostsWarningAsync(context, httpPort, httpsListen, cancellationToken) is { } hosts)
+        {
+            warnings.Add(hosts);
+        }
         if (profile is not null)
         {
             warnings.Add(profile.Describe());
@@ -296,6 +300,24 @@ internal static class ServeCommand
         };
 
         return await launch(new Launch(store, request, startLock, warnings, project, types, schedulerOn), cancellationToken);
+    }
+
+    /// <summary>
+    /// When no site of the database answers on the addresses serve listens on (<see cref="SiteHostMatch"/>): the warning
+    /// that every page there will be a 404, and what to do. Null when one does, or the sites can't be read (a database
+    /// the CMS hasn't set up yet), which mustn't stop the start.
+    /// </summary>
+    private static async Task<string?> SiteHostsWarningAsync(CliContext context, int httpPort, int? httpsPort, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var db = await context.OpenDatabaseAsync(cancellationToken);
+            return SiteHostMatch.Warning(await Core.Cms.SiteReader.ListAsync(db, cancellationToken), httpPort, httpsPort);
+        }
+        catch (OptiCliException)
+        {
+            return null;
+        }
     }
 
     /// <summary><c>serve</c>: starts the site in the background and returns once the agent answers.</summary>

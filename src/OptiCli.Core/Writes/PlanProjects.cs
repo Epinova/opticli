@@ -78,8 +78,14 @@ internal sealed class PlanProjects
         {
             return resolved;
         }
-        var projects = await ProjectReader.ListAsync(session.Db, cancellationToken);
-        foreach (var name in names)
+        return Of(steps, await ProjectReader.ListAsync(session.Db, cancellationToken));
+    }
+
+    /// <summary>The projects <paramref name="steps"/> name, resolved against the database's <paramref name="projects"/>.</summary>
+    internal static PlanProjects Of(IReadOnlyList<PlanStep> steps, IReadOnlyList<ProjectInfo> projects)
+    {
+        var resolved = new PlanProjects();
+        foreach (var name in steps.Select(s => s.Operation.Project?.Trim()).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase))
         {
             resolved._entries[name] = Resolve(projects, name);
         }
@@ -124,6 +130,53 @@ internal sealed class PlanProjects
 
     /// <summary>The operation's project doesn't exist yet: the run makes it, so the plan's check runs without it.</summary>
     public bool ToMake(WriteOperation operation) => For(operation) is { Id: null };
+
+    /// <summary>
+    /// Steps that save versions of the same content and language into different projects: content is in one project at a
+    /// time (the CMS edit UI holds it there too), so the run would save the first and have the second refused, with half
+    /// the plan saved. Told by the refs as the plan gives them (an id, or <c>$id</c> of content it creates).
+    /// </summary>
+    /// <exception cref="UsageException">The first two such steps, with their projects.</exception>
+    public void RequireOneProjectPerContent(IReadOnlyList<PlanStep> steps)
+    {
+        var seen = new Dictionary<(string Content, string Language), (int Index, string Key, string Name)>();
+        foreach (var step in steps)
+        {
+            var op = step.Operation;
+            if (For(op) is not { } entry || !WriteOperation.ProjectOps.Contains(op.Kind))
+            {
+                continue;
+            }
+            var (content, language) = op switch
+            {
+                SetOperation set => (set.Ref, set.Lang),
+                AreaEdit area => (area.Ref, area.Lang),
+                CompositionEdit composition => (composition.Ref, composition.Lang),
+                TranslateOperation translate => (translate.Ref, translate.Lang),
+                UploadOperation { Replace: { } replaced } => (replaced, null),
+                CreateOperation { Id: { } id } create => ($"${id}", create.Lang),
+                BlockCreateOperation { Id: { } id } block => ($"${id}", block.Lang),
+                UploadOperation { Id: { } id } => ($"${id}", null),
+                _ => ((string?)null, (string?)null),
+            };
+            if (content is null)
+            {
+                continue;
+            }
+            var key = (content.Trim().Split('_')[0].ToLowerInvariant(), language?.Trim().ToLowerInvariant() ?? "");
+            var project = entry.Id?.ToString(CultureInfo.InvariantCulture) ?? entry.Name.ToLowerInvariant();
+            if (!seen.TryGetValue(key, out var first))
+            {
+                seen[key] = (step.Index, project, entry.Name);
+            }
+            else if (first.Key != project)
+            {
+                throw new UsageException(
+                    $"Operations {first.Index} and {step.Index} save {content}{(language is null ? "" : $" in '{language}'")} into different projects ('{first.Name}' and '{entry.Name}'), and content is in one project at a time: the run would save the first and refuse the second. Nothing was changed.",
+                    "Give both operations the same \"project\", or put the content's changes in one operation.");
+            }
+        }
+    }
 
     /// <summary>A step's check, with a note when its project doesn't exist yet and so wasn't part of it.</summary>
     /// <param name="operation">The step as the plan gives it.</param>

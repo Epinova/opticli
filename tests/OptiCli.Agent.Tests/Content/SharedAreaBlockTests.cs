@@ -207,6 +207,11 @@ public class SharedAreaBlockTests
         /// <summary>Content names whose save fails, as a database error would.</summary>
         public HashSet<string> Failing { get; } = [];
 
+        /// <summary>When each version (content id, version id) was last saved: a save that fails before storing leaves it.</summary>
+        private readonly Dictionary<(int Id, int Version), DateTime> _savedAt = [];
+
+        private DateTime _clock = new(2026, 11, 1, 8, 0, 0, DateTimeKind.Utc);
+
         /// <summary>Who the next save is recorded as.</summary>
         public string SavedBy { get; set; } = AgentProtocol.PrincipalName;
 
@@ -255,6 +260,8 @@ public class SharedAreaBlockTests
             }
             versions.RemoveAll(v => v.Content.ContentLink.WorkID == link.WorkID);
             versions.Add((stored, SavedBy));
+            _clock = _clock.AddSeconds(1);
+            _savedAt[(id, link.WorkID)] = _clock;
             return link;
         }
 
@@ -280,7 +287,7 @@ public class SharedAreaBlockTests
 
         public ContentVersion[] Versions(ContentReference link) => Items.TryGetValue(link.ID, out var versions)
             ? versions.Select(v => new ContentVersion(v.Content.ContentLink, v.Content.Name, (v.Content as IVersionable)?.Status ?? VersionStatus.Published,
-                DateTime.UtcNow, v.SavedBy, v.SavedBy, 0, (v.Content as ILocalizable)?.Language?.Name ?? "", true, false)).ToArray()
+                _savedAt.GetValueOrDefault((link.ID, v.Content.ContentLink.WorkID), _clock), v.SavedBy, v.SavedBy, 0, (v.Content as ILocalizable)?.Language?.Name ?? "", true, false)).ToArray()
             : [];
     }
 
@@ -343,6 +350,9 @@ public class SharedAreaBlockTests
 
         public FakeProjects Projects { get; } = new();
 
+        /// <summary>The sites' start pages (CMS 13 applications); none by default.</summary>
+        public List<ContentReference> Applications { get; } = [];
+
         public Availability Availability { get; } = new();
 
         /// <summary>The site's validators: errors for a content item.</summary>
@@ -365,7 +375,8 @@ public class SharedAreaBlockTests
             return block;
         }
 
-        public Site(CmsCaller caller = CmsCaller.Developer)
+        /// <param name="publishing">The publishing gate (the MCP module's AllowPublish): throws where publishing is off.</param>
+        public Site(CmsCaller caller = CmsCaller.Developer, Action? publishing = null)
         {
             var handlers = new Dictionary<string, Delegate?>();
             var (events, eventsRecorder) = Recorder<IContentEvents>.Create();
@@ -415,7 +426,7 @@ public class SharedAreaBlockTests
                 .AddSingleton(events)
                 .AddSingleton(factory.Proxy)
                 .AddSingleton(Recorder<EPiServer.Construction.IContentDataBuilder>.Create().Proxy)
-                .AddSingleton(Recorder<ILanguageBranchRepository>.Create().Proxy)
+                .AddSingleton(EditableLanguages())
                 .AddSingleton(Recorder<IFrameRepository>.Create().Proxy)
                 .AddSingleton(Unused<CategoryRepository>())
                 .AddSingleton(Unused<EPiServer.Web.DisplayOptions>())
@@ -423,11 +434,12 @@ public class SharedAreaBlockTests
                 .AddSingleton<ContentTypeAvailabilityService>(Availability)
                 .AddSingleton<ProjectRepository>(Projects)
                 .AddSingleton(Approvals(this))
+                .AddSingleton(Sites(Applications))
                 .AddSingleton(new EPiServer.Web.SystemDefinition(new ContentReference(1), new ContentReference(2), new ContentReference(4), AssetsRoot))
                 .AddSingleton(EditUiPropertiesTests.Tabs())
                 .AddSingleton<IPrincipalAccessor>(new CmsCallTests.PrincipalAccessor(new GenericPrincipal(new GenericIdentity("editor"), [])))
                 .BuildServiceProvider();
-            Call = new CmsCall(services, CancellationToken.None, caller);
+            Call = new CmsCall(services, CancellationToken.None, caller, publishing);
         }
 
         /// <summary>A page of versions, its total count in the out parameter.</summary>
@@ -450,6 +462,13 @@ public class SharedAreaBlockTests
                 case ("TryGet", [ContentReference link, .., _]):
                     args[^1] = Store.Get(link);
                     return args[^1] is not null;
+                case ("GetAncestors", [ContentReference link]):
+                    var ancestors = new List<IContent>();
+                    for (var at = Store.Get(link)?.ParentLink; at is not null && Store.Get(at) is { } ancestor; at = ancestor.ParentLink)
+                    {
+                        ancestors.Add(ancestor);
+                    }
+                    return ancestors;
                 case ("GetChildren", [ContentReference parent, ..]):
                     return Store.Children(parent).ToList();
                 case ("GetDefault", [ContentReference parent, int type, ..]):
@@ -544,6 +563,24 @@ public class SharedAreaBlockTests
                     : null])
             : null;
         return approvals;
+    }
+
+    /// <summary>Languages an editor may edit: every one.</summary>
+    private static ILanguageBranchRepository EditableLanguages()
+    {
+        var (languages, recorder) = Recorder<ILanguageBranchRepository>.Create();
+        recorder.Answer = (method, args) => method.Name == nameof(ILanguageBranchRepository.Load) && args[0] is CultureInfo culture ? new CmsCallTests.Branch(culture, edit: true) : null;
+        return languages;
+    }
+
+    /// <summary>The sites, by their start pages: what an unpublish, a move or an access change won't touch.</summary>
+    private static EPiServer.Applications.IApplicationRepository Sites(List<ContentReference> startPages)
+    {
+        var (applications, recorder) = Recorder<EPiServer.Applications.IApplicationRepository>.Create();
+        recorder.Answer = (method, _) => method.Name == nameof(EPiServer.Applications.IApplicationRepository.List)
+            ? startPages.Select((start, i) => (EPiServer.Applications.Application)new EPiServer.Applications.InProcessWebsite($"site{i}", start)).ToList()
+            : null;
+        return applications;
     }
 
     private static T Unused<T>() where T : class =>
@@ -1037,6 +1074,42 @@ public class SharedAreaBlockTests
     }
 
     [Fact]
+    public void A_block_for_content_that_cant_have_a_folder_is_refused_also_in_a_dry_run()
+    {
+        var site = new Site();
+        // Content that isn't IResourceable, as a site's settings content often isn't: the CMS gives it no folder.
+        var settings = site.Block(AssetsRoot, "Settings", "Settings");
+
+        foreach (var dryRun in new[] { true, false })
+        {
+            var refused = Assert.Throws<AgentException>(() => CreateOperation.Run(site.Call,
+                new CreateRequest { ForContent = Id(settings), Type = nameof(PropertyWriterTests.ItemBlock), Name = "Link", DryRun = dryRun }));
+
+            Assert.Equal(AgentErrorCodes.Usage, refused.Code);
+            Assert.Contains("can't have a \"For this page\" folder", refused.Message);
+            Assert.Contains("--parent <folder>", refused.Hint);
+        }
+        Assert.Empty(site.Store.Saves);
+    }
+
+    [Fact]
+    public void A_failed_block_save_on_content_without_a_folder_names_the_folder_it_made()
+    {
+        var site = new Site();
+        var page = site.Page();
+        var flow = site.Flow();
+        var (writable, before) = site.Write(flow, page, """{"Area": [{"type": "ItemBlock", "name": "Broken", "properties": {"Title": "Hello"}}]}""");
+        site.Store.Failing.Add("Broken");
+
+        var error = Assert.Throws<AgentException>(() => site.Save(flow, writable, before));
+
+        Assert.Contains("The database refused it.", error.Message);
+        var folder = site.Store.Items.Values.Select(v => v[^1].Content).OfType<ContentAssetFolder>().Single();
+        Assert.Contains($"The \"For this page\" folder {folder.ContentLink} was made and stays.", error.Hint);
+        Assert.Empty(error.MadeBlocks!);
+    }
+
+    [Fact]
     public void A_positional_write_onto_a_shared_item_is_refused_with_the_blocks_ref()
     {
         var site = new Site();
@@ -1514,6 +1587,207 @@ public class SharedAreaBlockTests
         Assert.Equal(VersionStatus.CheckedOut, StatusOf(site, fresh));
         Assert.Equal(VersionStatus.CheckedOut, StatusOf(site, live));
         Assert.Contains(result.Validation!, i => (i.Property, i.Severity) == ("Area[0]", "warning") && i.Message.Contains("was never published, and stays a draft, as asked"));
+    }
+
+    [Fact]
+    public void A_failed_reschedule_of_a_scheduled_version_is_an_error_but_a_handler_failing_after_the_save_is_a_site_error()
+    {
+        var site = new Site();
+        var page = site.Page();
+        var scheduled = (Page)((IReadOnly)page).CreateWritableClone();
+        scheduled.StartPublish = DateTime.Now.AddDays(1);
+        var version = site.Stored(site.Store.Save(scheduled, SaveAction.Schedule | SaveAction.ForceNewVersion, null));
+        var later = new PublishRequest { Version = version.ContentLink.WorkID, PublishAt = DateTime.UtcNow.AddDays(2) };
+
+        // The save fails before anything is stored: the version keeps its old schedule, and that is no save.
+        site.Store.Failing.Add("Home");
+        Assert.Throws<InvalidOperationException>(() => Publish(site, page, later));
+        site.Store.Failing.Clear();
+
+        // A handler of the CMS's events fails after the version was saved: the save stands, and says so.
+        site.Store.Saved = (_, _) => throw new InvalidOperationException("The search index is down.");
+        var result = Publish(site, page, later);
+
+        Assert.True(result.Saved);
+        Assert.Contains("The search index is down.", result.SiteError);
+        Assert.Equal(VersionStatus.DelayedPublish, StatusOf(site, page));
+    }
+
+    [Fact]
+    public void A_block_draft_with_a_passed_stop_date_goes_along_with_the_date_cleared_and_a_warning()
+    {
+        var site = new Site();
+        var (page, fresh, _, _) = PageToPublish(site);
+        ((IVersionable)site.Store.Latest(fresh.ContentLink.ID)).StopPublish = DateTime.Now.AddDays(-1);
+
+        var dry = Publish(site, page, new PublishRequest { DryRun = true });
+        var result = Publish(site, page);
+
+        foreach (var run in new[] { dry, result })
+        {
+            Assert.Contains(run.Validation!, i => (i.Property, i.Severity) == ("Area[0]", "warning") && i.Message.Contains("('Fresh') at Area[0]: its stop-publish date"));
+        }
+        Assert.Equal(fresh.ContentLink.ID, ContentReference.Parse(Assert.Single(result.SharedBlocks!).Ref!).ID);
+        var live = (IVersionable)site.Store.Latest(fresh.ContentLink.ID);
+        Assert.Equal(VersionStatus.Published, live.Status);
+        Assert.Null(live.StopPublish);
+    }
+
+    [Fact]
+    public void An_editors_move_dry_run_checks_the_access_the_move_needs()
+    {
+        var site = new Site(CmsCaller.Editor);
+        var page = site.Page();
+        var destination = site.Page();
+        MoveResult Move() => MoveOperation.Run(site.Call, Id(page), new MoveRequest { Parent = Id(destination), DryRun = true });
+
+        ((Page)site.Store.Latest(page.ContentLink.ID)).Access = AccessLevel.Read | AccessLevel.Edit | AccessLevel.Publish;
+        Assert.Contains("Delete access", Assert.Throws<AgentException>(Move).Message);
+
+        ((Page)site.Store.Latest(page.ContentLink.ID)).Access = null;
+        ((Page)site.Store.Latest(destination.ContentLink.ID)).Access = AccessLevel.Read | AccessLevel.Create;
+        // Published content goes live where it is moved: Publish there too.
+        Assert.Contains("Publish access", Assert.Throws<AgentException>(Move).Message);
+
+        ((Page)site.Store.Latest(destination.ContentLink.ID)).Access = AccessLevel.Read | AccessLevel.Create | AccessLevel.Publish;
+        Assert.Equal(Id(destination), Move().Parent);
+        Assert.Empty(site.Store.Saves);
+    }
+
+    [Fact]
+    public async Task Access_rights_of_content_that_contains_a_start_page_are_refused()
+    {
+        var site = new Site();
+        var sites = site.Page();
+        var start = (Page)((IReadOnly)site.Page()).CreateWritableClone();
+        start.ParentLink = sites.ContentLink.ToReferenceWithoutVersion();
+        start = (Page)site.Stored(site.Store.Save(start, SaveAction.Publish, null));
+        site.Applications.Add(start.ContentLink.ToReferenceWithoutVersion());
+
+        var refused = await Assert.ThrowsAsync<AgentException>(() => AccessOperation.RunAsync(site.Call, Id(sites), new AccessRequest { Revoke = ["Everyone"], DryRun = true }));
+
+        Assert.Equal(AgentErrorCodes.Refused, refused.Code);
+        Assert.Contains($"contains {start.ContentLink.ID}, a start page or asset root", refused.Message);
+    }
+
+    [Fact]
+    public void A_block_draft_of_yours_that_holds_a_colleagues_earlier_changes_goes_along_only_when_named()
+    {
+        var site = new Site();
+        var (page, fresh, _, _) = PageToPublish(site);
+        // A colleague's never-published draft of the block, and then yours on top of it, which keeps their Title.
+        var theirs = (IContent)((IReadOnly)site.Store.Latest(fresh.ContentLink.ID)).CreateWritableClone();
+        theirs.Property["Title"].Value = "Their title";
+        site.Store.SavedBy = "colleague";
+        site.Store.Save(theirs, SaveAction.Save | SaveAction.ForceNewVersion, null);
+        var mine = (IContent)((IReadOnly)site.Store.Latest(fresh.ContentLink.ID)).CreateWritableClone();
+        mine.Property["Secret"].Value = "Mine";
+        site.Store.SavedBy = AgentProtocol.PrincipalName;
+        site.Store.Save(mine, SaveAction.Save | SaveAction.ForceNewVersion, null);
+        site.Store.Saves.Clear();
+
+        var result = Publish(site, page);
+
+        Assert.Null(result.SharedBlocks);
+        Assert.Equal(VersionStatus.CheckedOut, StatusOf(site, fresh));
+        Assert.Contains(result.Validation!, i => i.Property == "Area[0]" && i.Message.Contains("is a draft of yours that holds changes colleague saved before"));
+
+        // Named, it goes along: naming the block is the confirmation.
+        var named = Publish(site, site.Stored(page.ContentLink.ToReferenceWithoutVersion()), new PublishRequest { WithBlocks = [Id(fresh)] });
+        Assert.Equal(fresh.ContentLink.ID, ContentReference.Parse(Assert.Single(named.SharedBlocks!).Ref!).ID);
+    }
+
+    [Fact]
+    public void A_block_of_the_pages_folder_an_editor_cant_read_isnt_named_in_a_publishs_warnings_nor_can_be_named()
+    {
+        var site = new Site(CmsCaller.Editor);
+        var (page, _, live, _) = PageToPublish(site);
+        foreach (var (version, _) in site.Store.Items[live.ContentLink.ID])
+        {
+            ((Shared)version).Access = AccessLevel.NoAccess;
+        }
+
+        var dry = Publish(site, page, new PublishRequest { DryRun = true });
+
+        Assert.DoesNotContain(dry.Validation ?? [], i => i.Message.Contains("'Live'") || i.Message.Contains(Id(live)));
+        var refused = Assert.Throws<AgentException>(() => Publish(site, page, new PublishRequest { WithBlocks = [Id(live)], DryRun = true }));
+        // As content that doesn't exist: naming it tells nothing.
+        Assert.Equal((AgentErrorCodes.NotFound, $"No content with id {Id(live)}."), (refused.Code, refused.Message));
+    }
+
+    [Fact]
+    public void Renaming_a_folder_with_content_below_it_passes_the_publishing_gate()
+    {
+        var site = new Site(CmsCaller.Editor, publishing: () => throw AgentException.Refused("Publishing is off."));
+        var folder = site.Stored(site.Store.Save(new ContentFolder { Name = "Images", ParentLink = AssetsRoot, ContentTypeID = FolderType }, SaveAction.Publish, null));
+        IContent Renamed()
+        {
+            var writable = (IContent)((IReadOnly)site.Stored(folder.ContentLink)).CreateWritableClone();
+            writable.Name = "Pictures";
+            return writable;
+        }
+
+        // Empty, the folder's name is in no URL yet.
+        site.Save(site.Flow(), Renamed(), PropertyValues.Snapshot(folder), dryRun: true);
+        site.Block(folder.ContentLink, "Logo", "Logo");
+
+        // With content below it, its URLs change at once, as for a move of it: refused where publishing is off.
+        var refused = Assert.Throws<AgentException>(() => site.Save(site.Flow(), Renamed(), PropertyValues.Snapshot(folder), dryRun: true));
+        Assert.Equal("Publishing is off.", refused.Message);
+    }
+
+    [Fact]
+    public void An_unpublish_publishes_no_block_drafts_along_and_its_dry_run_lists_none()
+    {
+        var site = new Site();
+        var (page, fresh, live, _) = PageToPublish(site);
+
+        foreach (var dryRun in new[] { true, false })
+        {
+            var result = UnpublishOperation.Run(site.Call, Id(page), new UnpublishRequest { DryRun = dryRun }, site.Flow());
+
+            Assert.Equal(!dryRun, result.Unpublished);
+            Assert.Null(result.SharedBlocks);
+            Assert.DoesNotContain(result.Validation ?? [], i => i.Property?.StartsWith("Area", StringComparison.Ordinal) == true);
+        }
+        Assert.Equal(VersionStatus.CheckedOut, StatusOf(site, fresh));
+        Assert.Equal(VersionStatus.CheckedOut, StatusOf(site, live));
+        Assert.Equal([typeof(Page)], site.Store.Saves.Select(s => s.Kind));
+    }
+
+    [Fact]
+    public void A_publish_warns_of_block_drafts_in_review_or_rejected_that_would_have_gone_along()
+    {
+        var site = new Site();
+        var page = site.Page(folder: true);
+        var folder = site.Folder(page).ContentLink;
+        var rejected = site.Block(folder, "Rejected", "Rejected", VersionStatus.Rejected);
+        var reviewed = site.Block(folder, "Reviewed", "Reviewed", VersionStatus.AwaitingApproval);
+        var live = LiveWithDraft(site, folder, "Live", "Live", "Live changed");
+        ((IVersionable)site.Store.Latest(live.ContentLink.ID)).Status = VersionStatus.AwaitingApproval;
+        page = OwnerOf(site, rejected, Ref(rejected), Ref(reviewed), Ref(live));
+        var draft = (Page)((IReadOnly)page).CreateWritableClone();
+        draft.Property["Title"].Value = "Changed";
+        site.Store.Save(draft, SaveAction.Save | SaveAction.ForceNewVersion, null);
+        site.Store.Saves.Clear();
+
+        // Unnamed, the live block's draft in review wouldn't go along anyway: nothing to say of it.
+        var dry = Publish(site, page, new PublishRequest { DryRun = true });
+
+        Assert.Null(dry.SharedBlocks);
+        Assert.Equal(["Area[0]", "Area[1]"], dry.Validation!.Where(i => i.Severity == "warning").Select(i => i.Property));
+        Assert.Contains(dry.Validation!, i => i.Property == "Area[0]" && i.Message.Contains("was rejected by its reviewers, so it wasn't published along"));
+        Assert.Contains(dry.Validation!, i => i.Property == "Area[1]" && i.Message.Contains("is waiting for review, so it wasn't published along: visitors see nothing"));
+
+        var result = Publish(site, page, new PublishRequest { WithBlocks = [Id(live)] });
+
+        Assert.True(result.Published);
+        Assert.Null(result.SharedBlocks);
+        Assert.Contains(result.Validation!, i => i.Property == "Area[2]" && i.Message.Contains("is waiting for review, so it wasn't published along: the content goes live showing the block's published version"));
+        Assert.Equal(VersionStatus.Rejected, StatusOf(site, rejected));
+        Assert.Equal(VersionStatus.AwaitingApproval, StatusOf(site, reviewed));
+        Assert.Equal(VersionStatus.AwaitingApproval, StatusOf(site, live));
+        Assert.Equal([typeof(Page)], site.Store.Saves.Select(s => s.Kind));
     }
 
     [Fact]

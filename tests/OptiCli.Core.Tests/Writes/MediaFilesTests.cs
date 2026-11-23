@@ -62,6 +62,34 @@ public class MediaFilesTests
     }
 
     [Fact]
+    public void A_link_whose_target_climbs_out_through_another_link_is_refused()
+    {
+        // f -> s/../secret with s -> elsewhere/dir: the OS opens elsewhere/secret, not plan/secret.
+        using var root = new TempDirectory();
+        root.Write("elsewhere/secret", "secret");
+        Directory.CreateDirectory(root.Combine("elsewhere/dir"));
+        root.Write("plan/secret", "decoy");
+        Directory.CreateSymbolicLink(root.Combine("plan/s"), root.Combine("elsewhere/dir"));
+        File.CreateSymbolicLink(root.Combine("plan/f"), "s/../secret");
+
+        var refused = Assert.Throws<UsageException>(() => MediaFiles.ForPlan("f", root.Combine("plan"), allowOutside: false));
+
+        Assert.Contains($"links to {root.Combine("elsewhere/secret")}", refused.Message);
+    }
+
+    [Fact]
+    public void A_loop_of_links_is_a_usage_error()
+    {
+        using var root = new TempDirectory();
+        Directory.CreateDirectory(root.Combine("plan"));
+        File.CreateSymbolicLink(root.Combine("plan/a"), "b");
+        File.CreateSymbolicLink(root.Combine("plan/b"), "a");
+
+        Assert.Throws<UsageException>(() => MediaFiles.ForPlan("a", root.Combine("plan"), allowOutside: false));
+        Assert.Throws<UsageException>(() => MediaFiles.Check(root.Combine("plan/a")));
+    }
+
+    [Fact]
     public void Links_that_stay_inside_the_plan_folder_are_fine()
     {
         using var root = new TempDirectory();

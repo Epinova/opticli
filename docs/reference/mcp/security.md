@@ -3,6 +3,8 @@
 - **The assistant is the editor.** Every read is checked against the editor's Read access; content they can't read gives
   exactly the same `not_found` as content that doesn't exist, and lists leave it out. Every save, publish, move and
   delete goes through the CMS's own access checks for the editor. The CMS records the editor as the one who saved.
+  Renaming a folder with content below it changes those items' URLs at once, so it needs publishing allowed
+  (`AllowPublish`), as moving it does.
 - **What the CMS leaves to the edit UI is checked too**, since the CMS's repository doesn't check it on save:
   - a content type's own access rights (who may create it), and the access its group of types requires on the parent;
   - the access rights per language (admin mode, Languages): an editor who may not edit a language gets no draft,

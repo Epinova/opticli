@@ -121,7 +121,8 @@ public static class PlanSimulation
         {
             CreateOperation or BlockCreateOperation or UploadOperation => (op.Id, IsPublishing(op)),
             SetOperation set when PlanId(set.Ref) is { } id => (id, set.Publish),
-            PublishOperation publishing when PlanId(publishing.Ref) is { } id && publishing.Version is null => (id, true),
+            // A publish at a later time is a schedule (PublishAt, set below), not a publish now.
+            PublishOperation publishing when PlanId(publishing.Ref) is { } id && publishing.Version is null => (id, publishing.PublishAt is null),
             _ => ((string?)null, false),
         };
         var creating = op is CreateOperation or BlockCreateOperation or UploadOperation
@@ -221,6 +222,12 @@ public static class PlanSimulation
         };
         // A GUID is only checked for the step that creates the content: whether it exists already.
         simulated = simulated with { Id = null, ContentGuid = updateExisting || creating.Index != step.Index ? null : creating.Operation.ContentGuid };
+        if (creating.Index != step.Index)
+        {
+            // A later set or publish: how the step itself publishes (a schedule, a review request), not how the creating
+            // step did, or a publishAt in the past and an approval sequence's review would only show in the run.
+            simulated = simulated with { PublishAt = op.PublishAt, RequestApproval = op.RequestApproval };
+        }
         return new Simulation(simulated, target, standIns, skipped, references, areaBlock is null ? null
             : [$"Dry-run as the shared block operation {creating.Index} adds to {areaBlock.Property} will be: {areaBlock.Type} \"{name ?? "(planned)"}\" made in the \"For this page\" folder of {Place(areaBlock.Ref)}, with every value set on it so far."]);
     }
@@ -304,6 +311,20 @@ public static class PlanSimulation
                     return updateExisting ? null : throw new Errors.ConflictException(
                         $"Operation {earlier[^1].Index} already publishes {reference}{In(target)}, and nothing is saved in between, so this publish would find nothing to publish.",
                         "Remove this publish, or the earlier step's \"publish\": true.");
+                }
+                if (since.LastOrDefault(s => s.Operation is UploadOperation { Replace: not null }) is { Operation: UploadOperation replacing } replace
+                    && since.All(s => s.Index <= replace.Index))
+                {
+                    // The new file an earlier upload gives the media is what this publish puts live: dry-run as that upload,
+                    // published as this step publishes it.
+                    var publishing = (PublishOperation)step.Operation;
+                    return new Simulation(
+                        replacing with { Id = null, ContentGuid = null, Publish = publishing.PublishAt is null, PublishAt = publishing.PublishAt, RequestApproval = publishing.RequestApproval },
+                        null, new Dictionary<string, string>(), [], [],
+                        [$"Dry-run as operation {replace.Index}'s new file for {reference}, {(publishing.PublishAt is not null ? "scheduled" : publishing.RequestApproval ? "sent for review" : "published")} (the file isn't saved yet)."])
+                    {
+                        Folded = since,
+                    };
                 }
                 var published = Merged(step, since, target, translate, reference, publish: true, steps, existing,
                     $"Dry-run as {reference}{In(target)} will be after operation(s) {string.Join(", ", since.Select(s => s.Index))}, {(step.Operation.PublishAt is not null ? "scheduled" : step.Operation.RequestApproval ? "sent for review (published, where no approval sequence applies)" : "published")} (their changes aren't saved yet){Based(restart, from)}.", from);

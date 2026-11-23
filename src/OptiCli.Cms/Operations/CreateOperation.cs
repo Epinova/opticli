@@ -89,6 +89,16 @@ internal static class CreateOperation
         }
 
         var owner = flow.Locator.LoadAnyLanguage(flow.Locator.ResolveContent(forContent, "forContent"));
+        if (owner is not IResourceable)
+        {
+            // The CMS gives such content no folder (it returns none), so nothing could be made in one; a dry run too.
+            var type = flow.Types.Load(owner.ContentTypeID)?.Name ?? "content";
+            throw AgentException.Usage(
+                $"{owner.ContentLink.ID} ('{owner.Name}') is {type}, which can't have a \"For this page\" folder (it isn't IResourceable, as a site's settings content often isn't), so nothing can be made in one for it.",
+                flow.Call.ForCaller(
+                    "Make it in an asset folder instead (--parent <folder>, a shared block, say below the global assets folder) and reference it by its ref. Nothing was saved.",
+                    "Make it in an asset folder instead (parent), and reference it by its ref. Nothing was saved."));
+        }
         var assets = flow.Call.Service<ContentAssetHelper>();
         if (!dryRun)
         {

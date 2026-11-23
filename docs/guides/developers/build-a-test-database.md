@@ -3,7 +3,7 @@ title: Build a test database from scratch
 summary: Start from an empty database, and let one seed plan add the languages, the content and the sites, so end-to-end tests run on a database that code builds the same way every time.
 audience: developers
 order: 5
-written-for: 0.32.0
+written-for: 0.35.2
 ---
 
 A copy of a shared database drifts, holds data you may not want in tests, and is slow to restore. A database built
@@ -136,7 +136,7 @@ machine.
 | `... has this host already` (`validation`) | Another site has the host. Every site needs host names of its own; `opticli sites` lists them. |
 | `HTTPS port 5443 is already in use` | Another site or a stopped site's leftover holds the port. `opticli serve --status` in that project, or pick another port everywhere it appears. |
 | `Launch profile 'E2E' does not set ConnectionStrings:EPiServerDB` | `--profile` picks the database from the profile, so the profile needs the connection string. |
-| A page answers 404 on a host | The host's port isn't the one the site listens on. Use fixed ports (step 2). |
+| A page answers 404 on a host | The host's port isn't the one the site listens on. Use fixed ports (step 2). When no site answers on serve's address at all, `serve` warns and names the hosts the sites have, and the port to start it on where a site has a `localhost` host. |
 | Requests to `/` redirect to a registration page | The Alloy template asks for a first administrator when there are no users: `opticli users add` makes one, on a site with ASP.NET Identity. |
 
 ## Related

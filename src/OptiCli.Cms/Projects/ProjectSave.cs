@@ -125,6 +125,9 @@ internal sealed class ProjectSave
         {
             return;
         }
+        // The project's items change even when nothing is saved (a version put in as it is, replacing the item there):
+        // only for someone who may edit the content, as removing it from the project asks. A save checks it again.
+        Call.RequireAccess(writable, EPiServer.Security.AccessLevel.Edit);
         if (_projects.InOtherProjects(writable.ContentLink, ProjectContext.Language(writable), _project.ID) is [var (item, other), ..])
         {
             var id = other.ID.ToString(CultureInfo.InvariantCulture);

@@ -1140,7 +1140,36 @@ public sealed class WriteExecutor(
                 "Move it below a parent whose type allows it (the parent type's [AvailableContentTypes], or its settings in admin mode); nothing was moved.")
             { Details = ex.Details };
         }
-        return new WriteOutcome<MoveOutput>(Moved(result, descendants, recycleBin: null, dryRun), AgentSource, null, []);
+        var warnings = new List<string>();
+        if (target.Header.Deleted)
+        {
+            // As a restore does (sync pull moves content back this way), but restore checks it was what was deleted.
+            var id = WriteOutput.Id(result.Content.Id);
+            warnings.Add(dryRun
+                ? $"{id} is in the recycle bin: the move would bring it back out, as `opticli restore {id} --to {destination.Id}` does."
+                : $"{id} was in the recycle bin: the move brought it back out, as `opticli restore {id} --to {destination.Id}` does.");
+            warnings.AddRange(OutOfTrashWarnings(id, result.Content.Status, session.Model.Kind(target.Header.TypeId).IsPage(), result.Parent, descendants, dryRun));
+        }
+        return new WriteOutcome<MoveOutput>(Moved(result, descendants, recycleBin: null, dryRun), AgentSource, null, warnings);
+    }
+
+    /// <summary>
+    /// What content brought back out of the recycle bin puts live again: itself, when it has a published version, and the
+    /// content below it (a folder's published blocks show wherever they are used again; a folder itself has no versions
+    /// to tell by).
+    /// </summary>
+    internal static IEnumerable<string> OutOfTrashWarnings(string id, string? status, bool page, string parent, int descendants, bool dryRun)
+    {
+        if (status == "published")
+        {
+            yield return RestoredLiveWarning(id, page, parent, dryRun);
+        }
+        if (descendants > 0)
+        {
+            yield return dryRun
+                ? $"{descendants} item(s) below it would come back with it, and those with a published version would be live again."
+                : $"{descendants} item(s) below it came back with it, and those with a published version are live again.";
+        }
     }
 
     internal async Task<WriteOutcome<MoveOutput>> DeleteAsync(DeleteOperation op, bool dryRun, CancellationToken cancellationToken)
@@ -1250,11 +1279,7 @@ public sealed class WriteExecutor(
         var content = result.Content;
         var output = new RestoreOutput(WriteOutput.Id(content.Id), content.Guid, content.Type, content.Name, content.Language, content.Status,
             result.Parent, result.PreviousParent, op.To is null ? "originalParent" : "to", result.StoredParent, result.Restored, result.DryRun, descendants);
-        var warnings = new List<string>();
-        if (content.Status == "published")
-        {
-            warnings.Add(RestoredLiveWarning(WriteOutput.Id(content.Id), session.Model.Kind(header.TypeId).IsPage(), result.Parent, dryRun));
-        }
+        var warnings = OutOfTrashWarnings(WriteOutput.Id(content.Id), content.Status, session.Model.Kind(header.TypeId).IsPage(), result.Parent, descendants, dryRun).ToList();
         if (op.To is not null && result.StoredParent is { } stored && stored != result.Parent)
         {
             warnings.Add(dryRun

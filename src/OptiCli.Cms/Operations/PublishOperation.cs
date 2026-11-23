@@ -149,6 +149,9 @@ internal static class PublishOperation
         flow.ThrowIfAborted();
         ContentReference saved;
         string? siteError = null;
+        // As stored before the save: a version that has the status the save gives it already (one scheduled before, being
+        // scheduled again) went through the save only when its stamp changed.
+        var stampBefore = flow.Versions.Load(version.ContentLink);
         try
         {
             saved = call.Save(writable, action);
@@ -159,8 +162,8 @@ internal static class PublishOperation
         }
         catch (Exception ex) when (ex is not AgentException
             && !expired
-            && flow.Repository.Get<IContent>(version.ContentLink) is IVersionable { Status: var status }
-            && status == (publishing ? VersionStatus.Published : scheduling ? VersionStatus.DelayedPublish : VersionStatus.AwaitingApproval))
+            && SavedAnyway(flow, version.ContentLink, stampBefore,
+                publishing ? VersionStatus.Published : scheduling ? VersionStatus.DelayedPublish : VersionStatus.AwaitingApproval))
         {
             // A handler of the publishing events failed after the version went live (see WriteFlow.Save).
             call.SiteFailedAfterSave(version.ContentLink, ex);
@@ -190,6 +193,18 @@ internal static class PublishOperation
             PreviouslyPublished = publishing ? previouslyPublished : null,
             SharedBlocks = along is { Count: > 0 } ? along : null,
         };
+    }
+
+    /// <summary>
+    /// After a failed save: whether the version went through it all the same (a handler of the publishing events failed
+    /// after it), so it now has <paramref name="target"/>. A version that had that status before counts only when its
+    /// status or saved time changed: rescheduling a scheduled version that failed before saving leaves it as it was.
+    /// </summary>
+    private static bool SavedAnyway(WriteFlow flow, ContentReference version, ContentVersion? before, VersionStatus target)
+    {
+        var now = flow.Versions.Load(version);
+        return now is not null && now.Status == target
+            && (before is null || before.Status != target || before.Saved != now.Saved);
     }
 
     private static string AlreadyPublished(IContent version) => $"Version {version.ContentLink} is already the published version.";

@@ -329,6 +329,13 @@ public sealed class CustomToolsTests
         Assert.Contains(typeof(SameNameAsCustom).FullName!, clash);
 
         Assert.Contains("is registered twice", Refused(m => m.WithTools<CustomReadTools>().WithTools<CustomReadTools>()).Message);
+
+        // [Authorize] isn't applied by the module (it runs none of the SDK's filters): refused rather than offered to every editor.
+        var authorized = Refused(m => m.WithTools<AuthorizedTools>()).Message;
+        Assert.Contains($"WithTools<{typeof(AuthorizedTools).FullName}>(): [Authorize] restricts who may call the tool", authorized);
+        Assert.Contains("every editor connected to it could call this one", authorized);
+        Assert.Contains("method Run: [Authorize]", Refused(m => m.WithTools<AuthorizedMethodTools>()).Message);
+        Assert.Contains("[Authorize] restricts", Refused(m => m.WithWriteTool<AuthorizedWriteTool>()).Message);
         Assert.Contains("abstract", Refused(m => m.WithTools<AbstractTools>()).Message);
 
         // A refused class leaves nothing behind: the next one may take its names.
@@ -462,6 +469,28 @@ public sealed class InvalidNameTool
 {
     [McpServerTool(Name = "search products", ReadOnly = true)]
     public static string Run() => "";
+}
+
+[Microsoft.AspNetCore.Authorization.Authorize(Roles = "WebAdmins")]
+public sealed class AuthorizedTools
+{
+    [McpServerTool(Name = "custom_admin_report", ReadOnly = true)]
+    public static string Run() => "";
+}
+
+public sealed class AuthorizedMethodTools
+{
+    [McpServerTool(Name = "custom_admin_only", ReadOnly = true)]
+    [Microsoft.AspNetCore.Authorization.Authorize(Policy = "Admins")]
+    public static string Run() => "";
+}
+
+[OptiCliWriteTool("custom_admin_write", Kinds = ContentPlanKinds.Update)]
+[System.ComponentModel.Description("Changes content, for administrators.")]
+[Microsoft.AspNetCore.Authorization.Authorize(Roles = "WebAdmins")]
+internal sealed class AuthorizedWriteTool : IOptiCliWriteTool<RenameArgs>
+{
+    public Task<ContentPlan> PlanAsync(RenameArgs args, CancellationToken cancellationToken) => Task.FromResult(new ContentPlan());
 }
 
 public sealed class TwiceInOneClass

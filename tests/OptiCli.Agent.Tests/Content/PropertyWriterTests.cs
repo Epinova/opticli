@@ -330,6 +330,19 @@ public class PropertyWriterTests
     }
 
     [Fact]
+    public void A_list_property_given_as_text_it_cant_parse_is_a_usage_error_that_asks_for_an_array()
+    {
+        var block = Block();
+        block.Property.Add(nameof(LinksBlock.Teasers), new PropertyTeasers { PropertyDefinitionID = 5 });
+
+        var refused = Assert.Throws<AgentException>(() => Writer(CmsCaller.Developer).Writer.Apply(block, Values(new { Teasers = "[{\"Text\": \"Read\"}]" })));
+
+        Assert.Equal(AgentErrorCodes.Usage, refused.Code);
+        Assert.Contains("'Teasers' (PropertyTeasers) can't be set from text: ParseItem must be explicitly implemented", refused.Message);
+        Assert.Contains("JSON array of its items", refused.Hint);
+    }
+
+    [Fact]
     public void A_content_reference_given_as_an_object_gets_the_read_check_for_an_editor()
     {
         // The repository finds nothing: to an editor, content they can't read is missing content.
@@ -477,7 +490,8 @@ public class PropertyWriterTests
 
         public override Type PropertyValueType => typeof(IList<Teaser>);
 
-        public override void ParseToSelf(string value) => throw new NotSupportedException();
+        // As PropertyList<T> does where its type leaves ParseItem out (some of Optimizely Forms' lists).
+        public override void ParseToSelf(string value) => throw new NotImplementedException("ParseItem must be explicitly implemented");
 
         protected override void SetDefaultValue() => _value = null;
     }

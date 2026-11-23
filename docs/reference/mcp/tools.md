@@ -92,7 +92,12 @@ that ignores what it returns compiles as before, and one that chained other regi
 `CancellationToken`, image results). Every tool method needs `[McpServerTool]` with a `Name` and `ReadOnly = true`. The
 class needs no `[McpServerToolType]`, and is better off without it: the SDK's `WithToolsFromAssembly()` picks up classes
 that have it for the site's other MCP servers (the module removes them there, but there is no point). The class is made
-for every call from the request's services, so it takes the site's services, and `IOptiCliEditor`, in its constructor:
+for every call from the request's services, so it takes the site's services, and `IOptiCliEditor`, in its constructor.
+A read or write tool class or method with `[Authorize]` (or another ASP.NET Core authorization attribute) stops the site
+at startup: the module doesn't apply them, so the tool would be open to every editor connected to it. Check what the
+tool needs in the tool itself; it always runs as the signed-in editor, with their access rights.
+
+
 
 ```csharp
 using System.ComponentModel;
@@ -176,7 +181,8 @@ The assistant sees a tool with `TArgs`' properties as its arguments, camelCase, 
 before the tool runs (in a project without nullable reference types, as Alloy's, a `string` may be `null`, so check).
 With `dryRun: true` the module calls `PlanAsync`, checks every step as the editor with its own dry runs (access rights,
 the edit UI's rules, validation, `baseVersion`, the delete gate), and answers with each step's changes, a `planToken`
-and when it expires (`planTokenExpires`); a plan with a step that would be refused gets no token. With `dryRun: false`
+and when it expires (`planTokenExpires`); a plan with a step that would be refused gets no token. A plan with a step on
+content the editor can't read (or that doesn't exist) is refused whole, `not_found`, naming no step or id. With `dryRun: false`
 and the token, the module calls `PlanAsync` again, refuses the run (`conflict`) if the plan isn't the one the dry run
 showed, checks every step again, and saves them in order. The tool's description tells the assistant to do the dry run
 first and show the user the changes.
@@ -218,7 +224,8 @@ What a site's tools must allow for:
 - **Read as the editor.** The CMS's `IContentLoader` and `IContentRepository` don't check access rights. Load content
   through `IOptiCliEditor`, and pass ids that a search index or the site's own code found through `Readable` (not
   `Load`, whose `not_found` names the id), so content the editor can't read doesn't exist for the assistant: not in a
-  result, a count or a message. The module checks every step as the editor all the same. Use the editor during the
+  result, a count or a message. The module checks every step as the editor all the same, and refuses a plan that names
+  hidden content as a whole, without saying which. Use the editor during the
   call only: kept in a singleton, a cache or a background task, it throws.
 - **Plan from the latest version.** An update is based on the version of the content passed, and is a `conflict` when
   there is a newer one. Content loaded without a version (`IContentLoader.Get`, `Load` without `latest`) counts as its

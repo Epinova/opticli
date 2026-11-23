@@ -53,6 +53,31 @@ public class PlanSimulationTests
     }
 
     [Fact]
+    public void A_later_set_or_publish_of_planned_content_is_dry_run_with_its_own_schedule_and_review_request()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "create", "id": "page", "parent": "100", "type": "ArticlePage", "name": "Page", "publishAt": "2099-01-01T00:00:00Z"},
+              {"op": "set", "ref": "$page", "properties": {"Heading": "A"}, "publishAt": "2020-01-01T00:00:00Z"},
+              {"op": "publish", "ref": "$page", "requestApproval": true},
+              {"op": "publish", "ref": "$page", "publishAt": "2098-01-01T00:00:00Z"},
+              {"op": "set", "ref": "$page", "properties": {"Heading": "B"}}
+            ]}
+            """);
+
+        CreateOperation Simulated(int index) => Assert.IsType<CreateOperation>(PlanSimulation.For(plan.Steps[index], plan.Steps, None, updateExisting: false)!.Operation);
+
+        // The set's own (past) publishAt, which the site refuses in the dry run as in the run; not the create's.
+        Assert.Equal(DateTimeOffset.Parse("2020-01-01T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture), Simulated(1).PublishAt);
+        Assert.False(Simulated(1).Publish);
+        Assert.True(Simulated(2) is { Publish: true, RequestApproval: true, PublishAt: null });
+        Assert.True(Simulated(3) is { Publish: false, RequestApproval: false } && Simulated(3).PublishAt!.Value.Year == 2098);
+        Assert.True(Simulated(4) is { Publish: false, RequestApproval: false, PublishAt: null });
+        // The creating step itself keeps its own.
+        Assert.Equal(2099, Simulated(0).PublishAt!.Value.Year);
+    }
+
+    [Fact]
     public void Values_that_refer_to_planned_content_are_left_out_and_reported()
     {
         var simulation = PlanSimulation.For(Plan.Steps[2], Plan.Steps, None, updateExisting: false)!;

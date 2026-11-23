@@ -68,6 +68,26 @@ public class ProjectSaveTests
     }
 
     [Fact]
+    public void An_editor_who_may_only_read_the_content_cant_change_the_projects_item_for_it_even_with_nothing_to_save()
+    {
+        var services = new ServiceCollection()
+            .AddSingleton<ProjectRepository>(_projects)
+            .AddSingleton(Recorder<IContentRepository>.Create().Proxy)
+            .AddSingleton<IPrincipalAccessor>(new CmsCallTests.PrincipalAccessor(new System.Security.Principal.GenericPrincipal(new System.Security.Principal.GenericIdentity("editor"), [])))
+            .BuildServiceProvider();
+        var editor = new CmsCall(services, CancellationToken.None, CmsCaller.Editor);
+        _projects.AddItem(1, new ContentReference(10, 100), "en");
+        var save = ProjectSave.For(editor, "Launch", ready: false, publish: false, publishAt: null)!;
+
+        // A write with nothing to change would put that version in as it is, replacing the project's item: Edit first.
+        var refused = Assert.Throws<AgentException>(() => save.Check(new Page(new ContentReference(10, 90), CultureInfo.GetCultureInfo("en"), AccessLevel.Read)));
+
+        Assert.Equal(AgentErrorCodes.Refused, refused.Code);
+        Assert.Equal("10_100", Assert.Single(_projects.Items).ContentLink.ToString());
+        save.Check(new Page(new ContentReference(10, 90), CultureInfo.GetCultureInfo("en"), AccessLevel.Read | AccessLevel.Edit));
+    }
+
+    [Fact]
     public void The_first_version_is_added_as_the_edit_ui_adds_it()
     {
         var result = Save().Add(Version(10, 100), SaveAction.Save | SaveAction.ForceNewVersion);
@@ -299,7 +319,7 @@ public class ProjectSaveTests
     }
 
     /// <summary>A language branch of a page, as the CMS loads it (read-only, so it can be cloned).</summary>
-    private class Page(ContentReference link, CultureInfo? language) : CmsCallTests.Secured(link, AccessLevel.FullAccess), ILocalizable, IVersionable, IReadOnly
+    private class Page(ContentReference link, CultureInfo? language, AccessLevel granted = AccessLevel.FullAccess) : CmsCallTests.Secured(link, granted), ILocalizable, IVersionable, IReadOnly
     {
         public CultureInfo Language { get; set; } = language!;
 

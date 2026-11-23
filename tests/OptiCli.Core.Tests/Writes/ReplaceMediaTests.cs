@@ -37,6 +37,24 @@ public class ReplaceMediaTests
     }
 
     [Fact]
+    public void A_publish_after_a_new_file_for_existing_media_is_dry_run_as_that_upload_published()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "upload", "file": "new.png", "replace": "456"},
+              {"op": "publish", "ref": "456", "publishAt": "2099-01-01T00:00:00Z"}]}
+            """);
+        var targets = new Dictionary<int, PlanTarget> { [0] = new(456, null, null, true, false), [1] = new(456, null, null, true, false) };
+
+        var simulation = PlanSimulation.OnExisting(plan.Steps[1], plan.Steps, targets, new Dictionary<string, int>(), updateExisting: false)!;
+
+        // Not the media's published version alone, which a publish would find nothing new in.
+        var upload = Assert.IsType<UploadOperation>(simulation.Operation);
+        Assert.True(upload is { Replace: "456", Publish: false } && upload.PublishAt!.Value.Year == 2099);
+        Assert.Equal([0], simulation.Folded!.Select(s => s.Index));
+    }
+
+    [Fact]
     public void Replacing_planned_media_is_not_simulated_as_new_media()
     {
         var plan = WritePlan.Parse("""

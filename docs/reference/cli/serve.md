@@ -31,6 +31,15 @@ agent injected, and returns once the site agent answers.
   `%TEMP%\opticli-ports`, so `serve`s run with different
   values of those don't see each other's).
 - Ctrl+C while `serve` waits for the site stops the site again.
+- When none of the database's sites answers on serve's address (`127.0.0.1` or `localhost` on its port, `localhost`
+  on the HTTPS port), `serve` warns: every page there would be a 404. That is the case for a database restored with
+  production host names, or one whose hosts are on another port (a launch profile's `applicationUrl`, which `serve`
+  doesn't use). A site answers on a host it has (not a redirect host), on its SiteUrl, and on every host when it has the
+  `*` host (CMS 13: the default application). The warning names the sites' hosts. If a site has a `localhost` host on
+  another port, it names that port (`--port`, or `--https-port` for an https host). Otherwise it gives the `sites primary`
+  command that points a site at serve's address (see [Site hosts after a database
+  restore](database-maintenance.md#site-hosts-after-a-database-restore)). A database without sites, or whose sites
+  can't be read, gets no warning.
 - A site that configures `Kestrel:Endpoints` ignores `ASPNETCORE_URLS`. `serve` and `env` then add opticli's address
   as one more endpoint (`Kestrel__Endpoints__OptiCli__Url`) and warn. If the site sets its addresses in code, a
   timeout names the addresses it listens on instead.

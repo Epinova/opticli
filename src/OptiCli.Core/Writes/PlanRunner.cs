@@ -111,6 +111,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         }
         // The projects the plan names: by id, or by name, made when the plan runs if no unpublished project has the name.
         var projects = await PlanProjects.ResolveAsync(session, plan.Steps, cancellationToken);
+        projects.RequireOneProjectPerContent(plan.Steps);
         // Rich text from @file values only has its $ids once the files are read.
         var planned = WritePlan.LinkText(PlanFiles.Resolve(plan.Steps
             .Select(s => publishAll ? s with { Operation = s.Operation.WithPublish() } : s)
@@ -361,6 +362,8 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                 // A create step whose GUID exists updates that content (--update-existing).
                 CreateOperation { Id: { } id } create when existing.TryGetValue(id, out var found) => (WriteOutput.Id(found), create.Lang),
                 BlockCreateOperation { Id: { } id } block when existing.TryGetValue(id, out var found) => (WriteOutput.Id(found), block.Lang),
+                // An upload that gives existing media a new file saves a draft of it, which a later publish puts live.
+                UploadOperation { Replace: { } replaced } => (replaced, null),
                 UploadOperation { Id: { } id } when existing.TryGetValue(id, out var found) => (WriteOutput.Id(found), null),
                 _ => ((string?)null, (string?)null),
             };

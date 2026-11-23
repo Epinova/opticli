@@ -556,7 +556,7 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
         return made;
     }
 
-    /// <summary>The folder made for new content, if this write made one.</summary>
+    /// <summary>The "For this page" folder this write made (for new content, or existing content without one), if any.</summary>
     private IContent? _madeFolder;
 
     /// <summary>
@@ -569,7 +569,8 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     {
         if (!ContentReference.IsNullOrEmpty(owner.ContentLink))
         {
-            _folder = call.Service<ContentAssetHelper>().GetOrCreateAssetFolder(owner.ContentLink.ToReferenceWithoutVersion());
+            // Called only when it has none yet (Folder), so this makes one: a failure after it names it too.
+            _folder = _madeFolder = call.Service<ContentAssetHelper>().GetOrCreateAssetFolder(owner.ContentLink.ToReferenceWithoutVersion());
             return _folder;
         }
         var type = call.Service<IContentTypeRepository>().Load(typeof(ContentAssetFolder))
@@ -795,11 +796,18 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
         var results = new List<SharedBlockResult>();
         foreach (var (path, block, latest, version, folderId, live) in OwnBlocksShown(published))
         {
+            var what = $"The block {latest.ContentLink} ('{version.Name}') at {path}";
             if (latest.Status is not (VersionStatus.CheckedOut or VersionStatus.CheckedIn))
             {
+                // A draft in review, rejected or scheduled isn't published along. Said where it would have gone (never
+                // published, named or written), but not of a project's own item, which follows the project.
+                if (NotAlong(latest, live, block.ContentLink.ID, choice, what) is { } notAlong
+                    && inProject?.Invoke(block.ContentLink.ID, (version as ILocalizable)?.Language) is null)
+                {
+                    warnings.Add(new ValidationIssue(path, notAlong, "warning"));
+                }
                 continue;
             }
-            var what = $"The block {latest.ContentLink} ('{version.Name}') at {path}";
             if (inProject?.Invoke(block.ContentLink.ID, (version as ILocalizable)?.Language) is { } ready)
             {
                 if (!ready)
@@ -819,12 +827,14 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
                     "warning"));
                 continue;
             }
+            // Someone else's changes in the draft: its saver's, or an earlier draft's that it carries, as a publish of the
+            // block itself would ask about (ContentLocator.PendingDraft).
+            var others = OthersDraft(block, version);
             if ((live || choice.NamedOnly) && !choice.With.Contains(id) && !choice.Wrote(id, latest.ContentLink))
             {
                 var reference = id.ToString(CultureInfo.InvariantCulture);
                 var how = choice.HowToInclude?.Invoke(reference) ?? HowToInclude(published, reference);
-                nameable?.Add(new Nameable(path, id, version.Name, live,
-                    PendingDrafts.SavedBy(latest.SavedBy, call.UserName) ? null : string.IsNullOrWhiteSpace(latest.SavedBy) ? "someone without a user name" : latest.SavedBy));
+                nameable?.Add(new Nameable(path, id, version.Name, live, others));
                 warnings.Add(new ValidationIssue(path, live
                     ? $"{what} is published already, so its newer draft stays a draft: the content {(choice.NamedOnly ? "shows" : "goes live showing")} the block's published version. {how}"
                     : $"{what} was never published, and stays a draft: the content is published already, so a publish of it takes along only the blocks it names (or that the same plan run saved), and visitors see nothing of this block until it is published. {how}",
@@ -835,10 +845,12 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
             // includeDraft isn't. A block the write changes itself (or an earlier step of the plan run saved) goes along as its
             // own latest version; a dry run still sees the draft that version will replace, which a write gets past only with
             // that draft confirmed (RequireOwnDraft). In a sealed apply to production, not even naming it puts their draft live.
-            if ((!choice.With.Contains(id) || choice.KeepOthers) && !choice.Wrote(id, latest.ContentLink) && !PendingDrafts.SavedBy(latest.SavedBy, call.UserName))
+            if ((!choice.With.Contains(id) || choice.KeepOthers) && !choice.Wrote(id, latest.ContentLink) && others is not null)
             {
                 var reference = id.ToString(CultureInfo.InvariantCulture);
-                var whose = string.IsNullOrWhiteSpace(latest.SavedBy) ? "saved without a user name" : $"{latest.SavedBy} saved";
+                var whose = PendingDrafts.SavedBy(latest.SavedBy, call.UserName)
+                    ? $"of yours that holds changes {others} saved before"
+                    : string.IsNullOrWhiteSpace(latest.SavedBy) ? "saved without a user name" : $"{latest.SavedBy} saved";
                 if (choice.With.Contains(id))
                 {
                     keptOthers?.Add(id);
@@ -864,6 +876,12 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
                 continue;
             }
             var writable = (IContent)((IReadOnly)version).CreateWritableClone();
+            // A draft saved after the block was taken offline carries the passed stop date: it would go live expired, so
+            // nothing of it would show. Cleared as for the content itself (WriteFlow.ClearExpiredStopPublish), with a warning.
+            if (WriteFlow.ClearExpiredStopPublish(writable, kind, null) is { } cleared)
+            {
+                warnings.Add(new ValidationIssue(path, $"{what}: {char.ToLowerInvariant(cleared.Message[0])}{cleared.Message[1..]}", "warning"));
+            }
             if (ValidationErrors.Validate(call, writable, kind) is var issues && ValidationErrors.HasErrors(issues))
             {
                 warnings.Add(new ValidationIssue(path, $"{what} doesn't pass validation, so it wasn't published along: {string.Join(" ", issues.Where(i => i.Severity == "error").Select(i => i.Message))}", "warning"));
@@ -894,6 +912,41 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     }
 
     /// <summary>
+    /// Who saved changes in a block's draft other than the caller: the draft's saver, or the saver of an earlier draft whose
+    /// changes it carries (<see cref="ContentLocator.PendingDraft"/>, as a publish of the block itself checks). Null when
+    /// every change in it is the caller's.
+    /// </summary>
+    private string? OthersDraft(IContent block, IContent version)
+    {
+        var language = version is ILocalizable { Language: { } own } && !CultureInfo.InvariantCulture.Equals(own) ? own : null;
+        return locator.PendingDraft(locator.Versions(block.ContentLink, language), version) is { } draft
+            ? string.IsNullOrWhiteSpace(draft.SavedBy) ? "someone without a user name" : draft.SavedBy
+            : null;
+    }
+
+    /// <summary>
+    /// Why a block whose latest version is in review, rejected or scheduled wasn't published along, when it would have gone
+    /// had it been a draft: it was never published (and the publish takes those along), it is named, or the publish wrote
+    /// it. Null for any other block, including one whose latest version is published.
+    /// </summary>
+    private static string? NotAlong(ContentVersion latest, bool live, int id, AlongChoice choice, string what)
+    {
+        var wouldGo = choice.With.Contains(id) || choice.Wrote(id, latest.ContentLink) || (!live && !choice.NamedOnly && !choice.Without.Contains(id));
+        if (!wouldGo)
+        {
+            return null;
+        }
+        var shows = live ? "the content goes live showing the block's published version" : "visitors see nothing of the block until it is published";
+        return latest.Status switch
+        {
+            VersionStatus.AwaitingApproval => $"{what} is waiting for review, so it wasn't published along: {shows}, until its reviewers approve it.",
+            VersionStatus.Rejected => $"{what} was rejected by its reviewers, so it wasn't published along: {shows}. Save a new draft of the block, then publish it on its own or with the content.",
+            VersionStatus.DelayedPublish => $"{what} is scheduled to be published on its own, so it wasn't published along: {shows} until then.",
+            _ => null,
+        };
+    }
+
+    /// <summary>
     /// How to put a block's draft that a publish of <paramref name="content"/> left behind unnamed (a live block's, or one
     /// someone else saved) live: by naming it in a publish of the content (which, with the content published already,
     /// publishes just the blocks), or on its own.
@@ -910,7 +963,8 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
     /// The blocks of <paramref name="content"/>'s own "For this page" folder that its areas show (and the areas of those
     /// blocks' latest versions, at any depth), each once: its place, the block, its latest version in the content's
     /// language, that version, the folder's id, and whether the block has a published version in that language (a block
-    /// published only in another language counts as never published here). Blocks from anywhere else aren't walked.
+    /// published only in another language counts as never published here). Blocks from anywhere else aren't walked, nor
+    /// blocks the caller can't read.
     /// </summary>
     private IEnumerable<(string Path, IContent Block, ContentVersion Latest, IContent Version, string FolderId, bool Live)> OwnBlocksShown(IContent content)
     {
@@ -930,7 +984,10 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
             {
                 if (ContentReference.IsNullOrEmpty(item.ContentLink) || InlineBlocks.Of(item) is not null || !seen.Add(item.ContentLink.ID)
                     || !locator.Repository.TryGet<IContent>(item.ContentLink.ToReferenceWithoutVersion(), new LoaderOptions { LanguageLoaderOption.FallbackWithMaster() }, out var block)
-                    || block is not BlockData || !block.ParentLink.CompareToIgnoreWorkID(folder.ContentLink))
+                    || block is not BlockData || !block.ParentLink.CompareToIgnoreWorkID(folder.ContentLink)
+                    // A block with access rights of its own that the caller can't read: as if it weren't there, so its
+                    // ref, name and who saved it don't show in warnings and hints, and it can't be named.
+                    || !call.CanRead(block))
                 {
                     continue;
                 }

@@ -83,6 +83,12 @@ internal sealed class WriteFlow
     public bool BlockDraftsConfirmable { get; set; } = true;
 
     /// <summary>
+    /// An unpublish: its save publishes a copy of the published version that stops publishing now, which puts nothing
+    /// new live, so <see cref="PublishAlong"/> publishes no blocks along with it (a dry run lists none either).
+    /// </summary>
+    public bool Unpublishing { get; set; }
+
+    /// <summary>
     /// Where the site's edit UI makes new blocks in a ContentArea shared: after a save that publishes (or schedules) the
     /// content, the drafts of its own folder's blocks its areas show, published along (<see cref="SharedAreaBlocks.PublishAlong"/>);
     /// null where it makes them inline, which is as before.
@@ -95,7 +101,7 @@ internal sealed class WriteFlow
     public List<SharedBlockResult>? PublishAlong(IContent published, SaveAction action, bool dryRun, List<ValidationIssue> warnings,
         Func<int, System.Globalization.CultureInfo?, bool?>? inProject = null, DateTime? at = null, SharedAreaBlocks.AlongChoice? choice = null,
         List<SharedAreaBlocks.Nameable>? nameable = null, List<int>? keptOthers = null) =>
-        Writer.Shared is { } shared && Kind(action) is SaveAction.Publish or SaveAction.Schedule
+        Writer.Shared is { } shared && !Unpublishing && Kind(action) is SaveAction.Publish or SaveAction.Schedule
             ? shared.PublishAlong(published, Kind(action), at ?? (published as IVersionable)?.StartPublish, dryRun, warnings, inProject, choice, nameable, keptOthers)
             : null;
 
@@ -307,6 +313,12 @@ internal sealed class WriteFlow
         // checked for a dry run too, so the assistant learns before it tries.
         Call.RequireLanguageAccess(writable);
         Call.RequirePublishing(action, writable);
+        if (writable is ContentFolder && !ContentReference.IsNullOrEmpty(writable.ContentLink) && RenamesFolderWithChildren(writable))
+        {
+            // A folder's name is in the URLs of the media below it (/globalassets/<folder>/...): renaming one with children
+            // changes what visitors reach at once, as moving it does (MoveOperation), so it passes the same gate.
+            Call.RequirePublishing(SaveAction.Publish);
+        }
         if (!Call.MayWriteScript && writable is MediaData media)
         {
             // Media is served by its URL, whose last segment is made from its name: that extension counts as the file's.
@@ -519,6 +531,14 @@ internal sealed class WriteFlow
             Project = inProject,
             SharedBlocks = made.Count > 0 ? made : null,
         };
+    }
+
+    /// <summary>Whether the save renames an existing folder that has content below it.</summary>
+    private bool RenamesFolderWithChildren(IContent folder)
+    {
+        var link = folder.ContentLink.ToReferenceWithoutVersion();
+        return Repository.TryGet<IContent>(link, out var stored) && !string.Equals(stored.Name, folder.Name, StringComparison.Ordinal)
+            && Repository.GetChildren<IContent>(link, new LoaderOptions { LanguageLoaderOption.FallbackWithMaster() }).Any();
     }
 
     /// <summary>A dry run's <see cref="WriteResult.SharedBlocks"/>: the blocks it would make or change, and the drafts a publish would publish along.</summary>

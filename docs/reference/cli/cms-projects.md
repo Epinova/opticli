@@ -105,7 +105,9 @@ from the gadget than from opticli.
 
 **Plans** take `"project"` next to `"operations"` (a name, or an id as a number): every `set`, `create`, `area`,
 `composition`, `block`, `upload` and `translate` step puts its draft in that project. A step's own `"project"` overrides
-it, and `"project": null` leaves the step out; a folder a `create` step makes is left out. `"ready": true` on a step
+it, and `"project": null` leaves the step out; a folder a `create` step makes is left out. Steps that save the same
+content and language into different projects are a `usage` error before anything is saved: content is in one project
+at a time. `"ready": true` on a step
 marks its draft ready. A project the plan names (on the plan or on a step) that no unpublished project has is created by
 the run, after the whole plan passed its check and before the first step saves; a number that is no project's id is
 `not_found`, never a new project's name. A dry run checks the steps of a project still to be made without it, with a

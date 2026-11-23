@@ -13,9 +13,13 @@ namespace OptiCli.Cms.Operations;
 /// </summary>
 internal static class UnpublishOperation
 {
-    public static WriteResult Run(CmsCall call, string reference, UnpublishRequest body)
+    public static WriteResult Run(CmsCall call, string reference, UnpublishRequest body) => Run(call, reference, body, new WriteFlow(call));
+
+    /// <param name="flow">The write's flow: tests choose how the site makes new area blocks.</param>
+    internal static WriteResult Run(CmsCall call, string reference, UnpublishRequest body, WriteFlow flow)
     {
-        var flow = new WriteFlow(call);
+        // Taking content offline puts nothing live: not the drafts of its folder's blocks either.
+        flow.Unpublishing = true;
         var link = flow.Locator.ResolveContent(reference);
         if (ProtectedContent.Contains(ProtectedContent.Links(call), link))
         {

@@ -69,6 +69,18 @@ internal static class MoveOperation
                 };
             }
         }
+        // An editor's move needs what the CMS's own move checks (CmsCall.Move), so a dry run says what the move would:
+        // Delete on the content, Create below the destination, and Publish there for content that is published.
+        // A planned destination (an MCP plan's) is checked by the plan step, against what will be there.
+        if (call.ChecksLiveMoves && plannedParentType is null)
+        {
+            call.RequireAccess(content, EPiServer.Security.AccessLevel.Delete);
+            call.RequireAccess(target, EPiServer.Security.AccessLevel.Create);
+            if (Published(flow, link, content))
+            {
+                call.RequireAccess(target, EPiServer.Security.AccessLevel.Publish);
+            }
+        }
         if (body.DryRun)
         {
             return new MoveResult
@@ -110,8 +122,12 @@ internal static class MoveOperation
     /// </summary>
     private static bool MayBeLive(WriteFlow flow, ContentReference link, IContent content) =>
         content is not (IVersionable or ContentFolder)
-        || (content is IVersionable && flow.Versions.List(link.ToReferenceWithoutVersion()).Any(v => v.Status == VersionStatus.Published))
+        || Published(flow, link, content)
         || flow.Call.Service<IContentLoader>().GetChildren<IContent>(link.ToReferenceWithoutVersion(), new LoaderOptions { LanguageLoaderOption.FallbackWithMaster() }, 0, 1).Any();
+
+    /// <summary>Whether the content has a published version in any language.</summary>
+    internal static bool Published(WriteFlow flow, ContentReference link, IContent content) =>
+        content is IVersionable && flow.Versions.List(link.ToReferenceWithoutVersion()).Any(v => v.Status == VersionStatus.Published);
 
     internal static MoveResult Result(WriteFlow flow, ContentReference link, ContentReference previousParent)
     {

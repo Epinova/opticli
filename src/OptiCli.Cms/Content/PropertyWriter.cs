@@ -968,14 +968,37 @@ internal sealed class PropertyWriter(
                 // run again with --update-existing) changes nothing.
                 return;
             case JsonValueKind.String:
-                property.ParseToSelf(value.GetString());
+                ParseText(property, value.GetString()!);
                 return;
             case JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False:
-                property.ParseToSelf(value.GetRawText());
+                ParseText(property, value.GetRawText());
                 return;
             default:
                 property.Value = Structured(property, value);
                 return;
+        }
+    }
+
+    /// <summary>
+    /// Text for a property, parsed by the property itself (<c>ParseToSelf</c>). A property type that can't be set from text
+    /// (a <c>PropertyList&lt;T&gt;</c> whose <c>ParseItem</c> the site's or an add-on's type leaves unimplemented, as some
+    /// of Optimizely Forms' lists do) is a <c>usage</c> error that says to give the structured value, not a crash.
+    /// </summary>
+    private void ParseText(PropertyData property, string text)
+    {
+        try
+        {
+            property.ParseToSelf(text);
+        }
+        catch (Exception ex) when (ex is NotImplementedException or NotSupportedException)
+        {
+            var list = property.PropertyValueType is { IsGenericType: true } type && type != typeof(string)
+                && typeof(System.Collections.IEnumerable).IsAssignableFrom(type);
+            throw AgentException.Usage(
+                $"'{_prefix}{property.Name}' ({property.GetType().Name}) can't be set from text: {ex.Message}",
+                list
+                    ? $"Give it as a JSON array of its items, as {call.ForCaller("opticli get", "get_content")} shows it, not as a string (in a plan, the value itself, not JSON text in a string)."
+                    : $"Give its structured value, as {call.ForCaller("opticli get", "get_content")} shows it, not a string.");
         }
     }
 

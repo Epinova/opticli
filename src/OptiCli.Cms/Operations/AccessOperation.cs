@@ -28,6 +28,14 @@ internal static class AccessOperation
                 $"Content {link.ID} is the root, the recycle bin, the global block folder, a start page or an asset root; opticli won't change its access rights.",
                 "Change the section below it instead: children that inherit follow.");
         }
+        // Above them too, as for a move: a start page that inherits would follow, and a whole site could go dark.
+        var protectedLinks = ProtectedContent.Links(call);
+        if (protectedLinks.FirstOrDefault(p => flow.Repository.GetAncestors(p).Any(a => a.ContentLink.CompareToIgnoreWorkID(link))) is { } below)
+        {
+            throw AgentException.Refused(
+                $"Content {link.ID} contains {below.ID}, a start page or asset root, which may inherit its access rights; opticli won't change them.",
+                "Change the access rights in the CMS's admin mode, where the change to every site below is visible, or change a section below the start page instead.");
+        }
 
         var grants = body.Grant ?? new Dictionary<string, string>();
         var userGrants = body.GrantUsers ?? new Dictionary<string, string>();

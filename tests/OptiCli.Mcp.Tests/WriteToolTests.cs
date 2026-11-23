@@ -247,13 +247,13 @@ public sealed class WriteToolTests
         await using var client = await ToolTests.Connect(site);
         _cms.RefuseCheck = step => step is UpdateStep { Content.ID: 6 } ? CmsCall.NotFound(new ContentReference(6)) : null;
 
-        var result = Ok(await Call(client, "test_rename", new { ids = "5,6", to = "Renamed", dryRun = true }));
+        // Content the editor can't read (or that doesn't exist): the whole plan, naming no step or id, so a tool that
+        // planned from ids it didn't check can't tell which are hidden.
+        var hidden = Error(await Call(client, "test_rename", new { ids = "5,6", to = "Renamed", dryRun = true }));
 
-        Assert.False(result["valid"]!.GetValue<bool>());
-        Assert.Null(result["planToken"]);
-        var steps = result["steps"]!.AsArray();
-        Assert.Null(steps[0]!["error"]);
-        Assert.Equal(AgentErrorCodes.NotFound, steps[1]!["error"]!["code"]!.GetValue<string>());
+        Assert.Equal(AgentErrorCodes.NotFound, hidden.Code);
+        Assert.DoesNotContain("6", hidden.Message);
+        Assert.DoesNotContain("tep", hidden.Message);
 
         // A gate of the module's, refused inside a step: its error, reason and all.
         _cms.RefuseCheck = step => step.Number == 1 ? ToolErrors.Refused("Deleting is off.", "Do it in the CMS.", McpErrorReasons.DeletingOff) : null;
@@ -399,14 +399,12 @@ public sealed class WriteToolTests
         // Content 7 is hidden from the editor: the trash step's check refuses it as missing.
         _cms.RefuseCheck = step => step is TrashStep { Content.ID: 7 } ? CmsCall.NotFound(new ContentReference(7)) : null;
 
-        var dry = Ok(await Call(client, "test_ops", new { ops = "trash:7,update:9", dryRun = true }));
+        var dry = Error(await Call(client, "test_ops", new { ops = "trash:7,update:9", dryRun = true }));
 
-        Assert.False(dry["valid"]!.GetValue<bool>());
-        var steps = dry["steps"]!.AsArray();
-        Assert.Equal(AgentErrorCodes.NotFound, steps[0]!["error"]!["code"]!.GetValue<string>());
-        // Nothing says that 9 is below 7.
-        Assert.Null(steps[1]!["error"]);
-        Assert.DoesNotContain("trashes content", dry.ToJsonString(), StringComparison.Ordinal);
+        // The plan is refused whole as touching hidden content: nothing says which, nor that 9 is below 7.
+        Assert.Equal(AgentErrorCodes.NotFound, dry.Code);
+        Assert.DoesNotContain("trashes content", dry.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("7", dry.Message, StringComparison.Ordinal);
     }
 
     [Fact]

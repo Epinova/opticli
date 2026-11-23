@@ -218,8 +218,15 @@ internal sealed class CmsPlanSteps(IHttpContextAccessor http, IOptions<OptiCliMc
         var flow = new WriteFlow(call);
         var plannedType = move.PlannedDestinationType is { } name ? TypeOperation.Find(call, flow.Types, name) : null;
         var result = MoveOperation.Run(call, Reference(move.Content), new MoveRequest { Parent = Reference(move.Destination.Existing!), DryRun = true }, plannedType);
-        call.RequireAccess(flow.Locator.LoadAnyLanguage(move.Content), AccessLevel.Delete);
-        call.RequireAccess(flow.Locator.LoadAnyLanguage(move.Destination.Existing!), move.DestinationInAssets ? AccessLevel.Edit : AccessLevel.Create);
+        var moved = flow.Locator.LoadAnyLanguage(move.Content);
+        var destination = flow.Locator.LoadAnyLanguage(move.Destination.Existing!);
+        call.RequireAccess(moved, AccessLevel.Delete);
+        call.RequireAccess(destination, move.DestinationInAssets ? AccessLevel.Edit : AccessLevel.Create);
+        // As the CMS's move checks (CmsCall.Move): Publish where published content goes.
+        if (MoveOperation.Published(flow, moved.ContentLink, moved))
+        {
+            call.RequireAccess(destination, AccessLevel.Publish);
+        }
         return new StepOutcome(Json(ResultUrls.Serialize(result, result.Content, Context, wholeContent: true)))
         {
             Facts = new JsonObject { ["previousParent"] = result.PreviousParent },
@@ -249,6 +256,8 @@ internal sealed class CmsPlanSteps(IHttpContextAccessor http, IOptions<OptiCliMc
         var master = new LoaderOptions { LanguageLoaderOption.MasterLanguage() };
         var below = loader.GetDescendents(link).ToList();
         var descendants = loader.GetItems(below.Take(MaxCountedDescendants), master).Count(call.CanRead);
+        // "More" only when every one counted was readable: else it would tell of items below that the editor can't see.
+        var more = below.Count > MaxCountedDescendants && descendants == MaxCountedDescendants;
 
         var referencedBy = new List<ContentSummary>();
         var moreReferences = false;
@@ -276,14 +285,14 @@ internal sealed class CmsPlanSteps(IHttpContextAccessor http, IOptions<OptiCliMc
             Content = summary,
             Parent = content.ParentLink.ToReferenceWithoutVersion().ToString(),
             Descendants = descendants,
-            MoreDescendants = below.Count > MaxCountedDescendants ? true : null,
+            MoreDescendants = more ? true : null,
             ReferencedBy = referencedBy,
             MoreReferences = moreReferences ? true : null,
             ReferencedByNote = ReferencedByNote,
         };
         return new StepOutcome(Json(ResultUrls.Serialize(report, summary, Context, wholeContent: true)))
         {
-            Facts = new JsonObject { ["descendants"] = descendants, ["moreDescendants"] = below.Count > MaxCountedDescendants },
+            Facts = new JsonObject { ["descendants"] = descendants, ["moreDescendants"] = more },
         };
     }
 

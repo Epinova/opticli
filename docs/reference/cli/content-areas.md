@@ -134,7 +134,11 @@ one colleague's draft of a block (a takeover, above) doesn't put another colleag
 the same `--include-draft`. A block the write itself takes over is its own change by then and goes along. A sealed
 apply to production never takes someone else's block draft along, named or not ([Writing to
 production](databases.md#writing-to-production)). Also left as drafts, each with a `warning`, named or not: a block under
-an approval sequence, one that fails validation, and for an editor one they may not publish. The edit UI's own Publish
+an approval sequence, one that fails validation, and for an editor one they may not publish. A block whose latest
+version is waiting for review, was rejected, or is scheduled on its own isn't published along either; where it would
+have gone (never published, named, or saved by the write or the plan run), a `warning` says so. `unpublish` publishes
+no blocks along: taking content offline puts nothing live. A block's draft whose stop-publish date has passed (saved
+after the block was taken offline) goes along with the date cleared and a `warning`, as the content's own does. The edit UI's own Publish
 publishes the page alone. A block left a draft once the content is published goes live by its own ref (`publish
 <block>`), or named in a publish of the content (`publish <content> --with-block <block>`, which then publishes just
 the block). Until a changed block is published, the CMS's preview of the content shows the block's published version;
