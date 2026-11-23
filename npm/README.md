@@ -255,8 +255,11 @@ What's generated: reading content (`get`, `children`, `tree`, `ancestors`, `find
 `area`, `blockCreate`, `composition`, `translate`, `upload`, `publish`, `unpublish`, `move`, `delete`, `restore`,
 `discard`, `apply`, `access` with a change, `languagesEnable`, `languagesDisable`), projects (`projects`,
 `projectsCreate`, `projectsReady`, `projectsRemove`, `projectsPublish`, `projectsReactivate`, `projectsDelete`), jobs
-(`jobs`, `jobsLog`, `jobsRun`, `jobsStop`, `jobsSet`), users (`usersAdd`, `usersRemove`, `usersRoles`), `serve` and
-`sql`. Commands for the terminal or for setting up (`db`, `doctor`, `sync`, `export`, `drift`, `ide`, `env`, ...)
+(`jobs`, `jobsLog`, `jobsRun`, `jobsStop`, `jobsSet`), users (`usersAdd`, `usersRemove`, `usersRoles`), Optimizely
+Commerce (`commerce`, `commerceGet`, `commerceChildren`, `commerceTree`, `commerceRelations`, `commercePrices`,
+`commerceStock`, `commerceWarehouses`, `commerceMarkets`, `commerceRelationAdd`, `commerceRelationRemove`,
+`commercePriceSet`, `commercePriceRemove`, `commerceWarehouseSet`, `commerceInventorySet`, `commerceMarketSet`; a plan
+takes the `relation`, `price`, `warehouse`, `inventory` and `market` steps), `serve` and `sql`. Commands for the terminal or for setting up (`db`, `doctor`, `sync`, `export`, `drift`, `ide`, `env`, ...)
 aren't: `run(['drift'])` runs any command and returns its envelope (`data`, `meta`).
 
 Three are written by hand, to take more than the command line can:

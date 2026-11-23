@@ -103,6 +103,8 @@ export interface AgentStatus {
   scheduler?: SchedulerState;
   /** How the running site makes a new block in a ContentArea, which opticli's writes follow: `inline`, or `shared` (a shared block in the content's "For this page" folder, where the site's edit UI makes those: `UIOptions.InlineBlocksInContentAreaEnabled` off). Null when no site answers (or its agent is older than the field). */
   inlineBlocks?: InlineBlockMode;
+  /** The running site's Optimizely Commerce, and whether opticli's Commerce agent loaded into it (the `commerce` commands and catalog refs need it). Null for a site without Commerce, or when no site answers. */
+  commerce?: CommerceStatus;
   hint?: string;
 }
 
@@ -181,6 +183,62 @@ export interface BlockTranslation {
   status: string;
 }
 
+/** Response of `commerceChildren`: the catalog content below catalog content, in catalog order. */
+export interface CatalogChildren {
+  parent: CatalogRef;
+  children: CatalogRef[];
+  more: boolean;
+}
+
+/** What catalog content is, as Commerce's content types say (and `tblContentType.Base` records). */
+export type CatalogKind = 'root' | 'catalog' | 'node' | 'product' | 'variation' | 'bundle' | 'package' | 'dynamicPackage';
+
+/** A ref resolved to catalog content, or not found. */
+export interface CatalogRef {
+  /** The ref as it was asked for. */
+  input: string;
+  /** Whether it names catalog content (a GUID or ref of CMS content is not found here). */
+  found: boolean;
+  /** Its ref, `id__CatalogContent`: what the CMS agent's content routes take. */
+  ref?: string;
+  guid?: string;
+  name?: string;
+  /** Its content type's name. */
+  type?: string;
+  /** One of `CatalogKinds`. */
+  kind?: CatalogKind;
+  /** A node's or entry's code; null for catalogs and the root. */
+  code?: string;
+  /** Its parent's ref; null for the root. */
+  parent?: string;
+  /** Its master language; null for the root. */
+  masterLanguage?: string;
+  /** The languages it exists in. */
+  languages?: string[];
+  /** Its published version (or the latest, when it was never published). */
+  version?: number;
+}
+
+export interface CatalogSummary {
+  /** The catalog's ref (`-2147483646__CatalogContent`): its id is local to the database. */
+  ref: string;
+  guid: string;
+  name: string;
+}
+
+/** One item of `commerce tree`: catalog content and how deep below the tree's root it is. */
+export interface CatalogTreeItem {
+  /** 0 for the root, 1 for its children, ... */
+  depth: number;
+  ref: string;
+  guid?: string;
+  name?: string;
+  type?: string;
+  /** One of `CatalogKinds`. */
+  kind?: CatalogKind;
+  code?: string;
+}
+
 export interface CategoryInfo {
   id: number;
   /** What `set Category=...` takes (case doesn't matter), and what `get` shows. */
@@ -208,6 +266,88 @@ export interface ClassFile {
   /** The base class and interfaces as declared, e.g. to check a type against another type's allowedTypes. */
   baseTypes: string[];
 }
+
+/** Response of `commerce`: the site's Commerce as the Commerce agent sees it. */
+export interface CommerceInfo {
+  /** The site's EPiServer.Commerce.Core version. */
+  version: string;
+  /** The catalog root, which catalogs are made below: `-1073741823__CatalogContent`. */
+  catalogRoot: string;
+  /** The catalog root's GUID. */
+  catalogRootGuid: string;
+  /** The catalogs, by name. */
+  catalogs: CatalogSummary[];
+}
+
+/** A market (Commerce's `IMarket`). */
+export interface CommerceMarket {
+  id: string;
+  name: string;
+  enabled: boolean;
+  defaultCurrency: string;
+  currencies: string[];
+  defaultLanguage: string;
+  languages: string[];
+  /** ISO 3166-1 alpha-3 codes (`USA`, `SWE`). */
+  countries: string[];
+  description?: string;
+  pricesIncludeTax: boolean;
+}
+
+/** One price row of a catalog entry (Commerce's `IPriceDetailValue`). */
+export interface CommercePrice {
+  /** The market's id (`DEFAULT`). */
+  market: string;
+  /** ISO 4217 code (`USD`). */
+  currency: string;
+  amount: number;
+  /** One of `PriceTypes`. */
+  priceType: PriceType;
+  /** The user name or price group for those types; empty for `all`. */
+  priceCode: string;
+  /** The price applies from this quantity on. */
+  minQuantity: number;
+  /** UTC. */
+  validFrom: string;
+  /** UTC; null: no end. */
+  validUntil?: string;
+}
+
+/** A Commerce site, as the agent found it. */
+export interface CommerceStatus {
+  /** The site's EPiServer.Commerce.Core version, from its build's `.deps.json`. */
+  version: string;
+  /** Whether opticli's Commerce agent loaded into the site; when false, `Error` says why, and the Commerce commands don't work. */
+  agent: boolean;
+  /** Why the Commerce agent didn't load. */
+  error?: string;
+}
+
+/** An entry's stock in one warehouse (Commerce's `InventoryRecord`). */
+export interface CommerceStock {
+  warehouse: string;
+  /** What can be bought now (`PurchaseAvailableQuantity`). */
+  inStock: number;
+  backorder: number;
+  preorder: number;
+  /** Whether stock is tracked (an untracked entry is always available). */
+  tracked: boolean;
+}
+
+/** A warehouse (Commerce's `IWarehouse`). */
+export interface CommerceWarehouse {
+  code: string;
+  name: string;
+  active: boolean;
+  primary: boolean;
+  fulfillmentCenter: boolean;
+  pickupLocation: boolean;
+  deliveryLocation: boolean;
+  sortOrder: number;
+}
+
+/** What a Commerce write did (or would do, for a dry run) to the one thing it names. */
+export type CommerceWriteStatus = 'created' | 'updated' | 'unchanged' | 'removed' | 'absent';
 
 /** One node of a Visual Builder composition that a write added, removed, moved or changed. */
 export interface CompositionChange {
@@ -327,6 +467,69 @@ export interface ContentIdentity {
   provider?: string;
   /** True when something references a GUID or id that no content item has. */
   missing?: boolean;
+}
+
+/** Response of `GET /v1/content/{ref}`: one content version exactly as the CMS loads it, in the shape the CLI's DB-direct `get` uses wherever both can express a value. It exists so the DB read path can be checked against the CMS itself; it never writes. */
+export interface ContentItem {
+  /** Content id as a ref, without version (`123`). */
+  ref: string;
+  id: number;
+  /** The loaded version (`tblWorkContent.pkID`). */
+  version?: number;
+  guid: string;
+  name?: string;
+  type?: string;
+  /** `page`, `block`, `media`, `folder` or `other`, from the loaded instance's base class. */
+  kind: string;
+  /** The loaded branch; null for language-invariant content (media, folders). */
+  language?: string;
+  masterLanguage?: string;
+  /** Every existing branch, sorted; null for content that isn't localizable. */
+  languages?: string[];
+  /** CMS version status, camelCase (`published`, `checkedOut`, ...). */
+  status?: string;
+  parent?: string;
+  deleted?: boolean;
+  startPublish?: string;
+  stopPublish?: string;
+  saved?: string;
+  changedBy?: string;
+  /** What `IUrlResolver.GetUrl` returns for the item in its language (default context, canonical): host-relative from the developer's agent, absolute (with the site's host) from the MCP module; null when not routable. */
+  url?: string;
+  /** Every property that is not CMS metadata, keyed by name; on CMS 13 without the properties a Visual Builder composition is stored in (`Layout`, `UnstructuredData`), which `composition` shows. */
+  properties: Record<string, ContentItemProperty>;
+  /** CMS 13: an experience's or a section's composition as the CMS's `ICompositionMapper` reads it (unpublished shared blocks included); null for other content and on CMS 12. For a signed-in editor (the MCP module) it follows the rules of every other read: inline blocks show the properties the edit UI shows them, and shared content they can't read is a node with only the kind of its place, its key and its ref. */
+  composition?: ContentItemCompositionNode;
+}
+
+/** One node of a Visual Builder composition, as the CMS's `CompositionNode` has it. */
+export interface ContentItemCompositionNode {
+  /** `experience`, `section`, `row`, `column` or `component`. */
+  nodeType: string;
+  /** The binding key of a section or component, a row's or column's id, the content's GUID at the root. */
+  key?: string;
+  name?: string;
+  /** The content type of the block (or, at the root, of the content). */
+  type?: string;
+  /** `outline`, `grid`, ... */
+  layoutType?: string;
+  displayTemplate?: string;
+  /** Only when there are any. */
+  displaySettings?: Record<string, string>;
+  /** A shared block (content of its own) used by reference: its ref. */
+  ref?: string;
+  /** An inline block's properties (a section's without its own composition's), in the `ContentItemProperty` shape. */
+  properties?: Record<string, ContentItemProperty>;
+  nodes?: ContentItemCompositionNode[];
+}
+
+/** One property value. `value` is omitted when the property is empty, and otherwise has these shapes: String, LongString, Url, XhtmlString (the stored markup, `ToInternalString`) and other text: a string.Number, FloatNumber, Boolean: a JSON number or boolean. Date: an ISO 8601 date-time with offset.ContentReference, PageReference: the ref (`123`, or `123__provider` for content-provider content).ContentArea: an array of `ContentItemAreaEntry`.LinkItemCollection: an array of `{href, text, title, target}`; LinkItem: one such object.A local block (`type``Block`): an object of nested properties, keyed by name, in this same shape; a list of blocks (`BlockList`): an array of such objects.Other lists (ContentReferenceList, StringList, ...): an array of the items in these shapes.Custom property types (lists of the site's own classes, ...): what the property stores (`SaveData`), parsed when it is JSON, since only the property knows how its items serialise. */
+export interface ContentItemProperty {
+  /** The property definition type name (`String`, `ContentArea`, ...), or `Block`/`BlockList` for block-typed properties. */
+  type: string;
+  value?: unknown;
+  /** For `Block` and `BlockList`: the block's content type name. */
+  blockType?: string;
 }
 
 /** What a content type is, as users think of it (the DB spreads this over several columns). */
@@ -535,6 +738,23 @@ export interface InstanceUsage {
   blueprint?: boolean;
 }
 
+/** Response of `GET``commerceInventory`: an entry's stock, per warehouse. */
+export interface InventoryList {
+  entry: string;
+  code: string;
+  stock: CommerceStock[];
+}
+
+export interface InventoryResult {
+  entry: string;
+  code: string;
+  stock: CommerceStock;
+  status: CommerceWriteStatus;
+  /** The record before an update. */
+  before?: CommerceStock;
+  dryRun: boolean;
+}
+
 /** A project an item is in, as `get` shows it. */
 export interface ItemProject {
   id: number;
@@ -712,6 +932,19 @@ export interface LeftOutVersion {
   primary: boolean;
 }
 
+/** Response of `GET``commerceMarkets`. */
+export interface MarketList {
+  markets: CommerceMarket[];
+}
+
+export interface MarketResult {
+  market: CommerceMarket;
+  status: CommerceWriteStatus;
+  /** The fields that changed (all of them for a new one). */
+  changes: string[];
+  dryRun: boolean;
+}
+
 /** Result of move and delete (a delete is a move to the recycle bin). */
 export interface MoveOutput {
   ref: string;
@@ -825,6 +1058,32 @@ export interface PlanStepResult {
 }
 
 export type PlanStepStatus = 'valid' | 'deferred' | 'simulated' | 'invalid' | 'saved' | 'unchanged' | 'failed' | 'notRun';
+
+/** Response of `GET``commercePrices`: every price row of an entry. */
+export interface PriceList {
+  /** The entry's ref. */
+  entry: string;
+  /** Its code, which Commerce keys prices by. */
+  code: string;
+  prices: CommercePrice[];
+}
+
+/** Result of a price write. */
+export interface PriceResult {
+  /** The entry's ref. */
+  entry: string;
+  /** The entry's code, which Commerce keys prices by. */
+  code: string;
+  /** The row as it is now (as it was, for a removal). */
+  price: CommercePrice;
+  status: CommerceWriteStatus;
+  /** The row before an update. */
+  before?: CommercePrice;
+  dryRun: boolean;
+}
+
+/** Who a price is for (Commerce's `CustomerPricing.PriceType`). */
+export type PriceType = 'all' | 'user' | 'group';
 
 /** A dry run of `projects delete`, checked in the database: the project and the items it would take with it (their versions stay). */
 export interface ProjectDeletePreview {
@@ -1003,6 +1262,46 @@ export interface PropertyDetails {
   uiHint?: string;
   /** For those: how many values are stored, on content and in versions. */
   values?: StoredValues;
+}
+
+/** Catalog content at the other end of a relation. */
+export interface RelatedContent {
+  ref: string;
+  code?: string;
+  name?: string;
+  /** One of `RelationKinds`. */
+  kind: RelationKind;
+  /** For bundle and package entries. */
+  quantity?: number;
+  sortOrder: number;
+}
+
+/** How catalog content is related (Commerce's `IRelationRepository`). */
+export type RelationKind = 'variant' | 'bundleEntry' | 'packageEntry' | 'category';
+
+/** Response of `GET``commerceRelations`. */
+export interface RelationList {
+  ref: string;
+  /** A product's variants, a bundle's or package's entries, a node's extra entries. */
+  children: RelatedContent[];
+  /** The products, bundles and packages it is in, and the nodes it is an extra entry of. */
+  parents: RelatedContent[];
+}
+
+/** Result of a relation write. */
+export interface RelationResult {
+  /** The parent's ref (`id__CatalogContent`). */
+  parent: string;
+  /** The child's ref. */
+  child: string;
+  /** One of `RelationKinds`. */
+  kind: RelationKind;
+  /** One of `CommerceWriteStatus`. */
+  status: CommerceWriteStatus;
+  /** The quantity it has (had, for a removal); null for variants and categories. */
+  quantity?: number;
+  sortOrder: number;
+  dryRun: boolean;
 }
 
 /** Result of `translate --remove`. */
@@ -1571,6 +1870,19 @@ export interface VisitorGroupInfo {
   securityRole: boolean;
   /** The CMS counts how often it matches. */
   statistics: boolean;
+}
+
+/** Response of `GET``commerceWarehouses`. */
+export interface WarehouseList {
+  warehouses: CommerceWarehouse[];
+}
+
+export interface WarehouseResult {
+  warehouse: CommerceWarehouse;
+  status: CommerceWriteStatus;
+  /** The fields that changed (all of them for a new one). */
+  changes: string[];
+  dryRun: boolean;
 }
 
 /** The agent's `WriteResult` in the CLI's identity conventions: `ref` is the content (pass it to any command), `version` the version written (`id_version`). */

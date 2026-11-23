@@ -3,7 +3,7 @@ title: Seed CMS content for Playwright tests
 summary: Use the @epinova/opticli npm package to start the site, seed the content your Playwright tests read, and give each test pages of its own that are cleaned up afterwards.
 audience: developers
 order: 3
-written-for: 0.34.0
+written-for: 0.36.0
 ---
 
 End-to-end tests on an Optimizely site usually depend on content someone made by hand, and break when an editor
@@ -58,7 +58,9 @@ export const seedPlan = {
 
 A database the CMS created from scratch has no sites and few languages; the plan can add them first, see
 [Build a test database from scratch](build-a-test-database.md). `$root` refers to what the step with `id: 'root'` made. `as const satisfies Plan` checks the steps against the plan
-type and keeps the ids as literals, which step 4 uses. Files the plan uploads are relative to `planDir`.
+type and keeps the ids as literals, which step 4 uses. Files the plan uploads are relative to `planDir`. On an
+Optimizely Commerce site the same plan can make the catalog, prices and stock too: see
+[Seed a Commerce catalog for Playwright tests](seed-a-commerce-catalog.md).
 
 ### 3. Add the global setup and the config
 

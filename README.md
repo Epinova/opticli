@@ -5,7 +5,8 @@ own machine. It is built for AI coding agents (Claude Code and similar) as much 
 you would otherwise answer with hand-written SQL or by clicking through the edit UI: what content exists, what a page
 contains, which C# class and view render it, where a block is used, what is unpublished. It can also make changes
 (set properties, add blocks to a ContentArea, build a Visual Builder page, create, translate, publish), as drafts by
-default.
+default. On an **Optimizely Commerce** 14 or 15 site it also writes and reads the catalog, prices, stock and markets,
+through the running site (see [Optimizely Commerce](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/commerce.md)).
 
 For editors, a separate package adds an MCP server to the site itself, so they can work on its content with their AI
 assistant: `OptiCli.Mcp` for CMS 12, `OptiCli.Mcp.Cms13` for CMS 13. See
@@ -199,6 +200,7 @@ The reference, one page per area:
 | [CMS projects](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/cms-projects.md) | collecting drafts in a project and publishing it |
 | [Database maintenance](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/database-maintenance.md) | site hosts after a restore, a database built from scratch, local users, orphaned content types |
 | [CMS 13](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/cms13.md) | what differs on CMS 13, Visual Builder |
+| [Optimizely Commerce](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/commerce.md) | catalogs and catalog content, relations, prices, warehouses, stock and markets, through the site; catalog refs |
 | [serve and env](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/serve.md) | running the site with the site agent, IDE mode |
 | [Output and files](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/output.md) | the JSON envelope, exit codes, where opticli keeps its files |
 | [MCP server for editors](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/install.md) | installing the MCP module |
@@ -215,12 +217,15 @@ MCP integrators. [CHANGELOG.md](https://github.com/Epinova/opticli/blob/main/CHA
 - Optimizely CMS 12 (`EPiServer.CMS.AspNetCore` 12.x): reads on any runtime; writes on a site running .NET 8 or newer.
 - Optimizely CMS 13 (`EPiServer.CMS` 13.x, .NET 10), fresh installs and databases upgraded from CMS 12: reads and writes,
   Visual Builder included (see [CMS 13](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/cms13.md#cms-13)).
+- Optimizely Commerce 14 (on CMS 12) and 15 (on CMS 13): catalog content, relations, prices, warehouses, stock and
+  markets, written and read through the running site (see [Optimizely Commerce](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/commerce.md));
+  `sql` reads Commerce's tables only as SQL. The MCP module for editors has no Commerce tools.
 - The MCP server for editors: `OptiCli.Mcp` on CMS 12 (12.12.1 / CMS UI 12.16.1 or newer, .NET 8 or newer),
   `OptiCli.Mcp.Cms13` on CMS 13 (13.0.0 or newer); see [MCP server for editors](#mcp-server-for-editors).
 - SQL Server on the local machine (including LocalDB and containers), or a remote SQL Server / Azure SQL
   development database.
 - Not supported:
-  - CMS 11, Commerce, Forms data and search indexes;
+  - CMS 11, Commerce 13 and older, Commerce's orders, customers and promotions, Forms data and search indexes;
   - writes to test and staging databases; production only through a sealed plan the user runs (see
     [Writing to production](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/databases.md#writing-to-production)).
 

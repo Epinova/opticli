@@ -28,10 +28,36 @@
 @epinova/opticli interface BlobLocation
 @epinova/opticli interface BlockCreateOptions
 @epinova/opticli interface BlockTranslation
+@epinova/opticli interface CatalogChildren
+@epinova/opticli interface CatalogRef
+@epinova/opticli interface CatalogSummary
+@epinova/opticli interface CatalogTreeItem
 @epinova/opticli interface CategoriesOptions
 @epinova/opticli interface CategoryInfo
 @epinova/opticli interface ChildrenOptions
 @epinova/opticli interface ClassFile
+@epinova/opticli interface CommerceChildrenOptions
+@epinova/opticli interface CommerceGetOptions
+@epinova/opticli interface CommerceInfo
+@epinova/opticli interface CommerceInventorySetOptions
+@epinova/opticli interface CommerceMarket
+@epinova/opticli interface CommerceMarketSetOptions
+@epinova/opticli interface CommerceMarketsOptions
+@epinova/opticli interface CommerceOptions
+@epinova/opticli interface CommercePrice
+@epinova/opticli interface CommercePriceRemoveOptions
+@epinova/opticli interface CommercePriceSetOptions
+@epinova/opticli interface CommercePricesOptions
+@epinova/opticli interface CommerceRelationAddOptions
+@epinova/opticli interface CommerceRelationRemoveOptions
+@epinova/opticli interface CommerceRelationsOptions
+@epinova/opticli interface CommerceStatus
+@epinova/opticli interface CommerceStock
+@epinova/opticli interface CommerceStockOptions
+@epinova/opticli interface CommerceTreeOptions
+@epinova/opticli interface CommerceWarehouse
+@epinova/opticli interface CommerceWarehouseSetOptions
+@epinova/opticli interface CommerceWarehousesOptions
 @epinova/opticli interface CommonOptions
 @epinova/opticli interface CompositionChange
 @epinova/opticli interface CompositionFieldChange
@@ -39,6 +65,9 @@
 @epinova/opticli interface CompositionOptions
 @epinova/opticli interface ContentDocument
 @epinova/opticli interface ContentIdentity
+@epinova/opticli interface ContentItem
+@epinova/opticli interface ContentItemCompositionNode
+@epinova/opticli interface ContentItemProperty
 @epinova/opticli interface ContentSummary
 @epinova/opticli interface ContentUrls
 @epinova/opticli interface CreateOptions
@@ -64,6 +93,8 @@
 @epinova/opticli interface IncomingReference
 @epinova/opticli interface InlineUsages
 @epinova/opticli interface InstanceUsage
+@epinova/opticli interface InventoryList
+@epinova/opticli interface InventoryResult
 @epinova/opticli interface ItemProject
 @epinova/opticli interface JobLogView
 @epinova/opticli interface JobRunView
@@ -85,6 +116,8 @@
 @epinova/opticli interface LanguagesOutput
 @epinova/opticli interface LeftOutVersion
 @epinova/opticli interface LinkValue
+@epinova/opticli interface MarketList
+@epinova/opticli interface MarketResult
 @epinova/opticli interface Meta
 @epinova/opticli interface MoveOptions
 @epinova/opticli interface MoveOutput
@@ -96,6 +129,8 @@
 @epinova/opticli interface PlanProject
 @epinova/opticli interface PlanRun
 @epinova/opticli interface PlanStepResult
+@epinova/opticli interface PriceList
+@epinova/opticli interface PriceResult
 @epinova/opticli interface ProjectDeletePreview
 @epinova/opticli interface ProjectInfo
 @epinova/opticli interface ProjectItemInfo
@@ -115,6 +150,9 @@
 @epinova/opticli interface PropertyDetails
 @epinova/opticli interface PropertyOut
 @epinova/opticli interface PublishOptions
+@epinova/opticli interface RelatedContent
+@epinova/opticli interface RelationList
+@epinova/opticli interface RelationResult
 @epinova/opticli interface RemoveLanguageOutput
 @epinova/opticli interface ResolveOptions
 @epinova/opticli interface ResolveOutput
@@ -177,11 +215,15 @@
 @epinova/opticli interface VirtualRoleInfo
 @epinova/opticli interface VisitorGroupInfo
 @epinova/opticli interface VisitorGroupsOptions
+@epinova/opticli interface WarehouseList
+@epinova/opticli interface WarehouseResult
 @epinova/opticli interface WhereUsedOptions
 @epinova/opticli interface WriteOutput
 @epinova/opticli type AccessKind
 @epinova/opticli type AgentState
 @epinova/opticli type AppliedStep
+@epinova/opticli type CatalogKind
+@epinova/opticli type CommerceWriteStatus
 @epinova/opticli type ContentAreaItem
 @epinova/opticli type ContentKind
 @epinova/opticli type ContentRef
@@ -199,11 +241,13 @@
 @epinova/opticli type PlanProjectStatus
 @epinova/opticli type PlanStep
 @epinova/opticli type PlanStepStatus
+@epinova/opticli type PriceType
 @epinova/opticli type ProjectEditorUi
 @epinova/opticli type ProjectItemOutcome
 @epinova/opticli type ProjectStatus
 @epinova/opticli type Properties
 @epinova/opticli type PropertyValue
+@epinova/opticli type RelationKind
 @epinova/opticli type SavedContent
 @epinova/opticli type SchedulerState
 @epinova/opticli type ServeMode
@@ -277,6 +321,7 @@ AgentState = 'wrongDatabase'
 AgentStatus.agent?
 AgentStatus.agentDll?
 AgentStatus.browseUrl?
+AgentStatus.commerce?
 AgentStatus.database?
 AgentStatus.drift?
 AgentStatus.hint?
@@ -357,6 +402,17 @@ AppliedStep[op='delete' | 'move'].savedInto?
 AppliedStep[op='delete' | 'move'].status
 AppliedStep[op='delete' | 'move'].undo?
 AppliedStep[op='delete' | 'move'].warnings?
+AppliedStep[op='inventory']
+AppliedStep[op='inventory'].error?
+AppliedStep[op='inventory'].guid?
+AppliedStep[op='inventory'].id?
+AppliedStep[op='inventory'].index
+AppliedStep[op='inventory'].op
+AppliedStep[op='inventory'].result?
+AppliedStep[op='inventory'].savedInto?
+AppliedStep[op='inventory'].status
+AppliedStep[op='inventory'].undo?
+AppliedStep[op='inventory'].warnings?
 AppliedStep[op='language']
 AppliedStep[op='language'].error?
 AppliedStep[op='language'].guid?
@@ -368,6 +424,39 @@ AppliedStep[op='language'].savedInto?
 AppliedStep[op='language'].status
 AppliedStep[op='language'].undo?
 AppliedStep[op='language'].warnings?
+AppliedStep[op='market']
+AppliedStep[op='market'].error?
+AppliedStep[op='market'].guid?
+AppliedStep[op='market'].id?
+AppliedStep[op='market'].index
+AppliedStep[op='market'].op
+AppliedStep[op='market'].result?
+AppliedStep[op='market'].savedInto?
+AppliedStep[op='market'].status
+AppliedStep[op='market'].undo?
+AppliedStep[op='market'].warnings?
+AppliedStep[op='price']
+AppliedStep[op='price'].error?
+AppliedStep[op='price'].guid?
+AppliedStep[op='price'].id?
+AppliedStep[op='price'].index
+AppliedStep[op='price'].op
+AppliedStep[op='price'].result?
+AppliedStep[op='price'].savedInto?
+AppliedStep[op='price'].status
+AppliedStep[op='price'].undo?
+AppliedStep[op='price'].warnings?
+AppliedStep[op='relation']
+AppliedStep[op='relation'].error?
+AppliedStep[op='relation'].guid?
+AppliedStep[op='relation'].id?
+AppliedStep[op='relation'].index
+AppliedStep[op='relation'].op
+AppliedStep[op='relation'].result?
+AppliedStep[op='relation'].savedInto?
+AppliedStep[op='relation'].status
+AppliedStep[op='relation'].undo?
+AppliedStep[op='relation'].warnings?
 AppliedStep[op='restore']
 AppliedStep[op='restore'].error?
 AppliedStep[op='restore'].guid?
@@ -401,6 +490,17 @@ AppliedStep[op='translate'].savedInto?
 AppliedStep[op='translate'].status
 AppliedStep[op='translate'].undo?
 AppliedStep[op='translate'].warnings?
+AppliedStep[op='warehouse']
+AppliedStep[op='warehouse'].error?
+AppliedStep[op='warehouse'].guid?
+AppliedStep[op='warehouse'].id?
+AppliedStep[op='warehouse'].index
+AppliedStep[op='warehouse'].op
+AppliedStep[op='warehouse'].result?
+AppliedStep[op='warehouse'].savedInto?
+AppliedStep[op='warehouse'].status
+AppliedStep[op='warehouse'].undo?
+AppliedStep[op='warehouse'].warnings?
 ApplyCallOptions.acceptDrift?
 ApplyCallOptions.allowOutside?
 ApplyCallOptions.baseDir?
@@ -483,6 +583,39 @@ BlockTranslation.ref
 BlockTranslation.status
 BlockTranslation.type?
 BlockTranslation.version?
+CatalogChildren.children
+CatalogChildren.more
+CatalogChildren.parent
+CatalogKind = 'bundle'
+CatalogKind = 'catalog'
+CatalogKind = 'dynamicPackage'
+CatalogKind = 'node'
+CatalogKind = 'package'
+CatalogKind = 'product'
+CatalogKind = 'root'
+CatalogKind = 'variation'
+CatalogRef.code?
+CatalogRef.found
+CatalogRef.guid?
+CatalogRef.input
+CatalogRef.kind?
+CatalogRef.languages?
+CatalogRef.masterLanguage?
+CatalogRef.name?
+CatalogRef.parent?
+CatalogRef.ref?
+CatalogRef.type?
+CatalogRef.version?
+CatalogSummary.guid
+CatalogSummary.name
+CatalogSummary.ref
+CatalogTreeItem.code?
+CatalogTreeItem.depth
+CatalogTreeItem.guid?
+CatalogTreeItem.kind?
+CatalogTreeItem.name?
+CatalogTreeItem.ref
+CatalogTreeItem.type?
 CategoriesOptions.connection?
 CategoriesOptions.connectionName?
 CategoriesOptions.cursor?
@@ -519,6 +652,144 @@ Cms.parent
 Cms.project
 Cms.publish
 Cms.set
+CommerceChildrenOptions.connection?
+CommerceChildrenOptions.connectionName?
+CommerceChildrenOptions.db?
+CommerceChildrenOptions.limit?
+CommerceGetOptions.connection?
+CommerceGetOptions.connectionName?
+CommerceGetOptions.db?
+CommerceGetOptions.lang?
+CommerceInfo.catalogRoot
+CommerceInfo.catalogRootGuid
+CommerceInfo.catalogs
+CommerceInfo.version
+CommerceInventorySetOptions.backorder?
+CommerceInventorySetOptions.connection?
+CommerceInventorySetOptions.connectionName?
+CommerceInventorySetOptions.db?
+CommerceInventorySetOptions.dryRun?
+CommerceInventorySetOptions.inStock?
+CommerceInventorySetOptions.preorder?
+CommerceInventorySetOptions.tracked?
+CommerceInventorySetOptions.warehouse
+CommerceMarket.countries
+CommerceMarket.currencies
+CommerceMarket.defaultCurrency
+CommerceMarket.defaultLanguage
+CommerceMarket.description?
+CommerceMarket.enabled
+CommerceMarket.id
+CommerceMarket.languages
+CommerceMarket.name
+CommerceMarket.pricesIncludeTax
+CommerceMarketSetOptions.connection?
+CommerceMarketSetOptions.connectionName?
+CommerceMarketSetOptions.countries?
+CommerceMarketSetOptions.currencies?
+CommerceMarketSetOptions.db?
+CommerceMarketSetOptions.defaultCurrency?
+CommerceMarketSetOptions.defaultLanguage?
+CommerceMarketSetOptions.description?
+CommerceMarketSetOptions.dryRun?
+CommerceMarketSetOptions.enabled?
+CommerceMarketSetOptions.languages?
+CommerceMarketSetOptions.name?
+CommerceMarketSetOptions.pricesIncludeTax?
+CommerceMarketsOptions.connection?
+CommerceMarketsOptions.connectionName?
+CommerceMarketsOptions.db?
+CommerceOptions.connection?
+CommerceOptions.connectionName?
+CommerceOptions.db?
+CommercePrice.amount
+CommercePrice.currency
+CommercePrice.market
+CommercePrice.minQuantity
+CommercePrice.priceCode
+CommercePrice.priceType
+CommercePrice.validFrom
+CommercePrice.validUntil?
+CommercePriceRemoveOptions.connection?
+CommercePriceRemoveOptions.connectionName?
+CommercePriceRemoveOptions.currency
+CommercePriceRemoveOptions.db?
+CommercePriceRemoveOptions.dryRun?
+CommercePriceRemoveOptions.market
+CommercePriceRemoveOptions.minQuantity?
+CommercePriceRemoveOptions.priceCode?
+CommercePriceRemoveOptions.priceType?
+CommercePriceRemoveOptions.validFrom?
+CommercePriceSetOptions.amount
+CommercePriceSetOptions.connection?
+CommercePriceSetOptions.connectionName?
+CommercePriceSetOptions.currency
+CommercePriceSetOptions.db?
+CommercePriceSetOptions.dryRun?
+CommercePriceSetOptions.market
+CommercePriceSetOptions.minQuantity?
+CommercePriceSetOptions.priceCode?
+CommercePriceSetOptions.priceType?
+CommercePriceSetOptions.validFrom?
+CommercePriceSetOptions.validUntil?
+CommercePricesOptions.connection?
+CommercePricesOptions.connectionName?
+CommercePricesOptions.db?
+CommerceRelationAddOptions.connection?
+CommerceRelationAddOptions.connectionName?
+CommerceRelationAddOptions.db?
+CommerceRelationAddOptions.dryRun?
+CommerceRelationAddOptions.quantity?
+CommerceRelationAddOptions.sortOrder?
+CommerceRelationRemoveOptions.connection?
+CommerceRelationRemoveOptions.connectionName?
+CommerceRelationRemoveOptions.db?
+CommerceRelationRemoveOptions.dryRun?
+CommerceRelationsOptions.connection?
+CommerceRelationsOptions.connectionName?
+CommerceRelationsOptions.db?
+CommerceStatus.agent
+CommerceStatus.error?
+CommerceStatus.version
+CommerceStock.backorder
+CommerceStock.inStock
+CommerceStock.preorder
+CommerceStock.tracked
+CommerceStock.warehouse
+CommerceStockOptions.connection?
+CommerceStockOptions.connectionName?
+CommerceStockOptions.db?
+CommerceTreeOptions.connection?
+CommerceTreeOptions.connectionName?
+CommerceTreeOptions.db?
+CommerceTreeOptions.depth?
+CommerceWarehouse.active
+CommerceWarehouse.code
+CommerceWarehouse.deliveryLocation
+CommerceWarehouse.fulfillmentCenter
+CommerceWarehouse.name
+CommerceWarehouse.pickupLocation
+CommerceWarehouse.primary
+CommerceWarehouse.sortOrder
+CommerceWarehouseSetOptions.active?
+CommerceWarehouseSetOptions.connection?
+CommerceWarehouseSetOptions.connectionName?
+CommerceWarehouseSetOptions.db?
+CommerceWarehouseSetOptions.deliveryLocation?
+CommerceWarehouseSetOptions.dryRun?
+CommerceWarehouseSetOptions.fulfillmentCenter?
+CommerceWarehouseSetOptions.name?
+CommerceWarehouseSetOptions.pickupLocation?
+CommerceWarehouseSetOptions.primary?
+CommerceWarehouseSetOptions.sortOrder?
+CommerceWarehousesOptions.connection?
+CommerceWarehousesOptions.connectionName?
+CommerceWarehousesOptions.db?
+CommerceWriteStatus = 'absent'
+CommerceWriteStatus = 'created'
+CommerceWriteStatus = 'removed'
+CommerceWriteStatus = 'unchanged'
+CommerceWriteStatus = 'updated'
 CommonOptions.connection?
 CommonOptions.connectionName?
 CommonOptions.db?
@@ -614,6 +885,39 @@ ContentIdentity.ref?
 ContentIdentity.status?
 ContentIdentity.type?
 ContentIdentity.url?
+ContentItem.changedBy?
+ContentItem.composition?
+ContentItem.deleted?
+ContentItem.guid
+ContentItem.id
+ContentItem.kind
+ContentItem.language?
+ContentItem.languages?
+ContentItem.masterLanguage?
+ContentItem.name?
+ContentItem.parent?
+ContentItem.properties
+ContentItem.ref
+ContentItem.saved?
+ContentItem.startPublish?
+ContentItem.status?
+ContentItem.stopPublish?
+ContentItem.type?
+ContentItem.url?
+ContentItem.version?
+ContentItemCompositionNode.displaySettings?
+ContentItemCompositionNode.displayTemplate?
+ContentItemCompositionNode.key?
+ContentItemCompositionNode.layoutType?
+ContentItemCompositionNode.name?
+ContentItemCompositionNode.nodeType
+ContentItemCompositionNode.nodes?
+ContentItemCompositionNode.properties?
+ContentItemCompositionNode.ref?
+ContentItemCompositionNode.type?
+ContentItemProperty.blockType?
+ContentItemProperty.type
+ContentItemProperty.value?
 ContentKind = 'block'
 ContentKind = 'contract'
 ContentKind = 'element'
@@ -907,6 +1211,15 @@ InstanceUsage.name?
 InstanceUsage.ref
 InstanceUsage.status
 InstanceUsage.usages
+InventoryList.code
+InventoryList.entry
+InventoryList.stock
+InventoryResult.before?
+InventoryResult.code
+InventoryResult.dryRun
+InventoryResult.entry
+InventoryResult.status
+InventoryResult.stock
 ItemProject.id
 ItemProject.language?
 ItemProject.name
@@ -1067,6 +1380,11 @@ LinkValue.href
 LinkValue.target?
 LinkValue.text?
 LinkValue.title?
+MarketList.markets
+MarketResult.changes
+MarketResult.dryRun
+MarketResult.market
+MarketResult.status
 Meta.database?
 Meta.next?
 Meta.source?
@@ -1108,6 +1426,22 @@ OptiCli.categoriesAll
 OptiCli.children
 OptiCli.childrenAll
 OptiCli.command
+OptiCli.commerce
+OptiCli.commerceChildren
+OptiCli.commerceGet
+OptiCli.commerceInventorySet
+OptiCli.commerceMarketSet
+OptiCli.commerceMarkets
+OptiCli.commercePriceRemove
+OptiCli.commercePriceSet
+OptiCli.commercePrices
+OptiCli.commerceRelationAdd
+OptiCli.commerceRelationRemove
+OptiCli.commerceRelations
+OptiCli.commerceStock
+OptiCli.commerceTree
+OptiCli.commerceWarehouseSet
+OptiCli.commerceWarehouses
 OptiCli.composition
 OptiCli.create
 OptiCli.cwd
@@ -1184,6 +1518,22 @@ OptiCliCommands.categories
 OptiCliCommands.categoriesAll
 OptiCliCommands.children
 OptiCliCommands.childrenAll
+OptiCliCommands.commerce
+OptiCliCommands.commerceChildren
+OptiCliCommands.commerceGet
+OptiCliCommands.commerceInventorySet
+OptiCliCommands.commerceMarketSet
+OptiCliCommands.commerceMarkets
+OptiCliCommands.commercePriceRemove
+OptiCliCommands.commercePriceSet
+OptiCliCommands.commercePrices
+OptiCliCommands.commerceRelationAdd
+OptiCliCommands.commerceRelationRemove
+OptiCliCommands.commerceRelations
+OptiCliCommands.commerceStock
+OptiCliCommands.commerceTree
+OptiCliCommands.commerceWarehouseSet
+OptiCliCommands.commerceWarehouses
 OptiCliCommands.composition
 OptiCliCommands.delete
 OptiCliCommands.discard
@@ -1255,6 +1605,22 @@ OptiCliCommandsSync.categories
 OptiCliCommandsSync.categoriesAll
 OptiCliCommandsSync.children
 OptiCliCommandsSync.childrenAll
+OptiCliCommandsSync.commerce
+OptiCliCommandsSync.commerceChildren
+OptiCliCommandsSync.commerceGet
+OptiCliCommandsSync.commerceInventorySet
+OptiCliCommandsSync.commerceMarketSet
+OptiCliCommandsSync.commerceMarkets
+OptiCliCommandsSync.commercePriceRemove
+OptiCliCommandsSync.commercePriceSet
+OptiCliCommandsSync.commercePrices
+OptiCliCommandsSync.commerceRelationAdd
+OptiCliCommandsSync.commerceRelationRemove
+OptiCliCommandsSync.commerceRelations
+OptiCliCommandsSync.commerceStock
+OptiCliCommandsSync.commerceTree
+OptiCliCommandsSync.commerceWarehouseSet
+OptiCliCommandsSync.commerceWarehouses
 OptiCliCommandsSync.composition
 OptiCliCommandsSync.delete
 OptiCliCommandsSync.discard
@@ -1339,6 +1705,22 @@ OptiCliSync.categoriesAll
 OptiCliSync.children
 OptiCliSync.childrenAll
 OptiCliSync.command
+OptiCliSync.commerce
+OptiCliSync.commerceChildren
+OptiCliSync.commerceGet
+OptiCliSync.commerceInventorySet
+OptiCliSync.commerceMarketSet
+OptiCliSync.commerceMarkets
+OptiCliSync.commercePriceRemove
+OptiCliSync.commercePriceSet
+OptiCliSync.commercePrices
+OptiCliSync.commerceRelationAdd
+OptiCliSync.commerceRelationRemove
+OptiCliSync.commerceRelations
+OptiCliSync.commerceStock
+OptiCliSync.commerceTree
+OptiCliSync.commerceWarehouseSet
+OptiCliSync.commerceWarehouses
 OptiCliSync.composition
 OptiCliSync.create
 OptiCliSync.cwd
@@ -1575,14 +1957,46 @@ PlanStep[op='discard'].lang?
 PlanStep[op='discard'].op
 PlanStep[op='discard'].ref
 PlanStep[op='discard'].version?
+PlanStep[op='inventory']
+PlanStep[op='inventory'].backorder?
+PlanStep[op='inventory'].entry
+PlanStep[op='inventory'].inStock?
+PlanStep[op='inventory'].op
+PlanStep[op='inventory'].preorder?
+PlanStep[op='inventory'].tracked?
+PlanStep[op='inventory'].warehouse
 PlanStep[op='language']
 PlanStep[op='language'].enabled?
 PlanStep[op='language'].lang
 PlanStep[op='language'].op
+PlanStep[op='market']
+PlanStep[op='market'].countries?
+PlanStep[op='market'].currencies?
+PlanStep[op='market'].defaultCurrency?
+PlanStep[op='market'].defaultLanguage?
+PlanStep[op='market'].description?
+PlanStep[op='market'].enabled?
+PlanStep[op='market'].languages?
+PlanStep[op='market'].market
+PlanStep[op='market'].name?
+PlanStep[op='market'].op
+PlanStep[op='market'].pricesIncludeTax?
 PlanStep[op='move']
 PlanStep[op='move'].op
 PlanStep[op='move'].ref
 PlanStep[op='move'].to
+PlanStep[op='price']
+PlanStep[op='price'].amount?
+PlanStep[op='price'].currency
+PlanStep[op='price'].entry
+PlanStep[op='price'].market
+PlanStep[op='price'].minQuantity?
+PlanStep[op='price'].op
+PlanStep[op='price'].priceCode?
+PlanStep[op='price'].priceType?
+PlanStep[op='price'].remove?
+PlanStep[op='price'].validFrom?
+PlanStep[op='price'].validUntil?
 PlanStep[op='publish']
 PlanStep[op='publish'].includeDraft?
 PlanStep[op='publish'].lang?
@@ -1593,6 +2007,13 @@ PlanStep[op='publish'].requestApproval?
 PlanStep[op='publish'].version?
 PlanStep[op='publish'].withBlocks?
 PlanStep[op='publish'].withoutBlocks?
+PlanStep[op='relation']
+PlanStep[op='relation'].child
+PlanStep[op='relation'].op
+PlanStep[op='relation'].parent
+PlanStep[op='relation'].quantity?
+PlanStep[op='relation'].remove?
+PlanStep[op='relation'].sortOrder?
 PlanStep[op='restore']
 PlanStep[op='restore'].op
 PlanStep[op='restore'].ref
@@ -1654,6 +2075,28 @@ PlanStep[op='upload'].ready?
 PlanStep[op='upload'].replace?
 PlanStep[op='upload'].requestApproval?
 PlanStep[op='upload'].type?
+PlanStep[op='warehouse']
+PlanStep[op='warehouse'].active?
+PlanStep[op='warehouse'].code
+PlanStep[op='warehouse'].deliveryLocation?
+PlanStep[op='warehouse'].fulfillmentCenter?
+PlanStep[op='warehouse'].name?
+PlanStep[op='warehouse'].op
+PlanStep[op='warehouse'].pickupLocation?
+PlanStep[op='warehouse'].primary?
+PlanStep[op='warehouse'].sortOrder?
+PriceList.code
+PriceList.entry
+PriceList.prices
+PriceResult.before?
+PriceResult.code
+PriceResult.dryRun
+PriceResult.entry
+PriceResult.price
+PriceResult.status
+PriceType = 'all'
+PriceType = 'group'
+PriceType = 'user'
 ProjectDeletePreview.deleted
 ProjectDeletePreview.dryRun
 ProjectDeletePreview.items
@@ -1830,6 +2273,26 @@ PublishOptions.site?
 PublishOptions.version?
 PublishOptions.withBlock?
 PublishOptions.withoutBlock?
+RelatedContent.code?
+RelatedContent.kind
+RelatedContent.name?
+RelatedContent.quantity?
+RelatedContent.ref
+RelatedContent.sortOrder
+RelationKind = 'bundleEntry'
+RelationKind = 'category'
+RelationKind = 'packageEntry'
+RelationKind = 'variant'
+RelationList.children
+RelationList.parents
+RelationList.ref
+RelationResult.child
+RelationResult.dryRun
+RelationResult.kind
+RelationResult.parent
+RelationResult.quantity?
+RelationResult.sortOrder
+RelationResult.status
 RemoveLanguageOutput.dryRun
 RemoveLanguageOutput.guid
 RemoveLanguageOutput.language
@@ -2383,6 +2846,11 @@ VisitorGroupsOptions.connectionName?
 VisitorGroupsOptions.cursor?
 VisitorGroupsOptions.db?
 VisitorGroupsOptions.limit?
+WarehouseList.warehouses
+WarehouseResult.changes
+WarehouseResult.dryRun
+WarehouseResult.status
+WarehouseResult.warehouse
 WhereUsedOptions.connection?
 WhereUsedOptions.connectionName?
 WhereUsedOptions.cursor?

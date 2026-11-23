@@ -2,13 +2,18 @@
 // guarantee made required, and a plan's results typed by their step.
 import type {
   AccessOutput,
+  InventoryResult,
   LanguagesOutput,
+  MarketResult,
   MoveOutput,
   PlanRun,
   PlanStepResult,
+  PriceResult,
+  RelationResult,
   RemoveLanguageOutput,
   RestoreOutput,
   SiteHostsView,
+  WarehouseResult,
   WriteOutput,
 } from './generated/types.ts';
 import type { ContentRef, Plan, PlanIds } from './types.ts';
@@ -20,7 +25,19 @@ export type SavedContent = WriteOutput & { ref: ContentRef };
 export type CreatedContent = WriteOutput & { ref: ContentRef; version: string; guid: string; type: string; name: string };
 
 /** What a plan step's `result` can be: the output of the command its op is. */
-type StepOutput = WriteOutput | RemoveLanguageOutput | MoveOutput | RestoreOutput | AccessOutput | SiteHostsView | LanguagesOutput;
+type StepOutput =
+  | WriteOutput
+  | RemoveLanguageOutput
+  | MoveOutput
+  | RestoreOutput
+  | AccessOutput
+  | SiteHostsView
+  | LanguagesOutput
+  | RelationResult
+  | PriceResult
+  | WarehouseResult
+  | InventoryResult
+  | MarketResult;
 
 type Keys<U> = U extends unknown ? keyof U : never;
 
@@ -47,7 +64,12 @@ export type AppliedStep =
   | StepOf<'restore', RestoreOutput>
   | StepOf<'access', AccessOutput>
   | StepOf<'site', SiteHostsView>
-  | StepOf<'language', LanguagesOutput>;
+  | StepOf<'language', LanguagesOutput>
+  | StepOf<'relation', RelationResult>
+  | StepOf<'price', PriceResult>
+  | StepOf<'warehouse', WarehouseResult>
+  | StepOf<'inventory', InventoryResult>
+  | StepOf<'market', MarketResult>;
 
 /** The ids a plan declares, or any string for a plan whose ids TypeScript can't see (not written `as const`). */
 export type PlanId<P extends Plan> = [PlanIds<P>] extends [never] ? string : PlanIds<P>;
@@ -55,6 +77,6 @@ export type PlanId<P extends Plan> = [PlanIds<P>] extends [never] ? string : Pla
 /** What `apply` returns: `created` keyed by the plan's step ids, each step's result typed by its op. */
 export interface AppliedPlan<P extends Plan = Plan> extends Omit<PlanRun, 'created' | 'operations'> {
   operations: AppliedStep[];
-  /** Plan id → the content it created or updated, for every create, block and upload with an `id` (none for a dry run). */
+  /** Plan id → the content it created or updated, for every create, block and upload with an `id` (none for a dry run); catalog content as `id__CatalogContent`. */
   created: Record<PlanId<P>, ContentRef>;
 }

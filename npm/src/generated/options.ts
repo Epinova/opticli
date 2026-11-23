@@ -879,6 +879,167 @@ export interface UsersRemoveOptions extends CommonOptions {
 export interface UsersRolesOptions extends CommonOptions {
 }
 
+/** Options of `opticli commerce`. */
+export interface CommerceOptions extends CommonOptions {
+}
+
+/** Options of `opticli commerce get`. */
+export interface CommerceGetOptions extends CommonOptions {
+  /** The language branch to show. Default: its master language. */
+  lang?: string;
+}
+
+/** Options of `opticli commerce children`. */
+export interface CommerceChildrenOptions extends CommonOptions {
+  /** At most this many children (default 200); more says whether there were more. */
+  limit?: number;
+}
+
+/** Options of `opticli commerce tree`. */
+export interface CommerceTreeOptions extends CommonOptions {
+  /**
+   * How many levels below it (default 3).
+   * @defaultValue `3`
+   */
+  depth?: number;
+}
+
+/** Options of `opticli commerce relations`. */
+export interface CommerceRelationsOptions extends CommonOptions {
+}
+
+/** Options of `opticli commerce prices`. */
+export interface CommercePricesOptions extends CommonOptions {
+}
+
+/** Options of `opticli commerce stock`. */
+export interface CommerceStockOptions extends CommonOptions {
+}
+
+/** Options of `opticli commerce warehouses`. */
+export interface CommerceWarehousesOptions extends CommonOptions {
+}
+
+/** Options of `opticli commerce markets`. */
+export interface CommerceMarketsOptions extends CommonOptions {
+}
+
+/** Options of `opticli commerce relation add`. */
+export interface CommerceRelationAddOptions extends CommonOptions {
+  /** A bundle's or package's entry: how many (default 1 for a new one). */
+  quantity?: string;
+  /** Where it sorts among the parent's children (default 0 for a new one). */
+  sortOrder?: number;
+  /** Validate and show the before/after diff without saving anything. */
+  dryRun?: boolean;
+}
+
+/** Options of `opticli commerce relation remove`. */
+export interface CommerceRelationRemoveOptions extends CommonOptions {
+  /** Validate and show the before/after diff without saving anything. */
+  dryRun?: boolean;
+}
+
+/** Options of `opticli commerce price set`. */
+export interface CommercePriceSetOptions extends CommonOptions {
+  /** The market's id (DEFAULT; `opticli commerce markets`). */
+  market: string;
+  /** ISO 4217 code: USD, EUR, SEK. */
+  currency: string;
+  /** The unit price. */
+  amount: string;
+  /** Who it is for: all (default), user (a user name as --price-code) or group (a customer price group as --price-code). */
+  priceType?: string;
+  /** The user name or price group of a user or group price. */
+  priceCode?: string;
+  /** It applies from this quantity on (default 0). */
+  minQuantity?: string;
+  /** When it starts (UTC unless it has an offset), part of the key. Default: the price with the rest of the key that has no end (the base price); a new one starts today. */
+  validFrom?: string;
+  /** When it ends (UTC unless it has an offset); needs --valid-from. Default: no end. */
+  validUntil?: string;
+  /** Validate and show the before/after diff without saving anything. */
+  dryRun?: boolean;
+}
+
+/** Options of `opticli commerce price remove`. */
+export interface CommercePriceRemoveOptions extends CommonOptions {
+  /** The market's id (DEFAULT; `opticli commerce markets`). */
+  market: string;
+  /** ISO 4217 code: USD, EUR, SEK. */
+  currency: string;
+  /** Who it is for: all (default), user (a user name as --price-code) or group (a customer price group as --price-code). */
+  priceType?: string;
+  /** The user name or price group of a user or group price. */
+  priceCode?: string;
+  /** It applies from this quantity on (default 0). */
+  minQuantity?: string;
+  /** When it starts (UTC unless it has an offset), part of the key. Default: the price with the rest of the key that has no end (the base price); a new one starts today. */
+  validFrom?: string;
+  /** Validate and show the before/after diff without saving anything. */
+  dryRun?: boolean;
+}
+
+/** Options of `opticli commerce warehouse set`. */
+export interface CommerceWarehouseSetOptions extends CommonOptions {
+  /** Its name (a new one's default: the code). */
+  name?: string;
+  /** Whether it is active (a new one is). `false` passes `--active false`; left out, the setting saved for the project decides. */
+  active?: boolean;
+  /** Whether it is the primary warehouse. `false` passes `--primary false`; left out, the setting saved for the project decides. */
+  primary?: boolean;
+  /** Whether it ships orders. `false` passes `--fulfillment-center false`; left out, the setting saved for the project decides. */
+  fulfillmentCenter?: boolean;
+  /** Whether customers pick up orders there. `false` passes `--pickup-location false`; left out, the setting saved for the project decides. */
+  pickupLocation?: boolean;
+  /** Whether it delivers. `false` passes `--delivery-location false`; left out, the setting saved for the project decides. */
+  deliveryLocation?: boolean;
+  /** Where it sorts among the warehouses. */
+  sortOrder?: number;
+  /** Validate and show the before/after diff without saving anything. */
+  dryRun?: boolean;
+}
+
+/** Options of `opticli commerce inventory set`. */
+export interface CommerceInventorySetOptions extends CommonOptions {
+  /** The warehouse's code (`opticli commerce warehouses`). */
+  warehouse: string;
+  /** What can be bought now (Commerce's purchase available quantity). */
+  inStock?: string;
+  /** What can be backordered. */
+  backorder?: string;
+  /** What can be preordered. */
+  preorder?: string;
+  /** Whether stock is tracked (a new record is); untracked is always available. `false` passes `--tracked false`; left out, the setting saved for the project decides. */
+  tracked?: boolean;
+  /** Validate and show the before/after diff without saving anything. */
+  dryRun?: boolean;
+}
+
+/** Options of `opticli commerce market set`. */
+export interface CommerceMarketSetOptions extends CommonOptions {
+  /** Its name (a new one's default: the id). */
+  name?: string;
+  /** Whether it is enabled (a new one is). `false` passes `--enabled false`; left out, the setting saved for the project decides. */
+  enabled?: boolean;
+  /** All its currencies, comma-separated ISO 4217 codes (replaces its list); a new market needs them. */
+  currencies?: string;
+  /** One of its currencies. Default: the first. */
+  defaultCurrency?: string;
+  /** All its languages, comma-separated (replaces its list); a new market needs them. */
+  languages?: string;
+  /** One of its languages. Default: the first. */
+  defaultLanguage?: string;
+  /** All its countries, comma-separated ISO 3166-1 alpha-3 codes (replaces its list). */
+  countries?: string;
+  /** Its description (empty: none). */
+  description?: string;
+  /** Whether its prices include tax (a new one's don't). `false` passes `--prices-include-tax false`; left out, the setting saved for the project decides. */
+  pricesIncludeTax?: boolean;
+  /** Validate and show the before/after diff without saving anything. */
+  dryRun?: boolean;
+}
+
 /** Options of `opticli sql`. */
 export interface SqlOptions extends CommonOptions {
   /**

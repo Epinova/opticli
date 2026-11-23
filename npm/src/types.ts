@@ -253,6 +253,78 @@ export type PlanStep =
       readonly op: 'language';
       readonly lang: string | readonly string[];
       readonly enabled?: boolean;
+    }
+  | {
+      /**
+       * Optimizely Commerce: relates catalog content, as `opticli commerce relation add|remove`: a product and a variant,
+       * a bundle or package and an entry (with a `quantity`), a node and an entry (an extra category).
+       */
+      readonly op: 'relation';
+      /** A catalog ref: `$id`, `code:<code>`, `catalog:<name>`, a GUID or `id__CatalogContent`. */
+      readonly parent: ContentRef;
+      readonly child: ContentRef;
+      readonly quantity?: number;
+      readonly sortOrder?: number;
+      readonly remove?: boolean;
+    }
+  | {
+      /**
+       * Optimizely Commerce: one price of a variant or package, as `opticli commerce price set|remove`, keyed by market,
+       * currency, price type and code, minimum quantity and `validFrom` (none: the base price, with no end).
+       */
+      readonly op: 'price';
+      readonly entry: ContentRef;
+      readonly market: string;
+      readonly currency: string;
+      /** Required unless `remove`. */
+      readonly amount?: number;
+      readonly priceType?: 'all' | 'user' | 'group';
+      readonly priceCode?: string;
+      readonly minQuantity?: number;
+      /** UTC unless it has an offset: `"2026-12-01T00:00:00Z"`. */
+      readonly validFrom?: string;
+      /** Needs `validFrom`. */
+      readonly validUntil?: string;
+      readonly remove?: boolean;
+    }
+  | {
+      /** Optimizely Commerce: a warehouse, made or changed by its code, as `opticli commerce warehouse set`. */
+      readonly op: 'warehouse';
+      readonly code: string;
+      readonly name?: string;
+      readonly active?: boolean;
+      readonly primary?: boolean;
+      readonly fulfillmentCenter?: boolean;
+      readonly pickupLocation?: boolean;
+      readonly deliveryLocation?: boolean;
+      readonly sortOrder?: number;
+    }
+  | {
+      /** Optimizely Commerce: a variant's or package's stock in a warehouse, as `opticli commerce inventory set`. */
+      readonly op: 'inventory';
+      readonly entry: ContentRef;
+      readonly warehouse: string;
+      readonly inStock?: number;
+      readonly backorder?: number;
+      readonly preorder?: number;
+      readonly tracked?: boolean;
+    }
+  | {
+      /** Optimizely Commerce: a market, made or changed by its id, as `opticli commerce market set`. */
+      readonly op: 'market';
+      readonly market: string;
+      readonly name?: string;
+      readonly enabled?: boolean;
+      /** All its currencies (replacing its list); a new market needs them. */
+      readonly currencies?: readonly string[];
+      readonly defaultCurrency?: string;
+      /** All its languages (replacing its list); a new market needs them. */
+      readonly languages?: readonly string[];
+      readonly defaultLanguage?: string;
+      /** ISO 3166-1 alpha-3 codes. */
+      readonly countries?: readonly string[];
+      readonly description?: string;
+      readonly pricesIncludeTax?: boolean;
     };
 
 /** A host of a `site` step, as an object. */

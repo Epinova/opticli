@@ -14,6 +14,22 @@ import type {
   BlockCreateOptions,
   CategoriesOptions,
   ChildrenOptions,
+  CommerceChildrenOptions,
+  CommerceGetOptions,
+  CommerceInventorySetOptions,
+  CommerceMarketSetOptions,
+  CommerceMarketsOptions,
+  CommerceOptions,
+  CommercePriceRemoveOptions,
+  CommercePriceSetOptions,
+  CommercePricesOptions,
+  CommerceRelationAddOptions,
+  CommerceRelationRemoveOptions,
+  CommerceRelationsOptions,
+  CommerceStockOptions,
+  CommerceTreeOptions,
+  CommerceWarehouseSetOptions,
+  CommerceWarehousesOptions,
   CompositionOptions,
   DeleteOptions,
   DiscardOptions,
@@ -67,14 +83,20 @@ import type {
   AccessView,
   AgentStatus,
   AllowedIn,
+  CatalogChildren,
+  CatalogTreeItem,
   CategoryInfo,
+  CommerceInfo,
   ContentDocument,
   ContentIdentity,
+  ContentItem,
   ContentUrls,
   DisplayTemplateInfo,
   DraftInfo,
   DraftItem,
   HistoryEntry,
+  InventoryList,
+  InventoryResult,
   JobLogView,
   JobRunView,
   JobSetView,
@@ -82,13 +104,19 @@ import type {
   JobView,
   LanguageInfo,
   LanguagesOutput,
+  MarketList,
+  MarketResult,
   MoveOutput,
   PageUsageRow,
   PlanRun,
+  PriceList,
+  PriceResult,
   ProjectDeletePreview,
   ProjectInfo,
   ProjectItemInfo,
   ProjectResult,
+  RelationList,
+  RelationResult,
   RemoveLanguageOutput,
   ResolveOutput,
   RestoreOutput,
@@ -113,6 +141,8 @@ import type {
   UserRolesResult,
   VersionInfo,
   VisitorGroupInfo,
+  WarehouseList,
+  WarehouseResult,
   WriteOutput,
 } from './types.ts';
 
@@ -174,6 +204,22 @@ const specs: Readonly<Record<string, Readonly<Record<string, Flag>>>> = {
   usersAdd: { role: '--role', passwordStdin: '--password-stdin', dryRun: '--dry-run', connection: '--connection', connectionName: '--connection-name', db: '--db' },
   usersRemove: { dryRun: '--dry-run', connection: '--connection', connectionName: '--connection-name', db: '--db' },
   usersRoles: { connection: '--connection', connectionName: '--connection-name', db: '--db' },
+  commerce: { connection: '--connection', connectionName: '--connection-name', db: '--db' },
+  commerceGet: { lang: '--lang', connection: '--connection', connectionName: '--connection-name', db: '--db' },
+  commerceChildren: { limit: '--limit', connection: '--connection', connectionName: '--connection-name', db: '--db' },
+  commerceTree: { depth: '--depth', connection: '--connection', connectionName: '--connection-name', db: '--db' },
+  commerceRelations: { connection: '--connection', connectionName: '--connection-name', db: '--db' },
+  commercePrices: { connection: '--connection', connectionName: '--connection-name', db: '--db' },
+  commerceStock: { connection: '--connection', connectionName: '--connection-name', db: '--db' },
+  commerceWarehouses: { connection: '--connection', connectionName: '--connection-name', db: '--db' },
+  commerceMarkets: { connection: '--connection', connectionName: '--connection-name', db: '--db' },
+  commerceRelationAdd: { quantity: '--quantity', sortOrder: '--sort-order', dryRun: '--dry-run', connection: '--connection', connectionName: '--connection-name', db: '--db' },
+  commerceRelationRemove: { dryRun: '--dry-run', connection: '--connection', connectionName: '--connection-name', db: '--db' },
+  commercePriceSet: { market: '--market', currency: '--currency', amount: '--amount', priceType: '--price-type', priceCode: '--price-code', minQuantity: '--min-quantity', validFrom: '--valid-from', validUntil: '--valid-until', dryRun: '--dry-run', connection: '--connection', connectionName: '--connection-name', db: '--db' },
+  commercePriceRemove: { market: '--market', currency: '--currency', priceType: '--price-type', priceCode: '--price-code', minQuantity: '--min-quantity', validFrom: '--valid-from', dryRun: '--dry-run', connection: '--connection', connectionName: '--connection-name', db: '--db' },
+  commerceWarehouseSet: { name: '--name', active: { flag: '--active', explicitFalse: true }, primary: { flag: '--primary', explicitFalse: true }, fulfillmentCenter: { flag: '--fulfillment-center', explicitFalse: true }, pickupLocation: { flag: '--pickup-location', explicitFalse: true }, deliveryLocation: { flag: '--delivery-location', explicitFalse: true }, sortOrder: '--sort-order', dryRun: '--dry-run', connection: '--connection', connectionName: '--connection-name', db: '--db' },
+  commerceInventorySet: { warehouse: '--warehouse', inStock: '--in-stock', backorder: '--backorder', preorder: '--preorder', tracked: { flag: '--tracked', explicitFalse: true }, dryRun: '--dry-run', connection: '--connection', connectionName: '--connection-name', db: '--db' },
+  commerceMarketSet: { name: '--name', enabled: { flag: '--enabled', explicitFalse: true }, currencies: '--currencies', defaultCurrency: '--default-currency', languages: '--languages', defaultLanguage: '--default-language', countries: '--countries', description: '--description', pricesIncludeTax: { flag: '--prices-include-tax', explicitFalse: true }, dryRun: '--dry-run', connection: '--connection', connectionName: '--connection-name', db: '--db' },
   sql: { limit: '--limit', full: '--full', includePersonalData: '--include-personal-data', connection: '--connection', connectionName: '--connection-name', db: '--db' },
 };
 
@@ -1773,6 +1819,224 @@ export abstract class OptiCliCommands {
   }
 
   /**
+   * Optimizely Commerce, through the site (needs `opticli serve` on a site whose build has EPiServer.Commerce.Core,
+   * which gets opticli's Commerce agent). Alone: the site's Commerce version, the catalog root and the catalogs.
+   * Catalog content (catalogs, nodes, products, variants, bundles, packages) is content: make and change it with
+   * `opticli create` and `opticli set`, below catalog refs (code:<code>, catalog:<name>, catalog-root). The
+   * subcommands are for the rest: relations (a product's variants, a bundle's entries), prices, warehouses, stock
+   * and markets, each also a plan step. Writes report status: created, updated, unchanged, removed or absent.
+   * Example: opticli commerce
+   */
+  async commerce(options?: CommerceOptions, call?: RunOptions): Promise<CommerceInfo> {
+    return this.#data<CommerceInfo>(argv(['commerce'], [], options, specs.commerce), call);
+  }
+
+  /**
+   * One catalog item as the site loads it (Commerce's catalog content provider): ref, guid, name, type, language,
+   * master language and languages, status, parent, publish dates, and every property with its type and value
+   * (the catalog model's and Commerce's own: Code, DisplayName, SeoUri, ...). Its published version, else its latest.
+   * Example: opticli commerce get code:P-1001
+   * @param ref - A catalog ref: code:<code>, catalog:<name>, catalog-root, a GUID, or id__CatalogContent.
+   */
+  async commerceGet(ref: string, options?: CommerceGetOptions, call?: RunOptions): Promise<ContentItem> {
+    return this.#data<ContentItem>(argv(['commerce', 'get'], [ref], options, specs.commerceGet), call);
+  }
+
+  /**
+   * The catalog content below a catalog item, in catalog order: the catalogs below the catalog root (the default),
+   * the nodes and entries below a catalog or node. Each with ref, guid, name, type, kind (catalog, node, product,
+   * variation, bundle, package), code, parent, languages and version. A product's variants are its relations
+   * (`opticli commerce relations`), not its children.
+   * Example: opticli commerce children code:women
+   * @param ref - A catalog ref: code:<code>, catalog:<name>, catalog-root, a GUID, or id__CatalogContent.
+   */
+  commerceChildren(ref: string | undefined, options?: CommerceChildrenOptions, call?: RunOptions): Promise<CatalogChildren>;
+
+  /**
+   * The catalog content below a catalog item, in catalog order: the catalogs below the catalog root (the default),
+   * the nodes and entries below a catalog or node. Each with ref, guid, name, type, kind (catalog, node, product,
+   * variation, bundle, package), code, parent, languages and version. A product's variants are its relations
+   * (`opticli commerce relations`), not its children.
+   * Example: opticli commerce children code:women
+   */
+  commerceChildren(options?: CommerceChildrenOptions): Promise<CatalogChildren>;
+
+  /**
+   * The catalog content below a catalog item, in catalog order: the catalogs below the catalog root (the default),
+   * the nodes and entries below a catalog or node. Each with ref, guid, name, type, kind (catalog, node, product,
+   * variation, bundle, package), code, parent, languages and version. A product's variants are its relations
+   * (`opticli commerce relations`), not its children.
+   * Example: opticli commerce children code:women
+   */
+  commerceChildren(options: CommerceChildrenOptions, call?: RunOptions): Promise<CatalogChildren>;
+  async commerceChildren(...values: unknown[]): Promise<any> {
+    const [positional, options, call] = split('commerce children', values, [], ['one']);
+    return this.#data<any>(argv(['commerce', 'children'], positional, options, specs.commerceChildren), call);
+  }
+
+  /**
+   * The catalog content below a catalog item, depth first, each with its depth: by default the catalog root and three
+   * levels (catalogs, their nodes, theirs). At most 200 children per item and 5000 items.
+   * Example: opticli commerce tree catalog:Fashion --depth 2
+   * @param ref - A catalog ref: code:<code>, catalog:<name>, catalog-root, a GUID, or id__CatalogContent.
+   */
+  commerceTree(ref: string | undefined, options?: CommerceTreeOptions, call?: RunOptions): Promise<CatalogTreeItem[]>;
+
+  /**
+   * The catalog content below a catalog item, depth first, each with its depth: by default the catalog root and three
+   * levels (catalogs, their nodes, theirs). At most 200 children per item and 5000 items.
+   * Example: opticli commerce tree catalog:Fashion --depth 2
+   */
+  commerceTree(options?: CommerceTreeOptions): Promise<CatalogTreeItem[]>;
+
+  /**
+   * The catalog content below a catalog item, depth first, each with its depth: by default the catalog root and three
+   * levels (catalogs, their nodes, theirs). At most 200 children per item and 5000 items.
+   * Example: opticli commerce tree catalog:Fashion --depth 2
+   */
+  commerceTree(options: CommerceTreeOptions, call?: RunOptions): Promise<CatalogTreeItem[]>;
+  async commerceTree(...values: unknown[]): Promise<any> {
+    const [positional, options, call] = split('commerce tree', values, [], ['one']);
+    return this.#data<any>(argv(['commerce', 'tree'], positional, options, specs.commerceTree), call);
+  }
+
+  /**
+   * The relations of catalog content: children (a product's variants, a bundle's or package's entries, a node's
+   * extra entries) and parents (the products, bundles and packages it is in, the nodes it is an extra entry of),
+   * each with its ref, code, name, kind, quantity and sort order. An entry's own node is its parent, not listed here.
+   * Example: opticli commerce relations code:P-1001
+   * @param ref - A catalog ref: code:<code> (a node or entry), catalog:<name>, catalog-root, a GUID, or id__CatalogContent as opticli prints it.
+   */
+  async commerceRelations(ref: string, options?: CommerceRelationsOptions, call?: RunOptions): Promise<RelationList> {
+    return this.#data<RelationList>(argv(['commerce', 'relations'], [ref], options, specs.commerceRelations), call);
+  }
+
+  /**
+   * Every price of a catalog entry (Commerce's IPriceDetailService): market, currency, amount, price type and code,
+   * minimum quantity, valid from and until (UTC). Commerce keeps prices on variants and packages.
+   * Example: opticli commerce prices code:P-1001-M
+   * @param entry - A catalog ref: code:<code> (a node or entry), catalog:<name>, catalog-root, a GUID, or id__CatalogContent as opticli prints it.
+   */
+  async commercePrices(entry: string, options?: CommercePricesOptions, call?: RunOptions): Promise<PriceList> {
+    return this.#data<PriceList>(argv(['commerce', 'prices'], [entry], options, specs.commercePrices), call);
+  }
+
+  /**
+   * A catalog entry's stock in every warehouse (Commerce's IInventoryService): in stock, backorder, preorder,
+   * tracked.
+   * Example: opticli commerce stock code:P-1001-M
+   * @param entry - A catalog ref: code:<code> (a node or entry), catalog:<name>, catalog-root, a GUID, or id__CatalogContent as opticli prints it.
+   */
+  async commerceStock(entry: string, options?: CommerceStockOptions, call?: RunOptions): Promise<InventoryList> {
+    return this.#data<InventoryList>(argv(['commerce', 'stock'], [entry], options, specs.commerceStock), call);
+  }
+
+  /**
+   * The site's warehouses (Commerce's IWarehouseRepository): code, name, active, primary, and what they are for.
+   * Example: opticli commerce warehouses
+   */
+  async commerceWarehouses(options?: CommerceWarehousesOptions, call?: RunOptions): Promise<WarehouseList> {
+    return this.#data<WarehouseList>(argv(['commerce', 'warehouses'], [], options, specs.commerceWarehouses), call);
+  }
+
+  /**
+   * The site's markets (Commerce's IMarketService): id, name, enabled, currencies, languages, countries.
+   * Example: opticli commerce markets
+   */
+  async commerceMarkets(options?: CommerceMarketsOptions, call?: RunOptions): Promise<MarketList> {
+    return this.#data<MarketList>(argv(['commerce', 'markets'], [], options, specs.commerceMarkets), call);
+  }
+
+  /**
+   * Relate catalog content (Commerce's IRelationRepository). Which relation follows from the two: a product and
+   * a variant (variant), a bundle or package and an entry (bundleEntry, packageEntry, with --quantity), a node and
+   * an entry (category: an extra node, besides the entry's own parent). Already there with the same quantity and
+   * sort order is `unchanged`. In a plan: {"op": "relation", "parent": "$shirt", "child": "$shirt-m"}.
+   * Example: opticli commerce relation add code:P-1001 code:P-1001-M
+   * Writes: needs the site running (`opticli serve`).
+   * @param parent - The product, bundle, package or node. A catalog ref: code:<code> (a node or entry), catalog:<name>, catalog-root, a GUID, or id__CatalogContent as opticli prints it.
+   * @param child - The variant or entry. A catalog ref: code:<code> (a node or entry), catalog:<name>, catalog-root, a GUID, or id__CatalogContent as opticli prints it.
+   */
+  async commerceRelationAdd(parent: string, child: string, options?: CommerceRelationAddOptions, call?: RunOptions): Promise<RelationResult> {
+    return this.#data<RelationResult>(argv(['commerce', 'relation', 'add'], [parent, child], options, specs.commerceRelationAdd), call);
+  }
+
+  /**
+   * Remove a relation (Commerce's IRelationRepository): a product's variant, a bundle's or package's entry, an
+   * entry's extra category. Nothing to remove is `absent`. In a plan: {"op": "relation", "parent": "$shirt",
+   * "child": "$shirt-m", "remove": true}.
+   * Example: opticli commerce relation remove code:P-1001 code:P-1001-M
+   * Writes: needs the site running (`opticli serve`).
+   * @param parent - The product, bundle, package or node. A catalog ref: code:<code> (a node or entry), catalog:<name>, catalog-root, a GUID, or id__CatalogContent as opticli prints it.
+   * @param child - The variant or entry. A catalog ref: code:<code> (a node or entry), catalog:<name>, catalog-root, a GUID, or id__CatalogContent as opticli prints it.
+   */
+  async commerceRelationRemove(parent: string, child: string, options?: CommerceRelationRemoveOptions, call?: RunOptions): Promise<RelationResult> {
+    return this.#data<RelationResult>(argv(['commerce', 'relation', 'remove'], [parent, child], options, specs.commerceRelationRemove), call);
+  }
+
+  /**
+   * Set one price of a variant or package (Commerce's IPriceDetailService). A price is keyed by market, currency,
+   * price type and code, minimum quantity and valid-from: the row with that key is made or updated (amount,
+   * valid-until), and the entry's other prices stay. Already so is `unchanged`. Without --valid-from it is the base
+   * price (the one with no end); a campaign price is another row, with --valid-from and --valid-until. In a plan: {"op": "price", "entry": "$shirt-m", "market": "DEFAULT",
+   * "currency": "USD", "amount": 49.9}.
+   * Example: opticli commerce price set code:P-1001-M --market DEFAULT --currency USD --amount 49.90
+   * Writes: needs the site running (`opticli serve`).
+   * @param entry - The variant or package. A catalog ref: code:<code> (a node or entry), catalog:<name>, catalog-root, a GUID, or id__CatalogContent as opticli prints it.
+   */
+  async commercePriceSet(entry: string, options: CommercePriceSetOptions, call?: RunOptions): Promise<PriceResult> {
+    return this.#data<PriceResult>(argv(['commerce', 'price', 'set'], [entry], options, specs.commercePriceSet), call);
+  }
+
+  /**
+   * Remove one price of a variant or package (Commerce's IPriceDetailService), named by its key as for set. Nothing
+   * to remove is `absent`. In a plan: {"op": "price", "entry": "$shirt-m", "market": "DEFAULT", "currency": "USD",
+   * "remove": true}.
+   * Example: opticli commerce price remove code:P-1001-M --market DEFAULT --currency USD
+   * Writes: needs the site running (`opticli serve`).
+   * @param entry - The variant or package. A catalog ref: code:<code> (a node or entry), catalog:<name>, catalog-root, a GUID, or id__CatalogContent as opticli prints it.
+   */
+  async commercePriceRemove(entry: string, options: CommercePriceRemoveOptions, call?: RunOptions): Promise<PriceResult> {
+    return this.#data<PriceResult>(argv(['commerce', 'price', 'remove'], [entry], options, specs.commercePriceRemove), call);
+  }
+
+  /**
+   * Make a warehouse, or change one, by its code (Commerce's IWarehouseRepository). What isn't given keeps its value
+   * (a new one: active, not primary, no locations). Already so is `unchanged`; changes lists what changed. In a plan:
+   * {"op": "warehouse", "code": "oslo", "name": "Oslo"}.
+   * Example: opticli commerce warehouse set oslo --name Oslo --pickup-location true
+   * Writes: needs the site running (`opticli serve`).
+   * @param code - The warehouse's code (default is Commerce's own).
+   */
+  async commerceWarehouseSet(code: string, options?: CommerceWarehouseSetOptions, call?: RunOptions): Promise<WarehouseResult> {
+    return this.#data<WarehouseResult>(argv(['commerce', 'warehouse', 'set'], [code], options, specs.commerceWarehouseSet), call);
+  }
+
+  /**
+   * Set a variant's or package's stock in a warehouse (Commerce's IInventoryService), one record per entry and
+   * warehouse. What isn't given keeps its value (a new record: 0, tracked). Already so is `unchanged`. In a plan:
+   * {"op": "inventory", "entry": "$shirt-m", "warehouse": "default", "inStock": 25}.
+   * Example: opticli commerce inventory set code:P-1001-M --warehouse default --in-stock 25
+   * Writes: needs the site running (`opticli serve`).
+   * @param entry - The variant or package. A catalog ref: code:<code> (a node or entry), catalog:<name>, catalog-root, a GUID, or id__CatalogContent as opticli prints it.
+   */
+  async commerceInventorySet(entry: string, options: CommerceInventorySetOptions, call?: RunOptions): Promise<InventoryResult> {
+    return this.#data<InventoryResult>(argv(['commerce', 'inventory', 'set'], [entry], options, specs.commerceInventorySet), call);
+  }
+
+  /**
+   * Make a market, or change one, by its id (Commerce's IMarketService). What isn't given keeps its value; the
+   * lists given replace the market's. Already so is `unchanged`; changes lists what changed. In a plan: {"op":
+   * "market", "market": "NORDIC", "currencies": ["SEK", "NOK"], "languages": ["en", "sv"], "countries": ["SWE", "NOR"]}.
+   * Example: opticli commerce market set NORDIC --name Nordic --currencies SEK,NOK --languages en,sv --countries SWE,NOR
+   * Writes: needs the site running (`opticli serve`).
+   * @param id - The market's id: 1 to 8 letters or digits (DEFAULT, US, NORDIC).
+   */
+  async commerceMarketSet(id: string, options?: CommerceMarketSetOptions, call?: RunOptions): Promise<MarketResult> {
+    return this.#data<MarketResult>(argv(['commerce', 'market', 'set'], [id], options, specs.commerceMarketSet), call);
+  }
+
+  /**
    * Run one read-only SELECT against the site's database, for questions the other commands don't answer.
    * Only a single SELECT/WITH statement is accepted (no writes, EXEC, other databases or server catalog views);
    * personal-data tables need --include-personal-data; it always runs in a transaction that is rolled back.
@@ -2740,6 +3004,177 @@ export abstract class OptiCliCommandsSync {
    */
   usersRoles(options?: UsersRolesOptions, call?: RunOptions): UserRolesResult {
     return this.#data<UserRolesResult>(argv(['users', 'roles'], [], options, specs.usersRoles), call);
+  }
+
+  /**
+   * Optimizely Commerce, through the site (needs `opticli serve` on a site whose build has EPiServer.Commerce.Core, which gets opticli's Commerce agent).
+   * Blocks until opticli exits; see `OptiCliCommands.commerce`.
+   */
+  commerce(options?: CommerceOptions, call?: RunOptions): CommerceInfo {
+    return this.#data<CommerceInfo>(argv(['commerce'], [], options, specs.commerce), call);
+  }
+
+  /**
+   * One catalog item as the site loads it (Commerce's catalog content provider): ref, guid, name, type, language, master language and languages, status, parent, publish dates, and every property with its type and value (the catalog model's and Commerce's own: Code, DisplayName, SeoUri, ...).
+   * Blocks until opticli exits; see `OptiCliCommands.commerceGet`.
+   * @param ref - A catalog ref: code:<code>, catalog:<name>, catalog-root, a GUID, or id__CatalogContent.
+   */
+  commerceGet(ref: string, options?: CommerceGetOptions, call?: RunOptions): ContentItem {
+    return this.#data<ContentItem>(argv(['commerce', 'get'], [ref], options, specs.commerceGet), call);
+  }
+
+  /**
+   * The catalog content below a catalog item, in catalog order: the catalogs below the catalog root (the default), the nodes and entries below a catalog or node.
+   * Blocks until opticli exits; see `OptiCliCommands.commerceChildren`.
+   * @param ref - A catalog ref: code:<code>, catalog:<name>, catalog-root, a GUID, or id__CatalogContent.
+   */
+  commerceChildren(ref: string | undefined, options?: CommerceChildrenOptions, call?: RunOptions): CatalogChildren;
+
+  /**
+   * The catalog content below a catalog item, in catalog order: the catalogs below the catalog root (the default), the nodes and entries below a catalog or node.
+   * Blocks until opticli exits; see `OptiCliCommands.commerceChildren`.
+   */
+  commerceChildren(options?: CommerceChildrenOptions): CatalogChildren;
+
+  /**
+   * The catalog content below a catalog item, in catalog order: the catalogs below the catalog root (the default), the nodes and entries below a catalog or node.
+   * Blocks until opticli exits; see `OptiCliCommands.commerceChildren`.
+   */
+  commerceChildren(options: CommerceChildrenOptions, call?: RunOptions): CatalogChildren;
+  commerceChildren(...values: unknown[]): any {
+    const [positional, options, call] = split('commerce children', values, [], ['one']);
+    return this.#data<any>(argv(['commerce', 'children'], positional, options, specs.commerceChildren), call);
+  }
+
+  /**
+   * The catalog content below a catalog item, depth first, each with its depth: by default the catalog root and three levels (catalogs, their nodes, theirs).
+   * Blocks until opticli exits; see `OptiCliCommands.commerceTree`.
+   * @param ref - A catalog ref: code:<code>, catalog:<name>, catalog-root, a GUID, or id__CatalogContent.
+   */
+  commerceTree(ref: string | undefined, options?: CommerceTreeOptions, call?: RunOptions): CatalogTreeItem[];
+
+  /**
+   * The catalog content below a catalog item, depth first, each with its depth: by default the catalog root and three levels (catalogs, their nodes, theirs).
+   * Blocks until opticli exits; see `OptiCliCommands.commerceTree`.
+   */
+  commerceTree(options?: CommerceTreeOptions): CatalogTreeItem[];
+
+  /**
+   * The catalog content below a catalog item, depth first, each with its depth: by default the catalog root and three levels (catalogs, their nodes, theirs).
+   * Blocks until opticli exits; see `OptiCliCommands.commerceTree`.
+   */
+  commerceTree(options: CommerceTreeOptions, call?: RunOptions): CatalogTreeItem[];
+  commerceTree(...values: unknown[]): any {
+    const [positional, options, call] = split('commerce tree', values, [], ['one']);
+    return this.#data<any>(argv(['commerce', 'tree'], positional, options, specs.commerceTree), call);
+  }
+
+  /**
+   * The relations of catalog content: children (a product's variants, a bundle's or package's entries, a node's extra entries) and parents (the products, bundles and packages it is in, the nodes it is an extra entry of), each with its ref, code, name, kind, quantity and sort order.
+   * Blocks until opticli exits; see `OptiCliCommands.commerceRelations`.
+   * @param ref - A catalog ref: code:<code> (a node or entry), catalog:<name>, catalog-root, a GUID, or id__CatalogContent as opticli prints it.
+   */
+  commerceRelations(ref: string, options?: CommerceRelationsOptions, call?: RunOptions): RelationList {
+    return this.#data<RelationList>(argv(['commerce', 'relations'], [ref], options, specs.commerceRelations), call);
+  }
+
+  /**
+   * Every price of a catalog entry (Commerce's IPriceDetailService): market, currency, amount, price type and code, minimum quantity, valid from and until (UTC).
+   * Blocks until opticli exits; see `OptiCliCommands.commercePrices`.
+   * @param entry - A catalog ref: code:<code> (a node or entry), catalog:<name>, catalog-root, a GUID, or id__CatalogContent as opticli prints it.
+   */
+  commercePrices(entry: string, options?: CommercePricesOptions, call?: RunOptions): PriceList {
+    return this.#data<PriceList>(argv(['commerce', 'prices'], [entry], options, specs.commercePrices), call);
+  }
+
+  /**
+   * A catalog entry's stock in every warehouse (Commerce's IInventoryService): in stock, backorder, preorder, tracked.
+   * Blocks until opticli exits; see `OptiCliCommands.commerceStock`.
+   * @param entry - A catalog ref: code:<code> (a node or entry), catalog:<name>, catalog-root, a GUID, or id__CatalogContent as opticli prints it.
+   */
+  commerceStock(entry: string, options?: CommerceStockOptions, call?: RunOptions): InventoryList {
+    return this.#data<InventoryList>(argv(['commerce', 'stock'], [entry], options, specs.commerceStock), call);
+  }
+
+  /**
+   * The site's warehouses (Commerce's IWarehouseRepository): code, name, active, primary, and what they are for.
+   * Blocks until opticli exits; see `OptiCliCommands.commerceWarehouses`.
+   */
+  commerceWarehouses(options?: CommerceWarehousesOptions, call?: RunOptions): WarehouseList {
+    return this.#data<WarehouseList>(argv(['commerce', 'warehouses'], [], options, specs.commerceWarehouses), call);
+  }
+
+  /**
+   * The site's markets (Commerce's IMarketService): id, name, enabled, currencies, languages, countries.
+   * Blocks until opticli exits; see `OptiCliCommands.commerceMarkets`.
+   */
+  commerceMarkets(options?: CommerceMarketsOptions, call?: RunOptions): MarketList {
+    return this.#data<MarketList>(argv(['commerce', 'markets'], [], options, specs.commerceMarkets), call);
+  }
+
+  /**
+   * Relate catalog content (Commerce's IRelationRepository). Writes: needs the site running (`opticli serve`).
+   * Blocks until opticli exits; see `OptiCliCommands.commerceRelationAdd`.
+   * @param parent - The product, bundle, package or node. A catalog ref: code:<code> (a node or entry), catalog:<name>, catalog-root, a GUID, or id__CatalogContent as opticli prints it.
+   * @param child - The variant or entry. A catalog ref: code:<code> (a node or entry), catalog:<name>, catalog-root, a GUID, or id__CatalogContent as opticli prints it.
+   */
+  commerceRelationAdd(parent: string, child: string, options?: CommerceRelationAddOptions, call?: RunOptions): RelationResult {
+    return this.#data<RelationResult>(argv(['commerce', 'relation', 'add'], [parent, child], options, specs.commerceRelationAdd), call);
+  }
+
+  /**
+   * Remove a relation (Commerce's IRelationRepository): a product's variant, a bundle's or package's entry, an entry's extra category. Writes: needs the site running (`opticli serve`).
+   * Blocks until opticli exits; see `OptiCliCommands.commerceRelationRemove`.
+   * @param parent - The product, bundle, package or node. A catalog ref: code:<code> (a node or entry), catalog:<name>, catalog-root, a GUID, or id__CatalogContent as opticli prints it.
+   * @param child - The variant or entry. A catalog ref: code:<code> (a node or entry), catalog:<name>, catalog-root, a GUID, or id__CatalogContent as opticli prints it.
+   */
+  commerceRelationRemove(parent: string, child: string, options?: CommerceRelationRemoveOptions, call?: RunOptions): RelationResult {
+    return this.#data<RelationResult>(argv(['commerce', 'relation', 'remove'], [parent, child], options, specs.commerceRelationRemove), call);
+  }
+
+  /**
+   * Set one price of a variant or package (Commerce's IPriceDetailService). Writes: needs the site running (`opticli serve`).
+   * Blocks until opticli exits; see `OptiCliCommands.commercePriceSet`.
+   * @param entry - The variant or package. A catalog ref: code:<code> (a node or entry), catalog:<name>, catalog-root, a GUID, or id__CatalogContent as opticli prints it.
+   */
+  commercePriceSet(entry: string, options: CommercePriceSetOptions, call?: RunOptions): PriceResult {
+    return this.#data<PriceResult>(argv(['commerce', 'price', 'set'], [entry], options, specs.commercePriceSet), call);
+  }
+
+  /**
+   * Remove one price of a variant or package (Commerce's IPriceDetailService), named by its key as for set. Writes: needs the site running (`opticli serve`).
+   * Blocks until opticli exits; see `OptiCliCommands.commercePriceRemove`.
+   * @param entry - The variant or package. A catalog ref: code:<code> (a node or entry), catalog:<name>, catalog-root, a GUID, or id__CatalogContent as opticli prints it.
+   */
+  commercePriceRemove(entry: string, options: CommercePriceRemoveOptions, call?: RunOptions): PriceResult {
+    return this.#data<PriceResult>(argv(['commerce', 'price', 'remove'], [entry], options, specs.commercePriceRemove), call);
+  }
+
+  /**
+   * Make a warehouse, or change one, by its code (Commerce's IWarehouseRepository). Writes: needs the site running (`opticli serve`).
+   * Blocks until opticli exits; see `OptiCliCommands.commerceWarehouseSet`.
+   * @param code - The warehouse's code (default is Commerce's own).
+   */
+  commerceWarehouseSet(code: string, options?: CommerceWarehouseSetOptions, call?: RunOptions): WarehouseResult {
+    return this.#data<WarehouseResult>(argv(['commerce', 'warehouse', 'set'], [code], options, specs.commerceWarehouseSet), call);
+  }
+
+  /**
+   * Set a variant's or package's stock in a warehouse (Commerce's IInventoryService), one record per entry and warehouse. Writes: needs the site running (`opticli serve`).
+   * Blocks until opticli exits; see `OptiCliCommands.commerceInventorySet`.
+   * @param entry - The variant or package. A catalog ref: code:<code> (a node or entry), catalog:<name>, catalog-root, a GUID, or id__CatalogContent as opticli prints it.
+   */
+  commerceInventorySet(entry: string, options: CommerceInventorySetOptions, call?: RunOptions): InventoryResult {
+    return this.#data<InventoryResult>(argv(['commerce', 'inventory', 'set'], [entry], options, specs.commerceInventorySet), call);
+  }
+
+  /**
+   * Make a market, or change one, by its id (Commerce's IMarketService). Writes: needs the site running (`opticli serve`).
+   * Blocks until opticli exits; see `OptiCliCommands.commerceMarketSet`.
+   * @param id - The market's id: 1 to 8 letters or digits (DEFAULT, US, NORDIC).
+   */
+  commerceMarketSet(id: string, options?: CommerceMarketSetOptions, call?: RunOptions): MarketResult {
+    return this.#data<MarketResult>(argv(['commerce', 'market', 'set'], [id], options, specs.commerceMarketSet), call);
   }
 
   /**

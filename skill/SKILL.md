@@ -1,7 +1,7 @@
 ---
 name: opticli
-description: Inspect and change content of an Optimizely CMS 12 or 13 (EPiServer) site the user develops locally (against its local or development database) with the opticli CLI instead of hand-written SQL or guessing from code. Use when you need to know what CMS content exists (pages, blocks, media, folders), what a page or block contains (properties, ContentArea items, rich text, a CMS 13 Visual Builder experience's sections and elements), which page type or block type something is and which C# class and Razor view render it, where a block or page is used, which content a URL shows, what drafts and versions exist, or when the user asks you to create or edit CMS content (set properties, add a block to a ContentArea or an element to a Visual Builder section, create a page or block, translate, publish, or collect drafts in a CMS project and publish them together) in their development site, or to point the sites of a restored database at localhost (their host names). Also for scheduled jobs: which exist, whether a job (an import, a sync) ran and how it ended, and running or rescheduling one. And for the recycle bin: what was deleted, by whom, and bringing it back; a local login for a restored database; and content types and properties that removed code left in the database.
-opticli-version: 0.35.2
+description: Inspect and change content of an Optimizely CMS 12 or 13 (EPiServer) site the user develops locally (against its local or development database) with the opticli CLI instead of hand-written SQL or guessing from code. Use when you need to know what CMS content exists (pages, blocks, media, folders), what a page or block contains (properties, ContentArea items, rich text, a CMS 13 Visual Builder experience's sections and elements), which page type or block type something is and which C# class and Razor view render it, where a block or page is used, which content a URL shows, what drafts and versions exist, or when the user asks you to create or edit CMS content (set properties, add a block to a ContentArea or an element to a Visual Builder section, create a page or block, translate, publish, or collect drafts in a CMS project and publish them together) in their development site, or to point the sites of a restored database at localhost (their host names). Also for scheduled jobs: which exist, whether a job (an import, a sync) ran and how it ended, and running or rescheduling one. And for the recycle bin: what was deleted, by whom, and bringing it back; a local login for a restored database; and content types and properties that removed code left in the database. On an Optimizely Commerce 14 or 15 site, also the catalog (catalogs, nodes, products, variants, bundles), their relations, prices, warehouses, stock and markets: seeding them for tests, reading them, changing them.
+opticli-version: 0.36.0
 ---
 
 # opticli: Optimizely CMS content from the command line
@@ -16,7 +16,7 @@ The database says what *does* exist (content items, their values, where blocks a
 opticli for the second kind of question, and to find the code: `opticli type <Name>` gives the class file, views and
 per-property `allowedTypes`; `opticli allowed-in <Type>` answers "where may this block go" across all types.
 
-This file was written for opticli 0.35.2 (`opticli --version`). Longer material (every command and option, value
+This file was written for opticli 0.36.0 (`opticli --version`). Longer material (every command and option, value
 syntax, plan files, output fields, troubleshooting) is in [reference.md](reference.md): read it when you write, or
 when a command below doesn't cover your question.
 
@@ -41,6 +41,9 @@ GUID, or a URL/path (`/en/about/`, `https://www.example.com/en/about/`). `1` is 
 Content from a content provider (e.g. DAM images) shows as `63__provider`: pass it back as is in property values,
 ContentAreas and links, but it can't be read with `get` (it isn't in the database). Its id is local to this database;
 use the `guid` in anything that must work in other environments.
+On a Commerce site, catalog content has refs of its own (see "Optimizely Commerce" below): `code:<code>`,
+`catalog:<name>`, `catalog-root`, and `1__CatalogContent` as opticli prints it (a catalog's id is negative,
+`-2147483646__CatalogContent`; pass it back as is).
 Add `--lang <code>` to choose a language branch (default: the item's master language, or the language of the URL).
 
 ## The commands you'll use most
@@ -312,6 +315,39 @@ or published together; ask before making one, and use the name they give.
 - `opticli projects reactivate <project>` cancels a scheduled publish (its items become drafts again: mark them ready
   again). `projects remove <project> <ref>` takes items out (their versions stay); `projects delete <project>` deletes
   the project, not its drafts (only when asked).
+
+## Optimizely Commerce (Commerce 14 on CMS 12, 15 on CMS 13)
+
+On a site whose build has `EPiServer.Commerce.Core`, `opticli serve` loads a Commerce agent beside the site agent:
+`serve --status` (and `doctor`) show `commerce: {version, agent}`; `agent: false` has an `error` saying why, and then
+none of this works. Everything goes through the running site; catalog content isn't in the CMS database, so `get`,
+`children`, `tree` and `sql` don't show it (the first three say so and name the commands below).
+
+- **Read:** `opticli commerce` (version, catalog root, catalogs), `commerce children [<ref>]` (catalogs below the root,
+  nodes and entries below a catalog or node), `commerce tree [<ref>] --depth n`, `commerce get <ref>` (all properties),
+  `commerce relations <ref>` (a product's variants, a bundle's entries, extra categories), `commerce prices <entry>`,
+  `commerce stock <entry>`, `commerce warehouses`, `commerce markets`.
+- **Catalog content is content:** `create` and `set` write it, with the types from `opticli types` (catalog types are
+  kind `other`; `opticli type FashionProduct` shows the properties, Commerce's `Code` among them). A catalog:
+  `opticli create catalog-root --type CatalogContent --name Fashion DefaultCurrency=USD DefaultLanguage=en
+  WeightBase=kgs LengthBase=cm --publish`. A node or entry: `opticli create catalog:Fashion --type FashionNode --name
+  Women Code=women --publish`, then `opticli create code:women --type FashionVariant --name "Dress S" Code=P-1-S`.
+  `set <ref> Prop=value [--publish]` changes it; `set <ref> --publish` alone publishes a draft. Catalog content takes
+  no projects, approvals, schedules, ContentAreas or `--from`, and opticli never publishes it separately, moves or
+  deletes it (`publish`, `move`, `delete` refuse it: the user does that in Commerce's UI).
+- **The rest:** `commerce relation add <parent> <child> [--quantity n]` (product + variant, bundle/package + entry,
+  node + entry as an extra category), `commerce price set <entry> --market DEFAULT --currency USD --amount 49.90`
+  (`--valid-from`/`--valid-until` for a campaign price, another row; without `--valid-from` it is the base price, the
+  one with no end), `commerce price remove`, `commerce warehouse set <code>`, `commerce inventory set <entry>
+  --warehouse default --in-stock 25`, `commerce market set <id> --currencies SEK --languages en --countries SWE`.
+  Prices and stock are on variants and packages, not products. Each write prints `status`: `created`, `updated`,
+  `unchanged`, `removed` or `absent`, and takes `--dry-run`.
+- **Plans:** every write is a step (`create` and `set` for catalog content, `relation`, `price`, `warehouse`,
+  `inventory`, `market`), so a test seed is one plan with a `guidNamespace`: run it with `apply --update-existing` and a
+  second run is all `unchanged`. A `$id` of catalog content is its `id__CatalogContent` ref, also in a CMS page's
+  property (`"Catalog": "$catalog"`). Put `market` and `warehouse` steps before the prices and stock that use them.
+- An empty database gets Commerce's schema at the site's first start; a fresh one has the market `DEFAULT` and the
+  warehouse `default`. Details: reference.md, "Optimizely Commerce".
 
 ## Rules
 

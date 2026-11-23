@@ -5,8 +5,35 @@ again to update the skill.
 
 ## 0.36.0 (unreleased)
 
+opticli writes and reads Optimizely Commerce 14 (CMS 12) and 15 (CMS 13) sites, through the running site, so an E2E
+suite can seed a Commerce site's catalog from code. See
+[Optimizely Commerce](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/commerce.md) and the guide
+[Seed a Commerce catalog for Playwright tests](https://github.com/Epinova/opticli/blob/main/docs/guides/developers/seed-a-commerce-catalog.md).
+
 ### Optimizely Commerce
 
+- **A Commerce agent.** `serve` gives a site whose build has `EPiServer.Commerce.Core` a second agent, shipped in the
+  tool and built for Commerce 14 and 15, beside the site agent; a site without Commerce runs exactly as before.
+  `serve`, `serve --status` and `doctor` show `commerce` (the site's version, and whether the agent loaded, or why
+  not); `doctor` shows the version the project builds against (`project.commerceVersion`). `OPTICLI_COMMERCE=off` in
+  the site's environment turns it off.
+- **Catalog content with `create` and `set`.** Catalogs, nodes, products, variants, bundles and packages are content:
+  `create` and `set` write them with the catalog model's types, by the site's own `IContentRepository`, with fixed
+  GUIDs, dry runs and `unchanged` on a re-run, in plans too. Catalog refs: `code:<code>`, `catalog:<name>`,
+  `catalog-root`, GUIDs and `id__CatalogContent`. What catalog content doesn't take (projects, approvals, schedules,
+  ContentAreas) is refused before anything is saved.
+- **Relations, prices, warehouses, stock and markets.** `commerce relation add|remove` (a product's variants, a
+  bundle's or package's entries with a quantity, an entry's extra category), `commerce price set|remove` (a price keyed
+  by market, currency, price type and code, minimum quantity and valid-from; without valid-from the base price, a
+  campaign price with valid-from and valid-until beside it), `commerce warehouse set`, `commerce inventory set` and
+  `commerce market set`, each with `--dry-run` and a status (`created`, `updated`, `unchanged`, `removed`, `absent`),
+  and each a plan step (`relation`, `price`, `warehouse`, `inventory`, `market`). A plan's `$id` of catalog content
+  works in those steps and in a CMS page's properties (a start page's `Catalog`).
+- **Reads through the site.** `commerce` (version, catalog root, catalogs), `commerce get|children|tree` for catalog
+  content, and `commerce relations|prices|stock|warehouses|markets`. `get`, `children` and `tree` read the CMS
+  database, where catalog content isn't, and say so for a catalog ref.
+- **The npm package** has a method for each `commerce` command (`commercePrices()`, `commercePriceSet()`, ...), and
+  types the new plan steps and their results.
 - **Catalog content's refs work.** Commerce's catalog content has ids that its `ReferenceConverter` encodes: a catalog is
   `0x80000000 | id`, so its ref is negative (`-2147483645__CatalogContent`), a node `0x40000000 | id`. opticli only took
   positive provider ids, so the ref a write or `get` printed for a catalog couldn't be passed back to any command. Every

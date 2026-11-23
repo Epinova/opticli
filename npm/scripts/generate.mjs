@@ -29,6 +29,9 @@ export const include = [
   'languages enable', 'languages disable',
   'jobs', 'jobs log', 'jobs run', 'jobs stop', 'jobs set',
   'users add', 'users remove', 'users roles',
+  // Optimizely Commerce (2026-11-23): its reads and writes, through the site's Commerce agent
+  'commerce', 'commerce get', 'commerce children', 'commerce tree', 'commerce relations', 'commerce prices', 'commerce stock', 'commerce warehouses', 'commerce markets',
+  'commerce relation add', 'commerce relation remove', 'commerce price set', 'commerce price remove', 'commerce warehouse set', 'commerce inventory set', 'commerce market set',
   'sql',
 ];
 

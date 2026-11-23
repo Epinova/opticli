@@ -72,6 +72,11 @@ internal sealed class OutputSchema
             (["access"], """{"$ref": "#/$defs/AccessOutput"}"""),
             (["site"], """{"$ref": "#/$defs/SiteHostsView"}"""),
             (["language"], """{"$ref": "#/$defs/LanguagesOutput"}"""),
+            (["relation"], """{"$ref": "#/$defs/RelationResult"}"""),
+            (["price"], """{"$ref": "#/$defs/PriceResult"}"""),
+            (["warehouse"], """{"$ref": "#/$defs/WarehouseResult"}"""),
+            (["inventory"], """{"$ref": "#/$defs/InventoryResult"}"""),
+            (["market"], """{"$ref": "#/$defs/MarketResult"}"""),
         };
         // A failed or invalid step's result is the error's details instead.
         defs["PlanStepResult"]!["allOf"] = new JsonArray(byOp.Select(o => (JsonNode)new JsonObject

@@ -937,6 +937,38 @@ Plans that run again (a section rebuilt after a database refresh, or repaired af
   nodes with those keys (a composition copied from another database keeps its keys), so running it again finds them
   and is `unchanged`. A key must be a GUID.
 
+## Optimizely Commerce
+
+On a Commerce site (its build has `EPiServer.Commerce.Core`), `serve` gives the site a Commerce agent; `serve --status`
+shows `commerce: {version, agent, error}`. `OPTICLI_COMMERCE=off` in the site's environment turns it off.
+
+**Catalog refs:** `code:<code>` (a node or entry), `catalog:<name>`, `catalog-root`, a GUID, and `<id>__CatalogContent`
+as opticli prints it (negative for catalogs and the root). A plan's `$id` of catalog content is that ref.
+
+| Command | Does |
+|---|---|
+| `commerce` | `{version, catalogRoot, catalogRootGuid, catalogs}` |
+| `commerce get <ref> [--lang]` | one catalog item as the site loads it, every property `{type, value}` |
+| `commerce children [<ref>] [--limit]` / `commerce tree [<ref>] [--depth]` | catalog content below it (default: the root) |
+| `commerce relations <ref>` | `children` and `parents`: `{ref, code, name, kind: variant\|bundleEntry\|packageEntry\|category, quantity, sortOrder}` |
+| `commerce prices <entry>` / `commerce stock <entry>` | price rows / stock per warehouse |
+| `commerce warehouses` / `commerce markets` | the site's warehouses / markets |
+| `create <catalog-ref> --type <CatalogType> --name ...` / `set <catalog-ref> ...` | catalog content (properties, name, lang, publish, guid) |
+| `commerce relation add <parent> <child> [--quantity] [--sort-order]`, `commerce relation remove <parent> <child>` | plan op `relation` (`parent`, `child`, `quantity`, `sortOrder`, `remove`) |
+| `commerce price set <entry> --market --currency --amount [--price-type all\|user\|group] [--price-code] [--min-quantity] [--valid-from] [--valid-until]`, `commerce price remove <entry> --market --currency [--valid-from]` | plan op `price` (`entry`, `market`, `currency`, `amount`, `priceType`, `priceCode`, `minQuantity`, `validFrom`, `validUntil`, `remove`) |
+| `commerce warehouse set <code> [--name] [--active] [--primary] [--fulfillment-center] [--pickup-location] [--delivery-location] [--sort-order]` | plan op `warehouse` (`code`, ...) |
+| `commerce inventory set <entry> --warehouse <code> [--in-stock] [--backorder] [--preorder] [--tracked]` | plan op `inventory` (`entry`, `warehouse`, `inStock`, `backorder`, `preorder`, `tracked`) |
+| `commerce market set <id> [--name] [--enabled] [--currencies a,b] [--default-currency] [--languages a,b] [--default-language] [--countries a,b] [--description] [--prices-include-tax]` | plan op `market` (`market`, `currencies`, ... as arrays) |
+
+Writes print `{..., status, dryRun}` with `status` `created`, `updated`, `unchanged`, `removed` or `absent`; a price's
+and stock's also `before` (the values an update replaced), a warehouse's and market's `changes`. A price's key is
+market, currency, price type and code, minimum quantity and valid-from; without `validFrom` it is the base price (no
+end), and `validUntil` needs `validFrom`. Times are UTC unless they have an offset. Values left out keep theirs; a new
+warehouse is active, a new stock record tracked, a new market needs currencies and languages. Booleans take
+`true`/`false`. A catalog needs `DefaultCurrency`, `DefaultLanguage` and `WeightBase`; Commerce makes a `Code` when a
+node or entry has none. Catalog content can't be published separately (`set --publish` instead), moved, deleted or put
+in a project. Full reference: docs/reference/cli/commerce.md.
+
 ## Export
 
 `opticli export <ref>... [--descendants] [--languages en,sv | --all-languages] [--out <dir>] [--blobs <dir|https URL>]
