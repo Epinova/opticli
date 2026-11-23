@@ -147,11 +147,16 @@ A catalog belongs to every site unless its `Sites` property names some: `opticli
 
 ## Reads
 
+Catalog content is read through the site (`meta.source: agent`), with `commerce get`, `commerce children` and `commerce
+tree`. `get`, `children` and `tree` read the CMS database, where it isn't: given a catalog ref, they say to use these.
+
 | Command | Shows |
 |---|---|
 | `commerce` | `{version, catalogRoot, catalogRootGuid, catalogs: [{ref, guid, name}]}` |
+| `commerce get <ref> [--lang <code>]` | one catalog item as the site loads it: `ref`, `guid`, `name`, `type`, `kind`, `language`, `masterLanguage`, `languages`, `status`, `parent`, `startPublish`, `saved`, and every property `{type, value}` (the model's and Commerce's: `Code`, `DisplayName`, `SeoUri`, ...); the published version, else the latest |
+| `commerce children [<ref>] [--limit <n>]` | `{parent, children, more}`: the catalogs below the root (the default), the nodes and entries below a catalog or node, also the entries a node has as an extra category; each `{ref, guid, name, type, kind, code, parent, masterLanguage, languages, version}`. At most `--limit` (200) |
+| `commerce tree [<ref>] [--depth <n>]` | depth first, each `{depth, ref, guid, name, type, kind, code}`: the item and `--depth` (3) levels below it |
 | `commerce relations`, `commerce prices`, `commerce stock`, `commerce warehouses`, `commerce markets` | as above |
-| `get`, `children`, `tree` on a catalog ref | through the site (`meta.source: agent`); see [commands](commands.md) |
 
 ## Plans
 

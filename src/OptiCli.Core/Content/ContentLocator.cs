@@ -29,7 +29,12 @@ public sealed class ContentLocator(CmsDatabase db, CmsModel model)
                 var ids = await ContentHeaderReader.IdsByGuidsAsync(db, [reference.Guid], cancellationToken);
                 return ids.TryGetValue(reference.Guid, out var id)
                     ? new LocatedContent(id, null, null)
-                    : throw new NotFoundException($"No content with GUID {reference.Guid:D}.", "GUIDs are stable across environments, but the item may not exist in this database.");
+                    : throw new NotFoundException($"No content with GUID {reference.Guid:D}.", "GUIDs are stable across environments, but the item may not exist in this database. On a Commerce site, catalog content isn't in it either: `opticli commerce get <guid>` reads that.");
+
+            case ContentRefKind.Provider when reference.Provider == Protocol.CatalogRefSyntax.Provider:
+                throw new UsageException(
+                    $"{reference} is catalog content (Optimizely Commerce), which isn't in the CMS database.",
+                    $"Read it through the site with `opticli commerce get {reference}` (commerce children and commerce tree for what is below it); create, set and the commerce commands take it.");
 
             case ContentRefKind.Provider:
                 var mapped = await ContentHeaderReader.ProviderGuidAsync(db, reference.Id, reference.Provider!, cancellationToken);

@@ -27,6 +27,12 @@ public static partial class ContentRefParser
             return false;
         }
 
+        if (Protocol.CatalogRefSyntax.IsCommerceOnly(value))
+        {
+            error = $"'{value}' is a catalog ref (Optimizely Commerce): catalog content isn't in the CMS database, so read it with `opticli commerce get|children|tree {value}`; create, set and the commerce commands take it.";
+            return false;
+        }
+
         if (IdPattern().Match(value) is { Success: true } id)
         {
             if (!TryParsePositive(id.Groups["id"].Value, out var contentId)

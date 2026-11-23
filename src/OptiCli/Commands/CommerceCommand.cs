@@ -27,6 +27,9 @@ internal static class CommerceCommand
             and markets, each also a plan step. Writes report status: created, updated, unchanged, removed or absent.
             Example: opticli commerce
             """);
+        command.Subcommands.Add(CommerceReadCommands.Get(options));
+        command.Subcommands.Add(CommerceReadCommands.Children(options));
+        command.Subcommands.Add(CommerceReadCommands.Tree(options));
         command.Subcommands.Add(Relation(options));
         command.Subcommands.Add(Relations(options));
         command.Subcommands.Add(Price(options));

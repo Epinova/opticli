@@ -26,3 +26,8 @@ public sealed record RelationList(string Ref, IReadOnlyList<RelatedContent> Chil
 
 /// <summary>Response of <see cref="AgentRoutes.CommerceChildren"/>: the catalog content below catalog content, in catalog order.</summary>
 public sealed record CatalogChildren(CatalogRef Parent, IReadOnlyList<CatalogRef> Children, bool More);
+
+/// <summary>One item of <c>commerce tree</c>: catalog content and how deep below the tree's root it is.</summary>
+/// <param name="Depth">0 for the root, 1 for its children, ...</param>
+/// <param name="Kind">One of <see cref="CatalogKinds"/>.</param>
+public sealed record CatalogTreeItem(int Depth, string Ref, Guid? Guid, string? Name, string? Type, [property: OutputValues(typeof(CatalogKinds))] string? Kind, string? Code);

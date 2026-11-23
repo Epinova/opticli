@@ -27,6 +27,8 @@ public class SchemaTests
     [
         "ContentDocument.properties",
         "ContentDocument.composition",
+        // commerce get: a property's value as the site has it (any JSON), as get's properties are.
+        "ContentItemProperty.value",
         "PropertyChange.before",
         "PropertyChange.after",
         "SiteChangedProperty.asked",

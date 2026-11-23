@@ -29,8 +29,10 @@ internal static class SchemaReads
     public static async Task<Dictionary<(string Command, string Mode), string>> RunAsync(OutputCheck check, string scratch)
     {
         var unavailable = new Dictionary<(string Command, string Mode), string>();
-        var state = (await check.Ok("serve", options: ["--status"]))?["state"]?.GetValue<string>();
+        var serveStatus = await check.Ok("serve", options: ["--status"]);
+        var state = serveStatus?["state"]?.GetValue<string>();
         var running = state == "running";
+        await CommerceAsync(check, running && serveStatus?["commerce"]?["agent"]?.GetValue<bool>() == true, unavailable);
 
         // The site, its languages and content model.
         await check.Ok("doctor");
@@ -265,6 +267,47 @@ internal static class SchemaReads
             check.Note($"not on this site: {command} [{mode}]: {why}");
         }
         return unavailable;
+    }
+
+    /// <summary>
+    /// The Commerce reads, on a Commerce site whose Commerce agent runs: the catalogs, and a variant the site has (the
+    /// Commerce tests make some). Elsewhere they can't print a result, so they are unavailable.
+    /// </summary>
+    private static async Task CommerceAsync(OutputCheck check, bool commerce, Dictionary<(string Command, string Mode), string> unavailable)
+    {
+        string[] reads = ["commerce", "commerce get", "commerce children", "commerce tree", "commerce relations", "commerce prices", "commerce stock", "commerce warehouses", "commerce markets"];
+        if (!commerce)
+        {
+            foreach (var read in reads)
+            {
+                unavailable[(read, "otherwise")] = "asks the site's Commerce agent: not a Commerce site, or not running";
+            }
+            return;
+        }
+        await check.Ok("commerce");
+        await check.Ok("commerce markets");
+        await check.Ok("commerce warehouses");
+        await check.Ok("commerce children");
+        var tree = await check.Ok("commerce tree", options: ["--depth", "3"]) as JsonArray ?? [];
+        var variant = tree.Select(i => (Kind: Text(i?["kind"]), Ref: Text(i?["ref"]))).FirstOrDefault(i => i.Kind == "variation").Ref;
+        var node = tree.Select(i => (Kind: Text(i?["kind"]), Ref: Text(i?["ref"]))).FirstOrDefault(i => i.Kind == "node").Ref;
+        if (node is not null)
+        {
+            await check.Ok("commerce children", [node], ["--limit", "5"]);
+        }
+        if (variant is null)
+        {
+            foreach (var read in reads.Where(r => r is "commerce get" or "commerce relations" or "commerce prices" or "commerce stock"))
+            {
+                unavailable[(read, "otherwise")] = "the site's catalog has no variant in its first three levels";
+            }
+            return;
+        }
+        await check.Ok("commerce get", [variant]);
+        await check.Ok("commerce relations", [variant]);
+        await check.Ok("commerce prices", [variant]);
+        await check.Ok("commerce stock", [variant]);
+        await check.Fails("commerce get", ["code:opticli-no-such-code"], code: "not_found");
     }
 
     /// <summary>The modes the battery must have checked: every one that doesn't write, but those in <see cref="NotRun"/>.</summary>
