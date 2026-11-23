@@ -34,6 +34,7 @@ public class SqlStatementGuardTests
     [InlineData("SELECT d.Data.value('.', 'int') FROM (SELECT Data FROM tblExample) d")]
     [InlineData("SELECT t.pkID FROM tblExample t WHERE EXISTS (SELECT 1 FROM tblOther o WHERE t.Data.exist('/a') = 1)")]
     [InlineData("SELECT dbo.tblExample.Data.value('.', 'int') FROM dbo.tblExample")]
+    [InlineData("WITH t AS (SELECT pkID, fkParentID FROM tblContent WHERE fkParentID IS NULL UNION ALL SELECT c.pkID, c.fkParentID FROM tblContent c JOIN t ON c.fkParentID = t.pkID) SELECT * FROM t OPTION (MAXRECURSION 1000)")]
     public void Allows_single_read_only_selects(string sql)
     {
         SqlStatementGuard.Check(sql, includePersonalData: false);

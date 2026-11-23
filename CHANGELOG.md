@@ -3,6 +3,16 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.35.3 (unreleased)
+
+### CLI
+
+- **`sql` reports SQL Server's error when `--limit` cuts a query that then fails.** If the rows past the limit ended in
+  an error, for example a recursive CTE running past SQL Server's 100 levels, opticli dropped the error with the rest
+  of the rows. The transaction it rolls back was then gone, and `sql` failed with an `internal` error saying the query
+  may have kept its changes. It now reads the rest of the result and reports SQL Server's error as `usage`. For a CTE
+  past the recursion limit, the hint names `OPTION (MAXRECURSION n)`.
+
 ## 0.35.2 (23 November 2026)
 
 Fixes from a review of the write path, and of the rest of the writes, and from building an E2E suite with opticli. The first four apply where the

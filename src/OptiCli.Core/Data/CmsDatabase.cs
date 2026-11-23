@@ -178,7 +178,7 @@ public sealed class CmsDatabase : IAsyncDisposable
         catch (SqlException ex)
         {
             await TryRollbackAsync(transaction);
-            throw new UsageException($"SQL Server rejected the query: {ex.Message}", "Check table and column names with `opticli sql \"SELECT name FROM sys.tables\"`.");
+            throw new UsageException($"SQL Server rejected the query: {ex.Message}", RejectedHint(ex.Number));
         }
         catch
         {
@@ -227,7 +227,13 @@ public sealed class CmsDatabase : IAsyncDisposable
             {
                 if (rows.Count == maxRows)
                 {
+                    // Read the rest without keeping it. Disposing the reader would read it too, but would swallow an
+                    // error SQL Server sends after the cut (a recursive CTE running past MAXRECURSION) and leave the
+                    // transaction ended, which then looks like a statement that committed.
                     truncated = true;
+                    while (await reader.ReadAsync(cancellationToken))
+                    {
+                    }
                     break;
                 }
                 var row = new Dictionary<string, object?>(columns.Count);
@@ -240,6 +246,14 @@ public sealed class CmsDatabase : IAsyncDisposable
             return new Sql.SqlResult(columns, rows, rows.Count, truncated ? true : null, RolledBack: true);
         }
     }
+
+    /// <summary>The hint for a query SQL Server rejected, by its error number.</summary>
+    internal static string RejectedHint(int number) => number switch
+    {
+        // The statement terminated. The maximum recursion 100 has been exhausted before statement completion.
+        530 => "A recursive CTE went more than 100 levels deep (SQL Server's default limit): end the query with OPTION (MAXRECURSION 1000), or 0 for no limit, and check that the recursion can't loop.",
+        _ => "Check table and column names with `opticli sql \"SELECT name FROM sys.tables\"`.",
+    };
 
     private static async Task TryRollbackAsync(SqlTransaction transaction)
     {
