@@ -9,7 +9,7 @@ namespace OptiCli.Core.Writes;
 /// </summary>
 /// <param name="Version">The saved version; for a dry run the version the change was applied to.</param>
 /// <param name="BaseVersion">The version the change was based on (draft) or that was published (publish).</param>
-public sealed record WriteOutput(
+public sealed partial record WriteOutput(
     string? Ref,
     string? Version,
     Guid? Guid,
@@ -120,9 +120,12 @@ public sealed record WriteOutput(
     {
         var content = result.Content;
         var (changes, composition) = CompositionChanges.Split(result.Changes);
+        // Provider content (Commerce's catalog content) by its provider's refs: 1__CatalogContent, 1_4_CatalogContent.
+        var provider = content is null ? null : ProviderOf(content.Ref);
+        string VersionOf(int id, int version) => provider is null ? VersionRef(id, version) : $"{Id(id)}_{version.ToString(CultureInfo.InvariantCulture)}_{provider}";
         return new WriteOutput(
-            content is null ? null : Id(content.Id),
-            content?.Version is { } version ? VersionRef(content.Id, version) : null,
+            content is null ? null : provider is null ? Id(content.Id) : $"{Id(content.Id)}__{provider}",
+            content?.Version is { } version ? VersionOf(content.Id, version) : null,
             content?.Guid,
             content?.Type ?? type,
             content?.Name ?? name,
@@ -133,7 +136,7 @@ public sealed record WriteOutput(
             result.Published,
             result.DryRun,
             result.Valid,
-            content is not null && result.BaseVersion is { } baseVersion ? VersionRef(content.Id, baseVersion) : null,
+            content is not null && result.BaseVersion is { } baseVersion ? VersionOf(content.Id, baseVersion) : null,
             changes,
             result.Validation)
         {
@@ -141,7 +144,7 @@ public sealed record WriteOutput(
             CanonicalUrl = result.CanonicalUrl,
             Composition = composition,
             PendingDraft = result.PendingDraft,
-            PreviouslyPublished = content is not null && result.PreviouslyPublished is { } previous ? VersionRef(content.Id, previous) : null,
+            PreviouslyPublished = content is not null && result.PreviouslyPublished is { } previous ? VersionOf(content.Id, previous) : null,
             SiteError = result.SiteError,
             SiteChanges = result.SiteChanges,
             ApprovalRequested = result.ApprovalRequested ? true : null,
@@ -156,6 +159,16 @@ public sealed record WriteOutput(
     }
 
     public static string Id(int id) => id.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The content provider of a ref as the CMS prints it for provider content (<c>1_4_CatalogContent</c>,
+    /// <c>-2147483646__CatalogContent</c>); null for CMS content (<c>123</c>, <c>123_456</c>).
+    /// </summary>
+    public static string? ProviderOf(string? reference) =>
+        reference is not null && ProviderRef().Match(reference) is { Success: true } match ? match.Groups["provider"].Value : null;
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^-?[0-9]+_[0-9]*_(?<provider>[A-Za-z][A-Za-z0-9.-]*)$")]
+    private static partial System.Text.RegularExpressions.Regex ProviderRef();
 
     public static string VersionRef(int id, int version) => $"{Id(id)}_{version.ToString(CultureInfo.InvariantCulture)}";
 }
@@ -250,6 +263,12 @@ public sealed record AccessOutput(
 /// <param name="CreatedId">Content id of what a create made (for plans' <c>$id</c>).</param>
 public abstract record WriteOutcome(string Source, int? CreatedId, IReadOnlyList<string> Warnings)
 {
+    /// <summary>
+    /// For content the CMS doesn't store, which a plan's <c>$id</c> can't name by <see cref="CreatedId"/> (Commerce's catalog
+    /// content): its ref, <c>1__CatalogContent</c>, which the site takes wherever a ref goes, CMS properties too.
+    /// </summary>
+    public string? CreatedRef { get; init; }
+
     /// <summary>The output, boxed, for a caller that takes any operation's (a plan).</summary>
     public object Output => BoxedOutput;
 

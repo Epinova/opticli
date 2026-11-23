@@ -28,6 +28,9 @@ public class RefSyntaxTests
     [Theory]
     [InlineData("63__dam-assets-provider", 63, "dam-assets-provider")]
     [InlineData(" 7__dam ", 7, "dam")]
+    // Commerce: a catalog and the catalog root.
+    [InlineData("-2147483646__CatalogContent", -2147483646, "CatalogContent")]
+    [InlineData("-1073741823__CatalogContent", -1073741823, "CatalogContent")]
     public void Parses_content_provider_refs(string input, int id, string provider)
     {
         Assert.True(RefSyntax.TryParse(input, out var parsed));
@@ -52,5 +55,8 @@ public class RefSyntaxTests
     [InlineData("0__dam")]
     [InlineData("63__")]
     [InlineData("63___dam")]
+    [InlineData("-0__dam")]
+    [InlineData("--5__dam")]
+    [InlineData("-99999999999__dam")]
     public void Rejects_everything_else(string? input) => Assert.False(RefSyntax.TryParse(input, out _));
 }

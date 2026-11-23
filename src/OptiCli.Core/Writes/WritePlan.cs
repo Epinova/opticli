@@ -174,10 +174,13 @@ public sealed partial class WritePlan
     /// (<see cref="TextRefs"/>) by what the CMS stores, once the id or GUID they need is known.
     /// </summary>
     /// <param name="guids">The GUID of each plan id: fixed by the plan, or of content created so far.</param>
-    public static WriteOperation Resolve(PlanStep step, IReadOnlyDictionary<string, int> created, IReadOnlyDictionary<string, Guid>? guids = null) =>
+    /// <param name="refs">The ref of each plan id whose content the CMS doesn't store (catalog content: <c>1__CatalogContent</c>).</param>
+    public static WriteOperation Resolve(PlanStep step, IReadOnlyDictionary<string, int> created, IReadOnlyDictionary<string, Guid>? guids = null, IReadOnlyDictionary<string, string>? refs = null) =>
         step.Operation.MapRefs(value =>
             value.StartsWith('$') && created.TryGetValue(value[1..], out var id)
                 ? id.ToString(CultureInfo.InvariantCulture)
+                : value.StartsWith('$') && refs is not null && refs.TryGetValue(value[1..], out var reference)
+                ? reference
                 : TextRefs.Map(value, found => TextRefs.Value(
                     found.Attribute,
                     created.TryGetValue(found.Id, out var contentId) ? contentId : null,

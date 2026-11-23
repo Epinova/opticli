@@ -14,6 +14,11 @@ public static class UndoHints
             $"None: {discarded.Version} was deleted for good, and opticli can't bring it back (changes shows what it held).",
         (_, WriteOutput { Saved: false, DryRun: false } blocksOnly) when BlocksOnly(blocksOnly) is { } blocks => blocks,
         (_, WriteOutput { Saved: false }) or (_, MoveOutput { Moved: false }) or (_, RestoreOutput { Restored: false }) or (_, AccessOutput { Saved: false }) => null,
+        // Commerce's catalog content: opticli only creates and sets it.
+        (CreateOperation, WriteOutput { Existing: not true } catalog) when WriteOutput.ProviderOf(catalog.Version) is not null =>
+            $"None in opticli: {catalog.Ref} is catalog content, which opticli doesn't delete; delete it in Commerce's catalog UI (or start again from an empty database).",
+        (_, WriteOutput catalog) when WriteOutput.ProviderOf(catalog.Version) is not null =>
+            $"{catalog.Version} was saved{(catalog.Published ? " and published" : " as a draft")}; set the values back with `opticli set {catalog.Ref} ...` (`opticli versions` doesn't list catalog content's versions).",
         (UnpublishOperation, WriteOutput { Unpublished: true } offline) =>
             $"{offline.Ref} is offline{In(offline)}; to put it back, publish the version that was live: opticli publish {offline.Ref} --version {VersionId(offline.PreviouslyPublished)}",
         (AccessOperation, AccessOutput access) => Access(access),

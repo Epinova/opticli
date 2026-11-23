@@ -10,7 +10,7 @@ internal readonly record struct ParsedRef(int Id, int? Version, Guid? Guid, stri
 /// <summary>Purely syntactic ref parsing; whether the content exists is <see cref="ContentLocator"/>'s job.</summary>
 internal static partial class RefSyntax
 {
-    public const string Description = "a content id (123), a version (123_456), a content GUID or content provider content (63__provider)";
+    public const string Description = "a content id (123), a version (123_456), a content GUID or content provider content (63__provider; Commerce's catalogs have negative ids, -2147483646__CatalogContent)";
 
     public static bool TryParse(string? input, out ParsedRef result)
     {
@@ -23,10 +23,11 @@ internal static partial class RefSyntax
             return true;
         }
 
-        // ContentReference.ToString() of provider content: id, an empty version, the provider name.
+        // ContentReference.ToString() of provider content: id, an empty version, the provider name. A provider may use
+        // negative ids: Commerce's catalogs and catalog root have them.
         if (ProviderPattern().Match(value) is { Success: true } provided)
         {
-            if (!TryParsePositive(provided.Groups["id"].Value, out var mapped))
+            if (!int.TryParse(provided.Groups["id"].Value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var mapped) || mapped == 0)
             {
                 return false;
             }
@@ -55,6 +56,6 @@ internal static partial class RefSyntax
     private static bool TryParsePositive(string digits, out int number) =>
         int.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out number) && number > 0;
 
-    [GeneratedRegex(@"^(?<id>[0-9]+)__(?<provider>[A-Za-z0-9][A-Za-z0-9.-]*)$")]
+    [GeneratedRegex(@"^(?<id>-?[0-9]+)__(?<provider>[A-Za-z0-9][A-Za-z0-9.-]*)$")]
     private static partial Regex ProviderPattern();
 }

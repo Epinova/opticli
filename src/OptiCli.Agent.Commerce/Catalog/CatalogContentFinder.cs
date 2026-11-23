@@ -31,7 +31,11 @@ internal sealed class CatalogContentFinder(IServiceProvider services)
             return null;
         }
         ContentReference? link = null;
-        if (CatalogRefSyntax.Code(reference) is { } code)
+        if (CatalogRefSyntax.IsRoot(reference))
+        {
+            link = RootLink;
+        }
+        else if (CatalogRefSyntax.Code(reference) is { } code)
         {
             link = _references.GetContentLink(code);
         }

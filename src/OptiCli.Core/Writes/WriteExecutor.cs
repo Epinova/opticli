@@ -49,7 +49,7 @@ namespace OptiCli.Core.Writes;
 /// confirms its fingerprint. Null: such a write fails with <c>drift</c>.
 /// </param>
 /// <param name="sharedDatabase">Whether drift is checked; default: when <paramref name="session"/>'s database is remote.</param>
-public sealed class WriteExecutor(
+public sealed partial class WriteExecutor(
     ContentSession session,
     Func<CancellationToken, Task<AgentClient>> connect,
     string? site = null,
@@ -172,7 +172,12 @@ public sealed class WriteExecutor(
 
     internal async Task<WriteOutcome<WriteOutput>> SetAsync(SetOperation op, bool dryRun, CancellationToken cancellationToken)
     {
-        var target = await EditableAsync(op.Ref, cancellationToken);
+        var resolved = await ResolveAsync(op.Ref, "ref", cancellationToken);
+        if (resolved.Catalog is { } catalog)
+        {
+            return await CatalogSetAsync(op, resolved, catalog, dryRun, cancellationToken);
+        }
+        var target = Editable(resolved, op.Ref);
         op.From?.Check(target.Id, target.Version);
         // CMS 13: "composition" in the values is an experience's (or section's) whole Visual Builder composition.
         var (split, composition) = CompositionInput.Split(session.Model, target.Header.TypeId, op.Properties);
@@ -474,6 +479,7 @@ public sealed class WriteExecutor(
 
     internal async Task<WriteOutcome<WriteOutput>> CreateAsync(CreateOperation op, bool dryRun, CancellationToken cancellationToken)
     {
+        op = CatalogCreate(op);
         if ((op.For is null) == (op.Parent is null))
         {
             throw new UsageException("Give exactly one of parent or for (the content whose \"For this page\" folder it goes in).");
@@ -669,8 +675,13 @@ public sealed class WriteExecutor(
     private async Task<WriteOutcome<WriteOutput>> CreatedAsync(CreateRequest request, string typeName, CancellationToken cancellationToken, ContentHeader? parent = null)
     {
         var result = await PublishingPostAsync(AgentRoutes.Create, request, r => r with { IncludeDraft = true }, cancellationToken);
-        return await WithSimpleAddressCheckAsync(
-            Outcome(Created(result, typeName, request.Name, request.Parent, request.Guid), CreatedId(result)), result, parent, self: false, cancellationToken);
+        var output = Created(result, typeName, request.Name, request.Parent, request.Guid);
+        if (WriteOutput.ProviderOf(result.Content?.Ref) is not null)
+        {
+            // Catalog content: a plan's $id binds to its ref, never to its id, which is the CMS's id of other content.
+            return Outcome(output, null) with { CreatedRef = CreatedId(result) is null ? null : output.Ref };
+        }
+        return await WithSimpleAddressCheckAsync(Outcome(output, CreatedId(result)), result, parent, self: false, cancellationToken);
     }
 
     /// <param name="guid">The GUID asked for, shown for a dry run, which has no content yet.</param>
@@ -1784,10 +1795,15 @@ public sealed class WriteExecutor(
     private async Task<Target> EditableAsync(string reference, CancellationToken cancellationToken, string what = "ref")
     {
         var target = await ResolveAsync(reference, what, cancellationToken);
-        return target.Stored is not null
-            ? target
-            : throw new UsageException($"{reference} is content from a content provider; opticli can only change content stored in the CMS database.");
+        return Editable(target, reference);
     }
+
+    private static Target Editable(Target target, string reference) =>
+        target.Stored is not null
+            ? target
+            : target.Catalog is not null
+                ? throw CatalogOnlyCreateAndSet(reference)
+                : throw new UsageException($"{reference} is content from a content provider; opticli can only change content stored in the CMS database.");
 
     /// <exception cref="UsageException">Not a ref.</exception>
     /// <exception cref="NotFoundException">Nothing matches.</exception>
@@ -1796,6 +1812,11 @@ public sealed class WriteExecutor(
         if (reference.StartsWith('$'))
         {
             throw new UsageException($"{what} '{reference}' refers to plan content; $ids only work inside `opticli apply`.");
+        }
+        // Commerce's catalog content isn't in the CMS database: the site's Commerce agent finds it.
+        if (CatalogRefSyntax.IsCommerceOnly(reference) || CatalogRefSyntax.ProviderId(reference) is not null)
+        {
+            return CatalogTarget(await CatalogRefAsync(reference, cancellationToken) ?? throw CatalogNotFound(reference, what));
         }
         var parsed = ContentRefParser.Parse(reference);
         if (parsed.Kind == ContentRefKind.Provider)
@@ -1810,8 +1831,12 @@ public sealed class WriteExecutor(
             if (!ids.ContainsKey(parsed.Guid))
             {
                 var provided = await ContentHeaderReader.ProviderContentAsync(session.Db, [parsed.Guid], cancellationToken);
-                return provided.ContainsKey(parsed.Guid)
-                    ? new Target(0, null, parsed.Guid.ToString("D"), null, null)
+                if (provided.ContainsKey(parsed.Guid))
+                {
+                    return new Target(0, null, parsed.Guid.ToString("D"), null, null);
+                }
+                return await CatalogRefAsync(parsed.Guid.ToString("D"), cancellationToken) is { } catalog
+                    ? CatalogTarget(catalog)
                     : throw new NotFoundException($"No content with GUID {parsed.Guid:D}.", "GUIDs are stable across environments, but the item may not exist in this database.");
             }
         }
@@ -1821,9 +1846,10 @@ public sealed class WriteExecutor(
         return new Target(located.Id, located.VersionId, null, header, located.Url?.Language);
     }
 
-    /// <param name="Guid">Set only for provider content, which is passed to the agent by GUID.</param>
+    /// <param name="Guid">Set only for provider content, which is passed to the agent by GUID (catalog content by its <c>id__CatalogContent</c> ref).</param>
     /// <param name="Stored">Null for provider content.</param>
-    private sealed record Target(int Id, int? Version, string? Guid, ContentHeader? Stored, LanguageBranch? UrlLanguage)
+    /// <param name="Catalog">For Commerce's catalog content: what the site's Commerce agent found.</param>
+    private sealed record Target(int Id, int? Version, string? Guid, ContentHeader? Stored, LanguageBranch? UrlLanguage, CatalogRef? Catalog = null)
     {
         /// <summary>The database header; only used on targets from <see cref="EditableAsync"/>, which have one.</summary>
         public ContentHeader Header => Stored ?? throw new InvalidOperationException("Provider content has no database header.");

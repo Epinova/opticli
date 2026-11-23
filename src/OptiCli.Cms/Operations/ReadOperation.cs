@@ -59,7 +59,7 @@ internal static class ReadOperation
             return locator.LatestVersion(link, language).ContentLink;
         }
         return int.TryParse(version, NumberStyles.None, CultureInfo.InvariantCulture, out var id) && id > 0
-            ? new ContentReference(link.ID, id)
+            ? ContentVersions.Of(link, id)
             : throw AgentException.Usage($"Invalid version '{version}'.", "Use published, latest or a version id.");
     }
 

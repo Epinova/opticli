@@ -82,7 +82,7 @@ internal sealed class ContentLocator(CmsCall call)
     /// </summary>
     /// <exception cref="AgentException"><c>not_found</c> naming the version, rather than the CMS's own exception.</exception>
     public IContent Version(ContentReference link, int versionId) =>
-        Repository.TryGet<IContent>(new ContentReference(link.ID, versionId), out var version) && version.ContentLink.ID == link.ID
+        Repository.TryGet<IContent>(ContentVersions.Of(link, versionId), out var version) && version.ContentLink.ID == link.ID
             ? version
             : throw AgentException.NotFound($"Content {link.ID} has no version {versionId}.");
 
@@ -178,14 +178,14 @@ internal sealed class ContentLocator(CmsCall call)
             return null;
         }
         var published = PublishedVersion(branch) is { } publishedId
-            ? PropertyValues.Snapshot(Repository.Get<IContent>(new ContentReference(based.ContentLink.ID, publishedId)))
+            ? PropertyValues.Snapshot(Repository.Get<IContent>(ContentVersions.Of(based.ContentLink, publishedId)))
             : new Dictionary<string, System.Text.Json.JsonElement?>();
         var basedValues = PropertyValues.Snapshot(based);
         foreach (var candidate in candidates)
         {
             var draft = candidate.Id == based.ContentLink.WorkID
                 ? basedValues
-                : PropertyValues.Snapshot(Repository.Get<IContent>(new ContentReference(based.ContentLink.ID, candidate.Id)));
+                : PropertyValues.Snapshot(Repository.Get<IContent>(ContentVersions.Of(based.ContentLink, candidate.Id)));
             if (PendingDrafts.Carries(PropertyValues.Diff(published, draft), PropertyValues.Diff(draft, basedValues)))
             {
                 return new PendingDraft(

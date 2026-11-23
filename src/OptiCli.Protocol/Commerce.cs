@@ -12,8 +12,8 @@ public sealed record CatalogSummary(string Ref, Guid Guid, string Name);
 
 /// <summary>Body of <see cref="AgentRoutes.CommerceRefs"/>: refs to resolve to catalog content.</summary>
 /// <param name="Refs">
-/// <c>code:&lt;code&gt;</c> (a node or entry by its code), <c>catalog:&lt;name&gt;</c> (a catalog by its name), a GUID, or
-/// <c>id__CatalogContent</c> (negative for catalogs and the catalog root).
+/// <c>code:&lt;code&gt;</c> (a node or entry by its code), <c>catalog:&lt;name&gt;</c> (a catalog by its name),
+/// <c>catalog-root</c>, a GUID, or <c>id__CatalogContent</c> (negative for catalogs and the catalog root).
 /// </param>
 public sealed record CatalogRefsRequest(IReadOnlyList<string> Refs);
 
@@ -85,8 +85,11 @@ public static class CatalogRefSyntax
 
     public const string CatalogPrefix = "catalog:";
 
+    /// <summary>The catalog root, which catalogs are made below (<c>-1073741823__CatalogContent</c> in every database).</summary>
+    public const string Root = "catalog-root";
+
     /// <summary>For messages: the forms a catalog ref takes.</summary>
-    public const string Description = "code:<code> (a node or entry), catalog:<name> (a catalog), a GUID, or id__CatalogContent";
+    public const string Description = "code:<code> (a node or entry), catalog:<name> (a catalog), catalog-root, a GUID, or id__CatalogContent";
 
     /// <summary>The code in <c>code:&lt;code&gt;</c>; null for any other ref.</summary>
     public static string? Code(string? reference) => After(reference, CodePrefix);
@@ -94,8 +97,11 @@ public static class CatalogRefSyntax
     /// <summary>The name in <c>catalog:&lt;name&gt;</c>; null for any other ref.</summary>
     public static string? CatalogName(string? reference) => After(reference, CatalogPrefix);
 
-    /// <summary>Whether the ref is a <c>code:</c> or <c>catalog:</c> ref, which only the Commerce agent resolves.</summary>
-    public static bool IsCommerceOnly(string? reference) => Code(reference) is not null || CatalogName(reference) is not null;
+    /// <summary>Whether the ref is <see cref="Root"/>.</summary>
+    public static bool IsRoot(string? reference) => string.Equals(reference?.Trim(), Root, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Whether the ref is a <c>code:</c>, <c>catalog:</c> or <c>catalog-root</c> ref, which only the Commerce agent resolves.</summary>
+    public static bool IsCommerceOnly(string? reference) => Code(reference) is not null || CatalogName(reference) is not null || IsRoot(reference);
 
     /// <summary>The id of <c>id__CatalogContent</c> (negative for catalogs and the catalog root); null for any other ref.</summary>
     public static int? ProviderId(string? reference)

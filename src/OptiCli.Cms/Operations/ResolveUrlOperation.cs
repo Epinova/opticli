@@ -83,7 +83,7 @@ internal static partial class ResolveUrlOperation
 
     private static string Short(string text) => text.Length > 200 ? text[..200] + "…" : text;
 
-    [GeneratedRegex(@"epi\.cms\.contentdata:///(?<ref>[0-9]+(?:_[0-9]+)?(?:__[A-Za-z0-9][A-Za-z0-9.-]*)?)")]
+    [GeneratedRegex(@"epi\.cms\.contentdata:///(?<ref>-?[0-9]+(?:_[0-9]+)?(?:__[A-Za-z0-9][A-Za-z0-9.-]*)?)")]
     private static partial Regex EditContext();
 
     [GeneratedRegex(@"/link/(?<guid>[0-9a-fA-F]{32})\.aspx", RegexOptions.IgnoreCase)]

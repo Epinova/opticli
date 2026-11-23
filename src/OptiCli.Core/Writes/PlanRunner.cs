@@ -125,7 +125,8 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         {
             WritePlan.RequireNoForwardLinks(steps, existing);
         }
-        var resolved = steps.Select(s => s with { Operation = WritePlan.Resolve(s, existing, guids) }).ToList();
+        _existingCatalog = executor.UpdateExisting ? await ExistingCatalogAsync(steps, existing, cancellationToken) : new Dictionary<string, string>();
+        var resolved = steps.Select(s => s with { Operation = WritePlan.Resolve(s, existing, guids, _existingCatalog) }).ToList();
         var targets = await TargetsAsync(resolved, existing, cancellationToken);
         var masters = await PlannedMastersAsync(resolved, existing, cancellationToken);
         var checks = new List<PlanStepResult>();
@@ -182,6 +183,8 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             await beforeSaving(cancellationToken);
         }
         var created = new Dictionary<string, int>(StringComparer.Ordinal);
+        // Content that isn't the CMS's (Commerce's catalog content), whose $id binds to its ref: id__CatalogContent.
+        var createdRefs = new Dictionary<string, string>(StringComparer.Ordinal);
         var results = new List<PlanStepResult>();
         try
         {
@@ -192,7 +195,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         {
             var ex = Stopped(caught, cancellationToken);
             throw OptiCliException.Create(ex.Code, $"The plan's project couldn't be made: {ex.Message.TrimEnd('.')}. Nothing was saved.", ex.Hint,
-                new PlanRun(false, steps.Select(s => new PlanStepResult(s.Index, s.Operation.Kind, s.Operation.Id, PlanStepStatus.NotRun, Guid: s.Operation.ContentGuid)).ToList(), Refs(created))
+                new PlanRun(false, steps.Select(s => new PlanStepResult(s.Index, s.Operation.Kind, s.Operation.Id, PlanStepStatus.NotRun, Guid: s.Operation.ContentGuid)).ToList(), Refs(created, createdRefs))
                 {
                     Projects = projects.Report(),
                 });
@@ -203,7 +206,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         var drafts = VersionPerStep ? null : new PlanDrafts();
         foreach (var step in steps)
         {
-            var operation = WritePlan.Resolve(step, created, guids);
+            var operation = WritePlan.Resolve(step, created, guids, createdRefs);
             try
             {
                 // A block an earlier area add was to make shared, where it made none (an inline one).
@@ -225,6 +228,14 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                 var outcome = await executor.RunAsync(operation, dryRun: false, cancellationToken);
                 var (into, note) = drafts?.After(operation, step.Index, outcome.Output, draft) ?? default;
                 IReadOnlyList<string> warnings = note is null ? outcome.Warnings : [.. outcome.Warnings, note];
+                if (step.Operation.Id is { } planId && outcome.CreatedRef is { } createdRef)
+                {
+                    createdRefs[planId] = createdRef;
+                    if (outcome.Output is WriteOutput { Guid: { } catalogGuid })
+                    {
+                        guids[planId] = catalogGuid;
+                    }
+                }
                 if (step.Operation.Id is { } id && outcome.CreatedId is { } createdId)
                 {
                     created[id] = createdId;
@@ -257,7 +268,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                     ex.Code,
                     $"Operation {step.Index} ({operation.Kind}) failed: {ex.Message.TrimEnd('.')}. {saved} earlier operation(s) were saved; details lists them with undo hints.{notMarked}",
                     ex.Hint,
-                    new PlanRun(false, results, Refs(created)) { Partial = true, Projects = projects.Report() });
+                    new PlanRun(false, results, Refs(created, createdRefs)) { Partial = true, Projects = projects.Report() });
             }
         }
         // A site the plan made (or changed) moves the content below its start page to its hosts: the URLs taken when that
@@ -276,9 +287,9 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             throw OptiCliException.Create(ex.Code,
                 $"Every operation was saved, but marking the drafts ready in their project failed: {ex.Message.TrimEnd('.')}.",
                 $"Mark them with `opticli projects ready <project> <ref>...` once the problem is fixed ({ex.Hint ?? "see the message"}). details lists what was saved.",
-                new PlanRun(false, results, Refs(created)) { Projects = projects.Report() });
+                new PlanRun(false, results, Refs(created, createdRefs)) { Projects = projects.Report() });
         }
-        return new PlanRun(false, results, Refs(created)) { Projects = projects.Report() };
+        return new PlanRun(false, results, Refs(created, createdRefs)) { Projects = projects.Report() };
     }
 
     /// <summary>
@@ -325,6 +336,28 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         IOException or UnauthorizedAccessException => new UsageException(ex.Message, "Check that the file exists and that you can read it."),
         _ => new InternalException($"{ex.GetType().Name}: {ex.Message}", "This is a bug in opticli; please report it with the plan you ran."),
     };
+
+    /// <summary>
+    /// Plan id to ref (<c>id__CatalogContent</c>), for create steps of catalog content whose GUID the site's Commerce agent
+    /// finds (<c>--update-existing</c>): the CMS database doesn't have them, so <see cref="ExistingAsync"/> can't. Steps that
+    /// depend only on such content (and on <c>existing</c>) get a full dry run.
+    /// </summary>
+    private IReadOnlyDictionary<string, string> _existingCatalog = new Dictionary<string, string>();
+
+    private async Task<Dictionary<string, string>> ExistingCatalogAsync(IReadOnlyList<PlanStep> steps, IReadOnlyDictionary<string, int> existing, CancellationToken cancellationToken)
+    {
+        var catalog = steps
+            .Where(s => s.Operation is CreateOperation { Id: { } id, ContentGuid: not null } create && !existing.ContainsKey(id) && executor.IsCatalogType(create.Type))
+            .ToList();
+        if (catalog.Count == 0)
+        {
+            return [];
+        }
+        var found = await executor.CatalogRefsAsync(catalog.Select(s => s.Operation.ContentGuid!.Value.ToString("D")), cancellationToken);
+        return catalog
+            .Where(s => found.ContainsKey(s.Operation.ContentGuid!.Value.ToString("D")))
+            .ToDictionary(s => s.Operation.Id!, s => found[s.Operation.ContentGuid!.Value.ToString("D")].Ref!, StringComparer.Ordinal);
+    }
 
     /// <summary>Plan id to content id, for steps whose GUID already exists outside the recycle bin (<c>--update-existing</c>).</summary>
     private async Task<Dictionary<string, int>> ExistingAsync(IReadOnlyList<PlanStep> steps, CancellationToken cancellationToken)
@@ -551,7 +584,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         var op = step.Operation;
         try
         {
-            if (step.DependsOn.Count == 0 || step.DependsOn.All(existing.ContainsKey))
+            if (step.DependsOn.Count == 0 || step.DependsOn.All(id => existing.ContainsKey(id) || _existingCatalog.ContainsKey(id)))
             {
                 var resolvedStep = resolved.First(s => s.Index == step.Index);
                 op = resolvedStep.Operation;
@@ -1027,7 +1060,8 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         {
             reference = PlanSimulation.Index(steps).Operation(id) is { } creating ? ParentOf(creating) : null;
         }
-        if (reference is null || PlanSimulation.PlanId(reference) is not null)
+        // Catalog content (Commerce) has no approval sequences, and isn't in the CMS database.
+        if (reference is null || PlanSimulation.PlanId(reference) is not null || Protocol.CatalogRefSyntax.IsCommerceOnly(reference) || Protocol.CatalogRefSyntax.ProviderId(reference) is not null)
         {
             return;
         }
@@ -1135,6 +1169,6 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
 
     private static ErrorBody Error(OptiCliException ex) => new(ExitCodes.Name(ex.Code), ex.Message, ex.Hint);
 
-    private static Dictionary<string, string> Refs(Dictionary<string, int> created) =>
-        created.ToDictionary(c => c.Key, c => WriteOutput.Id(c.Value), StringComparer.Ordinal);
+    private static Dictionary<string, string> Refs(Dictionary<string, int> created, Dictionary<string, string> createdRefs) =>
+        created.Select(c => KeyValuePair.Create(c.Key, WriteOutput.Id(c.Value))).Concat(createdRefs).ToDictionary(c => c.Key, c => c.Value, StringComparer.Ordinal);
 }

@@ -139,7 +139,7 @@ internal static class DraftOperation
         if (from.Trim().Equals(DraftRequest.FromPublished, StringComparison.OrdinalIgnoreCase))
         {
             return ContentLocator.PublishedVersion(branch) is { } publishedId
-                ? new ContentReference(link.ID, publishedId)
+                ? ContentVersions.Of(link, publishedId)
                 : throw AgentException.NotFound($"Content {link.ID} has no published version{In(language)} to base the change on.",
                     "Leave out from to base it on the latest version, or give a version id.");
         }
@@ -149,7 +149,7 @@ internal static class DraftOperation
         }
         // Any language: a version of another branch is reported as such once loaded.
         return locator.AllVersions(link, null).Any(v => v.ContentLink.WorkID == version)
-            ? new ContentReference(link.ID, version)
+            ? ContentVersions.Of(link, version)
             : throw AgentException.NotFound($"Content {link.ID} has no version {version}.", $"`opticli versions {link.ID}` lists them.");
     }
 

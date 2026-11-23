@@ -3,7 +3,28 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
-## 0.35.3 (unreleased)
+## 0.36.0 (unreleased)
+
+### Optimizely Commerce
+
+- **Catalog content's refs work.** Commerce's catalog content has ids that its `ReferenceConverter` encodes: a catalog is
+  `0x80000000 | id`, so its ref is negative (`-2147483645__CatalogContent`), a node `0x40000000 | id`. opticli only took
+  positive provider ids, so the ref a write or `get` printed for a catalog couldn't be passed back to any command. Every
+  ref parser now takes negative provider ids, and what opticli prints for catalog content always parses back. A CMS
+  property that points at catalog content now shows its ref (`1__CatalogContent`) and `"provider": "CatalogContent"`,
+  not `"missing": true`.
+- **Catalog content is found through the site, not `tblMappedIdentity`.** Commerce's catalog provider doesn't register
+  its items in `tblMappedIdentity` (it was empty on a Commerce site after content referenced the catalog): their ids and
+  GUIDs live in Commerce's own tables, behind `ReferenceConverter`. opticli resolved provider refs and GUIDs only there,
+  so a catalog item's ref or GUID was "not found". Catalog refs (`code:<code>`, `catalog:<name>`, `catalog-root`,
+  `id__CatalogContent`, and GUIDs the CMS database doesn't have) are now resolved by the site's Commerce agent. Other
+  content providers still go through `tblMappedIdentity`.
+- **A version of catalog content is the catalog's.** The site agent looked up a version of provider content without its
+  provider (`new ContentReference(id, version)`), so a draft of catalog entry 1 loaded the CMS's content 1 ("Content 1
+  has no version 4") or failed on content that wasn't there. Versions keep their provider now.
+- **A plan's `$id` of catalog content is its ref.** A plan bound `$id` to the content's id, which for catalog content is
+  the id of other, CMS content: a later step on `$product` wrote to the CMS's content of the same id. It binds to
+  `1__CatalogContent` now, in refs and in property values (a start page's `Catalog`).
 
 ### CLI
 

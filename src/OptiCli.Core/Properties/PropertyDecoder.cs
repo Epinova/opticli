@@ -133,6 +133,13 @@ public sealed class PropertyDecoder(
                 var target = row.ContentLink is { } id ? lookup.Content(id)
                     : row.LinkGuid is { } guid && guid != Guid.Empty ? lookup.Content(guid)
                     : null;
+                // Content a provider serves that doesn't register it in tblMappedIdentity (Commerce's catalog content):
+                // the CMS stores the reference's own ref beside its GUID (1__CatalogContent, -2147483646__CatalogContent).
+                if (target is { Missing: true, Guid: var linked } && linked != Guid.Empty
+                    && Refs.ContentRefParser.TryParse(row.String, out var stored, out _) && stored.Kind == Refs.ContentRefKind.Provider)
+                {
+                    target = ContentIdentity.FromProvider(linked, stored.Id, stored.Provider!);
+                }
                 return target is null ? null : WithNode(result, Reference(target));
         }
 

@@ -36,7 +36,7 @@ internal static class UnpublishOperation
         var where = language is null ? "" : $" in '{language.Name}'";
         var publishedId = ContentLocator.PublishedVersion(branch)
             ?? throw AgentException.Conflict($"Content {link.ID} isn't published{where}, so there is nothing to take offline.");
-        var published = flow.Repository.Get<IContent>(new ContentReference(link.ID, publishedId));
+        var published = flow.Repository.Get<IContent>(ContentVersions.Of(link, publishedId));
         var what = $"{link.ID} ('{published.Name}')";
         if (published is IVersionable { StopPublish: { } stop } && stop <= DateTime.Now)
         {

@@ -42,9 +42,10 @@ public static partial class ContentRefParser
 
         if (ProviderPattern().Match(value) is { Success: true } provided)
         {
-            if (!TryParsePositive(provided.Groups["id"].Value, out var mappedId))
+            // Commerce's catalogs and catalog root have negative ids (-2147483646__CatalogContent).
+            if (!int.TryParse(provided.Groups["id"].Value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var mappedId) || mappedId == 0)
             {
-                error = $"'{value}' is not a valid content provider ref: the id is a positive 32-bit integer.";
+                error = $"'{value}' is not a valid content provider ref: the id is a 32-bit integer other than 0.";
                 return false;
             }
             result = ContentRef.ForProvider(mappedId, provided.Groups["provider"].Value);
@@ -96,10 +97,10 @@ public static partial class ContentRefParser
     /// <c>ContentReference.ToString()</c> of provider content: id, an empty version, then the provider name. Provider
     /// content has no versions opticli can address, so <c>63_5__provider</c> is not accepted.
     /// </summary>
-    [GeneratedRegex(@"^(?<id>[0-9]+)__(?<provider>[A-Za-z0-9][A-Za-z0-9.-]*)$")]
+    [GeneratedRegex(@"^(?<id>-?[0-9]+)__(?<provider>[A-Za-z0-9][A-Za-z0-9.-]*)$")]
     private static partial Regex ProviderPattern();
 
-    [GeneratedRegex(@"^(?<id>[0-9]+)_[0-9]+__?(?<provider>[A-Za-z0-9][A-Za-z0-9.-]*)$")]
+    [GeneratedRegex(@"^(?<id>-?[0-9]+)_[0-9]+__?(?<provider>[A-Za-z0-9][A-Za-z0-9.-]*)$")]
     private static partial Regex VersionedProviderPattern();
 
     /// <summary>The permanent-link form CMS stores in rich text and link properties.</summary>

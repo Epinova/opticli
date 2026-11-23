@@ -310,7 +310,7 @@ internal sealed class SharedAreaBlocks(CmsCall call, ContentLocator locator)
         }
         var block = existing.ContentLink.ToReferenceWithoutVersion().ToString();
         var published = ContentLocator.PublishedVersion(branch) is { } publishedId
-            ? PropertyValues.Snapshot(locator.Repository.Get<IContent>(new ContentReference(existing.ContentLink.ID, publishedId)))
+            ? PropertyValues.Snapshot(locator.Repository.Get<IContent>(ContentVersions.Of(existing.ContentLink, publishedId)))
             : new Dictionary<string, JsonElement?>();
         var draft = new PendingDraft(latest.ContentLink.ToString(), latest.SavedBy, latest.Saved.ToUniversalTime(),
             call.Properties.Shown(existing, PropertyValues.Diff(published, PropertyValues.Snapshot(existing))))

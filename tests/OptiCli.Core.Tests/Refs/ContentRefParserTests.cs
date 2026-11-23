@@ -52,6 +52,9 @@ public class ContentRefParserTests
     [InlineData("63__dam-assets-provider", 63, "dam-assets-provider")]
     [InlineData(" 7__dam ", 7, "dam")]
     [InlineData("12__provider.v2", 12, "provider.v2")]
+    // Commerce: a catalog and the catalog root have negative ids.
+    [InlineData("-2147483646__CatalogContent", -2147483646, "CatalogContent")]
+    [InlineData("-1073741823__CatalogContent", -1073741823, "CatalogContent")]
     public void Parses_content_provider_refs(string input, int id, string provider)
     {
         var parsed = ContentRefParser.Parse(input);

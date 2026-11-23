@@ -76,7 +76,7 @@ internal static class DiscardOperation
             ?? ContentLocator.PublishedVersion(contentVersions)
             ?? contentVersions.First().ContentLink.WorkID;
         var changes = call.Properties.Shown(version,
-            PropertyValues.Diff(PropertyValues.Snapshot(flow.Repository.Get<IContent>(new ContentReference(link.ID, kept))), PropertyValues.Snapshot(version)));
+            PropertyValues.Diff(PropertyValues.Snapshot(flow.Repository.Get<IContent>(ContentVersions.Of(link, kept))), PropertyValues.Snapshot(version)));
         var pending = PendingDrafts.SavedBy(stamp.SavedBy, call.UserName)
             ? null
             : new PendingDraft(stamp.ContentLink.ToString(), stamp.SavedBy, stamp.Saved.ToUniversalTime(), changes);

@@ -442,7 +442,7 @@ internal sealed class WriteFlow
         var isNew = ContentReference.IsNullOrEmpty(writable.ContentLink);
         var askedParent = isNew ? writable.ParentLink : null;
         var newestBefore = isNew || writable is not IVersionable ? 0 : NewestVersion(writable.ContentLink);
-        var intoBefore = intoVersion is { } into ? Versions.Load(new ContentReference(writable.ContentLink.ID, into)) : null;
+        var intoBefore = intoVersion is { } into ? Versions.Load(ContentVersions.Of(writable.ContentLink, into)) : null;
         ContentReference saved;
         string? siteError = null;
         try
