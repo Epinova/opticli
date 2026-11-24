@@ -553,6 +553,11 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                 Warnings: [$"{planned.Url} is on the host {planned.Host}, which operation {planned.Index} gives the site '{planned.Site}': the database doesn't have it there yet, so the site checks this one when the plan runs."],
                 Guid: step.Operation.ContentGuid), null);
         }
+        if (CommerceEarlier(step, steps, checks) is { } commerce)
+        {
+            return (new PlanStepResult(step.Index, step.Operation.Kind, step.Operation.Id, PlanStepStatus.Deferred,
+                Warnings: [commerce], Guid: step.Operation.ContentGuid), null);
+        }
         if (EnabledEarlier(step, steps) is { } language)
         {
             return (new PlanStepResult(step.Index, step.Operation.Kind, step.Operation.Id, PlanStepStatus.Deferred,
@@ -749,6 +754,31 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             .Where(s => s.Index < step.Index && s.Operation is LanguageOperation { Enabled: true })
             .SelectMany(s => ((LanguageOperation)s.Operation).Langs)
             .FirstOrDefault(code => languages.Contains(code.Trim(), StringComparer.OrdinalIgnoreCase) && session.Model.LanguageByCode(code) is not { Enabled: true });
+    }
+
+    /// <summary>
+    /// A price or stock step whose market or warehouse an earlier <c>market</c> or <c>warehouse</c> step makes or changes
+    /// (its currencies, say): the site doesn't have that yet, so the step can only be checked when the plan runs. Null for
+    /// any other step, and where the earlier step's own dry run found its market or warehouse as the plan wants it
+    /// (<c>unchanged</c>: a plan run again), which the step is then checked against as usual.
+    /// </summary>
+    /// <param name="checks">The earlier steps' dry-run results, so far.</param>
+    internal static string? CommerceEarlier(PlanStep step, IReadOnlyList<PlanStep> steps, IReadOnlyList<PlanStepResult> checks)
+    {
+        var earlier = steps.Where(s => s.Index < step.Index && !AsWanted(checks.FirstOrDefault(c => c.Index == s.Index)?.Result));
+        return step.Operation switch
+        {
+            PriceOperation price when earlier.FirstOrDefault(s => s.Operation is MarketOperation market
+                && string.Equals(market.Market.Trim(), price.Market.Trim(), StringComparison.OrdinalIgnoreCase)) is { } making =>
+                $"Operation {making.Index} makes or changes the market '{price.Market.Trim()}', which the site may not have as the plan wants it yet, so the site checks this price when the plan runs.",
+            InventoryOperation stock when earlier.FirstOrDefault(s => s.Operation is WarehouseOperation warehouse
+                && string.Equals(warehouse.Code.Trim(), stock.Warehouse.Trim(), StringComparison.OrdinalIgnoreCase)) is { } making =>
+                $"Operation {making.Index} makes or changes the warehouse '{stock.Warehouse.Trim()}', which the site may not have as the plan wants it yet, so the site checks this stock when the plan runs.",
+            _ => null,
+        };
+
+        static bool AsWanted(object? result) =>
+            result is Protocol.MarketResult { Status: Protocol.CommerceWriteStatus.Unchanged } or Protocol.WarehouseResult { Status: Protocol.CommerceWriteStatus.Unchanged };
     }
 
     private static IReadOnlyList<string> LanguagesOf(WriteOperation op)

@@ -110,4 +110,36 @@ public class CommercePlanTests
         Assert.EndsWith("--valid-from 2026-12-01T00:00:00Z --amount 79", updated);
         Assert.Null(unchanged);
     }
+
+    /// <summary>A plan that grows: a price or stock step on a market or warehouse an earlier step makes is checked when it runs.</summary>
+    [Fact]
+    public void A_price_or_stock_on_a_market_or_warehouse_an_earlier_step_makes_is_deferred()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "market", "market": "EURO", "currencies": ["EUR"], "languages": ["en"]},
+              {"op": "warehouse", "code": "berlin"},
+              {"op": "price", "entry": "code:P-1001-M", "market": "euro", "currency": "EUR", "amount": 69},
+              {"op": "inventory", "entry": "code:P-1001-M", "warehouse": "Berlin", "inStock": 4},
+              {"op": "price", "entry": "code:P-1001-M", "market": "DEFAULT", "currency": "USD", "amount": 79},
+              {"op": "inventory", "entry": "code:P-1001-M", "warehouse": "default", "inStock": 4}
+            ]}
+            """);
+
+        Assert.Contains("Operation 0 makes or changes the market 'euro'", PlanRunner.CommerceEarlier(plan.Steps[2], plan.Steps, []));
+        Assert.Contains("Operation 1 makes or changes the warehouse 'Berlin'", PlanRunner.CommerceEarlier(plan.Steps[3], plan.Steps, []));
+        Assert.Null(PlanRunner.CommerceEarlier(plan.Steps[4], plan.Steps, []));
+        Assert.Null(PlanRunner.CommerceEarlier(plan.Steps[5], plan.Steps, []));
+        // A market step after the price doesn't count: the price is checked against the site as it is.
+        Assert.Null(PlanRunner.CommerceEarlier(plan.Steps[0], plan.Steps, []));
+
+        // Run again: the market's and warehouse's own dry runs found them as wanted, so price and stock are checked as usual.
+        var market = new MarketResult(new CommerceMarket("EURO", "EURO", true, "EUR", ["EUR"], "en", ["en"], [], null, false), CommerceWriteStatus.Unchanged, [], true);
+        var warehouse = new WarehouseResult(new CommerceWarehouse("berlin", "berlin", true, false, false, false, false, 0), CommerceWriteStatus.Unchanged, [], true);
+        PlanStepResult[] asWanted = [new(0, "market", null, PlanStepStatus.Valid, Result: market), new(1, "warehouse", null, PlanStepStatus.Valid, Result: warehouse)];
+        Assert.Null(PlanRunner.CommerceEarlier(plan.Steps[2], plan.Steps, asWanted));
+        Assert.Null(PlanRunner.CommerceEarlier(plan.Steps[3], plan.Steps, asWanted));
+        PlanStepResult[] changed = [new(0, "market", null, PlanStepStatus.Valid, Result: market with { Status = CommerceWriteStatus.Updated })];
+        Assert.NotNull(PlanRunner.CommerceEarlier(plan.Steps[2], plan.Steps, changed));
+    }
 }
