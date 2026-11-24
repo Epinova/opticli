@@ -354,6 +354,21 @@ await expect(page.getByText('Hi')).toBeVisible();
   </div>
   <article class="file">
     <ol class="releases">
+      <li><div class="v"><b>0.36.0</b><span>24 November 2026</span></div>
+        <ul>
+          <li><b>Optimizely Commerce:</b> on a site with Commerce 14 (CMS 12) or 15 (CMS 13), <code>serve</code> loads a
+            Commerce agent beside the site agent, so an E2E suite can seed a catalog from code. Catalogs, nodes, products
+            and variants are content for <code>create</code>, <code>set</code> and plans, with <code>code:</code> and
+            <code>catalog:</code> refs and product images. Prices, warehouses, stock, markets and relations get
+            <code>opticli commerce &hellip;</code> commands and plan steps, all with dry runs and <code>unchanged</code>
+            on a re-run. A site without Commerce runs as before, and the MCP module is unchanged. See the guide
+            <a href="guides/developers/seed-a-commerce-catalog/">Seed a Commerce catalog for Playwright tests</a>.</li>
+          <li><b>Reads through the site:</b> <code>commerce get|children|tree</code>, prices, stock, markets and
+            relations, and <code>resolve</code> takes a catalog URL back to its ref.</li>
+          <li><b>Fixed:</b> <code>opticli sql</code> with a recursive CTE cut by <code>--limit</code> reported an
+            internal error. It now gives SQL Server's own error, and past the recursion limit the hint names
+            <code>OPTION (MAXRECURSION n)</code>.</li>
+        </ul></li>
       <li><div class="v"><b>0.35.2</b><span>23 November 2026</span></div>
         <ul>
           <li><b>Fixes from a review of every write and the MCP module:</b> <code>unpublish</code> no longer publishes a
