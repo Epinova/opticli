@@ -31,3 +31,7 @@ public sealed record CatalogChildren(CatalogRef Parent, IReadOnlyList<CatalogRef
 /// <param name="Depth">0 for the root, 1 for its children, ...</param>
 /// <param name="Kind">One of <see cref="CatalogKinds"/>.</param>
 public sealed record CatalogTreeItem(int Depth, string Ref, Guid? Guid, string? Name, string? Type, [property: OutputValues(typeof(CatalogKinds))] string? Kind, string? Code);
+
+/// <summary>Response of <see cref="AgentRoutes.CommerceResolve"/>: the catalog content a URL shows, as the site routes it.</summary>
+/// <param name="Url">Its canonical public URL; null when it isn't routable.</param>
+public sealed record CatalogUrl(ContentSummary Content, string? Url);

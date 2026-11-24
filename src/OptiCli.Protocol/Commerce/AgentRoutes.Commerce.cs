@@ -54,6 +54,13 @@ public static partial class AgentRoutes
     /// </summary>
     public static string CommerceChildren => $"{Commerce}/children";
 
+    /// <summary>
+    /// <c>GET /v1/commerce/resolve?url=</c>. Response: <see cref="CatalogUrl"/>: the catalog content a URL or path shows, as
+    /// the site's catalog routing routes it. <c>not_found</c> for a URL that shows nothing, or CMS content (which the CLI
+    /// resolves from the database). Read-only.
+    /// </summary>
+    public static string CommerceResolve => $"{Commerce}/resolve";
+
     /// <summary>A read route with the catalog content as <c>?ref=</c>.</summary>
     public static string WithRef(string route, string reference) => $"{route}?ref={Uri.EscapeDataString(reference)}";
 }

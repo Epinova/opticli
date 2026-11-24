@@ -4,9 +4,12 @@
 # - 12: CMS 12 + Commerce 14 in /demo/Commerce12 (net8.0), on the empty databases opticli-commerce12 (the CMS's,
 #   EPiServerDB) and opticli-commerce12-ecf (Commerce's, EcfSqlConnection), port 5150.
 # - 13: CMS 13 + Commerce 15 in /demo/Commerce13 (net10.0), on opticli-commerce13 and opticli-commerce13-ecf, port 5151.
-# Both get CommerceFixture.cs: a start page, an image media type and a small catalog model (a fashion node, product,
-# variant and bundle). No content: the CMS and Commerce make their schemas at the first start, and opticli makes the
-# rest.
+# Both get CommerceFixture.cs: a start page, a teaser block, an image media type, a small catalog model (a fashion
+# node, product, variant and bundle), HTML pages for them, and Commerce's catalog routing below the start page. The CMS
+# and Commerce make their schemas at the first start; then opticli (this checkout's build, or OPTICLI) serves the site
+# and applies fixture.plan.json: the start page and a site definition for it (hosts commerce.localhost and *), an image,
+# and a small catalog ("Fixture": a node, a product and a variant with the image in their CommerceMediaCollection, a
+# price and stock) that the start page points at.
 #
 #   setup.sh [12|13|both]        (default: both)
 #
@@ -14,12 +17,14 @@
 # SQLCMDSERVER, SQLCMDUSER and SQLCMDPASSWORD (default: localhost,1433 and sa). Run it again to update the model: sites
 # and databases are kept unless FRESH=1, which makes both again from nothing (and drops their databases).
 # Other settings: CMS12_VERSION (12.34.9), COMMERCE14_VERSION (14.48.0), CMS13_VERSION (13.5.1), COMMERCE15_VERSION
-# (15.5.0), DIR12, DIR13, DB12, DB13 (the ECF database is the name plus -ecf), PORT12 (5150), PORT13 (5151).
+# (15.5.0), DIR12, DIR13, DB12, DB13 (the ECF database is the name plus -ecf), PORT12 (5150), PORT13 (5151), OPTICLI
+# (default: dotnet <this checkout>/src/OptiCli/bin/Debug/net8.0/opticli.dll, built when missing).
 set -euo pipefail
 
 WHICH=${1:-both}
 case "$WHICH" in 12|13|both) ;; *) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;; esac
 HERE=$(cd "$(dirname "$0")" && pwd)
+REPO=$(cd "$HERE/../../.." && pwd)
 CMS12_VERSION=${CMS12_VERSION:-12.34.9}
 COMMERCE14_VERSION=${COMMERCE14_VERSION:-14.48.0}
 CMS13_VERSION=${CMS13_VERSION:-13.5.1}
@@ -155,7 +160,30 @@ build_site() {
   done
   first_start "$dir" "$name" "$framework" "$port"
   echo "$db schema version: $(schema "$db"); $db-ecf Commerce schema: $(commerce_schema "$db-ecf")"
+  fixture_content "$dir"
   echo "Start it with opticli:  cd $dir && opticli serve"
+}
+
+# The fixture's content, through the site with opticli's agents: the plan run again changes nothing.
+fixture_content() {
+  local dir=$1 opticli=${OPTICLI:-}
+  if [ -z "$opticli" ]; then
+    if [ ! -f "$REPO/src/OptiCli/bin/Debug/net8.0/opticli.dll" ]; then
+      (cd "$REPO" && dotnet build src/OptiCli -nologo -v q -clp:ErrorsOnly)
+    fi
+    opticli="dotnet $REPO/src/OptiCli/bin/Debug/net8.0/opticli.dll"
+  fi
+  echo "== content: $HERE/fixture.plan.json"
+  (cd "$dir" && $opticli serve --stop >/dev/null 2>&1 || true)
+  (cd "$dir" && $opticli serve --build >/dev/null)
+  local result status=0
+  result=$(cd "$dir" && $opticli apply "$HERE/fixture.plan.json" --update-existing --publish --json) || status=$?
+  (cd "$dir" && $opticli serve --stop >/dev/null)
+  if [ "$status" != 0 ]; then
+    echo "$result" >&2
+    exit 1
+  fi
+  echo "$result" | grep -o '"status":"[a-z]*"' | sort | uniq -c | sed 's/^ */steps: /'
 }
 
 if [ "$WHICH" != 13 ]; then build_site 12; fi

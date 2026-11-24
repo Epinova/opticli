@@ -1,0 +1,19 @@
+{
+  "guidNamespace": "3c1f5b2a-8e4d-4a6f-9b7c-2d1e0f3a4b5c",
+  "operations": [
+    {"op": "create", "id": "start", "type": "StartPage", "parent": "1", "name": "Home", "properties": {"Heading": "Commerce fixture"}},
+    {"op": "site", "name": "Commerce", "startPage": "$start", "hosts": ["commerce.localhost", "*"]},
+    {"op": "upload", "id": "image", "file": "product.png", "for": "$start", "properties": {"AltText": "A fixture shirt"}},
+    {"op": "create", "id": "catalog", "type": "CatalogContent", "parent": "catalog-root", "name": "Fixture",
+      "properties": {"DefaultCurrency": "USD", "DefaultLanguage": "en", "WeightBase": "kgs", "LengthBase": "cm"}},
+    {"op": "create", "id": "shirts", "type": "FashionNode", "parent": "$catalog", "name": "Shirts", "properties": {"Code": "fixture-shirts"}},
+    {"op": "create", "id": "shirt", "type": "FashionProduct", "parent": "$shirts", "name": "Fixture shirt",
+      "properties": {"Code": "fixture-shirt", "Brand": "Acme", "CommerceMediaCollection": ["$image"]}},
+    {"op": "create", "id": "shirtM", "type": "FashionVariant", "parent": "$shirts", "name": "Fixture shirt M",
+      "properties": {"Code": "fixture-shirt-m", "Size": "M", "CommerceMediaCollection": [{"ref": "$image", "groupName": "default", "sortOrder": 0}]}},
+    {"op": "relation", "parent": "$shirt", "child": "$shirtM"},
+    {"op": "price", "entry": "$shirtM", "market": "DEFAULT", "currency": "USD", "amount": 29},
+    {"op": "inventory", "entry": "$shirtM", "warehouse": "default", "inStock": 10},
+    {"op": "set", "ref": "$start", "properties": {"Catalog": "$catalog", "FeaturedProduct": "$shirt"}}
+  ]
+}

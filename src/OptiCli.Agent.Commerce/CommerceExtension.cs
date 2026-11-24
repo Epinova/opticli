@@ -21,7 +21,7 @@ internal sealed class CommerceExtension : AgentExtension
     public override string Segment => "commerce";
 
     public override string RouteList =>
-        $"GET {AgentRoutes.Commerce}, POST {AgentRoutes.CommerceRefs}, GET {AgentRoutes.CommerceChildren}?ref=, GET|POST {AgentRoutes.CommerceRelations}, GET|POST {AgentRoutes.CommercePrices}, " +
+        $"GET {AgentRoutes.Commerce}, POST {AgentRoutes.CommerceRefs}, GET {AgentRoutes.CommerceChildren}?ref=, GET {AgentRoutes.CommerceResolve}?url=, GET|POST {AgentRoutes.CommerceRelations}, GET|POST {AgentRoutes.CommercePrices}, " +
         $"GET|POST {AgentRoutes.CommerceWarehouses}, GET|POST {AgentRoutes.CommerceInventory}, GET|POST {AgentRoutes.CommerceMarkets}";
 
     public override void Start(IServiceProvider services)
@@ -37,6 +37,7 @@ internal sealed class CommerceExtension : AgentExtension
         ["refs"] => Only(method, "POST", new AgentMiddleware.EndpointHandler(false, async request =>
             (200, (object)CatalogRefsEndpoint.Handle(request, await request.ReadBodyAsync<CatalogRefsRequest>())))),
         ["children"] => Only(method, "GET", AgentMiddleware.Read(CatalogChildrenEndpoint.Handle)),
+        ["resolve"] => Only(method, "GET", AgentMiddleware.Read(CatalogUrlEndpoint.Handle)),
         ["relations"] => ReadOrWrite(method, RelationsEndpoint.List, Write<RelationRequest>(b => b.DryRun, RelationsEndpoint.Write)),
         ["prices"] => ReadOrWrite(method, PricesEndpoint.List, Write<PriceRequest>(b => b.DryRun, PricesEndpoint.Write)),
         ["warehouses"] => ReadOrWrite(method, WarehousesEndpoint.List, Write<WarehouseRequest>(b => b.DryRun, WarehousesEndpoint.Write)),
