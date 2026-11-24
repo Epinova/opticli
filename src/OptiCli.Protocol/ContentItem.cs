@@ -23,7 +23,10 @@ public sealed record ContentItem
 
     public string? Type { get; init; }
 
-    /// <summary><c>page</c>, <c>block</c>, <c>media</c>, <c>folder</c> or <c>other</c>, from the loaded instance's base class.</summary>
+    /// <summary>
+    /// <c>page</c>, <c>block</c>, <c>media</c>, <c>folder</c> or <c>other</c>, from the loaded instance's base class; from
+    /// <c>opticli commerce get</c>, catalog content's kind (<see cref="CatalogKinds"/>: <c>catalog</c>, <c>node</c>, <c>product</c>, ...).
+    /// </summary>
     public required string Kind { get; init; }
 
     /// <summary>The loaded branch; null for language-invariant content (media, folders).</summary>

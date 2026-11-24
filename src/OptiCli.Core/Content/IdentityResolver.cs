@@ -19,6 +19,12 @@ public sealed class IdentityResolver(CmsDatabase db, CmsModel model)
 
     public CmsModel Model { get; } = model;
 
+    /// <summary>
+    /// Asks the running site about GUIDs neither the CMS database nor <c>tblMappedIdentity</c> has: Commerce's catalog content,
+    /// which a rich-text link names only by its GUID. Null (the default): such a GUID is missing.
+    /// </summary>
+    public Func<IReadOnlyList<Guid>, CancellationToken, Task<IReadOnlyDictionary<Guid, (int Id, string Provider)>>>? SiteContent { get; set; }
+
     public async Task LoadAsync(IEnumerable<int> ids, IEnumerable<Guid> guids, CancellationToken cancellationToken)
     {
         var newGuids = guids.Where(g => g != Guid.Empty && !_ids.ContainsKey(g) && !_unknownGuids.Contains(g)).Distinct().ToList();
@@ -42,6 +48,13 @@ public sealed class IdentityResolver(CmsDatabase db, CmsModel model)
                 foreach (var (guid, mapped) in await ContentHeaderReader.ProviderContentAsync(db, unknown, cancellationToken))
                 {
                     _providerContent[guid] = mapped;
+                }
+                if (SiteContent is { } site && unknown.Where(g => !_providerContent.ContainsKey(g)).ToList() is { Count: > 0 } elsewhere)
+                {
+                    foreach (var (guid, mapped) in await site(elsewhere, cancellationToken))
+                    {
+                        _providerContent[guid] = mapped;
+                    }
                 }
             }
         }

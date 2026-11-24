@@ -82,6 +82,8 @@ internal static class GetCommand
                 context.Parse.GetValue(expand),
                 Composition: true);
 
+            // On a Commerce site, links to catalog content (which the CMS database doesn't have) are asked of the site.
+            session.Identities.SiteContent = CommerceLookup.For(context);
             var loader = new ContentLoader(session.Db, session.Identities);
             var document = await loader.GetAsync(located.Id, selector, content.Language(context, session, located), decode, cancellationToken);
             // A composition reads as the tree it is, not as a table.

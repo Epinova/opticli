@@ -45,7 +45,7 @@ internal sealed class CatalogContentFinder(IServiceProvider services)
         }
         else if (CatalogRefSyntax.ProviderId(reference) is { } id)
         {
-            link = new ContentReference(id, 0, CatalogRefSyntax.Provider);
+            link = Canonical(id) ? new ContentReference(id, 0, CatalogRefSyntax.Provider) : null;
         }
         else if (Guid.TryParse(reference.Trim(), out var guid) && guid != Guid.Empty)
         {
@@ -58,12 +58,31 @@ internal sealed class CatalogContentFinder(IServiceProvider services)
         return _loader.TryGet<CatalogContentBase>(link.ToReferenceWithoutVersion(), AnyLanguage(), out var content) ? content : null;
     }
 
+    /// <summary>
+    /// Whether an id is one Commerce gives content: it decodes any id by its top two bits, so an id that names nothing still
+    /// loads something (-5 is the catalog root, and keeps -5 as its id). Only an id that encodes back to itself is real.
+    /// </summary>
+    private bool Canonical(int id)
+    {
+        var link = new ContentReference(id, 0, CatalogRefSyntax.Provider);
+        try
+        {
+            var type = _references.GetContentType(link);
+            var encoded = type == CatalogContentType.Root ? RootLink : _references.GetContentLink(_references.GetObjectId(link), type, 0);
+            return encoded is not null && encoded.ID == id;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or NotSupportedException)
+        {
+            return false;
+        }
+    }
+
     /// <summary>The catalog content a ref names.</summary>
     /// <exception cref="AgentException"><c>not_found</c>, saying which forms a catalog ref takes.</exception>
     public CatalogContentBase Require(string? reference, string what = "ref") =>
         Find(reference) ?? throw AgentException.NotFound(
             $"No catalog content '{reference?.Trim()}' ({what}).",
-            $"A catalog ref is {CatalogRefSyntax.Description}; `opticli children {CatalogRefSyntax.Format(-1073741823)}` lists the catalogs.");
+            $"A catalog ref is {CatalogRefSyntax.Description}; `opticli commerce children` lists the catalogs, `opticli commerce tree` what is below them.");
 
     /// <summary>The catalogs below the catalog root.</summary>
     public IReadOnlyList<CatalogContent> Catalogs() => _loader.GetChildren<CatalogContent>(RootLink, AnyLanguage()).ToList();

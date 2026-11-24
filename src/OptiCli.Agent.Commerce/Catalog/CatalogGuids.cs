@@ -16,8 +16,28 @@ internal static class CatalogGuids
     public static void Start(IServiceProvider services)
     {
 #if CMS13
-        if (services.GetService<IContentEvents>() is not { } events || services.GetService<EPiServer.Web.Internal.PermanentLinkMapper>() is not { } mapper)
+        // A risk: PermanentLinkMapper is in an Internal namespace, so a CMS 13 update may change or remove it (or stop
+        // registering it as itself). Then the hook isn't attached and only this is lost: a catalog GUID a write looked up
+        // before making the content stays "not found" for up to a minute after (the CLI passes catalog content to the agent
+        // as id__CatalogContent, so its own writes don't depend on it). The warning says so in the site's output.
+        if (services.GetService<IContentEvents>() is not { } events)
         {
+            Console.Error.WriteLine("[opticli] Commerce agent: no IContentEvents, so a catalog GUID looked up before its content was made stays unknown for up to a minute.");
+            return;
+        }
+        EPiServer.Web.Internal.PermanentLinkMapper? mapper;
+        try
+        {
+            mapper = services.GetService<EPiServer.Web.Internal.PermanentLinkMapper>();
+        }
+        catch (Exception ex) when (ex is TypeLoadException or MissingMethodException or InvalidOperationException)
+        {
+            mapper = null;
+            Console.Error.WriteLine($"[opticli] Commerce agent: {ex.GetType().Name} getting the CMS's PermanentLinkMapper.");
+        }
+        if (mapper is null)
+        {
+            Console.Error.WriteLine("[opticli] Commerce agent: the CMS's PermanentLinkMapper isn't there, so a catalog GUID looked up before its content was made stays unknown for up to a minute.");
             return;
         }
         events.CreatedContent += (_, e) =>

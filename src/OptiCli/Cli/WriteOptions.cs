@@ -204,10 +204,16 @@ internal sealed class WriteOptions
         return ParseVersion(value, "--base-version");
     }
 
-    /// <summary>A version id, as <c>456</c> or <c>123_456</c>.</summary>
+    /// <summary>A version id, as <c>456</c> or <c>123_456</c>, or as a write prints catalog content's (<c>1_33_CatalogContent</c>).</summary>
     public static int ParseVersion(string value, string option)
     {
-        var text = value.Contains('_') ? value[(value.LastIndexOf('_') + 1)..] : value;
+        var trimmed = value.Trim();
+        if (WriteOutput.ProviderOf(trimmed) is { } provider)
+        {
+            // id_version_provider: the version is the middle part.
+            trimmed = trimmed[..^(provider.Length + 1)];
+        }
+        var text = trimmed.Contains('_') ? trimmed[(trimmed.LastIndexOf('_') + 1)..] : trimmed;
         return int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var version) && version > 0
             ? version
             : throw new UsageException($"{option} '{value}' is not a version (use the id, or 123_456 as shown by `opticli versions`).");

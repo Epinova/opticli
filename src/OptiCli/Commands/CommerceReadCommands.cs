@@ -30,6 +30,8 @@ internal static class CommerceReadCommands
         {
             var found = await ResolveAsync(context, context.Parse.GetValue(reference)!, cancellationToken);
             var item = await CommerceCommand.ReadAsync<ContentItem>(context, AgentRoutes.Read(found.Ref!, context.Parse.GetValue(lang)), cancellationToken);
+            // The site agent knows CMS kinds only (catalog content is "other" to it); the Commerce agent knows which catalog kind.
+            item = item with { Kind = found.Kind ?? item.Kind };
             return new CommandResult<ContentItem>(item, Source: WriteExecutor.AgentSource);
         });
         return command;
