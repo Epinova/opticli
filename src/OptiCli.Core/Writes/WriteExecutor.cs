@@ -485,6 +485,10 @@ public sealed partial class WriteExecutor(
             throw new UsageException("Give exactly one of parent or for (the content whose \"For this page\" folder it goes in).");
         }
         var parent = await ResolveAsync(op.Parent ?? op.For!, op.Parent is null ? "for" : "parent", cancellationToken);
+        if (op.For is not null)
+        {
+            NotCatalog(parent, op.For, "for");
+        }
         // CMS 13: from a blueprint, whose type it is.
         var blueprint = op.Blueprint is { } named ? await BlueprintReader.FindAsync(session, named, cancellationToken) : null;
         var type = string.IsNullOrWhiteSpace(op.Type) && blueprint is not null
@@ -544,8 +548,8 @@ public sealed partial class WriteExecutor(
         var properties = PropertyNameCheck.Prepare(session.Model, type.Id, op.Properties);
         var request = new CreateRequest
         {
-            Parent = op.Parent is null ? null : (await ResolveAsync(op.Parent, "parent", cancellationToken)).ContentRef,
-            ForContent = op.For is null ? null : (await ResolveAsync(op.For, "--for", cancellationToken)).ContentRef,
+            Parent = op.Parent is null ? null : NotCatalog(await ResolveAsync(op.Parent, "parent", cancellationToken), op.Parent, "parent").ContentRef,
+            ForContent = op.For is null ? null : NotCatalog(await ResolveAsync(op.For, "--for", cancellationToken), op.For, "for").ContentRef,
             Type = type.Name,
             Name = op.Name,
             Lang = session.Language(op.Lang)?.Code,
@@ -585,8 +589,8 @@ public sealed partial class WriteExecutor(
         }
         var request = new UploadRequest
         {
-            Parent = op.Parent is null ? null : (await ResolveAsync(op.Parent, "parent", cancellationToken)).ContentRef,
-            ForContent = op.For is null ? null : (await ResolveAsync(op.For, "--for", cancellationToken)).ContentRef,
+            Parent = op.Parent is null ? null : NotCatalog(await ResolveAsync(op.Parent, "parent", cancellationToken), op.Parent, "parent").ContentRef,
+            ForContent = op.For is null ? null : NotCatalog(await ResolveAsync(op.For, "--for", cancellationToken), op.For, "for").ContentRef,
             // The name the user gave the file, even when it is a link to a file with another name.
             FileName = Path.GetFileName(op.File),
             Name = op.Name,

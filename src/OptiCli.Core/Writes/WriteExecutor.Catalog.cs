@@ -174,6 +174,17 @@ public sealed partial class WriteExecutor
         (reference is null ? "This needs" : $"'{reference}' is a catalog ref, which needs") + " the site's Commerce agent, and it doesn't answer: the site has no Optimizely Commerce, or opticli's Commerce agent didn't load.",
         "`opticli serve --status` shows commerce (agent false: error says why); restart the site with `opticli serve --stop`, then `opticli serve`, after a build.");
 
+    /// <summary>
+    /// A block's or media's place, which can't be catalog content: Commerce gives catalog content no "For this page" folder
+    /// (the CMS says it "isn't IResourceable"), and media and blocks don't go in a catalog. Product images are uploaded to a
+    /// media folder and attached as the item's CommerceMediaCollection.
+    /// </summary>
+    /// <exception cref="UsageException">It is catalog content.</exception>
+    private static Target NotCatalog(Target target, string reference, string what) =>
+        target.Catalog is not { } catalog ? target : throw new UsageException(
+            $"{reference} is catalog content ({catalog.Kind}): blocks and media don't go {(what == "for" ? "in a \"For this page\" folder of it" : "below it")}, which catalog content doesn't have.",
+            "Upload an image to a media folder instead (opticli upload <file> --parent <folder>, e.g. the global assets), and attach it to the item with CommerceMediaCollection: opticli set <catalog-ref> --values '{\"CommerceMediaCollection\": [\"<media ref>\"]}'. Nothing was saved.");
+
     private static Target CatalogTarget(CatalogRef catalog) => new(0, null, catalog.Ref, null, null, catalog);
 
     private static NotFoundException CatalogNotFound(string reference, string what) => new(

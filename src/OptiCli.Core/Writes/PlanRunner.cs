@@ -1134,6 +1134,20 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     /// <exception cref="UsageException">It doesn't.</exception>
     private void CheckCatalogPlacementOfPlannedContent(WriteOperation op, IReadOnlyList<PlanStep> steps)
     {
+        // Blocks and media never go for (or below) catalog content, which has no "For this page" folder.
+        var (place, what) = op switch
+        {
+            CreateOperation { For: { } forContent } => (forContent, "for"),
+            BlockCreateOperation block => (block.For ?? block.Parent, block.For is null ? "parent" : "for"),
+            UploadOperation upload => (upload.For ?? upload.Parent, upload.For is null ? "parent" : "for"),
+            _ => ((string?)null, ""),
+        };
+        if (place is not null && PlanSimulation.PlanId(place) is { } placeId && PlanSimulation.TypeOf(placeId, steps) is { } placeType && CatalogKind(placeType) is { } placeKind)
+        {
+            throw new UsageException(
+                $"{place} is catalog content ({placeKind}, made by the plan): blocks and media don't go {(what == "for" ? "in a \"For this page\" folder of it" : "below it")}, which catalog content doesn't have.",
+                "Upload the image to a media folder (\"parent\": a folder, e.g. the global assets) and attach it to the item with its CommerceMediaCollection property. Nothing was changed.");
+        }
         if (op is not CreateOperation { Parent: { } parent } create || PlanSimulation.PlanId(parent) is not { } parentId
             || PlanSimulation.TypeOf(parentId, steps) is not { } parentType || string.IsNullOrWhiteSpace(create.Type))
         {
