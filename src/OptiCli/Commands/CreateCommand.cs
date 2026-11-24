@@ -9,7 +9,7 @@ internal static class CreateCommand
 {
     public static Command Create(GlobalOptions options)
     {
-        var parent = new Argument<string>("parent-ref") { Description = $"Where to create it. {ContentRefParser.Syntax}" };
+        var parent = new Argument<string>("parent-ref") { Description = $"Where to create it. {ContentRefParser.Syntax} On an Optimizely Commerce site, catalog content goes below a catalog ref: code:<code> (a node), catalog:<name>, catalog-root (for a catalog), or id__CatalogContent." };
         var type = new Option<string?>("--type") { Description = "Content type name or GUID (see `opticli types`). Required unless --blueprint.", HelpName = "type" };
         var blueprint = new Option<string?>("--blueprint") { Description = "CMS 13: make it from this Visual Builder blueprint (ref, GUID or name; `opticli find --type <type> --blueprints`): its type, values and composition.", HelpName = "blueprint" };
         var name = new Option<string>("--name") { Description = "Content name.", Required = true, HelpName = "name" };

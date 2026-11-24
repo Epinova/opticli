@@ -9,7 +9,7 @@ internal static class MoveCommand
     public static Command Create(GlobalOptions options)
     {
         var content = new ContentOptions();
-        var to = new Option<string>("--to") { Description = "New parent (any ref).", Required = true, HelpName = "parent-ref" };
+        var to = new Option<string>("--to") { Description = "New parent (any ref of CMS content; catalog content, on an Optimizely Commerce site, isn't moved by opticli).", Required = true, HelpName = "parent-ref" };
         var write = new WriteOptions();
         var command = new Command("move", """
             Move content, with everything below it, under a new parent. Needs `opticli serve`.

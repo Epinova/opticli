@@ -42,19 +42,28 @@ needs no setup: point the site's `EPiServerDB` and `EcfSqlConnection` connection
 ## Catalog refs
 
 Catalog content has refs of its own. They work wherever a command or a plan takes a ref for catalog content, and in
-property values (a page's `ContentReference` to a product):
+the values of reference properties (a page's `ContentReference`, `ContentArea` or reference list), where opticli
+turns `code:`, `catalog:` and `catalog-root` into the content's `id__CatalogContent` through the site (a text
+property keeps such a value as text). In a plan, name content the plan makes by its `$id`: a `code:` the plan makes
+first doesn't exist yet when the dry run checks the step.
 
 | Ref | Names |
 |---|---|
 | `code:<code>` | a node or entry by its code (`code:P-1001`), the same in every database |
 | `catalog:<name>` | a catalog by its name (catalogs have no code) |
 | `catalog-root` | the catalog root, which catalogs are made below |
-| `<id>__CatalogContent` | as opticli prints catalog content: `1__CatalogContent` (an entry), `1073741825__CatalogContent` (a node), `-2147483646__CatalogContent` (a catalog; Commerce encodes the kind in the id, so catalogs and the root have negative ids). The id is the database's own |
+| `<id>__CatalogContent` | as opticli prints catalog content: `1__CatalogContent` (an entry), `1073741825__CatalogContent` (a node), `-2147483646__CatalogContent` (a catalog; Commerce encodes the kind in the id, so catalogs and the root have negative ids). The id is the database's own, and only an id Commerce gives content names it (`-5__CatalogContent` names nothing) |
 | a GUID | the content's GUID, which a plan can fix (`guid`, `guidNamespace`) |
 
 Catalog content is found by the site's Commerce agent, not in the CMS database: Commerce doesn't register it in
-`tblMappedIdentity`, where other content providers' content is. A GUID is looked up there first, then in Commerce. A
-CMS property that references catalog content shows its ref and `"provider": "CatalogContent"` in `get`.
+`tblMappedIdentity`, where other content providers' content is. A GUID is looked up there first, then in Commerce (only
+on a site whose content model has catalog types: elsewhere an unknown GUID is `not_found` as before, site running or
+not). A CMS property that references catalog content shows its ref and `"provider": "CatalogContent"` in `get`, and so
+does a rich-text link to it when the site runs (a link has only the GUID, which `get` asks the site about).
+
+Catalogs go below `catalog-root`, nodes and entries below a catalog or node, and CMS content below CMS content: a
+catalog type below CMS content, or a CMS type below catalog content, is a `usage` error in the dry run and the run
+(and in a plan, also below content the plan makes).
 
 ## Catalog content: create and set
 
@@ -68,7 +77,7 @@ type's, Commerce's own among them: `Code` on nodes and entries (Commerce makes o
 |---|---|
 | `create catalog-root --type CatalogContent --name <name> ...` | a catalog |
 | `create <catalog-ref> --type <type> --name <name> [Prop=value]... [--lang] [--publish] [--guid]` | a node, product, variant, bundle or package below a catalog or node (its parent is its primary node) |
-| `set <catalog-ref> [Prop=value]... [--name] [--lang] [--publish] [--base-version] [--force]` | a new version with the changes; `set <ref> --publish` alone publishes a draft |
+| `set <catalog-ref> [Prop=value]... [--name] [--lang] [--publish] [--base-version] [--force]` | a new version with the changes; `set <ref> --publish` alone publishes a draft. `--base-version` takes the version as a result prints it (`1_33_CatalogContent`) or its number |
 
 Catalog content is a draft until it is published (`--publish`, or `apply --publish`). A plan's `create` step with a
 `guid` (or a `guidNamespace`) and `apply --update-existing` updates the content when it exists, and reports
@@ -107,9 +116,10 @@ currency, price type and code (`all`, the default, has no code; `user` takes a u
 group), minimum quantity (default 0) and `--valid-from`: `set` makes or updates the row with that key (its amount and
 `--valid-until`), and the entry's other prices stay as they are. Without `--valid-from`, the key names the price with
 no end, the base price, and a new one starts today (UTC). A campaign price is another row, with `--valid-from` and
-`--valid-until` (an end needs a start). Times are UTC unless they have an offset, to the second. The market must exist
-(`not_found` lists the markets); a currency is an ISO 4217 code. The result is `{entry, code, price, status, before,
-dryRun}`; `before` is the row an update changed. In a plan: `{"op": "price", "entry": "$dress-s", "market": "DEFAULT",
+`--valid-until` (an end needs a start, and comes after it). Times are UTC unless they have an offset, to the second. The
+market must exist (`not_found` lists the markets), and the currency must be one of the market's. These are checked
+before a dry run answers, as `usage` errors. The result is `{entry, code, price, status, before, dryRun}`; `before` is
+the row an update changed, and `price` is null for a removal that found nothing (`absent`). In a plan: `{"op": "price", "entry": "$dress-s", "market": "DEFAULT",
 "currency": "USD", "amount": 79}` (`priceType`, `priceCode`, `minQuantity`, `validFrom`, `validUntil`, `"remove": true`).
 
 ## Warehouses and stock
@@ -138,8 +148,9 @@ code, stock, status, before, dryRun}`. In a plan: `{"op": "warehouse", "code": "
 
 A market id is 1 to 8 letters, digits, `-` or `_`; Commerce comes with `DEFAULT`. A new market needs `--currencies` and
 `--languages`; the lists given replace the market's (compared as sets), and the defaults are the first of each unless
-given (one of the list). Countries are ISO 3166-1 alpha-3 codes (`SWE`). What isn't given keeps its value. The result
-is `{market, status, changes, dryRun}`. In a plan: `{"op": "market", "market": "NORDIC", "currencies": ["SEK", "NOK"],
+given (one of the list). Currencies must be ones Commerce has (its currency list); languages cultures .NET knows (`en`,
+`sv-SE`; `xx-YY` is a `usage` error), and one the CMS hasn't enabled is a warning; countries ISO 3166-1 alpha-3 codes
+(`SWE`). What isn't given keeps its value. The result is `{market, status, changes, dryRun}`. In a plan: `{"op": "market", "market": "NORDIC", "currencies": ["SEK", "NOK"],
 "languages": ["en"], "countries": ["SWE", "NOR"]}` (`name`, `enabled`, `defaultCurrency`, `defaultLanguage`,
 `description`, `pricesIncludeTax`).
 
@@ -153,7 +164,7 @@ tree`. `get`, `children` and `tree` read the CMS database, where it isn't: given
 | Command | Shows |
 |---|---|
 | `commerce` | `{version, catalogRoot, catalogRootGuid, catalogs: [{ref, guid, name}]}` |
-| `commerce get <ref> [--lang <code>]` | one catalog item as the site loads it: `ref`, `guid`, `name`, `type`, `kind`, `language`, `masterLanguage`, `languages`, `status`, `parent`, `startPublish`, `saved`, and every property `{type, value}` (the model's and Commerce's: `Code`, `DisplayName`, `SeoUri`, ...); the published version, else the latest |
+| `commerce get <ref> [--lang <code>]` | one catalog item as the site loads it: `ref`, `guid`, `name`, `type`, `kind` (`catalog`, `node`, `product`, `variation`, `bundle`, `package`), `language`, `masterLanguage`, `languages`, `status`, `parent`, `startPublish`, `saved`, and every property `{type, value}` (the model's and Commerce's: `Code`, `DisplayName`, `SeoUri`, ...); the published version, else the latest |
 | `commerce children [<ref>] [--limit <n>]` | `{parent, children, more}`: the catalogs below the root (the default), the nodes and entries below a catalog or node, also the entries a node has as an extra category; each `{ref, guid, name, type, kind, code, parent, masterLanguage, languages, version}`. At most `--limit` (200) |
 | `commerce tree [<ref>] [--depth <n>]` | depth first, each `{depth, ref, guid, name, type, kind, code}`: the item and `--depth` (3) levels below it |
 | `commerce relations`, `commerce prices`, `commerce stock`, `commerce warehouses`, `commerce markets` | as above |
@@ -189,7 +200,8 @@ fully and reports `unchanged`. Put markets and warehouses before the prices and 
 
 ## Errors
 
-A Commerce command on a site without the Commerce agent is `not_found` (the site has no Commerce, or the agent didn't
-load: `serve --status` shows why), and so is a catalog ref that names nothing. A value Commerce doesn't take (a currency,
+A Commerce command, or a catalog ref in `create`, `set` or a plan, on a site without the Commerce agent is `not_found`
+(the site has no Commerce, or the agent didn't load: `serve --status` shows why), and so is a catalog ref that names
+nothing. With no site running at all, it is `unreachable`, as for every write. A value Commerce doesn't take (a currency,
 a country, a price on a product, a relation between a variant and a product) is `usage`; a market or warehouse that
 doesn't exist is `not_found`. Writes against a shared database pass the drift check as every write does.

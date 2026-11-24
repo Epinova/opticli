@@ -30,7 +30,7 @@
 | `export <ref>... [--descendants] [--languages]`, `export --site <name>\|--all` | content of any database, production too, as a plan folder that `apply --update-existing` brings into another one (see [Exporting content](databases.md#exporting-content)) |
 | `drift` | what differs between the build and a shared database (needs `serve`; see [Shared databases](safety.md#shared-databases)) |
 | `access <ref>` | who may read and edit an item: its access rights, and the ancestor they are inherited from |
-| `sql "<SELECT …>"` | anything else, read-only: one SELECT or `WITH … SELECT`, recursive CTEs included (past 100 levels, end the query with `OPTION (MAXRECURSION n)`). There is no write mode, and there won't be one: writes go through the site (see [Safety](safety.md)). |
+| `sql "<SELECT …>"` | anything else, read-only: one SELECT or `WITH … SELECT`, recursive CTEs included (past 100 levels, end the query with `OPTION (MAXRECURSION n)`). There is no write mode, and there won't be one: writes go through the site (see [Safety](safety.md)). That goes for Optimizely Commerce's tables too: `sql` never writes catalog, price, stock or market data; the `commerce` commands do, through the site ([Optimizely Commerce](commerce.md)). |
 
 A `<ref>` is a content id (`123`), a version (`123_456`), a content GUID, or a URL or path (`/en/about/`,
 `https://host/en/about/`). Content from a content provider, such as images from a DAM, shows up as `63__provider`. You

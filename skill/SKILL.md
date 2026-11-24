@@ -334,7 +334,9 @@ none of this works. Everything goes through the running site; catalog content is
   Women Code=women --publish`, then `opticli create code:women --type FashionVariant --name "Dress S" Code=P-1-S`.
   `set <ref> Prop=value [--publish]` changes it; `set <ref> --publish` alone publishes a draft. Catalog content takes
   no projects, approvals, schedules, ContentAreas or `--from`, and opticli never publishes it separately, moves or
-  deletes it (`publish`, `move`, `delete` refuse it: the user does that in Commerce's UI).
+  deletes it (`publish`, `move`, `delete` refuse it: the user does that in Commerce's UI). Catalogs go below
+  `catalog-root`, nodes and entries below a catalog or node, CMS content never below catalog content (refused).
+  A CMS page's reference property takes a catalog ref as its value: `opticli set 9 FeaturedProduct=code:P-1`.
 - **The rest:** `commerce relation add <parent> <child> [--quantity n]` (product + variant, bundle/package + entry,
   node + entry as an extra category), `commerce price set <entry> --market DEFAULT --currency USD --amount 49.90`
   (`--valid-from`/`--valid-until` for a campaign price, another row; without `--valid-from` it is the base price, the

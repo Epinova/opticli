@@ -123,7 +123,8 @@ opticli commerce stock code:P-1001-M
 
 Catalog content isn't in the CMS database, so `get`, `children` and `tree` don't read it: the `commerce` reads ask the
 site. The start page's `Catalog` and `FeaturedProduct` show the catalog's and product's refs in `opticli get` on the
-page (`-2147483646__CatalogContent`, `17__CatalogContent`): opticli takes those back wherever it takes a ref.
+page (on a database the plan seeded first, `-2147483647__CatalogContent` and `1__CatalogContent`; the ids are each
+database's own): opticli takes those back wherever it takes a ref.
 
 ### 6. Read the catalog in a test
 
