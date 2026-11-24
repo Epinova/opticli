@@ -146,9 +146,10 @@ applies `fixture.plan.json`: the start page, a site definition for it (hosts `co
 and a small catalog `Fixture` (a node, a product and a variant with the image, a price and stock) that the start page
 points at. The tests make the rest of their content themselves. `FRESH=1` makes both again from nothing (it drops the
 databases, and refuses any not named `opticli-commerce...`); the comment at the top lists the versions, folders,
-databases and ports. Catalog ids are each database's own: the first catalog is `-2147483646__CatalogContent` on
-Commerce 14 (which makes its `System.Archived` catalog at the first start) and `-2147483647__CatalogContent` on
-Commerce 15, so tests name catalog content by code, name or the ref a write returned.
+databases and ports. Catalog ids are each database's own: on a fresh database the first catalog is
+`-2147483647__CatalogContent` or `-2147483646__CatalogContent`, depending on whether Commerce had already made its
+`System.Archived` catalog (a matter of timing, on either major), so tests name catalog content by `$id`, `code:`,
+`catalog:` or the ref a write returned.
 
 The Commerce tests are `[CommerceSiteFact]`s: they run where `OPTICLI_IT_PROJECT` is a site whose restored project has
 `EPiServer.Commerce.Core`, and skip elsewhere. Run them alone (the other integration tests need the edge-case site's

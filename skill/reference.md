@@ -971,7 +971,8 @@ in a project, and takes no blocks or media "for" it (`upload --for`/`--parent`, 
 Images are its `CommerceMediaCollection`: an array of media refs or `{ref, groupName, sortOrder}` (default group
 `default`, order the array's), the whole list. ContentAreas (`{"ref": "code:P-1"}`) and reference lists of CMS
 content take catalog refs. `resolve <catalog url>` asks the running site: `matchedBy: "catalog"`. A plan's `price` or
-`inventory` step whose market or warehouse an earlier step makes or changes is `deferred` in a dry run. Full reference:
+`inventory` step whose market or warehouse an earlier step makes (or whose market's currencies it changes) is
+`deferred` in a dry run, checked in all but that market's or warehouse's existence. Full reference:
 docs/reference/cli/commerce.md.
 
 ## Export

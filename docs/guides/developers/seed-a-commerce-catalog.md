@@ -110,9 +110,10 @@ A seed plan grows with the site. To sell in euro too, add a market and its price
     { op: 'price', entry: '$dressS', market: 'EURO', currency: 'EUR', amount: 69 },
 ```
 
-On a database the plan seeded before, the dry run lists that price as `deferred`: the market isn't there yet, so the
-site checks the price when the plan runs, after the market step. The same goes for stock in a new warehouse, and for a
-price in a currency the plan adds to a market.
+On a database the plan seeded before, the dry run lists that price as `deferred`: the market isn't there yet. The dry
+run still checks the price against the market the step before makes (its currencies, the variant, the dates), and the
+site checks the market itself when the plan runs. The same goes for stock in a new warehouse, and for a price in a
+currency the plan adds to a market.
 
 ### 4. Apply it twice
 
@@ -147,9 +148,9 @@ site. `commerce get` shows the product's `CommerceMediaCollection` and its `url`
 puts it (null if the site doesn't route catalog content); `resolve` takes that URL back to the product. The start
 page's `Catalog` and `FeaturedProduct` show the catalog's and product's refs in `opticli get` on the page: a negative
 `<id>__CatalogContent` for the catalog and `<id>__CatalogContent` for the product. The ids are each database's own, so
-don't copy them into a plan or test: on a fresh Commerce 14 database the first catalog is
-`-2147483646__CatalogContent` (Commerce made its `System.Archived` catalog first), on Commerce 15 it can be
-`-2147483647__CatalogContent`. opticli takes them back wherever it takes a ref; a plan uses `$id`s or `catalog:Fashion`.
+don't copy them into a plan or test: even on a fresh database the first catalog is `-2147483647__CatalogContent` or
+`-2147483646__CatalogContent`, depending on whether Commerce had already made its own `System.Archived` catalog.
+opticli takes them back wherever it takes a ref; plans and tests use `$id`s, `code:` or `catalog:Fashion`.
 
 ### 6. Read the catalog in a test
 

@@ -44,14 +44,16 @@ suite can seed a Commerce site's catalog from code. See
   values, and in ContentAreas and reference lists, beside CMS content.
 - **Product images.** A catalog item's `CommerceMediaCollection` (its Assets tab) takes media in `create`, `set` and
   plans: an array of media refs (ids, GUIDs, a plan's `$id` of an upload) or `{ref, groupName, sortOrder}`, the whole
-  list, `unchanged` when it is as given. `commerce get` shows it as `[{ref, groupName, sortOrder}]`.
+  list, `unchanged` when it is as given; what isn't media, and the same item twice, are `usage` errors in the dry run
+  too. `commerce get` and a change's before and after show it as `[{ref, groupName, sortOrder}]`.
 - **Catalog URLs.** `commerce get` shows the `url` the site's catalog routing gives the item, and `resolve` takes a
   catalog URL back to the catalog ref: the CMS database knows nothing of catalog URLs, so `resolve` asks the running
   site when the database finds nothing (`matchedBy: "catalog"`).
-- **Seed plans grow.** A plan's `price` step in a market that an earlier `market` step makes or changes (a new currency,
-  say), or an `inventory` step in a warehouse an earlier `warehouse` step makes, is `deferred` in the dry run and
-  checked by the site when the plan runs, so a plan that seeded the database before can grow by a market or warehouse
-  with its prices or stock.
+- **Seed plans grow.** A plan's `price` step in a market that an earlier `market` step makes or gives new currencies,
+  or an `inventory` step in a warehouse an earlier `warehouse` step makes, is `deferred` in the dry run: checked against
+  the market as that step leaves it (its currencies) and in all else, with only the market's or warehouse's existence
+  left for the site when the plan runs. So a plan that seeded the database before can grow by a market or warehouse with
+  its prices or stock. A rename or any other change leaves the steps after it fully checked.
 - **Catalog content is found through the site, not `tblMappedIdentity`.** Commerce's catalog provider doesn't register
   its items in `tblMappedIdentity` (it was empty on a Commerce site after content referenced the catalog): their ids and
   GUIDs live in Commerce's own tables, behind `ReferenceConverter`. opticli resolved provider refs and GUIDs only there,
@@ -68,9 +70,9 @@ suite can seed a Commerce site's catalog from code. See
 - **Checked before a dry run answers**, as `usage` errors: a catalog type below CMS content and a CMS type below catalog
   content (which saved a catalog row in the CMS's tables, or failed inside Commerce's save), a price whose end isn't
   after its start, a price in a currency its market doesn't have, a market currency Commerce doesn't have, a market
-  language that isn't a culture, and blocks and media "for" catalog content or below it (`upload --for`/`--parent`,
-  `block create`, a plan's `create` with `for`; catalog content has no "For this page" folder): the hint says to upload
-  to a media folder and attach the image with `CommerceMediaCollection`.
+  language that isn't a culture, a market name another market has, and blocks and media "for" catalog content or below
+  it (`upload --for`/`--parent`, `block create`, a plan's `create` with `for`; catalog content has no "For this page"
+  folder): the hint says to upload to a media folder and attach the image with `CommerceMediaCollection`.
 
 ### CLI
 

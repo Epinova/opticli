@@ -100,9 +100,10 @@ the run, whose hint says what to do instead: upload the image to a media folder 
 A catalog item's images and other assets (the Assets tab in Commerce's catalog UI) are its `CommerceMediaCollection`
 property: a list of CMS media. `create` and `set` take it as a JSON array, the whole list (`[]` empties it); each item
 is a media ref (an id, a GUID, a plan's `$id` of an upload), or `{"ref": ..., "groupName": ..., "sortOrder": ...}`.
-`groupName` defaults to `default`, `sortOrder` to the item's place in the array. A ref that isn't media is a `usage`
-error. Setting the same list again is `unchanged`. `commerce get` shows it as `[{ref, groupName, sortOrder}]`, in sort
-order.
+`groupName` defaults to `default`, `sortOrder` to the item's place in the array. A ref that isn't media, and the
+same media item twice (Commerce keeps one row per item), are a `usage` error in the dry run too. Setting the same
+list again is `unchanged`. `commerce get`, and a change's `before` and `after`, show it as `[{ref, groupName,
+sortOrder}]`, in sort order.
 
 ```bash
 opticli upload shirt.png --parent <media folder> --publish
@@ -172,8 +173,9 @@ A market id is 1 to 8 letters, digits, `-` or `_`; Commerce comes with `DEFAULT`
 `--languages`; the lists given replace the market's (compared as sets), and the defaults are the first of each unless
 given (one of the list). Currencies must be ones Commerce has (its currency list); languages cultures .NET knows (`en`,
 `sv-SE`; `xx-YY` is a `usage` error), and one the CMS hasn't enabled is a warning; countries ISO 3166-1 alpha-3 codes
-(`SWE`). What isn't given keeps its value. The result is `{market, status, changes, dryRun}`. In a plan: `{"op": "market", "market": "NORDIC", "currencies": ["SEK", "NOK"],
-"languages": ["en"], "countries": ["SWE", "NOR"]}` (`name`, `enabled`, `defaultCurrency`, `defaultLanguage`,
+(`SWE`). A name another market has is a `usage` error (Commerce keeps names unique). What isn't given keeps its
+value. The result is `{market, status, changes, dryRun}`. In a plan: `{"op": "market", "market": "NORDIC",
+"currencies": ["SEK", "NOK"], "languages": ["en"], "countries": ["SWE", "NOR"]}` (`name`, `enabled`, `defaultCurrency`, `defaultLanguage`,
 `description`, `pricesIncludeTax`).
 
 A catalog belongs to every site unless its `Sites` property names some: `opticli set catalog:Fashion Sites=...`.
@@ -205,11 +207,13 @@ for catalog content), checked by `apply --dry-run` with the rest of the plan. A 
 (`1__CatalogContent`), in later steps' refs and in property values: a start page's `"Catalog": "$catalog"`. A step that
 needs content the plan makes first is `deferred` (or `simulated`, below a stand-in parent) in a dry run; with
 `--update-existing`, catalog content a step's GUID already names counts as existing, so a second run checks every step
-fully and reports `unchanged`. Put markets and warehouses before the prices and stock that use them: a `price` step
-whose market an earlier `market` step makes or changes (a new currency, say), or an `inventory` step whose warehouse an
-earlier `warehouse` step makes, is `deferred` in a dry run, with a warning naming that step, and checked by the site when
-the plan runs. So a seed plan can grow by a market and its prices on a database it seeded before; once the market is as
-the plan wants it (the market step's dry run is `unchanged`), its prices are checked fully again. See
+fully and reports `unchanged`. Put markets and warehouses before the prices and stock that use them. A `price` step
+whose market an earlier `market` step makes, or gives other currencies, is `deferred` in a dry run, with a warning
+naming that step: the site checks it in all else (the entry, the amount, the dates, the currency against the
+currencies that step gives the market), and checks that the market exists when the plan runs. An `inventory` step
+whose warehouse an earlier `warehouse` step makes is checked the same way. So a seed plan can grow by a market and its
+prices on a database it seeded before. Any other change to a market or warehouse (a rename, say) leaves the steps after
+it checked as usual, and so does a market or warehouse that is already as the plan wants it. See
 [the guide](../../guides/developers/seed-a-commerce-catalog.md).
 
 ```json
