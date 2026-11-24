@@ -3,7 +3,7 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
-## 0.36.0 (unreleased)
+## 0.36.0 (24 November 2026)
 
 opticli writes and reads Optimizely Commerce 14 (CMS 12) and 15 (CMS 13) sites, through the running site, so an E2E
 suite can seed a Commerce site's catalog from code. See
