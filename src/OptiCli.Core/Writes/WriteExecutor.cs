@@ -180,7 +180,7 @@ public sealed partial class WriteExecutor(
         var target = Editable(resolved, op.Ref);
         op.From?.Check(target.Id, target.Version);
         // CMS 13: "composition" in the values is an experience's (or section's) whole Visual Builder composition.
-        var (split, composition) = CompositionInput.Split(session.Model, target.Header.TypeId, op.Properties);
+        var (split, composition) = CompositionInput.Split(session.Model, target.Header.TypeId, await CatalogValuesAsync(target.Header.TypeId, op.Properties, cancellationToken));
         var properties = PropertyNameCheck.Prepare(session.Model, target.Header.TypeId, split);
         RequireVariations(op.Variation);
         var language = LanguageFor(op.Lang, target);
@@ -494,12 +494,16 @@ public sealed partial class WriteExecutor(
         {
             throw new UsageException($"The blueprint {blueprint.Id} ('{blueprint.Name}') is {session.Model.TypeName(blueprint.TypeId)}, not {type.Name}.", "Leave out --type: content made from a blueprint has its type.");
         }
+        // Catalog content only below catalog content, and CMS content only below CMS content; a dry run under a stand-in
+        // parent (a plan's planned parent) is checked against the planned parent's type.
+        var parentKind = op.PlannedParentType is { } planned && TryType(planned) is { } plannedType ? CatalogKinds.FromBase(plannedType.Base) : parent.Catalog?.Kind;
+        CatalogPlacement.Check(type.Name, CatalogKinds.FromBase(type.Base), parentKind, op.Parent ?? op.For!);
         if (type.Kind == ContentKind.Media)
         {
             throw new UsageException($"{type.Name} is a media type; created this way it would be a media item without a file.",
                 "Use `opticli upload <file> --parent <folder>` (or --for <page>); --type picks the media type.");
         }
-        var (split, composition) = CompositionInput.Split(session.Model, type.Id, op.Properties);
+        var (split, composition) = CompositionInput.Split(session.Model, type.Id, await CatalogValuesAsync(type.Id, op.Properties, cancellationToken));
         var properties = PropertyNameCheck.Prepare(session.Model, type.Id, split);
         var request = new CreateRequest
         {

@@ -632,6 +632,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             else
             {
                 CheckNamesOfPlannedContent(op, steps);
+                CheckCatalogPlacementOfPlannedContent(op, steps);
                 await CheckPlannedApprovalAsync(step, steps, cancellationToken);
                 if (op is UploadOperation upload)
                 {
@@ -1095,6 +1096,34 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         UploadOperation { Parent: { } parent } => parent,
         _ => null,
     };
+
+    /// <summary>
+    /// A create step below content an earlier step creates: whether catalog content goes below catalog content and CMS
+    /// content below CMS content can still be checked against that step's type (<see cref="CatalogPlacement"/>).
+    /// </summary>
+    /// <exception cref="UsageException">It doesn't.</exception>
+    private void CheckCatalogPlacementOfPlannedContent(WriteOperation op, IReadOnlyList<PlanStep> steps)
+    {
+        if (op is not CreateOperation { Parent: { } parent } create || PlanSimulation.PlanId(parent) is not { } parentId
+            || PlanSimulation.TypeOf(parentId, steps) is not { } parentType || string.IsNullOrWhiteSpace(create.Type))
+        {
+            return;
+        }
+        CatalogPlacement.Check(create.Type, CatalogKind(create.Type), CatalogKind(parentType), parent);
+    }
+
+    /// <summary>A type's catalog kind; null for a CMS type, or one the model doesn't have (the step's own check says so).</summary>
+    private string? CatalogKind(string type)
+    {
+        try
+        {
+            return Protocol.CatalogKinds.FromBase(session.Model.RequireType(type).Base);
+        }
+        catch (OptiCliException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>For a step on content an earlier step creates, the property names can still be checked against that step's type.</summary>
     private void CheckNamesOfPlannedContent(WriteOperation op, IReadOnlyList<PlanStep> steps)

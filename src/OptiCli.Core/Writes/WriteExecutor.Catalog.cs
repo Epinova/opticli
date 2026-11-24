@@ -25,7 +25,7 @@ public sealed partial class WriteExecutor
     /// <c>id__CatalogContent</c> refs, and GUIDs the CMS database doesn't have. Null when it names none, and for a GUID on
     /// a site without the Commerce agent.
     /// </summary>
-    /// <exception cref="UsageException">A catalog-only ref on a site whose Commerce agent doesn't run.</exception>
+    /// <exception cref="NotFoundException">A catalog-only ref on a site whose Commerce agent doesn't run.</exception>
     internal async Task<CatalogRef?> CatalogRefAsync(string reference, CancellationToken cancellationToken)
     {
         var key = reference.Trim();
@@ -33,14 +33,21 @@ public sealed partial class WriteExecutor
         {
             return known;
         }
+        var commerceOnly = CatalogRefSyntax.IsCommerceOnly(key) || CatalogRefSyntax.ProviderId(key) is not null;
+        if (!commerceOnly && !HasCatalogTypes)
+        {
+            // A GUID the CMS database doesn't have, on a site without a catalog model: not catalog content, and no need
+            // to ask a site (which may not run: the GUID is then simply not found, as before).
+            return null;
+        }
         CatalogRefsResponse response;
         try
         {
             response = await (await AgentAsync(cancellationToken)).SendAsync<CatalogRefsResponse>(HttpMethod.Post, AgentRoutes.CommerceRefs, new CatalogRefsRequest([key]), cancellationToken);
         }
-        catch (NotFoundException) when (!CatalogRefSyntax.IsCommerceOnly(key) && CatalogRefSyntax.ProviderId(key) is null)
+        catch (OptiCliException ex) when (!commerceOnly && ex is NotFoundException or UnreachableException)
         {
-            // No Commerce agent: a GUID the CMS database doesn't have isn't catalog content either.
+            // No Commerce agent, or no site running: the GUID is as not found as the CMS database says.
             return null;
         }
         catch (NotFoundException)
@@ -82,6 +89,69 @@ public sealed partial class WriteExecutor
         return found;
     }
 
+    /// <summary>
+    /// Property values that are catalog refs only the Commerce agent resolves (<c>code:</c>, <c>catalog:</c>,
+    /// <c>catalog-root</c>) in reference properties (ContentReference, PageReference, ContentArea, reference lists), as their
+    /// <c>id__CatalogContent</c> ref, which the site takes. Text properties are left as they are, whatever they say.
+    /// </summary>
+    /// <exception cref="NotFoundException">A catalog ref that names nothing.</exception>
+    private async Task<System.Text.Json.Nodes.JsonObject?> CatalogValuesAsync(int typeId, System.Text.Json.Nodes.JsonObject? properties, CancellationToken cancellationToken)
+    {
+        if (properties is null || !properties.Any(p => HasCatalogRef(p.Value)))
+        {
+            return properties;
+        }
+        var references = session.Model.PropertiesOf(typeId).Where(IsReference).Select(p => p.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var copy = (System.Text.Json.Nodes.JsonObject)properties.DeepClone();
+        foreach (var name in copy.Select(p => p.Key).Where(references.Contains).ToList())
+        {
+            copy[name] = await MapCatalogRefsAsync(copy[name], name, cancellationToken);
+        }
+        return copy;
+    }
+
+    private static bool IsReference(Content.PropertyDefinition property) =>
+        property.BaseType is Content.PropertyBaseType.ContentReference or Content.PropertyBaseType.PageReference
+        || property.TypeName.Contains("ContentArea", StringComparison.Ordinal) || property.TypeName.Contains("ContentReference", StringComparison.Ordinal);
+
+    private static bool HasCatalogRef(System.Text.Json.Nodes.JsonNode? node) => node switch
+    {
+        System.Text.Json.Nodes.JsonValue value => value.TryGetValue<string>(out var text) && CatalogRefSyntax.IsCommerceOnly(text),
+        System.Text.Json.Nodes.JsonArray array => array.Any(HasCatalogRef),
+        System.Text.Json.Nodes.JsonObject obj => obj.Any(p => HasCatalogRef(p.Value)),
+        _ => false,
+    };
+
+    private async Task<System.Text.Json.Nodes.JsonNode?> MapCatalogRefsAsync(System.Text.Json.Nodes.JsonNode? node, string property, CancellationToken cancellationToken)
+    {
+        switch (node)
+        {
+            case System.Text.Json.Nodes.JsonValue value when value.TryGetValue<string>(out var text) && CatalogRefSyntax.IsCommerceOnly(text):
+                return System.Text.Json.Nodes.JsonValue.Create(await CatalogAsync(text, $"the value of {property}", cancellationToken));
+            case System.Text.Json.Nodes.JsonArray array:
+                var items = new System.Text.Json.Nodes.JsonArray();
+                foreach (var item in array.ToList())
+                {
+                    items.Add(await MapCatalogRefsAsync(item?.DeepClone(), property, cancellationToken));
+                }
+                return items;
+            case System.Text.Json.Nodes.JsonObject obj:
+                var mapped = new System.Text.Json.Nodes.JsonObject();
+                foreach (var (key, child) in obj.ToList())
+                {
+                    mapped[key] = await MapCatalogRefsAsync(child?.DeepClone(), property, cancellationToken);
+                }
+                return mapped;
+            default:
+                return node?.DeepClone();
+        }
+    }
+
+    /// <summary>Whether the content model has catalog types: a Commerce site (a CMS-only site's database has none).</summary>
+    internal bool HasCatalogTypes => _hasCatalogTypes ??= session.Model.Types.Any(t => CatalogKinds.FromBase(t.Base) is not null);
+
+    private bool? _hasCatalogTypes;
+
     /// <summary>Whether a type name (or GUID) is one of the content model's catalog types (Optimizely Commerce).</summary>
     internal bool IsCatalogType(string? nameOrGuid) =>
         !string.IsNullOrWhiteSpace(nameOrGuid) && TryType(nameOrGuid) is { } type && CatalogKinds.FromBase(type.Base) is not null;
@@ -99,7 +169,8 @@ public sealed partial class WriteExecutor
         }
     }
 
-    private static UsageException NoCommerceAgent(string? reference) => new(
+    /// <summary>The Commerce agent doesn't answer: <c>not_found</c>, as the <c>commerce</c> commands report it.</summary>
+    private static NotFoundException NoCommerceAgent(string? reference) => new(
         (reference is null ? "This needs" : $"'{reference}' is a catalog ref, which needs") + " the site's Commerce agent, and it doesn't answer: the site has no Optimizely Commerce, or opticli's Commerce agent didn't load.",
         "`opticli serve --status` shows commerce (agent false: error says why); restart the site with `opticli serve --stop`, then `opticli serve`, after a build.");
 
@@ -199,7 +270,7 @@ public sealed partial class WriteExecutor
                 $"set on catalog content takes {CatalogOptions}. Nothing was saved.");
         }
         var type = session.Model.RequireType(catalog.Type ?? throw new InternalException($"The site gave catalog content {catalog.Ref} no type."));
-        var properties = PropertyNameCheck.Prepare(session.Model, type.Id, op.Properties);
+        var properties = PropertyNameCheck.Prepare(session.Model, type.Id, await CatalogValuesAsync(type.Id, op.Properties, cancellationToken));
         var request = new DraftRequest
         {
             Lang = session.Language(op.Lang)?.Code,
