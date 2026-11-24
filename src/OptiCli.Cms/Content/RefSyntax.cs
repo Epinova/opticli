@@ -10,7 +10,7 @@ internal readonly record struct ParsedRef(int Id, int? Version, Guid? Guid, stri
 /// <summary>Purely syntactic ref parsing; whether the content exists is <see cref="ContentLocator"/>'s job.</summary>
 internal static partial class RefSyntax
 {
-    public const string Description = "a content id (123), a version (123_456), a content GUID or content provider content (63__provider; Commerce's catalogs have negative ids, -2147483646__CatalogContent)";
+    public const string Description = "a content id (123), a version (123_456), a content GUID or content provider content (63__provider; a provider's ids may be negative)";
 
     public static bool TryParse(string? input, out ParsedRef result)
     {
@@ -24,7 +24,7 @@ internal static partial class RefSyntax
         }
 
         // ContentReference.ToString() of provider content: id, an empty version, the provider name. A provider may use
-        // negative ids: Commerce's catalogs and catalog root have them.
+        // negative ids.
         if (ProviderPattern().Match(value) is { Success: true } provided)
         {
             if (!int.TryParse(provided.Groups["id"].Value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var mapped) || mapped == 0)

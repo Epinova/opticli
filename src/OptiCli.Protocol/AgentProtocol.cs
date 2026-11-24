@@ -8,7 +8,7 @@ namespace OptiCli.Protocol;
 /// rather than shipped as an assembly, so the agent stays a single DLL and the two sides can never
 /// load mismatched copies. Link them into exactly one assembly per process.
 /// </remarks>
-public static class AgentProtocol
+public static partial class AgentProtocol
 {
     /// <summary>
     /// Bumped on any breaking change to a route or DTO. Routes carry it as a <c>/v{N}</c> prefix, and
@@ -56,14 +56,6 @@ public static class AgentProtocol
     public const string SchedulerVariable = "OPTICLI_SCHEDULER";
 
     public const string SchedulerOn = "on";
-
-    /// <summary>
-    /// Environment variable of the site process that turns the Commerce agent off when it is <see cref="CommerceOff"/>. The
-    /// agent loads it into every site whose build has EPiServer.Commerce.Core otherwise.
-    /// </summary>
-    public const string CommerceVariable = "OPTICLI_COMMERCE";
-
-    public const string CommerceOff = "off";
 
     /// <summary>
     /// Environment variable that tells the agent to read its secrets from the site's stdin instead of the environment, when

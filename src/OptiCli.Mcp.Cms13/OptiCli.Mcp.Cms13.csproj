@@ -44,7 +44,8 @@
     <!-- The module itself, as OptiCli.Mcp.csproj compiles it, with the same content operations linked in. -->
     <Compile Include="..\OptiCli.Mcp\**\*.cs" Exclude="..\OptiCli.Mcp\bin\**;..\OptiCli.Mcp\obj\**" />
     <Compile Include="..\OptiCli.Cms\**\*.cs" Exclude="..\OptiCli.Cms\bin\**;..\OptiCli.Cms\obj\**" LinkBase="Cms" />
-    <Compile Include="..\OptiCli.Protocol\**\*.cs" Exclude="..\OptiCli.Protocol\bin\**;..\OptiCli.Protocol\obj\**" LinkBase="Protocol" />
+    <!-- Not the Commerce protocol (Protocol/Commerce/): the editors' module has no Commerce. -->
+    <Compile Include="..\OptiCli.Protocol\**\*.cs" Exclude="..\OptiCli.Protocol\bin\**;..\OptiCli.Protocol\obj\**;..\OptiCli.Protocol\Commerce\**" LinkBase="Protocol" />
     <Compile Include="..\OptiCli.Core\Text\Suggestions.cs" Link="Shared\Suggestions.cs" />
     <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
   </ItemGroup>

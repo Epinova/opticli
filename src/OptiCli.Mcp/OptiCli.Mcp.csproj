@@ -40,7 +40,8 @@
   <ItemGroup>
     <!-- The content operations the CLI's agent runs; here always as the signed-in editor. Compiled in: one assembly. -->
     <Compile Include="..\OptiCli.Cms\**\*.cs" Exclude="..\OptiCli.Cms\bin\**;..\OptiCli.Cms\obj\**" LinkBase="Cms" />
-    <Compile Include="..\OptiCli.Protocol\**\*.cs" Exclude="..\OptiCli.Protocol\bin\**;..\OptiCli.Protocol\obj\**" LinkBase="Protocol" />
+    <!-- Not the Commerce protocol (Protocol/Commerce/): the editors' module has no Commerce. -->
+    <Compile Include="..\OptiCli.Protocol\**\*.cs" Exclude="..\OptiCli.Protocol\bin\**;..\OptiCli.Protocol\obj\**;..\OptiCli.Protocol\Commerce\**" LinkBase="Protocol" />
     <!-- Dependency-free helper shared with the CLI so "did you mean" behaves the same on both sides. -->
     <Compile Include="..\OptiCli.Core\Text\Suggestions.cs" Link="Shared\Suggestions.cs" />
     <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
