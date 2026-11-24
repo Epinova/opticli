@@ -2092,7 +2092,7 @@ PriceResult.before?
 PriceResult.code
 PriceResult.dryRun
 PriceResult.entry
-PriceResult.price
+PriceResult.price?
 PriceResult.status
 PriceType = 'all'
 PriceType = 'group'

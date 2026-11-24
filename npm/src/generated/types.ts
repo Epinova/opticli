@@ -479,7 +479,7 @@ export interface ContentItem {
   guid: string;
   name?: string;
   type?: string;
-  /** `page`, `block`, `media`, `folder` or `other`, from the loaded instance's base class. */
+  /** `page`, `block`, `media`, `folder` or `other`, from the loaded instance's base class; from `opticli commerce get`, catalog content's kind (`catalog`, `node`, `product`, ...). */
   kind: string;
   /** The loaded branch; null for language-invariant content (media, folders). */
   language?: string;
@@ -1074,8 +1074,8 @@ export interface PriceResult {
   entry: string;
   /** The entry's code, which Commerce keys prices by. */
   code: string;
-  /** The row as it is now (as it was, for a removal). */
-  price: CommercePrice;
+  /** The row as it is now (as it was, for a removal); null when a removal found none (`absent`). */
+  price?: CommercePrice;
   status: CommerceWriteStatus;
   /** The row before an update. */
   before?: CommercePrice;

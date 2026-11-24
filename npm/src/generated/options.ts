@@ -643,7 +643,7 @@ export interface UnpublishOptions extends CommonOptions {
 export interface MoveOptions extends CommonOptions {
   /** Site (name or host) that a path ref like /en/about/ belongs to. Default: the only site, or the one with the '*' host. */
   site?: string;
-  /** New parent (any ref). */
+  /** New parent (any ref of CMS content; catalog content, on an Optimizely Commerce site, isn't moved by opticli). */
   to: string;
   /** Validate and show the before/after diff without saving anything. */
   dryRun?: boolean;
