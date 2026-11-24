@@ -66,7 +66,18 @@ public sealed partial class WriteExecutor
         return await CommerceAsync<InventoryRequest, InventoryResult>(AgentRoutes.CommerceInventory, request, op, cancellationToken);
     }
 
-    internal Task<WriteOutcome<MarketResult>> MarketAsync(MarketOperation op, bool dryRun, CancellationToken cancellationToken) =>
+    internal async Task<WriteOutcome<MarketResult>> MarketAsync(MarketOperation op, bool dryRun, CancellationToken cancellationToken)
+    {
+        var outcome = await MarketCoreAsync(op, dryRun, cancellationToken);
+        // The agent takes any culture .NET knows; one the CMS hasn't enabled matches no content's language yet.
+        var disabled = outcome.Output.Market.Languages.Where(code => session.Model.LanguageByCode(code) is not { Enabled: true }).ToList();
+        return disabled.Count == 0 ? outcome : outcome with
+        {
+            Warnings = [.. outcome.Warnings, $"The CMS hasn't enabled {string.Join(", ", disabled)}: the market's content in that language shows only once it is (opticli languages enable {string.Join(" ", disabled)})."],
+        };
+    }
+
+    private Task<WriteOutcome<MarketResult>> MarketCoreAsync(MarketOperation op, bool dryRun, CancellationToken cancellationToken) =>
         CommerceAsync<MarketRequest, MarketResult>(AgentRoutes.CommerceMarkets, new MarketRequest(op.Market)
         {
             Name = op.Name,

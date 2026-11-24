@@ -127,9 +127,9 @@ public sealed record PriceRequest(string Entry, string Market, string Currency, 
 /// <summary>Result of a price write.</summary>
 /// <param name="Entry">The entry's ref.</param>
 /// <param name="Code">The entry's code, which Commerce keys prices by.</param>
-/// <param name="Price">The row as it is now (as it was, for a removal).</param>
+/// <param name="Price">The row as it is now (as it was, for a removal); null when a removal found none (<c>absent</c>).</param>
 /// <param name="Before">The row before an update.</param>
-public sealed record PriceResult(string Entry, string Code, CommercePrice Price, [property: OutputValues(typeof(CommerceWriteStatus))] string Status, CommercePrice? Before, bool DryRun);
+public sealed record PriceResult(string Entry, string Code, CommercePrice? Price, [property: OutputValues(typeof(CommerceWriteStatus))] string Status, CommercePrice? Before, bool DryRun);
 
 /// <summary>A warehouse (Commerce's <c>IWarehouse</c>).</summary>
 public sealed record CommerceWarehouse(string Code, string Name, bool Active, bool Primary, bool FulfillmentCenter, bool PickupLocation, bool DeliveryLocation, int SortOrder);

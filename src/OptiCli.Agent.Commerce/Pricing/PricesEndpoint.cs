@@ -46,7 +46,7 @@ internal static class PricesEndpoint
         {
             if (existing is not { } removed)
             {
-                return new PriceResult(entryRef, entry.Code, PriceKeys.Placeholder(key), CommerceWriteStatus.Absent, null, body.DryRun);
+                return new PriceResult(entryRef, entry.Code, null, CommerceWriteStatus.Absent, null, body.DryRun);
             }
             if (!body.DryRun)
             {
@@ -60,7 +60,10 @@ internal static class PricesEndpoint
         {
             throw AgentException.Usage("amount can't be negative.");
         }
+        // Checked before a dry run answers, as Commerce would refuse them only when saving.
+        PriceKeys.RequireMarketCurrency(market.MarketId.Value, market.Currencies.Select(c => c.CurrencyCode), key.Currency);
         var wanted = PriceKeys.Wanted(key, amount, body.ValidUntil, existing?.Price, DateTime.UtcNow);
+        PriceKeys.RequireOrder(wanted);
         var status = existing is not { } before ? CommerceWriteStatus.Created
             : PriceKeys.Same(before.Price, wanted) ? CommerceWriteStatus.Unchanged
             : CommerceWriteStatus.Updated;
@@ -170,9 +173,27 @@ internal static class PriceKeys
     public static bool Same(CommercePrice existing, CommercePrice wanted) =>
         existing.Amount == wanted.Amount && (existing.ValidUntil is { } a ? Second(a) : (DateTime?)null) == wanted.ValidUntil;
 
-    /// <summary>What a removal that found nothing reports.</summary>
-    public static CommercePrice Placeholder(PriceKey key) =>
-        new(key.Market, key.Currency, 0, key.PriceType, key.PriceCode, key.MinQuantity, key.ValidFrom ?? default, null);
+    /// <exception cref="AgentException">The market doesn't sell in the currency (Commerce takes such a price, and no visitor sees it).</exception>
+    public static void RequireMarketCurrency(string market, IEnumerable<string> currencies, string currency)
+    {
+        var codes = currencies.ToList();
+        if (!codes.Contains(currency, StringComparer.OrdinalIgnoreCase))
+        {
+            throw AgentException.Usage($"The market {market} doesn't have the currency {currency}: it has {string.Join(", ", codes)}.",
+                $"Give one of those, or add {currency} to the market first (opticli commerce market set {market} --currencies {string.Join(",", codes.Append(currency))}).");
+        }
+    }
+
+    /// <exception cref="AgentException">The price ends before it starts (Commerce refuses it only when saving).</exception>
+    public static void RequireOrder(CommercePrice price)
+    {
+        if (price.ValidUntil is { } until && until <= price.ValidFrom)
+        {
+            throw AgentException.Usage(
+                $"validUntil ({until:u}) isn't after validFrom ({price.ValidFrom:u}).",
+                "A price ends after it starts. Without validFrom, a new price starts today and an existing one keeps its start.");
+        }
+    }
 
     public static CommercePrice ToPrice(IPriceValue value) => new(
         value.MarketId.Value,

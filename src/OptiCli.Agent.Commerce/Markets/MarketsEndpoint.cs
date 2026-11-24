@@ -1,5 +1,6 @@
 using System.Globalization;
 using Mediachase.Commerce;
+using Mediachase.Commerce.Catalog.Managers;
 using Mediachase.Commerce.Markets;
 using Microsoft.Extensions.DependencyInjection;
 using OptiCli.Agent.Http;
@@ -23,6 +24,8 @@ internal static class MarketsEndpoint
         var existing = markets.GetMarket(new MarketId(id));
         var before = existing is null ? null : ToMarket(existing);
         var wanted = Wanted(id, body, before);
+        // Before a dry run answers: Commerce refuses a currency it doesn't know only when saving (a foreign key).
+        RequireKnown(wanted.Currencies, KnownCurrencies());
         var changes = Changes(before, wanted);
         var status = before is null ? CommerceWriteStatus.Created : changes.Count == 0 ? CommerceWriteStatus.Unchanged : CommerceWriteStatus.Updated;
         if (!body.DryRun && status != CommerceWriteStatus.Unchanged)
@@ -131,6 +134,35 @@ internal static class MarketsEndpoint
         string.IsNullOrWhiteSpace(market.MarketDescription) ? null : market.MarketDescription,
         market.PricesIncludeTax);
 
+    /// <summary>The currencies Commerce knows (its Currency table); null when they can't be read, which leaves the check to Commerce.</summary>
+    private static IReadOnlyCollection<string>? KnownCurrencies()
+    {
+        try
+        {
+            return CurrencyManager.GetCurrencyDto().Currency.Select(c => c.CurrencyCode).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[opticli] Commerce's currencies couldn't be read: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <exception cref="AgentException">A currency Commerce doesn't have.</exception>
+    internal static void RequireKnown(IEnumerable<string> currencies, IReadOnlyCollection<string>? known)
+    {
+        if (known is null)
+        {
+            return;
+        }
+        var unknown = currencies.Where(c => !known.Contains(c)).ToList();
+        if (unknown.Count > 0)
+        {
+            throw AgentException.Usage($"Commerce has no currency {string.Join(", ", unknown)}.",
+                $"Commerce's currencies: {string.Join(", ", known.Order(StringComparer.Ordinal))}; add one in Commerce's admin UI first.");
+        }
+    }
+
     private static string Currency(string code)
     {
         var value = code.Trim().ToUpperInvariant();
@@ -141,7 +173,8 @@ internal static class MarketsEndpoint
     {
         try
         {
-            var culture = CultureInfo.GetCultureInfo(code.Trim());
+            // Only cultures .NET knows: an invented one (xx-YY) would save, and match no content's language.
+            var culture = CultureInfo.GetCultureInfo(code.Trim(), predefinedOnly: true);
             return culture.Name.Length > 0 ? culture.Name : throw AgentException.Usage($"'{code}' is not a language.");
         }
         catch (CultureNotFoundException)

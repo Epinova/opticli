@@ -134,6 +134,51 @@ public class CommerceRulesTests
         Assert.Throws<AgentException>(() => MarketsEndpoint.Wanted("NORDIC", new MarketRequest("NORDIC") { Countries = ["SE"] }, before));
     }
 
+    [Fact]
+    public void A_price_in_a_currency_its_market_doesnt_have_is_refused_before_a_dry_run_answers()
+    {
+        PriceKeys.RequireMarketCurrency("NORDIC", ["SEK", "NOK"], "SEK");
+
+        var ex = Assert.Throws<AgentException>(() => PriceKeys.RequireMarketCurrency("NORDIC", ["SEK", "NOK"], "EUR"));
+        Assert.Equal(AgentErrorCodes.Usage, ex.Code);
+        Assert.Contains("doesn't have the currency EUR: it has SEK, NOK", ex.Message);
+        Assert.Contains("--currencies SEK,NOK,EUR", ex.Hint);
+    }
+
+    [Fact]
+    public void A_price_that_ends_before_it_starts_is_refused_before_a_dry_run_answers()
+    {
+        var key = PriceKeys.Key("DEFAULT", "USD", null, null, null, Today.AddDays(10));
+
+        var ex = Assert.Throws<AgentException>(() => PriceKeys.RequireOrder(PriceKeys.Wanted(key, 10m, Today, null, Today)));
+        Assert.Equal(AgentErrorCodes.Usage, ex.Code);
+        Assert.Contains("isn't after validFrom", ex.Message);
+        Assert.Throws<AgentException>(() => PriceKeys.RequireOrder(PriceKeys.Wanted(key, 10m, Today.AddDays(10), null, Today)));
+        PriceKeys.RequireOrder(PriceKeys.Wanted(key, 10m, Today.AddDays(11), null, Today));
+    }
+
+    [Fact]
+    public void A_market_s_currencies_must_be_ones_Commerce_has()
+    {
+        MarketsEndpoint.RequireKnown(["SEK"], new HashSet<string>(["USD", "SEK"], StringComparer.OrdinalIgnoreCase));
+        MarketsEndpoint.RequireKnown(["XYZ"], null);
+
+        var ex = Assert.Throws<AgentException>(() => MarketsEndpoint.RequireKnown(["SEK", "XYZ"], new HashSet<string>(["USD", "SEK"], StringComparer.OrdinalIgnoreCase)));
+        Assert.Equal(AgentErrorCodes.Usage, ex.Code);
+        Assert.Contains("no currency XYZ", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("xx-YY")]
+    [InlineData("klingon")]
+    public void A_market_language_is_a_culture_NET_knows(string language)
+    {
+        var ex = Assert.Throws<AgentException>(() => MarketsEndpoint.Wanted("NORDIC", new MarketRequest("NORDIC") { Currencies = ["SEK"], Languages = [language] }, null));
+
+        Assert.Contains("is not a language", ex.Message);
+        Assert.Equal(["sv-SE"], MarketsEndpoint.Wanted("NORDIC", new MarketRequest("NORDIC") { Currencies = ["SEK"], Languages = ["sv-se"] }, null).Languages);
+    }
+
     [Theory]
     [InlineData(CatalogKinds.Product, CatalogKinds.Variation, RelationKinds.Variant)]
     [InlineData(CatalogKinds.Bundle, CatalogKinds.Variation, RelationKinds.BundleEntry)]
