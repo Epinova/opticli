@@ -326,9 +326,9 @@ public sealed class CommerceSiteTests
                     new UploadOperation(file, For: shop.Product),
                     new UploadOperation(file, For: $"code:it-{shop.Run}-v"),
                     new UploadOperation(file, Parent: shop.Catalog),
-                    new BlockCreateOperation("TeaserBlock", "Teaser", For: shop.Product),
-                    new BlockCreateOperation("TeaserBlock", "Teaser", Parent: shop.Node),
-                    new CreateOperation(null, "TeaserBlock", "Teaser") { For = shop.Product },
+                    new BlockCreateOperation("TeaserBlock", $"Teaser {shop.Run}", For: shop.Product),
+                    new BlockCreateOperation("TeaserBlock", $"Teaser {shop.Run}", Parent: shop.Node),
+                    new CreateOperation(null, "TeaserBlock", $"Teaser {shop.Run}") { For = shop.Product },
                 ];
                 foreach (var op in refused)
                 {
@@ -342,7 +342,7 @@ public sealed class CommerceSiteTests
         {
             File.Delete(file);
         }
-        Assert.Empty(await site.Session.Db.QueryAsync("SELECT fkContentID FROM tblContentLanguage WHERE Name = N'Teaser'", r => r.GetInt32(0), cancellationToken));
+        Assert.Empty(await site.Session.Db.QueryAsync($"SELECT fkContentID FROM tblContentLanguage WHERE Name = N'Teaser {shop.Run}'", r => r.GetInt32(0), cancellationToken));
 
         // A plan: for catalog content the plan makes, and for catalog content the site has.
         var directory = Directory.CreateTempSubdirectory("opticli-it-").FullName;
