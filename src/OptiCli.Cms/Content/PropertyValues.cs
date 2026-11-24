@@ -143,6 +143,7 @@ internal static class PropertyValues
     public static object? Format(object? value) => value switch
     {
         null => null,
+        _ when PropertyValueConverters.Show(value) is { } shown => shown,
         string text => text.Length == 0 ? null : text,
         ContentArea area => area.Items.Select(AreaItem).ToList(),
         ContentReference reference => ContentReference.IsNullOrEmpty(reference) ? null : reference.ToString(),

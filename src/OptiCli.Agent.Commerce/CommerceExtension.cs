@@ -24,7 +24,12 @@ internal sealed class CommerceExtension : AgentExtension
         $"GET {AgentRoutes.Commerce}, POST {AgentRoutes.CommerceRefs}, GET {AgentRoutes.CommerceChildren}?ref=, GET|POST {AgentRoutes.CommerceRelations}, GET|POST {AgentRoutes.CommercePrices}, " +
         $"GET|POST {AgentRoutes.CommerceWarehouses}, GET|POST {AgentRoutes.CommerceInventory}, GET|POST {AgentRoutes.CommerceMarkets}";
 
-    public override void Start(IServiceProvider services) => CatalogGuids.Start(services);
+    public override void Start(IServiceProvider services)
+    {
+        CatalogGuids.Start(services);
+        // CommerceMediaCollection: written and shown by create, set and reads as a list of CMS media.
+        Cms.Content.PropertyValueConverters.Register(new CommerceMediaConverter());
+    }
 
     public override ExtensionRoute? Route(string method, IReadOnlyList<string> segments) => segments switch
     {

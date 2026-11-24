@@ -179,6 +179,35 @@ public class PropertyWriterTests
         Assert.Equal(body, ((XhtmlString)written.Property["Body"].Value).ToInternalString());
     }
 
+    /// <summary>A converter an extension registers (Commerce's media list): for the property it handles only.</summary>
+    private sealed class TaggedConverter : IPropertyValueConverter
+    {
+        public sealed record Tagged(string Text);
+
+        public bool Handles(PropertyData property) => property.Name == "OptiCliConverted";
+
+        public object? FromJson(PropertyData property, JsonElement value, Func<string, ContentReference> resolve) =>
+            $"tagged:{value.GetString()}";
+
+        public object? Show(object value) => value is Tagged tagged ? new[] { tagged.Text } : null;
+    }
+
+    [Fact]
+    public void A_registered_converter_writes_and_shows_only_the_properties_and_values_it_is_for()
+    {
+        using var registered = PropertyValueConverters.Use(new TaggedConverter());
+        var block = Block();
+        block.Property.Add("OptiCliConverted", new PropertyLongString { PropertyDefinitionID = 4 });
+        block.Property.Add(nameof(LinksBlock.Body), new PropertyXhtmlString { PropertyDefinitionID = 3 });
+
+        Writer(CmsCaller.Developer).Writer.Apply(block, Values(new { OptiCliConverted = "a", Body = "<p>b</p>" }));
+
+        Assert.Equal("tagged:a", block.Property["OptiCliConverted"].Value);
+        Assert.Equal("<p>b</p>", ((XhtmlString)block.Property["Body"].Value).ToInternalString());
+        Assert.Equal(new[] { "x" }, PropertyValues.Format(new TaggedConverter.Tagged("x")));
+        Assert.Equal("text", PropertyValues.Format("text"));
+    }
+
     [Fact]
     public void A_web_link_is_written_for_an_editor()
     {

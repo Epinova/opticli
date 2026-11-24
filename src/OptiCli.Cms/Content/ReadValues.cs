@@ -75,6 +75,7 @@ internal sealed class ReadValues(IContentTypeRepository types, Func<IContentData
     private object? Format(object? value) => value switch
     {
         null => null,
+        _ when PropertyValueConverters.Show(value) is { } shown => shown,
         string text => text.Length == 0 ? null : text,
         // ContentArea derives from XhtmlString, so it must come first.
         ContentArea area => area.Items.Count == 0 ? null : area.Items.Select(AreaEntry).ToList(),

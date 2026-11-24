@@ -891,6 +891,12 @@ internal sealed class PropertyWriter(
 
     private void SetValue(PropertyData property, JsonElement value)
     {
+        // A property type an extension of the agent knows (PropertyValueConverters).
+        if (value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined) && PropertyValueConverters.For(property) is { } converter)
+        {
+            property.Value = converter.FromJson(property, value, reference => locator.ResolveContent(reference, $"content named in {_prefix}{property.Name}"));
+            return;
+        }
         switch (value.ValueKind)
         {
             case JsonValueKind.Null or JsonValueKind.Undefined:
