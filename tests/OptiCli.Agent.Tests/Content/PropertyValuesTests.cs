@@ -18,6 +18,7 @@ public class PropertyValuesTests
     [Theory]
     [InlineData("""[{"href":"/x","text":"X"}]""")]
     [InlineData("""["12","13"]""")]
+    [InlineData("""[{"ref":"12","groupName":"default","sortOrder":0}]""")]
     [InlineData("\"text\"")]
     public void Other_values_are_left_as_they_are(string json)
     {

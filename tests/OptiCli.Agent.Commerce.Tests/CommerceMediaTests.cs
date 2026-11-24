@@ -44,6 +44,23 @@ public class CommerceMediaTests
     }
 
     [Fact]
+    public void The_same_media_item_twice_is_usage_naming_it_before_anything_is_saved()
+    {
+        var converter = new CommerceMediaConverter();
+        // "13" and its GUID name the same item.
+        var guid = "0c2b6f1e-0000-4000-8000-000000000013";
+        ContentReference Resolve(string reference) => reference == guid ? new ContentReference(13) : new ContentReference(int.Parse(reference, System.Globalization.CultureInfo.InvariantCulture));
+
+        foreach (var json in new[] { """["13", {"ref": "13", "groupName": "swatch"}]""", $$"""["12", "13", "{{guid}}"]""" })
+        {
+            var error = Assert.Throws<AgentException>(() => converter.FromJson(new PropertyCommerceMediaCollection { Name = "CommerceMediaCollection" }, Json(json), Resolve));
+
+            Assert.Equal(AgentErrorCodes.Usage, error.Code);
+            Assert.Contains("has the media item 13 twice", error.Message);
+        }
+    }
+
+    [Fact]
     public void A_read_shows_refs_groups_and_order_by_sort_order_and_only_for_media_lists()
     {
         var converter = new CommerceMediaConverter();

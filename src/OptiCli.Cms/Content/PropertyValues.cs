@@ -89,7 +89,9 @@ internal static class PropertyValues
     /// </summary>
     internal static JsonElement? ExplicitPersonalization(JsonElement? value)
     {
+        // Not a list a converter shows (an item's media: {ref, groupName, sortOrder}), which has no personalization.
         if (value is not { ValueKind: JsonValueKind.Array } array
+            || array.EnumerateArray().Any(item => item.ValueKind == JsonValueKind.Object && item.TryGetProperty("groupName", out _))
             || !array.EnumerateArray().Any(item => item.ValueKind == JsonValueKind.Object && (item.TryGetProperty("ref", out _) || item.TryGetProperty("guid", out _) || item.TryGetProperty("inline", out _)) && !item.TryGetProperty("href", out _)))
         {
             return value;

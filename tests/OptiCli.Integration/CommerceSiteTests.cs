@@ -261,6 +261,19 @@ public sealed class CommerceSiteTests
         Assert.Contains("not media", page.Message);
         await Assert.ThrowsAnyAsync<OptiCliException>(() => writes.RunAsync(new SetOperation(shop.Product, new JsonObject { ["CommerceMediaCollection"] = new JsonArray(Guid.NewGuid().ToString()) }), dryRun: true, cancellationToken));
 
+        // The same media item twice (here by ref and by GUID) is refused before anything is saved, dry run or not.
+        foreach (var dryRun in new[] { true, false })
+        {
+            var twice = new JsonArray(shop.Image, new JsonObject { ["ref"] = shop.ImageGuid.ToString(), ["groupName"] = "swatch" });
+            var duplicate = await Assert.ThrowsAsync<UsageException>(() => writes.RunAsync(new SetOperation(shop.Variant, new JsonObject { ["CommerceMediaCollection"] = twice }), dryRun, cancellationToken));
+            Assert.Contains($"has the media item {shop.Image} twice", duplicate.Message);
+        }
+
+        // A change's before and after are in the shape commerce get shows: {ref, groupName, sortOrder}.
+        var emptied = await writes.RunAsync(new SetOperation(shop.Product, new JsonObject { ["CommerceMediaCollection"] = new JsonArray() }), dryRun: true, cancellationToken);
+        var change = emptied.Output.Changes.Single(c => c.Property == "CommerceMediaCollection");
+        Assert.Equal($$"""[{"ref":"{{shop.Image}}","groupName":"default","sortOrder":0}]""", JsonSerializer.Serialize(change.Before));
+
         // A plan: an image it uploads, by its $id, on a product it makes; run again, nothing changes.
         var directory = Directory.CreateTempSubdirectory("opticli-it-").FullName;
         File.WriteAllBytes(Path.Combine(directory, "shirt.png"), Convert.FromBase64String(OnePixelPng));

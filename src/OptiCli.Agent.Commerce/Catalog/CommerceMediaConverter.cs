@@ -29,11 +29,23 @@ internal sealed class CommerceMediaConverter : IPropertyValueConverter
     {
         var items = Items(property.Name, value);
         var media = new List<CommerceMedia>();
+        var seen = new Dictionary<ContentReference, string>();
         foreach (var item in items)
         {
             var link = resolve(item.Ref).ToReferenceWithoutVersion();
-            RequireMedia(property.Name, item.Ref, link);
+            // Commerce keys an item's assets by the media item: a second row of it fails only when saving.
+            if (seen.TryGetValue(link, out var first))
+            {
+                throw AgentException.Usage(
+                    $"'{property.Name}' has the media item {link} twice ('{first}' and '{item.Ref}'): an item's assets are one row per media item.",
+                    "Give each media item once, in the group and sort order it should have.");
+            }
+            seen[link] = item.Ref;
             media.Add(new CommerceMedia(link, MediaAssetType, item.GroupName, item.SortOrder));
+        }
+        foreach (var (link, reference) in seen)
+        {
+            RequireMedia(property.Name, reference, link);
         }
         return new ItemCollection<CommerceMedia>(media.OrderBy(m => m.SortOrder));
     }
