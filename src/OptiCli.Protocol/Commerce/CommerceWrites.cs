@@ -122,6 +122,12 @@ public sealed record PriceRequest(string Entry, string Market, string Currency, 
     public bool Remove { get; init; }
 
     public bool DryRun { get; init; }
+
+    /// <summary>
+    /// Dry run only (ignored otherwise): an earlier step of the plan makes this market, or gives it these currencies. The
+    /// price is checked against them instead of the market as the site has it now, and the market need not exist yet.
+    /// </summary>
+    public IReadOnlyList<string>? PlannedCurrencies { get; init; }
 }
 
 /// <summary>Result of a price write.</summary>
@@ -176,6 +182,9 @@ public sealed record InventoryRequest(string Entry, string Warehouse)
     public bool? Tracked { get; init; }
 
     public bool DryRun { get; init; }
+
+    /// <summary>Dry run only (ignored otherwise): an earlier step of the plan makes this warehouse, so it need not exist yet.</summary>
+    public bool PlannedWarehouse { get; init; }
 }
 
 /// <param name="Before">The record before an update.</param>

@@ -51,6 +51,12 @@ public sealed record PriceOperation(string Entry, string Market, string Currency
 
     public bool Remove { get; init; }
 
+    /// <summary>
+    /// A plan's dry run only: an earlier step makes the market or gives it these currencies, so the dry run checks the
+    /// price against them (<see cref="PriceRequest.PlannedCurrencies"/>).
+    /// </summary>
+    internal IReadOnlyList<string>? PlannedCurrencies { get; init; }
+
     internal override Task<WriteOutcome<PriceResult>> RunOnAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken) =>
         executor.PriceAsync(this, dryRun, cancellationToken);
 
@@ -99,6 +105,9 @@ public sealed record InventoryOperation(string Entry, string Warehouse) : WriteO
     public decimal? Preorder { get; init; }
 
     public bool? Tracked { get; init; }
+
+    /// <summary>A plan's dry run only: an earlier step makes the warehouse (<see cref="InventoryRequest.PlannedWarehouse"/>).</summary>
+    internal bool PlannedWarehouse { get; init; }
 
     internal override Task<WriteOutcome<InventoryResult>> RunOnAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken) =>
         executor.InventoryAsync(this, dryRun, cancellationToken);

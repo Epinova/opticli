@@ -95,7 +95,9 @@ internal static class InventoryEndpoint
     {
         var services = request.Context.RequestServices;
         var entry = PricesEndpoint.PricedEntry(new CatalogContentFinder(services), body.Entry);
-        var warehouse = services.GetRequiredService<IWarehouseRepository>().Get(body.Warehouse?.Trim() ?? "")
+        var warehouse = services.GetRequiredService<IWarehouseRepository>().Get(body.Warehouse?.Trim() ?? "");
+        // In a plan's dry run, an earlier step may make the warehouse.
+        var code = warehouse?.Code ?? (body.DryRun && body.PlannedWarehouse && body.Warehouse?.Trim() is { Length: > 0 } planned ? planned : null)
             ?? throw AgentException.NotFound($"No warehouse '{body.Warehouse?.Trim()}'.",
                 $"Warehouses: {string.Join(", ", services.GetRequiredService<IWarehouseRepository>().List().Select(w => w.Code))}; make one with `opticli commerce warehouse set`.");
         foreach (var (name, value) in new[] { ("inStock", body.InStock), ("backorder", body.Backorder), ("preorder", body.Preorder) })
@@ -106,15 +108,15 @@ internal static class InventoryEndpoint
             }
         }
         var inventory = services.GetRequiredService<IInventoryService>();
-        var existing = inventory.Get(entry.Code, warehouse.Code);
+        var existing = warehouse is null ? null : inventory.Get(entry.Code, code);
         var before = existing is null ? null : ToStock(existing);
-        var wanted = Wanted(warehouse.Code, body, before);
+        var wanted = Wanted(code, body, before);
         var status = before is null ? CommerceWriteStatus.Created : before == wanted ? CommerceWriteStatus.Unchanged : CommerceWriteStatus.Updated;
         if (!body.DryRun && status != CommerceWriteStatus.Unchanged)
         {
             var now = DateTime.UtcNow;
             var record = existing is null
-                ? new InventoryRecord { CatalogEntryCode = entry.Code, WarehouseCode = warehouse.Code, PurchaseAvailableUtc = now, PreorderAvailableUtc = now, BackorderAvailableUtc = now }
+                ? new InventoryRecord { CatalogEntryCode = entry.Code, WarehouseCode = code, PurchaseAvailableUtc = now, PreorderAvailableUtc = now, BackorderAvailableUtc = now }
                 : new InventoryRecord(existing);
             record.PurchaseAvailableQuantity = wanted.InStock;
             record.BackorderAvailableQuantity = wanted.Backorder;

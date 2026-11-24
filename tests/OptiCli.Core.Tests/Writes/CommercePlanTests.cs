@@ -111,9 +111,19 @@ public class CommercePlanTests
         Assert.Null(unchanged);
     }
 
-    /// <summary>A plan that grows: a price or stock step on a market or warehouse an earlier step makes is checked when it runs.</summary>
+    private static MarketResult Market(string status, IReadOnlyList<string> changes, params string[] currencies) =>
+        new(new CommerceMarket("EURO", "Euro", true, currencies[0], currencies, "en", ["en"], [], null, false), status, changes, true);
+
+    private static WarehouseResult Warehouse(string status) =>
+        new(new CommerceWarehouse("berlin", "Berlin", true, false, false, false, false, 0), status, status == CommerceWriteStatus.Unchanged ? [] : ["name"], true);
+
+    /// <summary>
+    /// A plan that grows: a price on a market an earlier step makes (or gives new currencies), or stock in a warehouse an
+    /// earlier step makes, is dry-run against the planned market's currencies or without the warehouse; anything else an
+    /// earlier step does to the market or warehouse (a rename) leaves the step checked as usual.
+    /// </summary>
     [Fact]
-    public void A_price_or_stock_on_a_market_or_warehouse_an_earlier_step_makes_is_deferred()
+    public void A_price_or_stock_is_checked_against_the_market_or_warehouse_an_earlier_step_makes()
     {
         var plan = WritePlan.Parse("""
             {"operations": [
@@ -125,21 +135,41 @@ public class CommercePlanTests
               {"op": "inventory", "entry": "code:P-1001-M", "warehouse": "default", "inStock": 4}
             ]}
             """);
+        PlanStepResult[] Checks(MarketResult market, WarehouseResult warehouse) =>
+            [new(0, "market", null, PlanStepStatus.Valid, Result: market), new(1, "warehouse", null, PlanStepStatus.Valid, Result: warehouse)];
 
-        Assert.Contains("Operation 0 makes or changes the market 'euro'", PlanRunner.CommerceEarlier(plan.Steps[2], plan.Steps, []));
-        Assert.Contains("Operation 1 makes or changes the warehouse 'Berlin'", PlanRunner.CommerceEarlier(plan.Steps[3], plan.Steps, []));
-        Assert.Null(PlanRunner.CommerceEarlier(plan.Steps[4], plan.Steps, []));
-        Assert.Null(PlanRunner.CommerceEarlier(plan.Steps[5], plan.Steps, []));
+        // A new market and warehouse: the price is checked against the planned currencies, the stock without the warehouse.
+        var created = Checks(Market(CommerceWriteStatus.Created, ["name", "currencies"], "EUR"), Warehouse(CommerceWriteStatus.Created));
+        var price = PlanRunner.CommerceEarlier(plan.Steps[2], plan.Steps, created)!.Value;
+        Assert.Equal(["EUR"], Assert.IsType<PriceOperation>(price.Planned).PlannedCurrencies!);
+        Assert.Contains("Operation 0 makes the market 'EURO' (EUR)", price.Warning);
+        var stock = PlanRunner.CommerceEarlier(plan.Steps[3], plan.Steps, created)!.Value;
+        Assert.True(Assert.IsType<InventoryOperation>(stock.Planned).PlannedWarehouse);
+        Assert.Contains("Operation 1 makes the warehouse 'Berlin'", stock.Warning);
+        Assert.Null(PlanRunner.CommerceEarlier(plan.Steps[4], plan.Steps, created));
+        Assert.Null(PlanRunner.CommerceEarlier(plan.Steps[5], plan.Steps, created));
         // A market step after the price doesn't count: the price is checked against the site as it is.
-        Assert.Null(PlanRunner.CommerceEarlier(plan.Steps[0], plan.Steps, []));
+        Assert.Null(PlanRunner.CommerceEarlier(plan.Steps[0], plan.Steps, created));
 
-        // Run again: the market's and warehouse's own dry runs found them as wanted, so price and stock are checked as usual.
-        var market = new MarketResult(new CommerceMarket("EURO", "EURO", true, "EUR", ["EUR"], "en", ["en"], [], null, false), CommerceWriteStatus.Unchanged, [], true);
-        var warehouse = new WarehouseResult(new CommerceWarehouse("berlin", "berlin", true, false, false, false, false, 0), CommerceWriteStatus.Unchanged, [], true);
-        PlanStepResult[] asWanted = [new(0, "market", null, PlanStepStatus.Valid, Result: market), new(1, "warehouse", null, PlanStepStatus.Valid, Result: warehouse)];
-        Assert.Null(PlanRunner.CommerceEarlier(plan.Steps[2], plan.Steps, asWanted));
-        Assert.Null(PlanRunner.CommerceEarlier(plan.Steps[3], plan.Steps, asWanted));
-        PlanStepResult[] changed = [new(0, "market", null, PlanStepStatus.Valid, Result: market with { Status = CommerceWriteStatus.Updated })];
-        Assert.NotNull(PlanRunner.CommerceEarlier(plan.Steps[2], plan.Steps, changed));
+        // New currencies on a market the site has: checked against them.
+        var currencies = Checks(Market(CommerceWriteStatus.Updated, ["currencies"], "EUR", "SEK"), Warehouse(CommerceWriteStatus.Unchanged));
+        var updated = PlanRunner.CommerceEarlier(plan.Steps[2], plan.Steps, currencies)!.Value;
+        Assert.Equal(["EUR", "SEK"], Assert.IsType<PriceOperation>(updated.Planned).PlannedCurrencies!);
+        Assert.Contains("changes the currencies of the market 'EURO'", updated.Warning);
+
+        // A rename, other fields, or a plan run again: the price and stock are checked as usual, so the dry run catches
+        // a currency, an entry or dates the site would refuse when the plan runs.
+        foreach (var (market, warehouse) in new[]
+        {
+            (Market(CommerceWriteStatus.Updated, ["name"], "EUR"), Warehouse(CommerceWriteStatus.Updated)),
+            (Market(CommerceWriteStatus.Updated, ["countries", "defaultLanguage"], "EUR"), Warehouse(CommerceWriteStatus.Updated)),
+            (Market(CommerceWriteStatus.Unchanged, [], "EUR"), Warehouse(CommerceWriteStatus.Unchanged)),
+        })
+        {
+            Assert.Null(PlanRunner.CommerceEarlier(plan.Steps[2], plan.Steps, Checks(market, warehouse)));
+            Assert.Null(PlanRunner.CommerceEarlier(plan.Steps[3], plan.Steps, Checks(market, warehouse)));
+        }
+        // An earlier step the dry run refused (no result) leaves the step checked as usual too.
+        Assert.Null(PlanRunner.CommerceEarlier(plan.Steps[2], plan.Steps, []));
     }
 }

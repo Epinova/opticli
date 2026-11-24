@@ -26,6 +26,12 @@ internal static class MarketsEndpoint
         var wanted = Wanted(id, body, before);
         // Before a dry run answers: Commerce refuses a currency it doesn't know only when saving (a foreign key).
         RequireKnown(wanted.Currencies, KnownCurrencies());
+        // Commerce keeps market names unique, also only when saving.
+        if (markets.GetAllMarkets().FirstOrDefault(m => !string.Equals(m.MarketId.Value, id, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(m.MarketName?.Trim(), wanted.Name.Trim(), StringComparison.OrdinalIgnoreCase)) is { } named)
+        {
+            throw AgentException.Usage($"The market {named.MarketId.Value} is named '{named.MarketName}' already: market names are unique.", "Give this market another name (--name).");
+        }
         var changes = Changes(before, wanted);
         var status = before is null ? CommerceWriteStatus.Created : changes.Count == 0 ? CommerceWriteStatus.Unchanged : CommerceWriteStatus.Updated;
         if (!body.DryRun && status != CommerceWriteStatus.Unchanged)

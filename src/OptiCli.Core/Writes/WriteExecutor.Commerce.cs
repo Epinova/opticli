@@ -36,6 +36,7 @@ public sealed partial class WriteExecutor
             ValidUntil = op.ValidUntil?.UtcDateTime,
             Remove = op.Remove,
             DryRun = dryRun,
+            PlannedCurrencies = dryRun ? op.PlannedCurrencies : null,
         };
         return await CommerceAsync<PriceRequest, PriceResult>(AgentRoutes.CommercePrices, request, op, cancellationToken);
     }
@@ -62,6 +63,7 @@ public sealed partial class WriteExecutor
             Preorder = op.Preorder,
             Tracked = op.Tracked,
             DryRun = dryRun,
+            PlannedWarehouse = dryRun && op.PlannedWarehouse,
         };
         return await CommerceAsync<InventoryRequest, InventoryResult>(AgentRoutes.CommerceInventory, request, op, cancellationToken);
     }

@@ -555,8 +555,20 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
         }
         if (CommerceEarlier(step, steps, checks) is { } commerce)
         {
-            return (new PlanStepResult(step.Index, step.Operation.Kind, step.Operation.Id, PlanStepStatus.Deferred,
-                Warnings: [commerce], Guid: step.Operation.ContentGuid), null);
+            // Everything but the market's or warehouse's own existence (and a market's currencies) is checked as usual.
+            PlanStep Planned(PlanStep s) => s.Index != step.Index ? s : s with
+            {
+                Operation = s.Operation switch
+                {
+                    PriceOperation price => price with { PlannedCurrencies = ((PriceOperation)commerce.Planned).PlannedCurrencies },
+                    InventoryOperation stock => stock with { PlannedWarehouse = true },
+                    var other => other,
+                },
+            };
+            var (checkedResult, failed) = await CheckAsync(Planned(step), steps, existing, resolved.Select(Planned).ToList(), targets, cancellationToken);
+            return failed is not null || checkedResult.Status != PlanStepStatus.Valid
+                ? (checkedResult, failed)
+                : (checkedResult with { Status = PlanStepStatus.Deferred, Warnings = [commerce.Warning, .. checkedResult.Warnings ?? []] }, null);
         }
         if (EnabledEarlier(step, steps) is { } language)
         {
@@ -757,28 +769,46 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     }
 
     /// <summary>
-    /// A price or stock step whose market or warehouse an earlier <c>market</c> or <c>warehouse</c> step makes or changes
-    /// (its currencies, say): the site doesn't have that yet, so the step can only be checked when the plan runs. Null for
-    /// any other step, and where the earlier step's own dry run found its market or warehouse as the plan wants it
-    /// (<c>unchanged</c>: a plan run again), which the step is then checked against as usual.
+    /// A price step whose market an earlier <c>market</c> step makes or whose currencies it changes, or a stock step whose
+    /// warehouse an earlier <c>warehouse</c> step makes, as the earlier steps' own dry runs found them (<c>created</c>, or
+    /// <c>updated</c> with <c>currencies</c> among its changes): the step to dry-run instead, which the site checks against
+    /// the market's planned currencies (or without its warehouse) in all else as usual, and a warning saying so. Null for
+    /// any other step, and where the earlier steps leave the market's existence and currencies as the site has them (a
+    /// rename, another field, a plan run again), which the step is then checked against as usual.
     /// </summary>
     /// <param name="checks">The earlier steps' dry-run results, so far.</param>
-    internal static string? CommerceEarlier(PlanStep step, IReadOnlyList<PlanStep> steps, IReadOnlyList<PlanStepResult> checks)
+    internal static (WriteOperation Planned, string Warning)? CommerceEarlier(PlanStep step, IReadOnlyList<PlanStep> steps, IReadOnlyList<PlanStepResult> checks)
     {
-        var earlier = steps.Where(s => s.Index < step.Index && !AsWanted(checks.FirstOrDefault(c => c.Index == s.Index)?.Result));
-        return step.Operation switch
+        var earlier = steps.Where(s => s.Index < step.Index).ToList();
+        object? Checked(PlanStep s) => checks.FirstOrDefault(c => c.Index == s.Index)?.Result;
+        switch (step.Operation)
         {
-            PriceOperation price when earlier.FirstOrDefault(s => s.Operation is MarketOperation market
-                && string.Equals(market.Market.Trim(), price.Market.Trim(), StringComparison.OrdinalIgnoreCase)) is { } making =>
-                $"Operation {making.Index} makes or changes the market '{price.Market.Trim()}', which the site may not have as the plan wants it yet, so the site checks this price when the plan runs.",
-            InventoryOperation stock when earlier.FirstOrDefault(s => s.Operation is WarehouseOperation warehouse
-                && string.Equals(warehouse.Code.Trim(), stock.Warehouse.Trim(), StringComparison.OrdinalIgnoreCase)) is { } making =>
-                $"Operation {making.Index} makes or changes the warehouse '{stock.Warehouse.Trim()}', which the site may not have as the plan wants it yet, so the site checks this stock when the plan runs.",
-            _ => null,
-        };
-
-        static bool AsWanted(object? result) =>
-            result is Protocol.MarketResult { Status: Protocol.CommerceWriteStatus.Unchanged } or Protocol.WarehouseResult { Status: Protocol.CommerceWriteStatus.Unchanged };
+            case PriceOperation price:
+            {
+                var making = earlier
+                    .Where(s => s.Operation is MarketOperation market && string.Equals(market.Market.Trim(), price.Market.Trim(), StringComparison.OrdinalIgnoreCase))
+                    .Select(s => (Step: s, Result: Checked(s) as Protocol.MarketResult))
+                    .LastOrDefault(m => m.Result is { Status: Protocol.CommerceWriteStatus.Created }
+                        || m.Result is { Status: Protocol.CommerceWriteStatus.Updated } updated && updated.Changes.Contains("currencies"));
+                if (making.Result is not { } market)
+                {
+                    return null;
+                }
+                var verb = market.Status == Protocol.CommerceWriteStatus.Created ? "makes the market" : "changes the currencies of the market";
+                return (price with { PlannedCurrencies = market.Market.Currencies },
+                    $"Operation {making.Step.Index} {verb} '{market.Market.Id}' ({string.Join(", ", market.Market.Currencies)}): the dry run checked this price against that, and the site checks the market when the plan runs.");
+            }
+            case InventoryOperation stock:
+            {
+                var making = earlier.FirstOrDefault(s => s.Operation is WarehouseOperation warehouse
+                    && string.Equals(warehouse.Code.Trim(), stock.Warehouse.Trim(), StringComparison.OrdinalIgnoreCase)
+                    && Checked(s) is Protocol.WarehouseResult { Status: Protocol.CommerceWriteStatus.Created });
+                return making is null ? null : (stock with { PlannedWarehouse = true },
+                    $"Operation {making.Index} makes the warehouse '{stock.Warehouse.Trim()}': the dry run checked this stock without it, and the site checks the warehouse when the plan runs.");
+            }
+            default:
+                return null;
+        }
     }
 
     private static IReadOnlyList<string> LanguagesOf(WriteOperation op)

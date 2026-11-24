@@ -23,8 +23,11 @@ internal static class PricesEndpoint
     {
         var services = request.Context.RequestServices;
         var entry = PricedEntry(new CatalogContentFinder(services), body.Entry);
-        var market = Market(services, body.Market);
-        var key = PriceKeys.Key(market, body.Currency, body.PriceType, body.PriceCode, body.MinQuantity, body.ValidFrom);
+        // In a plan's dry run, an earlier step may make the market or change its currencies: check against those.
+        var planned = body.DryRun ? body.PlannedCurrencies : null;
+        var market = planned is null ? Market(services, body.Market) : FindMarket(services, body.Market);
+        var marketId = market?.MarketId.Value ?? body.Market?.Trim() ?? "";
+        var key = PriceKeys.Key(marketId, body.Currency, body.PriceType, body.PriceCode, body.MinQuantity, body.ValidFrom);
         if (body.ValidFrom is null && body.ValidUntil is not null && !body.Remove)
         {
             throw AgentException.Usage("A price with an end (validUntil) needs its start (validFrom) too: without validFrom, a price step names the entry's price that has no end.",
@@ -61,7 +64,7 @@ internal static class PricesEndpoint
             throw AgentException.Usage("amount can't be negative.");
         }
         // Checked before a dry run answers, as Commerce would refuse them only when saving.
-        PriceKeys.RequireMarketCurrency(market.MarketId.Value, market.Currencies.Select(c => c.CurrencyCode), key.Currency);
+        PriceKeys.RequireMarketCurrency(marketId, planned ?? market!.Currencies.Select(c => c.CurrencyCode), key.Currency);
         var wanted = PriceKeys.Wanted(key, amount, body.ValidUntil, existing?.Price, DateTime.UtcNow);
         PriceKeys.RequireOrder(wanted);
         var status = existing is not { } before ? CommerceWriteStatus.Created
@@ -108,12 +111,19 @@ internal static class PricesEndpoint
                 kind is CatalogKinds.Product or CatalogKinds.Bundle ? "Give its variants (or the bundle's entries) prices and stock; a product shows theirs." : null);
     }
 
+    /// <summary>The market; null when the site has none of that id.</summary>
+    internal static IMarket? FindMarket(IServiceProvider services, string? id)
+    {
+        var trimmed = id?.Trim() ?? "";
+        return trimmed.Length > 0 ? services.GetRequiredService<IMarketService>().GetMarket(new MarketId(trimmed)) : null;
+    }
+
     /// <exception cref="AgentException"><c>not_found</c>, listing the markets.</exception>
     internal static IMarket Market(IServiceProvider services, string? id)
     {
         var markets = services.GetRequiredService<IMarketService>();
         var trimmed = id?.Trim() ?? "";
-        return (trimmed.Length > 0 ? markets.GetMarket(new MarketId(trimmed)) : null)
+        return FindMarket(services, id)
             ?? throw AgentException.NotFound($"No market '{trimmed}'.", $"Markets: {string.Join(", ", markets.GetAllMarkets().Select(m => m.MarketId.Value))}; make one with `opticli commerce market set`.");
     }
 }

@@ -79,9 +79,12 @@ public sealed class CommerceSiteTests
         var dry = await Runner(site, Path.GetTempPath()).RunAsync(plan, dryRun: true, publishAll: false, cancellationToken);
         Assert.Equal([PlanStepStatus.Valid, PlanStepStatus.Valid, PlanStepStatus.Valid, PlanStepStatus.Deferred, PlanStepStatus.Deferred, PlanStepStatus.Valid, PlanStepStatus.Deferred],
             dry.Operations.Select(o => o.Status));
-        Assert.Contains($"Operation 1 makes or changes the market '{euro}'", dry.Operations[3].Warnings![0]);
-        Assert.Contains($"Operation 2 makes or changes the warehouse 'it-{shop.Run}-berlin'", dry.Operations[4].Warnings![0]);
-        Assert.Contains($"Operation 5 makes or changes the market '{nordic}'", dry.Operations[6].Warnings![0]);
+        Assert.Contains($"Operation 1 makes the market '{euro}' (EUR)", dry.Operations[3].Warnings![0]);
+        Assert.Contains($"Operation 2 makes the warehouse 'it-{shop.Run}-berlin'", dry.Operations[4].Warnings![0]);
+        Assert.Contains($"Operation 5 changes the currencies of the market '{nordic}'", dry.Operations[6].Warnings![0]);
+        // Deferred, but dry-run in all else: the site found the entry and answered as it will.
+        Assert.Equal(CommerceWriteStatus.Created, Assert.IsType<PriceResult>(dry.Operations[3].Result).Status);
+        Assert.Equal(CommerceWriteStatus.Created, Assert.IsType<InventoryResult>(dry.Operations[4].Result).Status);
         Assert.Empty((await site.Agent.SendAsync<PriceList>(HttpMethod.Get, AgentRoutes.WithRef(AgentRoutes.CommercePrices, shop.Variant), null, cancellationToken)).Prices);
 
         var first = await Runner(site, Path.GetTempPath()).RunAsync(plan, dryRun: false, publishAll: false, cancellationToken);
@@ -102,6 +105,74 @@ public sealed class CommerceSiteTests
         var unknown = WritePlan.Parse($$$"""{"operations": [{"op": "price", "entry": "code:it-{{{shop.Run}}}-v", "market": "NOWHERE", "currency": "EUR", "amount": 1}]}""");
         var refused = await Assert.ThrowsAnyAsync<OptiCliException>(() => Runner(site, Path.GetTempPath()).RunAsync(unknown, dryRun: true, publishAll: false, cancellationToken));
         Assert.Equal(PlanStepStatus.Invalid, Assert.IsType<PlanRun>(refused.Details).Operations[0].Status);
+    }
+
+    /// <summary>
+    /// A market or warehouse step before a price or stock step: the dry run still checks everything in that step that
+    /// doesn't wait for the market or warehouse (the entry, the dates, the currency against the planned market), so a
+    /// plan the site would refuse halfway is refused before anything is saved; a rename alone checks it all as usual.
+    /// </summary>
+    [CommerceSiteFact]
+    public async Task Price_and_stock_steps_after_a_market_or_warehouse_step_are_still_checked_before_anything_is_saved()
+    {
+        var cancellationToken = CancellationToken.None;
+        await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
+        var writes = new WriteExecutor(site.Session, _ => Task.FromResult(site.Agent));
+        var shop = await MakeAsync(site, writes, cancellationToken);
+        var market = "R" + shop.Run[..7].ToUpperInvariant();
+        var fresh = "F" + shop.Run[..7].ToUpperInvariant();
+        var warehouse = $"it-{shop.Run}-r";
+        var before = $"Before {shop.Run}";
+        await writes.RunAsync(new MarketOperation(market) { Name = before, Currencies = ["USD"], Languages = ["en"] }, dryRun: false, cancellationToken);
+        await writes.RunAsync(new WarehouseOperation(warehouse) { Name = before }, dryRun: false, cancellationToken);
+        var variant = $"code:it-{shop.Run}-v";
+
+        string Rename(string name) => $$$"""{"op": "market", "market": "{{{market}}}", "name": "{{{name}}} {{{shop.Run}}}"}""";
+        string Make() => $$$"""{"op": "market", "market": "{{{fresh}}}", "currencies": ["EUR"], "languages": ["en"]}""";
+        var cases = new (string First, string Price, string Error)[]
+        {
+            (Rename("Renamed 1"), $$$"""{"op": "price", "entry": "{{{variant}}}", "market": "{{{market}}}", "currency": "XYZ", "amount": 1}""", "doesn't have the currency XYZ"),
+            (Rename("Renamed 2"), $$$"""{"op": "price", "entry": "code:it-{{{shop.Run}}}-p", "market": "{{{market}}}", "currency": "USD", "amount": 1}""", "Commerce keeps prices and stock on variants and packages"),
+            (Rename("Renamed 3"), $$$"""{"op": "price", "entry": "code:it-{{{shop.Run}}}-nope", "market": "{{{market}}}", "currency": "USD", "amount": 1}""", "No catalog content"),
+            (Rename("Renamed 4"), $$$"""{"op": "price", "entry": "{{{variant}}}", "market": "{{{market}}}", "currency": "USD", "amount": 1, "validFrom": "2027-02-01T00:00:00Z", "validUntil": "2027-01-01T00:00:00Z"}""", "isn't after validFrom"),
+            ($$$"""{"op": "warehouse", "code": "{{{warehouse}}}", "name": "Renamed {{{shop.Run}}}"}""", $$$"""{"op": "inventory", "entry": "code:it-{{{shop.Run}}}-p", "warehouse": "{{{warehouse}}}", "inStock": 1}""", "Commerce keeps prices and stock on variants and packages"),
+            // A market or warehouse the plan makes: checked against it, in all but its existence.
+            (Make(), $$$"""{"op": "price", "entry": "{{{variant}}}", "market": "{{{fresh}}}", "currency": "SEK", "amount": 1}""", $"The market {fresh} doesn't have the currency SEK"),
+            (Make(), $$$"""{"op": "price", "entry": "code:it-{{{shop.Run}}}-p", "market": "{{{fresh}}}", "currency": "EUR", "amount": 1}""", "Commerce keeps prices and stock on variants and packages"),
+            (Make(), $$$"""{"op": "price", "entry": "{{{variant}}}", "market": "{{{fresh}}}", "currency": "EUR", "amount": 1, "validFrom": "2027-02-01T00:00:00Z", "validUntil": "2027-01-01T00:00:00Z"}""", "isn't after validFrom"),
+            ($$$"""{"op": "warehouse", "code": "{{{warehouse}}}-new"}""", $$$"""{"op": "inventory", "entry": "code:it-{{{shop.Run}}}-p", "warehouse": "{{{warehouse}}}-new", "inStock": 1}""", "Commerce keeps prices and stock on variants and packages"),
+        };
+        foreach (var (first, price, error) in cases)
+        {
+            var plan = WritePlan.Parse($$$"""{"operations": [{{{first}}}, {{{price}}}]}""");
+            foreach (var dryRun in new[] { true, false })
+            {
+                var refused = await Assert.ThrowsAnyAsync<OptiCliException>(() => Runner(site, Path.GetTempPath()).RunAsync(plan, dryRun, publishAll: false, cancellationToken));
+                var run = Assert.IsType<PlanRun>(refused.Details);
+                Assert.Equal(PlanStepStatus.Invalid, run.Operations[1].Status);
+                Assert.Contains(error, run.Operations[1].Error!.Message);
+            }
+        }
+
+        // Nothing was saved: not the renames, nor the market and warehouse the plans would have made.
+        var markets = await site.Agent.SendAsync<MarketList>(HttpMethod.Get, AgentRoutes.CommerceMarkets, null, cancellationToken);
+        Assert.Equal(before, markets.Markets.Single(m => m.Id == market).Name);
+        Assert.DoesNotContain(markets.Markets, m => m.Id == fresh);
+        var warehouses = await site.Agent.SendAsync<WarehouseList>(HttpMethod.Get, AgentRoutes.CommerceWarehouses, null, cancellationToken);
+        Assert.Equal(before, warehouses.Warehouses.Single(w => w.Code == warehouse).Name);
+        Assert.DoesNotContain(warehouses.Warehouses, w => w.Code == $"{warehouse}-new");
+
+        // A name another market has is refused by the dry run too (Commerce keeps them unique).
+        var taken = WritePlan.Parse($$$"""{"operations": [{"op": "market", "market": "{{{market}}}", "name": "{{{markets.Markets.First(m => m.Id != market).Name}}}"}]}""");
+        var named = await Assert.ThrowsAnyAsync<OptiCliException>(() => Runner(site, Path.GetTempPath()).RunAsync(taken, dryRun: true, publishAll: false, cancellationToken));
+        Assert.Contains("market names are unique", Assert.IsType<PlanRun>(named.Details).Operations[0].Error!.Message);
+
+        // A rename and a valid price: both checked fully (valid), then saved.
+        var renamed = WritePlan.Parse($$$"""{"operations": [{{{Rename("Renamed")}}}, {"op": "price", "entry": "{{{variant}}}", "market": "{{{market}}}", "currency": "USD", "amount": 5}]}""");
+        var dry = await Runner(site, Path.GetTempPath()).RunAsync(renamed, dryRun: true, publishAll: false, cancellationToken);
+        Assert.Equal([PlanStepStatus.Valid, PlanStepStatus.Valid], dry.Operations.Select(o => o.Status));
+        var saved = await Runner(site, Path.GetTempPath()).RunAsync(renamed, dryRun: false, publishAll: false, cancellationToken);
+        Assert.Equal([PlanStepStatus.Saved, PlanStepStatus.Saved], saved.Operations.Select(o => o.Status));
     }
 
     /// <summary>
