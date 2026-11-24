@@ -144,9 +144,10 @@ opticli commerce stock code:P-1001-M
 
 Catalog content isn't in the CMS database, so `get`, `children` and `tree` don't read it: the `commerce` reads ask the
 site. `commerce get` shows the product's `CommerceMediaCollection` and its `url`, where your site's catalog routing
-puts it (null if the site doesn't route catalog content); `resolve` takes that URL back to the product. The start page's `Catalog` and `FeaturedProduct` show the catalog's and product's refs in `opticli get` on the
-page: a negative `<id>__CatalogContent` for the catalog and `<id>__CatalogContent` for the product. The ids are each
-database's own, so don't copy them into a plan or test: on a fresh Commerce 14 database the first catalog is
+puts it (null if the site doesn't route catalog content); `resolve` takes that URL back to the product. The start
+page's `Catalog` and `FeaturedProduct` show the catalog's and product's refs in `opticli get` on the page: a negative
+`<id>__CatalogContent` for the catalog and `<id>__CatalogContent` for the product. The ids are each database's own, so
+don't copy them into a plan or test: on a fresh Commerce 14 database the first catalog is
 `-2147483646__CatalogContent` (Commerce made its `System.Archived` catalog first), on Commerce 15 it can be
 `-2147483647__CatalogContent`. opticli takes them back wherever it takes a ref; a plan uses `$id`s or `catalog:Fashion`.
 
