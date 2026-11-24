@@ -18,7 +18,7 @@
 | `find --type T [--where Prop=value] [--under] [--status]` | items of a type, filtered; `--status scheduled` (a version waits to be published: `publishAt`) and `expired` (published, stop-publish date passed: `expiredAt`), in the master language unless `--lang` |
 | `search <text> [--in names\|strings\|all]` | names and text properties containing a string |
 | `where-used <ref> [--pages]`, `where-used --type T` | ContentAreas, references, links and rich text pointing at an item (`--pages`: through nested blocks up to pages); `--type`: for every instance of a type |
-| `resolve <url>`, `url <ref>` | URL to content, and content to URL per language |
+| `resolve <url>`, `url <ref>` | URL to content, and content to URL per language (on a Commerce site, `resolve` also takes a catalog URL: [Optimizely Commerce](commerce.md#reads)) |
 | `versions <ref>`, `drafts [--since] [--by] [--kind] [--type]` | version history; unpublished changes |
 | `history <ref> [--since] [--by]` | the CMS's change log for one item: creates, publishes, moves (from, to), deletes and restores, with who and when; the only record of moves and deletes (drafts saved aren't in it) |
 | `categories`, `visitor-groups` | the category tree (names `set` takes, selectable, how many items use each); visitor groups (ids ContentAreas store, names, how criteria combine), without their criteria or notes |

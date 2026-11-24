@@ -43,7 +43,7 @@ ContentAreas and links, but it can't be read with `get` (it isn't in the databas
 use the `guid` in anything that must work in other environments.
 On a Commerce site, catalog content has refs of its own (see "Optimizely Commerce" below): `code:<code>`,
 `catalog:<name>`, `catalog-root`, and `1__CatalogContent` as opticli prints it (a catalog's id is negative,
-`-2147483646__CatalogContent`; pass it back as is).
+e.g. `-2147483646__CatalogContent`, and each database's own; pass it back as is).
 Add `--lang <code>` to choose a language branch (default: the item's master language, or the language of the URL).
 
 ## The commands you'll use most
@@ -336,7 +336,14 @@ none of this works. Everything goes through the running site; catalog content is
   no projects, approvals, schedules, ContentAreas or `--from`, and opticli never publishes it separately, moves or
   deletes it (`publish`, `move`, `delete` refuse it: the user does that in Commerce's UI). Catalogs go below
   `catalog-root`, nodes and entries below a catalog or node, CMS content never below catalog content (refused).
-  A CMS page's reference property takes a catalog ref as its value: `opticli set 9 FeaturedProduct=code:P-1`.
+  A CMS page's reference property, ContentArea or reference list takes catalog refs as values, beside CMS refs:
+  `opticli set 9 FeaturedProduct=code:P-1`, `--values '{"MainContentArea": [{"ref": "code:P-1"}, {"ref": "123"}]}'`.
+- **Product images:** a catalog item's images are its `CommerceMediaCollection`: upload the image to a media folder
+  (`opticli upload shirt.png --parent <folder>`; `--for` a catalog item is refused, it has no "For this page" folder),
+  then `opticli set code:P-1 --values '{"CommerceMediaCollection": ["<media ref>"]}'` (the whole list; an item can be
+  `{"ref", "groupName", "sortOrder"}`; a plan's `$id` of the upload works). `commerce get` shows it.
+- **URLs:** `commerce get` prints the item's `url` (where the site's catalog routing puts it); `opticli resolve <catalog
+  url>` asks the running site and prints the catalog ref with `matchedBy: "catalog"`.
 - **The rest:** `commerce relation add <parent> <child> [--quantity n]` (product + variant, bundle/package + entry,
   node + entry as an extra category), `commerce price set <entry> --market DEFAULT --currency USD --amount 49.90`
   (`--valid-from`/`--valid-until` for a campaign price, another row; without `--valid-from` it is the base price, the
@@ -347,7 +354,9 @@ none of this works. Everything goes through the running site; catalog content is
 - **Plans:** every write is a step (`create` and `set` for catalog content, `relation`, `price`, `warehouse`,
   `inventory`, `market`), so a test seed is one plan with a `guidNamespace`: run it with `apply --update-existing` and a
   second run is all `unchanged`. A `$id` of catalog content is its `id__CatalogContent` ref, also in a CMS page's
-  property (`"Catalog": "$catalog"`). Put `market` and `warehouse` steps before the prices and stock that use them.
+  property (`"Catalog": "$catalog"`). Put `market` and `warehouse` steps before the prices and stock that use them:
+  such a price or stock step is `deferred` in a dry run until the market or warehouse is as the plan wants it, so a
+  seed plan can grow by a market or warehouse with its prices and stock.
 - An empty database gets Commerce's schema at the site's first start; a fresh one has the market `DEFAULT` and the
   warehouse `default`. Details: reference.md, "Optimizely Commerce".
 

@@ -41,7 +41,17 @@ suite can seed a Commerce site's catalog from code. See
   (`--base-version` takes the version a result prints, `1_33_CatalogContent`). A CMS property that points at catalog
   content now shows its ref (`1__CatalogContent`) and `"provider": "CatalogContent"`, not `"missing": true`, and so does
   a rich-text link to it in `get` while the site runs. In reference properties, `code:` and `catalog:` refs work as
-  values.
+  values, and in ContentAreas and reference lists, beside CMS content.
+- **Product images.** A catalog item's `CommerceMediaCollection` (its Assets tab) takes media in `create`, `set` and
+  plans: an array of media refs (ids, GUIDs, a plan's `$id` of an upload) or `{ref, groupName, sortOrder}`, the whole
+  list, `unchanged` when it is as given. `commerce get` shows it as `[{ref, groupName, sortOrder}]`.
+- **Catalog URLs.** `commerce get` shows the `url` the site's catalog routing gives the item, and `resolve` takes a
+  catalog URL back to the catalog ref: the CMS database knows nothing of catalog URLs, so `resolve` asks the running
+  site when the database finds nothing (`matchedBy: "catalog"`).
+- **Seed plans grow.** A plan's `price` step in a market that an earlier `market` step makes or changes (a new currency,
+  say), or an `inventory` step in a warehouse an earlier `warehouse` step makes, is `deferred` in the dry run and
+  checked by the site when the plan runs, so a plan that seeded the database before can grow by a market or warehouse
+  with its prices or stock.
 - **Catalog content is found through the site, not `tblMappedIdentity`.** Commerce's catalog provider doesn't register
   its items in `tblMappedIdentity` (it was empty on a Commerce site after content referenced the catalog): their ids and
   GUIDs live in Commerce's own tables, behind `ReferenceConverter`. opticli resolved provider refs and GUIDs only there,
@@ -57,8 +67,10 @@ suite can seed a Commerce site's catalog from code. See
   `1__CatalogContent` now, in refs and in property values (a start page's `Catalog`).
 - **Checked before a dry run answers**, as `usage` errors: a catalog type below CMS content and a CMS type below catalog
   content (which saved a catalog row in the CMS's tables, or failed inside Commerce's save), a price whose end isn't
-  after its start, a price in a currency its market doesn't have, a market currency Commerce doesn't have, and a market
-  language that isn't a culture.
+  after its start, a price in a currency its market doesn't have, a market currency Commerce doesn't have, a market
+  language that isn't a culture, and blocks and media "for" catalog content or below it (`upload --for`/`--parent`,
+  `block create`, `create --for`; catalog content has no "For this page" folder): the hint says to upload to a media
+  folder and attach the image with `CommerceMediaCollection`.
 
 ### CLI
 

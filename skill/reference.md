@@ -50,7 +50,7 @@ production entry's login can write. The one write to production is a sealed appl
 | `type <name\|class\|guid>` | `properties[]` (name, type, blockType, list, cultureSpecific, required, tab, order, displayName, `source` file:line, `declaredIn`, `allowedTypes`/`restrictedTypes` from `[AllowedTypes]`, `uiHint`), `classes[]` (file, line, `baseTypes`), `views[]` (file, `matchedBy`: fileName, partialName, viewComponent, model), `sourceRoot`; CMS 13: `kind`, `compositionBehaviors`, `contracts`, `implementedBy` (a contract's), `blueprints`, `displayTemplates`. `existsOnModel: false` = in the DB but not in code (removed from code, which the CMS keeps while it has values, or added in admin mode), with `values` (`content`: content items holding a value, `versions`: versions holding one; values inside a block property and category selections count, as removing it deletes them) and a warning. Controllers are not listed. |
 | `allowed-in <type> [--kind K] [--explicit]` | ContentArea/reference properties of every type that can hold `<type>`, from `[AllowedTypes]` in code: `allowed` (`explicit` + `matchedBy`, or `any` for a ContentArea/reference list without the attribute), `allowedTypes`, `uiHint`, `source`. Base classes and interfaces declared in the sources count. Editor descriptors (`uiHint`) and metadata extenders can change the rules at runtime; they are not evaluated. CMS 13: `allowed: "composition"` rows (`property: "composition"`) for an experience's outline (SectionEnabled types) and a section's columns (ElementEnabled types). |
 | `get <ref>` | `--lang`, `--version published\|latest\|<id>` (default: published, or the latest draft if the branch was never published), `--fields A,B` (whole values; identity fields like `name`, `saved` are always shown, so `--fields name` gives just those), `--full`, `--all-properties`, `--expand` (inline ContentArea items / referenced content one level). `saved`/`changedBy` belong to the version shown. With `--lang`, language settings apply: a replacement language, or (no branch) the first fallback language that has one; `languageRule` (`replacement`, `fallback`, `none`) and `notes` say so. `projects` lists the projects that hold a version of it. CMS 13: `--variation <key>` shows a content variation (see [Visual Builder](#visual-builder-cms-13)); an experience or section shows `composition`. |
-| `resolve <url>` | `--site`. Result has `site`, `host`, `languageSource`, `matchedBy`. |
+| `resolve <url>` | `--site`. Result has `site`, `host`, `languageSource`, `matchedBy`. On a Commerce site, a catalog URL is asked of the running site: `matchedBy: "catalog"`, a catalog ref, no site/host. |
 | `url <ref>` | Per language: `path` (site-relative), `url` (absolute), `site`. |
 | `tree <ref> [--depth N] [--limit N]` | Default depth 2, max 5000 nodes (`capped`). `--limit` is children per node; the rest are counted in `more`. CMS 13: Visual Builder content has `kind`; blueprints are left out (`blueprints: N` on the parent) unless `--blueprints`, as in `children`, `find`, `search` and `drafts`. |
 | `children <ref>` / `ancestors <ref>` | One level down, in the parent's `childSortOrder` / the path from the root. Children show `sortIndex` when the parent sorts by `Index`. |
@@ -948,7 +948,7 @@ as opticli prints it (negative for catalogs and the root). A plan's `$id` of cat
 | Command | Does |
 |---|---|
 | `commerce` | `{version, catalogRoot, catalogRootGuid, catalogs}` |
-| `commerce get <ref> [--lang]` | one catalog item as the site loads it, every property `{type, value}` |
+| `commerce get <ref> [--lang]` | one catalog item as the site loads it, `url` (catalog routing), every property `{type, value}` |
 | `commerce children [<ref>] [--limit]` / `commerce tree [<ref>] [--depth]` | catalog content below it (default: the root) |
 | `commerce relations <ref>` | `children` and `parents`: `{ref, code, name, kind: variant\|bundleEntry\|packageEntry\|category, quantity, sortOrder}` |
 | `commerce prices <entry>` / `commerce stock <entry>` | price rows / stock per warehouse |
@@ -967,7 +967,12 @@ end), and `validUntil` needs `validFrom`. Times are UTC unless they have an offs
 warehouse is active, a new stock record tracked, a new market needs currencies and languages. Booleans take
 `true`/`false`. A catalog needs `DefaultCurrency`, `DefaultLanguage` and `WeightBase`; Commerce makes a `Code` when a
 node or entry has none. Catalog content can't be published separately (`set --publish` instead), moved, deleted or put
-in a project. Full reference: docs/reference/cli/commerce.md.
+in a project, and takes no blocks or media "for" it (`upload --for`/`--parent`, `block create`, `create --for`: usage).
+Images are its `CommerceMediaCollection`: an array of media refs or `{ref, groupName, sortOrder}` (default group
+`default`, order the array's), the whole list. ContentAreas (`{"ref": "code:P-1"}`) and reference lists of CMS
+content take catalog refs. `resolve <catalog url>` asks the running site: `matchedBy: "catalog"`. A plan's `price` or
+`inventory` step whose market or warehouse an earlier step makes or changes is `deferred` in a dry run. Full reference:
+docs/reference/cli/commerce.md.
 
 ## Export
 

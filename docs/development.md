@@ -136,19 +136,28 @@ epi-commerce-empty`): `/demo/Commerce12` (CMS 12, Commerce 14.48.0, net8.0) and 
 15.5.0, net10.0), each on two empty databases of its own, the CMS's and Commerce's (`opticli-commerce12` and
 `opticli-commerce12-ecf`, `opticli-commerce13` and `opticli-commerce13-ecf`), which the CMS and Commerce fill at the first
 start. `CommerceFixture.cs` gives both a small content model: a start page with `Catalog` and `FeaturedProduct`
-references, an image media type, and a catalog model (`FashionNode`, `FashionProduct` with a `MainImage`,
-`FashionVariant`, `FashionBundle`). There is no content: the tests make theirs. `FRESH=1` makes both again from nothing
-(it drops the databases, and refuses any not named `opticli-commerce...`); the comment at the top lists the versions,
-folders, databases and ports.
+references, a `MainContentArea` and a `RelatedContent` reference list (for catalog content beside CMS content), a
+`TeaserBlock`, an image media type, and a catalog model (`FashionNode`, `FashionProduct` with a `MainImage`,
+`FashionVariant`, `FashionBundle`). It also registers Commerce's hierarchical catalog routing
+(`CatalogRouteHelper.MapDefaultHierarchialRouter`, the standard registration on both majors) and plain-HTML pages for
+the start page, products and variants (a product's and variant's show the images of its `CommerceMediaCollection`), so
+catalog content has URLs that answer. Then setup.sh serves the site with this checkout's opticli (or `OPTICLI`) and
+applies `fixture.plan.json`: the start page, a site definition for it (hosts `commerce.localhost` and `*`), an image,
+and a small catalog `Fixture` (a node, a product and a variant with the image, a price and stock) that the start page
+points at. The tests make the rest of their content themselves. `FRESH=1` makes both again from nothing (it drops the
+databases, and refuses any not named `opticli-commerce...`); the comment at the top lists the versions, folders,
+databases and ports. Catalog ids are each database's own: the first catalog is `-2147483646__CatalogContent` on
+Commerce 14 (which makes its `System.Archived` catalog at the first start) and `-2147483647__CatalogContent` on
+Commerce 15, so tests name catalog content by code, name or the ref a write returned.
 
 The Commerce tests are `[CommerceSiteFact]`s: they run where `OPTICLI_IT_PROJECT` is a site whose restored project has
 `EPiServer.Commerce.Core`, and skip elsewhere. Run them alone (the other integration tests need the edge-case site's
-content), with the project path as `serve` was given it:
+content), with the project path as `serve` was given it; `SchemaOutputTests` run there too:
 
 ```sh
 SQLCMDPASSWORD=... FRESH=1 tests/fixtures/commerce/setup.sh
 opticli serve --project /demo/Commerce12
-OPTICLI_IT_PROJECT=/demo/Commerce12 dotnet test tests/OptiCli.Integration --filter "FullyQualifiedName~Commerce"
+OPTICLI_IT_PROJECT=/demo/Commerce12 dotnet test tests/OptiCli.Integration --filter "FullyQualifiedName~Commerce|FullyQualifiedName~SchemaOutputTests"
 ```
 
 ## The CMS 13 test sites

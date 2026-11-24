@@ -584,6 +584,8 @@ export abstract class OptiCliCommands {
    * The host picks the site (a bare path uses --site, else the '*' site), a leading language segment picks the language
    * (else the host's language, else the site's master), then the segments are walked from the start page. Media paths
    * (/globalassets/, /siteassets/, /contentassets/) work too. Every <ref> argument also accepts a URL directly.
+   * On an Optimizely Commerce site, a catalog URL (which the site's catalog routing makes, not the database) is
+   * asked of the running site: matchedBy is catalog, and ref the catalog ref (1__CatalogContent).
    * Example: opticli resolve https://www.example.com/en/about/team/
    * @param url - Full URL (https://host/en/about/) or site-relative path (/en/about/).
    */

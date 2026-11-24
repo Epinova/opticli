@@ -17,7 +17,8 @@ you have a seed plan for the catalog, a database that starts empty, and Playwrig
 - opticli 0.36.0 or newer, and the `@epinova/opticli` npm package set up as in
   [Seed CMS content for Playwright tests](playwright-seed-content.md).
 - A site on Optimizely Commerce 14 (CMS 12) or 15 (CMS 13), built, with its catalog model in code (the examples use a
-  `FashionNode`, `FashionProduct`, `FashionVariant` and `FashionBundle`, and a `StartPage` with a `Catalog` reference).
+  `FashionNode`, `FashionProduct`, `FashionVariant` and `FashionBundle`, a `StartPage` with a `Catalog` reference, and
+  an image media type for `.png` files).
 - SQL Server for the site's two databases: the CMS's (`EPiServerDB`) and Commerce's (`EcfSqlConnection`).
 
 ## Steps
@@ -54,7 +55,8 @@ to find a product (`code:P-1001`), and it is the same in every database.
 ### 3. Write the seed plan
 
 The plan makes the catalog first, then what goes in it, then the prices and stock. Markets and warehouses come before
-the prices and stock that use them. A fixed `guidNamespace` gives everything the same GUID on every run.
+the prices and stock that use them. The product's image is uploaded first, to the global assets, and attached to the
+product. A fixed `guidNamespace` gives everything the same GUID on every run.
 
 ```ts
 // e2e/seed.ts
@@ -65,11 +67,13 @@ export const seedPlan = {
   operations: [
     { op: 'market', market: 'NORDIC', name: 'Nordic', currencies: ['SEK', 'NOK'], languages: ['en'], countries: ['SWE', 'NOR'] },
     { op: 'warehouse', code: 'oslo', name: 'Oslo', pickupLocation: true },
+    // The global assets folder has this GUID in every CMS database. Files are relative to planDir.
+    { op: 'upload', id: 'dressImage', file: 'files/dress.png', parent: 'e56f85d0-e833-4e02-976a-2d11fe4d598c', publish: true },
     { op: 'create', id: 'catalog', type: 'CatalogContent', parent: 'catalog-root', name: 'Fashion',
       properties: { DefaultCurrency: 'USD', DefaultLanguage: 'en', WeightBase: 'kgs', LengthBase: 'cm' } },
     { op: 'create', id: 'women', type: 'FashionNode', parent: '$catalog', name: 'Women', properties: { Code: 'women' } },
     { op: 'create', id: 'dress', type: 'FashionProduct', parent: '$women', name: 'Summer dress',
-      properties: { Code: 'P-1001', Brand: 'Acme', Description: '<p>Light and airy.</p>' } },
+      properties: { Code: 'P-1001', Brand: 'Acme', Description: '<p>Light and airy.</p>', CommerceMediaCollection: ['$dressImage'] } },
     { op: 'create', id: 'dressS', type: 'FashionVariant', parent: '$women', name: 'Summer dress S', properties: { Code: 'P-1001-S', Size: 'S' } },
     { op: 'create', id: 'dressM', type: 'FashionVariant', parent: '$women', name: 'Summer dress M', properties: { Code: 'P-1001-M', Size: 'M' } },
     { op: 'create', id: 'set', type: 'FashionBundle', parent: '$women', name: 'Dress set', properties: { Code: 'B-2001' } },
@@ -94,6 +98,22 @@ sit in the node like the product, and the `relation` steps tie them to it. Price
 packages), not on the product. The price without `validFrom` is the base price; the one with `validFrom` and
 `validUntil` is a December campaign beside it.
 
+`CommerceMediaCollection` is the product's Assets tab in the catalog UI: the images (and other media) the site shows
+with it. It takes the whole list, each a media ref, or `{ ref: '$dressImage', groupName: 'swatch', sortOrder: 1 }`
+for another group or order. Images go in a media folder, not "for" the product: catalog content has no "For this page"
+folder, and opticli refuses `for: '$dress'` on an upload.
+
+A seed plan grows with the site. To sell in euro too, add a market and its prices to the plan:
+
+```ts
+    { op: 'market', market: 'EURO', name: 'Euro', currencies: ['EUR'], languages: ['en'] },
+    { op: 'price', entry: '$dressS', market: 'EURO', currency: 'EUR', amount: 69 },
+```
+
+On a database the plan seeded before, the dry run lists that price as `deferred`: the market isn't there yet, so the
+site checks the price when the plan runs, after the market step. The same goes for stock in a new warehouse, and for a
+price in a currency the plan adds to a market.
+
 ### 4. Apply it twice
 
 With the npm package, `defineSetup({ plan: seedPlan })` applies the plan before the tests, as for CMS content. To
@@ -116,15 +136,19 @@ run checks every step against what is there.
 ```bash
 opticli commerce tree catalog:Fashion
 opticli commerce get code:P-1001
+opticli resolve /en/fashion/women/summer-dress/
 opticli commerce relations code:P-1001
 opticli commerce prices code:P-1001-S
 opticli commerce stock code:P-1001-M
 ```
 
 Catalog content isn't in the CMS database, so `get`, `children` and `tree` don't read it: the `commerce` reads ask the
-site. The start page's `Catalog` and `FeaturedProduct` show the catalog's and product's refs in `opticli get` on the
-page (on a database the plan seeded first, `-2147483647__CatalogContent` and `1__CatalogContent`; the ids are each
-database's own): opticli takes those back wherever it takes a ref.
+site. `commerce get` shows the product's `CommerceMediaCollection` and its `url`, where your site's catalog routing
+puts it (null if the site doesn't route catalog content); `resolve` takes that URL back to the product. The start page's `Catalog` and `FeaturedProduct` show the catalog's and product's refs in `opticli get` on the
+page: a negative `<id>__CatalogContent` for the catalog and `<id>__CatalogContent` for the product. The ids are each
+database's own, so don't copy them into a plan or test: on a fresh Commerce 14 database the first catalog is
+`-2147483646__CatalogContent` (Commerce made its `System.Archived` catalog first), on Commerce 15 it can be
+`-2147483647__CatalogContent`. opticli takes them back wherever it takes a ref; a plan uses `$id`s or `catalog:Fashion`.
 
 ### 6. Read the catalog in a test
 
@@ -149,7 +173,7 @@ test('the medium dress is out of stock but can be backordered', async ({ opticli
 
 To test a change, make it in the test and set it back afterwards, or let the next run's seed put it back: for example
 `opticli.commercePriceSet('code:P-1001-S', { market: 'DEFAULT', currency: 'USD', amount: 69 })`. A product page the
-site renders is reached by its URL, as your site's routing gives it.
+site renders is reached by its URL, as your site's routing gives it: `(await opticli.commerceGet(seed.refs.dress!)).url`.
 
 ## Check it worked
 
@@ -164,6 +188,8 @@ site renders is reached by its URL, as your site's routing gives it.
 - **"has 2 DEFAULT USD prices ... without an end"**: two base prices with the same key exist (made in the UI, say).
   Give the step a `validFrom` to name one, or remove the other with `opticli commerce price remove ... --valid-from`.
 - **A product is refused a price**: Commerce keeps prices and stock on variants and packages. Price the variants.
+- **An upload `for` a product is refused ("... is catalog content")**: catalog content has no "For this page" folder.
+  Upload the image to a media folder and attach it with `CommerceMediaCollection`, as the dress's image above.
 - **`publish` or `delete` refuses catalog content**: opticli only creates and sets it (`set <ref> --publish` publishes
   a draft). To start over, start from empty databases again.
 

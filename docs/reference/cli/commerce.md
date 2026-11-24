@@ -44,7 +44,8 @@ needs no setup: point the site's `EPiServerDB` and `EcfSqlConnection` connection
 Catalog content has refs of its own. They work wherever a command or a plan takes a ref for catalog content, and in
 the values of reference properties (a page's `ContentReference`, `ContentArea` or reference list), where opticli
 turns `code:`, `catalog:` and `catalog-root` into the content's `id__CatalogContent` through the site (a text
-property keeps such a value as text). In a plan, name content the plan makes by its `$id`: a `code:` the plan makes
+property keeps such a value as text). A ContentArea or reference list can mix catalog content and CMS content:
+`opticli set 9 --values '{"MainContentArea": [{"ref": "code:P-1001"}, {"ref": "123"}], "RelatedContent": ["catalog:Fashion", "45"]}'`. In a plan, name content the plan makes by its `$id`: a `code:` the plan makes
 first doesn't exist yet when the dry run checks the step.
 
 | Ref | Names |
@@ -87,6 +88,26 @@ folders), `--request-approval`, `--publish-at`, `--from`, `--variation`, Content
 `unpublish`, `discard`, `move`, `delete`, `translate` and `access` refuse catalog content: opticli never deletes it
 (Commerce has no recycle bin for it); use Commerce's catalog UI. Results print catalog content's ref and version as
 Commerce has them (`1__CatalogContent`, `1_4_CatalogContent`); `get` and `versions` don't read them.
+
+Blocks and media don't go "for" catalog content or below it: catalog content has no "For this page" folder, and
+holds no CMS content. `upload --for` or `--parent`, `block create --for` or `--parent`, and `create --for` with a
+catalog ref (or, in a plan, the `$id` of catalog content) are a `usage` error in the dry run and the run, whose hint
+says what to do instead: upload the image to a media folder and attach it with `CommerceMediaCollection`.
+
+### Product images: CommerceMediaCollection
+
+A catalog item's images and other assets (the Assets tab in Commerce's catalog UI) are its `CommerceMediaCollection`
+property: a list of CMS media. `create` and `set` take it as a JSON array, the whole list (`[]` empties it); each item
+is a media ref (an id, a GUID, a plan's `$id` of an upload), or `{"ref": ..., "groupName": ..., "sortOrder": ...}`.
+`groupName` defaults to `default`, `sortOrder` to the item's place in the array. A ref that isn't media is a `usage`
+error. Setting the same list again is `unchanged`. `commerce get` shows it as `[{ref, groupName, sortOrder}]`, in sort
+order.
+
+```bash
+opticli upload shirt.png --parent <media folder> --publish
+opticli set code:P-1001 --values '{"CommerceMediaCollection": ["<media ref>"]}' --publish
+opticli set code:P-1001-S --values '{"CommerceMediaCollection": [{"ref": "<media ref>", "groupName": "swatch", "sortOrder": 1}]}'
+```
 
 ## Relations
 
@@ -164,10 +185,17 @@ tree`. `get`, `children` and `tree` read the CMS database, where it isn't: given
 | Command | Shows |
 |---|---|
 | `commerce` | `{version, catalogRoot, catalogRootGuid, catalogs: [{ref, guid, name}]}` |
-| `commerce get <ref> [--lang <code>]` | one catalog item as the site loads it: `ref`, `guid`, `name`, `type`, `kind` (`catalog`, `node`, `product`, `variation`, `bundle`, `package`), `language`, `masterLanguage`, `languages`, `status`, `parent`, `startPublish`, `saved`, and every property `{type, value}` (the model's and Commerce's: `Code`, `DisplayName`, `SeoUri`, ...); the published version, else the latest |
+| `commerce get <ref> [--lang <code>]` | one catalog item as the site loads it: `ref`, `guid`, `name`, `type`, `kind` (`catalog`, `node`, `product`, `variation`, `bundle`, `package`), `language`, `masterLanguage`, `languages`, `status`, `parent`, `startPublish`, `saved`, `url`, and every property `{type, value}` (the model's and Commerce's: `Code`, `DisplayName`, `SeoUri`, `CommerceMediaCollection`, ...); the published version, else the latest |
 | `commerce children [<ref>] [--limit <n>]` | `{parent, children, more}`: the catalogs below the root (the default), the nodes and entries below a catalog or node, also the entries a node has as an extra category; each `{ref, guid, name, type, kind, code, parent, masterLanguage, languages, version}`. At most `--limit` (200) |
 | `commerce tree [<ref>] [--depth <n>]` | depth first, each `{depth, ref, guid, name, type, kind, code}`: the item and `--depth` (3) levels below it |
 | `commerce relations`, `commerce prices`, `commerce stock`, `commerce warehouses`, `commerce markets` | as above |
+
+`url` is where the site's catalog routing puts the item (`/en/fashion/women/summer-dress/`); null on a site that
+doesn't route catalog content (Commerce's routing is the site's own registration, `CatalogRouteHelper.MapDefaultHierarchialRouter`).
+`resolve` takes such a URL back: the CMS database knows nothing of catalog URLs, so when it finds nothing for a URL on a
+Commerce site, `resolve` asks the running site, and prints the catalog content with `matchedBy: "catalog"` (and no
+`site`, `host` or `languageSource`). Without a running site it stays `not_found`. Other commands don't take a catalog
+URL as a ref: give them the ref `resolve` prints.
 
 ## Plans
 
@@ -176,7 +204,11 @@ for catalog content), checked by `apply --dry-run` with the rest of the plan. A 
 (`1__CatalogContent`), in later steps' refs and in property values: a start page's `"Catalog": "$catalog"`. A step that
 needs content the plan makes first is `deferred` (or `simulated`, below a stand-in parent) in a dry run; with
 `--update-existing`, catalog content a step's GUID already names counts as existing, so a second run checks every step
-fully and reports `unchanged`. Put markets and warehouses before the prices and stock that use them. See
+fully and reports `unchanged`. Put markets and warehouses before the prices and stock that use them: a `price` step
+whose market an earlier `market` step makes or changes (a new currency, say), or an `inventory` step whose warehouse an
+earlier `warehouse` step makes, is `deferred` in a dry run, with a warning naming that step, and checked by the site when
+the plan runs. So a seed plan can grow by a market and its prices on a database it seeded before; once the market is as
+the plan wants it (the market step's dry run is `unchanged`), its prices are checked fully again. See
 [the guide](../../guides/developers/seed-a-commerce-catalog.md).
 
 ```json
