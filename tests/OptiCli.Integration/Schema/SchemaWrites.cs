@@ -34,6 +34,12 @@ internal sealed class SchemaWrites(OutputCheck check, string scratch)
 
     public bool Cms13 { get; private set; }
 
+    /// <summary>The site runs opticli's Commerce agent (<c>serve --status</c>'s <c>commerce.agent</c>): the <c>commerce</c> writes are checked.</summary>
+    public bool Commerce { get; private set; }
+
+    /// <summary>The site is the edge-case site, where every CMS write is checked; on a Commerce test site only the Commerce writes are.</summary>
+    public bool EdgeCase { get; private set; }
+
     /// <returns>False when the site isn't the edge-case site (no approval root): nothing was written.</returns>
     public async Task<bool> RunAsync()
     {
@@ -45,21 +51,31 @@ internal sealed class SchemaWrites(OutputCheck check, string scratch)
         }
         Agent = Version.TryParse(Text(status["agent"]?["version"])?.Split('-', '+')[0], out var version) ? version : null;
         Cms13 = Text(status["agent"]?["cmsVersion"])?.StartsWith("13", StringComparison.Ordinal) == true;
-        check.Note($"agent {status["agent"]?["version"]}, CMS {status["agent"]?["cmsVersion"]}");
+        Commerce = status["commerce"]?["agent"]?.GetValue<bool>() == true;
+        check.Note($"agent {status["agent"]?["version"]}, CMS {status["agent"]?["cmsVersion"]}{(Commerce ? $", Commerce {status["commerce"]?["version"]}" : "")}");
         await check.Ok("serve");
         await check.Any("serve", options: ["--logs", "--tail", "5"]);
 
-        var approval = await check.Ok("get", [ApprovalRoot.ToString()], ["--fields", "Name"]);
-        if (Text(approval?["parent"]) is not { } edge)
+        // A Commerce test site has no approval root: its get is not_found there, which isn't a problem.
+        var approval = Commerce ? (await check.Any("get", [ApprovalRoot.ToString()], ["--fields", "Name"])).Envelope?["data"] : await check.Ok("get", [ApprovalRoot.ToString()], ["--fields", "Name"]);
+        EdgeCase = Text(approval?["parent"]) is not null;
+        if (!EdgeCase && !Commerce)
         {
             check.Note("no approval root: not the edge-case site, nothing written");
             return false;
         }
         try
         {
-            await ContentAsync(edge, Text(approval!["ref"])!);
-            await SiteAsync();
-            await JobsAndUsersAsync();
+            if (EdgeCase)
+            {
+                await ContentAsync(Text(approval!["parent"])!, Text(approval!["ref"])!);
+                await SiteAsync();
+                await JobsAndUsersAsync();
+            }
+            if (Commerce)
+            {
+                await CommerceAsync();
+            }
         }
         finally
         {
@@ -85,7 +101,51 @@ internal sealed class SchemaWrites(OutputCheck check, string scratch)
             .Select(m => (m.Command, m.Mode))
             .Where(m => !NotRun.ContainsKey($"{m.Command} [{m.Mode}]"))
             .Where(m => Projects || !m.Command.StartsWith("projects", StringComparison.Ordinal))
-            .Where(m => Cms13 || m.Command != "composition");
+            .Where(m => Cms13 || m.Command != "composition")
+            // The Commerce writes need the Commerce agent; on a Commerce test site (not the edge-case site) only they run.
+            .Where(m => IsCommerce(m.Command) ? Commerce : EdgeCase);
+
+    private static bool IsCommerce(string command) => command == "commerce" || command.StartsWith("commerce ", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Every Commerce write, dry run and real, on catalog content of its own (a catalog, a product and a variant with codes
+    /// of this run), a warehouse and a market of its own. Catalog content can't be deleted with opticli, so it stays,
+    /// as the Commerce integration tests' does; the price and relation are removed again, as the battery runs.
+    /// </summary>
+    private async Task CommerceAsync()
+    {
+        var catalog = $"opticli-it schema {stamp}";
+        await check.Ok("create", ["catalog-root", "DefaultCurrency=USD", "DefaultLanguage=en", "WeightBase=kgs", "LengthBase=cm"], ["--type", "CatalogContent", "--name", catalog, "--publish"]);
+        await check.Ok("create", [$"catalog:{catalog}", $"Code=schema-{stamp}-p"], ["--type", "FashionProduct", "--name", "Product", "--publish"]);
+        await check.Ok("create", [$"catalog:{catalog}", $"Code=schema-{stamp}-v"], ["--type", "FashionVariant", "--name", "Variant", "--publish"]);
+        await check.Ok("set", [$"code:schema-{stamp}-v", "Size=M"], ["--dry-run"]);
+        string[] pair = [$"code:schema-{stamp}-p", $"code:schema-{stamp}-v"];
+        await check.Ok("commerce relation add", pair, ["--dry-run"]);
+        await check.Ok("commerce relation add", pair, ["--sort-order", "1"]);
+        await check.Ok("commerce relation remove", pair, ["--dry-run"]);
+        await check.Ok("commerce relation remove", pair);
+        await check.Ok("commerce relation remove", pair);
+        string[] price = ["--market", "DEFAULT", "--currency", "USD"];
+        await check.Ok("commerce price set", [pair[1]], [.. price, "--amount", "10", "--dry-run"]);
+        await check.Ok("commerce price set", [pair[1]], [.. price, "--amount", "10"]);
+        await check.Ok("commerce price set", [pair[1]], [.. price, "--amount", "12"]);
+        await check.Ok("commerce price remove", [pair[1]], [.. price, "--dry-run"]);
+        await check.Ok("commerce price remove", [pair[1]], price);
+        await check.Ok("commerce price remove", [pair[1]], price);
+        var warehouse = $"schema-{stamp}";
+        await check.Ok("commerce warehouse set", [warehouse], ["--name", "Schema", "--dry-run"]);
+        await check.Ok("commerce warehouse set", [warehouse], ["--name", "Schema", "--pickup-location", "true"]);
+        await check.Ok("commerce warehouse set", [warehouse], ["--active", "false"]);
+        await check.Ok("commerce inventory set", [pair[1]], ["--warehouse", warehouse, "--in-stock", "3", "--dry-run"]);
+        await check.Ok("commerce inventory set", [pair[1]], ["--warehouse", warehouse, "--in-stock", "3"]);
+        await check.Ok("commerce inventory set", [pair[1]], ["--warehouse", warehouse, "--backorder", "2"]);
+        var market = "S" + stamp[..7].ToUpperInvariant();
+        await check.Ok("commerce market set", [market], ["--currencies", "USD", "--languages", "en", "--dry-run"]);
+        await check.Ok("commerce market set", [market], ["--currencies", "USD", "--languages", "en", "--countries", "USA"]);
+        await check.Ok("commerce market set", [market], ["--enabled", "false"]);
+        await check.Fails("commerce price set", [pair[0]], [.. price, "--amount", "1"], code: "usage");
+        await check.Fails("commerce inventory set", [$"code:schema-{stamp}-none"], ["--warehouse", "default"], code: "not_found");
+    }
 
     private string Name(string what) => $"opticli-it schema {what} {stamp}";
 
