@@ -967,7 +967,7 @@ end), and `validUntil` needs `validFrom`. Times are UTC unless they have an offs
 warehouse is active, a new stock record tracked, a new market needs currencies and languages. Booleans take
 `true`/`false`. A catalog needs `DefaultCurrency`, `DefaultLanguage` and `WeightBase`; Commerce makes a `Code` when a
 node or entry has none. Catalog content can't be published separately (`set --publish` instead), moved, deleted or put
-in a project, and takes no blocks or media "for" it (`upload --for`/`--parent`, `block create`, `create --for`: usage).
+in a project, and takes no blocks or media "for" it (`upload --for`/`--parent`, `block create`, a plan's `create` with `for`: usage).
 Images are its `CommerceMediaCollection`: an array of media refs or `{ref, groupName, sortOrder}` (default group
 `default`, order the array's), the whole list. ContentAreas (`{"ref": "code:P-1"}`) and reference lists of CMS
 content take catalog refs. `resolve <catalog url>` asks the running site: `matchedBy: "catalog"`. A plan's `price` or

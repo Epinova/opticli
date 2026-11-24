@@ -69,8 +69,8 @@ suite can seed a Commerce site's catalog from code. See
   content (which saved a catalog row in the CMS's tables, or failed inside Commerce's save), a price whose end isn't
   after its start, a price in a currency its market doesn't have, a market currency Commerce doesn't have, a market
   language that isn't a culture, and blocks and media "for" catalog content or below it (`upload --for`/`--parent`,
-  `block create`, `create --for`; catalog content has no "For this page" folder): the hint says to upload to a media
-  folder and attach the image with `CommerceMediaCollection`.
+  `block create`, a plan's `create` with `for`; catalog content has no "For this page" folder): the hint says to upload
+  to a media folder and attach the image with `CommerceMediaCollection`.
 
 ### CLI
 

@@ -90,9 +90,10 @@ folders), `--request-approval`, `--publish-at`, `--from`, `--variation`, Content
 Commerce has them (`1__CatalogContent`, `1_4_CatalogContent`); `get` and `versions` don't read them.
 
 Blocks and media don't go "for" catalog content or below it: catalog content has no "For this page" folder, and
-holds no CMS content. `upload --for` or `--parent`, `block create --for` or `--parent`, and `create --for` with a
-catalog ref (or, in a plan, the `$id` of catalog content) are a `usage` error in the dry run and the run, whose hint
-says what to do instead: upload the image to a media folder and attach it with `CommerceMediaCollection`.
+holds no CMS content. `upload --for` or `--parent`, `block create --for` or `--parent`, and a plan's `create` step
+with `for`, given a catalog ref (or, in a plan, the `$id` of catalog content), are a `usage` error in the dry run and
+the run, whose hint says what to do instead: upload the image to a media folder and attach it with
+`CommerceMediaCollection`.
 
 ### Product images: CommerceMediaCollection
 
