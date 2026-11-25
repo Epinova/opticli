@@ -72,28 +72,74 @@ Catalogs, nodes and entries are content, and their types come from the content m
 FashionProduct`): `create` and `set` write them as they write pages, through the site agent. The properties are the
 type's, Commerce's own among them: `Code` on nodes and entries (Commerce makes one when it is left out), `DisplayName`,
 `SeoUri`; on a catalog `DefaultCurrency`, `DefaultLanguage` and `WeightBase` (required), `LengthBase`,
-`CatalogLanguages` and `Sites` (the sites a catalog belongs to; none: every site).
+`CatalogLanguages` (its languages besides the default, see [Languages and translations](#languages-and-translations))
+and `Sites` (the sites a catalog belongs to; none: every site).
 
 | Command | Does |
 |---|---|
 | `create catalog-root --type CatalogContent --name <name> ...` | a catalog |
 | `create <catalog-ref> --type <type> --name <name> [Prop=value]... [--lang] [--publish] [--guid]` | a node, product, variant, bundle or package below a catalog or node (its parent is its primary node) |
 | `set <catalog-ref> [Prop=value]... [--name] [--lang] [--publish] [--base-version] [--force]` | a new version with the changes; `set <ref> --publish` alone publishes a draft. `--base-version` takes the version as a result prints it (`1_33_CatalogContent`) or its number |
+| `translate <catalog-ref> --lang <code> [Prop=value]... [--publish]` | a translation into one of its catalog's languages: on Commerce 15 a new language branch, else (Commerce 14, or a branch that exists) a new version in that language, as `set --lang` (`existing: true`). See [Languages and translations](#languages-and-translations) |
 
 Catalog content is a draft until it is published (`--publish`, or `apply --publish`). A plan's `create` step with a
 `guid` (or a `guidNamespace`) and `apply --update-existing` updates the content when it exists, and reports
 `unchanged` when nothing differs. What catalog content doesn't take is a `usage` error before anything is saved:
 `--for` and `--blueprint`, projects (`--in-project`; a plan's own `project` leaves catalog steps out, as it leaves out
-folders), `--request-approval`, `--publish-at`, `--from`, `--variation`, ContentArea and composition edits. `publish`,
-`unpublish`, `discard`, `move`, `delete`, `translate` and `access` refuse catalog content: opticli never deletes it
-(Commerce has no recycle bin for it); use Commerce's catalog UI. Results print catalog content's ref and version as
-Commerce has them (`1__CatalogContent`, `1_4_CatalogContent`); `get` and `versions` don't read them.
+folders), `--request-approval`, `--publish-at`, `--from`, `--variation`, ContentArea and composition edits. `translate`
+takes catalog content ([Languages and translations](#languages-and-translations)); `publish`, `unpublish`, `discard`,
+`move`, `delete`, `translate --remove` and `access` refuse it: opticli never deletes it (Commerce has no recycle bin
+for it); use Commerce's catalog UI. Results print catalog content's ref and version as Commerce has them
+(`1__CatalogContent`, `1_4_CatalogContent`); `get` and `versions` don't read them.
 
 Blocks and media don't go "for" catalog content or below it: catalog content has no "For this page" folder, and
 holds no CMS content. `upload --for` or `--parent`, `block create --for` or `--parent`, and a plan's `create` step
 with `for`, given a catalog ref (or, in a plan, the `$id` of catalog content), are a `usage` error in the dry run and
 the run, whose hint says what to do instead: upload the image to a media folder and attach it with
 `CommerceMediaCollection`.
+
+### Languages and translations
+
+A catalog's languages are its `DefaultLanguage` and its `CatalogLanguages` (a list of language codes): Commerce keeps
+the catalog's content in those languages only, and its catalog URLs have the language in them (`/sv/fashion/women/`).
+Give the list when the catalog is made, or set it on an existing catalog; Commerce adds the default language itself.
+Every language in it must be enabled in the CMS (`opticli languages`), and a market sells in the languages it has
+(`commerce market set --languages`).
+
+```bash
+opticli create catalog-root --type CatalogContent --name Fashion --publish \
+  --values '{"DefaultCurrency": "USD", "DefaultLanguage": "en", "WeightBase": "kgs", "LengthBase": "cm", "CatalogLanguages": ["en", "sv"]}'
+opticli set catalog:Fashion --values '{"CatalogLanguages": ["en", "sv", "nb"]}' --publish
+```
+
+Nodes and entries are made in the catalog's default language (their master language) and translated with `translate`
+or `set --lang`, which write the culture-specific properties (`DisplayName`, `SeoUri`, and the model's
+`[CultureSpecific]` ones). `--publish` publishes the translation in the same step:
+
+```bash
+opticli translate code:women --lang sv DisplayName=Dam Teaser="För henne" --publish
+opticli set code:women --lang sv DisplayName=Dam --publish
+```
+
+- **Commerce 14** keeps catalog content in every language of its catalog from the start: when it lists an item's
+  versions, it saves a version of its own in each language that has none (saved by `system`), a copy of what it serves
+  in that language. `translate` saves into that language as `set --lang` does (`existing: true`), and neither counts
+  Commerce's copy as someone else's draft: the translation is published without `--include-draft`. A draft someone
+  else saved in that language still stops the publish, as for any content (`details.reason: "pendingDraft"`; see
+  [Writing](commands.md#writing-needs-opticli-serve)).
+- **Commerce 15** makes a language branch as the CMS does: `translate` makes it (`set --lang` on an item without the
+  branch is `not_found`, and says to translate it first). A `translate` of a branch that exists saves into it as `set
+  --lang` does, so a plan's `translate` step runs again `unchanged` on either major.
+
+Catalog content has one name, the master language's, in every language: Commerce drops a name saved in another
+language. The name shown in a language is its `DisplayName`, so `--name` with `--lang` in another language is a `usage`
+error (unless it is the name the item has). A language that isn't one of the catalog's is a `usage` error before
+anything is saved, for `create`, `set` and `translate`, with the `set catalog:... --values '{"CatalogLanguages":
+[...]}'` that adds it: Commerce 14 has no such language to save into, Commerce 15 saves a version it then can't load,
+and a `create` would be saved in the default language instead. In a plan, a step in a language that an earlier step
+adds to the catalog's `CatalogLanguages` is `deferred` in the dry run, with a warning naming that step, and checked by
+the site when the plan runs, so a seed plan can grow by a language. `commerce get --lang sv` shows the language's
+published version, else its latest draft.
 
 ### Product images: CommerceMediaCollection
 
@@ -188,8 +234,8 @@ tree`. `get`, `children` and `tree` read the CMS database, where it isn't: given
 | Command | Shows |
 |---|---|
 | `commerce` | `{version, catalogRoot, catalogRootGuid, catalogs: [{ref, guid, name}]}` |
-| `commerce get <ref> [--lang <code>]` | one catalog item as the site loads it: `ref`, `guid`, `name`, `type`, `kind` (`catalog`, `node`, `product`, `variation`, `bundle`, `package`), `language`, `masterLanguage`, `languages`, `status`, `parent`, `startPublish`, `saved`, `url`, and every property `{type, value}` (the model's and Commerce's: `Code`, `DisplayName`, `SeoUri`, `CommerceMediaCollection`, ...); the published version, else the latest |
-| `commerce children [<ref>] [--limit <n>]` | `{parent, children, more}`: the catalogs below the root (the default), the nodes and entries below a catalog or node, also the entries a node has as an extra category; each `{ref, guid, name, type, kind, code, parent, masterLanguage, languages, version}`. At most `--limit` (200) |
+| `commerce get <ref> [--lang <code>]` | one catalog item as the site loads it: `ref`, `guid`, `name`, `type`, `kind` (`catalog`, `node`, `product`, `variation`, `bundle`, `package`), `language`, `masterLanguage`, `languages`, `status`, `parent`, `startPublish`, `saved`, `url`, and every property `{type, value}` (the model's and Commerce's: `Code`, `DisplayName`, `SeoUri`, `CommerceMediaCollection`, ...); the published version in that language, else its latest draft |
+| `commerce children [<ref>] [--limit <n>]` | `{parent, children, more}`: the catalogs below the root (the default), the nodes and entries below a catalog or node, also the entries a node has as an extra category; each `{ref, guid, name, type, kind, code, parent, masterLanguage, languages, version, catalogLanguages}` (`languages`: the languages it is in, on Commerce 14 every one of its catalog's; `catalogLanguages`: its catalog's). At most `--limit` (200) |
 | `commerce tree [<ref>] [--depth <n>]` | depth first, each `{depth, ref, guid, name, type, kind, code}`: the item and `--depth` (3) levels below it |
 | `commerce relations`, `commerce prices`, `commerce stock`, `commerce warehouses`, `commerce markets` | as above |
 
@@ -202,9 +248,9 @@ URL as a ref: give them the ref `resolve` prints.
 
 ## Plans
 
-Every write above is also a plan step (`relation`, `price`, `warehouse`, `inventory`, `market`, and `create` and `set`
-for catalog content), checked by `apply --dry-run` with the rest of the plan. A `$id` of catalog content is its ref
-(`1__CatalogContent`), in later steps' refs and in property values: a start page's `"Catalog": "$catalog"`. A step that
+Every write above is also a plan step (`relation`, `price`, `warehouse`, `inventory`, `market`, and `create`, `set`
+and `translate` for catalog content), checked by `apply --dry-run` with the rest of the plan. A `$id` of catalog
+content is its ref (`1__CatalogContent`), in later steps' refs and in property values: a start page's `"Catalog": "$catalog"`. A step that
 needs content the plan makes first is `deferred` (or `simulated`, below a stand-in parent) in a dry run; with
 `--update-existing`, catalog content a step's GUID already names counts as existing, so a second run checks every step
 fully and reports `unchanged`. Put markets and warehouses before the prices and stock that use them. A `price` step
