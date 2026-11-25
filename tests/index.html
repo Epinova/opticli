@@ -12,7 +12,7 @@
 <meta name="twitter:card" content="summary">
 <meta name="color-scheme" content="light dark">
 <link rel="preload" href="../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="../style.css?v=40f6687b38">
+<link rel="stylesheet" href="../style.css?v=47224649ae">
 <script>
 // Before the first paint: the examples start empty, so hide what the first play builds up. motion.js takes over;
 // without it (no script, a failed load) the page shows everything again after 3 seconds.
@@ -263,7 +263,9 @@ for (const b of document.querySelectorAll('.copy')) b.addEventListener('click', 
 });
 </script>
 <script type="module">
-import { loop, begin, sleep, state, toggleMarkup } from '../motion.js?v=6ec6efa63b';
+import { loop, begin, sleep, state, toggleMarkup } from '../motion.js?v=27bfa18b96';
+import { decorate } from '../halftone.js?v=c3d0da6f61';
+decorate();
 
 const run = document.querySelector('.run');
 const toggle = run.querySelector('.mtoggle');

@@ -59,11 +59,13 @@ export async function begin({ root, reset, instant, signal, fade = 600 }) {
   else { reset(); await sleep(fade, signal); }
 }
 
+// A cycle that resolves to true has played for the last time: the loop then stops for good and its Pause goes.
 export function loop({ root, toggle, cycle, rest }) {
   let ctrl = null;
   let paused = reduced;
   let visible = false;
-  const running = () => !paused && visible && !document.hidden;
+  let finished = false;
+  const running = () => !finished && !paused && visible && !document.hidden;
   const stop = () => {
     if (ctrl) { ctrl.abort(); ctrl = null; }
     rest();
@@ -78,7 +80,12 @@ export function loop({ root, toggle, cycle, rest }) {
           const played = cycle(c.signal, instant);
           document.documentElement.classList.remove('m-pre');
           instant = false;
-          await played;
+          if (await played === true) {
+            finished = true;
+            ctrl = null;
+            if (!toggle.hasAttribute('data-keep')) toggle.hidden = true;
+            return;
+          }
         }
       } catch (e) { if (!c.signal.aborted) console.error(e); }
     })();
@@ -96,6 +103,7 @@ export function loop({ root, toggle, cycle, rest }) {
   return {
     get running() { return !!ctrl; },
     restart() { if (!ctrl) return; ctrl.abort(); ctrl = null; rest(); start(false); },
+    get finished() { return finished; },
   };
 }
 

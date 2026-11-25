@@ -12,7 +12,7 @@
 <meta name="twitter:card" content="summary">
 <meta name="color-scheme" content="light dark">
 <link rel="preload" href="fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=40f6687b38">
+<link rel="stylesheet" href="style.css?v=47224649ae">
 <script>
 // Before the first paint: the examples start empty, so hide what the first play builds up. motion.js takes over;
 // without it (no script, a failed load) the page shows everything again after 3 seconds.
@@ -23,7 +23,13 @@ if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
 </script>
 <style>
 
-.intro { padding-block: 48px 0; }
+.intro { padding-block: 48px 0; position: relative; isolation: isolate; }
+/* The centerpiece: the halftone in the space right of the title, behind the text, fading into the ground at its edges
+   and most of all towards the title, so no dot sits on a letter. Hidden where the title takes the width. */
+.centerpiece { position: absolute; z-index: -1; top: 8px; right: -24px; bottom: -20px; width: min(40%, 500px);
+  --fade: linear-gradient(to right, transparent 0%, #000 42%), radial-gradient(ellipse 50% 50% at 50% 50%, #000 55%, transparent 100%);
+  -webkit-mask-image: var(--fade); -webkit-mask-composite: source-in; mask-image: var(--fade); mask-composite: intersect; }
+@media (max-width: 1080px) { .centerpiece { display: none; } }
 h1 { font-weight: 800; font-size: clamp(2.5rem, 5.6vw, 4.8rem); line-height: 1.02; letter-spacing: -.035em; max-width: 18ch; }
 .lead { margin-top: 20px; max-width: 52ch; font-size: 1.25rem; line-height: 1.5; color: var(--soft); }
 
@@ -115,6 +121,7 @@ h1 { font-weight: 800; font-size: clamp(2.5rem, 5.6vw, 4.8rem); line-height: 1.0
 
 <main class="wrap">
   <section class="intro">
+    <div class="centerpiece dots" aria-hidden="true"></div>
     <h1>Let AI and tests work on real Optimizely content.</h1>
     <p class="lead">For coding agents, for editors' AI assistants and for Playwright tests. Whichever way in, every change goes through your site's own CMS.</p>
   </section>
@@ -162,7 +169,7 @@ h1 { font-weight: 800; font-size: clamp(2.5rem, 5.6vw, 4.8rem); line-height: 1.0
       </article>
     </div>
     <p class="bar"><b>All three save through your site's own CMS</b><span class="facts"><span class="fact"><svg class="tick" viewBox="0 0 20 20" aria-hidden="true"><circle class="fill" cx="10" cy="10" r="9"/><path class="mark" pathLength="1" d="M5.8 10.4l2.8 2.8 5.6-6.1"/></svg>validated</span><span class="fact"><svg class="tick" viewBox="0 0 20 20" aria-hidden="true"><circle class="fill" cx="10" cy="10" r="9"/><path class="mark" pathLength="1" d="M5.8 10.4l2.8 2.8 5.6-6.1"/></svg>versioned</span><span class="fact"><svg class="tick" viewBox="0 0 20 20" aria-hidden="true"><circle class="fill" cx="10" cy="10" r="9"/><path class="mark" pathLength="1" d="M5.8 10.4l2.8 2.8 5.6-6.1"/></svg>with access rights</span><span class="fact"><svg class="tick" viewBox="0 0 20 20" aria-hidden="true"><circle class="fill" cx="10" cy="10" r="9"/><path class="mark" pathLength="1" d="M5.8 10.4l2.8 2.8 5.6-6.1"/></svg>with events and caches as when an editor saves</span></span><span class="wash" aria-hidden="true"></span></p>
-    <p class="shelf-foot"><button class="mtoggle" type="button" data-pause="Pause the examples" data-play="Play the examples"></button></p>
+    <p class="shelf-foot"><button class="mtoggle" type="button" data-keep data-pause="Pause the animation" data-play="Play the animation"></button></p>
   </div>
 
   <section class="fit" aria-labelledby="fit-h">
@@ -209,7 +216,8 @@ for (const b of document.querySelectorAll('.copy')) b.addEventListener('click', 
 });
 </script>
 <script type="module">
-import { loop, begin, sleep, show, hide, state, words, splitWords, toggleMarkup } from './motion.js?v=6ec6efa63b';
+import { loop, begin, sleep, show, hide, state, words, splitWords, toggleMarkup } from './motion.js?v=27bfa18b96';
+import { halftone } from './halftone.js?v=c3d0da6f61';
 
 const shelf = document.querySelector('.shelf');
 const panels = [...shelf.querySelectorAll('.panel')];
@@ -259,36 +267,38 @@ function land(i) {
   }
 }
 
-let next = 0, current = -1;
+// The shelf plays once: each panel in turn, then it stops for good. If the visitor scrolls away or pauses part-way,
+// what's left plays when they come back or press Play.
+let next = 0, fresh = true;
 const rest = () => {
-  current = -1;
-  panels.forEach((p) => p.getAnimations().forEach((a) => a.cancel()));
+  fresh = true;
   wash.getAnimations().forEach((a) => a.cancel());
   show(splitWords(cmd), splitWords(quote), cmdRes, quoteRes);
   state(runs, null);
   facts.forEach((f) => f.removeAttribute('data-lit'));
 };
 
-const ctl = loop({
+loop({
   root: shelf, toggle, rest,
   cycle: async (s, instant) => {
-    const i = (current = next);
-    next = (i + 1) % panels.length;
-    await begin({ root: shelf, reset: resets[i], instant, signal: s, fade: 700 });
+    const i = next;
+    // Every panel still to play starts empty, so none shows its finished example and then loses it.
+    if (fresh) {
+      await begin({ root: shelf, reset: () => resets.slice(i).forEach((r) => r()), instant, signal: s, fade: 700 });
+      fresh = false;
+    } else await sleep(500, s);
     await plays[i](s);
     await sleep(600, s);
     land(i);
-    await sleep(4200, s);
+    await sleep(i === panels.length - 1 ? 3800 : 1800, s);
+    next = i + 1;
+    return next === panels.length;
   },
 });
 
-// Pointing at a panel plays that one next, so the shelf follows the visitor's eye.
-let hover;
-panels.forEach((p, i) => {
-  const go = () => { clearTimeout(hover); hover = setTimeout(() => { if (ctl.running && current !== i) { next = i; ctl.restart(); } }, 160); };
-  p.addEventListener('pointerenter', go);
-  p.addEventListener('focusin', go);
-});
+// The centerpiece: the halftone, with a ripple in each field's ink in turn. The shelf's Pause link stops it too.
+const center = document.querySelector('.centerpiece');
+if (getComputedStyle(center).display !== 'none') halftone(center, { mode: 'loop', toggle });
 </script>
 </body>
 </html>

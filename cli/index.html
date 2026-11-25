@@ -13,7 +13,7 @@
 <meta name="color-scheme" content="light dark">
 <link rel="preload" href="../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/asciinema-player@3.17.0/dist/bundle/asciinema-player.css">
-<link rel="stylesheet" href="../style.css?v=40f6687b38">
+<link rel="stylesheet" href="../style.css?v=47224649ae">
 <style>
 /* The CLI's page: its own field is p1 (sage). */
 main { --bg: var(--p1); --c: var(--p1-ink); }
@@ -565,6 +565,10 @@ Promise.race([
   document.fonts ? document.fonts.load('14px "Fragment Mono"') : Promise.resolve(),
   new Promise(r => setTimeout(r, 1500)),
 ]).catch(() => {}).then(start);
+</script>
+<script type="module">
+import { decorate } from '../halftone.js?v=c3d0da6f61';
+decorate();
 </script>
 </body>
 </html>

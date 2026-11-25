@@ -293,7 +293,7 @@ main[data-area="editors"] { --bg: var(--p2); --c: var(--p2-ink); }
 :root { --ease: cubic-bezier(.16, 1, .3, 1); }
 
 /* Before the first paint: what the first play starts from (the inline script in those pages' head). */
-.m-pre .panel:first-child .example > * { opacity: 0; }
+.m-pre .panel .example > * { opacity: 0; }
 .m-pre .chat > :not(.example-note) { opacity: 0; }
 .m-pre .passes :is(.t, .file) { opacity: .45; }
 .m-pre .passes small, .m-pre .summary { opacity: 0; }
@@ -329,7 +329,21 @@ main[data-area="editors"] { --bg: var(--p2); --c: var(--p2-ink); }
 /* Pause and play: WCAG 2.2.2, since the examples move on their own. */
 .mtoggle { display: inline-flex; align-items: center; gap: 7px; padding: 6px 8px; margin: -6px -8px; border: 0; border-radius: 8px; background: none; color: inherit; font: 600 .88rem var(--sans); cursor: pointer; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: .22em; }
 .mtoggle:hover { text-decoration-thickness: 2px; }
+.mtoggle[hidden] { display: none; }
 .mtoggle svg { width: .85em; height: .85em; }
 .mtoggle .i-play { display: none; }
 .mtoggle[data-paused] .i-play { display: block; }
 .mtoggle[data-paused] .i-pause { display: none; }
+
+/* The halftone (halftone.js): the site's one decorative mark. A canvas fading into its surface at the edges. */
+.dots { pointer-events: none; }
+.dots canvas { display: block; width: 100%; height: 100%; }
+/* An area page's opening: the free space of the pitch column, beside the proof; never adds height. */
+.pitch .dots { flex: 1 1 0; min-height: 0; margin: -12px -20px;
+  -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 40%, transparent 100%); mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 40%, transparent 100%); }
+@media (max-width: 1060px) { .pitch .dots { display: none; } }
+/* The shelf field: a still dot screen fading out from its top right corner, behind the heading's empty side. */
+.shelf-field { position: relative; isolation: isolate; }
+.shelf-field > .dots { position: absolute; z-index: -1; top: 0; right: 0; width: min(60%, 680px); height: 240px; border-top-right-radius: inherit; overflow: hidden;
+  -webkit-mask-image: radial-gradient(ellipse 100% 100% at 100% 0%, #000 15%, transparent 70%); mask-image: radial-gradient(ellipse 100% 100% at 100% 0%, #000 15%, transparent 70%); }
+@media (max-width: 900px) { .shelf-field > .dots { width: 70%; height: 160px; } }
