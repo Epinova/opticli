@@ -141,7 +141,10 @@ references, a `MainContentArea` and a `RelatedContent` reference list (for catal
 `FashionVariant`, `FashionBundle`). It also registers Commerce's hierarchical catalog routing
 (`CatalogRouteHelper.MapDefaultHierarchialRouter`, the standard registration on both majors) and plain-HTML pages for
 the start page, products and variants (a product's and variant's show the images of its `CommerceMediaCollection`), so
-catalog content has URLs that answer. Then setup.sh serves the site with this checkout's opticli (or `OPTICLI`) and
+catalog content has URLs that answer. For the market tests, `POST /opticli-fixture/bare-market?id=<id>` (loopback only)
+makes a market as SQL makes one, with a default currency and language and no lists. setup.sh gives both sites two price
+types of their own in `appsettings.json` (`SalePriceTypes`: `MEMBER` 3 and `OUTLET` 4), which the price type tests
+need. Then setup.sh serves the site with this checkout's opticli (or `OPTICLI`) and
 applies `fixture.plan.json`: the start page, a site definition for it (hosts `commerce.localhost` and `*`), an image,
 and a small catalog `Fixture` (a node, a product and a variant with the image, a price and stock) that the start page
 points at. The tests make the rest of their content themselves. `FRESH=1` makes both again from nothing (it drops the
