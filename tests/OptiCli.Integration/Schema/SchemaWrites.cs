@@ -132,6 +132,9 @@ internal sealed class SchemaWrites(OutputCheck check, string scratch)
         await check.Ok("commerce price remove", [pair[1]], [.. price, "--dry-run"]);
         await check.Ok("commerce price remove", [pair[1]], price);
         await check.Ok("commerce price remove", [pair[1]], price);
+        // A price type of the site's own (the Commerce test sites' MEMBER): priceType is an open set.
+        await check.Ok("commerce price set", [pair[1]], [.. price, "--amount", "9", "--price-type", "member", "--price-code", "{\"tier\":\"gold\"}"]);
+        await check.Ok("commerce price remove", [pair[1]], [.. price, "--price-type", "member", "--price-code", "{\"tier\":\"gold\"}"]);
         var warehouse = $"schema-{stamp}";
         await check.Ok("commerce warehouse set", [warehouse], ["--name", "Schema", "--dry-run"]);
         await check.Ok("commerce warehouse set", [warehouse], ["--name", "Schema", "--pickup-location", "true"]);

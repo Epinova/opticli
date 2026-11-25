@@ -12,8 +12,11 @@ public class CommerceRulesTests
 {
     private static readonly DateTime Today = new(2026, 11, 23, 0, 0, 0, DateTimeKind.Utc);
 
-    private static CommercePrice Price(decimal amount, DateTime from, DateTime? until = null, string market = "DEFAULT", string currency = "USD") =>
-        new(market, currency, amount, PriceTypes.All, "", 0, from, until);
+    private static CommercePrice Price(decimal amount, DateTime from, DateTime? until = null, string market = "DEFAULT", string currency = "USD", string type = PriceTypes.All, string code = "") =>
+        new(market, currency, amount, type, code, 0, from, until);
+
+    /// <summary>A site with two price types of its own, as the Commerce test sites have.</summary>
+    private static readonly PriceTypeSet SiteTypes = PriceTypeSet.Of([("MEMBER", 3, "Members"), ("OUTLET", 4, "Outlet")]);
 
     [Fact]
     public void Without_a_start_a_price_step_names_the_base_price_not_a_campaign()
@@ -69,6 +72,88 @@ public class CommerceRulesTests
 
         Assert.Equal(AgentErrorCodes.Usage, ex.Code);
         Assert.Contains(message, ex.Message);
+    }
+
+    [Fact]
+    public void A_site_s_own_price_types_are_named_by_their_key_in_lower_case()
+    {
+        Assert.Equal(["all", "user", "group", "member", "outlet"], SiteTypes.Types.Select(t => t.Name));
+        Assert.Equal([0, 1, 2, 3, 4], SiteTypes.Types.Select(t => t.Id));
+        Assert.Equal("Members", SiteTypes.Types[3].Description);
+        Assert.Equal("Customer Price Group", SiteTypes.Types[2].Description);
+        // A row of a type the site no longer defines shows its number.
+        Assert.Equal("7", SiteTypes.Name(7));
+
+        Assert.Equal(3, SiteTypes.Id("Member"));
+        Assert.Equal(4, SiteTypes.Id(" 4 "));
+        Assert.Equal(0, SiteTypes.Id(null));
+        Assert.Equal(2, SiteTypes.Id("GROUP"));
+        Assert.Equal(7, SiteTypes.Id("7", anyNumber: true));
+    }
+
+    [Theory]
+    [InlineData("nope")]
+    [InlineData("7")]
+    [InlineData("Members")]
+    public void A_price_type_the_site_doesnt_have_is_refused_with_the_site_s_types(string type)
+    {
+        var ex = Assert.Throws<AgentException>(() => SiteTypes.Id(type));
+
+        Assert.Equal(AgentErrorCodes.Usage, ex.Code);
+        Assert.Contains("it has all, user, group, member, outlet", ex.Message);
+    }
+
+    [Fact]
+    public void A_key_that_would_clash_with_another_name_is_named_by_its_number()
+    {
+        var types = PriceTypeSet.Of([("All", 5, null), ("12", 6, "Twelve"), ("", 8, null), ("AllCustomers", 0, "Everyone")]);
+
+        Assert.Equal(["all", "user", "group", "5", "6", "8"], types.Types.Select(t => t.Name));
+        Assert.Equal("Everyone", types.Types[0].Description);
+        Assert.Equal(0, types.Id("all"));
+        Assert.Equal(5, types.Id("5"));
+    }
+
+    [Fact]
+    public void The_base_price_never_matches_a_row_of_the_site_s_own_type()
+    {
+        // The same market, currency, quantity and start: before 0.37.0 all three read as `all`.
+        var basePrice = Price(29, Today);
+        var member = Price(25, Today, type: "member");
+        var outlet = Price(19, Today, type: "outlet", code: "{\"rule\":\"clearance\"}");
+
+        var key = PriceKeys.Key("DEFAULT", "USD", null, null, null, null, SiteTypes);
+        Assert.Equal([basePrice], new[] { basePrice, member, outlet }.Where(p => PriceKeys.Matches(p, key)));
+
+        var memberKey = PriceKeys.Key("DEFAULT", "USD", "MEMBER", null, null, null, SiteTypes);
+        Assert.Equal(3, memberKey.PriceTypeId);
+        Assert.Equal([member], new[] { basePrice, member, outlet }.Where(p => PriceKeys.Matches(p, memberKey)));
+
+        var outletKey = PriceKeys.Key("DEFAULT", "USD", "4", " {\"rule\":\"clearance\"} ", null, null, SiteTypes);
+        Assert.Equal("{\"rule\":\"clearance\"}", outletKey.PriceCode);
+        Assert.Equal([outlet], new[] { basePrice, member, outlet }.Where(p => PriceKeys.Matches(p, outletKey)));
+    }
+
+    [Fact]
+    public void A_site_s_own_type_takes_any_price_code_or_none_up_to_Commerce_s_length()
+    {
+        Assert.Equal("", PriceKeys.Key("DEFAULT", "USD", "member", null, null, null, SiteTypes).PriceCode);
+        Assert.Equal("gold", PriceKeys.Key("DEFAULT", "USD", "member", "gold", null, null, SiteTypes).PriceCode);
+        PriceKeys.Key("DEFAULT", "USD", "member", new string('x', PriceKeys.MaxPriceCode), null, null, SiteTypes);
+
+        var ex = Assert.Throws<AgentException>(() => PriceKeys.Key("DEFAULT", "USD", "member", new string('x', PriceKeys.MaxPriceCode + 1), null, null, SiteTypes));
+        Assert.Contains("at most 256", ex.Message);
+        Assert.Throws<AgentException>(() => PriceKeys.Key("DEFAULT", "USD", "all", "gold", null, null, SiteTypes));
+    }
+
+    [Fact]
+    public void A_removal_takes_the_number_of_a_type_the_site_no_longer_has()
+    {
+        Assert.Throws<AgentException>(() => PriceKeys.Key("DEFAULT", "USD", "7", null, null, null, SiteTypes));
+
+        var key = PriceKeys.Key("DEFAULT", "USD", "7", null, null, null, SiteTypes, remove: true);
+        Assert.Equal("7", key.PriceType);
+        Assert.True(PriceKeys.Matches(Price(10, Today, type: "7"), key));
     }
 
     [Fact]

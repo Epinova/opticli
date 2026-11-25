@@ -3,6 +3,22 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.37.0 (unreleased)
+
+### Optimizely Commerce
+
+- **Price types of the site's own are no longer read as `all`.** A site can add price types to Commerce's three in
+  its settings (`EPiServer:Commerce:CatalogOptions:SalePriceTypes`, members' prices, say). opticli read every such
+  row as `"priceType": "all"`, told apart from the base price only by its amount, and `price set` of the base price
+  next to them failed ("Give validFrom", which couldn't help) or updated such a row as if it were the base price. Now a
+  site's own type is named by its key in lower case (`MEMBER` is `member`), the number of one the site no longer
+  defines as a string (`"7"`), and rows are matched by their type: `all` never names a `member` row.
+  `--price-type` (a plan's `priceType`) takes the name in any case or the number; one the site doesn't have is a
+  `usage` error that lists the site's types. Such a type takes any `--price-code` or none, kept as given (a JSON rule
+  too), up to Commerce's 256 characters. `opticli commerce` lists the site's types as `priceTypes: [{name, id,
+  description}]`. `priceType` in the output schema and the npm types is open now: `'all' | 'user' | 'group' | (string &
+  {})`.
+
 ## 0.36.0 (24 November 2026)
 
 opticli writes and reads Optimizely Commerce 14 (CMS 12) and 15 (CMS 13) sites, through the running site, so an E2E

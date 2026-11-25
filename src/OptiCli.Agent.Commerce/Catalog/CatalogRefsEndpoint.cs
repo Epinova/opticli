@@ -38,6 +38,7 @@ internal static class CommerceStatusEndpoint
             Extensions.AgentExtensions.Commerce?.Version ?? "unknown",
             CatalogRefSyntax.Format(root.ContentLink.ID),
             root.ContentGuid,
-            finder.Catalogs().Select(c => new CatalogSummary(CatalogRefSyntax.Format(c.ContentLink.ID), c.ContentGuid, c.Name)).ToList());
+            finder.Catalogs().Select(c => new CatalogSummary(CatalogRefSyntax.Format(c.ContentLink.ID), c.ContentGuid, c.Name)).ToList(),
+            Pricing.PriceTypeSet.From(request.Context.RequestServices).Types);
     }
 }

@@ -35,10 +35,10 @@ public sealed record PriceOperation(string Entry, string Market, string Currency
 {
     public override string Kind => "price";
 
-    /// <summary><c>all</c> (default), <c>user</c> or <c>group</c>.</summary>
+    /// <summary><c>all</c> (default), <c>user</c>, <c>group</c>, or a price type of the site's own by name or number.</summary>
     public string? PriceType { get; init; }
 
-    /// <summary>The user name or price group of a <c>user</c> or <c>group</c> price.</summary>
+    /// <summary>The user name or price group of a <c>user</c> or <c>group</c> price; any text or none for the site's own types.</summary>
     public string? PriceCode { get; init; }
 
     public decimal? MinQuantity { get; init; }

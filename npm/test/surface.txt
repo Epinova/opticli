@@ -47,6 +47,7 @@
 @epinova/opticli interface CommercePrice
 @epinova/opticli interface CommercePriceRemoveOptions
 @epinova/opticli interface CommercePriceSetOptions
+@epinova/opticli interface CommercePriceType
 @epinova/opticli interface CommercePricesOptions
 @epinova/opticli interface CommerceRelationAddOptions
 @epinova/opticli interface CommerceRelationRemoveOptions
@@ -663,6 +664,7 @@ CommerceGetOptions.lang?
 CommerceInfo.catalogRoot
 CommerceInfo.catalogRootGuid
 CommerceInfo.catalogs
+CommerceInfo.priceTypes
 CommerceInfo.version
 CommerceInventorySetOptions.backorder?
 CommerceInventorySetOptions.connection?
@@ -732,6 +734,9 @@ CommercePriceSetOptions.priceCode?
 CommercePriceSetOptions.priceType?
 CommercePriceSetOptions.validFrom?
 CommercePriceSetOptions.validUntil?
+CommercePriceType.description?
+CommercePriceType.id
+CommercePriceType.name
 CommercePricesOptions.connection?
 CommercePricesOptions.connectionName?
 CommercePricesOptions.db?

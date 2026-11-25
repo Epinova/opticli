@@ -73,8 +73,11 @@ public sealed record RelationResult(
 /// <summary>One price row of a catalog entry (Commerce's <c>IPriceDetailValue</c>).</summary>
 /// <param name="Market">The market's id (<c>DEFAULT</c>).</param>
 /// <param name="Currency">ISO 4217 code (<c>USD</c>).</param>
-/// <param name="PriceType">One of <see cref="PriceTypes"/>.</param>
-/// <param name="PriceCode">The user name or price group for those types; empty for <c>all</c>.</param>
+/// <param name="PriceType">
+/// One of <see cref="PriceTypes"/>, or a price type of the site's own: its key in lower case (<c>member</c>), or its number
+/// (<c>"7"</c>) when the site no longer defines it (<see cref="CommerceInfo.PriceTypes"/> lists the site's).
+/// </param>
+/// <param name="PriceCode">The user name or price group for those types, what the site keeps there for its own; empty for <c>all</c>.</param>
 /// <param name="MinQuantity">The price applies from this quantity on.</param>
 /// <param name="ValidFrom">UTC.</param>
 /// <param name="ValidUntil">UTC; null: no end.</param>
@@ -82,13 +85,13 @@ public sealed record CommercePrice(
     string Market,
     string Currency,
     decimal Amount,
-    [property: OutputValues(typeof(PriceTypes))] string PriceType,
+    [property: OutputValues(typeof(PriceTypes), Open = true)] string PriceType,
     string PriceCode,
     decimal MinQuantity,
     DateTime ValidFrom,
     DateTime? ValidUntil);
 
-/// <summary>Who a price is for (Commerce's <c>CustomerPricing.PriceType</c>).</summary>
+/// <summary>Who a price is for (Commerce's <c>CustomerPricing.PriceType</c>); a site may add its own (<see cref="CommercePriceType"/>).</summary>
 [ValueSetName("PriceType")]
 public static class PriceTypes
 {
@@ -106,9 +109,10 @@ public static class PriceTypes
 /// <param name="Amount">The unit price; required unless <see cref="Remove"/>.</param>
 public sealed record PriceRequest(string Entry, string Market, string Currency, decimal? Amount = null)
 {
-    /// <summary>One of <see cref="PriceTypes"/> (default <c>all</c>).</summary>
+    /// <summary>One of <see cref="PriceTypes"/> (default <c>all</c>), or a type of the site's own by name or number.</summary>
     public string? PriceType { get; init; }
 
+    /// <summary>None for <c>all</c>; the user name or price group for <c>user</c> and <c>group</c>; anything or none for the site's own types.</summary>
     public string? PriceCode { get; init; }
 
     public decimal? MinQuantity { get; init; }

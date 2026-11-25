@@ -186,7 +186,8 @@ public static class UndoHints
 
     private static string PriceKey(CommercePrice price) =>
         $"--market {price.Market} --currency {price.Currency}"
-        + (price.PriceType == PriceTypes.All ? "" : $" --price-type {price.PriceType} --price-code {price.PriceCode}")
+        + (price.PriceType == PriceTypes.All ? "" : $" --price-type {Quote(price.PriceType)}")
+        + (price.PriceCode.Length == 0 ? "" : $" --price-code {Quote(price.PriceCode)}")
         + (price.MinQuantity == 0 ? "" : $" --min-quantity {price.MinQuantity.ToString(System.Globalization.CultureInfo.InvariantCulture)}")
         + $" --valid-from {price.ValidFrom.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture)}";
 }

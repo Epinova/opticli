@@ -4,12 +4,13 @@
 # - 12: CMS 12 + Commerce 14 in /demo/Commerce12 (net8.0), on the empty databases opticli-commerce12 (the CMS's,
 #   EPiServerDB) and opticli-commerce12-ecf (Commerce's, EcfSqlConnection), port 5150.
 # - 13: CMS 13 + Commerce 15 in /demo/Commerce13 (net10.0), on opticli-commerce13 and opticli-commerce13-ecf, port 5151.
-# Both get CommerceFixture.cs: a start page, a teaser block, an image media type, a small catalog model (a fashion
-# node, product, variant and bundle), HTML pages for them, and Commerce's catalog routing below the start page. The CMS
-# and Commerce make their schemas at the first start; then opticli (this checkout's build, or OPTICLI) serves the site
-# and applies fixture.plan.json: the start page and a site definition for it (hosts commerce.localhost and *), an image,
-# and a small catalog ("Fixture": a node, a product and a variant with the image in their CommerceMediaCollection, a
-# price and stock) that the start page points at.
+# Both get two price types of their own (MEMBER 3 and OUTLET 4, in appsettings.json) and CommerceFixture.cs: a start
+# page, a teaser block, an image media type, a small catalog model (a fashion node, product, variant and bundle), HTML
+# pages for them, and Commerce's catalog routing below the start page. The CMS and Commerce make their schemas at the
+# first start; then opticli (this checkout's build, or OPTICLI) serves the site and applies fixture.plan.json: the start
+# page and a site definition for it (hosts commerce.localhost and *), an image, and a small catalog ("Fixture": a node,
+# a product and a variant with the image in their CommerceMediaCollection, a price and stock) that the start page
+# points at.
 #
 #   setup.sh [12|13|both]        (default: both)
 #
@@ -22,7 +23,7 @@
 set -euo pipefail
 
 WHICH=${1:-both}
-case "$WHICH" in 12|13|both) ;; *) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;; esac
+case "$WHICH" in 12|13|both) ;; *) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;; esac
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../../.." && pwd)
 CMS12_VERSION=${CMS12_VERSION:-12.34.9}
@@ -65,6 +66,25 @@ connect() {
     echo "No EPiServerDB and EcfSqlConnection connection strings found in $dir/appsettings.Development.json." >&2
     exit 1
   fi
+}
+
+# Two price types of the site's own next to Commerce's three (appsettings.json), as sites configure customer groups'
+# prices: Commerce writes them to its PriceType table at start.
+price_types() {
+  python3 - "$1/appsettings.json" <<'EOF'
+import json, sys
+path = sys.argv[1]
+with open(path, encoding="utf-8-sig") as f:
+    settings = json.load(f)
+options = settings.setdefault("EPiServer", {}).setdefault("Commerce", {}).setdefault("CatalogOptions", {})
+options["SalePriceTypes"] = [
+    {"Key": "MEMBER", "Value": 3, "Description": "Members"},
+    {"Key": "OUTLET", "Value": 4, "Description": "Outlet"},
+]
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(settings, f, indent=2)
+    f.write("\n")
+EOF
 }
 
 # The template's project, at the given framework and versions. On CMS 13 the ASP.NET Identity UI is a package of its own.
@@ -151,6 +171,7 @@ build_site() {
   fi
   project "$dir" "$name" "$framework" "$cms" "$commerce"
   connect "$dir" "$db"
+  price_types "$dir"
   mkdir -p "$dir/Models"
   cp "$HERE/CommerceFixture.cs" "$dir/Models/"
   for d in "$db" "$db-ecf"; do

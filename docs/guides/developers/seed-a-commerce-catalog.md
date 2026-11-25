@@ -3,7 +3,7 @@ title: Seed a Commerce catalog for Playwright tests
 summary: Build an Optimizely Commerce site's catalog, prices, stock and markets from a plan, so end-to-end tests start from the same products on every machine and in CI.
 audience: developers
 order: 8
-written-for: 0.36.0
+written-for: 0.37.0
 ---
 
 End-to-end tests of a Commerce site need products to show, prices to check and stock to buy. Made by hand in the
@@ -96,7 +96,10 @@ export const seedPlan = {
 price and the start page's `FeaturedProduct` all take it. A product's variants are relations, not children: variants
 sit in the node like the product, and the `relation` steps tie them to it. Prices and stock go on variants (and
 packages), not on the product. The price without `validFrom` is the base price; the one with `validFrom` and
-`validUntil` is a December campaign beside it.
+`validUntil` is a December campaign beside it. A site with price types of its own (members' prices, say, in its
+`EPiServer:Commerce:CatalogOptions:SalePriceTypes` setting) prices them the same way, by the type's key in lower case:
+`{ op: 'price', entry: '$dressS', market: 'DEFAULT', currency: 'USD', amount: 69, priceType: 'member' }`.
+`opticli commerce` lists the site's types as `priceTypes`.
 
 `CommerceMediaCollection` is the product's Assets tab in the catalog UI: the images (and other media) the site shows
 with it. It takes the whole list, each a media ref, or `{ ref: '$dressImage', groupName: 'swatch', sortOrder: 1 }`
@@ -190,6 +193,8 @@ site renders is reached by its URL, as your site's routing gives it: `(await opt
 - **"has 2 DEFAULT USD prices ... without an end"**: two base prices with the same key exist (made in the UI, say).
   Give the step a `validFrom` to name one, or remove the other with `opticli commerce price remove ... --valid-from`.
 - **A product is refused a price**: Commerce keeps prices and stock on variants and packages. Price the variants.
+- **"'...' is not a price type of this site"**: a type of the site's own is named by its key in lower case (`MEMBER`
+  is `member`), or by its number. `opticli commerce` lists the site's `priceTypes`.
 - **An upload `for` a product is refused ("... is catalog content")**: catalog content has no "For this page" folder.
   Upload the image to a media folder and attach it with `CommerceMediaCollection`, as the dress's image above.
 - **`publish` or `delete` refuses catalog content**: opticli only creates and sets it (`set <ref> --publish` publishes

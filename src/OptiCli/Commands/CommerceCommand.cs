@@ -127,8 +127,8 @@ internal static class CommerceCommand
         var market = new Option<string>("--market") { Description = "The market's id (DEFAULT; `opticli commerce markets`).", Required = true, HelpName = "id" };
         var currency = new Option<string>("--currency") { Description = "ISO 4217 code: USD, EUR, SEK.", Required = true, HelpName = "code" };
         var amount = new Option<decimal?>("--amount") { Description = "The unit price.", Required = !remove, HelpName = "n" };
-        var priceType = new Option<string?>("--price-type") { Description = "Who it is for: all (default), user (a user name as --price-code) or group (a customer price group as --price-code).", HelpName = "all|user|group" };
-        var priceCode = new Option<string?>("--price-code") { Description = "The user name or price group of a user or group price.", HelpName = "code" };
+        var priceType = new Option<string?>("--price-type") { Description = "Who it is for: all (default), user (a user name as --price-code), group (a customer price group as --price-code), or a price type of the site's own, by name or number (`opticli commerce` lists them as priceTypes).", HelpName = "type" };
+        var priceCode = new Option<string?>("--price-code") { Description = "The user name or price group of a user or group price; for a type of the site's own, what the site keeps there (any text, or none).", HelpName = "code" };
         var minQuantity = new Option<decimal?>("--min-quantity") { Description = "It applies from this quantity on (default 0).", HelpName = "n" };
         var validFrom = new Option<string?>("--valid-from") { Description = "When it starts (UTC unless it has an offset), part of the key. Default: the price with the rest of the key that has no end (the base price); a new one starts today.", HelpName = "time" };
         var validUntil = new Option<string?>("--valid-until") { Description = "When it ends (UTC unless it has an offset); needs --valid-from. Default: no end.", HelpName = "time" };

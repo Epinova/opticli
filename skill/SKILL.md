@@ -323,7 +323,7 @@ On a site whose build has `EPiServer.Commerce.Core`, `opticli serve` loads a Com
 none of this works. Everything goes through the running site; catalog content isn't in the CMS database, so `get`,
 `children`, `tree` and `sql` don't show it (the first three say so and name the commands below).
 
-- **Read:** `opticli commerce` (version, catalog root, catalogs), `commerce children [<ref>]` (catalogs below the root,
+- **Read:** `opticli commerce` (version, catalog root, catalogs, the site's `priceTypes`), `commerce children [<ref>]` (catalogs below the root,
   nodes and entries below a catalog or node), `commerce tree [<ref>] --depth n`, `commerce get <ref>` (all properties),
   `commerce relations <ref>` (a product's variants, a bundle's entries, extra categories), `commerce prices <entry>`,
   `commerce stock <entry>`, `commerce warehouses`, `commerce markets`.
@@ -349,7 +349,9 @@ none of this works. Everything goes through the running site; catalog content is
   (`--valid-from`/`--valid-until` for a campaign price, another row; without `--valid-from` it is the base price, the
   one with no end), `commerce price remove`, `commerce warehouse set <code>`, `commerce inventory set <entry>
   --warehouse default --in-stock 25`, `commerce market set <id> --currencies SEK --languages en --countries SWE`.
-  Prices and stock are on variants and packages, not products. Each write prints `status`: `created`, `updated`,
+  Prices and stock are on variants and packages, not products. `--price-type` is `all` (default), `user` or `group`
+  (with `--price-code`), or a price type of the site's own by its key in lower case (`member`; `opticli commerce` lists
+  them as `priceTypes`), which takes any `--price-code` or none. Each write prints `status`: `created`, `updated`,
   `unchanged`, `removed` or `absent`, and takes `--dry-run`.
 - **Plans:** every write is a step (`create` and `set` for catalog content, `relation`, `price`, `warehouse`,
   `inventory`, `market`), so a test seed is one plan with a `guidNamespace`: run it with `apply --update-existing` and a
