@@ -286,3 +286,50 @@ main[data-area="editors"] { --bg: var(--p2); --c: var(--p2-ink); }
 .snippet .t-nt { color: #aec0db; }
 .snippet .t-nf, .snippet .t-fm, .snippet .t-nb { color: #7fd0d6; }
 .snippet .t-nc, .snippet .t-nd, .snippet .t-nn { color: #d6a3f5; }
+
+/* Motion: the examples play themselves (front page shelf, editors' chat, tests' run). One small vocabulary:
+   words arrive, strikes draw, checks fill, and a save lands on the shelf.
+   Everything is visible by default; the script hides a step only to play it. */
+:root { --ease: cubic-bezier(.16, 1, .3, 1); }
+
+/* Before the first paint: what the first play starts from (the inline script in those pages' head). */
+.m-pre .panel:first-child .example > * { opacity: 0; }
+.m-pre .chat > :not(.example-note) { opacity: 0; }
+.m-pre .passes :is(.t, .file) { opacity: .45; }
+.m-pre .passes small, .m-pre .summary { opacity: 0; }
+/* A reset that should not be seen: the first one, from what the page shows at rest to the start. */
+.m-instant, .m-instant * { transition: none !important; }
+
+[data-m] { transition: opacity .45s var(--ease), transform .45s var(--ease); }
+[data-m="hide"] { opacity: 0; transform: translateY(6px); }
+.w[data-m] { transition-duration: .3s; }
+.w[data-m="hide"] { transform: none; }
+
+/* A strike that draws across the old value in reading order, line by line. */
+.changes s { text-decoration: none; }
+.strike { background: linear-gradient(currentColor, currentColor) no-repeat 0 58% / 100% 1.5px; transition: background-size .7s var(--ease); }
+.strike[data-s="off"] { background-size: 0% 1.5px; }
+
+/* A check: queued (a hollow ring), running (a turning arc), done (filled, the mark drawn). No data-state is done. */
+.tick { width: 1.15em; height: 1.15em; flex: none; overflow: visible; }
+.tick .ring { fill: none; stroke: currentColor; stroke-width: 1.6; opacity: 0; transition: opacity .3s; }
+.tick .fill { fill: currentColor; transform-box: fill-box; transform-origin: center; transition: transform .4s var(--ease); }
+.tick .mark { fill: none; stroke: var(--bg); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1 2; stroke-dashoffset: 0; transition: stroke-dashoffset .35s var(--ease) .15s, opacity 0s .15s; }
+.tick .arc { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 24 100; opacity: 0; transform-box: fill-box; transform-origin: center; transition: opacity .2s; }
+.tick .draw { stroke-dasharray: 1 2; stroke-dashoffset: 0; transition: stroke-dashoffset .5s var(--ease), opacity 0s; }
+:is([data-state="queued"], [data-state="running"]) .tick .fill { transform: scale(0); }
+:is([data-state="queued"], [data-state="running"]) .tick .ring { opacity: .4; }
+/* Round caps leave a dot on an undrawn stroke, so an undrawn one is also hidden. */
+:is([data-state="queued"], [data-state="running"]) .tick .mark { stroke-dashoffset: 1; opacity: 0; transition-delay: 0s; }
+[data-state="queued"] .tick .draw { stroke-dashoffset: 1; opacity: 0; }
+[data-state="running"] .tick .arc { opacity: 1; animation: turn .9s linear infinite; }
+@keyframes turn { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { [data-state="running"] .tick .arc { animation: none; } }
+
+/* Pause and play: WCAG 2.2.2, since the examples move on their own. */
+.mtoggle { display: inline-flex; align-items: center; gap: 7px; padding: 6px 8px; margin: -6px -8px; border: 0; border-radius: 8px; background: none; color: inherit; font: 600 .88rem var(--sans); cursor: pointer; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: .22em; }
+.mtoggle:hover { text-decoration-thickness: 2px; }
+.mtoggle svg { width: .85em; height: .85em; }
+.mtoggle .i-play { display: none; }
+.mtoggle[data-paused] .i-play { display: block; }
+.mtoggle[data-paused] .i-pause { display: none; }

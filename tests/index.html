@@ -12,7 +12,15 @@
 <meta name="twitter:card" content="summary">
 <meta name="color-scheme" content="light dark">
 <link rel="preload" href="../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="../style.css?v=29c69d01ac">
+<link rel="stylesheet" href="../style.css?v=40f6687b38">
+<script>
+// Before the first paint: the examples start empty, so hide what the first play builds up. motion.js takes over;
+// without it (no script, a failed load) the page shows everything again after 3 seconds.
+if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  document.documentElement.classList.add('m-pre');
+  setTimeout(() => document.documentElement.classList.remove('m-pre'), 3000);
+}
+</script>
 <style>
 /* The tests page: its own field is p3 (sand). */
 main { --bg: var(--p3); --c: var(--p3-ink); }
@@ -22,13 +30,18 @@ main { --bg: var(--p3); --c: var(--p3-ink); }
 .run .label code { color: var(--ink); }
 .passes { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .passes li { display: grid; grid-template-columns: 1.2em minmax(0, 1fr) auto; gap: 2px 12px; align-items: baseline; }
-.passes svg { width: 1.15em; height: 1.15em; align-self: start; margin-top: .15em; color: var(--c); }
-.passes small { color: color-mix(in srgb, var(--ink) 60%, var(--bg)); font: .85rem var(--mono); font-variant-numeric: tabular-nums; }
+.passes .tick { align-self: start; margin-top: .15em; color: var(--c); }
+.passes small { color: color-mix(in srgb, var(--ink) 60%, var(--bg)); font: .85rem var(--mono); font-variant-numeric: tabular-nums; transition: opacity .3s var(--ease); }
 .passes .file { grid-column: 2 / -1; font: .82rem var(--mono); color: color-mix(in srgb, var(--ink) 55%, var(--bg)); }
+.passes .t, .passes .file { transition: opacity .35s var(--ease); }
+/* While the run plays: waiting rows are quiet, a running row comes up to full ink, a time appears when it passes. */
+.passes [data-state="queued"] :is(.t, .file) { opacity: .45; }
+.passes :is([data-state="queued"], [data-state="running"]) small { opacity: 0; }
 .summary { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; padding-top: 14px; border-top: 1.5px solid color-mix(in srgb, var(--c) 30%, transparent); }
-.summary b { font-size: 1.2rem; font-weight: 800; color: var(--c); }
-.summary span { color: color-mix(in srgb, var(--ink) 65%, var(--bg)); }
-.example-note { font-size: .88rem; color: color-mix(in srgb, var(--ink) 60%, var(--bg)); }
+.summary b { font-size: 1.2rem; font-weight: 800; color: var(--c); font-variant-numeric: tabular-nums; }
+.summary span { color: color-mix(in srgb, var(--ink) 65%, var(--bg)); font-variant-numeric: tabular-nums; }
+.example-note { display: flex; flex-wrap: wrap; gap: 6px 20px; font-size: .88rem; color: color-mix(in srgb, var(--ink) 60%, var(--bg)); }
+.example-note .mtoggle { color: var(--c); font-size: .88rem; }
 
 /* What happens on a test run: one line of stops on the ground. */
 .run-steps { margin-top: 0; }
@@ -66,9 +79,6 @@ pre.code .s { color: #93dfaa; }
 </style>
 </head>
 <body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <symbol id="i-ok" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="currentColor"/><path d="M5.8 10.4l2.8 2.8 5.6-6.1" fill="none" stroke="var(--p3)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-</svg>
 
 <header>
   <div class="wrap">
@@ -93,18 +103,18 @@ pre.code .s { color: #93dfaa; }
     <div class="side run" aria-label="A test run">
       <p class="label"><code>npx playwright test</code> · Alloy sample site · CMS 13 · 2 workers</p>
       <ul class="passes">
-        <li><svg aria-hidden="true"><use href="#i-ok"/></svg><span>missing content is not_found</span><small>518ms</small><span class="file">errors.spec.ts</span></li>
-        <li><svg aria-hidden="true"><use href="#i-ok"/></svg><span>a property typo fails before anything is saved, with the type's properties in the hint</span><small>696ms</small><span class="file">errors.spec.ts</span></li>
-        <li><svg aria-hidden="true"><use href="#i-ok"/></svg><span>a required property left out is a validation error</span><small>823ms</small><span class="file">errors.spec.ts</span></li>
-        <li><svg aria-hidden="true"><use href="#i-ok"/></svg><span>a published page shows its body</span><small>2.3s</small><span class="file">per-test.spec.ts</span></li>
-        <li><svg aria-hidden="true"><use href="#i-ok"/></svg><span>visitors see a draft only once it is published</span><small>3.6s</small><span class="file">per-test.spec.ts</span></li>
-        <li><svg aria-hidden="true"><use href="#i-ok"/></svg><span>an inline teaser block in the content area</span><small>2.1s</small><span class="file">per-test.spec.ts</span></li>
-        <li><svg aria-hidden="true"><use href="#i-ok"/></svg><span>a plan builds a small section in one call</span><small>2.3s</small><span class="file">per-test.spec.ts</span></li>
-        <li><svg aria-hidden="true"><use href="#i-ok"/></svg><span>the seeded article shows its body and teaser</span><small>478ms</small><span class="file">seeded.spec.ts</span></li>
-        <li><svg aria-hidden="true"><use href="#i-ok"/></svg><span>the seeded root stays out of the menu</span><small>388ms</small><span class="file">seeded.spec.ts</span></li>
+        <li data-ms="518"><svg class="tick" viewBox="0 0 20 20" aria-hidden="true"><circle class="ring" cx="10" cy="10" r="8.6"/><circle class="arc" cx="10" cy="10" r="8.6" pathLength="100"/><circle class="fill" cx="10" cy="10" r="9"/><path class="mark" pathLength="1" d="M5.8 10.4l2.8 2.8 5.6-6.1"/></svg><span class="t">missing content is not_found</span><small>518ms</small><span class="file">errors.spec.ts</span></li>
+        <li data-ms="696"><svg class="tick" viewBox="0 0 20 20" aria-hidden="true"><circle class="ring" cx="10" cy="10" r="8.6"/><circle class="arc" cx="10" cy="10" r="8.6" pathLength="100"/><circle class="fill" cx="10" cy="10" r="9"/><path class="mark" pathLength="1" d="M5.8 10.4l2.8 2.8 5.6-6.1"/></svg><span class="t">a property typo fails before anything is saved, with the type's properties in the hint</span><small>696ms</small><span class="file">errors.spec.ts</span></li>
+        <li data-ms="823"><svg class="tick" viewBox="0 0 20 20" aria-hidden="true"><circle class="ring" cx="10" cy="10" r="8.6"/><circle class="arc" cx="10" cy="10" r="8.6" pathLength="100"/><circle class="fill" cx="10" cy="10" r="9"/><path class="mark" pathLength="1" d="M5.8 10.4l2.8 2.8 5.6-6.1"/></svg><span class="t">a required property left out is a validation error</span><small>823ms</small><span class="file">errors.spec.ts</span></li>
+        <li data-ms="2300"><svg class="tick" viewBox="0 0 20 20" aria-hidden="true"><circle class="ring" cx="10" cy="10" r="8.6"/><circle class="arc" cx="10" cy="10" r="8.6" pathLength="100"/><circle class="fill" cx="10" cy="10" r="9"/><path class="mark" pathLength="1" d="M5.8 10.4l2.8 2.8 5.6-6.1"/></svg><span class="t">a published page shows its body</span><small>2.3s</small><span class="file">per-test.spec.ts</span></li>
+        <li data-ms="3600"><svg class="tick" viewBox="0 0 20 20" aria-hidden="true"><circle class="ring" cx="10" cy="10" r="8.6"/><circle class="arc" cx="10" cy="10" r="8.6" pathLength="100"/><circle class="fill" cx="10" cy="10" r="9"/><path class="mark" pathLength="1" d="M5.8 10.4l2.8 2.8 5.6-6.1"/></svg><span class="t">visitors see a draft only once it is published</span><small>3.6s</small><span class="file">per-test.spec.ts</span></li>
+        <li data-ms="2100"><svg class="tick" viewBox="0 0 20 20" aria-hidden="true"><circle class="ring" cx="10" cy="10" r="8.6"/><circle class="arc" cx="10" cy="10" r="8.6" pathLength="100"/><circle class="fill" cx="10" cy="10" r="9"/><path class="mark" pathLength="1" d="M5.8 10.4l2.8 2.8 5.6-6.1"/></svg><span class="t">an inline teaser block in the content area</span><small>2.1s</small><span class="file">per-test.spec.ts</span></li>
+        <li data-ms="2300"><svg class="tick" viewBox="0 0 20 20" aria-hidden="true"><circle class="ring" cx="10" cy="10" r="8.6"/><circle class="arc" cx="10" cy="10" r="8.6" pathLength="100"/><circle class="fill" cx="10" cy="10" r="9"/><path class="mark" pathLength="1" d="M5.8 10.4l2.8 2.8 5.6-6.1"/></svg><span class="t">a plan builds a small section in one call</span><small>2.3s</small><span class="file">per-test.spec.ts</span></li>
+        <li data-ms="478"><svg class="tick" viewBox="0 0 20 20" aria-hidden="true"><circle class="ring" cx="10" cy="10" r="8.6"/><circle class="arc" cx="10" cy="10" r="8.6" pathLength="100"/><circle class="fill" cx="10" cy="10" r="9"/><path class="mark" pathLength="1" d="M5.8 10.4l2.8 2.8 5.6-6.1"/></svg><span class="t">the seeded article shows its body and teaser</span><small>478ms</small><span class="file">seeded.spec.ts</span></li>
+        <li data-ms="388"><svg class="tick" viewBox="0 0 20 20" aria-hidden="true"><circle class="ring" cx="10" cy="10" r="8.6"/><circle class="arc" cx="10" cy="10" r="8.6" pathLength="100"/><circle class="fill" cx="10" cy="10" r="9"/><path class="mark" pathLength="1" d="M5.8 10.4l2.8 2.8 5.6-6.1"/></svg><span class="t">the seeded root stays out of the menu</span><small>388ms</small><span class="file">seeded.spec.ts</span></li>
       </ul>
-      <p class="summary"><b>9 passed</b><span>14.2 s · seed plan unchanged</span></p>
-      <p class="example-note">Real output from an example suite on Optimizely's Alloy sample site, with opticli 0.27.0, set as a list.</p>
+      <p class="summary"><b><span class="n">9</span> passed</b><span class="after">14.2 s · seed plan unchanged</span></p>
+      <p class="example-note"><span>Real output from an example suite on Optimizely's Alloy sample site, with opticli 0.27.0, set as a list.</span><button class="mtoggle" type="button" data-pause="Pause" data-play="Play the run"></button></p>
     </div>
   </section>
 
@@ -250,6 +260,64 @@ for (const b of document.querySelectorAll('.copy')) b.addEventListener('click', 
   const done = (label) => { b.textContent = label; b.dataset.done = ''; setTimeout(() => { b.textContent = 'Copy'; delete b.dataset.done; }, 1600); };
   if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => done('Copied'), () => done('Select and copy'));
   else done('Select and copy');
+});
+</script>
+<script type="module">
+import { loop, begin, sleep, state, toggleMarkup } from '../motion.js?v=6ec6efa63b';
+
+const run = document.querySelector('.run');
+const toggle = run.querySelector('.mtoggle');
+toggle.innerHTML = toggleMarkup;
+const rows = [...run.querySelectorAll('.passes li')];
+const n = run.querySelector('.summary .n');
+const after = run.querySelector('.summary .after');
+const AFTER = after.textContent;
+
+// The real durations, played at about 40% speed on two workers, as Playwright ran them.
+const SPEED = 0.4, TOTAL = 14.2;
+function schedule() {
+  const lanes = [0, 0];
+  return rows.map((row) => {
+    const lane = lanes[0] <= lanes[1] ? 0 : 1;
+    const start = lanes[lane], dur = Math.max(320, +row.dataset.ms * SPEED);
+    lanes[lane] = start + dur + 140;
+    return { row, start, end: start + dur };
+  });
+}
+
+const rest = () => { state(rows, null); n.textContent = rows.length; after.textContent = AFTER; };
+
+loop({
+  root: run, toggle, rest,
+  cycle: async (s, instant) => {
+    const reset = () => {
+      state(rows, 'queued');
+      n.textContent = '0';
+      after.textContent = 'starting the site · checking the seed plan';
+    };
+    await begin({ root: run, reset, instant, signal: s, fade: 400 });
+    await sleep(1200, s);
+
+    const plan = schedule();
+    const wall = Math.max(...plan.map((p) => p.end));
+    const t0 = performance.now();
+    let passed = 0;
+    await new Promise((resolve, reject) => {
+      const frame = () => {
+        if (s.aborted) return reject(s.reason);
+        const t = performance.now() - t0;
+        for (const p of plan) {
+          if (!p.on && t >= p.start) { p.on = true; state(p.row, 'running'); }
+          if (!p.off && t >= p.end) { p.off = true; state(p.row, null); n.textContent = ++passed; }
+        }
+        after.textContent = `${(TOTAL * Math.min(t, wall) / wall).toFixed(1)} s · running on 2 workers`;
+        if (t >= wall) resolve(); else requestAnimationFrame(frame);
+      };
+      requestAnimationFrame(frame);
+    });
+    after.textContent = AFTER;
+    await sleep(8000, s);
+  },
 });
 </script>
 </body>

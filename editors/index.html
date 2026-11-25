@@ -12,7 +12,15 @@
 <meta name="twitter:card" content="summary">
 <meta name="color-scheme" content="light dark">
 <link rel="preload" href="../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="../style.css?v=29c69d01ac">
+<link rel="stylesheet" href="../style.css?v=40f6687b38">
+<script>
+// Before the first paint: the examples start empty, so hide what the first play builds up. motion.js takes over;
+// without it (no script, a failed load) the page shows everything again after 3 seconds.
+if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  document.documentElement.classList.add('m-pre');
+  setTimeout(() => document.documentElement.classList.remove('m-pre'), 3000);
+}
+</script>
 <style>
 /* The editors' page: its own field is p2 (pale blue). */
 main { --bg: var(--p2); --c: var(--p2-ink); }
@@ -24,13 +32,25 @@ main { --bg: var(--p2); --c: var(--p2-ink); }
 /* The example conversation, set on the panel: the editor's turns as bubbles, the assistant's as text. */
 .chat { gap: 18px; }
 .you { justify-self: end; align-self: flex-end; max-width: 86%; padding: 11px 16px; border-radius: 18px 18px 4px 18px; background: var(--ground); font-size: 1.02rem; }
+/* The editor's turn arrives from where they typed it: from the right, settling onto its tail. */
+.you[data-m="hide"] { transform: translate(10px, 4px); }
+.you[data-m] { transform-origin: 100% 100%; }
+.reply { display: grid; gap: 10px; justify-items: start; }
+.reply .who { font-weight: 800; }
 .reply { display: grid; gap: 10px; justify-items: start; }
 .reply .who { font-weight: 800; }
 .tool { display: inline-flex; align-items: center; gap: 8px; padding: 3px 12px; border-radius: 999px; background: color-mix(in srgb, var(--c) 12%, var(--bg)); color: color-mix(in srgb, var(--ink) 70%, var(--bg)); font-size: .85rem; font-weight: 600; }
 .tool code { color: var(--ink); }
 .tool svg { width: 1em; height: 1em; }
+/* While the tool runs, a light passes along the pill, in the field's own ink. */
+.tool[data-work] { background: linear-gradient(100deg, color-mix(in srgb, var(--c) 12%, var(--bg)) 30%, color-mix(in srgb, var(--c) 26%, var(--bg)) 50%, color-mix(in srgb, var(--c) 12%, var(--bg)) 70%) 0 0 / 300% 100%; animation: pass 1.3s linear infinite; }
+@keyframes pass { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .tool[data-work] { animation: none; } }
 .preview { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 999px; background: var(--ink); color: var(--ground); font-weight: 700; font-size: .95rem; }
-.example-note { font-size: .88rem; color: color-mix(in srgb, var(--ink) 60%, var(--bg)); }
+.checks .tick { width: 1em; height: 1em; }
+.checks .no .tick .draw { fill: none; stroke: currentColor; stroke-width: 2.4; }
+.example-note { display: flex; flex-wrap: wrap; gap: 6px 20px; font-size: .88rem; color: color-mix(in srgb, var(--ink) 60%, var(--bg)); }
+.example-note .mtoggle { color: var(--c); font-size: .88rem; }
 
 /* For your developer: the one code block, in the screencast's dark. */
 .dev { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 32px 56px; padding: 40px; border-radius: 26px; background: color-mix(in srgb, var(--bg) 55%, var(--ground)); }
@@ -52,8 +72,6 @@ pre.code .c { color: #8a949e; }
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <symbol id="i-ok" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="currentColor"/><path d="M5.8 10.4l2.8 2.8 5.6-6.1" fill="none" stroke="var(--p2)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-  <symbol id="i-no" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M4.6 15.4L15.4 4.6" stroke="currentColor" stroke-width="2.4"/></symbol>
   <symbol id="i-tool" viewBox="0 0 20 20"><path d="M12.6 3.4a4 4 0 0 0-4.9 5.2L3.4 12.9a1.6 1.6 0 0 0 2.3 2.3l4.3-4.3a4 4 0 0 0 5.2-4.9l-2.4 2.4-2.1-.4-.4-2.1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
   <symbol id="i-arrow" viewBox="0 0 20 20"><path d="M3.5 10h12M11 5.5l4.5 4.5-4.5 4.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="i-down" viewBox="0 0 20 20"><path d="M10 3.5v10M5.5 9l4.5 4.5L14.5 9M4 16.5h12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
@@ -84,27 +102,27 @@ pre.code .c { color: #8a949e; }
       <p class="you"><span class="visually-hidden">You: </span>The Alloy Track teaser should mention reporting, and the page title should say the same.</p>
       <div class="reply">
         <p class="who">Assistant</p>
-        <p class="tool"><svg aria-hidden="true"><use href="#i-tool"/></svg>Used <code>update_content</code> as a dry run</p>
+        <p class="tool"><svg aria-hidden="true"><use href="#i-tool"/></svg><span class="verb">Used</span> <code>update_content</code> as a dry run</p>
         <p>Here's what I'd change on Alloy Track, as a dry run, so nothing is saved yet:</p>
         <dl class="changes" aria-label="Changes">
-          <div><dt>Teaser text</dt><dd><s>Involve the whole team!</s><ins>Plan, track and report with the whole team</ins></dd></div>
-          <div><dt>Page title</dt><dd><s>Alloy Track, online risk management where the whole team gets involved…</s><ins>Alloy Track: plan, track and report with the whole team</ins></dd></div>
+          <div><dt>Teaser text</dt><dd><s><span class="strike">Involve the whole team!</span></s><ins>Plan, track and report with the whole team</ins></dd></div>
+          <div><dt>Page title</dt><dd><s><span class="strike">Alloy Track, online risk management where the whole team gets involved…</span></s><ins>Alloy Track: plan, track and report with the whole team</ins></dd></div>
         </dl>
         <p>You may edit this page and both values are valid. Shall I save it as a draft?</p>
       </div>
       <p class="you"><span class="visually-hidden">You: </span>Looks good. Save it.</p>
       <div class="reply">
         <p class="who">Assistant</p>
-        <p class="tool"><svg aria-hidden="true"><use href="#i-tool"/></svg>Used <code>update_content</code></p>
+        <p class="tool"><svg aria-hidden="true"><use href="#i-tool"/></svg><span class="verb">Used</span> <code>update_content</code></p>
         <p>Saved as a draft in your name. Here's how it will look before it goes live:</p>
         <span class="preview" aria-hidden="true">Preview the draft <svg class="icon"><use href="#i-arrow"/></svg></span>
         <ul class="checks plain" aria-label="Checks">
-          <li class="ok"><svg class="icon" aria-hidden="true"><use href="#i-ok"/></svg><span>a draft, in your name</span></li>
-          <li class="ok"><svg class="icon" aria-hidden="true"><use href="#i-ok"/></svg><span>the approval sequence applies</span></li>
-          <li class="no"><svg class="icon" aria-hidden="true"><use href="#i-no"/></svg>publishing is off on this site</li>
+          <li class="ok"><svg class="tick" viewBox="0 0 20 20" aria-hidden="true"><circle class="ring" cx="10" cy="10" r="8.6"/><circle class="arc" cx="10" cy="10" r="8.6" pathLength="100"/><circle class="fill" cx="10" cy="10" r="9"/><path class="mark" pathLength="1" d="M5.8 10.4l2.8 2.8 5.6-6.1"/></svg><span>a draft, in your name</span></li>
+          <li class="ok"><svg class="tick" viewBox="0 0 20 20" aria-hidden="true"><circle class="ring" cx="10" cy="10" r="8.6"/><circle class="arc" cx="10" cy="10" r="8.6" pathLength="100"/><circle class="fill" cx="10" cy="10" r="9"/><path class="mark" pathLength="1" d="M5.8 10.4l2.8 2.8 5.6-6.1"/></svg><span>the approval sequence applies</span></li>
+          <li class="no"><svg class="tick" viewBox="0 0 20 20" aria-hidden="true"><circle class="draw" pathLength="1" cx="10" cy="10" r="8"/><path class="draw" pathLength="1" d="M4.6 15.4L15.4 4.6"/></svg>publishing is off on this site</li>
         </ul>
       </div>
-      <p class="example-note">An illustrative conversation, on Optimizely's Alloy sample site.</p>
+      <p class="example-note"><span>An illustrative conversation, on Optimizely's Alloy sample site.</span><button class="mtoggle" type="button" data-pause="Pause" data-play="Play the conversation"></button></p>
     </div>
   </section>
 
@@ -207,6 +225,74 @@ for (const b of document.querySelectorAll('.copy')) b.addEventListener('click', 
   const done = (label) => { b.textContent = label; b.dataset.done = ''; setTimeout(() => { b.textContent = 'Copy'; delete b.dataset.done; }, 1600); };
   if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => done('Copied'), () => done('Select and copy'));
   else done('Select and copy');
+});
+</script>
+<script type="module">
+import { loop, begin, sleep, show, hide, state, words, splitWords, toggleMarkup } from '../motion.js?v=6ec6efa63b';
+
+const chat = document.querySelector('.chat');
+const toggle = chat.querySelector('.mtoggle');
+toggle.innerHTML = toggleMarkup;
+
+const [you1, you2] = chat.querySelectorAll('.you');
+const [r1, r2] = chat.querySelectorAll('.reply');
+const kids = (r) => [...r.children];
+const rows = [...r1.querySelectorAll('.changes > div')];
+const strikes = rows.map((d) => d.querySelector('.strike'));
+const news = rows.map((d) => d.querySelector('ins'));
+const checks = [...r2.querySelectorAll('.checks li')];
+const steps = [you1, ...kids(r1), you2, ...kids(r2)];
+
+// A tool call: the pill says what's running while a light passes along it, then settles on what was done.
+async function tool(pill, ms, s) {
+  const verb = pill.querySelector('.verb');
+  verb.textContent = 'Using';
+  pill.setAttribute('data-work', '');
+  show(pill);
+  await sleep(ms, s);
+  pill.removeAttribute('data-work');
+  verb.textContent = 'Used';
+}
+
+const rest = () => {
+  show(steps, rows, news.flatMap(splitWords));
+  chat.querySelectorAll('.tool').forEach((p) => { p.removeAttribute('data-work'); p.querySelector('.verb').textContent = 'Used'; });
+  strikes.forEach((x) => delete x.dataset.s);
+  state(checks, null);
+};
+
+loop({
+  root: chat, toggle, rest,
+  cycle: async (s, instant) => {
+    const reset = () => {
+      hide(steps, rows, news.flatMap(splitWords));
+      strikes.forEach((x) => (x.dataset.s = 'off'));
+      state(checks, 'queued');
+    };
+    await begin({ root: chat, reset, instant, signal: s, fade: 900 });
+
+    show(you1); await sleep(1100, s);
+    const [who1, tool1, say1, , ask1] = kids(r1);
+    show(who1, r1.querySelector('.changes')); await sleep(250, s);
+    await tool(tool1, 1500, s);
+    show(say1); await sleep(700, s);
+    for (const [i, row] of rows.entries()) {
+      show(row); await sleep(450, s);
+      delete strikes[i].dataset.s; await sleep(500, s);
+      await words(news[i], s, 45); await sleep(350, s);
+    }
+    show(ask1); await sleep(1800, s);
+
+    show(you2); await sleep(1000, s);
+    const [who2, tool2, say2, preview, list] = kids(r2);
+    show(who2, list); await sleep(250, s);
+    await tool(tool2, 1100, s);
+    show(say2); await sleep(450, s);
+    show(preview); await sleep(500, s);
+    for (const c of checks) { state(c, null); await sleep(380, s); }
+
+    await sleep(8000, s);
+  },
 });
 </script>
 </body>
