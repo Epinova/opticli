@@ -22,9 +22,30 @@ internal readonly record struct VersionStamp(int Id, bool Published, DateTime Sa
 /// keep the names of those who saved them. So who marked the version ready is known, and so is who saved each older draft
 /// it carries; who wrote the ready version's own changes is lost once someone else checks it in, which is why marking
 /// another person's draft ready needs <c>includeDraft</c> itself (<see cref="Operations.ProjectReadyOperation"/>).</para>
+/// <para>One exception, for Optimizely Commerce's catalog content (<see cref="CommerceLanguageCopy"/>): Commerce 14 keeps
+/// catalog content in every language of its catalog, and when it lists the versions of an item that has none in one of
+/// those languages, it saves one itself (<c>CatalogContentVersionStore.EnsureDraftsInAllLanguages</c>): a copy of what it
+/// serves in that language, saved as <c>system</c> (its cached copy of the list has no user name), with the time the
+/// item was last changed live (by the latest publish in any of its languages), not the time it made the copy. Every
+/// translation would otherwise publish "changes saved by system", and confirming them with <c>includeDraft</c> would also
+/// wave through a real draft in that language. The copy is left out only while it is what Commerce made: the first
+/// version of its branch, not the master language's, never published, saved by <c>system</c> or nobody, within a second
+/// of a version of another language saved before it. An editor's save into it records the editor and the time of the
+/// save, and a later draft, also a job's, is a version of its own, so neither is ever left out (Olav, the Commerce E2E
+/// feedback plan, item 2). Commerce 15 saves no such copies: a language branch of catalog content is made as a CMS one
+/// is.</para>
 /// </remarks>
 internal static class PendingDrafts
 {
+    /// <summary>The user Commerce 14 saves its own copy of catalog content in another language as (<see cref="CommerceLanguageCopy"/>).</summary>
+    public const string CommerceSystemUser = "system";
+
+    /// <summary>
+    /// The name of Commerce's content provider, as catalog content's refs have it (the Commerce protocol's
+    /// <c>CatalogRefSyntax.Provider</c>, which the editors' module doesn't compile in).
+    /// </summary>
+    public const string CommerceProvider = "CatalogContent";
+
     /// <param name="versions">Every version of the branch.</param>
     /// <param name="baseVersion">The version the publish is based on (or publishes).</param>
     /// <param name="self">The caller's user name (<see cref="CmsCall.UserName"/>).</param>
@@ -49,6 +70,27 @@ internal static class PendingDrafts
             .OrderByDescending(v => v.Id)
             .ToList();
     }
+
+    /// <summary>
+    /// Whether a version of catalog content in a language other than its master language is Commerce 14's own copy of
+    /// that language, which holds nobody's changes (see the remarks): the first version of its branch, never published,
+    /// saved by <see cref="CommerceSystemUser"/> or nobody, within <see cref="CommerceCopyTime"/> of a version of another
+    /// language saved before it (the publish that last changed the item, whose time Commerce gave the copy).
+    /// </summary>
+    /// <param name="version">A version of the branch, from <see cref="ByOthers"/>.</param>
+    /// <param name="branch">Every version of its branch.</param>
+    /// <param name="others">Every version of the content's other languages.</param>
+    public static bool CommerceLanguageCopy(VersionStamp version, IEnumerable<VersionStamp> branch, IEnumerable<VersionStamp> others) =>
+        !version.Published
+        && (string.IsNullOrWhiteSpace(version.SavedBy) || string.Equals(version.SavedBy.Trim(), CommerceSystemUser, StringComparison.Ordinal))
+        && branch.All(v => v.Id >= version.Id)
+        && others.Any(o => o.Id < version.Id && (o.Saved.ToUniversalTime() - version.Saved.ToUniversalTime()).Duration() <= CommerceCopyTime);
+
+    /// <summary>
+    /// How far the time Commerce gives its copy (the item's last modified time, set by the latest publish in any language)
+    /// may be from that publish's version: the two are written apart, a few milliseconds.
+    /// </summary>
+    public static readonly TimeSpan CommerceCopyTime = TimeSpan.FromSeconds(1);
 
     /// <summary>
     /// Who consented to publishing a project item's version by marking it Ready to publish: the user the CMS recorded
