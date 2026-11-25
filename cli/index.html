@@ -13,7 +13,7 @@
 <meta name="color-scheme" content="light dark">
 <link rel="preload" href="../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/asciinema-player@3.17.0/dist/bundle/asciinema-player.css">
-<link rel="stylesheet" href="../style.css?v=0fe4532399">
+<link rel="stylesheet" href="../style.css?v=29c69d01ac">
 <style>
 /* The CLI's page: its own field is p1 (sage). */
 main { --bg: var(--p1); --c: var(--p1-ink); }
@@ -165,20 +165,152 @@ hint: opticli writes to a production database only through a sealed apply, which
     <div class="group">
       <div><h3>Read content</h3><p>Answers without SQL, straight from the database.</p></div>
       <ul class="features">
-        <li><h4>Answer content questions without SQL</h4><code class="cmd">opticli get 123 --fields MainContentArea</code><p>No more hand-written queries against tblContent. Items come back with every property decoded, including ContentAreas, local blocks, links and rich text. Reads go straight to the database, so the site doesn't need to be running.</p><a class="play" href="#chapter-2"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 2 · Find the content</a></li>
-        <li><h4>Go from content to code</h4><code class="cmd">opticli type TeaserBlock</code><p>See the C# class for a content type, the source line of each property and the Razor views, plus which ContentAreas accept it according to [AllowedTypes].</p><a class="play" href="#chapter-3"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 3 · Find the code</a></li>
-        <li><h4>Know what a change will affect</h4><code class="cmd">opticli where-used 456 --pages</code><p>Find every page and block that references an item, through nested blocks all the way up to pages. You can also resolve a URL to content, or list the unpublished drafts.</p></li>
-        <li><h4>Content history</h4><code class="cmd">opticli history 123</code><p>See an item's change log: moves, deletes, restores and publishes, with who did each and when.</p></li>
-        <li><h4>CMS 12 and CMS 13</h4><code class="cmd">opticli doctor</code><p>The same commands work on both, including CMS 13 databases upgraded from CMS 12. <code>serve</code> picks the right site agent for your CMS version.</p></li>
+        <li><h4>Answer content questions without SQL</h4><code class="cmd">opticli get 9 --fields MainContentArea</code><p>No more hand-written queries against tblContent. Items come back with every property decoded, including ContentAreas, local blocks, links and rich text. Reads go straight to the database, so the site doesn't need to be running.</p><div class="acts"><details class="out"><summary><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="show">Show output</span><span class="hide">Hide output</span></summary><div class="out-body"><pre>ref:            9
+guid:           456929c5-d6b8-46c5-b339-896be5ccfddc
+type:           ProductPage
+name:           Alloy Meet
+language:       en
+status:         published
+url:            /en/alloy-meet/
+kind:           page
+version:        9_1755
+masterLanguage: en
+languages:      en
+parent:         5
+saved:          2026-10-21T09:14:28Z
+changedBy:      opticli
+startPublish:   2012-08-22T16:32:16Z
+childSortOrder: Index
+sortIndex:      3
+urlSegment:     alloy-meet
+visibleInMenu:  yes
+category:       Meet
+properties:
+  MainContentArea:
+    type:    ContentArea
+    value:
+      ref   guid                                  type          name                              language  status     displayOption  url
+      ----  ------------------------------------  ------------  --------------------------------  --------  ---------  -------------  -------------------------------
+      59    4dacf7fa-7f9c-4472-acfd-6cbf7363bdba  TeaserBlock   Customer testimonial wide teaser  en        published  full
+      1264  1f8df2bf-5b21-45bc-b0e1-cbcfbd542017  TeaserBlock   Alloy Track whitepaper teaser     en        published
+      28    f5d5ac23-d96d-4c2f-b8e1-56dfe7e05733  StandardPage  Contact us                        en        published  half           /en/about-us/contact-us/
+      31    6a5312a5-f9b7-40bd-a6b3-4f2ae2bdf7c0  StandardPage  Find a reseller                   en        published  half           /en/how-to-buy/find-a-reseller/
+    culture: en</pre><p class="out-note">opticli 0.36.0 on the Alloy sample site.</p></div></details><a class="play" href="#chapter-2"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 2 · Find the content</a></div></li>
+        <li><h4>Go from content to code</h4><code class="cmd">opticli type TeaserBlock</code><p>See the C# class for a content type, the source line of each property and the Razor views, plus which ContentAreas accept it according to [AllowedTypes].</p><div class="acts"><details class="out"><summary><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="show">Show output</span><span class="hide">Hide output</span></summary><div class="out-body"><pre>name:       TeaserBlock
+guid:       eb67a99a-e239-41b8-9c59-20eaa5936047
+kind:       block
+base:       Block
+modelType:  Alloy.Models.Blocks.TeaserBlock, Alloy, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null
+instances:  24
+properties:
+  name     type              cultureSpecific  required  tab          order  source                           uiHint
+  -------  ----------------  ---------------  --------  -----------  -----  -------------------------------  ---------------
+  Heading  LongString        yes              yes       Information  1      Models/Blocks/TeaserBlock.cs:18
+  Text     LongString        yes              yes       Information  2      Models/Blocks/TeaserBlock.cs:26  UIHint.Textarea
+  Image    ContentReference  yes              yes       Information  3      Models/Blocks/TeaserBlock.cs:34  UIHint.Image
+  Link     PageReference     no               no        Information  4      Models/Blocks/TeaserBlock.cs:39
+sourceRoot: /demo/Alloy
+classes:
+  file                          line  matchedBy  baseTypes
+  ----------------------------  ----  ---------  -------------
+  Models/Blocks/TeaserBlock.cs  11    guid       SiteBlockData
+views:
+  file                                        matchedBy
+  ------------------------------------------  ---------
+  Views/Shared/Blocks/TeaserBlock.cshtml      fileName
+  Views/Shared/Blocks/TeaserBlockWide.cshtml  model</pre><p class="out-note">opticli 0.36.0 on the Alloy sample site.</p></div></details><a class="play" href="#chapter-3"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 3 · Find the code</a></div></li>
+        <li><h4>Know what a change will affect</h4><code class="cmd">opticli where-used 8 --pages</code><p>Find every page and block that references an item, through nested blocks all the way up to pages. You can also resolve a URL to content, or list the unpublished drafts.</p><div class="acts"><details class="out"><summary><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="show">Show output</span><span class="hide">Hide output</span></summary><div class="out-body"><pre>ref  guid                                  type         name         language  status     url               property         kind         sources             saved                 changedBy  via
+---  ------------------------------------  -----------  -----------  --------  ---------  ----------------  ---------------  -----------  ------------------  --------------------  ---------  ----
+9    456929c5-d6b8-46c5-b339-896be5ccfddc  ProductPage  Alloy Meet   en        published  /en/alloy-meet/   MainContentArea  contentArea  property, softlink  2026-10-21T09:14:28Z  opticli    1264
+7    d581c90b-3b11-45e1-8eb3-43dc5d88a2f2  ProductPage  Alloy Track  en        published  /en/alloy-track/  MainContentArea  contentArea  property, softlink  2026-10-21T09:11:02Z  opticli</pre><p class="out-note">opticli 0.36.0 on the Alloy sample site.</p></div></details></div></li>
+        <li><h4>Content history</h4><code class="cmd">opticli history 1264</code><p>See an item's change log: moves, deletes, restores and publishes, with who did each and when.</p><div class="acts"><details class="out"><summary><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="show">Show output</span><span class="hide">Hide output</span></summary><div class="out-body"><pre>when                      by       action   name                           from                    to                      version    language  previousStatus
+------------------------  -------  -------  -----------------------------  ----------------------  ----------------------  ---------  --------  --------------
+2026-10-21T09:16:58.217Z  opticli  restore  Alloy Track whitepaper teaser  ref=2 name=Recycle Bin  ref=62 name=Alloy Meet
+2026-10-21T09:16:39.37Z   opticli  delete   Alloy Track whitepaper teaser  ref=62 name=Alloy Meet  ref=2 name=Recycle Bin
+2026-10-21T09:14:24.91Z   opticli  publish  Alloy Track whitepaper teaser                                                  1264_1754  en        checkedOut
+2026-10-21T09:13:54.927Z  opticli  create   Alloy Track whitepaper teaser                                                  1264_1754  en</pre><p class="out-note">opticli 0.36.0 on the Alloy sample site.</p></div></details></div></li>
+        <li><h4>CMS 12 and CMS 13</h4><code class="cmd">opticli doctor</code><p>The same commands work on both, including CMS 13 databases upgraded from CMS 12. <code>serve</code> picks the right site agent for your CMS version.</p><div class="acts"><details class="out"><summary><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="show">Show output</span><span class="hide">Hide output</span></summary><div class="out-body"><pre>healthy: yes
+tool:
+  version: 0.36.0
+  runtime: .NET 8.0.34
+project:
+  found:           yes
+  path:            /demo/Alloy/Alloy.csproj
+  sourceRoot:      /demo/Alloy
+  howFound:        nearest CMS project above the working directory (/demo/Alloy)
+  targetFramework: net8.0
+  cmsVersion:      12.21.2
+  cmsMajor:        12
+  name:            EPiServerDB
+  chosen:
+    id:       50aa90
+    source:   appSettingsDevelopment
+    location: appsettings.Development.json
+    key:      ConnectionStrings:EPiServerDB
+    server:   localhost,1433
+    database: alloy-demo
+    local:    yes
+    role:     local
+    status:   chosen
+  mode:            automatic
+  …
+  cmsMajor:         12
+  sqlServerVersion: 16.0.4305.5
+  contentTypes:     24
+  contentItems:     161
+agent:
+  state:     stopped
+  message:   No opticli agent is running for this project.
+  statePath: ~/.local/state/opticli/Alloy-960610cd297e.json
+  hint:      Start it with `opticli serve`.
+scheduler:
+  serve:       off
+  overdueJobs: 11
+drift:
+  checked:      no</pre><p class="out-note">opticli 0.36.0 on the Alloy sample site. Shortened.</p></div></details></div></li>
       </ul>
     </div>
 
     <div class="group">
       <div><h3>Change content</h3><p>Through the CMS API, as drafts unless you publish.</p></div>
       <ul class="features">
-        <li><h4>Change content through the CMS API</h4><code class="cmd">opticli set 123 Heading="New title" --dry-run</code><p>Writes go through IContentRepository inside your running site, so validation, versioning, events and caches all work. Changes are saved as drafts unless you publish, and every write command takes <code>--dry-run</code>.</p><a class="play" href="#chapter-4"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 4 · Make the change</a></li>
+        <li><h4>Change content through the CMS API</h4><code class="cmd">opticli set 6 MetaTitle='Alloy Plan: plan projects, not meetings' --dry-run</code><p>Writes go through IContentRepository inside your running site, so validation, versioning, events and caches all work. Changes are saved as drafts unless you publish, and every write command takes <code>--dry-run</code>.</p><div class="acts"><details class="out"><summary><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="show">Show output</span><span class="hide">Hide output</span></summary><div class="out-body"><pre>ref:          6
+version:      6_1768
+guid:         fdac9c5f-86b6-4223-b4a6-397fe72483f9
+type:         ProductPage
+name:         Alloy Plan
+language:     en
+status:       published
+parent:       5
+saved:        no
+published:    no
+dryRun:       yes
+valid:        yes
+baseVersion:  6_1768
+changes:
+  property   before                                            after
+  ---------  ------------------------------------------------  ---------------------------------------
+  MetaTitle  Alloy Plan: projects without the status meetings  Alloy Plan: plan projects, not meetings
+url:          /en/alloy-plan/
+canonicalUrl: http://127.0.0.1:5010/en/alloy-plan/</pre><p class="out-note">opticli 0.36.0 on the Alloy sample site.</p></div></details><a class="play" href="#chapter-4"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 4 · Make the change</a></div></li>
         <li><h4>Visual Builder pages</h4><code class="cmd">opticli composition 123 add element --in Left --type TextElement Heading=Hi</code><p><code>get</code> shows an experience as its sections, rows, columns and elements, with display templates and settings. <code>composition</code> adds, moves, changes and removes them, or writes back the JSON <code>get</code> printed.</p></li>
-        <li><h4>Safe deletes, with restore</h4><code class="cmd">opticli delete 456 --dry-run</code><p><code>delete</code> only moves content to the recycle bin, and refuses while other pages or blocks still reference it, listing where. <code>trash</code> shows what's in the bin, and <code>restore</code> puts it back where it was.</p><a class="play" href="#chapter-7"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 7 · Safety nets</a></li>
+        <li><h4>Safe deletes, with restore</h4><code class="cmd">opticli delete 1264 --dry-run</code><p><code>delete</code> only moves content to the recycle bin, and refuses while other pages or blocks still reference it, listing where. <code>trash</code> shows what's in the bin, and <code>restore</code> puts it back where it was.</p><div class="acts"><details class="out"><summary><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="show">Show output</span><span class="hide">Hide output</span></summary><div class="out-body"><pre>ref:            1264
+guid:           1f8df2bf-5b21-45bc-b0e1-cbcfbd542017
+type:           TeaserBlock
+name:           Alloy Track whitepaper teaser
+language:       en
+status:         published
+previousParent: 62
+moved:          no
+dryRun:         yes
+descendants:    0
+recycleBin:     yes
+references:
+  from  name        type         language  to    property         kind
+  ----  ----------  -----------  --------  ----  ---------------  -----------
+  9     Alloy Meet  ProductPage  en        1264  MainContentArea  contentArea
+referenceCount: 1
+warning: referenced: 1 reference(s) from other content (9 MainContentArea -&gt; 1264); they would point into the recycle bin (broken links, missing blocks). The real run stops unless --ignore-references (ask the user first).</pre><p class="out-note">opticli 0.36.0 on the Alloy sample site.</p></div></details><a class="play" href="#chapter-7"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 7 · Safety nets</a></div></li>
         <li><h4>Approvals and scheduled publishing</h4><code class="cmd">opticli publish 123 --request-approval</code><p>Content with an approval sequence can't skip its reviewers: <code>--request-approval</code> sends it for review instead. <code>--publish-at</code> schedules the publish with the CMS's own scheduled job.</p></li>
         <li><h4>Media, page settings and access rights</h4><code class="cmd">opticli upload price-list.pdf --for 123</code><p>Upload files as media of the type your site registers for each extension. Read and set shortcuts, simple addresses, categories, sort order and publish dates, and see or change who can read and edit an item.</p></li>
       </ul>
@@ -187,9 +319,28 @@ hint: opticli writes to a production database only through a sealed apply, which
     <div class="group">
       <div><h3>Plans</h3><p>Whole sections from a file, safe to run again.</p></div>
       <ul class="features">
-        <li><h4>Plans you can run again</h4><code class="cmd">opticli apply plan.json --update-existing</code><p>With <code>"guidNamespace"</code>, every item a plan creates gets the same GUID in every database. <code>--update-existing</code> then updates what's already there and skips finished steps. <code>export</code> turns existing content from any database into a plan like this.</p><a class="play" href="#chapter-6"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 6 · Run it again</a></li>
+        <li><h4>Plans you can run again</h4><code class="cmd">opticli apply content/partners/plan.json --publish --update-existing</code><p>With <code>"guidNamespace"</code>, every item a plan creates gets the same GUID in every database. <code>--update-existing</code> then updates what's already there and skips finished steps. <code>export</code> turns existing content from any database into a plan like this.</p><div class="acts"><details class="out"><summary><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="show">Show output</span><span class="hide">Hide output</span></summary><div class="out-body"><pre>  0  create	partners	unchanged
+  1  access		unchanged
+  2  upload	prices	unchanged
+  3  create	training	unchanged
+  4  block	teaser	unchanged
+  5  area		unchanged
+
+# After editing partners.html, the same command again:
+  0  create	partners	saved
+  1  access		unchanged
+  2  upload	prices	unchanged
+  3  create	training	unchanged
+  4  block	teaser	unchanged
+  5  area		unchanged</pre><p class="out-note">From the screencast (opticli 0.20.0): each step’s status, picked out with jq.</p></div></details><a class="play" href="#chapter-6"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 6 · Run it again</a></div></li>
         <li><h4>Rich text from files</h4><code class="cmd">"MainBody": "@body.html"</code><p>Long rich text lives in HTML files you can review instead of inside the JSON. Links written as <code>href="$id"</code> point to content the plan creates.</p><a class="play" href="#chapter-5"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 5 · A section as a plan</a></li>
-        <li><h4>Dry runs that reach every step</h4><code class="cmd">opticli apply plan.json --publish --dry-run</code><p>Steps on content the plan hasn't created yet run against stand-ins, so validators, required properties and [AllowedTypes] are checked before anything is written.</p></li>
+        <li><h4>Dry runs that reach every step</h4><code class="cmd">opticli apply content/partners/plan.json --publish --dry-run</code><p>Steps on content the plan hasn't created yet run against stand-ins, so validators, required properties and [AllowedTypes] are checked before anything is written.</p><div class="acts"><details class="out"><summary><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="show">Show output</span><span class="hide">Hide output</span></summary><div class="out-body"><pre>  0  create	partners	valid
+  1  access		deferred
+  2  upload	prices	simulated
+  3  create	training	simulated
+  4  block	teaser	simulated
+  5  area		simulated
+  Dry run of 6 operation(s): 1 checked by the site, 4 checked as their content will be after earlier operations, or against stand-ins for content the plan crea…</pre><p class="out-note">From the screencast (opticli 0.20.0): each step’s status, picked out with jq, at the terminal’s width.</p></div></details></div></li>
       </ul>
     </div>
 
@@ -197,16 +348,54 @@ hint: opticli writes to a production database only through a sealed apply, which
       <div><h3>Environments and production</h3><p>Local by default; production only read, unless you run a sealed apply.</p></div>
       <ul class="features">
         <li><h4>Run a production copy on localhost</h4><code class="cmd">opticli sites primary --from-config</code><p>After restoring a production database, one command makes your local host each site's primary host and moves SiteUrl with it. <code>users add</code> creates a local admin login.</p></li>
-        <li><h4>Pull content from production</h4><code class="cmd">opticli sync pull --from prod --all --dry-run</code><p>Brings what editors did in production into your local database, matched by GUID and written through your local site. It only reads production, keeps your own local changes and lists conflicts instead of overwriting them.</p><a class="play" href="#chapter-11"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 11 · Pull from production</a></li>
-        <li><h4>Push to production: the agent prepares, you run it</h4><code class="cmd">opticli sync push --to prod /en/campaign/</code><p>A coding agent can prepare changes for production but can't write them. <code>sync push</code> seals what changed; you run the command it prints in your own terminal, with a write login that is never saved. It refuses if the plan, the build or production changed since the seal.</p><a class="play" href="#chapter-12"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 12 · Push to production</a></li>
+        <li><h4>Pull content from production</h4><code class="cmd">opticli sync pull --from prod --all --dry-run</code><p>Brings what editors did in production into your local database, matched by GUID and written through your local site. It only reads production, keeps your own local changes and lists conflicts instead of overwriting them.</p><div class="acts"><details class="out"><summary><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="show">Show output</span><span class="hide">Hide output</span></summary><div class="out-body"><pre>warning: Using the production database 'alloy-prod' on 'sql.alloy.example.com' (role prod, opticli user config (db add)) for this run: opticli only reads it, and…
+warning: 1 item(s) changed both in the source and locally since the last sync (conflicts) were left as they are; --overwrite-local writes the source's over the…
+warning: 1 item(s) synced before are gone from the source (gone); --delete moves them to the local recycle bin.
+Dry run: would sync alloy-prod into alloy-demo: 6 step(s)
+  created 1, updated 2, moved 1, restored 0, trashed 0, unchanged 72
+  conflicts 1, kept local 2, gone 1, skipped 0; 0 file(s)
+  created d4aaf98a-de78-4616-9788-be9a85fad94c Alloy Meet adds live captions
+  updated 6 Alloy Plan
+  updated 27 Management
+  moved 29 Become a reseller: to e9cefa25-6a0a-47d0-b12c-74c3f6a51c9a
+  conflict 28 Contact us: changed in the source, and changed in the target (en)
+  kept 9 Alloy Meet: changed in the target (en)
+  kept 10 About us: changed in the target (en)
+  gone 15 Risk Management: deleted in the source (or in its recycle bin); --delete moves it to the target's recycle bin</pre><p class="out-note">From the screencast (opticli 0.20.0), at the terminal’s width. The production host is renamed.</p></div></details><a class="play" href="#chapter-11"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 11 · Pull from production</a></div></li>
+        <li><h4>Push to production: the agent prepares, you run it</h4><code class="cmd">opticli sync push --to prod /en/alloy-meet/</code><p>A coding agent can prepare changes for production but can't write them. <code>sync push</code> seals what changed; you run the command it prints in your own terminal, with a write login that is never saved. It refuses if the plan, the build or production changed since the seal.</p><div class="acts"><details class="out"><summary><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="show">Show output</span><span class="hide">Hide output</span></summary><div class="out-body"><pre>Push to 'alloy-prod': created 1, updated 1, moved 0, restored 0, unchanged 1; conflicts 0, skipped 0, media left out 0.
+Sealed bac65e6e00156d07 for 'alloy-prod' on 'sql.alloy.example.com' (role prod), good until 2026-10-22 09:20:19Z.
+  plan /demo/Alloy/push-alloy-prod-20261021-112019/plan.json (0 file(s)), 3 step(s): 1 block, 1 create, 1 set; content types ProductPage 1, TeaserBlock 1;…
+  checked against alloy-demo on localhost,1433; build /demo/Alloy/bin/Debug/net8.0/Alloy.dll
+
+The user runs this in their own terminal (an agent hands it over and never runs it):
+  opticli apply /demo/Alloy/push-alloy-prod-20261021-112019/plan.json --db prod --seal bac65e6e00156d07</pre><p class="out-note">From the screencast (opticli 0.20.0), at the terminal’s width. The production host is renamed.</p></div></details><a class="play" href="#chapter-12"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 12 · Push to production</a></div></li>
       </ul>
     </div>
 
     <div class="group">
       <div><h3>Site operations</h3><p>Jobs, leftovers and Commerce catalogs.</p></div>
       <ul class="features">
-        <li><h4>Scheduled jobs</h4><code class="cmd">opticli jobs run "Content import"</code><p>See every job's schedule, last run and log, and where its code lives. Run one and wait for its result, stop it, or change when it runs.</p><a class="play" href="#chapter-8"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 8 · Scheduled jobs</a></li>
-        <li><h4>Clean up what removed code left behind</h4><code class="cmd">opticli types prune --dry-run</code><p><code>types --orphaned</code> finds content types whose code is gone. <code>types prune</code> removes what can go through the CMS, never content, and records every removal first.</p><a class="play" href="#chapter-9"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 9 · Clean up leftovers</a></li>
+        <li><h4>Scheduled jobs</h4><code class="cmd">opticli jobs run 'Publish Delayed Content Versions'</code><p>See every job's schedule, last run and log, and where its code lives. Run one and wait for its result, stop it, or change when it runs.</p><div class="acts"><details class="out"><summary><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="show">Show output</span><span class="hide">Hide output</span></summary><div class="out-body"><pre>job:        Publish Delayed Content Versions
+id:         17f4a400-75e5-4449-a0ae-c44bfa50a213
+started:    yes
+since:      2026-10-21T09:17:52.0424812Z
+status:     succeeded
+duration:   0.0 s
+durationMs: 42
+finished:   2026-10-21T09:17:52.103Z
+message:    Nothing was published.</pre><p class="out-note">From the screencast (opticli 0.20.0).</p></div></details><a class="play" href="#chapter-8"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 8 · Scheduled jobs</a></div></li>
+        <li><h4>Clean up what removed code left behind</h4><code class="cmd">opticli types prune --properties --dry-run</code><p><code>types --orphaned</code> finds content types whose code is gone. <code>types prune</code> removes what can go through the CMS, never content, and records every removal first.</p><div class="acts"><details class="out"><summary><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="show">Show output</span><span class="hide">Hide output</span></summary><div class="out-body"><pre>Would remove: content types (0):
+
+Would remove: properties (0):
+
+Kept (1):
+  - type: StandardPage
+    property: LegacyIntro
+    code: refused
+    reason: It has stored values (2 content items, 2 versions), which would be deleted with it for good: --allow-destructive removes them too.
+    values:
+      content: 2
+      versions: 2</pre><p class="out-note">From the screencast (opticli 0.20.0).</p></div></details><a class="play" href="#chapter-9"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 9 · Clean up leftovers</a></div></li>
         <li><h4>Commerce catalogs</h4><code class="cmd">opticli commerce price set code:P-1001-S --market DEFAULT --currency USD --amount 79</code><p>On a site with Commerce 14 or 15, catalogs, products and variants are content for <code>create</code>, <code>set</code> and plans, and prices, stock, markets and relations get their own commands, all with dry runs.</p></li>
       </ul>
     </div>
@@ -214,8 +403,45 @@ hint: opticli writes to a production database only through a sealed apply, which
     <div class="group">
       <div><h3>Your IDE and your agent</h3><p>Nothing to add to your solution.</p></div>
       <ul class="features">
-        <li><h4>Nothing to add to your solution</h4><code class="cmd">opticli serve</code><p><code>serve</code> starts your existing build with a small agent injected at startup, through a .NET startup hook and a hosting startup. Your site's code and config stay as they are.</p><a class="play" href="#chapter-1"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 1 · No setup</a></li>
-        <li><h4>See changes in the site you're debugging</h4><code class="cmd">opticli ide on</code><p>The site you start from Rider or Visual Studio loads the agent from its own build, so a reload shows the change without a restart. The debugger, hot reload and breakpoints stay as they are.</p><a class="play" href="#chapter-13"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 13 · See it while debugging</a></li>
+        <li><h4>Nothing to add to your solution</h4><code class="cmd">opticli serve</code><p><code>serve</code> starts your existing build with a small agent injected at startup, through a .NET startup hook and a hosting startup. Your site's code and config stay as they are.</p><div class="acts"><details class="out"><summary><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="show">Show output</span><span class="hide">Hide output</span></summary><div class="out-body"><pre>state:        running
+message:      Agent running at http://127.0.0.1:5201/.
+mode:         background
+pid:          3663192
+port:         5201
+url:          http://127.0.0.1:5201
+startedAt:    2026-11-25T12:27:01.1424693+00:00
+logPath:      ~/.local/state/opticli/Alloy-960610cd297e.log
+statePath:    ~/.local/state/opticli/Alloy-960610cd297e.json
+output:       /demo/Alloy/bin/Debug/net8.0/Alloy.dll
+agentDll:     ~/.dotnet/tools/.store/opticli/0.36.0/opticli/0.36.0/tools/net8.0/any/agent/cms12/OptiCli.Agent.dll
+agent:
+  version:     0.36.0
+  protocol:    1
+  cmsVersion:  12.21.2
+  runtime:     8.0.34
+  environment: Development
+  principal:   opticli
+database:
+  connectionName: EPiServerDB
+  server:         localhost,1433
+  name:           alloy-demo
+  local:          yes
+  pinned:         yes
+scheduler:    off
+inlineBlocks: shared</pre><p class="out-note">opticli 0.36.0 on the Alloy sample site.</p></div></details><a class="play" href="#chapter-1"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 1 · No setup</a></div></li>
+        <li><h4>See changes in the site you're debugging</h4><code class="cmd">opticli ide on</code><p>The site you start from Rider or Visual Studio loads the agent from its own build, so a reload shows the change without a restart. The debugger, hot reload and breakpoints stay as they are.</p><div class="acts"><details class="out"><summary><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="show">Show output</span><span class="hide">Hide output</span></summary><div class="out-body"><pre>userFile:      /demo/Alloy/Alloy.csproj.user
+created:       yes
+agent:         /demo/.state/opticli/agent/0.20.0-31f189f9/cms12/OptiCli.Agent.dll
+agentVersion:  0.20.0
+configuration: Debug
+ideFile:       /demo/.state/opticli/Alloy-42ff78dfdcb3.ide.json
+database:
+  server: localhost,1433
+  name:   alloy-demo
+  remote: no
+git:           noRepository
+rebuildNeeded: yes
+next:          Rebuild the site (Debug): in Rider or Visual Studio use Rebuild, since Run's up-to-date check doesn't notice a changed .csproj.user. Then start …</pre><p class="out-note">From the screencast (opticli 0.20.0), at the terminal’s width.</p></div></details><a class="play" href="#chapter-13"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 13 · See it while debugging</a></div></li>
         <li><h4>Built for coding agents</h4><code class="cmd">opticli skill install</code><p>Piped output is compact JSON. Every item has a ref you can pass to the next command, and errors come with a code and a hint. A Claude Code skill tells the agent when to use opticli and how to use it safely.</p><a class="play" href="#chapter-14"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 14 · Let an agent do it</a></li>
       </ul>
     </div>

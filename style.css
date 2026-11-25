@@ -124,6 +124,22 @@ header nav a[aria-current="page"] { color: var(--ink); text-decoration: underlin
 .play:hover { text-decoration: underline; }
 .play svg { width: .9em; height: .9em; }
 .tok { white-space: nowrap; }
+/* A feature's real output, folded under its command; open, it takes the row and the chapter link moves below it. */
+.features .acts { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 24px; margin-top: 10px; }
+.features .acts .play { margin-top: 0; }
+details.out > summary { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; font-size: .92rem; font-weight: 700; color: var(--c); border-radius: 6px; }
+details.out > summary::-webkit-details-marker { display: none; }
+details.out > summary:hover span { text-decoration: underline; }
+details.out > summary svg { width: .9em; height: .9em; transition: transform .2s cubic-bezier(.16, 1, .3, 1); }
+details.out { min-width: 0; max-width: 100%; }
+details.out[open] { flex-basis: 100%; }
+.group > *, .features > li { min-width: 0; }
+details.out[open] > summary svg { transform: rotate(90deg); }
+details.out .hide, details.out[open] .show { display: none; }
+details.out[open] .hide { display: inline; }
+.out-body { margin-top: 10px; }
+.out-body pre { margin: 0; padding: 16px 18px; border-radius: 14px; background: var(--code-bg); color: #dfe4e8; font: .8rem/1.6 var(--mono); overflow: auto; max-height: 30rem; }
+.out-note { margin-top: 8px; font-size: .85rem; color: var(--soft); }
 @media (max-width: 900px) { .group { grid-template-columns: minmax(0, 1fr); } .group > div:first-child { position: static; } }
 
 /* Routes and steps: short sequences drawn as a line of stops. */
