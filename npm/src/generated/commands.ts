@@ -1259,6 +1259,8 @@ export abstract class OptiCliCommands {
    * Create a language branch of existing content, as a draft unless --publish. Needs `opticli serve`.
    * Culture-specific properties may be given; shared ones come from the master language and can't be set here.
    * --with-blocks translates the blocks in its "For this page" folder too. --remove deletes a branch instead.
+   * Commerce's catalog content too, into a language of its catalog (code:P-1001 --lang sv DisplayName=...): where
+   * Commerce has the language already (Commerce 14 always), it is saved into it as set --lang does.
    * Example: opticli translate 123 --lang en --name "About" Heading="About us" --dry-run
    * @param ref - A ref is a content id (123), id_version (123_456), a content GUID, a URL/path (/en/about/ or https://host/en/about/), or content provider content as get prints it (63__provider).
    * @param properties - Property values: Prop=value (string, parsed by the site like an import), Prop= (clear), Prop=@file (file contents, @@ for a literal @), Block.Prop=value (local block property), Area[2].Prop=value (inline block in a ContentArea).
@@ -1269,6 +1271,8 @@ export abstract class OptiCliCommands {
    * Create a language branch of existing content, as a draft unless --publish. Needs `opticli serve`.
    * Culture-specific properties may be given; shared ones come from the master language and can't be set here.
    * --with-blocks translates the blocks in its "For this page" folder too. --remove deletes a branch instead.
+   * Commerce's catalog content too, into a language of its catalog (code:P-1001 --lang sv DisplayName=...): where
+   * Commerce has the language already (Commerce 14 always), it is saved into it as set --lang does.
    * Example: opticli translate 123 --lang en --name "About" Heading="About us" --dry-run
    * @param ref - A ref is a content id (123), id_version (123_456), a content GUID, a URL/path (/en/about/ or https://host/en/about/), or content provider content as get prints it (63__provider).
    */
@@ -1278,6 +1282,8 @@ export abstract class OptiCliCommands {
    * Create a language branch of existing content, as a draft unless --publish. Needs `opticli serve`.
    * Culture-specific properties may be given; shared ones come from the master language and can't be set here.
    * --with-blocks translates the blocks in its "For this page" folder too. --remove deletes a branch instead.
+   * Commerce's catalog content too, into a language of its catalog (code:P-1001 --lang sv DisplayName=...): where
+   * Commerce has the language already (Commerce 14 always), it is saved into it as set --lang does.
    * Example: opticli translate 123 --lang en --name "About" Heading="About us" --dry-run
    * @param ref - A ref is a content id (123), id_version (123_456), a content GUID, a URL/path (/en/about/ or https://host/en/about/), or content provider content as get prints it (63__provider).
    * @param properties - Property values: Prop=value (string, parsed by the site like an import), Prop= (clear), Prop=@file (file contents, @@ for a literal @), Block.Prop=value (local block property), Area[2].Prop=value (inline block in a ContentArea).
@@ -1288,6 +1294,8 @@ export abstract class OptiCliCommands {
    * Create a language branch of existing content, as a draft unless --publish. Needs `opticli serve`.
    * Culture-specific properties may be given; shared ones come from the master language and can't be set here.
    * --with-blocks translates the blocks in its "For this page" folder too. --remove deletes a branch instead.
+   * Commerce's catalog content too, into a language of its catalog (code:P-1001 --lang sv DisplayName=...): where
+   * Commerce has the language already (Commerce 14 always), it is saved into it as set --lang does.
    * Example: opticli translate 123 --lang en --name "About" Heading="About us" --dry-run
    * @param ref - A ref is a content id (123), id_version (123_456), a content GUID, a URL/path (/en/about/ or https://host/en/about/), or content provider content as get prints it (63__provider).
    */
@@ -1297,6 +1305,8 @@ export abstract class OptiCliCommands {
    * Create a language branch of existing content, as a draft unless --publish. Needs `opticli serve`.
    * Culture-specific properties may be given; shared ones come from the master language and can't be set here.
    * --with-blocks translates the blocks in its "For this page" folder too. --remove deletes a branch instead.
+   * Commerce's catalog content too, into a language of its catalog (code:P-1001 --lang sv DisplayName=...): where
+   * Commerce has the language already (Commerce 14 always), it is saved into it as set --lang does.
    * Example: opticli translate 123 --lang en --name "About" Heading="About us" --dry-run
    * @param ref - A ref is a content id (123), id_version (123_456), a content GUID, a URL/path (/en/about/ or https://host/en/about/), or content provider content as get prints it (63__provider).
    * @param properties - Property values: Prop=value (string, parsed by the site like an import), Prop= (clear), Prop=@file (file contents, @@ for a literal @), Block.Prop=value (local block property), Area[2].Prop=value (inline block in a ContentArea).
@@ -1307,6 +1317,8 @@ export abstract class OptiCliCommands {
    * Create a language branch of existing content, as a draft unless --publish. Needs `opticli serve`.
    * Culture-specific properties may be given; shared ones come from the master language and can't be set here.
    * --with-blocks translates the blocks in its "For this page" folder too. --remove deletes a branch instead.
+   * Commerce's catalog content too, into a language of its catalog (code:P-1001 --lang sv DisplayName=...): where
+   * Commerce has the language already (Commerce 14 always), it is saved into it as set --lang does.
    * Example: opticli translate 123 --lang en --name "About" Heading="About us" --dry-run
    * @param ref - A ref is a content id (123), id_version (123_456), a content GUID, a URL/path (/en/about/ or https://host/en/about/), or content provider content as get prints it (63__provider).
    */

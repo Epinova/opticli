@@ -594,6 +594,7 @@ CatalogKind = 'package'
 CatalogKind = 'product'
 CatalogKind = 'root'
 CatalogKind = 'variation'
+CatalogRef.catalogLanguages?
 CatalogRef.code?
 CatalogRef.found
 CatalogRef.guid?

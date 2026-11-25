@@ -23,6 +23,8 @@ internal static class TranslateCommand
             Create a language branch of existing content, as a draft unless --publish. Needs `opticli serve`.
             Culture-specific properties may be given; shared ones come from the master language and can't be set here.
             --with-blocks translates the blocks in its "For this page" folder too. --remove deletes a branch instead.
+            Commerce's catalog content too, into a language of its catalog (code:P-1001 --lang sv DisplayName=...): where
+            Commerce has the language already (Commerce 14 always), it is saved into it as set --lang does.
             Example: opticli translate 123 --lang en --name "About" Heading="About us" --dry-run
             """);
         content.AddTo(command);
