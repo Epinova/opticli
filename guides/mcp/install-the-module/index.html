@@ -12,29 +12,26 @@
 <meta name="twitter:card" content="summary">
 <meta name="color-scheme" content="light dark">
 <link rel="preload" href="../../../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="../../../style.css">
+<link rel="stylesheet" href="../../../style.css?v=0fe4532399">
 </head>
 <body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <symbol id="i-chev" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-  <symbol id="i-ext" viewBox="0 0 20 20"><path d="M8 4.5H4.5v11h11V12M11 4.5h4.5V9M15.2 4.8L9 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-</svg>
-
-<header class="top">
+<header>
   <div class="wrap">
     <a class="mark" href="../../../">opticli<span>.</span></a>
-    <nav aria-label="Pages">
-      <a class="keep" href="../../">All guides</a><span class="sep" aria-hidden="true"></span><a class="page-link" href="../../../editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep page-link" href="../../../">For developers <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
+    <nav aria-label="Areas">
+      <a class="area" href="../../../cli/">Coding agents</a><a class="area" href="../../../editors/">Editors</a><a class="area" href="../../../tests/">Tests</a><a class="sec" href="../../../guides/" aria-current="page">Guides</a><a class="sec" href="https://github.com/epinova/opticli">GitHub</a>
     </nav>
   </div>
 </header>
 
-<main>
-<div class="wrap guide">
+<main class="wrap" data-area="editors">
+<div class="guide">
   <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#mcp">For the MCP module</a></p>
-  <h1>Install the MCP module in your site</h1>
-  <p class="lead">Add the opticli MCP module to a CMS 12 or CMS 13 site, decide what assistants may do, and connect a first assistant to check that it works.</p>
-  <p class="guide-meta">Written for opticli 0.35.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/mcp/install-the-module.md">Edit on GitHub</a></p>
+  <div class="guide-head">
+    <h1>Install the MCP module in your site</h1>
+    <p class="lead">Add the opticli MCP module to a CMS 12 or CMS 13 site, decide what assistants may do, and connect a first assistant to check that it works.</p>
+    <p class="guide-meta">Written for opticli 0.35.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/mcp/install-the-module.md">Edit on GitHub</a></p>
+  </div>
   <div class="guide-body">
     <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#install-and-connect">Install and connect</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
     <article class="prose">
@@ -263,23 +260,20 @@ the consent page. Change the option, then have them connect again.</li>
 </ul>
     </article>
   </div>
-  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for the MCP module</h2><div class="file"><ol class="guide-list"><li><a href="../../mcp/custom-tools/"><b>Write your first site-specific tool</b><span>Add a read tool and a write tool of your own to the MCP module, so editors&#x27; assistants can find Alloy product pages without a teaser and fill them in as drafts.</span></a></li><li><a href="../../mcp/hardening/"><b>Take the MCP module to production</b><span>Configure the MCP module for a shared or production environment, from which assistants may connect and how the site is reached to error pages, uploads, the audit log and preview links.</span></a></li></ol></div></section>
+  <section class="more" aria-labelledby="more-h"><h2 id="more-h">More guides for the MCP module</h2><ol class="guide-list"><li><a href="../../mcp/custom-tools/"><b>Write your first site-specific tool</b><span>Add a read tool and a write tool of your own to the MCP module, so editors&#x27; assistants can find Alloy product pages without a teaser and fill them in as drafts.</span></a></li><li><a href="../../mcp/hardening/"><b>Take the MCP module to production</b><span>Configure the MCP module for a shared or production environment, from which assistants may connect and how the site is reached to error pages, uploads, the audit log and preview links.</span></a></li></ol></section>
 </div>
 </main>
 
 <footer class="wrap">
-  <p>opticli and OptiCli.Mcp are open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. They are independent projects, not affiliated with or endorsed by Optimizely.</p>
+  <p>opticli is open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. It is an independent project, not affiliated with or endorsed by Optimizely.</p>
 </footer>
 <script>
-for (const button of document.querySelectorAll('[data-copy]')) {
-  button.addEventListener('click', async () => {
-    const text = document.getElementById(button.dataset.copy).textContent;
-    try { await navigator.clipboard.writeText(text); } catch { getSelection().selectAllChildren(document.getElementById(button.dataset.copy)); return; }
-    button.textContent = 'Copied';
-    button.dataset.done = '';
-    setTimeout(() => { button.textContent = 'Copy'; delete button.dataset.done; }, 1600);
-  });
-}
+for (const b of document.querySelectorAll('[data-copy]')) b.addEventListener('click', () => {
+  const text = document.getElementById(b.dataset.copy).textContent;
+  const done = (label) => { b.textContent = label; b.dataset.done = ''; setTimeout(() => { b.textContent = 'Copy'; delete b.dataset.done; }, 1600); };
+  if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => done('Copied'), () => done('Select and copy'));
+  else done('Select and copy');
+});
 </script>
 </body>
 </html>

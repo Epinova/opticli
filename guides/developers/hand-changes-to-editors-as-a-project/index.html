@@ -12,29 +12,26 @@
 <meta name="twitter:card" content="summary">
 <meta name="color-scheme" content="light dark">
 <link rel="preload" href="../../../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="../../../style.css">
+<link rel="stylesheet" href="../../../style.css?v=0fe4532399">
 </head>
 <body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <symbol id="i-chev" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-  <symbol id="i-ext" viewBox="0 0 20 20"><path d="M8 4.5H4.5v11h11V12M11 4.5h4.5V9M15.2 4.8L9 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-</svg>
-
-<header class="top">
+<header>
   <div class="wrap">
     <a class="mark" href="../../../">opticli<span>.</span></a>
-    <nav aria-label="Pages">
-      <a class="keep" href="../../">All guides</a><span class="sep" aria-hidden="true"></span><a class="page-link" href="../../../editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep page-link" href="../../../">For developers <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
+    <nav aria-label="Areas">
+      <a class="area" href="../../../cli/">Coding agents</a><a class="area" href="../../../editors/">Editors</a><a class="area" href="../../../tests/">Tests</a><a class="sec" href="../../../guides/" aria-current="page">Guides</a><a class="sec" href="https://github.com/epinova/opticli">GitHub</a>
     </nav>
   </div>
 </header>
 
-<main>
-<div class="wrap guide">
+<main class="wrap" data-area="agents">
+<div class="guide">
   <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#developers">For developers</a></p>
-  <h1>Hand a batch of changes to editors as a project</h1>
-  <p class="lead">Put the drafts a plan or your coding agent makes in a CMS project, so an editor reviews them together in the CMS and they go live in one go, when someone decides they should.</p>
-  <p class="guide-meta">Written for opticli 0.33.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/developers/hand-changes-to-editors-as-a-project.md">Edit on GitHub</a></p>
+  <div class="guide-head">
+    <h1>Hand a batch of changes to editors as a project</h1>
+    <p class="lead">Put the drafts a plan or your coding agent makes in a CMS project, so an editor reviews them together in the CMS and they go live in one go, when someone decides they should.</p>
+    <p class="guide-meta">Written for opticli 0.33.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/developers/hand-changes-to-editors-as-a-project.md">Edit on GitHub</a></p>
+  </div>
   <div class="guide-body">
     <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#steps">Steps</a></li><li><a href="#running-the-plan-again">Running the plan again</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
     <article class="prose">
@@ -183,23 +180,20 @@ production.</p>
 </ul>
     </article>
   </div>
-  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for developers</h2><div class="file"><ol class="guide-list"><li><a href="../../developers/restored-production-database/"><b>Work on a restored production database</b><span>Point opticli at a restored copy of production, make its sites answer on localhost, get a local login and keep its scheduled jobs from running.</span></a></li><li><a href="../../developers/find-content-and-code/"><b>Find content and the code behind it</b><span>Go from a URL or a name to the content item, its C# class and Razor view, and every page that uses it.</span></a></li><li><a href="../../developers/playwright-seed-content/"><b>Seed CMS content for Playwright tests</b><span>Use the @epinova/opticli npm package to start the site, seed the content your Playwright tests read, and give each test pages of its own that are cleaned up afterwards.</span></a></li><li><a href="../../developers/pull-from-staging/"><b>Pull content from staging into your local database</b><span>Register a staging or test database by name, bring its content into your local database with sync pull, and keep it current without another restore.</span></a></li><li><a href="../../developers/build-a-test-database/"><b>Build a test database from scratch</b><span>Start from an empty database, and let one seed plan add the languages, the content and the sites, so end-to-end tests run on a database that code builds the same way every time.</span></a></li><li><a href="../../developers/node-scripts-and-playwright-config/"><b>Read the site from Node.js scripts and playwright.config</b><span>Call opticli&#x27;s commands as typed methods from a Node.js script, and build Playwright projects from the site&#x27;s own data, such as one project per enabled language.</span></a></li><li><a href="../../developers/seed-a-commerce-catalog/"><b>Seed a Commerce catalog for Playwright tests</b><span>Build an Optimizely Commerce site&#x27;s catalog, prices, stock and markets from a plan, so end-to-end tests start from the same products on every machine and in CI.</span></a></li></ol></div></section>
+  <section class="more" aria-labelledby="more-h"><h2 id="more-h">More guides for developers</h2><ol class="guide-list"><li><a href="../../developers/restored-production-database/"><b>Work on a restored production database</b><span>Point opticli at a restored copy of production, make its sites answer on localhost, get a local login and keep its scheduled jobs from running.</span></a></li><li><a href="../../developers/find-content-and-code/"><b>Find content and the code behind it</b><span>Go from a URL or a name to the content item, its C# class and Razor view, and every page that uses it.</span></a></li><li><a href="../../developers/playwright-seed-content/"><b>Seed CMS content for Playwright tests</b><span>Use the @epinova/opticli npm package to start the site, seed the content your Playwright tests read, and give each test pages of its own that are cleaned up afterwards.</span></a></li><li><a href="../../developers/pull-from-staging/"><b>Pull content from staging into your local database</b><span>Register a staging or test database by name, bring its content into your local database with sync pull, and keep it current without another restore.</span></a></li><li><a href="../../developers/build-a-test-database/"><b>Build a test database from scratch</b><span>Start from an empty database, and let one seed plan add the languages, the content and the sites, so end-to-end tests run on a database that code builds the same way every time.</span></a></li><li><a href="../../developers/node-scripts-and-playwright-config/"><b>Read the site from Node.js scripts and playwright.config</b><span>Call opticli&#x27;s commands as typed methods from a Node.js script, and build Playwright projects from the site&#x27;s own data, such as one project per enabled language.</span></a></li><li><a href="../../developers/seed-a-commerce-catalog/"><b>Seed a Commerce catalog for Playwright tests</b><span>Build an Optimizely Commerce site&#x27;s catalog, prices, stock and markets from a plan, so end-to-end tests start from the same products on every machine and in CI.</span></a></li></ol></section>
 </div>
 </main>
 
 <footer class="wrap">
-  <p>opticli and OptiCli.Mcp are open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. They are independent projects, not affiliated with or endorsed by Optimizely.</p>
+  <p>opticli is open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. It is an independent project, not affiliated with or endorsed by Optimizely.</p>
 </footer>
 <script>
-for (const button of document.querySelectorAll('[data-copy]')) {
-  button.addEventListener('click', async () => {
-    const text = document.getElementById(button.dataset.copy).textContent;
-    try { await navigator.clipboard.writeText(text); } catch { getSelection().selectAllChildren(document.getElementById(button.dataset.copy)); return; }
-    button.textContent = 'Copied';
-    button.dataset.done = '';
-    setTimeout(() => { button.textContent = 'Copy'; delete button.dataset.done; }, 1600);
-  });
-}
+for (const b of document.querySelectorAll('[data-copy]')) b.addEventListener('click', () => {
+  const text = document.getElementById(b.dataset.copy).textContent;
+  const done = (label) => { b.textContent = label; b.dataset.done = ''; setTimeout(() => { b.textContent = 'Copy'; delete b.dataset.done; }, 1600); };
+  if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => done('Copied'), () => done('Select and copy'));
+  else done('Select and copy');
+});
 </script>
 </body>
 </html>

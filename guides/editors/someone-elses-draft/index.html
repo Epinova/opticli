@@ -12,29 +12,26 @@
 <meta name="twitter:card" content="summary">
 <meta name="color-scheme" content="light dark">
 <link rel="preload" href="../../../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="../../../style.css">
+<link rel="stylesheet" href="../../../style.css?v=0fe4532399">
 </head>
 <body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <symbol id="i-chev" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-  <symbol id="i-ext" viewBox="0 0 20 20"><path d="M8 4.5H4.5v11h11V12M11 4.5h4.5V9M15.2 4.8L9 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-</svg>
-
-<header class="top">
+<header>
   <div class="wrap">
     <a class="mark" href="../../../">opticli<span>.</span></a>
-    <nav aria-label="Pages">
-      <a class="keep" href="../../">All guides</a><span class="sep" aria-hidden="true"></span><a class="page-link" href="../../../editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep page-link" href="../../../">For developers <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
+    <nav aria-label="Areas">
+      <a class="area" href="../../../cli/">Coding agents</a><a class="area" href="../../../editors/">Editors</a><a class="area" href="../../../tests/">Tests</a><a class="sec" href="../../../guides/" aria-current="page">Guides</a><a class="sec" href="https://github.com/epinova/opticli">GitHub</a>
     </nav>
   </div>
 </header>
 
-<main>
-<div class="wrap guide">
+<main class="wrap" data-area="editors">
+<div class="guide">
   <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#editors">For editors</a></p>
-  <h1>When someone else has changes on the page</h1>
-  <p class="lead">Understand why your assistant stops before publishing a colleague&#x27;s unpublished changes, decide what goes live, and send pages for review where an approval sequence applies.</p>
-  <p class="guide-meta">Written for opticli 0.35.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/editors/someone-elses-draft.md">Edit on GitHub</a></p>
+  <div class="guide-head">
+    <h1>When someone else has changes on the page</h1>
+    <p class="lead">Understand why your assistant stops before publishing a colleague&#x27;s unpublished changes, decide what goes live, and send pages for review where an approval sequence applies.</p>
+    <p class="guide-meta">Written for opticli 0.35.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/editors/someone-elses-draft.md">Edit on GitHub</a></p>
+  </div>
   <div class="guide-body">
     <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#steps">Steps</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
     <article class="prose">
@@ -159,23 +156,20 @@ other people's changes</li>
 </ul>
     </article>
   </div>
-  <section class="part more" aria-labelledby="more-h"><h2 id="more-h">More guides for editors</h2><div class="file"><ol class="guide-list"><li><a href="../../editors/connect-your-assistant/"><b>Connect your assistant to the CMS</b><span>Connect Claude or another assistant to your Optimizely site, sign in with your own CMS account, and check that it works.</span></a></li><li><a href="../../editors/translate-a-page/"><b>Translate a page with your assistant</b><span>Have your assistant translate a page into another language, review the translation as a draft, and publish it only when you say so.</span></a></li><li><a href="../../editors/image-alt-texts/"><b>Fix image alt texts with your assistant</b><span>Have your assistant look at your images, suggest alt texts or descriptions, and save them as drafts you review first.</span></a></li><li><a href="../../editors/collect-changes-in-a-project/"><b>Collect changes in a project and publish them together</b><span>Have your assistant put the drafts of a campaign or a new section in a CMS project, review them together in the CMS, and publish them in one go, now or at a set time.</span></a></li><li><a href="../../editors/add-blocks-to-a-page/"><b>Add blocks to a page with your assistant</b><span>Have your assistant put new blocks in a page&#x27;s content area, know where the CMS keeps them, review them, and publish the page and its blocks together.</span></a></li></ol></div></section>
+  <section class="more" aria-labelledby="more-h"><h2 id="more-h">More guides for editors</h2><ol class="guide-list"><li><a href="../../editors/connect-your-assistant/"><b>Connect your assistant to the CMS</b><span>Connect Claude or another assistant to your Optimizely site, sign in with your own CMS account, and check that it works.</span></a></li><li><a href="../../editors/translate-a-page/"><b>Translate a page with your assistant</b><span>Have your assistant translate a page into another language, review the translation as a draft, and publish it only when you say so.</span></a></li><li><a href="../../editors/image-alt-texts/"><b>Fix image alt texts with your assistant</b><span>Have your assistant look at your images, suggest alt texts or descriptions, and save them as drafts you review first.</span></a></li><li><a href="../../editors/collect-changes-in-a-project/"><b>Collect changes in a project and publish them together</b><span>Have your assistant put the drafts of a campaign or a new section in a CMS project, review them together in the CMS, and publish them in one go, now or at a set time.</span></a></li><li><a href="../../editors/add-blocks-to-a-page/"><b>Add blocks to a page with your assistant</b><span>Have your assistant put new blocks in a page&#x27;s content area, know where the CMS keeps them, review them, and publish the page and its blocks together.</span></a></li></ol></section>
 </div>
 </main>
 
 <footer class="wrap">
-  <p>opticli and OptiCli.Mcp are open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. They are independent projects, not affiliated with or endorsed by Optimizely.</p>
+  <p>opticli is open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. It is an independent project, not affiliated with or endorsed by Optimizely.</p>
 </footer>
 <script>
-for (const button of document.querySelectorAll('[data-copy]')) {
-  button.addEventListener('click', async () => {
-    const text = document.getElementById(button.dataset.copy).textContent;
-    try { await navigator.clipboard.writeText(text); } catch { getSelection().selectAllChildren(document.getElementById(button.dataset.copy)); return; }
-    button.textContent = 'Copied';
-    button.dataset.done = '';
-    setTimeout(() => { button.textContent = 'Copy'; delete button.dataset.done; }, 1600);
-  });
-}
+for (const b of document.querySelectorAll('[data-copy]')) b.addEventListener('click', () => {
+  const text = document.getElementById(b.dataset.copy).textContent;
+  const done = (label) => { b.textContent = label; b.dataset.done = ''; setTimeout(() => { b.textContent = 'Copy'; delete b.dataset.done; }, 1600); };
+  if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => done('Copied'), () => done('Select and copy'));
+  else done('Select and copy');
+});
 </script>
 </body>
 </html>

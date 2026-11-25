@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>opticli releases</title>
+<meta name="description" content="What changed in each opticli release: the CLI, the MCP server and the npm package for Playwright.">
+<meta property="og:title" content="opticli releases">
+<meta property="og:description" content="What changed in each opticli release.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://epinova.github.io/opticli/releases/">
+<meta name="twitter:card" content="summary">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../style.css?v=0fe4532399">
+<style>
+.history { margin-top: 56px; }
+.older { margin-top: 24px; font-weight: 700; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <a class="mark" href="../">opticli<span>.</span></a>
+    <nav aria-label="Areas">
+      <a class="area" href="../cli/">Coding agents</a><a class="area" href="../editors/">Editors</a><a class="area" href="../tests/">Tests</a><a class="sec" href="../guides/">Guides</a><a class="sec" href="https://github.com/epinova/opticli">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="page-intro" aria-labelledby="releases-h">
+    <h1 id="releases-h">Releases</h1>
+    <p class="lead">What changed in each release of the CLI, the MCP server and the npm package. Every release is on <a href="https://www.nuget.org/packages/OptiCli">nuget.org</a> and <a href="https://www.npmjs.com/package/@epinova/opticli">npm</a>. After updating the CLI, run <code>opticli skill install</code> again to update the skill.</p>
+  </section>
+  <section class="history" aria-label="Recent releases">
+    <ol class="versions">
+      <li><div class="v"><b>0.36.0</b><span>24 November 2026</span></div>
+        <ul>
+          <li><b>Optimizely Commerce:</b> on a site with Commerce 14 (CMS 12) or 15 (CMS 13), <code>serve</code> loads a
+            Commerce agent beside the site agent, so an E2E suite can seed a catalog from code. Catalogs, nodes, products
+            and variants are content for <code>create</code>, <code>set</code> and plans, with <code>code:</code> and
+            <code>catalog:</code> refs and product images. Prices, warehouses, stock, markets and relations get
+            <code>opticli commerce &hellip;</code> commands and plan steps, all with dry runs and <code>unchanged</code>
+            on a re-run. A site without Commerce runs as before, and the MCP module is unchanged. See the guide
+            <a href="../guides/developers/seed-a-commerce-catalog/">Seed a Commerce catalog for Playwright tests</a>.</li>
+          <li><b>Reads through the site:</b> <code>commerce get|children|tree</code>, prices, stock, markets and
+            relations, and <code>resolve</code> takes a catalog URL back to its ref.</li>
+          <li><b>Fixed:</b> <code>opticli sql</code> with a recursive CTE cut by <code>--limit</code> reported an
+            internal error. It now gives SQL Server's own error, and past the recursion limit the hint names
+            <code>OPTION (MAXRECURSION n)</code>.</li>
+        </ul></li>
+      <li><div class="v"><b>0.35.2</b><span>23 November 2026</span></div>
+        <ul>
+          <li><b>Fixes from a review of every write and the MCP module:</b> <code>unpublish</code> no longer publishes a
+            page's never-published blocks along with it, a block whose draft holds a colleague's changes goes live with
+            a page only when named, and a block published along has a passed stop date cleared.</li>
+          <li><b>Plans don't stop half-way:</b> a later step's <code>publishAt</code> and <code>requestApproval</code>,
+            one content in two projects, and a <code>publish</code> after an upload's new file are now checked in the
+            dry run. A link out of the plan's folder is refused, also in a sealed run.</li>
+          <li><b>For editors' assistants:</b> a save into a project needs Edit even with nothing to change, renaming a
+            folder with content below it needs publishing allowed, and blocks or content an editor can't read are named
+            nowhere. A site tool with <code>[Authorize]</code> stops the site at startup instead of being open to
+            every editor.</li>
+          <li><b>New:</b> <code>serve</code> warns when no site answers on its address, and says which port or command
+            makes one answer.</li>
+        </ul></li>
+      <li><div class="v"><b>0.35.1</b><span>19 November 2026</span></div>
+        <ul>
+          <li><b>Fixed:</b> <code>opticli env --connection-name</code> without <code>--include-connection</code> now
+            tells the site agent which connection string the site uses. It checked <code>EPiServerDB</code> instead, so a
+            site without that string wouldn't start.</li>
+          <li><b>The reference moved:</b> the README is now a quickstart, and the reference is in
+            <a href="https://github.com/Epinova/opticli/tree/main/docs/reference">docs/reference/</a>, one page per
+            area, checked against the code on the way.</li>
+        </ul></li>
+      <li><div class="v"><b>0.35.0</b><span>19 November 2026</span></div>
+        <ul>
+          <li><b>New blocks follow the site's edit UI:</b> where the site has
+            <code>UIOptions.InlineBlocksInContentAreaEnabled</code> off (Optimizely's default on CMS 12), a new block in a
+            ContentArea is now a shared block in the page's &ldquo;For this page&rdquo; folder, as an editor would make it,
+            instead of an inline block the site may not render. Inline blocks a page already has stay inline, and
+            writing an area again updates its blocks instead of making new ones. The result's <code>sharedBlocks</code>
+            gives each block's ref.</li>
+          <li><b>Publishing takes only what you mean:</b> a publish takes along the page's never-published blocks, but a
+            live block's newer draft, or a colleague's draft, goes live only when you name it
+            (<code>--with-block</code>, <code>blocks</code>). Replacing a colleague's block draft needs
+            <code>--include-draft</code>. <code>publish --dry-run</code> and <code>publish_content</code>'s new
+            <code>dryRun</code> show what goes live.</li>
+          <li><b>For editors:</b> a new guide,
+            <a href="../guides/editors/add-blocks-to-a-page/">Add blocks to a page</a>.</li>
+        </ul></li>
+      <li><div class="v"><b>0.34.2</b><span>18 November 2026</span></div>
+        <ul>
+          <li><b>Fixed in the Claude Desktop extension:</b> after a sign-in that wasn't finished, every later sign-in
+            page said &ldquo;Unknown app&rdquo; and Claude Desktop gave up. The extension now drops a saved
+            registration that never signed in and registers again.</li>
+        </ul></li>
+      <li><div class="v"><b>0.34.1</b><span>17 November 2026</span></div>
+        <ul>
+          <li><b>Fixed on Windows:</b> when the npm package, a script or an agent read opticli's output, characters
+            outside ASCII (<code>æøå</code> in a content name) came out wrong, and a plan piped to
+            <code>apply -</code> was read the same way. Redirected input and output are UTF-8 now.</li>
+        </ul></li>
+      <li><div class="v"><b>0.34.0</b><span>17 November 2026</span></div>
+        <ul>
+          <li><b>A typed method for every command:</b> the npm package's client is generated from opticli's own
+            description of its commands, with the CLI's shape and each command's JSON as the return type:
+            <code>cli.languages()</code>, <code>cli.projects('Spring campaign')</code>,
+            <code>cli.whereUsed('123', { pages: true })</code>. <code>OptiCliSync</code> has the same methods, blocking,
+            for a <code>playwright.config</code> that makes a project per enabled language. The API changes where 0.33's
+            no longer fit; see the <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>. See the guide
+            <a href="../guides/developers/node-scripts-and-playwright-config/">Read the site from Node.js scripts and playwright.config</a>.</li>
+          <li><b>Projects in tests:</b> <code>cms.page()</code> and <code>cms.set()</code> take <code>inProject</code>
+            and <code>ready</code>, and a project a test makes is deleted after the test.</li>
+          <li><b>On the command line:</b> a value that starts with <code>@</code> is plain text
+            (<code>opticli search @alloy</code>), and plans that replace a file they upload work.</li>
+          <li><b>For editors' assistants:</b> <code>get_content_type</code> gives the block types an editor descriptor
+            allows, and saves follow them, as the edit UI does.</li>
+        </ul></li>
+      <li><div class="v"><b>0.33.0</b><span>17 November 2026</span></div>
+        <ul>
+          <li><b>Changes collected in a project:</b> drafts can go into the CMS's projects, so editors review many related
+            changes together and publish them in one go. Your assistant can create a project, put its drafts in it, mark
+            them Ready to publish and, where the site allows it, publish or schedule the project. Only items marked ready
+            go live; the rest stay drafts. See the guide
+            <a href="../guides/editors/collect-changes-in-a-project/">Collect changes in a project and publish them together</a>.</li>
+          <li><b>On the command line:</b> <code>--in-project</code> and <code>--ready</code> on the writes,
+            <code>"project"</code> in plans, and <code>opticli projects create</code>, <code>ready</code> and
+            <code>publish</code>. See the guide
+            <a href="../guides/developers/hand-changes-to-editors-as-a-project/">Hand a batch of changes to editors as a project</a>.</li>
+        </ul></li>
+      <li><div class="v"><b>0.32.0</b><span>12 November 2026</span></div>
+        <ul>
+          <li><b>Sites with assets of their own:</b> a site that <code>opticli sites add</code> or a plan's
+            <code>site</code> step creates now gets an assets folder of its own, at <code>/siteassets/</code>, as admin
+            mode makes it, so add-ons that keep data in a site's assets folder find one. A seed plan can upload straight
+            into it by its URL; <code>--site-assets global</code> keeps a site on the shared folder. See the guide
+            <a href="../guides/developers/build-a-test-database/">Build a test database from scratch</a>.</li>
+          <li><b>Fixes in plans that create sites:</b> a step on the new site's host waits for the site instead of failing
+            the dry run, and a page that links elsewhere keeps that link as its URL on the first run too.</li>
+        </ul></li>
+      <li><div class="v"><b>0.31.1</b><span>11 November 2026</span></div>
+        <ul>
+          <li><b>What the site's own code changed:</b> when the site's code changes a value during a save, the result
+            shows what was stored, not what was asked for, and opticli warns about it.</li>
+          <li><b>External links:</b> a page whose shortcut is an external link has that link as its URL again.</li>
+        </ul></li>
+    </ol>
+    <p class="older"><a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">Older releases are in the changelog</a></p>
+  </section>
+</main>
+
+<footer class="wrap">
+  <p>opticli is open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. It is an independent project, not affiliated with or endorsed by Optimizely.</p>
+</footer>
+</body>
+</html>

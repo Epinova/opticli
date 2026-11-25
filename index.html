@@ -3,616 +3,182 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>opticli: Optimizely content for coding agents</title>
-<meta name="description" content="opticli lets your coding agent read and edit content in an Optimizely CMS 12 or 13 site through the CMS API, saved as drafts you review. Production is read-only.">
-<meta property="og:title" content="opticli: Optimizely content for coding agents">
-<meta property="og:description" content="Let your coding agent edit Optimizely content. You review the drafts. Production is read-only.">
+<title>opticli: Optimizely content for coding agents, editors and tests</title>
+<meta name="description" content="Let AI and tests work on real Optimizely content: a CLI for coding agents, an MCP server for editors' AI assistants and an npm package for Playwright tests, all writing through your site's own CMS.">
+<meta property="og:title" content="opticli: Optimizely content for coding agents, editors and tests">
+<meta property="og:description" content="Let AI and tests work on real Optimizely content: a CLI for coding agents, an MCP server for editors' AI assistants and an npm package for Playwright tests, all writing through your site's own CMS.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://epinova.github.io/opticli/">
 <meta name="twitter:card" content="summary">
 <meta name="color-scheme" content="light dark">
 <link rel="preload" href="fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/asciinema-player@3.17.0/dist/bundle/asciinema-player.css">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=0fe4532399">
+<style>
+
+.intro { padding-block: 48px 0; }
+h1 { font-weight: 800; font-size: clamp(2.5rem, 5.6vw, 4.8rem); line-height: 1.02; letter-spacing: -.035em; max-width: 18ch; }
+.lead { margin-top: 20px; max-width: 52ch; font-size: 1.25rem; line-height: 1.5; color: var(--soft); }
+
+/* The shelf: three panels side by side, standing on one bar that names what they share. */
+.shelf { margin-top: 48px; }
+.panels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.panel { --bg: var(--p1); --c: var(--p1-ink); display: flex; flex-direction: column; gap: 18px; padding: 30px 30px 28px; background: var(--bg); border-radius: 22px 22px 6px 6px; }
+.panel.p2 { --bg: var(--p2); --c: var(--p2-ink); }
+.panel.p3 { --bg: var(--p3); --c: var(--p3-ink); }
+.panel h2 { margin: 0; font-weight: 800; font-size: clamp(1.7rem, 2.4vw, 2.15rem); line-height: 1.08; letter-spacing: -.025em; }
+.panel .kind { margin-top: 2px; font-weight: 700; color: var(--c); }
+.panel > p { color: color-mix(in srgb, var(--ink) 78%, var(--bg)); max-width: 40ch; }
+
+/* The example is set as type on the panel, under a hairline in the panel's own ink. */
+.example { padding-top: 16px; border-top: 1.5px solid color-mix(in srgb, var(--c) 35%, transparent); }
+.example .cmd { font: .95rem/1.6 var(--mono); color: var(--ink); overflow-wrap: anywhere; }
+.example .cmd span { color: var(--c); }
+.example .q { font-size: 1.2rem; line-height: 1.4; font-weight: 600; }
+.example .res { margin-top: 8px; font-size: .95rem; color: var(--c); font-weight: 600; }
+.example .ok { display: flex; gap: 10px; font-size: 1.02rem; line-height: 1.45; }
+.example .ok svg { flex: none; width: 1.15em; height: 1.15em; margin-top: .14em; color: var(--c); }
+.example .ok + .ok { margin-top: 8px; }
+
+.actions { margin-top: auto; display: grid; gap: 18px; justify-items: start; }
+.install { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.install code { font-size: .92rem; }
+.install + small { display: block; margin-top: -12px; font-size: .9rem; color: color-mix(in srgb, var(--ink) 65%, var(--bg)); }
+
+.bar { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 28px; margin-top: 10px; padding: 18px 32px; border-radius: 6px 6px 22px 22px; background: var(--shelf); color: var(--shelf-ink); }
+.bar b { font-weight: 800; font-size: 1.15rem; }
+.bar span { opacity: .78; }
+@media (max-width: 1080px) {
+  .panels { grid-template-columns: minmax(0, 1fr); max-width: 640px; }
+  .panel { border-radius: 22px; }
+  .bar { max-width: 640px; border-radius: 22px; }
+}
+
+/* How they fit, in three plain sentences. */
+.fit { margin-top: 112px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 28px 72px; }
+.fit h2 { font-weight: 800; font-size: clamp(2rem, 3.4vw, 3rem); line-height: 1.05; letter-spacing: -.03em; }
+.fit ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 22px; }
+.fit li { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 16px; }
+.fit li::before { content: ""; width: 14px; height: 14px; margin-top: .4em; border-radius: 50%; background: var(--d); }
+.fit li p { color: var(--soft); max-width: 60ch; }
+.fit li b { color: var(--ink); font-weight: 700; }
+@media (max-width: 900px) { .fit { grid-template-columns: minmax(0, 1fr); } }
+
+.release { margin-top: 112px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 20px 72px; }
+.release h2 { font-weight: 800; font-size: clamp(2rem, 3.4vw, 3rem); line-height: 1.05; letter-spacing: -.03em; }
+.release .all { display: inline-block; margin-top: 16px; font-weight: 700; }
+@media (max-width: 900px) { .release { grid-template-columns: minmax(0, 1fr); } }
+
+
+</style>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <symbol id="i-ok" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="currentColor"/><path d="M5.8 10.4l2.8 2.8 5.6-6.1" fill="none" stroke="var(--surface)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-  <symbol id="i-off" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.2"/></symbol>
-  <symbol id="i-no" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M4.6 15.4L15.4 4.6" stroke="currentColor" stroke-width="2.4"/></symbol>
-  <symbol id="i-play" viewBox="0 0 20 20"><path d="M6 4.2v11.6L15.6 10z" fill="currentColor"/></symbol>
-  <symbol id="i-ext" viewBox="0 0 20 20"><path d="M8 4.5H4.5v11h11V12M11 4.5h4.5V9M15.2 4.8L9 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-  <symbol id="i-chev" viewBox="0 0 20 20"><path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-ok" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="currentColor"/><path d="M5.8 10.4l2.8 2.8 5.6-6.1" fill="none" stroke="var(--ground)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 20 20"><path d="M3.5 10h12M11 5.5l4.5 4.5-4.5 4.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 </svg>
 
-<header class="top">
+<header>
   <div class="wrap">
-    <a class="mark" href="#change">opticli<span>.</span></a>
-    <a class="now" id="now" href="#commits" aria-live="polite"><svg class="icon"><use href="#i-play"/></svg><span></span></a>
-    <nav aria-label="Sections">
-      <a href="#commits">Screencast</a><a href="#what-its-for">Features</a><a href="#safety">Safety</a><a href="#changelog">Releases</a><a href="guides/">Guides</a><span class="sep" aria-hidden="true"></span><a class="page-link" href="tests/">For tests <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep page-link" href="editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="keep out-link" href="https://github.com/epinova/opticli">GitHub <svg class="icon" aria-hidden="true"><use href="#i-ext"/></svg></a>
+    <a class="mark" href="./">opticli<span>.</span></a>
+    <nav aria-label="Areas">
+      <a class="area" href="cli/">Coding agents</a><a class="area" href="editors/">Editors</a><a class="area" href="tests/">Tests</a><a class="sec" href="guides/">Guides</a><a class="sec" href="https://github.com/epinova/opticli">GitHub</a>
     </nav>
   </div>
 </header>
 
-<main>
-<section class="change wrap" id="change" data-mode="draft">
-  <h1>Let your coding agent edit Optimizely content. <em>You review the drafts.</em></h1>
-  <div class="change-head">
-    <p class="lead">Your coding agent uses opticli to find and edit pages and blocks. Edits go through the CMS API in your running site, so they're validated, versioned and saved as drafts. Production is read-only.</p>
-    <aside class="checkout" aria-labelledby="checkout-h">
-      <h2 id="checkout-h">Install</h2>
-      <div class="copyline"><code id="install">dotnet tool install -g OptiCli</code><button class="copy" type="button" data-copy="install">Copy</button></div>
-      <p>Then run <code>opticli skill install</code> in your site's repository so Claude Code knows how to use it. Requires the .NET 8 SDK or newer. Works with CMS 12 and 13.</p>
-    </aside>
+<main class="wrap">
+  <section class="intro">
+    <h1>Let AI and tests work on real Optimizely content.</h1>
+    <p class="lead">For coding agents, for editors' AI assistants and for Playwright tests. Whichever way in, every change goes through your site's own CMS.</p>
+  </section>
+
+  <div class="shelf">
+    <div class="panels">
+      <article class="panel" id="agents" aria-labelledby="agents-h">
+        <div><h2 id="agents-h">For coding agents</h2><p class="kind">The CLI</p></div>
+        <p>Your coding agent finds pages, blocks and the code behind them, and changes content as drafts you review. Production stays read-only.</p>
+        <div class="example">
+          <p class="cmd"><span>opticli set 7</span> TeaserText='Plan, track and report with the whole team'</p>
+          <p class="res">Alloy Track saved as a draft, not published</p>
+        </div>
+        <div class="actions">
+          <p class="install"><code id="c-cli">dotnet tool install -g OptiCli</code><button class="copy" type="button" data-copy="c-cli" aria-live="polite">Copy</button></p>
+          <a class="go" href="cli/">The CLI <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+        </div>
+      </article>
+
+      <article class="panel p2" id="editors" aria-labelledby="editors-h">
+        <div><h2 id="editors-h">For editors</h2><p class="kind">The MCP server</p></div>
+        <p>Editors ask the AI assistant they already use. It signs in as them, works with their access rights and saves drafts.</p>
+        <div class="example">
+          <p class="q">“The Alloy Track teaser should mention reporting.”</p>
+          <p class="res">Saved as a draft in your name, with a preview link</p>
+        </div>
+        <div class="actions">
+          <p class="install"><code id="c-mcp">dotnet add package OptiCli.Mcp</code><button class="copy" type="button" data-copy="c-mcp" aria-live="polite">Copy</button></p>
+          <small>A developer adds it to the site once.</small>
+          <a class="go" href="editors/">The MCP server <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+        </div>
+      </article>
+
+      <article class="panel p3" id="tests" aria-labelledby="tests-h">
+        <div><h2 id="tests-h">For tests</h2><p class="kind">The npm package</p></div>
+        <p>Playwright tests get seeded content and pages of their own, made through the CMS and cleared away after each test.</p>
+        <div class="example">
+          <p class="ok"><svg aria-hidden="true"><use href="#i-ok"/></svg>visitors see a draft only once it is published</p>
+          <p class="ok"><svg aria-hidden="true"><use href="#i-ok"/></svg>the seeded article shows its body and teaser</p>
+        </div>
+        <div class="actions">
+          <p class="install"><code id="c-npm">npm install -D @epinova/opticli</code><button class="copy" type="button" data-copy="c-npm" aria-live="polite">Copy</button></p>
+          <a class="go" href="tests/">The test package <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+        </div>
+      </article>
+    </div>
+    <p class="bar"><b>All three save through your site's own CMS</b><span>validated, versioned, with access rights, and with events and caches as when an editor saves</span></p>
   </div>
 
-  <article class="file hero-file" aria-labelledby="demo-h">
-    <div class="demo-bar">
-      <h2 id="demo-h">One change, four ways to run it</h2>
-      <fieldset class="runas">
-        <legend class="visually-hidden">Run the change</legend>
-        <label><input type="radio" name="mode" value="dry"><span>--dry-run</span></label>
-        <label><input type="radio" name="mode" value="draft" checked><span>as a draft</span></label>
-        <label><input type="radio" name="mode" value="publish"><span>--publish</span></label>
-        <label><input type="radio" name="mode" value="prod"><span>--db prod</span></label>
-      </fieldset>
-    </div>
-    <div class="command">
-      <p class="command-label">Your agent runs</p>
-      <code><span class="tok">opticli</span> <span class="tok">set</span> <span class="tok">7</span> <span class="tok"><span class="key">TeaserText</span>='Plan,</span> <span class="tok">track</span> <span class="tok">and</span> <span class="tok">report</span> <span class="tok">with</span> <span class="tok">the</span> <span class="tok">whole</span> <span class="tok">team'</span> <span class="tok"><span class="key">MetaTitle</span>='Alloy</span> <span class="tok">Track:</span> <span class="tok">plan,</span> <span class="tok">track</span> <span class="tok">and</span> <span class="tok">report</span> <span class="tok">with</span> <span class="tok">the</span> <span class="tok">whole</span> <span class="tok">team'</span><span data-show="dry"> <span class="flag">--dry-run</span></span><span data-show="publish"> <span class="flag">--publish</span></span><span data-show="prod"> <span class="flag no">--db prod</span></span></code>
-    </div>
-    <p class="refusal" data-show="prod">error (refused): Refusing to write to 'alloy-demo-prod' on 'localhost,1433': it is a production database (role prod), which opticli only reads.
-hint: opticli writes to a production database only through a sealed apply, which the user runs in their own terminal.</p>
-    <div class="file-bar">
-      <b>Alloy Track</b><small class="ref-id">ProductPage · ref 7 · en</small>
-      <span class="result">
-        <span class="pill dry" data-show="dry">Dry run</span><span class="pill wait" data-show="draft">Draft</span><span class="pill done" data-show="publish">Published</span><span class="pill refused" data-show="prod">Refused</span>
-        <span class="ref" data-show="dry">nothing saved</span>
-        <span class="ref" data-show="draft">saved as 7_1755 by opticli</span>
-        <span class="ref" data-show="publish">7_1755 published by opticli</span>
-        <span class="ref" data-show="prod">alloy-demo-prod · nothing saved</span>
-      </span>
-    </div>
-    <div class="diff" role="table" aria-label="Changes">
-      <div class="ln hunk" role="row"><span role="cell"></span><span role="cell"></span><span role="cell">@@ TeaserText</span></div>
-      <div class="ln minus" role="row"><span role="cell">1</span><span role="cell">−</span><span role="cell">Involve the whole team!</span></div>
-      <div class="ln plus" role="row"><span role="cell">1</span><span role="cell">+</span><span role="cell">Plan, track and report with the whole team</span></div>
-      <div class="ln hunk" role="row"><span role="cell"></span><span role="cell"></span><span role="cell">@@ MetaTitle</span></div>
-      <div class="ln minus" role="row"><span role="cell">1</span><span role="cell">−</span><span role="cell">Alloy Track, online risk management where the whole team ge…</span></div>
-      <div class="ln plus" role="row"><span role="cell">1</span><span role="cell">+</span><span role="cell">Alloy Track: plan, track and report with the whole team</span></div>
-    </div>
-    <ul class="checks" aria-label="Checks">
-      <li class="ok" data-show="dry draft publish"><svg class="icon" aria-hidden="true"><use href="#i-ok"/></svg><span>valid: yes</span></li>
-      <li class="ok" data-show="dry draft publish"><svg class="icon" aria-hidden="true"><use href="#i-ok"/></svg><span>access rights: user opticli</span></li>
-      <li class="off" data-show="dry"><svg class="icon" aria-hidden="true"><use href="#i-off"/></svg><span>saved: no</span></li>
-      <li class="ok" data-show="draft publish"><svg class="icon" aria-hidden="true"><use href="#i-ok"/></svg><span>saved: yes, a new version</span></li>
-      <li class="off" data-show="dry draft"><svg class="icon" aria-hidden="true"><use href="#i-off"/></svg><span>published: no, that takes --publish</span></li>
-      <li class="ok" data-show="publish"><svg class="icon" aria-hidden="true"><use href="#i-ok"/></svg><span>published: yes, this page has no approval sequence</span></li>
-      <li class="no" data-show="dry draft publish"><svg class="icon" aria-hidden="true"><use href="#i-no"/></svg>production: read-only</li>
-      <li class="no" data-show="prod"><svg class="icon" aria-hidden="true"><use href="#i-no"/></svg>write refused, dry runs too</li>
-    </ul>
-  </article>
-  <p class="example">An illustration built from opticli's real output, on Optimizely's Alloy sample site. The screencast below shows actual runs.</p>
-</section>
-
-<section class="part wrap" id="commits" aria-labelledby="commits-h">
-  <div class="part-head">
-    <h2 id="commits-h">Watch it work</h2>
-  </div>
-  <div class="term">
-    <div class="term-bar"><b>Screencast</b><span>Alloy sample site · CMS 12 · .NET 8 · 11 min, long pauses cut</span></div>
-    <div class="player" id="player"></div>
-  </div>
-  <nav class="chapters" id="chapters" aria-label="Screencast chapters"><div class="timeline" role="group" aria-label="Chapters on a timeline"><button type="button" data-index="0" data-n="1" data-start="4.016" data-end="28.848" aria-current="false" style="--len: 24.8" title="1 · No setup · 0:04" aria-label="Chapter 1: No setup, at 0:04"><span class="bar"></span></button><button type="button" data-index="1" data-n="2" data-start="28.848" data-end="58.34" aria-current="false" style="--len: 29.5" title="2 · Find the content · 0:28" aria-label="Chapter 2: Find the content, at 0:28"><span class="bar"></span></button><button type="button" data-index="2" data-n="3" data-start="58.34" data-end="75.622" aria-current="false" style="--len: 17.3" title="3 · Find the code · 0:58" aria-label="Chapter 3: Find the code, at 0:58"><span class="bar"></span></button><button type="button" data-index="3" data-n="4" data-start="75.622" data-end="157.749" aria-current="false" style="--len: 82.1" title="4 · Make the change · 1:15" aria-label="Chapter 4: Make the change, at 1:15"><span class="bar"></span></button><button type="button" data-index="4" data-n="5" data-start="157.749" data-end="230.833" aria-current="false" style="--len: 73.1" title="5 · A section as a plan · 2:37" aria-label="Chapter 5: A section as a plan, at 2:37"><span class="bar"></span></button><button type="button" data-index="5" data-n="6" data-start="230.833" data-end="259.49" aria-current="false" style="--len: 28.7" title="6 · Run it again · 3:50" aria-label="Chapter 6: Run it again, at 3:50"><span class="bar"></span></button><button type="button" data-index="6" data-n="7" data-start="259.49" data-end="329.941" aria-current="false" style="--len: 70.5" title="7 · Safety nets · 4:19" aria-label="Chapter 7: Safety nets, at 4:19"><span class="bar"></span></button><button type="button" data-index="7" data-n="8" data-start="329.941" data-end="373.196" aria-current="false" style="--len: 43.3" title="8 · Scheduled jobs · 5:29" aria-label="Chapter 8: Scheduled jobs, at 5:29"><span class="bar"></span></button><button type="button" data-index="8" data-n="9" data-start="373.196" data-end="412.129" aria-current="false" style="--len: 38.9" title="9 · Clean up leftovers · 6:13" aria-label="Chapter 9: Clean up leftovers, at 6:13"><span class="bar"></span></button><button type="button" data-index="9" data-n="10" data-start="412.129" data-end="445.695" aria-current="false" style="--len: 33.6" title="10 · Production is read-only · 6:52" aria-label="Chapter 10: Production is read-only, at 6:52"><span class="bar"></span></button><button type="button" data-index="10" data-n="11" data-start="445.695" data-end="485.684" aria-current="false" style="--len: 40.0" title="11 · Pull from production · 7:25" aria-label="Chapter 11: Pull from production, at 7:25"><span class="bar"></span></button><button type="button" data-index="11" data-n="12" data-start="485.684" data-end="551.253" aria-current="false" style="--len: 65.6" title="12 · Push to production · 8:05" aria-label="Chapter 12: Push to production, at 8:05"><span class="bar"></span></button><button type="button" data-index="12" data-n="13" data-start="551.253" data-end="624.729" aria-current="false" style="--len: 73.5" title="13 · See it while debugging · 9:11" aria-label="Chapter 13: See it while debugging, at 9:11"><span class="bar"></span></button><button type="button" data-index="13" data-n="14" data-start="624.729" data-end="683.648" aria-current="false" style="--len: 58.9" title="14 · Let an agent do it · 10:24" aria-label="Chapter 14: Let an agent do it, at 10:24"><span class="bar"></span></button></div><div class="index"><div class="group" role="group" aria-labelledby="chapters-g0"><p class="label" id="chapters-g0">Find and change</p><ol><li><a href="#chapter-1" data-index="0" data-n="1" data-start="4.016" data-end="28.848" aria-current="false"><span class="n">01</span><span class="t">No setup</span><span class="time">0:04</span><span class="dur">25 s</span></a></li><li><a href="#chapter-2" data-index="1" data-n="2" data-start="28.848" data-end="58.34" aria-current="false"><span class="n">02</span><span class="t">Find the content</span><span class="time">0:28</span><span class="dur">29 s</span></a></li><li><a href="#chapter-3" data-index="2" data-n="3" data-start="58.34" data-end="75.622" aria-current="false"><span class="n">03</span><span class="t">Find the code</span><span class="time">0:58</span><span class="dur">17 s</span></a></li><li><a href="#chapter-4" data-index="3" data-n="4" data-start="75.622" data-end="157.749" aria-current="false"><span class="n">04</span><span class="t">Make the change</span><span class="time">1:15</span><span class="dur">82 s</span></a></li></ol></div><div class="group" role="group" aria-labelledby="chapters-g1"><p class="label" id="chapters-g1">Plans</p><ol><li><a href="#chapter-5" data-index="4" data-n="5" data-start="157.749" data-end="230.833" aria-current="false"><span class="n">05</span><span class="t">A section as a plan</span><span class="time">2:37</span><span class="dur">73 s</span></a></li><li><a href="#chapter-6" data-index="5" data-n="6" data-start="230.833" data-end="259.49" aria-current="false"><span class="n">06</span><span class="t">Run it again</span><span class="time">3:50</span><span class="dur">29 s</span></a></li></ol></div><div class="group" role="group" aria-labelledby="chapters-g2"><p class="label" id="chapters-g2">Safety and operations</p><ol><li><a href="#chapter-7" data-index="6" data-n="7" data-start="259.49" data-end="329.941" aria-current="false"><span class="n">07</span><span class="t">Safety nets</span><span class="time">4:19</span><span class="dur">70 s</span></a></li><li><a href="#chapter-8" data-index="7" data-n="8" data-start="329.941" data-end="373.196" aria-current="false"><span class="n">08</span><span class="t">Scheduled jobs</span><span class="time">5:29</span><span class="dur">43 s</span></a></li><li><a href="#chapter-9" data-index="8" data-n="9" data-start="373.196" data-end="412.129" aria-current="false"><span class="n">09</span><span class="t">Clean up leftovers</span><span class="time">6:13</span><span class="dur">39 s</span></a></li></ol></div><div class="group" role="group" aria-labelledby="chapters-g3"><p class="label" id="chapters-g3">Environments</p><ol><li><a href="#chapter-10" data-index="9" data-n="10" data-start="412.129" data-end="445.695" aria-current="false"><span class="n">10</span><span class="t">Production is read-only</span><span class="time">6:52</span><span class="dur">34 s</span></a></li><li><a href="#chapter-11" data-index="10" data-n="11" data-start="445.695" data-end="485.684" aria-current="false"><span class="n">11</span><span class="t">Pull from production</span><span class="time">7:25</span><span class="dur">40 s</span></a></li><li><a href="#chapter-12" data-index="11" data-n="12" data-start="485.684" data-end="551.253" aria-current="false"><span class="n">12</span><span class="t">Push to production</span><span class="time">8:05</span><span class="dur">66 s</span></a></li></ol></div><div class="group" role="group" aria-labelledby="chapters-g4"><p class="label" id="chapters-g4">Your IDE and your agent</p><ol><li><a href="#chapter-13" data-index="12" data-n="13" data-start="551.253" data-end="624.729" aria-current="false"><span class="n">13</span><span class="t">See it while debugging</span><span class="time">9:11</span><span class="dur">73 s</span></a></li><li><a href="#chapter-14" data-index="13" data-n="14" data-start="624.729" data-end="683.648" aria-current="false"><span class="n">14</span><span class="t">Let an agent do it</span><span class="time">10:24</span><span class="dur">59 s</span></a></li></ol></div></div></nav>
-</section>
-
-<section class="part wrap" id="what-its-for" aria-labelledby="files-h">
-  <div class="part-head">
-    <h2 id="files-h">What it does</h2>
-  </div>
-  <div class="files">
-    <article class="file">
-      <div class="file-bar"><h3>Read content</h3></div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Answer content questions without SQL</h4><a class="play" href="#chapter-2"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 2 · Find the content</a></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">get</span> <span class="tok">123</span> <span class="tok">--fields</span> <span class="tok">MainContentArea</span></code></div>
-        <p>No more hand-written queries against <code>tblContent</code>. Items come back with every property decoded, including ContentAreas, local blocks, links and rich text. Reads go straight to the database, so the site doesn't need to be running.</p>
-      </div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Go from content to code</h4><a class="play" href="#chapter-3"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 3 · Find the code</a></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">type</span> <span class="tok">TeaserBlock</span></code></div>
-        <p>See the C# class for a content type, the source line of each property and the Razor views, plus which ContentAreas accept it according to <code>[AllowedTypes]</code>.</p>
-      </div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Know what a change will affect</h4><a class="play" href="#chapter-2"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 2 · Find the content</a></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">where-used</span> <span class="tok">456</span> <span class="tok">--pages</span></code></div>
-        <p>Find every page and block that references an item, through nested blocks all the way up to pages. You can also resolve a URL to content, or list the unpublished drafts.</p>
-      </div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Content history</h4></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">history</span> <span class="tok">123</span></code></div>
-        <p>See an item's change log: moves, deletes, restores and publishes, with who did each and when.</p>
-      </div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">CMS 12 and CMS 13</h4></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">doctor</span></code></div>
-        <p>The same commands work on both, including CMS 13 databases upgraded from CMS 12. <code>serve</code> picks the
-          right site agent for your CMS version.</p>
-      </div>
-    </article>
-    <article class="file">
-      <div class="file-bar"><h3>Change content</h3></div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Change content through the CMS API</h4><a class="play" href="#chapter-4"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 4 · Make the change</a></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">set</span> <span class="tok">123</span> <span class="tok">Heading="New</span> <span class="tok">title"</span> <span class="tok">--dry-run</span></code></div>
-        <p>Writes go through <code>IContentRepository</code> inside your running site, so validation, versioning, events and caches all work. Changes are saved as drafts unless you publish, and every write command takes <code>--dry-run</code>.</p>
-      </div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Visual Builder pages</h4></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">composition</span> <span class="tok">123</span> <span class="tok">add</span> <span class="tok">element</span> <span class="tok">--in</span> <span class="tok">Left</span> <span class="tok">--type</span> <span class="tok">TextElement</span> <span class="tok">Heading=Hi</span></code></div>
-        <p><code>get</code> shows an experience as its sections, rows, columns and elements, with display templates and
-          settings. <code>composition</code> adds, moves, changes and removes them, or writes back the JSON
-          <code>get</code> printed. Content variations and blueprints work too.</p>
-      </div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Page settings</h4></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">set</span> <span class="tok">123</span> <span class="tok">SimpleAddress=campaign</span></code></div>
-        <p>Read and set shortcuts and external links, simple addresses, categories, sort order and publish dates.</p>
-      </div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Safe deletes, with restore</h4><a class="play" href="#chapter-7"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 7 · Safety nets</a></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">delete</span> <span class="tok">456</span> <span class="tok">--dry-run</span></code></div>
-        <p><code>delete</code> only moves content to the recycle bin, and refuses while other pages or blocks still
-          reference it, listing where. <code>trash</code> shows what's in the bin, and <code>restore</code> puts it back
-          where it was.</p>
-      </div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Unpublish and discard</h4><a class="play" href="#chapter-7"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 7 · Safety nets</a></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">unpublish</span> <span class="tok">123</span></code></div>
-        <p><code>unpublish</code> takes a page offline, the same way expiring it in the edit UI does, and shows which version
-          was live so you can publish it again. <code>discard</code> removes a draft that was never published.</p>
-      </div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Approvals and scheduled publishing</h4></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">publish</span> <span class="tok">123</span> <span class="tok">--request-approval</span></code></div>
-        <p>Content with an approval sequence can't skip its reviewers: <code>--request-approval</code> sends it for review
-          instead. <code>--publish-at</code> schedules the publish with the CMS's own scheduled job.</p>
-      </div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Upload files as media</h4></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">upload</span> <span class="tok">price-list.pdf</span> <span class="tok">--for</span> <span class="tok">123</span></code></div>
-        <p>Each file becomes a media item of the type your site registers for its extension, in the page's own folder or any
-          folder you choose. The output shows where it was stored.</p>
-      </div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Read and change access rights</h4><a class="play" href="#chapter-5"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 5 · A section as a plan</a></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">access</span> <span class="tok">123</span> <span class="tok">--revoke</span> <span class="tok">Everyone</span></code></div>
-        <p>See who can read and edit an item, and where those rights are inherited from. Changes apply to that item only,
-          and can never leave the site without an administering role.</p>
-      </div>
-    </article>
-    <article class="file">
-      <div class="file-bar"><h3>Plans</h3></div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Plans you can run again</h4><a class="play" href="#chapter-6"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 6 · Run it again</a></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">apply</span> <span class="tok">plan.json</span> <span class="tok">--update-existing</span></code></div>
-        <p>With <code>"guidNamespace"</code>, every item a plan creates gets the same GUID in every database.
-          <code>--update-existing</code> then updates what's already there, restores it from the recycle bin if needed, and
-          skips finished steps. <code>export</code> turns existing content from any database into a plan like this.</p>
-      </div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Rich text from files</h4><a class="play" href="#chapter-5"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 5 · A section as a plan</a></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">"MainBody":</span> <span class="tok">"@body.html"</span></code></div>
-        <p>A plan value of <code>"@body.html"</code> reads that file, so long rich text lives in HTML files you can review
-          instead of inside the JSON. Links written as <code>href="$id"</code> point to content the plan creates and are
-          saved as permanent links.</p>
-      </div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Dry runs that reach every step</h4><a class="play" href="#chapter-5"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 5 · A section as a plan</a></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">apply</span> <span class="tok">plan.json</span> <span class="tok">--publish</span> <span class="tok">--dry-run</span></code></div>
-        <p>Steps on content the plan hasn't created yet run against stand-ins, so validators, required properties and
-          <code>[AllowedTypes]</code> are checked before anything is written.</p>
-      </div>
-    </article>
-    <article class="file">
-      <div class="file-bar"><h3>Environments and production</h3></div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Run a production copy on localhost</h4></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">sites</span> <span class="tok">primary</span> <span class="tok">--from-config</span></code></div>
-        <p>After restoring a production database, one command makes your local host each site's primary host and moves
-          SiteUrl with it, so links and canonical URLs point to localhost. The production hosts are kept. Save the mapping
-          once and rerun it after every restore. <code>users add</code> creates a local admin login and stores its
-          password in a file only you can read.</p>
-      </div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Pull content from production</h4><a class="play" href="#chapter-11"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 11 · Pull from production</a></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">sync</span> <span class="tok">pull</span> <span class="tok">--from</span> <span class="tok">prod</span> <span class="tok">--all</span> <span class="tok">--dry-run</span></code></div>
-        <p><code>sync pull</code> brings what editors did in production into your local database: new, changed and moved
-          content, matched by GUID and written through your local site. It only reads production, keeps your own local
-          changes, lists conflicts instead of overwriting them, and remembers what it synced, so the next pull is quick.</p>
-      </div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Push to production: the agent prepares, you run it</h4><a class="play" href="#chapter-12"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 12 · Push to production</a></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">sync</span> <span class="tok">push</span> <span class="tok">--to</span> <span class="tok">prod</span> <span class="tok">/en/campaign/</span></code></div>
-        <p>A coding agent can prepare changes for production but can't write them. <code>sync push</code> seals what changed
-          locally. You run the command it prints in your own terminal: it shows what it will do, then asks for the
-          database's name and a write login, which is never saved. It refuses to run if the plan, the build or production
-          changed since the seal. On Azure it can join production's event bus, so no restart is needed, and upload media
-          to its blob storage.</p>
-      </div>
-    </article>
-    <article class="file">
-      <div class="file-bar"><h3>Site operations</h3></div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Scheduled jobs</h4><a class="play" href="#chapter-8"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 8 · Scheduled jobs</a></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">jobs</span> <span class="tok">run</span> <span class="tok">"Content</span> <span class="tok">import"</span></code></div>
-        <p>See every job's schedule, last run and log, and where its code lives. Run one and wait for its result, stop
-          it, or change when it runs. After a database restore, <code>serve</code> stops overdue jobs from all
-          running at startup, and jobs that delete data permanently need an explicit flag.</p>
-      </div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Clean up what removed code left behind</h4><a class="play" href="#chapter-9"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 9 · Clean up leftovers</a></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">types</span> <span class="tok">prune</span> <span class="tok">--dry-run</span></code></div>
-        <p><code>types --orphaned</code> finds content types whose code is gone, and <code>type</code> shows leftover
-          properties with their stored values. <code>types prune</code> removes what can go through the CMS, never
-          content, records every removal first, and needs a flag before it deletes stored values.</p>
-      </div>
-    </article>
-    <article class="file">
-      <div class="file-bar"><h3>Your IDE and your agent</h3></div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Nothing to add to your solution</h4><a class="play" href="#chapter-1"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 1 · No setup</a></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">serve</span></code></div>
-        <p><code>serve</code> starts your existing build with a small agent injected at startup, through a .NET startup hook and a hosting startup. Your site's code and config stay as they are. <code>ide on</code> only adds a block to your own <code>.csproj.user</code>, which git ignores.</p>
-      </div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">See changes in the site you're debugging</h4><a class="play" href="#chapter-13"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 13 · See it while debugging</a></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">ide</span> <span class="tok">on</span></code></div>
-        <p>With <code>ide on</code>, the site you start from Rider or Visual Studio loads the agent from its own build, so
-          opticli writes through that process and a reload shows the change, without a restart. No per-run setup,
-          HTTPS with the development certificate works, and the debugger, hot reload and breakpoints stay as they are.</p>
-      </div>
-      <div class="change-row">
-        <div class="hunk-h"><h4 class="row-h">Built for coding agents</h4><a class="play" href="#chapter-14"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 14 · Let an agent do it</a></div>
-        <div class="run"><span class="prompt" aria-hidden="true">$</span><code><span class="tok">opticli</span> <span class="tok">skill</span> <span class="tok">install</span></code></div>
-        <p>Piped output is compact JSON. Every item has a ref you can pass to the next command, and errors come with a code and a hint. A Claude Code skill tells the agent when to use opticli and how to use it safely.</p>
-      </div>
-    </article>
-  </div>
-
-  <article class="file how-it-works" id="how-it-works">
-    <div class="file-bar"><b>How it works</b><small>reads go straight to the database, writes through your running site</small></div>
-    <div class="lanes" role="img" aria-label="Reads: opticli queries the CMS database with fixed read-only SQL. Writes: opticli calls the site agent inside the running site over loopback HTTP with a per-run token; the agent uses IContentRepository.">
-      <div class="lane"><span class="tag">Reads</span><span class="node hot">opticli</span><span class="wire"><span>fixed read-only SQL</span><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 4-8 4z"/></svg></span><span class="node">CMS database</span></div>
-      <div class="lane"><span class="tag">Writes</span><span class="node hot">opticli</span><span class="wire"><span>127.0.0.1 and a per-run token</span><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 4-8 4z"/></svg></span><span class="node">agent in your running site</span><span class="wire"><span>IContentRepository</span><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 4-8 4z"/></svg></span><span class="node">CMS database</span></div>
-    </div>
-  </article>
-</section>
-
-<section class="part wrap" id="safety" aria-labelledby="checks-h">
-  <div class="part-head">
-    <h2 id="checks-h">Safety</h2>
-  </div>
-  <article class="file">
-    <ul class="required">
-      <li><svg class="icon ok" aria-hidden="true"><use href="#i-ok"/></svg><b>Which database does it use?</b><p>Your local one by default: opticli reads the connection string from the site's Development config. To use a remote database you have to choose it explicitly, and every response then carries a warning.</p><span class="status ok">local by default</span></li>
-      <li><svg class="icon ok" aria-hidden="true"><use href="#i-ok"/></svg><b>Can a read change anything?</b><p>No. Reads use fixed queries. <code>opticli sql</code> accepts a single <code>SELECT</code> against the site's own database and runs it in a transaction that is rolled back.</p><span class="status ok">read-only</span></li>
-      <li><svg class="icon ok" aria-hidden="true"><use href="#i-ok"/></svg><b>Can it publish or delete by accident?</b><p>No. Changes are saved as drafts, under a CMS user named <code>opticli</code>. Publishing needs <code>--publish</code>. <code>delete</code> only moves content to the recycle bin, and refuses while other content still references it.</p><span class="status ok">drafts · recycle bin</span></li>
-      <li><svg class="icon no" aria-hidden="true"><use href="#i-no"/></svg><b>Can it write to production?</b><p>Not on its own. A database with the role <code>prod</code> is read-only: every response carries a warning, and <code>serve</code> and every write, dry runs included, are refused. The only way to write is a sealed apply that you run in your own terminal, with a write login you type and opticli never saves; an agent can prepare and seal it, not run it. <a class="play" href="#chapter-10"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Chapter 10 · Production is read-only</a></p><span class="status no">refused · sealed apply only</span></li>
-      <li><svg class="icon off" aria-hidden="true"><use href="#i-off"/></svg><b>Can starting it change a shared database?</b><p>Only in limited ways. Against a remote development database, opticli turns off the scheduler, schema updates, content type sync and store remapping, and <code>serve</code> won't start a build with EF Core migrations the database lacks. Two things still happen: the CMS registers the build's scheduled jobs and add-on content roots, and the site's own startup code runs. Where your add-ons allow it, use a login without DDL rights.</p><span class="status off">limited</span></li>
-      <li><svg class="icon no" aria-hidden="true"><use href="#i-no"/></svg><b>What if my branch isn't what's deployed?</b><p>opticli compares the build with the shared database: content types, properties, migrations. While they differ, writes stop until you confirm with <code>--accept-drift</code>, and opticli tells you whether the code or the database is newer. Reads keep working.</p><span class="status no">writes stop on drift</span></li>
-      <li><svg class="icon ok" aria-hidden="true"><use href="#i-ok"/></svg><b>What can the MCP server do to a production site?</b><p>Only what the signed-in editor may do: every read and save is checked against their access rights, and content they can't read looks the same as content that doesn't exist. Changes are drafts, without script. Publishing and deleting are off until the site turns them on, and approval sequences always apply. Only apps on the editor's own machine can connect, and web-based assistants from addresses the site allows (claude.ai by default); editors can see and revoke their connections.</p><span class="status ok">only what the editor may</span></li>
-      <li><svg class="icon no" aria-hidden="true"><use href="#i-no"/></svg><b>Can anyone else reach the site agent?</b><p>It answers only to requests from this machine, only in Development, and only with the token of that run, which sits in a file only you can read. Requests that came through a proxy or tunnel are refused.</p><span class="status no">loopback + run token only</span></li>
-      <li><svg class="icon ok" aria-hidden="true"><use href="#i-ok"/></svg><b>Does the site I debug start differently?</b><p>No. With <code>ide on</code>, the agent doesn't pin the database or touch the scheduler, and it never stops the site from starting: against another database, or outside Development, it stays off for that run and tells you why.</p><span class="status ok">no</span></li>
-    </ul>
-  </article>
-</section>
-
-<section class="part wrap" id="editors" aria-labelledby="editors-h">
-  <div class="part-head">
-    <h2 id="editors-h">For editors</h2>
-    <p>opticli runs on a developer's machine. <code>OptiCli.Mcp</code> (<code>OptiCli.Mcp.Cms13</code> on CMS 13) is an MCP server installed in the site, so editors can work on its content with their AI assistant in any environment.</p>
-  </div>
-  <article class="file editors">
-    <div>
-      <h3>An assistant, signed in as the editor</h3>
-      <p>Editors connect an assistant that supports MCP servers (Claude Desktop has an extension for it) and sign in with their usual CMS login. The assistant then works as them, with their access rights: drafts by default, dry runs, validation, approval sequences and a preview link for every draft. Works with CMS 12 from 12.12.1 (CMS UI 12.16.1) and CMS 13, including Visual Builder pages.</p>
-      <a class="go" href="editors/">For editors <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
-    </div>
-    <div aria-label="An example conversation">
-      <div class="bubble"><small>Editor</small>The Alloy Track teaser should mention reporting.</div>
-      <div class="bubble"><small>Assistant</small>Saved as a draft: TeaserText is now "Plan, track and report with the whole team". Here's the preview. Nothing is published yet.</div>
-    </div>
-  </article>
-</section>
-
-<section class="part wrap" id="tests" aria-labelledby="tests-h">
-  <div class="part-head">
-    <h2 id="tests-h">For tests</h2>
-    <p>The npm package <code>@epinova/opticli</code> runs opticli from Playwright and Node.js scripts: real content for end-to-end tests, made through the CMS.</p>
-  </div>
-  <article class="file editors">
-    <div>
-      <h3>Seeded content, and pages of each test's own</h3>
-      <p>Global setup starts the site with <code>serve</code> and applies a seed plan on every run. Each test can create its own pages, published or as drafts, and they go to the recycle bin when the test ends. Typed from the seed plan's step ids to opticli's error codes.</p>
-      <a class="go" href="tests/">For tests <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></a>
-    </div>
-<div><pre class="cmd"><span class="c">// a test with a page of its own</span>
-const created = await cms.page('StandardPage', 'Hello',
-  { MainBody: '&lt;p&gt;Hi&lt;/p&gt;' });
-await page.goto(created.url);
-await expect(page.getByText('Hi')).toBeVisible();
-<span class="c">// after the test: to the recycle bin</span></pre></div>
-  </article>
-</section>
-
-<section class="part wrap" id="changelog" aria-labelledby="timeline-h">
-  <div class="part-head">
-    <h2 id="timeline-h">Releases</h2>
-    <p>Every release is on <a href="https://www.nuget.org/packages/OptiCli">nuget.org</a>, with the details in the <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>. After updating, run <code>opticli skill install</code> again to update the skill.</p>
-  </div>
-  <article class="file">
-    <ol class="releases">
-      <li><div class="v"><b>0.36.0</b><span>24 November 2026</span></div>
-        <ul>
-          <li><b>Optimizely Commerce:</b> on a site with Commerce 14 (CMS 12) or 15 (CMS 13), <code>serve</code> loads a
-            Commerce agent beside the site agent, so an E2E suite can seed a catalog from code. Catalogs, nodes, products
-            and variants are content for <code>create</code>, <code>set</code> and plans, with <code>code:</code> and
-            <code>catalog:</code> refs and product images. Prices, warehouses, stock, markets and relations get
-            <code>opticli commerce &hellip;</code> commands and plan steps, all with dry runs and <code>unchanged</code>
-            on a re-run. A site without Commerce runs as before, and the MCP module is unchanged. See the guide
-            <a href="guides/developers/seed-a-commerce-catalog/">Seed a Commerce catalog for Playwright tests</a>.</li>
-          <li><b>Reads through the site:</b> <code>commerce get|children|tree</code>, prices, stock, markets and
-            relations, and <code>resolve</code> takes a catalog URL back to its ref.</li>
-          <li><b>Fixed:</b> <code>opticli sql</code> with a recursive CTE cut by <code>--limit</code> reported an
-            internal error. It now gives SQL Server's own error, and past the recursion limit the hint names
-            <code>OPTION (MAXRECURSION n)</code>.</li>
-        </ul></li>
-      <li><div class="v"><b>0.35.2</b><span>23 November 2026</span></div>
-        <ul>
-          <li><b>Fixes from a review of every write and the MCP module:</b> <code>unpublish</code> no longer publishes a
-            page's never-published blocks along with it, a block whose draft holds a colleague's changes goes live with
-            a page only when named, and a block published along has a passed stop date cleared.</li>
-          <li><b>Plans don't stop half-way:</b> a later step's <code>publishAt</code> and <code>requestApproval</code>,
-            one content in two projects, and a <code>publish</code> after an upload's new file are now checked in the
-            dry run. A link out of the plan's folder is refused, also in a sealed run.</li>
-          <li><b>For editors' assistants:</b> a save into a project needs Edit even with nothing to change, renaming a
-            folder with content below it needs publishing allowed, and blocks or content an editor can't read are named
-            nowhere. A site tool with <code>[Authorize]</code> stops the site at startup instead of being open to
-            every editor.</li>
-          <li><b>New:</b> <code>serve</code> warns when no site answers on its address, and says which port or command
-            makes one answer.</li>
-        </ul></li>
-      <li><div class="v"><b>0.35.1</b><span>19 November 2026</span></div>
-        <ul>
-          <li><b>Fixed:</b> <code>opticli env --connection-name</code> without <code>--include-connection</code> now
-            tells the site agent which connection string the site uses. It checked <code>EPiServerDB</code> instead, so a
-            site without that string wouldn't start.</li>
-          <li><b>The reference moved:</b> the README is now a quickstart, and the reference is in
-            <a href="https://github.com/Epinova/opticli/tree/main/docs/reference">docs/reference/</a>, one page per
-            area, checked against the code on the way.</li>
-        </ul></li>
-      <li><div class="v"><b>0.35.0</b><span>19 November 2026</span></div>
-        <ul>
-          <li><b>New blocks follow the site's edit UI:</b> where the site has
-            <code>UIOptions.InlineBlocksInContentAreaEnabled</code> off (Optimizely's default on CMS 12), a new block in a
-            ContentArea is now a shared block in the page's &ldquo;For this page&rdquo; folder, as an editor would make it,
-            instead of an inline block the site may not render. Inline blocks a page already has stay inline, and
-            writing an area again updates its blocks instead of making new ones. The result's <code>sharedBlocks</code>
-            gives each block's ref.</li>
-          <li><b>Publishing takes only what you mean:</b> a publish takes along the page's never-published blocks, but a
-            live block's newer draft, or a colleague's draft, goes live only when you name it
-            (<code>--with-block</code>, <code>blocks</code>). Replacing a colleague's block draft needs
-            <code>--include-draft</code>. <code>publish --dry-run</code> and <code>publish_content</code>'s new
-            <code>dryRun</code> show what goes live.</li>
-          <li><b>For editors:</b> a new guide,
-            <a href="guides/editors/add-blocks-to-a-page/">Add blocks to a page</a>.</li>
-        </ul></li>
-      <li><div class="v"><b>0.34.2</b><span>18 November 2026</span></div>
-        <ul>
-          <li><b>Fixed in the Claude Desktop extension:</b> after a sign-in that wasn't finished, every later sign-in
-            page said &ldquo;Unknown app&rdquo; and Claude Desktop gave up. The extension now drops a saved
-            registration that never signed in and registers again.</li>
-        </ul></li>
-      <li><div class="v"><b>0.34.1</b><span>17 November 2026</span></div>
-        <ul>
-          <li><b>Fixed on Windows:</b> when the npm package, a script or an agent read opticli's output, characters
-            outside ASCII (<code>æøå</code> in a content name) came out wrong, and a plan piped to
-            <code>apply -</code> was read the same way. Redirected input and output are UTF-8 now.</li>
-        </ul></li>
-      <li><div class="v"><b>0.34.0</b><span>17 November 2026</span></div>
-        <ul>
-          <li><b>A typed method for every command:</b> the npm package's client is generated from opticli's own
-            description of its commands, with the CLI's shape and each command's JSON as the return type:
-            <code>cli.languages()</code>, <code>cli.projects('Spring campaign')</code>,
-            <code>cli.whereUsed('123', { pages: true })</code>. <code>OptiCliSync</code> has the same methods, blocking,
-            for a <code>playwright.config</code> that makes a project per enabled language. The API changes where 0.33's
-            no longer fit; see the <a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">changelog</a>. See the guide
-            <a href="guides/developers/node-scripts-and-playwright-config/">Read the site from Node.js scripts and playwright.config</a>.</li>
-          <li><b>Projects in tests:</b> <code>cms.page()</code> and <code>cms.set()</code> take <code>inProject</code>
-            and <code>ready</code>, and a project a test makes is deleted after the test.</li>
-          <li><b>On the command line:</b> a value that starts with <code>@</code> is plain text
-            (<code>opticli search @alloy</code>), and plans that replace a file they upload work.</li>
-          <li><b>For editors' assistants:</b> <code>get_content_type</code> gives the block types an editor descriptor
-            allows, and saves follow them, as the edit UI does.</li>
-        </ul></li>
-      <li><div class="v"><b>0.33.0</b><span>17 November 2026</span></div>
-        <ul>
-          <li><b>Changes collected in a project:</b> drafts can go into the CMS's projects, so editors review many related
-            changes together and publish them in one go. Your assistant can create a project, put its drafts in it, mark
-            them Ready to publish and, where the site allows it, publish or schedule the project. Only items marked ready
-            go live; the rest stay drafts. See the guide
-            <a href="guides/editors/collect-changes-in-a-project/">Collect changes in a project and publish them together</a>.</li>
-          <li><b>On the command line:</b> <code>--in-project</code> and <code>--ready</code> on the writes,
-            <code>"project"</code> in plans, and <code>opticli projects create</code>, <code>ready</code> and
-            <code>publish</code>. See the guide
-            <a href="guides/developers/hand-changes-to-editors-as-a-project/">Hand a batch of changes to editors as a project</a>.</li>
-        </ul></li>
-      <li><div class="v"><b>0.32.0</b><span>12 November 2026</span></div>
-        <ul>
-          <li><b>Sites with assets of their own:</b> a site that <code>opticli sites add</code> or a plan's
-            <code>site</code> step creates now gets an assets folder of its own, at <code>/siteassets/</code>, as admin
-            mode makes it, so add-ons that keep data in a site's assets folder find one. A seed plan can upload straight
-            into it by its URL; <code>--site-assets global</code> keeps a site on the shared folder. See the guide
-            <a href="guides/developers/build-a-test-database/">Build a test database from scratch</a>.</li>
-          <li><b>Fixes in plans that create sites:</b> a step on the new site's host waits for the site instead of failing
-            the dry run, and a page that links elsewhere keeps that link as its URL on the first run too.</li>
-        </ul></li>
-      <li><div class="v"><b>0.31.1</b><span>11 November 2026</span></div>
-        <ul>
-          <li><b>What the site's own code changed:</b> when the site's code changes a value during a save, the result
-            shows what was stored, not what was asked for, and opticli warns about it.</li>
-          <li><b>External links:</b> a page whose shortcut is an external link has that link as its URL again.</li>
-        </ul></li>
+  <section class="fit" aria-labelledby="fit-h">
+    <h2 id="fit-h">Nothing writes straight to the database.</h2>
+    <ol>
+      <li style="--d: var(--p1-ink)"><p><b>The CLI</b> writes through a small agent loaded into your running site, with no changes to your solution.</p></li>
+      <li style="--d: var(--p2-ink)"><p><b>The MCP server</b> lives in the site and acts as the signed-in editor, with drafts by default and publishing off until the site turns it on.</p></li>
+      <li style="--d: var(--p3-ink)"><p><b>The test package</b> runs the CLI, so every page a test makes goes through the CMS too.</p></li>
     </ol>
-    <p class="earlier"><a href="https://github.com/epinova/opticli/blob/main/CHANGELOG.md">Older releases are in the changelog</a></p>
-  </article>
-</section>
+  </section>
 
-<section class="part wrap" id="get-started" aria-labelledby="merge-h">
-  <article class="file merge">
-    <div class="file-bar"><svg class="icon ok" aria-hidden="true"><use href="#i-ok"/></svg><b id="merge-h">Get started</b><small>.NET 8 SDK or newer · a CMS 12 or CMS 13 site's repository</small></div>
-    <div class="merge-body">
-      <pre class="cmd"><span class="c"># install, or update to the latest version</span>
-dotnet tool install -g OptiCli
-dotnet tool update -g OptiCli
-
-<span class="c"># then, in your site's repository</span>
-opticli doctor            <span class="c"># what it found: project, database, types</span>
-opticli resolve https://example.com/en/about/
-opticli skill install     <span class="c"># teach Claude Code to use it</span></pre>
-      <div>
-        <p>Install it from <a href="https://www.nuget.org/packages/OptiCli">nuget.org</a> as a global tool and run it from anywhere inside your site's repository. Nothing is added to your solution.</p>
-        <div class="links"><a href="https://github.com/epinova/opticli">View on GitHub</a><a href="https://github.com/epinova/opticli#readme">Read the README</a><a href="guides/#developers">Guides</a></div>
-      </div>
+  <section class="release" aria-labelledby="release-h">
+    <div>
+      <h2 id="release-h">Recent releases</h2>
+      <a class="all" href="releases/">All releases</a>
     </div>
-  </article>
-</section>
+    <ol class="versions">
+      <li><div class="v"><b>0.36.0</b><span>24 November 2026</span></div>
+        <p><b>Optimizely Commerce.</b> On a site with Commerce 14 or 15, tests can seed a catalog from code: catalogs, products and variants, with their prices, stock and markets.</p></li>
+      <li><div class="v"><b>0.35.2</b><span>23 November 2026</span></div>
+        <p><b>Fixes from a review of every write and the MCP module.</b> Plans check more in their dry run, so they don't stop half-way, and <code>serve</code> warns when no site answers on its address.</p></li>
+      <li><div class="v"><b>0.35.1</b><span>19 November 2026</span></div>
+        <p><b>The reference moved</b> to one page per area, checked against the code. Fixed: a site without an <code>EPiServerDB</code> connection string now starts with <code>env --connection-name</code>.</p></li>
+    </ol>
+  </section>
 </main>
 
 <footer class="wrap">
   <p>opticli is open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. It is an independent project, not affiliated with or endorsed by Optimizely.</p>
 </footer>
 
-<script src="https://cdn.jsdelivr.net/npm/asciinema-player@3.17.0/dist/bundle/asciinema-player.min.js"></script>
 <script>
-// The hero: run the same change as a dry run, a draft, a publish, or against production.
-const change = document.getElementById('change');
-for (const input of change.querySelectorAll('input[name="mode"]')) {
-  input.addEventListener('change', () => { change.dataset.mode = input.value; });
-}
-
-// Copy buttons.
-for (const button of document.querySelectorAll('[data-copy]')) {
-  button.addEventListener('click', async () => {
-    const text = document.getElementById(button.dataset.copy).textContent;
-    try { await navigator.clipboard.writeText(text); } catch { getSelection().selectAllChildren(document.getElementById(button.dataset.copy)); return; }
-    button.textContent = 'Copied';
-    button.dataset.done = '';
-    setTimeout(() => { button.textContent = 'Copy'; delete button.dataset.done; }, 1600);
-  });
-}
-
-let player;
-
-// Every chapter has a timeline segment (a button) and a line in the index (a link to #chapter-<n>).
-const chapters = [...document.querySelectorAll('#chapters [data-index]')];
-const playerBox = document.getElementById('player');
-const now = document.getElementById('now');
-const narrow = matchMedia('(max-width: 720px)').matches;
-let playing = false, playerVisible = true;
-
-// The chapter a #chapter-<n> link names, if any.
-function linked() {
-  const m = /^#chapter-(\d+)$/.exec(location.hash);
-  return m ? chapters.find(c => c.dataset.n === m[1]) : undefined;
-}
-
-// Bring the player into view (its frame, title bar included), once the page has laid out around it.
-function show(smooth) {
-  requestAnimationFrame(() => playerBox.closest('.term').scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'auto' }));
-}
-
-// A chapter link scrolls to the player, not to where the page was the last time it was open.
-if (linked()) history.scrollRestoration = 'manual';
-
-function start() {
-  // Opened through a chapter's link: start there, with that chapter's first moments as the poster.
-  const chapter = linked();
-  const at = chapter ? Number(chapter.dataset.start) : 0;
-  player = AsciinemaPlayer.create('opticli-demo.cast', playerBox, {
-    theme: 'opti',
-    // On a phone the 160-column terminal would shrink to unreadable text: keep it legible and let it scroll sideways.
-    ...(narrow ? { fit: false, terminalFontSize: '10px' } : { fit: 'width' }),
-    poster: `npt:${at + 4.5}`,
-    ...(chapter ? { startAt: at } : {}),
-    terminalFontFamily: '"Fragment Mono", ui-monospace, Menlo, Consolas, monospace',
-    terminalLineHeight: 1.3,
-  });
-  player.addEventListener('play', () => { playing = true; pin(); });
-  player.addEventListener('pause', () => { playing = false; pin(); });
-  player.addEventListener('ended', () => { playing = false; pin(); });
-  if (chapter) {
-    mark(at);
-    show();
-  }
-  setInterval(paint, 200);
-}
-
-// The playing chapter stays pinned in the top bar while the player is out of view.
-function pin() {
-  const current = chapters.find(c => c.matches('a') && c.getAttribute('aria-current') === 'true');
-  const on = playing && !playerVisible && current;
-  now.classList.toggle('on', Boolean(on));
-  if (on) now.lastElementChild.textContent = `${current.dataset.n} · ${current.querySelector('.t').textContent}`;
-}
-new IntersectionObserver(([entry]) => { playerVisible = entry.isIntersecting; pin(); }).observe(playerBox);
-
-// Fill each chapter's segment up to the playback position and mark the chapter that is playing.
-function mark(time) {
-  for (const b of chapters) {
-    const start = Number(b.dataset.start), end = Number(b.dataset.end);
-    b.style.setProperty('--p', Math.min(1, Math.max(0, (time - start) / (end - start))).toFixed(4));
-    b.setAttribute('aria-current', time >= start && time < end ? 'true' : 'false');
-  }
-  pin();
-}
-
-async function paint() {
-  const time = await player.getCurrentTime();
-  if (typeof time === 'number' && time > 0) mark(time);
-}
-
-async function play(chapter) {
-  await player.seek({ marker: Number(chapter.dataset.index) });
-  player.play();
-  paint();
-}
-
-// A click plays the chapter and puts its link in the address bar, without a jump or a history entry per click.
-document.getElementById('chapters').addEventListener('click', e => {
-  const chapter = e.target.closest('[data-index]');
-  if (!chapter || !player || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
-  e.preventDefault();
-  history.replaceState(null, '', `#chapter-${chapter.dataset.n}`);
-  play(chapter);
+// Links into the old single page (screencast chapters, features, safety, releases) now live on the CLI and releases pages.
+(() => {
+  const h = location.hash;
+  if (/^#(chapter-\d+|commits|what-its-for|safety|how-it-works|get-started)$/.test(h)) location.replace('cli/' + (h === '#commits' ? '#screencast' : h === '#what-its-for' ? '#features' : h === '#how-it-works' ? '#how' : h === '#get-started' ? '' : h));
+  else if (h === '#changelog') location.replace('releases/');
+})();
+for (const b of document.querySelectorAll('.copy')) b.addEventListener('click', () => {
+  const text = document.getElementById(b.dataset.copy).textContent;
+  const done = (label) => { b.textContent = label; b.dataset.done = ''; setTimeout(() => { b.textContent = 'Copy'; delete b.dataset.done; }, 1600); };
+  if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => done('Copied'), () => done('Select and copy'));
+  else done('Select and copy');
 });
-
-// A #chapter-<n> link followed on the page itself (the files' chapter links, or the hash edited) plays that chapter.
-addEventListener('hashchange', () => {
-  const chapter = linked();
-  if (chapter && player) {
-    show(true);
-    play(chapter);
-  }
-});
-
-// The terminal measures its font when it is created, so wait for the font (at most 1.5 s).
-Promise.race([
-  document.fonts ? document.fonts.load('14px "Fragment Mono"') : Promise.resolve(),
-  new Promise(r => setTimeout(r, 1500)),
-]).catch(() => {}).then(start);
 </script>
 </body>
 </html>

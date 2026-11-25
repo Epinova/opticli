@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>opticli for coding agents: the CLI</title>
+<meta name="description" content="opticli lets your coding agent find and edit Optimizely CMS content through the CMS API in your running site, saved as drafts you review.">
+<meta property="og:title" content="opticli for coding agents: the CLI">
+<meta property="og:description" content="Let your coding agent edit Optimizely content. You review the drafts. Production is read-only.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://epinova.github.io/opticli/cli/">
+<meta name="twitter:card" content="summary">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/asciinema-player@3.17.0/dist/bundle/asciinema-player.css">
+<link rel="stylesheet" href="../style.css?v=0fe4532399">
+<style>
+/* The CLI's page: its own field is p1 (sage). */
+main { --bg: var(--p1); --c: var(--p1-ink); }
+
+/* One change, four ways to run it. */
+.demo { display: flex; flex-direction: column; gap: 22px; }
+.demo h2 { font-weight: 800; font-size: 1.25rem; letter-spacing: -.01em; }
+.runas { display: inline-flex; flex-wrap: wrap; gap: 4px; margin: 12px 0 0; padding: 4px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--c) 12%, var(--bg)); }
+.runas label { position: relative; cursor: pointer; }
+.runas input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.runas span { display: inline-block; padding: 7px 16px; border-radius: 999px; font-weight: 600; font-size: .95rem; color: color-mix(in srgb, var(--ink) 75%, var(--bg)); transition: background .2s, color .2s; }
+.runas label:hover span { color: var(--ink); }
+.runas input:checked + span { background: var(--ink); color: var(--ground); }
+.runas input[value="prod"]:checked + span { background: #a3271f; color: #fff; }
+.runas input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
+.runs .label { font-weight: 600; font-size: .92rem; color: color-mix(in srgb, var(--ink) 65%, var(--bg)); margin-bottom: 4px; }
+.runs code { display: block; font-size: 1rem; line-height: 1.6; }
+.runs code .key { color: var(--c); }
+.flag { padding: 1px 8px; border-radius: 6px; background: var(--ink); color: var(--ground); white-space: nowrap; }
+.flag.no { background: #a3271f; color: #fff; }
+.result { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.result b { font-size: 1.15rem; font-weight: 800; }
+.result small { color: color-mix(in srgb, var(--ink) 65%, var(--bg)); font-size: .92rem; }
+.refusal { margin: 0; padding: 14px 16px; border-radius: 12px; background: #f9dcd8; color: #7d1c15; font: .9rem/1.55 var(--mono); white-space: pre-wrap; }
+[data-mode] [data-show] { display: none; }
+[data-mode="dry"] [data-show~="dry"], [data-mode="draft"] [data-show~="draft"], [data-mode="publish"] [data-show~="publish"], [data-mode="prod"] [data-show~="prod"] { display: revert; }
+[data-mode="dry"] li[data-show~="dry"], [data-mode="draft"] li[data-show~="draft"], [data-mode="publish"] li[data-show~="publish"], [data-mode="prod"] li[data-show~="prod"] { display: flex; }
+[data-mode="dry"] .pill[data-show~="dry"], [data-mode="draft"] .pill[data-show~="draft"], [data-mode="publish"] .pill[data-show~="publish"], [data-mode="prod"] .pill[data-show~="prod"] { display: inline-flex; }
+[data-mode="prod"] .changes { opacity: .45; }
+[data-mode="prod"] .changes ins { text-decoration: line-through; }
+.example-note { font-size: .88rem; color: color-mix(in srgb, var(--ink) 60%, var(--bg)); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .runas input[value="prod"]:checked + span, :root:not([data-theme="light"]) .flag.no { background: #ffb4ab; color: #3f1f1c; }
+  :root:not([data-theme="light"]) .refusal { background: #3f1f1c; color: #ffb4ab; }
+}
+
+/* The screencast: the one dark object on the page, with its chapters set as plain lists under it. */
+.screen { border-radius: 22px; overflow: hidden; background: var(--code-bg); }
+.screen-bar { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; padding: 14px 22px; color: #aeb7bf; font-size: .92rem; }
+.screen-bar b { color: #fff; font-weight: 700; }
+.player { min-height: 220px; }
+.asciinema-player-theme-opti {
+  --term-color-foreground: #dfe4e8; --term-color-background: var(--code-bg);
+  --term-color-0: #1f252c; --term-color-1: #ff8a7f; --term-color-2: #7fd79a; --term-color-3: #f1c54b;
+  --term-color-4: #8fb2ff; --term-color-5: #d6a3f5; --term-color-6: #7fd0d6; --term-color-7: #c9d0d6;
+  --term-color-8: #6c7680; --term-color-9: #ffaaa1; --term-color-10: #a3e6b6; --term-color-11: #f6d77f;
+  --term-color-12: #b0c9ff; --term-color-13: #e5c0fb; --term-color-14: #a3e1e6; --term-color-15: #f2f5f7;
+}
+@media (max-width: 720px) { .player { overflow-x: auto; } }
+.timeline { display: flex; gap: 4px; height: 10px; margin-top: 20px; }
+.timeline button { flex: var(--len) 1 0; min-width: 6px; padding: 0; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--ink) 12%, var(--ground)); cursor: pointer; overflow: hidden; position: relative; }
+.timeline button:hover { background: color-mix(in srgb, var(--ink) 24%, var(--ground)); }
+.timeline .bar { position: absolute; inset: 0; background: var(--c); transform-origin: left; transform: scaleX(var(--p, 0)); }
+.index { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 28px; margin-top: 26px; }
+.index .label { font-weight: 800; padding-bottom: 8px; }
+.index ol { list-style: none; margin: 0; padding: 0; }
+.index a { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 10px; align-items: baseline; padding: 8px 10px; margin: 0 -10px; border-radius: 10px; text-decoration: none; }
+.index a:hover .t { text-decoration: underline; }
+.index .t { font-weight: 600; }
+.index .time { font: .85rem var(--mono); color: var(--soft); font-variant-numeric: tabular-nums; }
+.index a[aria-current="true"] { background: var(--bg); }
+.index a[aria-current="true"] .t { color: var(--c); }
+@media (max-width: 1080px) { .index { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .index { grid-template-columns: minmax(0, 1fr); gap: 18px; } }
+@media (max-width: 560px) { .changes div { grid-template-columns: minmax(0, 1fr); } }
+
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-ok" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="currentColor"/><path d="M5.8 10.4l2.8 2.8 5.6-6.1" fill="none" stroke="var(--p1)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-off" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.2"/></symbol>
+  <symbol id="i-no" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M4.6 15.4L15.4 4.6" stroke="currentColor" stroke-width="2.4"/></symbol>
+  <symbol id="i-play" viewBox="0 0 20 20"><path d="M6 4.2v11.6L15.6 10z" fill="currentColor"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 20 20"><path d="M3.5 10h12M11 5.5l4.5 4.5-4.5 4.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header>
+  <div class="wrap">
+    <a class="mark" href="../">opticli<span>.</span></a>
+    <nav aria-label="Areas">
+      <a class="area" href="./" aria-current="page">Coding agents</a><a class="area" href="../editors/">Editors</a><a class="area" href="../tests/">Tests</a><a class="sec" href="../guides/">Guides</a><a class="sec" href="https://github.com/epinova/opticli">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero" aria-labelledby="hero-h">
+    <div class="pitch">
+      <h1 id="hero-h">Let your coding agent edit Optimizely content. <span>You review the drafts.</span></h1>
+      <p class="lead">Your coding agent uses opticli to find and edit pages and blocks. Edits go through the CMS API in your running site, so they're validated, versioned and saved as drafts. Production is read-only.</p>
+      <div class="get">
+        <p class="install"><code id="c-cli">dotnet tool install -g OptiCli</code><button class="copy" type="button" data-copy="c-cli" aria-live="polite">Copy</button></p>
+        <p>Then run <code>opticli skill install</code> in your site's repository so Claude Code knows how to use it. Requires the .NET 8 SDK or newer. Works with CMS 12 and 13.</p>
+      </div>
+    </div>
+
+    <div class="side demo" id="change" data-mode="draft">
+      <div>
+        <h2>One change, four ways to run it</h2>
+        <fieldset class="runas">
+          <legend class="visually-hidden">Run the change</legend>
+          <label><input type="radio" name="mode" value="dry"><span>Dry run</span></label>
+          <label><input type="radio" name="mode" value="draft" checked><span>Draft</span></label>
+          <label><input type="radio" name="mode" value="publish"><span>Publish</span></label>
+          <label><input type="radio" name="mode" value="prod"><span>On production</span></label>
+        </fieldset>
+      </div>
+      <div class="runs">
+        <p class="label">Your agent runs</p>
+        <code class="cmd" data-keep>opticli set 7 <span class="key">TeaserText</span>='Plan, track and report with the whole team' <span class="key">MetaTitle</span>='Alloy Track: plan, track and report with the whole team'<span data-show="dry"> <span class="flag">--dry-run</span></span><span data-show="publish"> <span class="flag">--publish</span></span><span data-show="prod"> <span class="flag no">--db prod</span></span></code>
+      </div>
+      <p class="refusal" data-show="prod">error (refused): Refusing to write to 'alloy-prod' on 'sql.alloy.example.com': it is a production database (role prod), which opticli only reads.
+hint: opticli writes to a production database only through a sealed apply, which the user runs in their own terminal.</p>
+      <div class="result">
+        <b>Alloy Track</b>
+        <span class="pill dry" data-show="dry">Dry run</span><span class="pill wait" data-show="draft">Draft</span><span class="pill done" data-show="publish">Published</span><span class="pill refused" data-show="prod">Refused</span>
+        <small data-show="dry">nothing saved</small><small data-show="draft">saved as version 7_1755 by opticli</small><small data-show="publish">7_1755 published by opticli</small><small data-show="prod">alloy-prod · nothing saved</small>
+      </div>
+      <dl class="changes" aria-label="Changes">
+        <div><dt>Teaser text</dt><dd><s>Involve the whole team!</s><ins>Plan, track and report with the whole team</ins></dd></div>
+        <div><dt>Page title</dt><dd><s>Alloy Track, online risk management where the whole team ge…</s><ins>Alloy Track: plan, track and report with the whole team</ins></dd></div>
+      </dl>
+      <ul class="checks" aria-label="Checks">
+        <li class="ok" data-show="dry draft publish"><svg class="icon" aria-hidden="true"><use href="#i-ok"/></svg><span>valid</span></li>
+        <li class="ok" data-show="dry draft publish"><svg class="icon" aria-hidden="true"><use href="#i-ok"/></svg><span>access rights of the CMS user opticli</span></li>
+        <li class="off" data-show="dry"><svg class="icon" aria-hidden="true"><use href="#i-off"/></svg><span>nothing saved</span></li>
+        <li class="ok" data-show="draft publish"><svg class="icon" aria-hidden="true"><use href="#i-ok"/></svg><span>saved as a new version</span></li>
+        <li class="off" data-show="dry draft"><svg class="icon" aria-hidden="true"><use href="#i-off"/></svg><span>not published; that takes --publish</span></li>
+        <li class="ok" data-show="publish"><svg class="icon" aria-hidden="true"><use href="#i-ok"/></svg><span>published; this page has no approval sequence</span></li>
+        <li class="no" data-show="prod"><svg class="icon" aria-hidden="true"><use href="#i-no"/></svg>write refused, dry runs too</li>
+      </ul>
+      <p class="example-note">Built from opticli's real output on Optimizely's Alloy sample site. The screencast below shows actual runs.</p>
+    </div>
+  </section>
+
+  <section class="part" id="screencast" aria-labelledby="screencast-h">
+    <div class="part-head"><h2 id="screencast-h">Watch it work</h2><p>Eleven minutes on the Alloy sample site, long pauses cut. Pick a chapter to jump to it.</p></div>
+    <div class="screen">
+      <div class="screen-bar"><b>Screencast</b><span>Alloy sample site · CMS 12 · .NET 8</span></div>
+      <div class="player" id="player"></div>
+    </div>
+    <nav id="chapters" aria-label="Screencast chapters"><div class="timeline" role="group" aria-label="Chapters on a timeline"><button type="button" data-index="0" data-n="1" data-start="4.016" data-end="28.848" aria-current="false" style="--len: 24.8" title="1 · No setup · 0:04" aria-label="Chapter 1: No setup, at 0:04"><span class="bar"></span></button><button type="button" data-index="1" data-n="2" data-start="28.848" data-end="58.34" aria-current="false" style="--len: 29.5" title="2 · Find the content · 0:28" aria-label="Chapter 2: Find the content, at 0:28"><span class="bar"></span></button><button type="button" data-index="2" data-n="3" data-start="58.34" data-end="75.622" aria-current="false" style="--len: 17.3" title="3 · Find the code · 0:58" aria-label="Chapter 3: Find the code, at 0:58"><span class="bar"></span></button><button type="button" data-index="3" data-n="4" data-start="75.622" data-end="157.749" aria-current="false" style="--len: 82.1" title="4 · Make the change · 1:15" aria-label="Chapter 4: Make the change, at 1:15"><span class="bar"></span></button><button type="button" data-index="4" data-n="5" data-start="157.749" data-end="230.833" aria-current="false" style="--len: 73.1" title="5 · A section as a plan · 2:37" aria-label="Chapter 5: A section as a plan, at 2:37"><span class="bar"></span></button><button type="button" data-index="5" data-n="6" data-start="230.833" data-end="259.49" aria-current="false" style="--len: 28.7" title="6 · Run it again · 3:50" aria-label="Chapter 6: Run it again, at 3:50"><span class="bar"></span></button><button type="button" data-index="6" data-n="7" data-start="259.49" data-end="329.941" aria-current="false" style="--len: 70.5" title="7 · Safety nets · 4:19" aria-label="Chapter 7: Safety nets, at 4:19"><span class="bar"></span></button><button type="button" data-index="7" data-n="8" data-start="329.941" data-end="373.196" aria-current="false" style="--len: 43.3" title="8 · Scheduled jobs · 5:29" aria-label="Chapter 8: Scheduled jobs, at 5:29"><span class="bar"></span></button><button type="button" data-index="8" data-n="9" data-start="373.196" data-end="412.129" aria-current="false" style="--len: 38.9" title="9 · Clean up leftovers · 6:13" aria-label="Chapter 9: Clean up leftovers, at 6:13"><span class="bar"></span></button><button type="button" data-index="9" data-n="10" data-start="412.129" data-end="445.695" aria-current="false" style="--len: 33.6" title="10 · Production is read-only · 6:52" aria-label="Chapter 10: Production is read-only, at 6:52"><span class="bar"></span></button><button type="button" data-index="10" data-n="11" data-start="445.695" data-end="485.684" aria-current="false" style="--len: 40.0" title="11 · Pull from production · 7:25" aria-label="Chapter 11: Pull from production, at 7:25"><span class="bar"></span></button><button type="button" data-index="11" data-n="12" data-start="485.684" data-end="551.253" aria-current="false" style="--len: 65.6" title="12 · Push to production · 8:05" aria-label="Chapter 12: Push to production, at 8:05"><span class="bar"></span></button><button type="button" data-index="12" data-n="13" data-start="551.253" data-end="624.729" aria-current="false" style="--len: 73.5" title="13 · See it while debugging · 9:11" aria-label="Chapter 13: See it while debugging, at 9:11"><span class="bar"></span></button><button type="button" data-index="13" data-n="14" data-start="624.729" data-end="683.648" aria-current="false" style="--len: 58.9" title="14 · Let an agent do it · 10:24" aria-label="Chapter 14: Let an agent do it, at 10:24"><span class="bar"></span></button></div><div class="index"><div role="group" aria-labelledby="chapters-g0"><p class="label" id="chapters-g0">Find and change</p><ol><li><a href="#chapter-1" data-index="0" data-n="1" data-start="4.016" data-end="28.848" aria-current="false"><span class="t">No setup</span><span class="time">0:04</span></a></li><li><a href="#chapter-2" data-index="1" data-n="2" data-start="28.848" data-end="58.34" aria-current="false"><span class="t">Find the content</span><span class="time">0:28</span></a></li><li><a href="#chapter-3" data-index="2" data-n="3" data-start="58.34" data-end="75.622" aria-current="false"><span class="t">Find the code</span><span class="time">0:58</span></a></li><li><a href="#chapter-4" data-index="3" data-n="4" data-start="75.622" data-end="157.749" aria-current="false"><span class="t">Make the change</span><span class="time">1:15</span></a></li></ol></div><div role="group" aria-labelledby="chapters-g1"><p class="label" id="chapters-g1">Plans</p><ol><li><a href="#chapter-5" data-index="4" data-n="5" data-start="157.749" data-end="230.833" aria-current="false"><span class="t">A section as a plan</span><span class="time">2:37</span></a></li><li><a href="#chapter-6" data-index="5" data-n="6" data-start="230.833" data-end="259.49" aria-current="false"><span class="t">Run it again</span><span class="time">3:50</span></a></li></ol></div><div role="group" aria-labelledby="chapters-g2"><p class="label" id="chapters-g2">Safety and operations</p><ol><li><a href="#chapter-7" data-index="6" data-n="7" data-start="259.49" data-end="329.941" aria-current="false"><span class="t">Safety nets</span><span class="time">4:19</span></a></li><li><a href="#chapter-8" data-index="7" data-n="8" data-start="329.941" data-end="373.196" aria-current="false"><span class="t">Scheduled jobs</span><span class="time">5:29</span></a></li><li><a href="#chapter-9" data-index="8" data-n="9" data-start="373.196" data-end="412.129" aria-current="false"><span class="t">Clean up leftovers</span><span class="time">6:13</span></a></li></ol></div><div role="group" aria-labelledby="chapters-g3"><p class="label" id="chapters-g3">Environments</p><ol><li><a href="#chapter-10" data-index="9" data-n="10" data-start="412.129" data-end="445.695" aria-current="false"><span class="t">Production is read-only</span><span class="time">6:52</span></a></li><li><a href="#chapter-11" data-index="10" data-n="11" data-start="445.695" data-end="485.684" aria-current="false"><span class="t">Pull from production</span><span class="time">7:25</span></a></li><li><a href="#chapter-12" data-index="11" data-n="12" data-start="485.684" data-end="551.253" aria-current="false"><span class="t">Push to production</span><span class="time">8:05</span></a></li></ol></div><div role="group" aria-labelledby="chapters-g4"><p class="label" id="chapters-g4">Your IDE and your agent</p><ol><li><a href="#chapter-13" data-index="12" data-n="13" data-start="551.253" data-end="624.729" aria-current="false"><span class="t">See it while debugging</span><span class="time">9:11</span></a></li><li><a href="#chapter-14" data-index="13" data-n="14" data-start="624.729" data-end="683.648" aria-current="false"><span class="t">Let an agent do it</span><span class="time">10:24</span></a></li></ol></div></div></nav>
+  </section>
+
+  <section class="part" id="features" aria-labelledby="features-h">
+    <div class="part-head"><h2 id="features-h">What it does</h2><p>Everything your agent needs to work on a site's content, from the first question to production.</p></div>
+
+    <div class="group">
+      <div><h3>Read content</h3><p>Answers without SQL, straight from the database.</p></div>
+      <ul class="features">
+        <li><h4>Answer content questions without SQL</h4><code class="cmd">opticli get 123 --fields MainContentArea</code><p>No more hand-written queries against tblContent. Items come back with every property decoded, including ContentAreas, local blocks, links and rich text. Reads go straight to the database, so the site doesn't need to be running.</p><a class="play" href="#chapter-2"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 2 · Find the content</a></li>
+        <li><h4>Go from content to code</h4><code class="cmd">opticli type TeaserBlock</code><p>See the C# class for a content type, the source line of each property and the Razor views, plus which ContentAreas accept it according to [AllowedTypes].</p><a class="play" href="#chapter-3"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 3 · Find the code</a></li>
+        <li><h4>Know what a change will affect</h4><code class="cmd">opticli where-used 456 --pages</code><p>Find every page and block that references an item, through nested blocks all the way up to pages. You can also resolve a URL to content, or list the unpublished drafts.</p></li>
+        <li><h4>Content history</h4><code class="cmd">opticli history 123</code><p>See an item's change log: moves, deletes, restores and publishes, with who did each and when.</p></li>
+        <li><h4>CMS 12 and CMS 13</h4><code class="cmd">opticli doctor</code><p>The same commands work on both, including CMS 13 databases upgraded from CMS 12. <code>serve</code> picks the right site agent for your CMS version.</p></li>
+      </ul>
+    </div>
+
+    <div class="group">
+      <div><h3>Change content</h3><p>Through the CMS API, as drafts unless you publish.</p></div>
+      <ul class="features">
+        <li><h4>Change content through the CMS API</h4><code class="cmd">opticli set 123 Heading="New title" --dry-run</code><p>Writes go through IContentRepository inside your running site, so validation, versioning, events and caches all work. Changes are saved as drafts unless you publish, and every write command takes <code>--dry-run</code>.</p><a class="play" href="#chapter-4"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 4 · Make the change</a></li>
+        <li><h4>Visual Builder pages</h4><code class="cmd">opticli composition 123 add element --in Left --type TextElement Heading=Hi</code><p><code>get</code> shows an experience as its sections, rows, columns and elements, with display templates and settings. <code>composition</code> adds, moves, changes and removes them, or writes back the JSON <code>get</code> printed.</p></li>
+        <li><h4>Safe deletes, with restore</h4><code class="cmd">opticli delete 456 --dry-run</code><p><code>delete</code> only moves content to the recycle bin, and refuses while other pages or blocks still reference it, listing where. <code>trash</code> shows what's in the bin, and <code>restore</code> puts it back where it was.</p><a class="play" href="#chapter-7"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 7 · Safety nets</a></li>
+        <li><h4>Approvals and scheduled publishing</h4><code class="cmd">opticli publish 123 --request-approval</code><p>Content with an approval sequence can't skip its reviewers: <code>--request-approval</code> sends it for review instead. <code>--publish-at</code> schedules the publish with the CMS's own scheduled job.</p></li>
+        <li><h4>Media, page settings and access rights</h4><code class="cmd">opticli upload price-list.pdf --for 123</code><p>Upload files as media of the type your site registers for each extension. Read and set shortcuts, simple addresses, categories, sort order and publish dates, and see or change who can read and edit an item.</p></li>
+      </ul>
+    </div>
+
+    <div class="group">
+      <div><h3>Plans</h3><p>Whole sections from a file, safe to run again.</p></div>
+      <ul class="features">
+        <li><h4>Plans you can run again</h4><code class="cmd">opticli apply plan.json --update-existing</code><p>With <code>"guidNamespace"</code>, every item a plan creates gets the same GUID in every database. <code>--update-existing</code> then updates what's already there and skips finished steps. <code>export</code> turns existing content from any database into a plan like this.</p><a class="play" href="#chapter-6"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 6 · Run it again</a></li>
+        <li><h4>Rich text from files</h4><code class="cmd">"MainBody": "@body.html"</code><p>Long rich text lives in HTML files you can review instead of inside the JSON. Links written as <code>href="$id"</code> point to content the plan creates.</p><a class="play" href="#chapter-5"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 5 · A section as a plan</a></li>
+        <li><h4>Dry runs that reach every step</h4><code class="cmd">opticli apply plan.json --publish --dry-run</code><p>Steps on content the plan hasn't created yet run against stand-ins, so validators, required properties and [AllowedTypes] are checked before anything is written.</p></li>
+      </ul>
+    </div>
+
+    <div class="group">
+      <div><h3>Environments and production</h3><p>Local by default; production only read, unless you run a sealed apply.</p></div>
+      <ul class="features">
+        <li><h4>Run a production copy on localhost</h4><code class="cmd">opticli sites primary --from-config</code><p>After restoring a production database, one command makes your local host each site's primary host and moves SiteUrl with it. <code>users add</code> creates a local admin login.</p></li>
+        <li><h4>Pull content from production</h4><code class="cmd">opticli sync pull --from prod --all --dry-run</code><p>Brings what editors did in production into your local database, matched by GUID and written through your local site. It only reads production, keeps your own local changes and lists conflicts instead of overwriting them.</p><a class="play" href="#chapter-11"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 11 · Pull from production</a></li>
+        <li><h4>Push to production: the agent prepares, you run it</h4><code class="cmd">opticli sync push --to prod /en/campaign/</code><p>A coding agent can prepare changes for production but can't write them. <code>sync push</code> seals what changed; you run the command it prints in your own terminal, with a write login that is never saved. It refuses if the plan, the build or production changed since the seal.</p><a class="play" href="#chapter-12"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 12 · Push to production</a></li>
+      </ul>
+    </div>
+
+    <div class="group">
+      <div><h3>Site operations</h3><p>Jobs, leftovers and Commerce catalogs.</p></div>
+      <ul class="features">
+        <li><h4>Scheduled jobs</h4><code class="cmd">opticli jobs run "Content import"</code><p>See every job's schedule, last run and log, and where its code lives. Run one and wait for its result, stop it, or change when it runs.</p><a class="play" href="#chapter-8"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 8 · Scheduled jobs</a></li>
+        <li><h4>Clean up what removed code left behind</h4><code class="cmd">opticli types prune --dry-run</code><p><code>types --orphaned</code> finds content types whose code is gone. <code>types prune</code> removes what can go through the CMS, never content, and records every removal first.</p><a class="play" href="#chapter-9"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 9 · Clean up leftovers</a></li>
+        <li><h4>Commerce catalogs</h4><code class="cmd">opticli commerce price set code:P-1001-S --market DEFAULT --currency USD --amount 79</code><p>On a site with Commerce 14 or 15, catalogs, products and variants are content for <code>create</code>, <code>set</code> and plans, and prices, stock, markets and relations get their own commands, all with dry runs.</p></li>
+      </ul>
+    </div>
+
+    <div class="group">
+      <div><h3>Your IDE and your agent</h3><p>Nothing to add to your solution.</p></div>
+      <ul class="features">
+        <li><h4>Nothing to add to your solution</h4><code class="cmd">opticli serve</code><p><code>serve</code> starts your existing build with a small agent injected at startup, through a .NET startup hook and a hosting startup. Your site's code and config stay as they are.</p><a class="play" href="#chapter-1"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 1 · No setup</a></li>
+        <li><h4>See changes in the site you're debugging</h4><code class="cmd">opticli ide on</code><p>The site you start from Rider or Visual Studio loads the agent from its own build, so a reload shows the change without a restart. The debugger, hot reload and breakpoints stay as they are.</p><a class="play" href="#chapter-13"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 13 · See it while debugging</a></li>
+        <li><h4>Built for coding agents</h4><code class="cmd">opticli skill install</code><p>Piped output is compact JSON. Every item has a ref you can pass to the next command, and errors come with a code and a hint. A Claude Code skill tells the agent when to use opticli and how to use it safely.</p><a class="play" href="#chapter-14"><svg aria-hidden="true"><use href="#i-play"/></svg>Chapter 14 · Let an agent do it</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="part" id="how" aria-labelledby="how-h">
+    <div class="part-head"><h2 id="how-h">How it works</h2><p>Reads go straight to the database. Writes go through your running site.</p></div>
+    <div class="routes">
+      <div class="route">
+        <h3>Reads</h3>
+        <p>Fast, and the site doesn't need to run.</p>
+        <ol class="steps">
+          <li><p><b>opticli</b></p></li>
+          <li><p><b>Fixed, read-only SQL</b><span>a free-form <code>opticli sql</code> runs one SELECT in a transaction that is rolled back</span></p></li>
+          <li class="hot"><p><b>CMS database</b></p></li>
+        </ol>
+      </div>
+      <div class="route">
+        <h3>Writes</h3>
+        <p>Everything an editor's save gets: validation, versions, events, caches.</p>
+        <ol class="steps">
+          <li><p><b>opticli</b></p></li>
+          <li><p><b>Agent in your running site</b><span>127.0.0.1 only, with a token for that run</span></p></li>
+          <li><p><b>IContentRepository</b><span>the CMS's own API</span></p></li>
+          <li class="hot"><p><b>CMS database</b></p></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="part shelf-field" id="safety" aria-labelledby="safety-h">
+    <div class="part-head"><h2 id="safety-h">Safety</h2><p>What it can't do, and its limits, in one place.</p></div>
+    <ul class="qa">
+      <li><b>Which database does it use?</b><p>Your local one by default: opticli reads the connection string from the site's Development config. To use a remote database you have to choose it explicitly, and every response then carries a warning.</p><span class="tag">local by default</span></li>
+      <li><b>Can a read change anything?</b><p>No. Reads use fixed queries. <code>opticli sql</code> accepts a single SELECT against the site's own database and runs it in a transaction that is rolled back.</p><span class="tag">read-only</span></li>
+      <li><b>Can it publish or delete by accident?</b><p>No. Changes are saved as drafts, under a CMS user named opticli. Publishing needs <code>--publish</code>. <code>delete</code> only moves content to the recycle bin, and refuses while other content still references it.</p><span class="tag">drafts · recycle bin</span></li>
+      <li><b>Can it write to production?</b><p>Not on its own. A database with the role <code>prod</code> is read-only: <code>serve</code> and every write, dry runs included, are refused. The only way to write is a sealed apply that you run in your own terminal, with a write login you type and opticli never saves. <a href="#chapter-10">Chapter 10</a></p><span class="tag">refused · sealed apply only</span></li>
+      <li><b>Can starting it change a shared database?</b><p>Only in limited ways. Against a remote development database, opticli turns off the scheduler, schema updates, content type sync and store remapping, and <code>serve</code> won't start a build with EF Core migrations the database lacks. The CMS still registers the build's scheduled jobs and add-on content roots, and the site's own startup code runs.</p><span class="tag">limited</span></li>
+      <li><b>What if my branch isn't what's deployed?</b><p>opticli compares the build with the shared database: content types, properties, migrations. While they differ, writes stop until you confirm with <code>--accept-drift</code>, and opticli tells you whether the code or the database is newer. Reads keep working.</p><span class="tag">writes stop on drift</span></li>
+      <li><b>Can anyone else reach the site agent?</b><p>It answers only to requests from this machine, only in Development, and only with the token of that run, which sits in a file only you can read. Requests that came through a proxy or tunnel are refused.</p><span class="tag">this machine + run token only</span></li>
+      <li><b>Does the site I debug start differently?</b><p>No. With <code>ide on</code>, the agent doesn't pin the database or touch the scheduler, and it never stops the site from starting: against another database, or outside Development, it stays off for that run and tells you why.</p><span class="tag">no</span></li>
+    </ul>
+  </section>
+
+  <section class="part" aria-labelledby="else-h">
+    <div class="part-head"><h2 id="else-h">The other ways in</h2></div>
+    <div class="elsewhere">
+      <a class="p2" href="../editors/"><b>For editors</b><span>The MCP server: editors' AI assistants sign in to the site as them and save drafts.</span></a>
+      <a class="p3" href="../tests/"><b>For tests</b><span>The npm package: Playwright tests get seeded content and pages of their own.</span></a>
+    </div>
+    <p class="latest">Latest release: <code>0.36.0</code>, Optimizely Commerce, 24 November 2026. <a href="../releases/">Every release</a></p>
+  </section>
+</main>
+
+<footer class="wrap">
+  <p>opticli is open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. It is an independent project, not affiliated with or endorsed by Optimizely.</p>
+</footer>
+
+
+<script src="https://cdn.jsdelivr.net/npm/asciinema-player@3.17.0/dist/bundle/asciinema-player.min.js"></script>
+<script>
+// Commands wrap only between words, never inside a flag.
+for (const code of document.querySelectorAll('.features .cmd')) {
+  code.innerHTML = code.textContent.split(' ').map(w => `<span class="tok">${w.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</span>`).join(' ');
+}
+
+// One change, four ways to run it.
+const change = document.getElementById('change');
+for (const input of change.querySelectorAll('input[name="mode"]')) input.addEventListener('change', () => { change.dataset.mode = input.value; });
+
+// Copy: confirm at once, or say how to copy by hand.
+for (const b of document.querySelectorAll('.copy')) b.addEventListener('click', () => {
+  const text = document.getElementById(b.dataset.copy).textContent;
+  const done = (label) => { b.textContent = label; b.dataset.done = ''; setTimeout(() => { b.textContent = 'Copy'; delete b.dataset.done; }, 1600); };
+  if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => done('Copied'), () => done('Select and copy'));
+  else done('Select and copy');
+});
+
+// The screencast and its chapters (the timeline's segments and the index's links).
+let player;
+const chapters = [...document.querySelectorAll('#chapters [data-index]')];
+const playerBox = document.getElementById('player');
+const narrow = matchMedia('(max-width: 720px)').matches;
+const linked = () => { const m = /^#chapter-(\d+)$/.exec(location.hash); return m ? chapters.find(c => c.dataset.n === m[1]) : undefined; };
+const show = (smooth) => requestAnimationFrame(() => playerBox.closest('.screen').scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'auto' }));
+if (linked()) history.scrollRestoration = 'manual';
+
+function mark(time) {
+  for (const c of chapters) {
+    const start = Number(c.dataset.start), end = Number(c.dataset.end);
+    c.style.setProperty('--p', Math.min(1, Math.max(0, (time - start) / (end - start))).toFixed(4));
+    c.setAttribute('aria-current', time >= start && time < end ? 'true' : 'false');
+  }
+}
+async function paint() { const t = await player.getCurrentTime(); if (typeof t === 'number' && t > 0) mark(t); }
+async function play(chapter) { await player.seek({ marker: Number(chapter.dataset.index) }); player.play(); paint(); }
+
+function start() {
+  const chapter = linked();
+  const at = chapter ? Number(chapter.dataset.start) : 0;
+  player = AsciinemaPlayer.create('../opticli-demo.cast', playerBox, {
+    theme: 'opti',
+    ...(narrow ? { fit: false, terminalFontSize: '10px' } : { fit: 'width' }),
+    poster: `npt:${at + 4.5}`,
+    ...(chapter ? { startAt: at } : {}),
+    terminalFontFamily: '"Fragment Mono", ui-monospace, Menlo, Consolas, monospace',
+    terminalLineHeight: 1.3,
+  });
+  if (chapter) { mark(at); show(); }
+  setInterval(paint, 200);
+}
+document.getElementById('chapters').addEventListener('click', e => {
+  const chapter = e.target.closest('[data-index]');
+  if (!chapter || !player || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+  e.preventDefault();
+  history.replaceState(null, '', `#chapter-${chapter.dataset.n}`);
+  play(chapter);
+});
+addEventListener('hashchange', () => { const chapter = linked(); if (chapter && player) { show(true); play(chapter); } });
+Promise.race([
+  document.fonts ? document.fonts.load('14px "Fragment Mono"') : Promise.resolve(),
+  new Promise(r => setTimeout(r, 1500)),
+]).catch(() => {}).then(start);
+</script>
+</body>
+</html>
