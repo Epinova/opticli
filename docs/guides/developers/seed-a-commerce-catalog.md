@@ -9,17 +9,20 @@ written-for: 0.37.0
 End-to-end tests of a Commerce site need products to show, prices to check and stock to buy. Made by hand in the
 catalog UI, they differ between machines and drift as editors work. With opticli the catalog comes from code: one
 plan makes the catalog, its nodes, products, variants and bundles, relates them, gives the variants prices and stock,
-and sets up the markets, all through the running site. Run again, the plan changes nothing. By the end of this guide
-you have a seed plan for the catalog, a database that starts empty, and Playwright tests that read what the plan made.
+and sets up the markets, and translates the catalog into a second language, all through the running site. Run again,
+the plan changes nothing. By the end of this guide you have a seed plan for the catalog, a database that starts empty,
+and Playwright tests that read what the plan made.
 
 ## Before you start
 
-- opticli 0.36.0 or newer, and the `@epinova/opticli` npm package set up as in
+- opticli 0.37.0 or newer, and the `@epinova/opticli` npm package set up as in
   [Seed CMS content for Playwright tests](playwright-seed-content.md).
 - A site on Optimizely Commerce 14 (CMS 12) or 15 (CMS 13), built, with its catalog model in code (the examples use a
   `FashionNode`, `FashionProduct`, `FashionVariant` and `FashionBundle`, a `StartPage` with a `Catalog` reference, and
   an image media type for `.png` files).
 - SQL Server for the site's two databases: the CMS's (`EPiServerDB`) and Commerce's (`EcfSqlConnection`).
+- For the translations, the second language (Swedish, `sv`, in the examples) enabled in the CMS: `opticli languages`
+  lists them, and `opticli languages enable sv` enables one.
 
 ## Steps
 
@@ -65,15 +68,17 @@ import type { Plan } from '@epinova/opticli';
 export const seedPlan = {
   guidNamespace: '5b2e9c41-7d0a-4f3e-8c61-2a9d4e7b1f05', // any GUID; keep it
   operations: [
-    { op: 'market', market: 'NORDIC', name: 'Nordic', currencies: ['SEK', 'NOK'], languages: ['en'], countries: ['SWE', 'NOR'] },
+    { op: 'market', market: 'NORDIC', name: 'Nordic', currencies: ['SEK', 'NOK'], languages: ['en', 'sv'], countries: ['SWE', 'NOR'] },
     { op: 'warehouse', code: 'oslo', name: 'Oslo', pickupLocation: true },
     // The global assets folder has this GUID in every CMS database. Files are relative to planDir.
     { op: 'upload', id: 'dressImage', file: 'files/dress.png', parent: 'e56f85d0-e833-4e02-976a-2d11fe4d598c', publish: true },
     { op: 'create', id: 'catalog', type: 'CatalogContent', parent: 'catalog-root', name: 'Fashion',
-      properties: { DefaultCurrency: 'USD', DefaultLanguage: 'en', WeightBase: 'kgs', LengthBase: 'cm' } },
+      properties: { DefaultCurrency: 'USD', DefaultLanguage: 'en', WeightBase: 'kgs', LengthBase: 'cm', CatalogLanguages: ['en', 'sv'] } },
     { op: 'create', id: 'women', type: 'FashionNode', parent: '$catalog', name: 'Women', properties: { Code: 'women' } },
+    { op: 'translate', ref: '$women', lang: 'sv', properties: { DisplayName: 'Dam' } },
     { op: 'create', id: 'dress', type: 'FashionProduct', parent: '$women', name: 'Summer dress',
       properties: { Code: 'P-1001', Brand: 'Acme', Description: '<p>Light and airy.</p>', CommerceMediaCollection: ['$dressImage'] } },
+    { op: 'translate', ref: '$dress', lang: 'sv', properties: { DisplayName: 'Sommarklänning', Description: '<p>Lätt och luftig.</p>' } },
     { op: 'create', id: 'dressS', type: 'FashionVariant', parent: '$women', name: 'Summer dress S', properties: { Code: 'P-1001-S', Size: 'S' } },
     { op: 'create', id: 'dressM', type: 'FashionVariant', parent: '$women', name: 'Summer dress M', properties: { Code: 'P-1001-M', Size: 'M' } },
     { op: 'create', id: 'set', type: 'FashionBundle', parent: '$women', name: 'Dress set', properties: { Code: 'B-2001' } },
@@ -106,6 +111,13 @@ with it. It takes the whole list, each a media ref, or `{ ref: '$dressImage', gr
 for another group or order. Images go in a media folder, not "for" the product: catalog content has no "For this page"
 folder, and opticli refuses `for: '$dress'` on an upload.
 
+The catalog is in English and Swedish: `CatalogLanguages` lists its languages (Commerce adds the default language
+itself), and catalog content is kept in those languages only. Nodes and entries are made in the default language, and
+each `translate` step gives one of them its Swedish values: the culture-specific properties, such as `DisplayName` and
+the description. The name (`Summer dress`) is the same in every language; the name shown in Swedish is its
+`DisplayName`. Brand, code and the images aren't culture-specific, so the Swedish version has the English ones. The
+market lists `sv` among its languages so it sells in Swedish too.
+
 A seed plan grows with the site. To sell in euro too, add a market and its prices to the plan:
 
 ```ts
@@ -116,8 +128,9 @@ A seed plan grows with the site. To sell in euro too, add a market and its price
 On a database the plan seeded before, the dry run lists that price as `deferred`: the market isn't there yet. The dry
 run still checks the price against the market the step before makes (its currencies, the variant, the dates), and the
 site checks the market itself when the plan runs. The same goes for stock in a new warehouse, and for a price in a
-currency the plan adds to a market. A market the suite no longer needs goes with `opticli commerce market remove EURO`
-(or a step with `remove: true`), and Commerce removes its prices with it.
+currency the plan adds to a market. A `translate` step in a language the plan adds to the catalog's `CatalogLanguages`
+is `deferred` too, and the site checks it when the plan runs. A market the suite no longer needs goes with
+`opticli commerce market remove EURO` (or a step with `remove: true`), and Commerce removes its prices with it.
 
 ### 4. Apply it twice
 
@@ -141,6 +154,7 @@ run checks every step against what is there.
 ```bash
 opticli commerce tree catalog:Fashion
 opticli commerce get code:P-1001
+opticli commerce get code:P-1001 --lang sv
 opticli resolve /en/fashion/women/summer-dress/
 opticli commerce relations code:P-1001
 opticli commerce prices code:P-1001-S
@@ -149,8 +163,9 @@ opticli commerce stock code:P-1001-M
 
 Catalog content isn't in the CMS database, so `get`, `children` and `tree` don't read it: the `commerce` reads ask the
 site. `commerce get` shows the product's `CommerceMediaCollection` and its `url`, where your site's catalog routing
-puts it (null if the site doesn't route catalog content); `resolve` takes that URL back to the product. The start
-page's `Catalog` and `FeaturedProduct` show the catalog's and product's refs in `opticli get` on the page: a negative
+puts it (null if the site doesn't route catalog content); `resolve` takes that URL back to the product. With `--lang sv`
+it shows the Swedish version: its `DisplayName` and description, and a `url` in `/sv/`. The start page's `Catalog` and
+`FeaturedProduct` show the catalog's and product's refs in `opticli get` on the page: a negative
 `<id>__CatalogContent` for the catalog and `<id>__CatalogContent` for the product. The ids are each database's own, so
 don't copy them into a plan or test: even on a fresh database the first catalog is `-2147483647__CatalogContent` or
 `-2147483646__CatalogContent`, depending on whether Commerce had already made its own `System.Archived` catalog.
@@ -186,6 +201,8 @@ site renders is reached by its URL, as your site's routing gives it: `(await opt
 - `opticli serve --status` shows `commerce.agent: true`.
 - A second `opticli apply ... --update-existing --publish` lists every step as `unchanged`.
 - `opticli commerce prices code:P-1001-S` lists the base price, the campaign price and the Nordic price.
+- `opticli commerce get code:P-1001 --lang sv` shows `"language": "sv"`, `"status": "published"` and the Swedish
+  `DisplayName`.
 
 ## Troubleshooting
 
@@ -198,8 +215,12 @@ site renders is reached by its URL, as your site's routing gives it: `(await opt
   is `member`), or by its number. `opticli commerce` lists the site's `priceTypes`.
 - **An upload `for` a product is refused ("... is catalog content")**: catalog content has no "For this page" folder.
   Upload the image to a media folder and attach it with `CommerceMediaCollection`, as the dress's image above.
-- **`publish` or `delete` refuses catalog content**: opticli only creates and sets it (`set <ref> --publish` publishes
-  a draft). To start over, start from empty databases again.
+- **"... is in a catalog whose languages are en"**: the step writes a language the catalog doesn't have. Add it to the
+  catalog's `CatalogLanguages` (the error shows the `set` that does), or add it to the plan's `create` step of the
+  catalog.
+- **"... whose name Commerce keeps once for every language"**: a translation gave a `name`. Give `DisplayName` instead.
+- **`publish` or `delete` refuses catalog content**: opticli only creates, sets and translates it (`set <ref>
+  --publish` publishes a draft). To start over, start from empty databases again.
 
 Every command and option is in the
 [Optimizely Commerce reference](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/commerce.md#optimizely-commerce).

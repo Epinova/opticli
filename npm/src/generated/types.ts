@@ -217,6 +217,8 @@ export interface CatalogRef {
   languages?: string[];
   /** Its published version (or the latest, when it was never published). */
   version?: number;
+  /** The languages of its catalog (a catalog's own): the default language and `CatalogLanguages`, the only ones Commerce keeps catalog content in. Null for the catalog root. */
+  catalogLanguages?: string[];
 }
 
 export interface CatalogSummary {

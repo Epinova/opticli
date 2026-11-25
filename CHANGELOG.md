@@ -29,6 +29,29 @@ again to update the skill.
   naming it. Commerce's own `DEFAULT` is refused. The undo hint of a new market is now `commerce market remove`. A
   removal that found none has no `market`, so the npm package's `MarketResult.market` is optional now (as
   `PriceResult.price` is): TypeScript asks for a check where code reads it.
+- **Translating catalog content.** `translate` takes catalog content, into a language of its catalog: on Commerce 15 it
+  makes the language branch, as the CMS does (opticli 0.36 refused it, so catalog content couldn't be translated
+  there); on Commerce 14, which keeps catalog content in every language of its catalog, it saves into that language as
+  `set --lang` does (`existing: true`). A plan's `translate` step runs again `unchanged` on either major. See
+  [Languages and translations](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/commerce.md#languages-and-translations).
+- **Fix: a translation on Commerce 14 needed `--include-draft`.** Commerce 14 saves a copy of its own of catalog content
+  in each language of its catalog (as `system`), which opticli counted as someone else's draft, so publishing a
+  translation was a `conflict` and confirming it also waved through real drafts. Commerce's copy is left out now, only
+  as long as it is what Commerce made; a draft someone else saved in that language still stops the publish.
+- **Fix: `commerce get --lang` on Commerce 15 showed a language never published without its draft's values** (the
+  version was the draft's, the values what Commerce serves in that language). It shows the draft now.
+- **A language the catalog doesn't have is refused.** `create`, `set` and `translate` of catalog content in a language
+  that isn't its catalog's (`DefaultLanguage` or `CatalogLanguages`) are a `usage` error before anything is saved, with
+  the `set catalog:... --values '{"CatalogLanguages": [...]}'` that adds it. Commerce 14 refused it with a hint to
+  `translate`, Commerce 15 saved a version it then couldn't load, and `create` saved the content in the default
+  language instead. In a plan, a step in a language an earlier step adds to the catalog is `deferred` in the dry run,
+  so a seed plan can grow by a language.
+- **`--name` in another language is refused.** Catalog content has one name in every language, the master language's:
+  Commerce dropped a name given with `--lang` in another language, though the result listed it as changed. It is a
+  `usage` error now, which says to translate `DisplayName`.
+- **`catalogLanguages`** on `commerce children` items: the languages of the item's catalog.
+- **Docs:** `CatalogLanguages` (a catalog's languages, and how to add one) in the reference, and a catalog in two
+  languages in the guide [Seed a Commerce catalog for Playwright tests](https://github.com/Epinova/opticli/blob/main/docs/guides/developers/seed-a-commerce-catalog.md).
 
 ## 0.36.0 (24 November 2026)
 

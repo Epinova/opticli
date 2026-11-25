@@ -103,7 +103,26 @@ internal sealed class CatalogContentFinder(IServiceProvider services)
             ContentReference.IsNullOrEmpty(content.ParentLink) ? null : CatalogRefSyntax.Format(content.ParentLink.ID),
             localizable?.MasterLanguage?.Name is { Length: > 0 } master ? master : null,
             localizable?.ExistingLanguages?.Select(l => l.Name).Where(l => l.Length > 0).ToList(),
-            content.ContentLink.WorkID > 0 ? content.ContentLink.WorkID : null);
+            content.ContentLink.WorkID > 0 ? content.ContentLink.WorkID : null,
+            CatalogLanguagesOf(content));
+    }
+
+    /// <summary>
+    /// The languages of the catalog the content is in (a catalog's own): its default language and its CatalogLanguages,
+    /// the languages Commerce keeps catalog content in. Null for the catalog root.
+    /// </summary>
+    private IReadOnlyList<string>? CatalogLanguagesOf(CatalogContentBase content)
+    {
+        var catalog = content as CatalogContent;
+        if (catalog is null && content is not RootContent && content.CatalogId > 0
+            && _loader.TryGet<CatalogContent>(_references.GetContentLink(content.CatalogId, CatalogContentType.Catalog, 0), AnyLanguage(), out var loaded))
+        {
+            catalog = loaded;
+        }
+        return catalog is null
+            ? null
+            : new[] { catalog.DefaultLanguage }.Concat(catalog.CatalogLanguages ?? Enumerable.Empty<string>())
+                .Where(l => !string.IsNullOrWhiteSpace(l)).Select(l => l.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     /// <summary>A node's or entry's code; null for catalogs and the root.</summary>

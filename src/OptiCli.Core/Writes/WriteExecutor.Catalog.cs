@@ -26,10 +26,11 @@ public sealed partial class WriteExecutor
     /// a site without the Commerce agent.
     /// </summary>
     /// <exception cref="NotFoundException">A catalog-only ref on a site whose Commerce agent doesn't run.</exception>
-    internal async Task<CatalogRef?> CatalogRefAsync(string reference, CancellationToken cancellationToken)
+    /// <param name="fresh">Ask the site even when the ref was found before in this run (for languages an earlier step may have added).</param>
+    internal async Task<CatalogRef?> CatalogRefAsync(string reference, CancellationToken cancellationToken, bool fresh = false)
     {
         var key = reference.Trim();
-        if (_catalogRefs.TryGetValue(key, out var known))
+        if (!fresh && _catalogRefs.TryGetValue(key, out var known))
         {
             return known;
         }
@@ -259,7 +260,8 @@ public sealed partial class WriteExecutor
     }
 
     /// <summary><c>set</c> on catalog content: a new version with the properties and name, through the site agent's draft route.</summary>
-    private async Task<WriteOutcome<WriteOutput>> CatalogSetAsync(SetOperation op, Target target, CatalogRef catalog, bool dryRun, CancellationToken cancellationToken)
+    /// <param name="allowNothing">A request without changes is sent as it is (translate's look at an existing branch, as a dry run).</param>
+    private async Task<WriteOutcome<WriteOutput>> CatalogSetAsync(SetOperation op, Target target, CatalogRef catalog, bool dryRun, CancellationToken cancellationToken, bool allowNothing = false)
     {
         var unsupported = new List<string>();
         if (op.From is not null)
@@ -280,11 +282,14 @@ public sealed partial class WriteExecutor
             throw new UsageException($"{op.Ref} is catalog content (Optimizely Commerce), which doesn't take {string.Join(", ", unsupported)}.",
                 $"set on catalog content takes {CatalogOptions}. Nothing was saved.");
         }
+        var lang = session.Language(op.Lang)?.Code;
+        catalog = await RequireCatalogLanguageAsync(catalog, lang, op.Ref, cancellationToken);
+        RequireSharedName(catalog, op.Name, lang, op.Ref);
         var type = session.Model.RequireType(catalog.Type ?? throw new InternalException($"The site gave catalog content {catalog.Ref} no type."));
         var properties = PropertyNameCheck.Prepare(session.Model, type.Id, await CatalogValuesAsync(type.Id, op.Properties, cancellationToken));
         var request = new DraftRequest
         {
-            Lang = session.Language(op.Lang)?.Code,
+            Lang = lang,
             Name = op.Name,
             Properties = PropertyArguments.ToRequest(properties),
             Publish = op.Publish,
@@ -292,11 +297,103 @@ public sealed partial class WriteExecutor
             DryRun = dryRun,
             BaseVersion = op.Force ? null : op.BaseVersion,
         };
-        if (request.Properties is null && request.Name is null && !op.Publish)
+        if (request.Properties is null && request.Name is null && !op.Publish && !allowNothing)
         {
             throw new UsageException("Nothing to set.", $"Give properties ({PropertyArguments.Syntax}), --values, --name or --publish.");
         }
         var result = await PostDraftAsync(AgentRoutes.Draft(target.ContentRef), request, cancellationToken);
         return Outcome(WriteOutput.From(result), null);
+    }
+
+    /// <summary>
+    /// <c>translate</c> of catalog content. Commerce 15 makes a language branch of it as the CMS does, through the site
+    /// agent's language route. Commerce 14 keeps catalog content in every language of its catalog from the start (it saves
+    /// a copy of its own in each; the agent's <c>PendingDrafts</c> leaves it out), so the branch is there already, and the
+    /// translation is saved into it as <c>set --lang</c> saves it (<c>existing: true</c>); so is a translation into a
+    /// branch made earlier, on either major.
+    /// </summary>
+    private async Task<WriteOutcome<WriteOutput>> CatalogTranslateAsync(TranslateOperation op, Target target, CatalogRef catalog, bool dryRun, CancellationToken cancellationToken)
+    {
+        var unsupported = new List<string>();
+        if (op.WithBlocks)
+        {
+            unsupported.Add("--with-blocks (catalog content has no \"For this page\" folder)");
+        }
+        AddCmsOnly(op, unsupported);
+        if (unsupported.Count > 0)
+        {
+            throw new UsageException($"{op.Ref} is catalog content (Optimizely Commerce), which doesn't take {string.Join(", ", unsupported)}.",
+                "translate on catalog content takes properties, --lang and --publish. Nothing was saved.");
+        }
+        var language = session.Language(op.Lang) ?? throw new UsageException("translate needs --lang <code>.");
+        // The languages it has now: an earlier step (or run, in the same session) may have made the branch.
+        catalog = await CatalogRefAsync(catalog.Ref!, cancellationToken, fresh: true) ?? catalog;
+        catalog = await RequireCatalogLanguageAsync(catalog, language.Code, op.Ref, cancellationToken);
+        RequireSharedName(catalog, op.Name, language.Code, op.Ref);
+        if (catalog.Languages?.Contains(language.Code, StringComparer.OrdinalIgnoreCase) == true)
+        {
+            // With nothing to save, what the branch has: from a dry run, which saves nothing.
+            var nothing = op.Properties is null && op.Name is null && !op.Publish;
+            var set = await CatalogSetAsync(new SetOperation(op.Ref, op.Properties, op.Name, language.Code, op.Publish, Force: true) { IncludeDraft = op.IncludeDraft },
+                target, catalog, dryRun || nothing, cancellationToken, allowNothing: nothing);
+            return set with { Output = set.Output with { Existing = true, DryRun = dryRun } };
+        }
+        var type = session.Model.RequireType(catalog.Type ?? throw new InternalException($"The site gave catalog content {catalog.Ref} no type."));
+        var properties = PropertyNameCheck.Prepare(session.Model, type.Id, await CatalogValuesAsync(type.Id, op.Properties, cancellationToken));
+        var result = await PostAsync<WriteResult>(AgentRoutes.Languages(target.ContentRef), new LanguageBranchRequest
+        {
+            Lang = language.Code,
+            Properties = PropertyArguments.ToRequest(properties),
+            Publish = op.Publish,
+            DryRun = dryRun,
+        }, cancellationToken);
+        return Outcome(WriteOutput.From(result), null);
+    }
+
+    /// <summary>
+    /// Catalog content is kept only in the languages of its catalog (its default language and <c>CatalogLanguages</c>).
+    /// In another, Commerce 14 has no branch to save into, Commerce 15 saves a version it then can't load, and a
+    /// <c>create</c> is saved in the catalog's default language instead.
+    /// </summary>
+    /// <param name="item">The content written, or for <c>create</c> its parent.</param>
+    /// <returns><paramref name="item"/>, as the site has it now when the language was added since it was found.</returns>
+    /// <exception cref="UsageException">The language isn't one of the catalog's.</exception>
+    private async Task<CatalogRef> RequireCatalogLanguageAsync(CatalogRef item, string? lang, string reference, CancellationToken cancellationToken)
+    {
+        if (!HasLanguage(item, lang))
+        {
+            // Found earlier in this run (a plan's dry run, say): an earlier step may have given the catalog the language.
+            item = await CatalogRefAsync(item.Ref!, cancellationToken, fresh: true) ?? item;
+        }
+        if (HasLanguage(item, lang))
+        {
+            return item;
+        }
+        var languages = item.CatalogLanguages!;
+        var isCatalog = item.Kind == CatalogKinds.Catalog;
+        var wanted = string.Join(", ", languages.Append(lang).Select(l => $"\"{l}\""));
+        throw new UsageException(
+            $"{reference} is {(isCatalog ? "a catalog" : "in a catalog")} whose languages are {string.Join(", ", languages)}: Commerce keeps catalog content only in its catalog's languages (its default language and CatalogLanguages), so nothing can be saved in '{lang}'.",
+            $"Add the language to the catalog first: opticli set {(isCatalog ? reference : "catalog:<name>")} --values '{{\"CatalogLanguages\": [{wanted}]}}' (`opticli commerce children` lists the catalogs). Nothing was saved.");
+    }
+
+    private static bool HasLanguage(CatalogRef item, string? lang) =>
+        lang is null || item.CatalogLanguages is not { Count: > 0 } languages || languages.Contains(lang, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Commerce keeps one name for catalog content, the master language's: a name saved in another language is dropped
+    /// (the content still loads with the master's, on Commerce 14 and 15). The name shown in a language is its DisplayName.
+    /// </summary>
+    /// <exception cref="UsageException">A name other than the master language's, in another language.</exception>
+    private static void RequireSharedName(CatalogRef catalog, string? name, string? lang, string reference)
+    {
+        if (name is null || lang is null || catalog.MasterLanguage is not { } master || lang.Equals(master, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(name, catalog.Name, StringComparison.Ordinal))
+        {
+            return;
+        }
+        throw new UsageException(
+            $"{reference} is catalog content, whose name Commerce keeps once for every language (the master language's, '{catalog.Name}'): a name given in '{lang}' would be dropped. The name shown in a language is its DisplayName.",
+            $"Give DisplayName instead (opticli set {reference} --lang {lang} DisplayName=...), or --name without --lang to rename it. Nothing was saved.");
     }
 }

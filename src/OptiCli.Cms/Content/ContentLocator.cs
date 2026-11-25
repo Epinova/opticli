@@ -171,8 +171,18 @@ internal sealed class ContentLocator(CmsCall call)
         {
             return null;
         }
-        var stamps = branch.Select(v => new VersionStamp(v.ContentLink.WorkID, v.Status == VersionStatus.Published, v.Saved, v.SavedBy));
+        var stamps = branch.Select(Stamp).ToList();
         var candidates = PendingDrafts.ByOthers(stamps, based.ContentLink.WorkID, call.UserName, readyBy);
+        if (candidates.Count > 0
+            && string.Equals(based.ContentLink.ProviderName, PendingDrafts.CommerceProvider, StringComparison.Ordinal)
+            && based is ILocalizable { Language: { } language, MasterLanguage: { } master }
+            && !language.Name.Equals(master.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            // Commerce 14's own copy of the item in this language is nobody's draft (PendingDrafts' remarks).
+            var others = AllVersions(based.ContentLink, null)
+                .Where(v => !string.Equals(v.LanguageBranch, language.Name, StringComparison.OrdinalIgnoreCase)).Select(Stamp).ToList();
+            candidates = candidates.Where(c => !PendingDrafts.CommerceLanguageCopy(c, stamps, others)).ToList();
+        }
         if (candidates.Count == 0)
         {
             return null;
@@ -197,4 +207,7 @@ internal sealed class ContentLocator(CmsCall call)
         }
         return null;
     }
+
+    private static VersionStamp Stamp(ContentVersion version) =>
+        new(version.ContentLink.WorkID, version.Status == VersionStatus.Published, version.Saved, version.SavedBy);
 }

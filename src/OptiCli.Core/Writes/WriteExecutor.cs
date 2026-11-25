@@ -502,6 +502,11 @@ public sealed partial class WriteExecutor(
         // parent (a plan's planned parent) is checked against the planned parent's type.
         var parentKind = op.PlannedParentType is { } planned && TryType(planned) is { } plannedType ? CatalogKinds.FromBase(plannedType.Base) : parent.Catalog?.Kind;
         CatalogPlacement.Check(type.Name, CatalogKinds.FromBase(type.Base), parentKind, op.Parent ?? op.For!);
+        // Not under a dry run's stand-in for a planned parent, whose catalog may be another.
+        if (CatalogKinds.FromBase(type.Base) is not null && parent.Catalog is { } parentCatalog && op.PlannedParentType is null)
+        {
+            await RequireCatalogLanguageAsync(parentCatalog, session.Language(op.Lang)?.Code, op.Parent!, cancellationToken);
+        }
         if (type.Kind == ContentKind.Media)
         {
             throw new UsageException($"{type.Name} is a media type; created this way it would be a media item without a file.",
@@ -717,7 +722,12 @@ public sealed partial class WriteExecutor(
 
     private async Task<WriteOutcome<WriteOutput>> TranslateBranchAsync(TranslateOperation op, bool dryRun, CancellationToken cancellationToken)
     {
-        var target = await EditableAsync(op.Ref, cancellationToken);
+        var resolved = await ResolveAsync(op.Ref, "ref", cancellationToken);
+        if (resolved.Catalog is { } catalog)
+        {
+            return await CatalogTranslateAsync(op, resolved, catalog, dryRun, cancellationToken);
+        }
+        var target = Editable(resolved, op.Ref);
         var language = session.Language(op.Lang) ?? throw new UsageException("translate needs --lang <code>.");
         // An existing branch is updated by a set or publish below, which check it themselves.
         var masterFirst = updateExisting && target.Header.Languages.ContainsKey(language.Id)

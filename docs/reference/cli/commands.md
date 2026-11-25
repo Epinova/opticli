@@ -57,8 +57,9 @@ with [IDE mode](serve.md#running-the-site-from-your-ide-ide-mode) on.
   settings content often isn't) is a `usage` error for `--for`, in a dry run too: use `--parent`. `upload --replace <media>` gives existing media a new file instead: a new version
   of the same media type, which must accept the extension (no `--for`, `--parent` or `--type`).
 - `translate <ref> --lang <code>` makes a language branch (`--with-blocks`: the blocks of its "For this page" folder
-  too). `translate --remove` deletes the branch with all its versions instead (not the master language, nor a start
-  page) and can't be undone: it asks on a terminal, and elsewhere is a `conflict` (exit 5) without `--confirm`.
+  too; Commerce's catalog content: see [Languages and translations](commerce.md#languages-and-translations)).
+  `translate --remove` deletes the branch with all its versions instead (not the master language, nor a start page)
+  and can't be undone: it asks on a terminal, and elsewhere is a `conflict` (exit 5) without `--confirm`.
 - `publish`, `unpublish` (takes a published branch offline, as the edit UI's expiry does), `discard` (deletes one
   unpublished version; it can't be undone), `move` and `delete` (to the recycle bin). `delete` stops when other content
   references what it deletes, unless `--ignore-references`.

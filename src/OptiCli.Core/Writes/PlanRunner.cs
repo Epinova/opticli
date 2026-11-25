@@ -576,6 +576,12 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                 Warnings: [$"An earlier operation enables the language '{language}', which the database doesn't have enabled yet, so the site checks this one when the plan runs."],
                 Guid: step.Operation.ContentGuid), null);
         }
+        if (await CatalogLanguageEarlierAsync(resolved.FirstOrDefault(s => s.Index == step.Index) ?? step, steps, cancellationToken) is { } catalogLanguage)
+        {
+            return (new PlanStepResult(step.Index, step.Operation.Kind, step.Operation.Id, PlanStepStatus.Deferred,
+                Warnings: [$"Operation {catalogLanguage.Index} gives a catalog the language '{catalogLanguage.Language}' (CatalogLanguages), which this content's catalog doesn't have yet, so the site checks this one when the plan runs."],
+                Guid: step.Operation.ContentGuid), null);
+        }
         MasterOrder? order;
         try
         {
@@ -766,6 +772,39 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             .Where(s => s.Index < step.Index && s.Operation is LanguageOperation { Enabled: true })
             .SelectMany(s => ((LanguageOperation)s.Operation).Langs)
             .FirstOrDefault(code => languages.Contains(code.Trim(), StringComparer.OrdinalIgnoreCase) && session.Model.LanguageByCode(code) is not { Enabled: true });
+    }
+
+    /// <summary>
+    /// A language this step writes catalog content in (<c>create</c> below it, <c>set</c>, <c>translate</c>) that an earlier
+    /// <c>create</c> or <c>set</c> step gives a catalog (<c>CatalogLanguages</c>) and the content's catalog doesn't have yet:
+    /// the step can only be checked once that one ran (a seed plan that grows by a language). Null for anything else, also
+    /// where the catalog has the language already (a plan run again), which the step is then checked against as usual.
+    /// </summary>
+    /// <param name="step">The step with its <c>$id</c>s resolved; planned content is checked by the other rules.</param>
+    private async Task<(int Index, string Language)?> CatalogLanguageEarlierAsync(PlanStep step, IReadOnlyList<PlanStep> steps, CancellationToken cancellationToken)
+    {
+        var (reference, language) = step.Operation switch
+        {
+            SetOperation set => (set.Ref, set.Lang),
+            TranslateOperation { Remove: false } translate => (translate.Ref, translate.Lang),
+            CreateOperation create => (create.Parent, create.Lang),
+            _ => (null, null),
+        };
+        if (reference is null || reference.StartsWith('$') || string.IsNullOrWhiteSpace(language) || !executor.HasCatalogTypes)
+        {
+            return null;
+        }
+        var giving = steps.FirstOrDefault(s => s.Index < step.Index
+            && (s.Operation switch { CreateOperation c => c.Properties, SetOperation s2 => s2.Properties, _ => null })?["CatalogLanguages"] is System.Text.Json.Nodes.JsonArray codes
+            && codes.Any(c => c is System.Text.Json.Nodes.JsonValue v && v.TryGetValue<string>(out var code) && code.Trim().Equals(language.Trim(), StringComparison.OrdinalIgnoreCase)));
+        if (giving is null)
+        {
+            return null;
+        }
+        // As the site has it now, not as an earlier run of this executor found it.
+        return await executor.CatalogRefAsync(reference, cancellationToken, fresh: true) is { CatalogLanguages: { } has } && !has.Contains(language.Trim(), StringComparer.OrdinalIgnoreCase)
+            ? (giving.Index, language.Trim())
+            : null;
     }
 
     /// <summary>

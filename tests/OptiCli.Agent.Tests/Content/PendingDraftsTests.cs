@@ -138,6 +138,49 @@ public class PendingDraftsTests
         Assert.False(PendingDrafts.SavedBy(null, ""));
     }
 
+    /// <summary>
+    /// Commerce 14's own copy of catalog content in another language of its catalog: the branch's first version, saved by
+    /// system (or nobody, in its cached list) with the item's last modified time, which the master language's publish
+    /// (version 7) set.
+    /// </summary>
+    [Theory]
+    [InlineData("system")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void Commerces_own_copy_of_a_catalog_language_is_nobodys_draft(string? savedBy)
+    {
+        VersionStamp[] others = [Version(7, "opticli", published: true)];
+        var copy = new VersionStamp(8, false, others[0].Saved, savedBy);
+
+        Assert.True(PendingDrafts.CommerceLanguageCopy(copy, [copy, Version(9, "opticli")], others));
+        // Also once the master language is published again: the copy keeps the time it was made with.
+        Assert.True(PendingDrafts.CommerceLanguageCopy(copy, [copy], [others[0] with { Published = false }, Version(10, "opticli", published: true)]));
+        // A copy made after a publish in another language (version 9) has that publish's time, a few ms apart.
+        var after = new VersionStamp(10, false, Version(9, "opticli").Saved.AddMilliseconds(4), savedBy);
+        Assert.True(PendingDrafts.CommerceLanguageCopy(after, [after], [Version(7, "opticli", published: true), Version(9, "opticli", published: true)]));
+    }
+
+    [Fact]
+    public void A_draft_in_that_language_is_not_Commerces_copy()
+    {
+        VersionStamp[] others = [Version(7, "opticli", published: true)];
+        var copy = new VersionStamp(8, false, others[0].Saved, "system");
+
+        // An editor's save into the copy records the editor and the time of the save.
+        Assert.False(PendingDrafts.CommerceLanguageCopy(copy with { SavedBy = "editor@example.com" }, [copy], others));
+        Assert.False(PendingDrafts.CommerceLanguageCopy(copy with { SavedBy = "", Saved = others[0].Saved.AddMinutes(5) }, [copy], others));
+        // A user called System isn't Commerce.
+        Assert.False(PendingDrafts.CommerceLanguageCopy(copy with { SavedBy = "System" }, [copy], others));
+        // A version after the branch's first is someone's, a job's too, whatever its time.
+        var later = new VersionStamp(9, false, others[0].Saved, "");
+        Assert.False(PendingDrafts.CommerceLanguageCopy(later, [copy, later], others));
+        // Published, it is no draft; a time no version before it has is not Commerce's copy, nor is a later version's.
+        Assert.False(PendingDrafts.CommerceLanguageCopy(copy with { Published = true }, [copy], others));
+        Assert.False(PendingDrafts.CommerceLanguageCopy(copy, [copy], [Version(10, "opticli", published: true)]));
+        Assert.False(PendingDrafts.CommerceLanguageCopy(copy, [copy], [new VersionStamp(12, true, copy.Saved, "opticli")]));
+        Assert.False(PendingDrafts.CommerceLanguageCopy(copy, [copy], []));
+    }
+
     [Fact]
     public void An_unconfirmed_publish_is_a_conflict_carrying_the_draft()
     {

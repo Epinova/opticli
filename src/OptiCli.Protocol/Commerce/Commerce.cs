@@ -41,6 +41,10 @@ public sealed record CatalogRefsResponse(IReadOnlyList<CatalogRef> Refs);
 /// <param name="MasterLanguage">Its master language; null for the root.</param>
 /// <param name="Languages">The languages it exists in.</param>
 /// <param name="Version">Its published version (or the latest, when it was never published).</param>
+/// <param name="CatalogLanguages">
+/// The languages of its catalog (a catalog's own): the default language and <c>CatalogLanguages</c>, the only ones Commerce
+/// keeps catalog content in. Null for the catalog root.
+/// </param>
 public sealed record CatalogRef(
     string Input,
     bool Found,
@@ -53,7 +57,8 @@ public sealed record CatalogRef(
     string? Parent = null,
     string? MasterLanguage = null,
     IReadOnlyList<string>? Languages = null,
-    int? Version = null);
+    int? Version = null,
+    IReadOnlyList<string>? CatalogLanguages = null);
 
 /// <summary>What catalog content is, as Commerce's content types say (and <c>tblContentType.Base</c> records).</summary>
 [ValueSetName("CatalogKind")]

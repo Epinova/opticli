@@ -338,6 +338,10 @@ none of this works. Everything goes through the running site; catalog content is
   `catalog-root`, nodes and entries below a catalog or node, CMS content never below catalog content (refused).
   A CMS page's reference property, ContentArea or reference list takes catalog refs as values, beside CMS refs:
   `opticli set 9 FeaturedProduct=code:P-1`, `--values '{"MainContentArea": [{"ref": "code:P-1"}, {"ref": "123"}]}'`.
+- **Languages:** a catalog's are its `DefaultLanguage` and `--values '{"CatalogLanguages": ["en", "sv"]}'` (on
+  `create`, or `set catalog:Fashion` adds one). Translate: `opticli translate code:women --lang sv DisplayName=Dam
+  --publish` (the name is shared by all languages: translate `DisplayName`); `commerce get code:women --lang sv`
+  reads it.
 - **Product images:** a catalog item's images are its `CommerceMediaCollection`: upload the image to a media folder
   (`opticli upload shirt.png --parent <folder>`; `--for` a catalog item is refused, it has no "For this page" folder),
   then `opticli set code:P-1 --values '{"CommerceMediaCollection": ["<media ref>"]}'` (the whole list; an item can be

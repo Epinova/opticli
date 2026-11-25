@@ -44,7 +44,16 @@ internal static class ReadOperation
 
         var language = Language(locator.LoadAnyLanguage(link), lang);
         var versionLink = link.WorkID > 0 ? link : SelectVersion(locator, link, language, version);
-        return call.RequireRead(versionLink is null ? Load(loader, link, language) : LoadVersion(loader, versions, versionLink));
+        var content = versionLink is null ? Load(loader, link, language) : LoadVersion(loader, versions, versionLink);
+        if (versionLink is null && !string.IsNullOrEmpty(content.ContentLink.ProviderName) && content is IVersionable { Status: not VersionStatus.Published }
+            && versions.LoadCommonDraft(link.ToReferenceWithoutVersion(), (content as ILocale)?.Language?.Name ?? "") is { ContentLink.WorkID: > 0 } draft)
+        {
+            // Commerce 15 loads catalog content in a language never published with the values it serves in that language
+            // (none of the draft's), though its version is the draft's (ContentReader.PrimaryVersion); the version itself,
+            // loaded by its id, has them.
+            content = LoadVersion(loader, versions, draft.ContentLink);
+        }
+        return call.RequireRead(content);
     }
 
     /// <summary>Null for the primary version; otherwise the version to load.</summary>

@@ -38,7 +38,8 @@ internal sealed class SiteUnderTest : IAsyncDisposable
     /// through the edge-case fixture's <c>POST /opticli-fixture/hand-over</c>, which saves it again as that user, so the
     /// CMS records them and clears its cached version list. On a site without the fixture, CMS 12 gets the change in SQL
     /// (its version list isn't cached after the agent's save); CMS 13 keeps the list cached after the agent's own save
-    /// until the CMS changes the content again, so a change in SQL wouldn't reach the agent there.
+    /// until the CMS changes the content again, so a change in SQL wouldn't reach the agent there. A version of Commerce's
+    /// catalog content (<c>1_2_CatalogContent</c>) is handed over by the Commerce test sites' fixture of the same name only.
     /// </summary>
     /// <param name="user">The other user, <see cref="SomeoneElse"/> by default.</param>
     /// <param name="ready">
@@ -61,7 +62,8 @@ internal sealed class SiteUnderTest : IAsyncDisposable
                 throw new InvalidOperationException($"POST /opticli-fixture/hand-over answered {(int)response.StatusCode}: {await response.Content.ReadAsStringAsync(cancellationToken)}");
             }
         }
-        if (Session.Model.Schema.Major >= 13 || ready)
+        // Catalog content's versions (1_2_CatalogContent) are Commerce's, not the CMS's: only the Commerce fixture's endpoint.
+        if (Session.Model.Schema.Major >= 13 || ready || versionRef.Split('_', 3) is [_, _, { Length: > 0 }])
         {
             return false;
         }
