@@ -5,19 +5,30 @@
 // reference on the product. Pages for the start page, products and variants (plain HTML, no views; a product's and variant's show the
 // images of its CommerceMediaCollection), and Commerce's hierarchical catalog routing below the start page, so catalog
 // content has URLs that answer. The content comes from setup.sh's fixture.plan.json (applied with opticli) and the tests.
+// POST /opticli-fixture/hand-over (loopback only) saves a version of catalog content again as another user, for the tests
+// of someone else's draft (opticli's agent only saves as itself).
 using System.ComponentModel.DataAnnotations;
 using System.Net;
+using System.Security.Principal;
 using System.Text;
 using EPiServer.Commerce.Catalog.ContentTypes;
 using EPiServer.Commerce.Catalog.DataAnnotations;
 using EPiServer.Commerce.Routing;
+using EPiServer.Data.Entity;
+using EPiServer.DataAccess;
 using EPiServer.Framework;
 using EPiServer.Framework.DataAnnotations;
 using EPiServer.Framework.Initialization;
+using EPiServer.Security;
+using EPiServer.ServiceLocation;
 using EPiServer.Web;
 using EPiServer.Web.Mvc;
 using EPiServer.Web.Routing;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace OptiCliCommerce;
 
@@ -116,6 +127,68 @@ public class CatalogRoutingFixture : IInitializableModule
 
     public void Uninitialize(InitializationEngine context)
     {
+    }
+}
+
+/// <summary>
+/// <c>POST /opticli-fixture/hand-over?version=&lt;id_version_CatalogContent&gt;&amp;user=&lt;name&gt;</c> from the machine
+/// itself: saves that version of catalog content again, unchanged and as the same version, as <c>user</c>, so it becomes
+/// that user's draft the way an editor's save makes it (Commerce records the user and clears its cached version list).
+/// The tests of someone else's draft use it, as the edge-case site's fixture of the same name; opticli's agent only saves
+/// as itself.
+/// </summary>
+[InitializableModule]
+public class HandOverFixture : IConfigurableModule
+{
+    public const string Path = "/opticli-fixture/hand-over";
+
+    public void ConfigureContainer(ServiceConfigurationContext context) =>
+        context.Services.AddTransient<IStartupFilter, Endpoint>();
+
+    public void Initialize(InitializationEngine context)
+    {
+    }
+
+    public void Uninitialize(InitializationEngine context)
+    {
+    }
+
+    private sealed class Endpoint : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            app.Use(async (context, nextMiddleware) =>
+            {
+                if (!context.Request.Path.Equals(Path, StringComparison.OrdinalIgnoreCase))
+                {
+                    await nextMiddleware();
+                    return;
+                }
+                if (!HttpMethods.IsPost(context.Request.Method) || context.Connection.RemoteIpAddress is not { } address || !IPAddress.IsLoopback(address)
+                    || !ContentReference.TryParse(context.Request.Query["version"], out var version) || version.WorkID <= 0
+                    || context.Request.Query["user"].ToString() is not { Length: > 0 } user)
+                {
+                    context.Response.StatusCode = StatusCodes.Status404NotFound;
+                    return;
+                }
+                var repository = context.RequestServices.GetRequiredService<IContentRepository>();
+                var accessor = context.RequestServices.GetRequiredService<IPrincipalAccessor>();
+                var principal = accessor.Principal;
+                accessor.Principal = new GenericPrincipal(new GenericIdentity(user), ["WebEditors"]);
+                try
+                {
+                    var content = (IContent)((IReadOnly)repository.Get<IContent>(version)).CreateWritableClone();
+                    ((IChangeTrackable)content).ChangedBy = user;
+                    repository.Save(content, SaveAction.CheckOut | SaveAction.ForceCurrentVersion, AccessLevel.NoAccess);
+                }
+                finally
+                {
+                    accessor.Principal = principal;
+                }
+                context.Response.StatusCode = StatusCodes.Status204NoContent;
+            });
+            next(app);
+        };
     }
 }
 

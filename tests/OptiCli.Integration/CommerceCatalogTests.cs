@@ -2,6 +2,7 @@ using System.Globalization;
 using OptiCli.Core.Content;
 using OptiCli.Core.Errors;
 using OptiCli.Core.Writes;
+using OptiCli.Protocol;
 
 namespace OptiCli.Integration;
 
@@ -95,6 +96,104 @@ public sealed class CommerceCatalogTests
         Assert.Contains("No catalog content", missing.Message);
         var project = await Assert.ThrowsAsync<UsageException>(() => writes.RunAsync(new SetOperation(product.Ref!, Name: "x") { Project = "Spring" }, dryRun: false, cancellationToken));
         Assert.Contains("doesn't take a project", project.Message);
+    }
+
+    /// <summary>
+    /// A catalog in two languages, and its content translated. Commerce 14 keeps catalog content in every language of its
+    /// catalog and saves a copy of its own in each (as system), which opticli 0.36 took for someone else's draft, so every
+    /// translation needed includeDraft; Commerce 15 makes a language branch as the CMS does, which translate refused.
+    /// </summary>
+    [CommerceSiteFact]
+    public async Task Catalog_content_is_translated_and_published_in_one_step_while_another_users_draft_still_stops_it()
+    {
+        var cancellationToken = CancellationToken.None;
+        await using var site = await SiteUnderTest.ConnectAsync(cancellationToken);
+        var run = Guid.NewGuid().ToString("N")[..8];
+        var writes = new WriteExecutor(site.Session, _ => Task.FromResult(site.Agent));
+        var languages = Properties(("DefaultCurrency", "USD"), ("DefaultLanguage", "en"), ("WeightBase", "kgs"), ("LengthBase", "cm"));
+        languages["CatalogLanguages"] = new System.Text.Json.Nodes.JsonArray("en", "sv");
+        var catalog = Assert.IsType<WriteOutput>((await writes.RunAsync(new CreateOperation("catalog-root", "CatalogContent", $"opticli-it {run}", languages, Publish: true), dryRun: false, cancellationToken)).Output);
+        var women = $"code:it-{run}-women";
+        await writes.RunAsync(new CreateOperation(catalog.Ref!, "FashionNode", "Women", Properties(("Code", $"it-{run}-women"), ("Teaser", "For her")), Publish: true), dryRun: false, cancellationToken);
+        await writes.RunAsync(new CreateOperation(catalog.Ref!, "FashionNode", "Men", Properties(("Code", $"it-{run}-men"), ("Teaser", "For him")), Publish: true), dryRun: false, cancellationToken);
+        var commerce14 = (await site.Agent.SendAsync<CommerceInfo>(HttpMethod.Get, AgentRoutes.Commerce, null, cancellationToken)).Version.StartsWith("14.", StringComparison.Ordinal);
+
+        // A plan translates and publishes in one step, without includeDraft, and finds it so on its second run.
+        var plan = WritePlan.Parse($$"""
+            {"operations": [{"op": "translate", "ref": "{{women}}", "lang": "sv", "properties": {"DisplayName": "Dam", "Teaser": "För henne"}, "publish": true}]}
+            """);
+        PlanRunner Runner() => new(site.Session, writes, Path.GetTempPath());
+        Assert.Equal(PlanStepStatus.Valid, (await Runner().RunAsync(plan, dryRun: true, publishAll: false, cancellationToken)).Operations[0].Status);
+        var first = await Runner().RunAsync(plan, dryRun: false, publishAll: false, cancellationToken);
+        var translated = Assert.IsType<WriteOutput>(first.Operations[0].Result);
+        Assert.True(translated.Published);
+        Assert.Equal("sv", translated.Language);
+        Assert.Null(translated.PendingDraft);
+        // Commerce 14 had the branch already (its own copy), Commerce 15 makes it.
+        Assert.Equal(commerce14 ? true : null, translated.Existing);
+        Assert.Equal(PlanStepStatus.Unchanged, (await Runner().RunAsync(plan, dryRun: false, publishAll: false, cancellationToken)).Operations[0].Status);
+
+        // set --lang publishes a translation in one step too, where translate made the branch (Commerce 15) or not (14).
+        var men = $"code:it-{run}-men";
+        if (!commerce14)
+        {
+            await writes.RunAsync(new TranslateOperation(men, "sv"), dryRun: false, cancellationToken);
+        }
+        var set = Assert.IsType<WriteOutput>((await writes.RunAsync(new SetOperation(men, Properties(("DisplayName", "Herr")), Lang: "sv", Publish: true), dryRun: false, cancellationToken)).Output);
+        Assert.True(set.Published);
+        Assert.Null(set.PendingDraft);
+
+        // A translation saved as a draft, in a branch never published: commerce get --lang reads it (the branch's latest),
+        // not Commerce 14's copy before it. The name is the master language's, in every language.
+        var kids = Assert.IsType<WriteOutput>((await writes.RunAsync(new CreateOperation(catalog.Ref!, "FashionNode", "Kids", Properties(("Code", $"it-{run}-kids")), Publish: true), dryRun: false, cancellationToken)).Output);
+        var kidsDraft = Assert.IsType<WriteOutput>((await writes.RunAsync(new TranslateOperation(kids.Ref!, "sv", Properties: Properties(("Teaser", "Barn"))), dryRun: false, cancellationToken)).Output);
+        Assert.False(kidsDraft.Published);
+        var read = await site.Agent.SendAsync<ContentItem>(HttpMethod.Get, AgentRoutes.Read(kids.Ref!, "sv"), null, cancellationToken);
+        Assert.Equal((int.Parse(kidsDraft.Version!.Split('_')[1], CultureInfo.InvariantCulture), "Barn", "Kids"),
+            (read.Version!.Value, read.Properties!["Teaser"].Value?.GetString(), read.Name));
+
+        // A draft in a published branch.
+        var draft = Assert.IsType<WriteOutput>((await writes.RunAsync(new SetOperation(women, Properties(("Teaser", "Nytt")), Lang: "sv"), dryRun: false, cancellationToken)).Output);
+        Assert.False(draft.Published);
+
+        // Catalog content has one name, in every language: a name in sv is refused, as a language the catalog hasn't is.
+        var name = await Assert.ThrowsAsync<UsageException>(() => writes.RunAsync(new SetOperation(women, Name: "Dam", Lang: "sv"), dryRun: true, cancellationToken));
+        Assert.Contains("DisplayName", name.Message);
+        await writes.RunAsync(new CreateOperation("catalog-root", "CatalogContent", $"opticli-it {run} en",
+            Properties(("DefaultCurrency", "USD"), ("DefaultLanguage", "en"), ("WeightBase", "kgs"), ("LengthBase", "cm")), Publish: true), dryRun: false, cancellationToken);
+        var english = await Assert.ThrowsAsync<UsageException>(() => writes.RunAsync(
+            new CreateOperation($"catalog:opticli-it {run} en", "FashionNode", "Kids", Properties(("Code", $"it-{run}-kids")), Lang: "sv"), dryRun: false, cancellationToken));
+        Assert.Contains("whose languages are en", english.Message);
+        Assert.Contains("CatalogLanguages", english.Hint);
+
+        // A plan that gives that catalog sv translates into it: the dry run leaves the translation to the run.
+        await writes.RunAsync(new CreateOperation($"catalog:opticli-it {run} en", "FashionNode", "Kids", Properties(("Code", $"it-{run}-kids-en")), Publish: true), dryRun: false, cancellationToken);
+        var grow = WritePlan.Parse($$"""
+            {"operations": [
+              {"op": "set", "ref": "catalog:opticli-it {{run}} en", "properties": {"CatalogLanguages": ["en", "sv"]}, "publish": true},
+              {"op": "translate", "ref": "code:it-{{run}}-kids-en", "lang": "sv", "properties": {"DisplayName": "Barn"}, "publish": true}
+            ]}
+            """);
+        var growDry = await Runner().RunAsync(grow, dryRun: true, publishAll: false, cancellationToken);
+        Assert.Equal(PlanStepStatus.Deferred, growDry.Operations[1].Status);
+        Assert.Contains("Operation 0 gives a catalog the language 'sv'", growDry.Operations[1].Warnings![0]);
+        var grown = await Runner().RunAsync(grow, dryRun: false, publishAll: false, cancellationToken);
+        Assert.True(Assert.IsType<WriteOutput>(grown.Operations[1].Result).Published);
+        Assert.Equal(PlanStepStatus.Valid, (await Runner().RunAsync(grow, dryRun: true, publishAll: false, cancellationToken)).Operations[1].Status);
+
+        // Another user's draft in sv still stops the publish, until it is confirmed.
+        if (!await site.HandOverAsync(draft.Version!, cancellationToken))
+        {
+            // A Commerce site set up before its fixture could hand a version over: the rest is about someone else's draft.
+            return;
+        }
+        var publish = new SetOperation(women, Properties(("DisplayName", "Damer")), Lang: "sv", Publish: true);
+        var refused = await Assert.ThrowsAsync<ConflictException>(() => writes.RunAsync(publish, dryRun: false, cancellationToken));
+        var details = Assert.IsType<Core.Serve.AgentErrorDetails>(refused.Details);
+        Assert.Equal((draft.Version!.Replace("_CatalogContent", ""), SiteUnderTest.SomeoneElse), (details.Draft?.Version, details.Draft?.SavedBy));
+        var confirmed = Assert.IsType<WriteOutput>((await writes.RunAsync(publish with { IncludeDraft = true }, dryRun: false, cancellationToken)).Output);
+        Assert.True(confirmed.Published);
+        Assert.Equal(SiteUnderTest.SomeoneElse, confirmed.PendingDraft?.SavedBy);
     }
 
     private static System.Text.Json.Nodes.JsonObject Properties(params (string Name, string Value)[] values)
