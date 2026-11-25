@@ -3,6 +3,33 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.37.0 (unreleased)
+
+### Optimizely Commerce
+
+- **Price types of the site's own are no longer read as `all`.** A site can add price types to Commerce's three in
+  its settings (`EPiServer:Commerce:CatalogOptions:SalePriceTypes`, members' prices, say). opticli read every such
+  row as `"priceType": "all"`, told apart from the base price only by its amount, and `price set` of the base price
+  next to them failed ("Give validFrom", which couldn't help) or updated such a row as if it were the base price. Now a
+  site's own type is named by its key in lower case (`MEMBER` is `member`), the number of one the site no longer
+  defines as a string (`"7"`), and rows are matched by their type: `all` never names a `member` row.
+  `--price-type` (a plan's `priceType`) takes the name in any case or the number; one the site doesn't have is a
+  `usage` error that lists the site's types. Such a type takes any `--price-code` or none, kept as given (a JSON rule
+  too), up to Commerce's 256 characters. `opticli commerce` lists the site's types as `priceTypes: [{name, id,
+  description}]`. `priceType` in the output schema and the npm types is open now: `'all' | 'user' | 'group' | (string &
+  {})`.
+- **`market set` on a market without lists.** A market written with SQL, with a default currency and language but no
+  `MarketCurrencies` or `MarketLanguages` rows, failed every `market set` ("A market needs at least one currency and
+  one language"), a rename too. An existing market now keeps its lists as they are unless the change gives them, and a
+  default is checked against its list only when it has one. Commerce's save adds the default currency and language to
+  the lists, which `changes` then says (`["name", "currencies", "languages"]`).
+- **`commerce market remove <id>`** (a plan's `market` step with `"remove": true`) removes a market through
+  `IMarketService.DeleteMarket`, with `--dry-run`; `removed`, or `absent` when there is none. Commerce removes the
+  market's prices with it and takes it off payment and shipping methods, which a warning says; orders and carts keep
+  naming it. Commerce's own `DEFAULT` is refused. The undo hint of a new market is now `commerce market remove`. A
+  removal that found none has no `market`, so the npm package's `MarketResult.market` is optional now (as
+  `PriceResult.price` is): TypeScript asks for a check where code reads it.
+
 ## 0.36.0 (24 November 2026)
 
 opticli writes and reads Optimizely Commerce 14 (CMS 12) and 15 (CMS 13) sites, through the running site, so an E2E

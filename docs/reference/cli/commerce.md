@@ -130,20 +130,42 @@ quantity, sortOrder, dryRun}`: `created`, `updated` (another quantity or sort or
 
 | Command | Does |
 |---|---|
-| `commerce price set <entry> --market <id> --currency <code> --amount <n> [--price-type all\|user\|group] [--price-code <code>] [--min-quantity <n>] [--valid-from <time>] [--valid-until <time>] [--dry-run]` | makes or updates one price |
+| `commerce price set <entry> --market <id> --currency <code> --amount <n> [--price-type <type>] [--price-code <code>] [--min-quantity <n>] [--valid-from <time>] [--valid-until <time>] [--dry-run]` | makes or updates one price |
 | `commerce price remove <entry> --market <id> --currency <code> [--price-type] [--price-code] [--min-quantity] [--valid-from] [--dry-run]` | removes one price |
 | `commerce prices <entry>` | every price of the entry: `{market, currency, amount, priceType, priceCode, minQuantity, validFrom, validUntil}` |
 
 Commerce keeps prices on variants and packages; a product or bundle is a `usage` error. A price is keyed by market,
 currency, price type and code (`all`, the default, has no code; `user` takes a user name, `group` a customer price
-group), minimum quantity (default 0) and `--valid-from`: `set` makes or updates the row with that key (its amount and
-`--valid-until`), and the entry's other prices stay as they are. Without `--valid-from`, the key names the price with
+group; a type of the site's own takes any code or none, below), minimum quantity (default 0) and `--valid-from`: `set`
+makes or updates the row with that key (its amount and `--valid-until`), and the entry's other prices stay as they
+are. Without `--valid-from`, the key names the price with
 no end, the base price, and a new one starts today (UTC). A campaign price is another row, with `--valid-from` and
 `--valid-until` (an end needs a start, and comes after it). Times are UTC unless they have an offset, to the second. The
 market must exist (`not_found` lists the markets), and the currency must be one of the market's. These are checked
 before a dry run answers, as `usage` errors. The result is `{entry, code, price, status, before, dryRun}`; `before` is
 the row an update changed, and `price` is null for a removal that found nothing (`absent`). In a plan: `{"op": "price", "entry": "$dress-s", "market": "DEFAULT",
 "currency": "USD", "amount": 79}` (`priceType`, `priceCode`, `minQuantity`, `validFrom`, `validUntil`, `"remove": true`).
+
+### Price types of the site's own
+
+A site can add price types to Commerce's three in its settings, `EPiServer:Commerce:CatalogOptions:SalePriceTypes`
+(`[{"Key": "MEMBER", "Value": 3, "Description": "Members"}]`; Commerce writes them to its `PriceType` table at start).
+opticli names such a type by its key in lower case: `--price-type member` (any case) writes it, its number
+(`--price-type 3`) too, and `commerce prices` shows `"priceType": "member"`. `commerce` lists the site's types as
+`priceTypes: [{name, id, description}]`. A key that would read as another name (`all`, a number) is named by its number,
+and a row whose type the site no longer defines shows its number as a string (`"7"`); `price remove --price-type 7`
+removes such a row. A type the site doesn't have is a `usage` error that lists the site's types.
+
+Rows are told apart by their type: the base price (`all`) never names a `member` row with the same market, currency,
+quantity and start. A type of the site's own takes any price code, or none: the code is kept as given (only the ends
+are trimmed), so a site that keeps a rule there can write it as JSON (`--price-code '{"tier": "gold"}'`). Commerce keeps
+at most 256 characters; a longer code is a `usage` error before a dry run answers. The schema's `priceType` is open:
+`all`, `user`, `group`, or the site's own name.
+
+```sh
+opticli commerce price set code:P-1001-S --market DEFAULT --currency USD --amount 69 --price-type member
+opticli commerce price set code:P-1001-S --market DEFAULT --currency USD --amount 59 --price-type outlet --price-code '{"tier": "clearance"}'
+```
 
 ## Warehouses and stock
 
@@ -167,6 +189,7 @@ code, stock, status, before, dryRun}`. In a plan: `{"op": "warehouse", "code": "
 | Command | Does |
 |---|---|
 | `commerce market set <id> [--name] [--enabled] [--currencies <a,b>] [--default-currency] [--languages <a,b>] [--default-language] [--countries <a,b>] [--description] [--prices-include-tax] [--dry-run]` | makes or changes a market |
+| `commerce market remove <id> [--dry-run]` | removes a market, and Commerce its prices |
 | `commerce markets` | the markets: `{id, name, enabled, defaultCurrency, currencies, defaultLanguage, languages, countries, description, pricesIncludeTax}` |
 
 A market id is 1 to 8 letters, digits, `-` or `_`; Commerce comes with `DEFAULT`. A new market needs `--currencies` and
@@ -178,6 +201,23 @@ value. The result is `{market, status, changes, dryRun}`. In a plan: `{"op": "ma
 "currencies": ["SEK", "NOK"], "languages": ["en"], "countries": ["SWE", "NOR"]}` (`name`, `enabled`, `defaultCurrency`, `defaultLanguage`,
 `description`, `pricesIncludeTax`).
 
+An existing market keeps its lists unless the change gives them, also when they are empty. Only SQL makes such a market
+(a `Market` row without `MarketCurrencies` or `MarketLanguages` rows): Commerce reads its lists as they are, empty, and
+doesn't take the defaults for them, so the market offers no currency or language in its lists until it is saved.
+Commerce's own save (`IMarketService`, the admin UI, opticli) always adds the default currency and language to the
+lists. So `market set <id> --name ...` on such a market saves the defaults in its lists too, and `changes` says so
+(`["name", "currencies", "languages"]`). A default is checked against its list only when the market has one, or a list
+is given.
+
+`market remove` removes a market through `IMarketService.DeleteMarket`. Commerce removes the market's prices with it,
+in every catalog, and takes it off the payment and shipping methods that name it (its database's foreign keys cascade);
+orders and carts keep naming the market, and a catalog entry's excluded markets keep its id. A dry run says what it
+would remove; Commerce can't count the market's prices short of reading every entry's, so the result doesn't say how
+many (a warning says that they go). `DEFAULT` is Commerce's own, which it falls back to, and is a `usage` error: turn it
+off with `market set DEFAULT --enabled false` instead. Nothing to remove is `absent`, with no `market`. The removal
+takes only the id (another field is a `usage` error). In a plan: `{"op": "market", "market": "NORDIC", "remove":
+true}`.
+
 A catalog belongs to every site unless its `Sites` property names some: `opticli set catalog:Fashion Sites=...`.
 
 ## Reads
@@ -187,7 +227,7 @@ tree`. `get`, `children` and `tree` read the CMS database, where it isn't: given
 
 | Command | Shows |
 |---|---|
-| `commerce` | `{version, catalogRoot, catalogRootGuid, catalogs: [{ref, guid, name}]}` |
+| `commerce` | `{version, catalogRoot, catalogRootGuid, catalogs: [{ref, guid, name}], priceTypes: [{name, id, description}]}`: `priceTypes` are Commerce's three (`all` 0, `user` 1, `group` 2) and [the site's own](#price-types-of-the-sites-own) |
 | `commerce get <ref> [--lang <code>]` | one catalog item as the site loads it: `ref`, `guid`, `name`, `type`, `kind` (`catalog`, `node`, `product`, `variation`, `bundle`, `package`), `language`, `masterLanguage`, `languages`, `status`, `parent`, `startPublish`, `saved`, `url`, and every property `{type, value}` (the model's and Commerce's: `Code`, `DisplayName`, `SeoUri`, `CommerceMediaCollection`, ...); the published version, else the latest |
 | `commerce children [<ref>] [--limit <n>]` | `{parent, children, more}`: the catalogs below the root (the default), the nodes and entries below a catalog or node, also the entries a node has as an extra category; each `{ref, guid, name, type, kind, code, parent, masterLanguage, languages, version}`. At most `--limit` (200) |
 | `commerce tree [<ref>] [--depth <n>]` | depth first, each `{depth, ref, guid, name, type, kind, code}`: the item and `--depth` (3) levels below it |

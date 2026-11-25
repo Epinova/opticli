@@ -948,9 +948,9 @@ export interface CommercePriceSetOptions extends CommonOptions {
   currency: string;
   /** The unit price. */
   amount: string;
-  /** Who it is for: all (default), user (a user name as --price-code) or group (a customer price group as --price-code). */
+  /** Who it is for: all (default), user (a user name as --price-code), group (a customer price group as --price-code), or a price type of the site's own, by name or number (`opticli commerce` lists them as priceTypes). */
   priceType?: string;
-  /** The user name or price group of a user or group price. */
+  /** The user name or price group of a user or group price; for a type of the site's own, what the site keeps there (any text, or none). */
   priceCode?: string;
   /** It applies from this quantity on (default 0). */
   minQuantity?: string;
@@ -968,9 +968,9 @@ export interface CommercePriceRemoveOptions extends CommonOptions {
   market: string;
   /** ISO 4217 code: USD, EUR, SEK. */
   currency: string;
-  /** Who it is for: all (default), user (a user name as --price-code) or group (a customer price group as --price-code). */
+  /** Who it is for: all (default), user (a user name as --price-code), group (a customer price group as --price-code), or a price type of the site's own, by name or number (`opticli commerce` lists them as priceTypes). */
   priceType?: string;
-  /** The user name or price group of a user or group price. */
+  /** The user name or price group of a user or group price; for a type of the site's own, what the site keeps there (any text, or none). */
   priceCode?: string;
   /** It applies from this quantity on (default 0). */
   minQuantity?: string;
@@ -1036,6 +1036,12 @@ export interface CommerceMarketSetOptions extends CommonOptions {
   description?: string;
   /** Whether its prices include tax (a new one's don't). `false` passes `--prices-include-tax false`; left out, the setting saved for the project decides. */
   pricesIncludeTax?: boolean;
+  /** Validate and show the before/after diff without saving anything. */
+  dryRun?: boolean;
+}
+
+/** Options of `opticli commerce market remove`. */
+export interface CommerceMarketRemoveOptions extends CommonOptions {
   /** Validate and show the before/after diff without saving anything. */
   dryRun?: boolean;
 }

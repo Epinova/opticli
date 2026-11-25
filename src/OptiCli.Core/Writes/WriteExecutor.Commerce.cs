@@ -71,8 +71,12 @@ public sealed partial class WriteExecutor
     internal async Task<WriteOutcome<MarketResult>> MarketAsync(MarketOperation op, bool dryRun, CancellationToken cancellationToken)
     {
         var outcome = await MarketCoreAsync(op, dryRun, cancellationToken);
+        if (op.Remove || outcome.Output.Market is not { } market)
+        {
+            return outcome;
+        }
         // The agent takes any culture .NET knows; one the CMS hasn't enabled matches no content's language yet.
-        var disabled = outcome.Output.Market.Languages.Where(code => session.Model.LanguageByCode(code) is not { Enabled: true }).ToList();
+        var disabled = market.Languages.Where(code => session.Model.LanguageByCode(code) is not { Enabled: true }).ToList();
         return disabled.Count == 0 ? outcome : outcome with
         {
             Warnings = [.. outcome.Warnings, $"The CMS hasn't enabled {string.Join(", ", disabled)}: the market's content in that language shows only once it is (opticli languages enable {string.Join(" ", disabled)})."],
@@ -91,6 +95,7 @@ public sealed partial class WriteExecutor
             Countries = op.Countries,
             Description = op.Description,
             PricesIncludeTax = op.PricesIncludeTax,
+            Remove = op.Remove,
             DryRun = dryRun,
         }, op, cancellationToken);
 
@@ -130,7 +135,9 @@ internal static class CommerceWarnings
     {
         RelationResult { Status: CommerceWriteStatus.Unchanged } or PriceResult { Status: CommerceWriteStatus.Unchanged } or WarehouseResult { Status: CommerceWriteStatus.Unchanged }
             or InventoryResult { Status: CommerceWriteStatus.Unchanged } or MarketResult { Status: CommerceWriteStatus.Unchanged } => ["Nothing changed: it is already as asked."],
-        RelationResult { Status: CommerceWriteStatus.Absent } or PriceResult { Status: CommerceWriteStatus.Absent } => ["Nothing to remove: there is none."],
+        RelationResult { Status: CommerceWriteStatus.Absent } or PriceResult { Status: CommerceWriteStatus.Absent } or MarketResult { Status: CommerceWriteStatus.Absent } => ["Nothing to remove: there is none."],
+        MarketResult { Status: CommerceWriteStatus.Removed, Market: { } market } =>
+            [$"Commerce removes a market's prices with it, in every catalog, and takes it off the payment and shipping methods that name it; orders and carts keep naming {market.Id}."],
         _ => [],
     };
 }

@@ -127,8 +127,8 @@ internal static class CommerceCommand
         var market = new Option<string>("--market") { Description = "The market's id (DEFAULT; `opticli commerce markets`).", Required = true, HelpName = "id" };
         var currency = new Option<string>("--currency") { Description = "ISO 4217 code: USD, EUR, SEK.", Required = true, HelpName = "code" };
         var amount = new Option<decimal?>("--amount") { Description = "The unit price.", Required = !remove, HelpName = "n" };
-        var priceType = new Option<string?>("--price-type") { Description = "Who it is for: all (default), user (a user name as --price-code) or group (a customer price group as --price-code).", HelpName = "all|user|group" };
-        var priceCode = new Option<string?>("--price-code") { Description = "The user name or price group of a user or group price.", HelpName = "code" };
+        var priceType = new Option<string?>("--price-type") { Description = "Who it is for: all (default), user (a user name as --price-code), group (a customer price group as --price-code), or a price type of the site's own, by name or number (`opticli commerce` lists them as priceTypes).", HelpName = "type" };
+        var priceCode = new Option<string?>("--price-code") { Description = "The user name or price group of a user or group price; for a type of the site's own, what the site keeps there (any text, or none).", HelpName = "code" };
         var minQuantity = new Option<decimal?>("--min-quantity") { Description = "It applies from this quantity on (default 0).", HelpName = "n" };
         var validFrom = new Option<string?>("--valid-from") { Description = "When it starts (UTC unless it has an offset), part of the key. Default: the price with the rest of the key that has no end (the base price); a new one starts today.", HelpName = "time" };
         var validUntil = new Option<string?>("--valid-until") { Description = "When it ends (UTC unless it has an offset); needs --valid-from. Default: no end.", HelpName = "time" };
@@ -307,7 +307,7 @@ internal static class CommerceCommand
 
     private static Command Market(GlobalOptions options)
     {
-        var command = new Command("market", "Make or change a market.");
+        var command = new Command("market", "Make, change or remove a market.");
         var id = new Argument<string>("id") { Description = "The market's id: 1 to 8 letters or digits (DEFAULT, US, NORDIC)." };
         var name = new Option<string?>("--name") { Description = "Its name (a new one's default: the id).", HelpName = "name" };
         var enabled = new Option<bool?>("--enabled") { Description = "Whether it is enabled (a new one is).", HelpName = "true|false" };
@@ -321,8 +321,10 @@ internal static class CommerceCommand
         var write = new WriteOptions();
         var set = new Command("set", """
             Make a market, or change one, by its id (Commerce's IMarketService). What isn't given keeps its value; the
-            lists given replace the market's. Already so is `unchanged`; changes lists what changed. In a plan: {"op":
-            "market", "market": "NORDIC", "currencies": ["SEK", "NOK"], "languages": ["en", "sv"], "countries": ["SWE", "NOR"]}.
+            lists given replace the market's, and an existing market's lists stay as they are (empty ones too) unless
+            given. Commerce's save adds the default currency and language to the lists. Already so is `unchanged`; changes
+            lists what changed. In a plan: {"op": "market", "market": "NORDIC", "currencies": ["SEK", "NOK"], "languages":
+            ["en", "sv"], "countries": ["SWE", "NOR"]}.
             Example: opticli commerce market set NORDIC --name Nordic --currencies SEK,NOK --languages en,sv --countries SWE,NOR
             """);
         set.Arguments.Add(id);
@@ -350,6 +352,27 @@ internal static class CommerceCommand
             return WriteOptions.Result(await context.Writes(session).RunAsync(operation, parse.GetValue(write.DryRun), cancellationToken));
         });
         command.Subcommands.Add(set);
+
+        var removeId = new Argument<string>("id") { Description = "The market's id." };
+        var removeWrite = new WriteOptions();
+        var remove = new Command("remove", """
+            Remove a market by its id (Commerce's IMarketService). Commerce removes the market's prices with it, in every
+            catalog, and takes it off payment and shipping methods; orders and carts keep naming it. Commerce's own DEFAULT
+            can't be removed (turn it off with market set --enabled false). Nothing to remove is `absent`. In a plan:
+            {"op": "market", "market": "NORDIC", "remove": true}.
+            Example: opticli commerce market remove NORDIC
+            """);
+        remove.Arguments.Add(removeId);
+        remove.Options.Add(removeWrite.DryRun);
+        WriteCommands.Mark(remove);
+        CommandRunner.SetHandler<MarketResult>(remove, options, async (context, cancellationToken) =>
+        {
+            var parse = context.Parse;
+            await using var session = await context.OpenContentAsync(cancellationToken);
+            var operation = new MarketOperation(parse.GetValue(removeId)!) { Remove = true };
+            return WriteOptions.Result(await context.Writes(session).RunAsync(operation, parse.GetValue(removeWrite.DryRun), cancellationToken));
+        });
+        command.Subcommands.Add(remove);
         return command;
     }
 

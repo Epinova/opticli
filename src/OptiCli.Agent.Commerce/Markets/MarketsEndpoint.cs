@@ -23,6 +23,10 @@ internal static class MarketsEndpoint
         var markets = request.Context.RequestServices.GetRequiredService<IMarketService>();
         var existing = markets.GetMarket(new MarketId(id));
         var before = existing is null ? null : ToMarket(existing);
+        if (body.Remove)
+        {
+            return Remove(markets, body, before);
+        }
         var wanted = Wanted(id, body, before);
         // Before a dry run answers: Commerce refuses a currency it doesn't know only when saving (a foreign key).
         RequireKnown(wanted.Currencies, KnownCurrencies());
@@ -33,6 +37,12 @@ internal static class MarketsEndpoint
             throw AgentException.Usage($"The market {named.MarketId.Value} is named '{named.MarketName}' already: market names are unique.", "Give this market another name (--name).");
         }
         var changes = Changes(before, wanted);
+        if (before is not null && changes.Count > 0)
+        {
+            // Commerce's save puts the defaults in the lists (a market written with SQL may lack them): say so.
+            wanted = WithDefaultsListed(wanted);
+            changes = Changes(before, wanted);
+        }
         var status = before is null ? CommerceWriteStatus.Created : changes.Count == 0 ? CommerceWriteStatus.Unchanged : CommerceWriteStatus.Updated;
         if (!body.DryRun && status != CommerceWriteStatus.Unchanged)
         {
@@ -59,31 +69,72 @@ internal static class MarketsEndpoint
         return new MarketResult(wanted, status, changes, body.DryRun);
     }
 
+    /// <summary>
+    /// A removal (<see cref="IMarketService.DeleteMarket"/>). Commerce's database removes the market's prices (in every
+    /// catalog), and its place in payment and shipping methods, with it; orders and carts keep its id. Commerce's API can't
+    /// count a market's prices short of reading every entry's (a catalog's list is refused, a node's has only its own
+    /// entries), so the result doesn't say how many.
+    /// </summary>
+    private static MarketResult Remove(IMarketService markets, MarketRequest body, CommerceMarket? before)
+    {
+        RequireOnlyId(body);
+        if (string.Equals(body.Id?.Trim(), MarketId.Default.Value, StringComparison.OrdinalIgnoreCase))
+        {
+            throw AgentException.Usage($"{MarketId.Default.Value} is Commerce's own market, which it falls back to: it can't be removed.",
+                $"Turn it off instead: opticli commerce market set {MarketId.Default.Value} --enabled false.");
+        }
+        if (before is null)
+        {
+            return new MarketResult(null, CommerceWriteStatus.Absent, [], body.DryRun);
+        }
+        if (!body.DryRun)
+        {
+            markets.DeleteMarket(new MarketId(before.Id));
+        }
+        return new MarketResult(before, CommerceWriteStatus.Removed, [], body.DryRun);
+    }
+
+    /// <exception cref="AgentException">A removal that gives more than the id.</exception>
+    internal static void RequireOnlyId(MarketRequest body)
+    {
+        if (body.Name is not null || body.Enabled is not null || body.Currencies is not null || body.DefaultCurrency is not null || body.Languages is not null
+            || body.DefaultLanguage is not null || body.Countries is not null || body.Description is not null || body.PricesIncludeTax is not null)
+        {
+            throw AgentException.Usage("A market's removal takes only its id: give the other fields to market set, or remove the market.");
+        }
+    }
+
     public static MarketList List(AgentRequest request) =>
         new(request.Context.RequestServices.GetRequiredService<IMarketService>().GetAllMarkets()
             .Select(ToMarket).OrderBy(m => m.Id, StringComparer.OrdinalIgnoreCase).ToList());
 
-    /// <summary>What the market should be: what the request gives, else what it has. A new market needs currencies and languages.</summary>
-    /// <exception cref="AgentException">A value that isn't one, or a default not in its list.</exception>
+    /// <summary>
+    /// What the market should be: what the request gives, else what it has. A new market needs currencies and languages;
+    /// an existing one keeps its lists as they are, empty too (a market written with SQL), unless the request gives them.
+    /// </summary>
+    /// <exception cref="AgentException">A value that isn't one, an empty list, or a default not in its list.</exception>
     internal static CommerceMarket Wanted(string id, MarketRequest body, CommerceMarket? before)
     {
-        var currencies = body.Currencies is { } givenCurrencies ? Distinct(givenCurrencies.Select(Currency)) : before?.Currencies.ToList();
-        var languages = body.Languages is { } givenLanguages ? Distinct(givenLanguages.Select(Language)) : before?.Languages.ToList();
-        if (currencies is not { Count: > 0 } || languages is not { Count: > 0 })
+        if (body.Currencies is { Count: 0 } || body.Languages is { Count: 0 })
         {
-            throw AgentException.Usage(before is null
-                ? $"The market {id} doesn't exist yet: give its currencies and languages (--currencies USD,EUR --languages en,sv)."
-                : "A market needs at least one currency and one language.");
+            throw AgentException.Usage("A market needs at least one currency and one language: give them, or leave them out to keep the market's.");
         }
+        var currencies = body.Currencies is { } givenCurrencies ? Distinct(givenCurrencies.Select(Currency)) : before?.Currencies.ToList() ?? [];
+        var languages = body.Languages is { } givenLanguages ? Distinct(givenLanguages.Select(Language)) : before?.Languages.ToList() ?? [];
+        if (before is null && (currencies.Count == 0 || languages.Count == 0))
+        {
+            throw AgentException.Usage($"The market {id} doesn't exist yet: give its currencies and languages (--currencies USD,EUR --languages en,sv).");
+        }
+        // An empty list (a market written with SQL) has nothing to check a default against; Commerce's save adds it there.
         var defaultCurrency = body.DefaultCurrency is { } currency ? Currency(currency)
-            : before is not null && currencies.Contains(before.DefaultCurrency) ? before.DefaultCurrency : currencies[0];
+            : before is not null && (currencies.Count == 0 || currencies.Contains(before.DefaultCurrency)) ? before.DefaultCurrency : currencies[0];
         var defaultLanguage = body.DefaultLanguage is { } language ? Language(language)
-            : before is not null && languages.Contains(before.DefaultLanguage, StringComparer.OrdinalIgnoreCase) ? before.DefaultLanguage : languages[0];
-        if (!currencies.Contains(defaultCurrency))
+            : before is not null && (languages.Count == 0 || languages.Contains(before.DefaultLanguage, StringComparer.OrdinalIgnoreCase)) ? before.DefaultLanguage : languages[0];
+        if (currencies.Count > 0 && !currencies.Contains(defaultCurrency))
         {
             throw AgentException.Usage($"The default currency {defaultCurrency} isn't one of the market's currencies ({string.Join(", ", currencies)}).");
         }
-        if (!languages.Contains(defaultLanguage, StringComparer.OrdinalIgnoreCase))
+        if (languages.Count > 0 && !languages.Contains(defaultLanguage, StringComparer.OrdinalIgnoreCase))
         {
             throw AgentException.Usage($"The default language {defaultLanguage} isn't one of the market's languages ({string.Join(", ", languages)}).");
         }
@@ -100,6 +151,16 @@ internal static class MarketsEndpoint
             body.Description is null ? before?.Description : body.Description.Trim() is { Length: > 0 } description ? description : null,
             body.PricesIncludeTax ?? before?.PricesIncludeTax ?? false);
     }
+
+    /// <summary>
+    /// The market as Commerce saves it: its default currency and language in its lists (Commerce's save adds them). Only a
+    /// market written with SQL lacks them.
+    /// </summary>
+    internal static CommerceMarket WithDefaultsListed(CommerceMarket market) => market with
+    {
+        Currencies = market.Currencies.Contains(market.DefaultCurrency, StringComparer.OrdinalIgnoreCase) ? market.Currencies : [.. market.Currencies, market.DefaultCurrency],
+        Languages = market.Languages.Contains(market.DefaultLanguage, StringComparer.OrdinalIgnoreCase) ? market.Languages : [.. market.Languages, market.DefaultLanguage],
+    };
 
     /// <summary>The fields that differ (lists compared as sets); every field for a new market.</summary>
     internal static IReadOnlyList<string> Changes(CommerceMarket? before, CommerceMarket wanted)

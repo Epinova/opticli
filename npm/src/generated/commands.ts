@@ -17,6 +17,7 @@ import type {
   CommerceChildrenOptions,
   CommerceGetOptions,
   CommerceInventorySetOptions,
+  CommerceMarketRemoveOptions,
   CommerceMarketSetOptions,
   CommerceMarketsOptions,
   CommerceOptions,
@@ -220,6 +221,7 @@ const specs: Readonly<Record<string, Readonly<Record<string, Flag>>>> = {
   commerceWarehouseSet: { name: '--name', active: { flag: '--active', explicitFalse: true }, primary: { flag: '--primary', explicitFalse: true }, fulfillmentCenter: { flag: '--fulfillment-center', explicitFalse: true }, pickupLocation: { flag: '--pickup-location', explicitFalse: true }, deliveryLocation: { flag: '--delivery-location', explicitFalse: true }, sortOrder: '--sort-order', dryRun: '--dry-run', connection: '--connection', connectionName: '--connection-name', db: '--db' },
   commerceInventorySet: { warehouse: '--warehouse', inStock: '--in-stock', backorder: '--backorder', preorder: '--preorder', tracked: { flag: '--tracked', explicitFalse: true }, dryRun: '--dry-run', connection: '--connection', connectionName: '--connection-name', db: '--db' },
   commerceMarketSet: { name: '--name', enabled: { flag: '--enabled', explicitFalse: true }, currencies: '--currencies', defaultCurrency: '--default-currency', languages: '--languages', defaultLanguage: '--default-language', countries: '--countries', description: '--description', pricesIncludeTax: { flag: '--prices-include-tax', explicitFalse: true }, dryRun: '--dry-run', connection: '--connection', connectionName: '--connection-name', db: '--db' },
+  commerceMarketRemove: { dryRun: '--dry-run', connection: '--connection', connectionName: '--connection-name', db: '--db' },
   sql: { limit: '--limit', full: '--full', includePersonalData: '--include-personal-data', connection: '--connection', connectionName: '--connection-name', db: '--db' },
 };
 
@@ -2028,14 +2030,29 @@ export abstract class OptiCliCommands {
 
   /**
    * Make a market, or change one, by its id (Commerce's IMarketService). What isn't given keeps its value; the
-   * lists given replace the market's. Already so is `unchanged`; changes lists what changed. In a plan: {"op":
-   * "market", "market": "NORDIC", "currencies": ["SEK", "NOK"], "languages": ["en", "sv"], "countries": ["SWE", "NOR"]}.
+   * lists given replace the market's, and an existing market's lists stay as they are (empty ones too) unless
+   * given. Commerce's save adds the default currency and language to the lists. Already so is `unchanged`; changes
+   * lists what changed. In a plan: {"op": "market", "market": "NORDIC", "currencies": ["SEK", "NOK"], "languages":
+   * ["en", "sv"], "countries": ["SWE", "NOR"]}.
    * Example: opticli commerce market set NORDIC --name Nordic --currencies SEK,NOK --languages en,sv --countries SWE,NOR
    * Writes: needs the site running (`opticli serve`).
    * @param id - The market's id: 1 to 8 letters or digits (DEFAULT, US, NORDIC).
    */
   async commerceMarketSet(id: string, options?: CommerceMarketSetOptions, call?: RunOptions): Promise<MarketResult> {
     return this.#data<MarketResult>(argv(['commerce', 'market', 'set'], [id], options, specs.commerceMarketSet), call);
+  }
+
+  /**
+   * Remove a market by its id (Commerce's IMarketService). Commerce removes the market's prices with it, in every
+   * catalog, and takes it off payment and shipping methods; orders and carts keep naming it. Commerce's own DEFAULT
+   * can't be removed (turn it off with market set --enabled false). Nothing to remove is `absent`. In a plan:
+   * {"op": "market", "market": "NORDIC", "remove": true}.
+   * Example: opticli commerce market remove NORDIC
+   * Writes: needs the site running (`opticli serve`).
+   * @param id - The market's id.
+   */
+  async commerceMarketRemove(id: string, options?: CommerceMarketRemoveOptions, call?: RunOptions): Promise<MarketResult> {
+    return this.#data<MarketResult>(argv(['commerce', 'market', 'remove'], [id], options, specs.commerceMarketRemove), call);
   }
 
   /**
@@ -3177,6 +3194,15 @@ export abstract class OptiCliCommandsSync {
    */
   commerceMarketSet(id: string, options?: CommerceMarketSetOptions, call?: RunOptions): MarketResult {
     return this.#data<MarketResult>(argv(['commerce', 'market', 'set'], [id], options, specs.commerceMarketSet), call);
+  }
+
+  /**
+   * Remove a market by its id (Commerce's IMarketService). Writes: needs the site running (`opticli serve`).
+   * Blocks until opticli exits; see `OptiCliCommands.commerceMarketRemove`.
+   * @param id - The market's id.
+   */
+  commerceMarketRemove(id: string, options?: CommerceMarketRemoveOptions, call?: RunOptions): MarketResult {
+    return this.#data<MarketResult>(argv(['commerce', 'market', 'remove'], [id], options, specs.commerceMarketRemove), call);
   }
 
   /**

@@ -5,7 +5,17 @@ namespace OptiCli.Protocol;
 /// <param name="CatalogRoot">The catalog root, which catalogs are made below: <c>-1073741823__CatalogContent</c>.</param>
 /// <param name="CatalogRootGuid">The catalog root's GUID.</param>
 /// <param name="Catalogs">The catalogs, by name.</param>
-public sealed record CommerceInfo(string Version, string CatalogRoot, Guid CatalogRootGuid, IReadOnlyList<CatalogSummary> Catalogs);
+/// <param name="PriceTypes">The price types a price can have, by number: Commerce's three and the site's own.</param>
+public sealed record CommerceInfo(string Version, string CatalogRoot, Guid CatalogRootGuid, IReadOnlyList<CatalogSummary> Catalogs, IReadOnlyList<CommercePriceType> PriceTypes);
+
+/// <summary>
+/// A price type: Commerce's own (<c>all</c>, <c>user</c>, <c>group</c>), or one the site adds in its settings
+/// (<c>EPiServer:Commerce:CatalogOptions:SalePriceTypes</c>), named by its key in lower case.
+/// </summary>
+/// <param name="Name">What <c>--price-type</c> takes and a price shows (<c>member</c>); the number, as a string, for a key that would clash with another name.</param>
+/// <param name="Id">Commerce's number for it (0 to 2 for its own).</param>
+/// <param name="Description">Its description, as Commerce's PriceType table has it.</param>
+public sealed record CommercePriceType(string Name, int Id, string? Description);
 
 /// <param name="Ref">The catalog's ref (<c>-2147483646__CatalogContent</c>): its id is local to the database.</param>
 public sealed record CatalogSummary(string Ref, Guid Guid, string Name);

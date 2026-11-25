@@ -110,7 +110,7 @@ internal sealed class SchemaWrites(OutputCheck check, string scratch)
     /// <summary>
     /// Every Commerce write, dry run and real, on catalog content of its own (a catalog, a product and a variant with codes
     /// of this run), a warehouse and a market of its own. Catalog content can't be deleted with opticli, so it stays,
-    /// as the Commerce integration tests' does; the price and relation are removed again, as the battery runs.
+    /// as the Commerce integration tests' does; the price, relation and market are removed again, as the battery runs.
     /// </summary>
     private async Task CommerceAsync()
     {
@@ -132,6 +132,9 @@ internal sealed class SchemaWrites(OutputCheck check, string scratch)
         await check.Ok("commerce price remove", [pair[1]], [.. price, "--dry-run"]);
         await check.Ok("commerce price remove", [pair[1]], price);
         await check.Ok("commerce price remove", [pair[1]], price);
+        // A price type of the site's own (the Commerce test sites' MEMBER): priceType is an open set.
+        await check.Ok("commerce price set", [pair[1]], [.. price, "--amount", "9", "--price-type", "member", "--price-code", "{\"tier\":\"gold\"}"]);
+        await check.Ok("commerce price remove", [pair[1]], [.. price, "--price-type", "member", "--price-code", "{\"tier\":\"gold\"}"]);
         var warehouse = $"schema-{stamp}";
         await check.Ok("commerce warehouse set", [warehouse], ["--name", "Schema", "--dry-run"]);
         await check.Ok("commerce warehouse set", [warehouse], ["--name", "Schema", "--pickup-location", "true"]);
@@ -143,6 +146,10 @@ internal sealed class SchemaWrites(OutputCheck check, string scratch)
         await check.Ok("commerce market set", [market], ["--currencies", "USD", "--languages", "en", "--dry-run"]);
         await check.Ok("commerce market set", [market], ["--currencies", "USD", "--languages", "en", "--countries", "USA"]);
         await check.Ok("commerce market set", [market], ["--enabled", "false"]);
+        await check.Ok("commerce market remove", [market], ["--dry-run"]);
+        await check.Ok("commerce market remove", [market]);
+        await check.Ok("commerce market remove", [market]);
+        await check.Fails("commerce market remove", ["DEFAULT"], code: "usage");
         await check.Fails("commerce price set", [pair[0]], [.. price, "--amount", "1"], code: "usage");
         await check.Fails("commerce inventory set", [$"code:schema-{stamp}-none"], ["--warehouse", "default"], code: "not_found");
     }

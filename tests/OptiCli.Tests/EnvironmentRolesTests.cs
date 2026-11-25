@@ -67,6 +67,7 @@ public sealed class EnvironmentRolesTests : IDisposable
         "commerce warehouse set oslo",
         "commerce inventory set code:V-1 --warehouse default --in-stock 1",
         "commerce market set NORDIC --currencies SEK --languages en",
+        "commerce market remove NORDIC",
     ];
 
     public static TheoryData<string> WriteCommandLines() => new(WriteLines);

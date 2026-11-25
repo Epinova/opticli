@@ -277,6 +277,8 @@ export interface CommerceInfo {
   catalogRootGuid: string;
   /** The catalogs, by name. */
   catalogs: CatalogSummary[];
+  /** The price types a price can have, by number: Commerce's three and the site's own. */
+  priceTypes: CommercePriceType[];
 }
 
 /** A market (Commerce's `IMarket`). */
@@ -301,9 +303,9 @@ export interface CommercePrice {
   /** ISO 4217 code (`USD`). */
   currency: string;
   amount: number;
-  /** One of `PriceTypes`. */
-  priceType: PriceType;
-  /** The user name or price group for those types; empty for `all`. */
+  /** One of `PriceTypes`, or a price type of the site's own: its key in lower case (`member`), or its number (`"7"`) when the site no longer defines it (`priceTypes` lists the site's). */
+  priceType: PriceType | (string & {});
+  /** The user name or price group for those types, what the site keeps there for its own; empty for `all`. */
   priceCode: string;
   /** The price applies from this quantity on. */
   minQuantity: number;
@@ -311,6 +313,16 @@ export interface CommercePrice {
   validFrom: string;
   /** UTC; null: no end. */
   validUntil?: string;
+}
+
+/** A price type: Commerce's own (`all`, `user`, `group`), or one the site adds in its settings (`EPiServer:Commerce:CatalogOptions:SalePriceTypes`), named by its key in lower case. */
+export interface CommercePriceType {
+  /** What `--price-type` takes and a price shows (`member`); the number, as a string, for a key that would clash with another name. */
+  name: string;
+  /** Commerce's number for it (0 to 2 for its own). */
+  id: number;
+  /** Its description, as Commerce's PriceType table has it. */
+  description?: string;
 }
 
 /** A Commerce site, as the agent found it. */
@@ -938,9 +950,10 @@ export interface MarketList {
 }
 
 export interface MarketResult {
-  market: CommerceMarket;
+  /** The market as it is now (as it was, for a removal); null when a removal found none (`absent`). */
+  market?: CommerceMarket;
   status: CommerceWriteStatus;
-  /** The fields that changed (all of them for a new one). */
+  /** The fields that changed (all of them for a new one; none for a removal). */
   changes: string[];
   dryRun: boolean;
 }
@@ -1082,7 +1095,7 @@ export interface PriceResult {
   dryRun: boolean;
 }
 
-/** Who a price is for (Commerce's `CustomerPricing.PriceType`). */
+/** Who a price is for (Commerce's `CustomerPricing.PriceType`); a site may add its own (`CommercePriceType`). */
 export type PriceType = 'all' | 'user' | 'group';
 
 /** A dry run of `projects delete`, checked in the database: the project and the items it would take with it (their versions stay). */

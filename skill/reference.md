@@ -947,7 +947,7 @@ as opticli prints it (negative for catalogs and the root). A plan's `$id` of cat
 
 | Command | Does |
 |---|---|
-| `commerce` | `{version, catalogRoot, catalogRootGuid, catalogs}` |
+| `commerce` | `{version, catalogRoot, catalogRootGuid, catalogs, priceTypes}` (`priceTypes`: `{name, id, description}`, Commerce's three and the site's own) |
 | `commerce get <ref> [--lang]` | one catalog item as the site loads it, `url` (catalog routing), every property `{type, value}` |
 | `commerce children [<ref>] [--limit]` / `commerce tree [<ref>] [--depth]` | catalog content below it (default: the root) |
 | `commerce relations <ref>` | `children` and `parents`: `{ref, code, name, kind: variant\|bundleEntry\|packageEntry\|category, quantity, sortOrder}` |
@@ -955,16 +955,20 @@ as opticli prints it (negative for catalogs and the root). A plan's `$id` of cat
 | `commerce warehouses` / `commerce markets` | the site's warehouses / markets |
 | `create <catalog-ref> --type <CatalogType> --name ...` / `set <catalog-ref> ...` | catalog content (properties, name, lang, publish, guid) |
 | `commerce relation add <parent> <child> [--quantity] [--sort-order]`, `commerce relation remove <parent> <child>` | plan op `relation` (`parent`, `child`, `quantity`, `sortOrder`, `remove`) |
-| `commerce price set <entry> --market --currency --amount [--price-type all\|user\|group] [--price-code] [--min-quantity] [--valid-from] [--valid-until]`, `commerce price remove <entry> --market --currency [--valid-from]` | plan op `price` (`entry`, `market`, `currency`, `amount`, `priceType`, `priceCode`, `minQuantity`, `validFrom`, `validUntil`, `remove`) |
+| `commerce price set <entry> --market --currency --amount [--price-type all\|user\|group\|<site's own>] [--price-code] [--min-quantity] [--valid-from] [--valid-until]`, `commerce price remove <entry> --market --currency [--valid-from]` | plan op `price` (`entry`, `market`, `currency`, `amount`, `priceType`, `priceCode`, `minQuantity`, `validFrom`, `validUntil`, `remove`) |
 | `commerce warehouse set <code> [--name] [--active] [--primary] [--fulfillment-center] [--pickup-location] [--delivery-location] [--sort-order]` | plan op `warehouse` (`code`, ...) |
 | `commerce inventory set <entry> --warehouse <code> [--in-stock] [--backorder] [--preorder] [--tracked]` | plan op `inventory` (`entry`, `warehouse`, `inStock`, `backorder`, `preorder`, `tracked`) |
 | `commerce market set <id> [--name] [--enabled] [--currencies a,b] [--default-currency] [--languages a,b] [--default-language] [--countries a,b] [--description] [--prices-include-tax]` | plan op `market` (`market`, `currencies`, ... as arrays) |
+| `commerce market remove <id>` | plan op `market` with `"remove": true` and no other field; Commerce removes the market's prices with it; `DEFAULT` is refused |
 
 Writes print `{..., status, dryRun}` with `status` `created`, `updated`, `unchanged`, `removed` or `absent`; a price's
 and stock's also `before` (the values an update replaced), a warehouse's and market's `changes`. A price's key is
 market, currency, price type and code, minimum quantity and valid-from; without `validFrom` it is the base price (no
-end), and `validUntil` needs `validFrom`. Times are UTC unless they have an offset. Values left out keep theirs; a new
-warehouse is active, a new stock record tracked, a new market needs currencies and languages. Booleans take
+end), and `validUntil` needs `validFrom`. A price type of the site's own (its `SalePriceTypes` setting) is named by its
+key in lower case (`member`) or its number, and takes any price code or none (JSON too, up to 256 characters); `all`
+never names its rows. Times are UTC unless they have an offset. Values left out keep theirs; a new
+warehouse is active, a new stock record tracked, a new market needs currencies and languages (an existing one keeps
+its lists, empty ones too, unless given; Commerce's save adds the defaults to them). Booleans take
 `true`/`false`. A catalog needs `DefaultCurrency`, `DefaultLanguage` and `WeightBase`; Commerce makes a `Code` when a
 node or entry has none. Catalog content can't be published separately (`set --publish` instead), moved, deleted or put
 in a project, and takes no blocks or media "for" it (`upload --for`/`--parent`, `block create`, a plan's `create` with `for`: usage).

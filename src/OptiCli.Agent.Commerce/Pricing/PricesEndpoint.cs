@@ -27,14 +27,15 @@ internal static class PricesEndpoint
         var planned = body.DryRun ? body.PlannedCurrencies : null;
         var market = planned is null ? Market(services, body.Market) : FindMarket(services, body.Market);
         var marketId = market?.MarketId.Value ?? body.Market?.Trim() ?? "";
-        var key = PriceKeys.Key(marketId, body.Currency, body.PriceType, body.PriceCode, body.MinQuantity, body.ValidFrom);
+        var types = PriceTypeSet.From(services);
+        var key = PriceKeys.Key(marketId, body.Currency, body.PriceType, body.PriceCode, body.MinQuantity, body.ValidFrom, types, body.Remove);
         if (body.ValidFrom is null && body.ValidUntil is not null && !body.Remove)
         {
             throw AgentException.Usage("A price with an end (validUntil) needs its start (validFrom) too: without validFrom, a price step names the entry's price that has no end.",
                 "Give --valid-from (a plan's \"validFrom\") with --valid-until, as for a campaign price.");
         }
         var prices = services.GetRequiredService<IPriceDetailService>();
-        var rows = prices.List(entry.ContentLink.ToReferenceWithoutVersion()).Select(r => (r.PriceValueId, Price: PriceKeys.ToPrice(r))).ToList();
+        var rows = prices.List(entry.ContentLink.ToReferenceWithoutVersion()).Select(r => (r.PriceValueId, Price: PriceKeys.ToPrice(r, types))).ToList();
         var matches = rows.Where(r => PriceKeys.Matches(r.Price, key)).ToList();
         if (matches.Count > 1)
         {
@@ -77,7 +78,7 @@ internal static class PricesEndpoint
                 PriceValueId = existing?.PriceValueId ?? 0,
                 CatalogKey = new CatalogKey(entry.Code),
                 MarketId = new MarketId(wanted.Market),
-                CustomerPricing = new CustomerPricing(PriceKeys.ToCommerce(wanted.PriceType), wanted.PriceCode),
+                CustomerPricing = new CustomerPricing((CustomerPricing.PriceType)key.PriceTypeId, wanted.PriceCode),
                 ValidFrom = wanted.ValidFrom,
                 ValidUntil = wanted.ValidUntil,
                 MinQuantity = wanted.MinQuantity,
@@ -91,10 +92,12 @@ internal static class PricesEndpoint
     {
         var services = request.Context.RequestServices;
         var entry = PricedEntry(new CatalogContentFinder(services), request.Context.Request.Query["ref"].ToString(), reading: true);
+        var types = PriceTypeSet.From(services);
         var prices = services.GetRequiredService<IPriceDetailService>().List(entry.ContentLink.ToReferenceWithoutVersion())
-            .Select(PriceKeys.ToPrice)
-            .OrderBy(p => p.Market, StringComparer.OrdinalIgnoreCase).ThenBy(p => p.Currency, StringComparer.Ordinal).ThenBy(p => p.PriceType, StringComparer.Ordinal)
-            .ThenBy(p => p.PriceCode, StringComparer.Ordinal).ThenBy(p => p.MinQuantity).ThenBy(p => p.ValidFrom)
+            .Select(v => (TypeId: (int)v.CustomerPricing.PriceTypeId, Price: PriceKeys.ToPrice(v, types)))
+            .OrderBy(p => p.Price.Market, StringComparer.OrdinalIgnoreCase).ThenBy(p => p.Price.Currency, StringComparer.Ordinal).ThenBy(p => p.TypeId)
+            .ThenBy(p => p.Price.PriceCode, StringComparer.Ordinal).ThenBy(p => p.Price.MinQuantity).ThenBy(p => p.Price.ValidFrom)
+            .Select(p => p.Price)
             .ToList();
         return new PriceList(CatalogRefSyntax.Format(entry.ContentLink.ID), entry.Code, prices);
     }
@@ -131,40 +134,53 @@ internal static class PricesEndpoint
 /// <summary>A price row's key and values, apart from Commerce's types where they can be, so the rules can be tested.</summary>
 internal static class PriceKeys
 {
+    /// <summary>Commerce's <c>PriceDetail.PriceCode</c> column: a longer code is refused only when saving.</summary>
+    public const int MaxPriceCode = 256;
+
     /// <param name="Market">The market's id as Commerce has it.</param>
-    internal sealed record PriceKey(string Market, string Currency, string PriceType, string PriceCode, decimal MinQuantity, DateTime? ValidFrom);
+    /// <param name="PriceTypeId">Commerce's number for the price type.</param>
+    /// <param name="PriceType">Its name (<see cref="PriceTypeSet.Name"/>).</param>
+    internal sealed record PriceKey(string Market, string Currency, int PriceTypeId, string PriceType, string PriceCode, decimal MinQuantity, DateTime? ValidFrom);
 
-    public static PriceKey Key(IMarket market, string? currency, string? priceType, string? priceCode, decimal? minQuantity, DateTime? validFrom) =>
-        Key(market.MarketId.Value, currency, priceType, priceCode, minQuantity, validFrom);
-
+    /// <param name="types">The site's price types (default: Commerce's three).</param>
+    /// <param name="remove">A removal, which also takes the number of a type the site no longer has (to remove its rows).</param>
     /// <exception cref="AgentException">A value that isn't one.</exception>
-    public static PriceKey Key(string market, string? currency, string? priceType, string? priceCode, decimal? minQuantity, DateTime? validFrom)
+    public static PriceKey Key(string market, string? currency, string? priceType, string? priceCode, decimal? minQuantity, DateTime? validFrom,
+        PriceTypeSet? types = null, bool remove = false)
     {
         var code = currency?.Trim().ToUpperInvariant() ?? "";
         if (code.Length != 3 || !code.All(char.IsAsciiLetterUpper))
         {
             throw AgentException.Usage($"'{currency}' is not a currency: give its ISO 4217 code (USD, EUR, SEK).");
         }
-        var type = string.IsNullOrWhiteSpace(priceType) ? PriceTypes.All : priceType.Trim().ToLowerInvariant();
-        if (type is not (PriceTypes.All or PriceTypes.User or PriceTypes.Group))
-        {
-            throw AgentException.Usage($"'{priceType}' is not a price type: all, user or group.");
-        }
+        types ??= PriceTypeSet.Builtin;
+        var typeId = types.Id(priceType, remove);
+        var type = types.Name(typeId);
+        // As given but for the ends: a site's own type may keep a rule (JSON) there.
         var priceCodeValue = priceCode?.Trim() ?? "";
-        if ((type == PriceTypes.All) != (priceCodeValue.Length == 0))
+        if (typeId == PriceTypeSet.AllCustomers && priceCodeValue.Length > 0)
         {
-            throw AgentException.Usage(type == PriceTypes.All
-                ? "A price for all customers has no price code; give --price-type user or group with it."
-                : $"A {type} price needs the {(type == PriceTypes.User ? "user name" : "price group")} as its price code.");
+            throw AgentException.Usage("A price for all customers has no price code; give --price-type user or group with it, or one of the site's own price types.");
+        }
+        if (typeId is PriceTypeSet.UserName or PriceTypeSet.PriceGroup && priceCodeValue.Length == 0)
+        {
+            throw AgentException.Usage($"A {type} price needs the {(typeId == PriceTypeSet.UserName ? "user name" : "price group")} as its price code.");
+        }
+        if (priceCodeValue.Length > MaxPriceCode)
+        {
+            throw AgentException.Usage($"The price code is {priceCodeValue.Length} characters long: Commerce keeps at most {MaxPriceCode}.");
         }
         if (minQuantity is < 0)
         {
             throw AgentException.Usage("minQuantity can't be negative.");
         }
-        return new PriceKey(market, code, type, priceCodeValue, minQuantity ?? 0, validFrom is { } from ? Second(from) : null);
+        return new PriceKey(market, code, typeId, type, priceCodeValue, minQuantity ?? 0, validFrom is { } from ? Second(from) : null);
     }
 
-    /// <summary>Whether a row has the key; without a valid-from, the key names the row with no end (the base price).</summary>
+    /// <summary>
+    /// Whether a row has the key; without a valid-from, the key names the row with no end (the base price). Types compare
+    /// by name, and a name stands for one number only (<see cref="PriceTypeSet"/>): a site's own type never matches <c>all</c>.
+    /// </summary>
     public static bool Matches(CommercePrice price, PriceKey key) =>
         string.Equals(price.Market, key.Market, StringComparison.OrdinalIgnoreCase)
         && string.Equals(price.Currency, key.Currency, StringComparison.OrdinalIgnoreCase)
@@ -205,29 +221,15 @@ internal static class PriceKeys
         }
     }
 
-    public static CommercePrice ToPrice(IPriceValue value) => new(
+    public static CommercePrice ToPrice(IPriceValue value, PriceTypeSet types) => new(
         value.MarketId.Value,
         value.UnitPrice.Currency.CurrencyCode,
         Decimals.Plain(value.UnitPrice.Amount),
-        FromCommerce(value.CustomerPricing.PriceTypeId),
+        types.Name((int)value.CustomerPricing.PriceTypeId),
         value.CustomerPricing.PriceCode ?? "",
         Decimals.Plain(value.MinQuantity),
         DateTime.SpecifyKind(value.ValidFrom, DateTimeKind.Utc),
         value.ValidUntil is { } until ? DateTime.SpecifyKind(until, DateTimeKind.Utc) : null);
-
-    public static CustomerPricing.PriceType ToCommerce(string type) => type switch
-    {
-        PriceTypes.User => CustomerPricing.PriceType.UserName,
-        PriceTypes.Group => CustomerPricing.PriceType.PriceGroup,
-        _ => CustomerPricing.PriceType.AllCustomers,
-    };
-
-    public static string FromCommerce(CustomerPricing.PriceType type) => type switch
-    {
-        CustomerPricing.PriceType.UserName => PriceTypes.User,
-        CustomerPricing.PriceType.PriceGroup => PriceTypes.Group,
-        _ => PriceTypes.All,
-    };
 
     /// <summary>In UTC, to the second: what the database keeps of a time, so a run compares what it wrote.</summary>
     public static DateTime Second(DateTime time)

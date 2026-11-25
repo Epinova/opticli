@@ -178,15 +178,28 @@ public static class UndoHints
         InventoryResult { Status: CommerceWriteStatus.Updated, Before: { } before } stock => $"opticli commerce inventory set {stock.Entry} --warehouse {before.Warehouse} --in-stock {before.InStock.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
         InventoryResult { Status: CommerceWriteStatus.Created } stock => $"None in opticli: set the stock to 0 (opticli commerce inventory set {stock.Entry} --warehouse {stock.Stock.Warehouse} --in-stock 0), or delete the record in Commerce's catalog UI.",
         WarehouseResult { Status: CommerceWriteStatus.Created } warehouse => $"None in opticli: deactivate it (opticli commerce warehouse set {warehouse.Warehouse.Code} --active false), or delete it in Commerce's admin UI.",
-        MarketResult { Status: CommerceWriteStatus.Created } market => $"None in opticli: disable it (opticli commerce market set {market.Market.Id} --enabled false), or delete it in Commerce's admin UI.",
+        MarketResult { Status: CommerceWriteStatus.Created, Market: { } created } => $"opticli commerce market remove {created.Id}",
+        MarketResult { Status: CommerceWriteStatus.Removed, Market: { } removed } => $"Make it again with `{MarketSet(removed)}`; its prices went with it, set them again (opticli commerce price set).",
         WarehouseResult { Status: CommerceWriteStatus.Updated } warehouse => $"Set {string.Join(", ", warehouse.Changes)} back with `opticli commerce warehouse set {warehouse.Warehouse.Code} ...`.",
-        MarketResult { Status: CommerceWriteStatus.Updated } market => $"Set {string.Join(", ", market.Changes)} back with `opticli commerce market set {market.Market.Id} ...`.",
+        MarketResult { Status: CommerceWriteStatus.Updated, Market: { } updated } market => $"Set {string.Join(", ", market.Changes)} back with `opticli commerce market set {updated.Id} ...`.",
         _ => null,
     };
 
+    private static string MarketSet(CommerceMarket market) =>
+        $"opticli commerce market set {market.Id} --name {Quote(market.Name)}"
+        + (market.Currencies.Count == 0 ? "" : $" --currencies {string.Join(",", market.Currencies)}")
+        + $" --default-currency {market.DefaultCurrency}"
+        + (market.Languages.Count == 0 ? "" : $" --languages {string.Join(",", market.Languages)}")
+        + $" --default-language {market.DefaultLanguage}"
+        + (market.Countries.Count == 0 ? "" : $" --countries {string.Join(",", market.Countries)}")
+        + (market.Enabled ? "" : " --enabled false")
+        + (market.Description is { } description ? $" --description {Quote(description)}" : "")
+        + (market.PricesIncludeTax ? " --prices-include-tax true" : "");
+
     private static string PriceKey(CommercePrice price) =>
         $"--market {price.Market} --currency {price.Currency}"
-        + (price.PriceType == PriceTypes.All ? "" : $" --price-type {price.PriceType} --price-code {price.PriceCode}")
+        + (price.PriceType == PriceTypes.All ? "" : $" --price-type {Quote(price.PriceType)}")
+        + (price.PriceCode.Length == 0 ? "" : $" --price-code {Quote(price.PriceCode)}")
         + (price.MinQuantity == 0 ? "" : $" --min-quantity {price.MinQuantity.ToString(System.Globalization.CultureInfo.InvariantCulture)}")
         + $" --valid-from {price.ValidFrom.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture)}";
 }

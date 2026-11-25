@@ -278,7 +278,9 @@ export type PlanStep =
       readonly currency: string;
       /** Required unless `remove`. */
       readonly amount?: number;
-      readonly priceType?: 'all' | 'user' | 'group';
+      /** `all` (default), `user`, `group`, or a price type of the site's own by name or number (`commerce()`'s `priceTypes`). */
+      readonly priceType?: 'all' | 'user' | 'group' | (string & {});
+      /** None for `all`; the user name or price group for `user` and `group`; any text or none for the site's own types. */
       readonly priceCode?: string;
       readonly minQuantity?: number;
       /** UTC unless it has an offset: `"2026-12-01T00:00:00Z"`. */
@@ -310,7 +312,10 @@ export type PlanStep =
       readonly tracked?: boolean;
     }
   | {
-      /** Optimizely Commerce: a market, made or changed by its id, as `opticli commerce market set`. */
+      /**
+       * Optimizely Commerce: a market, made or changed by its id, as `opticli commerce market set`; or removed, as
+       * `opticli commerce market remove`, with `remove: true` and no other field (Commerce removes its prices with it).
+       */
       readonly op: 'market';
       readonly market: string;
       readonly name?: string;
@@ -325,6 +330,7 @@ export type PlanStep =
       readonly countries?: readonly string[];
       readonly description?: string;
       readonly pricesIncludeTax?: boolean;
+      readonly remove?: boolean;
     };
 
 /** A host of a `site` step, as an object. */

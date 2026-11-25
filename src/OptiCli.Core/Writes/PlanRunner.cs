@@ -790,13 +790,13 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                     .Select(s => (Step: s, Result: Checked(s) as Protocol.MarketResult))
                     .LastOrDefault(m => m.Result is { Status: Protocol.CommerceWriteStatus.Created }
                         || m.Result is { Status: Protocol.CommerceWriteStatus.Updated } updated && updated.Changes.Contains("currencies"));
-                if (making.Result is not { } market)
+                if (making.Result is not { Market: { } planned } market)
                 {
                     return null;
                 }
                 var verb = market.Status == Protocol.CommerceWriteStatus.Created ? "makes the market" : "changes the currencies of the market";
-                return (price with { PlannedCurrencies = market.Market.Currencies },
-                    $"Operation {making.Step.Index} {verb} '{market.Market.Id}' ({string.Join(", ", market.Market.Currencies)}): the dry run checked this price against that, and the site checks the market when the plan runs.");
+                return (price with { PlannedCurrencies = planned.Currencies },
+                    $"Operation {making.Step.Index} {verb} '{planned.Id}' ({string.Join(", ", planned.Currencies)}): the dry run checked this price against that, and the site checks the market when the plan runs.");
             }
             case InventoryOperation stock:
             {
