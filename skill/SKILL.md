@@ -348,7 +348,8 @@ none of this works. Everything goes through the running site; catalog content is
   node + entry as an extra category), `commerce price set <entry> --market DEFAULT --currency USD --amount 49.90`
   (`--valid-from`/`--valid-until` for a campaign price, another row; without `--valid-from` it is the base price, the
   one with no end), `commerce price remove`, `commerce warehouse set <code>`, `commerce inventory set <entry>
-  --warehouse default --in-stock 25`, `commerce market set <id> --currencies SEK --languages en --countries SWE`.
+  --warehouse default --in-stock 25`, `commerce market set <id> --currencies SEK --languages en --countries SWE`,
+  `commerce market remove <id>` (Commerce removes the market's prices with it; `DEFAULT` is refused).
   Prices and stock are on variants and packages, not products. `--price-type` is `all` (default), `user` or `group`
   (with `--price-code`), or a price type of the site's own by its key in lower case (`member`; `opticli commerce` lists
   them as `priceTypes`), which takes any `--price-code` or none. Each write prints `status`: `created`, `updated`,

@@ -220,6 +220,40 @@ public class CommerceRulesTests
     }
 
     [Fact]
+    public void A_market_written_without_lists_keeps_them_empty_until_given()
+    {
+        // As SQL writes a market: a default currency and language, no MarketCurrencies or MarketLanguages rows.
+        var before = new CommerceMarket("BARE", "Bare", true, "USD", [], "en", [], [], null, false);
+
+        var renamed = MarketsEndpoint.Wanted("BARE", new MarketRequest("BARE") { Name = "Renamed" }, before);
+        Assert.Empty(renamed.Currencies);
+        Assert.Equal("USD", renamed.DefaultCurrency);
+        Assert.Equal(["name"], MarketsEndpoint.Changes(before, renamed));
+        // Commerce's save lists the defaults, which the result then says.
+        Assert.Equal(["name", "currencies", "languages"], MarketsEndpoint.Changes(before, MarketsEndpoint.WithDefaultsListed(renamed)));
+        Assert.Empty(MarketsEndpoint.Changes(before, MarketsEndpoint.Wanted("BARE", new MarketRequest("BARE"), before)));
+
+        // A default alone isn't checked against an empty list; with a list given it is.
+        Assert.Equal("EUR", MarketsEndpoint.Wanted("BARE", new MarketRequest("BARE") { DefaultCurrency = "EUR" }, before).DefaultCurrency);
+        var listed = MarketsEndpoint.Wanted("BARE", new MarketRequest("BARE") { Currencies = ["EUR", "USD"] }, before);
+        Assert.Equal("USD", listed.DefaultCurrency);
+        Assert.Throws<AgentException>(() => MarketsEndpoint.Wanted("BARE", new MarketRequest("BARE") { Currencies = ["EUR"], DefaultCurrency = "SEK" }, before));
+        Assert.Equal("EUR", MarketsEndpoint.Wanted("BARE", new MarketRequest("BARE") { Currencies = ["EUR"] }, before).DefaultCurrency);
+
+        var empty = Assert.Throws<AgentException>(() => MarketsEndpoint.Wanted("BARE", new MarketRequest("BARE") { Languages = [] }, before));
+        Assert.Contains("at least one currency and one language", empty.Message);
+    }
+
+    [Fact]
+    public void A_market_s_removal_takes_only_its_id()
+    {
+        MarketsEndpoint.RequireOnlyId(new MarketRequest("NORDIC") { Remove = true, DryRun = true });
+
+        var ex = Assert.Throws<AgentException>(() => MarketsEndpoint.RequireOnlyId(new MarketRequest("NORDIC") { Remove = true, Name = "Nordic" }));
+        Assert.Equal(AgentErrorCodes.Usage, ex.Code);
+    }
+
+    [Fact]
     public void A_price_in_a_currency_its_market_doesnt_have_is_refused_before_a_dry_run_answers()
     {
         PriceKeys.RequireMarketCurrency("NORDIC", ["SEK", "NOK"], "SEK");

@@ -49,7 +49,7 @@ public sealed partial class WritePlan
         ["price"] = ["entry*", "market*", "currency*", "amount", "priceType", "priceCode", "minQuantity", "validFrom", "validUntil", "remove"],
         ["warehouse"] = ["code*", "name", "active", "primary", "fulfillmentCenter", "pickupLocation", "deliveryLocation", "sortOrder"],
         ["inventory"] = ["entry*", "warehouse*", "inStock", "backorder", "preorder", "tracked"],
-        ["market"] = ["market*", "name", "enabled", "currencies", "defaultCurrency", "languages", "defaultLanguage", "countries", "description", "pricesIncludeTax"],
+        ["market"] = ["market*", "name", "enabled", "currencies", "defaultCurrency", "languages", "defaultLanguage", "countries", "description", "pricesIncludeTax", "remove"],
     };
 
     /// <summary>
@@ -443,6 +443,7 @@ public sealed partial class WritePlan
                 Countries = reader.Strings("countries"),
                 Description = reader.String("description"),
                 PricesIncludeTax = reader.OptionalBool("pricesIncludeTax"),
+                Remove = reader.Bool("remove"),
             },
             _ => new DeleteOperation(reader.Ref("ref"), reader.Bool("ignoreReferences")),
         };

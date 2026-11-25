@@ -1040,6 +1040,12 @@ export interface CommerceMarketSetOptions extends CommonOptions {
   dryRun?: boolean;
 }
 
+/** Options of `opticli commerce market remove`. */
+export interface CommerceMarketRemoveOptions extends CommonOptions {
+  /** Validate and show the before/after diff without saving anything. */
+  dryRun?: boolean;
+}
+
 /** Options of `opticli sql`. */
 export interface SqlOptions extends CommonOptions {
   /**

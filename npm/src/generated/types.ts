@@ -950,9 +950,10 @@ export interface MarketList {
 }
 
 export interface MarketResult {
-  market: CommerceMarket;
+  /** The market as it is now (as it was, for a removal); null when a removal found none (`absent`). */
+  market?: CommerceMarket;
   status: CommerceWriteStatus;
-  /** The fields that changed (all of them for a new one). */
+  /** The fields that changed (all of them for a new one; none for a removal). */
   changes: string[];
   dryRun: boolean;
 }

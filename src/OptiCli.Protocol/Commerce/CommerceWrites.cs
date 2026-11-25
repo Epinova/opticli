@@ -208,7 +208,10 @@ public sealed record CommerceMarket(
     string? Description,
     bool PricesIncludeTax);
 
-/// <summary>Body of <see cref="AgentRoutes.CommerceMarkets"/>: a market upserted by its id. What is left out keeps its value; a new market needs currencies and languages.</summary>
+/// <summary>
+/// Body of <see cref="AgentRoutes.CommerceMarkets"/>: a market upserted (or removed) by its id. What is left out keeps its
+/// value, an existing market's lists too (empty ones as well); a new market needs currencies and languages.
+/// </summary>
 public sealed record MarketRequest(string Id)
 {
     public string? Name { get; init; }
@@ -234,8 +237,12 @@ public sealed record MarketRequest(string Id)
 
     public bool? PricesIncludeTax { get; init; }
 
+    /// <summary>Remove the market (<c>IMarketService.DeleteMarket</c>) instead; only the id may be given. Commerce's <c>DEFAULT</c> is refused.</summary>
+    public bool Remove { get; init; }
+
     public bool DryRun { get; init; }
 }
 
-/// <param name="Changes">The fields that changed (all of them for a new one).</param>
-public sealed record MarketResult(CommerceMarket Market, [property: OutputValues(typeof(CommerceWriteStatus))] string Status, IReadOnlyList<string> Changes, bool DryRun);
+/// <param name="Market">The market as it is now (as it was, for a removal); null when a removal found none (<c>absent</c>).</param>
+/// <param name="Changes">The fields that changed (all of them for a new one; none for a removal).</param>
+public sealed record MarketResult(CommerceMarket? Market, [property: OutputValues(typeof(CommerceWriteStatus))] string Status, IReadOnlyList<string> Changes, bool DryRun);

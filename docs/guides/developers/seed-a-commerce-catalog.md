@@ -116,7 +116,8 @@ A seed plan grows with the site. To sell in euro too, add a market and its price
 On a database the plan seeded before, the dry run lists that price as `deferred`: the market isn't there yet. The dry
 run still checks the price against the market the step before makes (its currencies, the variant, the dates), and the
 site checks the market itself when the plan runs. The same goes for stock in a new warehouse, and for a price in a
-currency the plan adds to a market.
+currency the plan adds to a market. A market the suite no longer needs goes with `opticli commerce market remove EURO`
+(or a step with `remove: true`), and Commerce removes its prices with it.
 
 ### 4. Apply it twice
 

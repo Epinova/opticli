@@ -41,6 +41,7 @@
 @epinova/opticli interface CommerceInfo
 @epinova/opticli interface CommerceInventorySetOptions
 @epinova/opticli interface CommerceMarket
+@epinova/opticli interface CommerceMarketRemoveOptions
 @epinova/opticli interface CommerceMarketSetOptions
 @epinova/opticli interface CommerceMarketsOptions
 @epinova/opticli interface CommerceOptions
@@ -685,6 +686,10 @@ CommerceMarket.id
 CommerceMarket.languages
 CommerceMarket.name
 CommerceMarket.pricesIncludeTax
+CommerceMarketRemoveOptions.connection?
+CommerceMarketRemoveOptions.connectionName?
+CommerceMarketRemoveOptions.db?
+CommerceMarketRemoveOptions.dryRun?
 CommerceMarketSetOptions.connection?
 CommerceMarketSetOptions.connectionName?
 CommerceMarketSetOptions.countries?
@@ -1388,7 +1393,7 @@ LinkValue.title?
 MarketList.markets
 MarketResult.changes
 MarketResult.dryRun
-MarketResult.market
+MarketResult.market?
 MarketResult.status
 Meta.database?
 Meta.next?
@@ -1435,6 +1440,7 @@ OptiCli.commerce
 OptiCli.commerceChildren
 OptiCli.commerceGet
 OptiCli.commerceInventorySet
+OptiCli.commerceMarketRemove
 OptiCli.commerceMarketSet
 OptiCli.commerceMarkets
 OptiCli.commercePriceRemove
@@ -1527,6 +1533,7 @@ OptiCliCommands.commerce
 OptiCliCommands.commerceChildren
 OptiCliCommands.commerceGet
 OptiCliCommands.commerceInventorySet
+OptiCliCommands.commerceMarketRemove
 OptiCliCommands.commerceMarketSet
 OptiCliCommands.commerceMarkets
 OptiCliCommands.commercePriceRemove
@@ -1614,6 +1621,7 @@ OptiCliCommandsSync.commerce
 OptiCliCommandsSync.commerceChildren
 OptiCliCommandsSync.commerceGet
 OptiCliCommandsSync.commerceInventorySet
+OptiCliCommandsSync.commerceMarketRemove
 OptiCliCommandsSync.commerceMarketSet
 OptiCliCommandsSync.commerceMarkets
 OptiCliCommandsSync.commercePriceRemove
@@ -1714,6 +1722,7 @@ OptiCliSync.commerce
 OptiCliSync.commerceChildren
 OptiCliSync.commerceGet
 OptiCliSync.commerceInventorySet
+OptiCliSync.commerceMarketRemove
 OptiCliSync.commerceMarketSet
 OptiCliSync.commerceMarkets
 OptiCliSync.commercePriceRemove
@@ -1986,6 +1995,7 @@ PlanStep[op='market'].market
 PlanStep[op='market'].name?
 PlanStep[op='market'].op
 PlanStep[op='market'].pricesIncludeTax?
+PlanStep[op='market'].remove?
 PlanStep[op='move']
 PlanStep[op='move'].op
 PlanStep[op='move'].ref

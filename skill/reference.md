@@ -959,6 +959,7 @@ as opticli prints it (negative for catalogs and the root). A plan's `$id` of cat
 | `commerce warehouse set <code> [--name] [--active] [--primary] [--fulfillment-center] [--pickup-location] [--delivery-location] [--sort-order]` | plan op `warehouse` (`code`, ...) |
 | `commerce inventory set <entry> --warehouse <code> [--in-stock] [--backorder] [--preorder] [--tracked]` | plan op `inventory` (`entry`, `warehouse`, `inStock`, `backorder`, `preorder`, `tracked`) |
 | `commerce market set <id> [--name] [--enabled] [--currencies a,b] [--default-currency] [--languages a,b] [--default-language] [--countries a,b] [--description] [--prices-include-tax]` | plan op `market` (`market`, `currencies`, ... as arrays) |
+| `commerce market remove <id>` | plan op `market` with `"remove": true` and no other field; Commerce removes the market's prices with it; `DEFAULT` is refused |
 
 Writes print `{..., status, dryRun}` with `status` `created`, `updated`, `unchanged`, `removed` or `absent`; a price's
 and stock's also `before` (the values an update replaced), a warehouse's and market's `changes`. A price's key is
@@ -966,7 +967,8 @@ market, currency, price type and code, minimum quantity and valid-from; without 
 end), and `validUntil` needs `validFrom`. A price type of the site's own (its `SalePriceTypes` setting) is named by its
 key in lower case (`member`) or its number, and takes any price code or none (JSON too, up to 256 characters); `all`
 never names its rows. Times are UTC unless they have an offset. Values left out keep theirs; a new
-warehouse is active, a new stock record tracked, a new market needs currencies and languages. Booleans take
+warehouse is active, a new stock record tracked, a new market needs currencies and languages (an existing one keeps
+its lists, empty ones too, unless given; Commerce's save adds the defaults to them). Booleans take
 `true`/`false`. A catalog needs `DefaultCurrency`, `DefaultLanguage` and `WeightBase`; Commerce makes a `Code` when a
 node or entry has none. Catalog content can't be published separately (`set --publish` instead), moved, deleted or put
 in a project, and takes no blocks or media "for" it (`upload --for`/`--parent`, `block create`, a plan's `create` with `for`: usage).

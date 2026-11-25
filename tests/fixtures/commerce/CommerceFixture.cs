@@ -5,7 +5,9 @@
 // reference on the product. Pages for the start page, products and variants (plain HTML, no views; a product's and variant's show the
 // images of its CommerceMediaCollection), and Commerce's hierarchical catalog routing below the start page, so catalog
 // content has URLs that answer. The content comes from setup.sh's fixture.plan.json (applied with opticli) and the tests.
+// POST /opticli-fixture/bare-market (loopback only) makes a market with no currency or language lists, as SQL makes one.
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using System.Net;
 using System.Text;
 using EPiServer.Commerce.Catalog.ContentTypes;
@@ -13,11 +15,21 @@ using EPiServer.Commerce.Catalog.DataAnnotations;
 using EPiServer.Commerce.Routing;
 using EPiServer.Framework;
 using EPiServer.Framework.DataAnnotations;
+using EPiServer.Framework.Cache;
 using EPiServer.Framework.Initialization;
+using EPiServer.ServiceLocation;
 using EPiServer.Web;
 using EPiServer.Web.Mvc;
 using EPiServer.Web.Routing;
+using Mediachase.Commerce;
+using Mediachase.Commerce.Markets;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace OptiCliCommerce;
 
@@ -159,4 +171,83 @@ public class FashionVariantController(IUrlResolver urls) : ContentController<Fas
 {
     public IActionResult Index(FashionVariant currentContent) => FixtureHtml.Page(currentContent.DisplayName ?? currentContent.Name,
         $"<p class=\"code\">{WebUtility.HtmlEncode(currentContent.Code)}</p><p class=\"size\">{WebUtility.HtmlEncode(currentContent.Size)}</p>{FixtureHtml.Images(currentContent, urls)}");
+}
+
+/// <summary>
+/// <c>POST /opticli-fixture/bare-market?id=&lt;id&gt;&amp;currency=&lt;code&gt;&amp;language=&lt;code&gt;</c> from the machine
+/// itself: makes the market (or makes it again) with a default currency and language and no currencies or languages
+/// listed, as a market written with SQL has it (a Market row, no MarketCurrencies or MarketLanguages rows). Commerce's
+/// IMarketService always lists the defaults when it saves, so the fixture makes the market through it, deletes those rows
+/// with SQL and clears Commerce's market cache. The market tests change and remove it with opticli. Answers the market as
+/// Commerce then reads it.
+/// </summary>
+[InitializableModule]
+public class BareMarketFixture : IConfigurableModule
+{
+    public const string Path = "/opticli-fixture/bare-market";
+
+    public void ConfigureContainer(ServiceConfigurationContext context) =>
+        context.Services.AddTransient<IStartupFilter, Endpoint>();
+
+    public void Initialize(InitializationEngine context)
+    {
+    }
+
+    public void Uninitialize(InitializationEngine context)
+    {
+    }
+
+    private sealed class Endpoint : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            app.Use(async (context, nextMiddleware) =>
+            {
+                if (!context.Request.Path.Equals(Path, StringComparison.OrdinalIgnoreCase))
+                {
+                    await nextMiddleware();
+                    return;
+                }
+                if (!HttpMethods.IsPost(context.Request.Method) || context.Connection.RemoteIpAddress is not { } address || !IPAddress.IsLoopback(address)
+                    || context.Request.Query["id"].ToString() is not { Length: > 0 } id)
+                {
+                    context.Response.StatusCode = StatusCodes.Status404NotFound;
+                    return;
+                }
+                var markets = context.RequestServices.GetRequiredService<IMarketService>();
+                if (markets.GetMarket(new MarketId(id)) is not null)
+                {
+                    markets.DeleteMarket(new MarketId(id));
+                }
+                markets.CreateMarket(new MarketImpl(new MarketId(id))
+                {
+                    MarketName = $"{id} (bare)",
+                    MarketDescription = "",
+                    IsEnabled = true,
+                    DefaultCurrency = new Currency(context.Request.Query["currency"].ToString() is { Length: > 0 } currency ? currency : "USD"),
+                    DefaultLanguage = CultureInfo.GetCultureInfo(context.Request.Query["language"].ToString() is { Length: > 0 } language ? language : "en"),
+                });
+                var ecf = context.RequestServices.GetRequiredService<IConfiguration>().GetConnectionString("EcfSqlConnection");
+                await using (var connection = new SqlConnection(ecf))
+                {
+                    await connection.OpenAsync();
+                    await using var command = new SqlCommand("DELETE FROM dbo.MarketCurrencies WHERE MarketId = @id; DELETE FROM dbo.MarketLanguages WHERE MarketId = @id;", connection);
+                    command.Parameters.AddWithValue("@id", id);
+                    await command.ExecuteNonQueryAsync();
+                }
+                // MarketServiceCache's key.
+                context.RequestServices.GetRequiredService<ISynchronizedObjectInstanceCache>().Remove("_allMarkets");
+                var market = markets.GetMarket(new MarketId(id));
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    id = market.MarketId.Value,
+                    defaultCurrency = market.DefaultCurrency.CurrencyCode,
+                    currencies = market.Currencies.Select(c => c.CurrencyCode),
+                    defaultLanguage = market.DefaultLanguage?.Name,
+                    languages = market.Languages.Select(l => l.Name),
+                });
+            });
+            next(app);
+        };
+    }
 }

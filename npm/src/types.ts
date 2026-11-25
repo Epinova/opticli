@@ -312,7 +312,10 @@ export type PlanStep =
       readonly tracked?: boolean;
     }
   | {
-      /** Optimizely Commerce: a market, made or changed by its id, as `opticli commerce market set`. */
+      /**
+       * Optimizely Commerce: a market, made or changed by its id, as `opticli commerce market set`; or removed, as
+       * `opticli commerce market remove`, with `remove: true` and no other field (Commerce removes its prices with it).
+       */
       readonly op: 'market';
       readonly market: string;
       readonly name?: string;
@@ -327,6 +330,7 @@ export type PlanStep =
       readonly countries?: readonly string[];
       readonly description?: string;
       readonly pricesIncludeTax?: boolean;
+      readonly remove?: boolean;
     };
 
 /** A host of a `site` step, as an object. */

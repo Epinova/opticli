@@ -189,6 +189,7 @@ code, stock, status, before, dryRun}`. In a plan: `{"op": "warehouse", "code": "
 | Command | Does |
 |---|---|
 | `commerce market set <id> [--name] [--enabled] [--currencies <a,b>] [--default-currency] [--languages <a,b>] [--default-language] [--countries <a,b>] [--description] [--prices-include-tax] [--dry-run]` | makes or changes a market |
+| `commerce market remove <id> [--dry-run]` | removes a market, and Commerce its prices |
 | `commerce markets` | the markets: `{id, name, enabled, defaultCurrency, currencies, defaultLanguage, languages, countries, description, pricesIncludeTax}` |
 
 A market id is 1 to 8 letters, digits, `-` or `_`; Commerce comes with `DEFAULT`. A new market needs `--currencies` and
@@ -199,6 +200,23 @@ given (one of the list). Currencies must be ones Commerce has (its currency list
 value. The result is `{market, status, changes, dryRun}`. In a plan: `{"op": "market", "market": "NORDIC",
 "currencies": ["SEK", "NOK"], "languages": ["en"], "countries": ["SWE", "NOR"]}` (`name`, `enabled`, `defaultCurrency`, `defaultLanguage`,
 `description`, `pricesIncludeTax`).
+
+An existing market keeps its lists unless the change gives them, also when they are empty. Only SQL makes such a market
+(a `Market` row without `MarketCurrencies` or `MarketLanguages` rows): Commerce reads its lists as they are, empty, and
+doesn't take the defaults for them, so the market offers no currency or language in its lists until it is saved.
+Commerce's own save (`IMarketService`, the admin UI, opticli) always adds the default currency and language to the
+lists. So `market set <id> --name ...` on such a market saves the defaults in its lists too, and `changes` says so
+(`["name", "currencies", "languages"]`). A default is checked against its list only when the market has one, or a list
+is given.
+
+`market remove` removes a market through `IMarketService.DeleteMarket`. Commerce removes the market's prices with it,
+in every catalog, and takes it off the payment and shipping methods that name it (its database's foreign keys cascade);
+orders and carts keep naming the market, and a catalog entry's excluded markets keep its id. A dry run says what it
+would remove; Commerce can't count the market's prices short of reading every entry's, so the result doesn't say how
+many (a warning says that they go). `DEFAULT` is Commerce's own, which it falls back to, and is a `usage` error: turn it
+off with `market set DEFAULT --enabled false` instead. Nothing to remove is `absent`, with no `market`. The removal
+takes only the id (another field is a `usage` error). In a plan: `{"op": "market", "market": "NORDIC", "remove":
+true}`.
 
 A catalog belongs to every site unless its `Sites` property names some: `opticli set catalog:Fashion Sites=...`.
 

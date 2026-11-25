@@ -117,7 +117,7 @@ public sealed record InventoryOperation(string Entry, string Warehouse) : WriteO
     public override WriteOperation MapRefs(Func<string, string> map) => this with { Entry = map(Entry) };
 }
 
-/// <summary><c>commerce market set</c> (a plan's <c>market</c>): a market, upserted by its id.</summary>
+/// <summary><c>commerce market set|remove</c> (a plan's <c>market</c>): a market, upserted (or removed) by its id.</summary>
 /// <param name="Market">The market's id (<c>DEFAULT</c>, <c>NORDIC</c>).</param>
 public sealed record MarketOperation(string Market) : WriteOperation<MarketResult>
 {
@@ -140,6 +140,9 @@ public sealed record MarketOperation(string Market) : WriteOperation<MarketResul
     public string? Description { get; init; }
 
     public bool? PricesIncludeTax { get; init; }
+
+    /// <summary>Remove the market instead (only the id may be given); Commerce removes its prices with it.</summary>
+    public bool Remove { get; init; }
 
     internal override Task<WriteOutcome<MarketResult>> RunOnAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken) =>
         executor.MarketAsync(this, dryRun, cancellationToken);
