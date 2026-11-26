@@ -3,7 +3,7 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
-## 0.37.0 (unreleased)
+## 0.37.0 (26 November 2026)
 
 ### Optimizely Commerce
 
