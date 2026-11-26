@@ -90,6 +90,20 @@ public class FashionNode : NodeContent
     [Display(Name = "Teaser", Order = 10)]
     [CultureSpecific]
     public virtual string? Teaser { get; set; }
+
+    /// <summary>
+    /// A culture-specific value a new node gets from its type (<see cref="SetDefaultValues"/>): Commerce 14's own copy of a
+    /// language has it too, as it builds the copy from the type's defaults, which the pending-draft tests need.
+    /// </summary>
+    [Display(Name = "Ribbon", Order = 20)]
+    [CultureSpecific]
+    public virtual string? Ribbon { get; set; }
+
+    public override void SetDefaultValues(EPiServer.DataAbstraction.ContentType contentType)
+    {
+        base.SetDefaultValues(contentType);
+        Ribbon = "New";
+    }
 }
 
 [CatalogContentType(GUID = "0c2b6f1e-6a51-4c1a-9a0e-3f1d2c7b5a11", MetaClassName = "FashionProduct", DisplayName = "Fashion product")]

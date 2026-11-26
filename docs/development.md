@@ -137,8 +137,8 @@ epi-commerce-empty`): `/demo/Commerce12` (CMS 12, Commerce 14.48.0, net8.0) and 
 `opticli-commerce12-ecf`, `opticli-commerce13` and `opticli-commerce13-ecf`), which the CMS and Commerce fill at the first
 start. `CommerceFixture.cs` gives both a small content model: a start page with `Catalog` and `FeaturedProduct`
 references, a `MainContentArea` and a `RelatedContent` reference list (for catalog content beside CMS content), a
-`TeaserBlock`, an image media type, and a catalog model (`FashionNode`, `FashionProduct` with a `MainImage`,
-`FashionVariant`, `FashionBundle`). It also registers Commerce's hierarchical catalog routing
+`TeaserBlock`, an image media type, and a catalog model (`FashionNode`, whose culture-specific `Ribbon` defaults to
+"New" in `SetDefaultValues`, `FashionProduct` with a `MainImage`, `FashionVariant`, `FashionBundle`). It also registers Commerce's hierarchical catalog routing
 (`CatalogRouteHelper.MapDefaultHierarchialRouter`, the standard registration on both majors) and plain-HTML pages for
 the start page, products and variants (a product's and variant's show the images of its `CommerceMediaCollection`), so
 catalog content has URLs that answer. For the market tests, `POST /opticli-fixture/bare-market?id=<id>` (loopback only)

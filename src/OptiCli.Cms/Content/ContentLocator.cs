@@ -184,7 +184,7 @@ internal sealed class ContentLocator(CmsCall call)
                 .Where(v => !string.Equals(v.LanguageBranch, language.Name, StringComparison.OrdinalIgnoreCase)).Select(Stamp).ToList();
             candidates = candidates.Where(c => !(PendingDrafts.CommerceLanguageCopy(c, stamps, others)
                 && Repository.TryGet<IContent>(ContentVersions.Of(based.ContentLink, c.Id), out var copy)
-                && PendingDrafts.CommerceCopyValues(CultureSpecificValues(copy), language.Name))).ToList();
+                && PendingDrafts.CommerceCopyValues(CultureSpecificValues(copy), Defaults(copy, language), language.Name))).ToList();
         }
         if (candidates.Count == 0)
         {
@@ -209,6 +209,26 @@ internal sealed class ContentLocator(CmsCall call)
             }
         }
         return null;
+    }
+
+    /// <summary>
+    /// The culture-specific values a new item of <paramref name="content"/>'s type gets in <paramref name="language"/>
+    /// below its parent (<see cref="CultureSpecificValues"/>): what Commerce 14 builds its copy of a language from
+    /// (<see cref="PendingDrafts.CommerceCopyValues"/>). Null when it can't be made, which leaves only empty values passing.
+    /// </summary>
+    private IReadOnlyDictionary<string, object?>? Defaults(IContent content, CultureInfo language)
+    {
+        try
+        {
+            return CultureSpecificValues(Repository.GetDefault<IContent>(content.ParentLink, content.ContentTypeID, language))
+                .GroupBy(p => p.Key, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().Value, StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Console.Error.WriteLine($"[opticli] A new item of content type {content.ContentTypeID} couldn't be made to compare a language copy with: {ex.Message}");
+            return null;
+        }
     }
 
     /// <summary>

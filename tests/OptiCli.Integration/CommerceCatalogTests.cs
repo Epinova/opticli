@@ -114,8 +114,8 @@ public sealed class CommerceCatalogTests
         languages["CatalogLanguages"] = new System.Text.Json.Nodes.JsonArray("en", "sv");
         var catalog = Assert.IsType<WriteOutput>((await writes.RunAsync(new CreateOperation("catalog-root", "CatalogContent", $"opticli-it {run}", languages, Publish: true), dryRun: false, cancellationToken)).Output);
         var women = $"code:it-{run}-women";
-        await writes.RunAsync(new CreateOperation(catalog.Ref!, "FashionNode", "Women", Properties(("Code", $"it-{run}-women"), ("Teaser", "For her")), Publish: true), dryRun: false, cancellationToken);
-        await writes.RunAsync(new CreateOperation(catalog.Ref!, "FashionNode", "Men", Properties(("Code", $"it-{run}-men"), ("Teaser", "For him")), Publish: true), dryRun: false, cancellationToken);
+        await writes.RunAsync(new CreateOperation(catalog.Ref!, "FashionNode", "Women", Properties(("Code", $"it-{run}-women"), ("Teaser", "For her"), ("Ribbon", "Sale")), Publish: true), dryRun: false, cancellationToken);
+        await writes.RunAsync(new CreateOperation(catalog.Ref!, "FashionNode", "Men", Properties(("Code", $"it-{run}-men"), ("Teaser", "For him"), ("Ribbon", "Sale")), Publish: true), dryRun: false, cancellationToken);
         var commerce14 = (await site.Agent.SendAsync<CommerceInfo>(HttpMethod.Get, AgentRoutes.Commerce, null, cancellationToken)).Version.StartsWith("14.", StringComparison.Ordinal);
 
         // A plan translates and publishes in one step, without includeDraft, and finds it so on its second run.

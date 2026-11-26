@@ -182,11 +182,12 @@ public class PendingDraftsTests
     }
 
     /// <summary>
-    /// Commerce's copy holds no value of its language: every culture-specific property empty but the SeoUri Commerce makes
-    /// for it. A draft that gives the language a value, a job's too, isn't the copy.
+    /// Commerce's copy holds no value of its language: every culture-specific property the type's default for a new item
+    /// (empty where it has none) but the SeoUri Commerce makes for it. A draft that gives the language a value of its own,
+    /// a job's too, isn't the copy.
     /// </summary>
     [Fact]
-    public void Commerces_copy_has_no_value_of_its_language_but_the_address_Commerce_makes()
+    public void Commerces_copy_has_the_types_defaults_and_the_address_Commerce_makes()
     {
         static KeyValuePair<string, object?> Value(string name, object? value) => new(name, value);
         KeyValuePair<string, object?>[] copy =
@@ -194,20 +195,54 @@ public class PendingDraftsTests
             Value("DisplayName", null), Value("Teaser", " "), Value("Description", new EPiServer.Core.XhtmlString("")),
             Value("SeoInformation.Title", null), Value("Tags", Array.Empty<string>()), Value("SeoUri", "Women-sv.aspx"),
         ];
+        var none = new Dictionary<string, object?>();
 
-        Assert.True(PendingDrafts.CommerceCopyValues(copy, "sv"));
-        Assert.True(PendingDrafts.CommerceCopyValues([Value("SeoUri", "Women-2-SV.aspx")], "sv"));
-        Assert.True(PendingDrafts.CommerceCopyValues([Value("SeoUri", null)], "sv"));
-        Assert.True(PendingDrafts.CommerceCopyValues([], "sv"));
+        Assert.True(PendingDrafts.CommerceCopyValues(copy, none, "sv"));
+        Assert.True(PendingDrafts.CommerceCopyValues(copy, null, "sv"));
+        Assert.True(PendingDrafts.CommerceCopyValues([Value("SeoUri", "Women-2-SV.aspx")], none, "sv"));
+        Assert.True(PendingDrafts.CommerceCopyValues([Value("SeoUri", null)], none, "sv"));
+        Assert.True(PendingDrafts.CommerceCopyValues([], none, "sv"));
 
-        Assert.False(PendingDrafts.CommerceCopyValues([.. copy, Value("DisplayName", "Dam")], "sv"));
-        Assert.False(PendingDrafts.CommerceCopyValues([Value("SeoInformation.Title", "Dam")], "sv"));
-        Assert.False(PendingDrafts.CommerceCopyValues([Value("Description", new EPiServer.Core.XhtmlString("<p>Dam</p>"))], "sv"));
-        Assert.False(PendingDrafts.CommerceCopyValues([Value("SeoUri", "dam.aspx")], "sv"));
-        Assert.False(PendingDrafts.CommerceCopyValues([Value("SeoUri", "Women-en.aspx")], "sv"));
-        // A value it can't tell is empty counts as given.
-        Assert.False(PendingDrafts.CommerceCopyValues([Value("InStock", false)], "sv"));
-        Assert.False(PendingDrafts.CommerceCopyValues([Value("Weight", 0d)], "sv"));
+        Assert.False(PendingDrafts.CommerceCopyValues([.. copy, Value("DisplayName", "Dam")], none, "sv"));
+        Assert.False(PendingDrafts.CommerceCopyValues([Value("SeoInformation.Title", "Dam")], none, "sv"));
+        Assert.False(PendingDrafts.CommerceCopyValues([Value("Description", new EPiServer.Core.XhtmlString("<p>Dam</p>"))], none, "sv"));
+        Assert.False(PendingDrafts.CommerceCopyValues([Value("SeoUri", "dam.aspx")], none, "sv"));
+        Assert.False(PendingDrafts.CommerceCopyValues([Value("SeoUri", "Women-en.aspx")], none, "sv"));
+        Assert.False(PendingDrafts.CommerceCopyValues([Value("InStock", false)], none, "sv"));
+    }
+
+    /// <summary>
+    /// Commerce builds its copy from the type's defaults (SetDefaultValues), so a culture-specific default is in the copy
+    /// whatever the master language has; a value other than the default is someone's.
+    /// </summary>
+    [Fact]
+    public void A_culture_specific_default_of_the_type_is_Commerces_not_a_draft()
+    {
+        static KeyValuePair<string, object?> Value(string name, object? value) => new(name, value);
+        var defaults = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Ribbon"] = "New", ["Featured"] = true, ["Rank"] = 3, ["Intro"] = new EPiServer.Core.XhtmlString("<p>Hi</p>"),
+            ["Tags"] = new[] { "a", "b" }, ["DisplayName"] = null,
+        };
+        KeyValuePair<string, object?>[] copy =
+        [
+            Value("Ribbon", "New"), Value("Featured", true), Value("Rank", 3), Value("Intro", new EPiServer.Core.XhtmlString("<p>Hi</p>")),
+            Value("Tags", new List<string> { "a", "b" }), Value("DisplayName", null), Value("SeoUri", "Women-sv.aspx"),
+        ];
+
+        Assert.True(PendingDrafts.CommerceCopyValues(copy, defaults, "sv"));
+
+        Assert.False(PendingDrafts.CommerceCopyValues([Value("Ribbon", "Sale")], defaults, "sv"));
+        Assert.False(PendingDrafts.CommerceCopyValues([Value("Ribbon", null)], defaults, "sv"));
+        Assert.False(PendingDrafts.CommerceCopyValues([Value("Featured", false)], defaults, "sv"));
+        Assert.False(PendingDrafts.CommerceCopyValues([Value("Rank", 4)], defaults, "sv"));
+        Assert.False(PendingDrafts.CommerceCopyValues([Value("Intro", new EPiServer.Core.XhtmlString("<p>Hej</p>"))], defaults, "sv"));
+        Assert.False(PendingDrafts.CommerceCopyValues([Value("Tags", new[] { "a" })], defaults, "sv"));
+        Assert.False(PendingDrafts.CommerceCopyValues([Value("DisplayName", "Dam")], defaults, "sv"));
+        // A default it can't compare (an object without value equality) is no default: the value counts as given.
+        Assert.False(PendingDrafts.CommerceCopyValues([Value("Link", new object())], new Dictionary<string, object?> { ["Link"] = new object() }, "sv"));
+        // Without the defaults (a new item couldn't be made), only empty values pass.
+        Assert.False(PendingDrafts.CommerceCopyValues([Value("Ribbon", "New")], null, "sv"));
     }
 
     /// <summary>Only Commerce 14 (CMS 12) makes the copies; on CMS 13 (Commerce 15) the rule never applies.</summary>

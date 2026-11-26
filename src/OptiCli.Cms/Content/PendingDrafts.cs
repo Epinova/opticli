@@ -31,11 +31,12 @@ internal readonly record struct VersionStamp(int Id, bool Published, DateTime Sa
 /// wave through a real draft in that language. The copy is left out only while it is what Commerce made: the first
 /// version of its branch, not the master language's, never published, saved by <c>system</c> or nobody, within a second
 /// of a version of another language saved before it, and holding no value of its language (<see
-/// cref="CommerceCopyValues"/>: every culture-specific property empty, its <c>SeoUri</c> the one Commerce makes). An
-/// editor's save into it records the editor and the time of the save, a later version is never the branch's first, and a
-/// draft that gives the language a value isn't empty, so none of those is left out. What remains: a first version saved by
-/// a job or an import as <c>system</c> or without a user name, within a second of another language's save, that sets no
-/// culture-specific value of its own; its shared values are the master language's (Commerce reads them from there), so it
+/// cref="CommerceCopyValues"/>: every culture-specific property the type's default for a new item, empty where it has
+/// none, and its <c>SeoUri</c> the one Commerce makes). An editor's save into it records the editor and the time of the
+/// save, a later version is never the branch's first, and a draft that gives the language a value of its own differs
+/// from the defaults, so none of those is left out. What remains: a first version saved by a job or an import as
+/// <c>system</c> or without a user name, within a second of another language's save, whose culture-specific values are
+/// all the type's defaults; its shared values are the master language's (Commerce reads them from there), so it
 /// carries nothing of that language to put live. Commerce 15 saves no such copies (a language branch of catalog content
 /// is made as a CMS one is), so the rule applies only on CMS 12, the only CMS Commerce 14 runs on (<see
 /// cref="Compat.CmsApi.CommerceLanguageCopies"/>). (Olav, the Commerce E2E feedback plan, item 2.)</para>
@@ -93,16 +94,36 @@ internal static class PendingDrafts
 
     /// <summary>
     /// Whether a version's culture-specific values are those of Commerce 14's copy of a language (<see
-    /// cref="CommerceLanguageCopy"/>): it copies what it serves in a language that has no version, so each is empty, but
-    /// <c>SeoUri</c>, which Commerce makes for the language (<c>&lt;name&gt;-sv.aspx</c>, <c>&lt;name&gt;-2-sv.aspx</c>).
-    /// Anything else, or a value it can't tell is empty, is a value someone gave, so the version isn't the copy.
+    /// cref="CommerceLanguageCopy"/>). Commerce builds the copy as it loads the item in a language without values: a new
+    /// instance of the type with its defaults (the CMS's content factory with <c>SetPropertyValues</c>, so the model's
+    /// <c>SetDefaultValues</c> and the defaults set in admin), filled with the values stored in that language, of which
+    /// there are none. So each value is the type's default for a new item (empty where it has none), but <c>SeoUri</c>,
+    /// which Commerce makes for the language (<c>&lt;name&gt;-sv.aspx</c>, <c>&lt;name&gt;-2-sv.aspx</c>). Anything else, or
+    /// a value it can't compare with the default, is a value someone gave, so the version isn't the copy.
     /// </summary>
     /// <param name="cultureSpecific">The version's culture-specific values by property (a block's as <c>Block.Property</c>).</param>
+    /// <param name="defaults">The same of a new item of the type in that language; null when it couldn't be made, which only empty values pass.</param>
     /// <param name="language">The version's language (<c>sv</c>).</param>
-    public static bool CommerceCopyValues(IEnumerable<KeyValuePair<string, object?>> cultureSpecific, string language) =>
+    public static bool CommerceCopyValues(IEnumerable<KeyValuePair<string, object?>> cultureSpecific, IReadOnlyDictionary<string, object?>? defaults, string language) =>
         cultureSpecific.All(p => string.Equals(p.Key, CommerceSeoUri, StringComparison.OrdinalIgnoreCase)
             ? p.Value is null || p.Value is string uri && uri.Trim().EndsWith($"-{language}.aspx", StringComparison.OrdinalIgnoreCase)
-            : Empty(p.Value));
+            : Same(p.Value, defaults?.GetValueOrDefault(p.Key)));
+
+    /// <summary>
+    /// Whether two values are the same: both empty, the same text, rich text or number, or lists of equal items. Values it
+    /// can't compare (a ContentArea with items, an object without value equality) aren't.
+    /// </summary>
+    private static bool Same(object? value, object? other) => (value, other) switch
+    {
+        _ when Empty(value) && Empty(other) => true,
+        _ when Empty(value) || Empty(other) => false,
+        (EPiServer.Core.ContentArea, _) or (_, EPiServer.Core.ContentArea) => false,
+        (EPiServer.Core.XhtmlString a, EPiServer.Core.XhtmlString b) => string.Equals(a.ToInternalString(), b.ToInternalString(), StringComparison.Ordinal),
+        (string a, string b) => string.Equals(a, b, StringComparison.Ordinal),
+        (System.Collections.IEnumerable a, System.Collections.IEnumerable b) => a.Cast<object?>().SequenceEqual(b.Cast<object?>()),
+        (ValueType or EPiServer.Core.ContentReference, _) => value!.Equals(other),
+        _ => false,
+    };
 
     /// <summary>The culture-specific property Commerce fills in its copy of a language: the item's address in it.</summary>
     public const string CommerceSeoUri = "SeoUri";
