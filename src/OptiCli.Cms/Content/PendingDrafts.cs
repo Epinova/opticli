@@ -22,18 +22,23 @@ internal readonly record struct VersionStamp(int Id, bool Published, DateTime Sa
 /// keep the names of those who saved them. So who marked the version ready is known, and so is who saved each older draft
 /// it carries; who wrote the ready version's own changes is lost once someone else checks it in, which is why marking
 /// another person's draft ready needs <c>includeDraft</c> itself (<see cref="Operations.ProjectReadyOperation"/>).</para>
-/// <para>One exception, for Optimizely Commerce's catalog content (<see cref="CommerceLanguageCopy"/>): Commerce 14 keeps
-/// catalog content in every language of its catalog, and when it lists the versions of an item that has none in one of
-/// those languages, it saves one itself (<c>CatalogContentVersionStore.EnsureDraftsInAllLanguages</c>): a copy of what it
-/// serves in that language, saved as <c>system</c> (its cached copy of the list has no user name), with the time the
+/// <para>One exception, for Optimizely Commerce 14's catalog content (<see cref="CommerceLanguageCopy"/>): Commerce 14
+/// keeps catalog content in every language of its catalog, and when it lists the versions of an item that has none in one
+/// of those languages, it saves one itself (<c>CatalogContentVersionStore.EnsureDraftsInAllLanguages</c>): a copy of what
+/// it serves in that language, saved as <c>system</c> (its cached copy of the list has no user name), with the time the
 /// item was last changed live (by the latest publish in any of its languages), not the time it made the copy. Every
 /// translation would otherwise publish "changes saved by system", and confirming them with <c>includeDraft</c> would also
 /// wave through a real draft in that language. The copy is left out only while it is what Commerce made: the first
 /// version of its branch, not the master language's, never published, saved by <c>system</c> or nobody, within a second
-/// of a version of another language saved before it. An editor's save into it records the editor and the time of the
-/// save, and a later draft, also a job's, is a version of its own, so neither is ever left out (Olav, the Commerce E2E
-/// feedback plan, item 2). Commerce 15 saves no such copies: a language branch of catalog content is made as a CMS one
-/// is.</para>
+/// of a version of another language saved before it, and holding no value of its language (<see
+/// cref="CommerceCopyValues"/>: every culture-specific property empty, its <c>SeoUri</c> the one Commerce makes). An
+/// editor's save into it records the editor and the time of the save, a later version is never the branch's first, and a
+/// draft that gives the language a value isn't empty, so none of those is left out. What remains: a first version saved by
+/// a job or an import as <c>system</c> or without a user name, within a second of another language's save, that sets no
+/// culture-specific value of its own; its shared values are the master language's (Commerce reads them from there), so it
+/// carries nothing of that language to put live. Commerce 15 saves no such copies (a language branch of catalog content
+/// is made as a CMS one is), so the rule applies only on CMS 12, the only CMS Commerce 14 runs on (<see
+/// cref="Compat.CmsApi.CommerceLanguageCopies"/>). (Olav, the Commerce E2E feedback plan, item 2.)</para>
 /// </remarks>
 internal static class PendingDrafts
 {
@@ -85,6 +90,34 @@ internal static class PendingDrafts
         && (string.IsNullOrWhiteSpace(version.SavedBy) || string.Equals(version.SavedBy.Trim(), CommerceSystemUser, StringComparison.Ordinal))
         && branch.All(v => v.Id >= version.Id)
         && others.Any(o => o.Id < version.Id && (o.Saved.ToUniversalTime() - version.Saved.ToUniversalTime()).Duration() <= CommerceCopyTime);
+
+    /// <summary>
+    /// Whether a version's culture-specific values are those of Commerce 14's copy of a language (<see
+    /// cref="CommerceLanguageCopy"/>): it copies what it serves in a language that has no version, so each is empty, but
+    /// <c>SeoUri</c>, which Commerce makes for the language (<c>&lt;name&gt;-sv.aspx</c>, <c>&lt;name&gt;-2-sv.aspx</c>).
+    /// Anything else, or a value it can't tell is empty, is a value someone gave, so the version isn't the copy.
+    /// </summary>
+    /// <param name="cultureSpecific">The version's culture-specific values by property (a block's as <c>Block.Property</c>).</param>
+    /// <param name="language">The version's language (<c>sv</c>).</param>
+    public static bool CommerceCopyValues(IEnumerable<KeyValuePair<string, object?>> cultureSpecific, string language) =>
+        cultureSpecific.All(p => string.Equals(p.Key, CommerceSeoUri, StringComparison.OrdinalIgnoreCase)
+            ? p.Value is null || p.Value is string uri && uri.Trim().EndsWith($"-{language}.aspx", StringComparison.OrdinalIgnoreCase)
+            : Empty(p.Value));
+
+    /// <summary>The culture-specific property Commerce fills in its copy of a language: the item's address in it.</summary>
+    public const string CommerceSeoUri = "SeoUri";
+
+    /// <summary>No value: null, a blank string, or an empty list (a ContentArea without items, rich text without text).</summary>
+    private static bool Empty(object? value) => value switch
+    {
+        null => true,
+        string text => string.IsNullOrWhiteSpace(text),
+        // Before rich text: a ContentArea is rich text on CMS 12.
+        EPiServer.Core.ContentArea area => !area.Items.Any(),
+        EPiServer.Core.XhtmlString xhtml => xhtml.IsEmpty || string.IsNullOrWhiteSpace(xhtml.ToInternalString()),
+        System.Collections.IEnumerable items => !items.Cast<object?>().Any(),
+        _ => false,
+    };
 
     /// <summary>
     /// How far the time Commerce gives its copy (the item's last modified time, set by the latest publish in any language)

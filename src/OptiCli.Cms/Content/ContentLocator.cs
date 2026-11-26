@@ -174,6 +174,7 @@ internal sealed class ContentLocator(CmsCall call)
         var stamps = branch.Select(Stamp).ToList();
         var candidates = PendingDrafts.ByOthers(stamps, based.ContentLink.WorkID, call.UserName, readyBy);
         if (candidates.Count > 0
+            && Compat.CmsApi.CommerceLanguageCopies
             && string.Equals(based.ContentLink.ProviderName, PendingDrafts.CommerceProvider, StringComparison.Ordinal)
             && based is ILocalizable { Language: { } language, MasterLanguage: { } master }
             && !language.Name.Equals(master.Name, StringComparison.OrdinalIgnoreCase))
@@ -181,7 +182,9 @@ internal sealed class ContentLocator(CmsCall call)
             // Commerce 14's own copy of the item in this language is nobody's draft (PendingDrafts' remarks).
             var others = AllVersions(based.ContentLink, null)
                 .Where(v => !string.Equals(v.LanguageBranch, language.Name, StringComparison.OrdinalIgnoreCase)).Select(Stamp).ToList();
-            candidates = candidates.Where(c => !PendingDrafts.CommerceLanguageCopy(c, stamps, others)).ToList();
+            candidates = candidates.Where(c => !(PendingDrafts.CommerceLanguageCopy(c, stamps, others)
+                && Repository.TryGet<IContent>(ContentVersions.Of(based.ContentLink, c.Id), out var copy)
+                && PendingDrafts.CommerceCopyValues(CultureSpecificValues(copy), language.Name))).ToList();
         }
         if (candidates.Count == 0)
         {
@@ -206,6 +209,36 @@ internal sealed class ContentLocator(CmsCall call)
             }
         }
         return null;
+    }
+
+    /// <summary>
+    /// The content's culture-specific values, by property (<see cref="PendingDrafts.CommerceCopyValues"/>): those of its
+    /// culture-specific properties, and of every property of a block in one (<c>SeoInformation.Title</c>), or of a
+    /// culture-specific property of a block in a shared one. Metadata (the name, publish dates) isn't among them, nor is a
+    /// reference to the content itself, which nobody gives: Commerce's <c>PriceReference</c> and <c>InventoryReference</c>
+    /// point every version at its own item.
+    /// </summary>
+    internal static IEnumerable<KeyValuePair<string, object?>> CultureSpecificValues(IContentData content)
+    {
+        var self = (content as IContent)?.ContentLink;
+        foreach (var property in content.Property.Where(p => !p.IsMetaData))
+        {
+            if (property.Value is ContentReference reference && self is not null && reference.CompareToIgnoreWorkID(self))
+            {
+                continue;
+            }
+            if (property.Value is BlockData block)
+            {
+                foreach (var inner in block.Property.Where(p => !p.IsMetaData && (property.IsLanguageSpecific || p.IsLanguageSpecific)))
+                {
+                    yield return new($"{property.Name}.{inner.Name}", inner.Value);
+                }
+            }
+            else if (property.IsLanguageSpecific)
+            {
+                yield return new(property.Name, property.Value);
+            }
+        }
     }
 
     private static VersionStamp Stamp(ContentVersion version) =>

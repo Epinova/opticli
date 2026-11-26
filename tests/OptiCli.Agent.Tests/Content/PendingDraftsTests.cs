@@ -181,6 +181,46 @@ public class PendingDraftsTests
         Assert.False(PendingDrafts.CommerceLanguageCopy(copy, [copy], []));
     }
 
+    /// <summary>
+    /// Commerce's copy holds no value of its language: every culture-specific property empty but the SeoUri Commerce makes
+    /// for it. A draft that gives the language a value, a job's too, isn't the copy.
+    /// </summary>
+    [Fact]
+    public void Commerces_copy_has_no_value_of_its_language_but_the_address_Commerce_makes()
+    {
+        static KeyValuePair<string, object?> Value(string name, object? value) => new(name, value);
+        KeyValuePair<string, object?>[] copy =
+        [
+            Value("DisplayName", null), Value("Teaser", " "), Value("Description", new EPiServer.Core.XhtmlString("")),
+            Value("SeoInformation.Title", null), Value("Tags", Array.Empty<string>()), Value("SeoUri", "Women-sv.aspx"),
+        ];
+
+        Assert.True(PendingDrafts.CommerceCopyValues(copy, "sv"));
+        Assert.True(PendingDrafts.CommerceCopyValues([Value("SeoUri", "Women-2-SV.aspx")], "sv"));
+        Assert.True(PendingDrafts.CommerceCopyValues([Value("SeoUri", null)], "sv"));
+        Assert.True(PendingDrafts.CommerceCopyValues([], "sv"));
+
+        Assert.False(PendingDrafts.CommerceCopyValues([.. copy, Value("DisplayName", "Dam")], "sv"));
+        Assert.False(PendingDrafts.CommerceCopyValues([Value("SeoInformation.Title", "Dam")], "sv"));
+        Assert.False(PendingDrafts.CommerceCopyValues([Value("Description", new EPiServer.Core.XhtmlString("<p>Dam</p>"))], "sv"));
+        Assert.False(PendingDrafts.CommerceCopyValues([Value("SeoUri", "dam.aspx")], "sv"));
+        Assert.False(PendingDrafts.CommerceCopyValues([Value("SeoUri", "Women-en.aspx")], "sv"));
+        // A value it can't tell is empty counts as given.
+        Assert.False(PendingDrafts.CommerceCopyValues([Value("InStock", false)], "sv"));
+        Assert.False(PendingDrafts.CommerceCopyValues([Value("Weight", 0d)], "sv"));
+    }
+
+    /// <summary>Only Commerce 14 (CMS 12) makes the copies; on CMS 13 (Commerce 15) the rule never applies.</summary>
+    [Fact]
+    public void Only_Commerce_14_on_CMS_12_makes_language_copies()
+    {
+#if CMS13
+        Assert.False(OptiCli.Cms.Compat.CmsApi.CommerceLanguageCopies);
+#else
+        Assert.True(OptiCli.Cms.Compat.CmsApi.CommerceLanguageCopies);
+#endif
+    }
+
     [Fact]
     public void An_unconfirmed_publish_is_a_conflict_carrying_the_draft()
     {

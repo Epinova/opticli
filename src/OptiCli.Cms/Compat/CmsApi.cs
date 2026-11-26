@@ -44,6 +44,18 @@ internal static class CmsApi
 #endif
     }
 
+    /// <summary>
+    /// Whether the site's catalog content can hold Commerce's own copies of a language (<see
+    /// cref="Content.PendingDrafts.CommerceLanguageCopy"/>): Commerce 14 makes them, and runs only on CMS 12; Commerce 15,
+    /// the Commerce of CMS 13, makes none, so there it has nothing to leave out.
+    /// </summary>
+    public static bool CommerceLanguageCopies =>
+#if CMS13
+        false;
+#else
+        true;
+#endif
+
     /// <summary>A property's value as saved to the database (CMS 13 dropped the owner argument).</summary>
     public static object? SaveData(PropertyData property, PropertyDataCollection owner) =>
 #if CMS13
