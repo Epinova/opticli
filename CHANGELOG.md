@@ -26,7 +26,9 @@ again to update the skill.
 - **`commerce market remove <id>`** (a plan's `market` step with `"remove": true`) removes a market through
   `IMarketService.DeleteMarket`, with `--dry-run`; `removed`, or `absent` when there is none. Commerce removes the
   market's prices with it and takes it off payment and shipping methods, which a warning says; orders and carts keep
-  naming it. Commerce's own `DEFAULT` is refused. The undo hint of a new market is now `commerce market remove`. A
+  naming it. Commerce's own `DEFAULT` is refused. The removal clears Commerce's price caches (on every server), so
+  reads and price writes don't meet the removed prices. In a plan, a `price` step in a market an earlier step removes
+  is a `usage` error in the dry run, naming that step, unless a step between them makes the market again. The undo hint of a new market is now `commerce market remove`. A
   removal that found none has no `market`, so the npm package's `MarketResult.market` is optional now (as
   `PriceResult.price` is): TypeScript asks for a check where code reads it.
 - **Translating catalog content.** `translate` takes catalog content, into a language of its catalog: on Commerce 15 it
@@ -37,14 +39,17 @@ again to update the skill.
 - **Fix: a translation on Commerce 14 needed `--include-draft`.** Commerce 14 saves a copy of its own of catalog content
   in each language of its catalog (as `system`), which opticli counted as someone else's draft, so publishing a
   translation was a `conflict` and confirming it also waved through real drafts. Commerce's copy is left out now, only
-  as long as it is what Commerce made; a draft someone else saved in that language still stops the publish.
+  as long as it is what Commerce made: the first version in that language, saved by Commerce right after a save in
+  another language, with no value of that language but the address Commerce gives it. A draft someone else saved in
+  that language, or a later one, still stops the publish. Commerce 15 makes no such copies, so there nothing is left
+  out.
 - **Fix: `commerce get --lang` on Commerce 15 showed a language never published without its draft's values** (the
   version was the draft's, the values what Commerce serves in that language). It shows the draft now.
 - **A language the catalog doesn't have is refused.** `create`, `set` and `translate` of catalog content in a language
   that isn't its catalog's (`DefaultLanguage` or `CatalogLanguages`) are a `usage` error before anything is saved, with
   the `set catalog:... --values '{"CatalogLanguages": [...]}'` that adds it. Commerce 14 refused it with a hint to
   `translate`, Commerce 15 saved a version it then couldn't load, and `create` saved the content in the default
-  language instead. In a plan, a step in a language an earlier step adds to the catalog is `deferred` in the dry run,
+  language instead. In a plan, a step in a language an earlier step adds to its catalog is `deferred` in the dry run,
   so a seed plan can grow by a language.
 - **`--name` in another language is refused.** Catalog content has one name in every language, the master language's:
   Commerce dropped a name given with `--lang` in another language, though the result listed it as changed. It is a

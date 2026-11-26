@@ -124,9 +124,14 @@ opticli set code:women --lang sv DisplayName=Dam --publish
 - **Commerce 14** keeps catalog content in every language of its catalog from the start: when it lists an item's
   versions, it saves a version of its own in each language that has none (saved by `system`), a copy of what it serves
   in that language. `translate` saves into that language as `set --lang` does (`existing: true`), and neither counts
-  Commerce's copy as someone else's draft: the translation is published without `--include-draft`. A draft someone
-  else saved in that language still stops the publish, as for any content (`details.reason: "pendingDraft"`; see
-  [Writing](commands.md#writing-needs-opticli-serve)).
+  Commerce's copy as someone else's draft: the translation is published without `--include-draft`. The copy is left
+  out only while it is what Commerce made: the first version in that language, saved by `system` (or with no user
+  name) within a second of a save in another language, with every culture-specific property empty but the `SeoUri`
+  Commerce makes for the language (`<name>-sv.aspx`). A draft someone else saved in that language, a later version,
+  or a first version that gives the language a value, still stops the publish, as for any content
+  (`details.reason: "pendingDraft"`; see [Writing](commands.md#writing-needs-opticli-serve)). What a job or an import
+  saves as `system`, or without a user name, right after a save in another language and with no value of that language
+  passes as Commerce's copy; it carries only shared values, which are the master language's.
 - **Commerce 15** makes a language branch as the CMS does: `translate` makes it (`set --lang` on an item without the
   branch is `not_found`, and says to translate it first). A `translate` of a branch that exists saves into it as `set
   --lang` does, so a plan's `translate` step runs again `unchanged` on either major.
@@ -137,8 +142,10 @@ error (unless it is the name the item has). A language that isn't one of the cat
 anything is saved, for `create`, `set` and `translate`, with the `set catalog:... --values '{"CatalogLanguages":
 [...]}'` that adds it: Commerce 14 has no such language to save into, Commerce 15 saves a version it then can't load,
 and a `create` would be saved in the default language instead. In a plan, a step in a language that an earlier step
-adds to the catalog's `CatalogLanguages` is `deferred` in the dry run, with a warning naming that step, and checked by
-the site when the plan runs, so a seed plan can grow by a language. `commerce get --lang sv` shows the language's
+adds to the `CatalogLanguages` of the step's own catalog is `deferred` in the dry run, with a warning naming that step,
+and checked by the site when the plan runs, so a seed plan can grow by a language. An earlier step that gives another
+existing catalog the language, or makes a new catalog, leaves the step checked as usual; one whose catalog the dry run
+can't find (a `catalog:` name the plan makes, say) counts as the step's own. `commerce get --lang sv` shows the language's
 published version, else its latest draft.
 
 ### Product images: CommerceMediaCollection
@@ -259,7 +266,9 @@ is given.
 in every catalog, and takes it off the payment and shipping methods that name it (its database's foreign keys cascade);
 orders and carts keep naming the market, and a catalog entry's excluded markets keep its id. A dry run says what it
 would remove; Commerce can't count the market's prices short of reading every entry's, so the result doesn't say how
-many (a warning says that they go). `DEFAULT` is Commerce's own, which it falls back to, and is a `usage` error: turn it
+many (a warning says that they go). Commerce keeps each entry's prices in its cache, which the database's removal
+doesn't touch, so the removal also clears Commerce's price caches, on every server of the site: reads and price writes
+after it don't meet the removed prices, and the next reads fill the caches again. `DEFAULT` is Commerce's own, which it falls back to, and is a `usage` error: turn it
 off with `market set DEFAULT --enabled false` instead. Nothing to remove is `absent`, with no `market`. The removal
 takes only the id (another field is a `usage` error). In a plan: `{"op": "market", "market": "NORDIC", "remove":
 true}`.
@@ -299,7 +308,11 @@ naming that step: the site checks it in all else (the entry, the amount, the dat
 currencies that step gives the market), and checks that the market exists when the plan runs. An `inventory` step
 whose warehouse an earlier `warehouse` step makes is checked the same way. So a seed plan can grow by a market and its
 prices on a database it seeded before. Any other change to a market or warehouse (a rename, say) leaves the steps after
-it checked as usual, and so does a market or warehouse that is already as the plan wants it. See
+it checked as usual, and so does a market or warehouse that is already as the plan wants it. A `price` step in a
+market that an earlier step removes (`"remove": true`) is a `usage` error in the dry run, naming that step, so the plan
+doesn't run half: a plan that removes a market and then prices in it is a mistake. A `market` step between them that
+makes the market again, with its currencies and languages (a new market needs them, a `usage` error otherwise), is
+`deferred`, and the price is checked against the currencies it gives. Warehouses can't be removed. See
 [the guide](../../guides/developers/seed-a-commerce-catalog.md).
 
 ```json

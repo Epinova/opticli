@@ -953,7 +953,7 @@ as opticli prints it (negative for catalogs and the root). A plan's `$id` of cat
 | `commerce relations <ref>` | `children` and `parents`: `{ref, code, name, kind: variant\|bundleEntry\|packageEntry\|category, quantity, sortOrder}` |
 | `commerce prices <entry>` / `commerce stock <entry>` | price rows / stock per warehouse |
 | `commerce warehouses` / `commerce markets` | the site's warehouses / markets |
-| `create <catalog-ref> --type <CatalogType> --name ...` / `set <catalog-ref> ...` | catalog content (properties, name, lang, publish, guid) |
+| `create <catalog-ref> --type <CatalogType> --name ...` / `set <catalog-ref> ...` / `translate <catalog-ref> --lang <code> [Prop=value...]` | catalog content (properties, name, lang, publish, guid); `translate` into a language of its catalog (`CatalogLanguages`), not `--remove` |
 | `commerce relation add <parent> <child> [--quantity] [--sort-order]`, `commerce relation remove <parent> <child>` | plan op `relation` (`parent`, `child`, `quantity`, `sortOrder`, `remove`) |
 | `commerce price set <entry> --market --currency --amount [--price-type all\|user\|group\|<site's own>] [--price-code] [--min-quantity] [--valid-from] [--valid-until]`, `commerce price remove <entry> --market --currency [--valid-from]` | plan op `price` (`entry`, `market`, `currency`, `amount`, `priceType`, `priceCode`, `minQuantity`, `validFrom`, `validUntil`, `remove`) |
 | `commerce warehouse set <code> [--name] [--active] [--primary] [--fulfillment-center] [--pickup-location] [--delivery-location] [--sort-order]` | plan op `warehouse` (`code`, ...) |
@@ -976,7 +976,8 @@ Images are its `CommerceMediaCollection`: an array of media refs or `{ref, group
 `default`, order the array's), the whole list. ContentAreas (`{"ref": "code:P-1"}`) and reference lists of CMS
 content take catalog refs. `resolve <catalog url>` asks the running site: `matchedBy: "catalog"`. A plan's `price` or
 `inventory` step whose market or warehouse an earlier step makes (or whose market's currencies it changes) is
-`deferred` in a dry run, checked in all but that market's or warehouse's existence. Full reference:
+`deferred` in a dry run, checked in all but that market's or warehouse's existence; a `price` step in a market an
+earlier step removes is a `usage` error, unless a step between them makes it again. Full reference:
 docs/reference/cli/commerce.md.
 
 ## Export

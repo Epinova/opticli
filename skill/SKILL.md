@@ -358,13 +358,13 @@ none of this works. Everything goes through the running site; catalog content is
   (with `--price-code`), or a price type of the site's own by its key in lower case (`member`; `opticli commerce` lists
   them as `priceTypes`), which takes any `--price-code` or none. Each write prints `status`: `created`, `updated`,
   `unchanged`, `removed` or `absent`, and takes `--dry-run`.
-- **Plans:** every write is a step (`create` and `set` for catalog content, `relation`, `price`, `warehouse`,
-  `inventory`, `market`), so a test seed is one plan with a `guidNamespace`: run it with `apply --update-existing` and a
+- **Plans:** every write is a step (`create`, `set` and `translate` for catalog content, `relation`, `price`,
+  `warehouse`, `inventory`, `market`), so a test seed is one plan with a `guidNamespace`: run it with `apply --update-existing` and a
   second run is all `unchanged`. A `$id` of catalog content is its `id__CatalogContent` ref, also in a CMS page's
   property (`"Catalog": "$catalog"`). Put `market` and `warehouse` steps before the prices and stock that use them: a
   price or stock step on a market or warehouse an earlier step makes (or a market it gives new currencies) is
   `deferred` in a dry run, checked in all but the market's or warehouse's existence, so a seed plan can grow by a
-  market or warehouse with its prices and stock.
+  market or warehouse with its prices and stock. A price in a market an earlier step removes is a `usage` error.
 - An empty database gets Commerce's schema at the site's first start; a fresh one has the market `DEFAULT` and the
   warehouse `default`. Details: reference.md, "Optimizely Commerce".
 

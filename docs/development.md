@@ -142,7 +142,10 @@ references, a `MainContentArea` and a `RelatedContent` reference list (for catal
 (`CatalogRouteHelper.MapDefaultHierarchialRouter`, the standard registration on both majors) and plain-HTML pages for
 the start page, products and variants (a product's and variant's show the images of its `CommerceMediaCollection`), so
 catalog content has URLs that answer. For the market tests, `POST /opticli-fixture/bare-market?id=<id>` (loopback only)
-makes a market as SQL makes one, with a default currency and language and no lists. setup.sh gives both sites two price
+makes a market as SQL makes one, with a default currency and language and no lists. For the tests of someone else's
+draft of catalog content, `POST /opticli-fixture/hand-over?version=<id_version_CatalogContent>&user=<name>` (loopback
+only) saves that version again, unchanged, as that user, as an editor's save would (opticli's agent only saves as
+itself); the integration tests reach it through `SiteUnderTest.HandOverAsync`. setup.sh gives both sites two price
 types of their own in `appsettings.json` (`SalePriceTypes`: `MEMBER` 3 and `OUTLET` 4), which the price type tests
 need. Then setup.sh serves the site with this checkout's opticli (or `OPTICLI`) and
 applies `fixture.plan.json`: the start page, a site definition for it (hosts `commerce.localhost` and `*`), an image,

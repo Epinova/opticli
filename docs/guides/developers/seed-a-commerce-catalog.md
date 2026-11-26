@@ -130,7 +130,8 @@ run still checks the price against the market the step before makes (its currenc
 site checks the market itself when the plan runs. The same goes for stock in a new warehouse, and for a price in a
 currency the plan adds to a market. A `translate` step in a language the plan adds to the catalog's `CatalogLanguages`
 is `deferred` too, and the site checks it when the plan runs. A market the suite no longer needs goes with
-`opticli commerce market remove EURO` (or a step with `remove: true`), and Commerce removes its prices with it.
+`opticli commerce market remove EURO` (or a step with `remove: true`), and Commerce removes its prices with it. Take
+its `price` steps out of the plan with it: a price in a market an earlier step removes fails the dry run.
 
 ### 4. Apply it twice
 
