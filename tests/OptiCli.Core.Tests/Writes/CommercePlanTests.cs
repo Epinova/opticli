@@ -172,4 +172,96 @@ public class CommercePlanTests
         // An earlier step the dry run refused (no result) leaves the step checked as usual too.
         Assert.Null(PlanRunner.CommerceEarlier(plan.Steps[2], plan.Steps, []));
     }
+
+    /// <summary>
+    /// A market an earlier step removes: a price in it is refused before anything runs, naming the removal, unless a step
+    /// between makes the market again (checked against the currencies that step gives); a step that makes it again must
+    /// give its lists.
+    /// </summary>
+    [Fact]
+    public void A_price_in_a_market_an_earlier_step_removes_is_refused_unless_a_step_between_makes_it_again()
+    {
+        var plan = WritePlan.Parse("""
+            {"operations": [
+              {"op": "market", "market": "VTMP", "remove": true},
+              {"op": "price", "entry": "code:P-1001-M", "market": "vtmp", "currency": "EUR", "amount": 69},
+              {"op": "market", "market": "VTMP", "currencies": ["eur", "SEK"], "languages": ["en"]},
+              {"op": "price", "entry": "code:P-1001-M", "market": "VTMP", "currency": "EUR", "amount": 69},
+              {"op": "market", "market": "VTMP", "name": "Renamed"},
+              {"op": "price", "entry": "code:P-1001-M", "market": "VTMP", "currency": "SEK", "amount": 690},
+              {"op": "price", "entry": "code:P-1001-M", "market": "DEFAULT", "currency": "USD", "amount": 79},
+              {"op": "market", "market": "VTMP", "remove": true}
+            ]}
+            """);
+        PlanStepResult[] checks = [new(0, "market", null, PlanStepStatus.Valid, Result: Market(CommerceWriteStatus.Removed, [], "EUR"))];
+
+        var refused = Assert.Throws<UsageException>(() => PlanRunner.CommerceEarlier(plan.Steps[1], plan.Steps, checks));
+        Assert.Contains("Operation 0 removes the market 'vtmp'", refused.Message);
+
+        // Made again between them: deferred, checked against the currencies that step gives.
+        var again = PlanRunner.CommerceEarlier(plan.Steps[2], plan.Steps, checks)!.Value;
+        Assert.Contains("Operation 0 removes the market 'VTMP' first, so this step makes it again", again.Warning);
+        var price = PlanRunner.CommerceEarlier(plan.Steps[3], plan.Steps, checks)!.Value;
+        Assert.Equal(["EUR", "SEK"], Assert.IsType<PriceOperation>(price.Planned).PlannedCurrencies!);
+        Assert.Contains("Operation 2 makes the market 'VTMP' again (EUR, SEK) after operation 0 removes it", price.Warning);
+        // A rename after that keeps the currencies the market is made with.
+        Assert.Equal(["EUR", "SEK"], Assert.IsType<PriceOperation>(PlanRunner.CommerceEarlier(plan.Steps[5], plan.Steps, checks)!.Value.Planned).PlannedCurrencies!);
+        // Another market is checked as usual; a removal after the price doesn't count for it.
+        Assert.Null(PlanRunner.CommerceEarlier(plan.Steps[6], plan.Steps, checks));
+        Assert.Null(PlanRunner.CommerceEarlier(plan.Steps[4], plan.Steps, checks));
+
+        // Made again without its lists: the market step is refused.
+        var bare = WritePlan.Parse("""
+            {"operations": [
+              {"op": "market", "market": "VTMP", "remove": true},
+              {"op": "market", "market": "VTMP", "name": "Again"}
+            ]}
+            """);
+        var noLists = Assert.Throws<UsageException>(() => PlanRunner.CommerceEarlier(bare.Steps[1], bare.Steps, checks));
+        Assert.Contains("needs its currencies and languages", noLists.Message);
+        // Removed twice: the second finds it gone.
+        var twice = WritePlan.Parse("""{"operations": [{"op": "market", "market": "VTMP", "remove": true}, {"op": "market", "market": "VTMP", "remove": true}]}""");
+        Assert.Contains("finds it gone", PlanRunner.CommerceEarlier(twice.Steps[1], twice.Steps, checks)!.Value.Warning);
+    }
+
+    /// <summary>
+    /// A step in a language an earlier step gives a catalog waits for the plan to run only where that catalog is the
+    /// step's own, or one the plan doesn't let it know; a new catalog, or another existing one, leaves it checked as usual.
+    /// </summary>
+    [Fact]
+    public async Task A_step_in_a_language_an_earlier_step_gives_a_catalog_waits_only_for_its_own_catalog()
+    {
+        var refs = new Dictionary<string, CatalogRef>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["catalog:Fashion"] = new("catalog:Fashion", true, "-2147483647__CatalogContent", Kind: CatalogKinds.Catalog, CatalogLanguages: ["en"]),
+            ["-2147483647__CatalogContent"] = new("-2147483647__CatalogContent", true, "-2147483647__CatalogContent", Kind: CatalogKinds.Catalog, CatalogLanguages: ["en"]),
+            ["catalog:Outlet"] = new("catalog:Outlet", true, "-2147483646__CatalogContent", Kind: CatalogKinds.Catalog, CatalogLanguages: ["en"]),
+            ["1073741825__CatalogContent"] = new("1073741825__CatalogContent", true, "1073741825__CatalogContent", Kind: CatalogKinds.Node, Parent: "-2147483647__CatalogContent", CatalogLanguages: ["en"]),
+            ["code:women"] = new("code:women", true, "1073741825__CatalogContent", Kind: CatalogKinds.Node, Parent: "-2147483647__CatalogContent", CatalogLanguages: ["en"]),
+            ["code:shirt"] = new("code:shirt", true, "5__CatalogContent", Kind: CatalogKinds.Variation, Parent: "1073741825__CatalogContent", CatalogLanguages: ["en"]),
+            ["code:orphan"] = new("code:orphan", true, "6__CatalogContent", Kind: CatalogKinds.Variation, Parent: "1073741899__CatalogContent", CatalogLanguages: ["en"]),
+        };
+        Task<CatalogRef?> Find(string reference, bool fresh) => Task.FromResult(refs.GetValueOrDefault(reference.Trim()));
+        async Task<(int, string)?> Earlier(string givingStep, string step = """{"op": "set", "ref": "code:shirt", "lang": "sv", "properties": {"DisplayName": "Skjorta"}}""")
+        {
+            var plan = WritePlan.Parse($$"""{"operations": [{{givingStep}}, {{step}}]}""");
+            return await PlanRunner.CatalogLanguageEarlierAsync(plan.Steps[1], plan.Steps, new Dictionary<string, string>(), Find);
+        }
+
+        // The step's own catalog, by a catalog: ref or the catalog's ref.
+        Assert.Equal((0, "sv"), await Earlier("""{"op": "set", "ref": "catalog:Fashion", "properties": {"CatalogLanguages": ["en", "sv"]}}"""));
+        Assert.Equal((0, "sv"), await Earlier("""{"op": "set", "ref": "-2147483647__CatalogContent", "properties": {"CatalogLanguages": ["en", "sv"]}}"""));
+        Assert.Equal((0, "sv"), await Earlier("""{"op": "set", "ref": "catalog:Fashion", "properties": {"CatalogLanguages": ["en", "sv"]}}""",
+            """{"op": "create", "parent": "code:women", "type": "FashionVariant", "name": "Shirt", "lang": "sv"}"""));
+        // Another existing catalog, or a new one: checked as usual.
+        Assert.Null(await Earlier("""{"op": "set", "ref": "catalog:Outlet", "properties": {"CatalogLanguages": ["en", "sv"]}}"""));
+        Assert.Null(await Earlier("""{"op": "create", "id": "new", "parent": "catalog-root", "type": "CatalogContent", "name": "New", "properties": {"CatalogLanguages": ["en", "sv"]}}"""));
+        Assert.Null(await Earlier("""{"op": "create", "id": "new", "guid": "6f2e3c1a-0000-4000-8000-000000000001", "parent": "catalog-root", "type": "CatalogContent", "name": "New", "properties": {"CatalogLanguages": ["en", "sv"]}}"""));
+        // Another language: checked as usual.
+        Assert.Null(await Earlier("""{"op": "set", "ref": "catalog:Fashion", "properties": {"CatalogLanguages": ["en", "de"]}}"""));
+        // A catalog the plan doesn't let it know (not found), or content whose catalog can't be found: deferred.
+        Assert.Equal((0, "sv"), await Earlier("""{"op": "set", "ref": "catalog:Nowhere", "properties": {"CatalogLanguages": ["en", "sv"]}}"""));
+        Assert.Equal((0, "sv"), await Earlier("""{"op": "set", "ref": "catalog:Outlet", "properties": {"CatalogLanguages": ["en", "sv"]}}""",
+            """{"op": "set", "ref": "code:orphan", "lang": "sv", "properties": {"DisplayName": "x"}}"""));
+    }
 }

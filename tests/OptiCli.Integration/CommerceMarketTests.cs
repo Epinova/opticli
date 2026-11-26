@@ -51,6 +51,12 @@ public sealed class CommerceMarketTests
         await writes.RunAsync(new PriceOperation($"code:it-{run}-shirt", id, "USD", 29m), dryRun: false, cancellationToken);
         await writes.RunAsync(new PriceOperation($"code:it-{run}-shirt", "DEFAULT", "USD", 30m), dryRun: false, cancellationToken);
 
+        // Read before the removal, so Commerce's price cache holds the entry's rows.
+        async Task<IEnumerable<string>> PricedMarkets() =>
+            (await site.Agent.SendAsync<PriceList>(HttpMethod.Get, AgentRoutes.WithRef(AgentRoutes.CommercePrices, $"code:it-{run}-shirt"), null, cancellationToken))
+            .Prices.Select(p => p.Market).Order(StringComparer.Ordinal);
+        Assert.Equal(new[] { "DEFAULT", id }.Order(StringComparer.Ordinal), await PricedMarkets());
+
         var dry = await writes.RunAsync(new MarketOperation(id) { Remove = true }, dryRun: true, cancellationToken);
         Assert.Equal((CommerceWriteStatus.Removed, true), (dry.Output.Status, dry.Output.DryRun));
         Assert.Contains((await site.Agent.SendAsync<MarketList>(HttpMethod.Get, AgentRoutes.CommerceMarkets, null, cancellationToken)).Markets, m => m.Id == id);
@@ -60,8 +66,14 @@ public sealed class CommerceMarketTests
         Assert.Equal(id, removed.Output.Market!.Id);
         Assert.Contains(removed.Warnings, w => w.Contains("removes a market's prices with it", StringComparison.Ordinal));
         Assert.DoesNotContain((await site.Agent.SendAsync<MarketList>(HttpMethod.Get, AgentRoutes.CommerceMarkets, null, cancellationToken)).Markets, m => m.Id == id);
-        var prices = await site.Agent.SendAsync<PriceList>(HttpMethod.Get, AgentRoutes.WithRef(AgentRoutes.CommercePrices, $"code:it-{run}-shirt"), null, cancellationToken);
-        Assert.Equal(["DEFAULT"], prices.Prices.Select(p => p.Market));
+        // Gone from reads at once (not only after a restart, as Commerce's cache had it), so the same price in the market
+        // made again is a new one.
+        Assert.Equal(["DEFAULT"], await PricedMarkets());
+        Assert.Equal(CommerceWriteStatus.Created, (await writes.RunAsync(new MarketOperation(id) { Currencies = ["USD"], Languages = ["en"] }, dryRun: false, cancellationToken)).Output.Status);
+        Assert.Equal(CommerceWriteStatus.Created, (await writes.RunAsync(new PriceOperation($"code:it-{run}-shirt", id, "USD", 29m), dryRun: false, cancellationToken)).Output.Status);
+        Assert.Equal(new[] { "DEFAULT", id }.Order(StringComparer.Ordinal), await PricedMarkets());
+        Assert.Equal(CommerceWriteStatus.Removed, (await writes.RunAsync(new MarketOperation(id) { Remove = true }, dryRun: false, cancellationToken)).Output.Status);
+        Assert.Equal(["DEFAULT"], await PricedMarkets());
 
         var again = await writes.RunAsync(new MarketOperation(id) { Remove = true }, dryRun: false, cancellationToken);
         Assert.Equal(CommerceWriteStatus.Absent, again.Output.Status);
@@ -90,5 +102,17 @@ public sealed class CommerceMarketTests
         var both = WritePlan.Parse($$"""{"operations": [{"op": "market", "market": "{{id}}", "remove": true, "name": "x"}]}""");
         var refused = await Assert.ThrowsAsync<UsageException>(() => Runner().RunAsync(both, dryRun: true, publishAll: false, cancellationToken));
         Assert.Contains("takes only its id", refused.Message);
+
+        // A price in a market an earlier step removes: refused before anything runs, not half-applied.
+        var priceAfter = WritePlan.Parse($$"""
+            {"operations": [
+              {"op": "market", "market": "{{id}}", "currencies": ["EUR"], "languages": ["en"]},
+              {"op": "market", "market": "{{id}}", "remove": true},
+              {"op": "price", "entry": "code:fixture-shirt-m", "market": "{{id}}", "currency": "EUR", "amount": 9}
+            ]}
+            """);
+        var removedFirst = await Assert.ThrowsAsync<UsageException>(() => Runner().RunAsync(priceAfter, dryRun: false, publishAll: false, cancellationToken));
+        Assert.Contains("Operation 1 removes the market", removedFirst.Message);
+        Assert.DoesNotContain((await site.Agent.SendAsync<MarketList>(HttpMethod.Get, AgentRoutes.CommerceMarkets, null, cancellationToken)).Markets, m => m.Id == id);
     }
 }

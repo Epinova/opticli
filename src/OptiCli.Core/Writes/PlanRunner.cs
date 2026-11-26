@@ -553,7 +553,16 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                 Warnings: [$"{planned.Url} is on the host {planned.Host}, which operation {planned.Index} gives the site '{planned.Site}': the database doesn't have it there yet, so the site checks this one when the plan runs."],
                 Guid: step.Operation.ContentGuid), null);
         }
-        if (CommerceEarlier(step, steps, checks) is { } commerce)
+        (WriteOperation Planned, string Warning)? commerceEarlier;
+        try
+        {
+            commerceEarlier = CommerceEarlier(step, steps, checks);
+        }
+        catch (UsageException ex)
+        {
+            return (new PlanStepResult(step.Index, step.Operation.Kind, step.Operation.Id, PlanStepStatus.Invalid, ex.Details, Error(ex), Guid: step.Operation.ContentGuid), ex);
+        }
+        if (commerceEarlier is { } commerce)
         {
             // Everything but the market's or warehouse's own existence (and a market's currencies) is checked as usual.
             PlanStep Planned(PlanStep s) => s.Index != step.Index ? s : s with
@@ -576,7 +585,7 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
                 Warnings: [$"An earlier operation enables the language '{language}', which the database doesn't have enabled yet, so the site checks this one when the plan runs."],
                 Guid: step.Operation.ContentGuid), null);
         }
-        if (await CatalogLanguageEarlierAsync(resolved.FirstOrDefault(s => s.Index == step.Index) ?? step, steps, cancellationToken) is { } catalogLanguage)
+        if (await CatalogLanguageEarlierAsync(resolved.FirstOrDefault(s => s.Index == step.Index) ?? step, resolved, cancellationToken) is { } catalogLanguage)
         {
             return (new PlanStepResult(step.Index, step.Operation.Kind, step.Operation.Id, PlanStepStatus.Deferred,
                 Warnings: [$"Operation {catalogLanguage.Index} gives a catalog the language '{catalogLanguage.Language}' (CatalogLanguages), which this content's catalog doesn't have yet, so the site checks this one when the plan runs."],
@@ -776,12 +785,28 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
 
     /// <summary>
     /// A language this step writes catalog content in (<c>create</c> below it, <c>set</c>, <c>translate</c>) that an earlier
-    /// <c>create</c> or <c>set</c> step gives a catalog (<c>CatalogLanguages</c>) and the content's catalog doesn't have yet:
-    /// the step can only be checked once that one ran (a seed plan that grows by a language). Null for anything else, also
-    /// where the catalog has the language already (a plan run again), which the step is then checked against as usual.
+    /// <c>create</c> or <c>set</c> step gives the content's own catalog (<c>CatalogLanguages</c>) and the catalog doesn't
+    /// have yet: the step can only be checked once that one ran (a seed plan that grows by a language). Null for anything
+    /// else, also where the catalog has the language already (a plan run again), which the step is then checked against as
+    /// usual.
     /// </summary>
     /// <param name="step">The step with its <c>$id</c>s resolved; planned content is checked by the other rules.</param>
-    private async Task<(int Index, string Language)?> CatalogLanguageEarlierAsync(PlanStep step, IReadOnlyList<PlanStep> steps, CancellationToken cancellationToken)
+    private Task<(int Index, string Language)?> CatalogLanguageEarlierAsync(PlanStep step, IReadOnlyList<PlanStep> resolved, CancellationToken cancellationToken) =>
+        executor.HasCatalogTypes
+            ? CatalogLanguageEarlierAsync(step, resolved, _existingCatalog, (reference, fresh) => executor.CatalogRefAsync(reference, cancellationToken, fresh))
+            : Task.FromResult<(int, string)?>(null);
+
+    /// <summary>
+    /// <see cref="CatalogLanguageEarlierAsync(PlanStep, IReadOnlyList{PlanStep}, CancellationToken)"/>, with catalog refs
+    /// found by <paramref name="find"/>. An earlier step counts where it gives the language to the step's catalog, or to a
+    /// catalog the plan doesn't let it know (a ref that isn't found, content whose catalog can't be found); a step that
+    /// makes a new catalog, or gives the language to another existing catalog, doesn't.
+    /// </summary>
+    /// <param name="resolved">The plan's steps with their <c>$id</c>s resolved.</param>
+    /// <param name="existingCatalog">Plan id to catalog ref, for create steps whose catalog content exists already.</param>
+    /// <param name="find">The catalog content a ref names (null for none); <c>fresh</c> asks the site again.</param>
+    internal static async Task<(int Index, string Language)?> CatalogLanguageEarlierAsync(PlanStep step, IReadOnlyList<PlanStep> resolved,
+        IReadOnlyDictionary<string, string> existingCatalog, Func<string, bool, Task<Protocol.CatalogRef?>> find)
     {
         var (reference, language) = step.Operation switch
         {
@@ -790,21 +815,64 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
             CreateOperation create => (create.Parent, create.Lang),
             _ => (null, null),
         };
-        if (reference is null || reference.StartsWith('$') || string.IsNullOrWhiteSpace(language) || !executor.HasCatalogTypes)
+        if (reference is null || reference.StartsWith('$') || string.IsNullOrWhiteSpace(language))
         {
             return null;
         }
-        var giving = steps.FirstOrDefault(s => s.Index < step.Index
+        var giving = resolved.Where(s => s.Index < step.Index
             && (s.Operation switch { CreateOperation c => c.Properties, SetOperation s2 => s2.Properties, _ => null })?["CatalogLanguages"] is System.Text.Json.Nodes.JsonArray codes
-            && codes.Any(c => c is System.Text.Json.Nodes.JsonValue v && v.TryGetValue<string>(out var code) && code.Trim().Equals(language.Trim(), StringComparison.OrdinalIgnoreCase)));
-        if (giving is null)
+            && codes.Any(c => c is System.Text.Json.Nodes.JsonValue v && v.TryGetValue<string>(out var code) && code.Trim().Equals(language.Trim(), StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+        if (giving.Count == 0)
         {
             return null;
         }
         // As the site has it now, not as an earlier run of this executor found it.
-        return await executor.CatalogRefAsync(reference, cancellationToken, fresh: true) is { CatalogLanguages: { } has } && !has.Contains(language.Trim(), StringComparer.OrdinalIgnoreCase)
-            ? (giving.Index, language.Trim())
-            : null;
+        if (await find(reference, true) is not { CatalogLanguages: { } has } content || has.Contains(language.Trim(), StringComparer.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+        var catalog = await CatalogOfAsync(content, find);
+        foreach (var s in giving)
+        {
+            var given = s.Operation switch
+            {
+                SetOperation set when set.Ref.StartsWith('$') => Planned,
+                SetOperation set => await find(set.Ref, false) is { } target ? await CatalogOfAsync(target, find) : null,
+                CreateOperation create when create.Id is { } id && existingCatalog.TryGetValue(id, out var existing) =>
+                    await find(existing, false) is { } target ? await CatalogOfAsync(target, find) : null,
+                CreateOperation { ContentGuid: { } guid } => await find(guid.ToString("D"), false) is { } target ? await CatalogOfAsync(target, find) : Planned,
+                _ => Planned,
+            };
+            // Planned content is a new catalog, which has no content of the site's yet; unknown (null) counts.
+            if (given != Planned && (given is null || catalog is null || string.Equals(given, catalog, StringComparison.OrdinalIgnoreCase)))
+            {
+                return (s.Index, language.Trim());
+            }
+        }
+        return null;
+    }
+
+    /// <summary>Stands for a catalog the plan makes, in <see cref="CatalogLanguageEarlierAsync(PlanStep, IReadOnlyList{PlanStep}, IReadOnlyDictionary{string, string}, Func{string, bool, Task{Protocol.CatalogRef}})"/>.</summary>
+    private const string Planned = "$planned";
+
+    /// <summary>The ref of the catalog the content is in (its own for a catalog), by its parents; null where a parent isn't found.</summary>
+    private static async Task<string?> CatalogOfAsync(Protocol.CatalogRef content, Func<string, bool, Task<Protocol.CatalogRef?>> find)
+    {
+        var current = content;
+        for (var depth = 0; depth < 100; depth++)
+        {
+            if (current.Kind == Protocol.CatalogKinds.Catalog)
+            {
+                return current.Ref;
+            }
+            if (current.Parent is not { } parent || await find(parent, false) is not { } next)
+            {
+                return null;
+            }
+            current = next;
+        }
+        return null;
     }
 
     /// <summary>
@@ -814,18 +882,66 @@ public sealed class PlanRunner(ContentSession session, WriteExecutor executor, s
     /// the market's planned currencies (or without its warehouse) in all else as usual, and a warning saying so. Null for
     /// any other step, and where the earlier steps leave the market's existence and currencies as the site has them (a
     /// rename, another field, a plan run again), which the step is then checked against as usual.
+    /// A market an earlier step removes: a price in it is refused, unless a step between makes the market again, whose
+    /// currencies it is then checked against; a market step that makes it again must give its currencies and languages,
+    /// and is checked when the plan runs (its dry run meets the market the removal hasn't removed yet).
     /// </summary>
     /// <param name="checks">The earlier steps' dry-run results, so far.</param>
+    /// <exception cref="UsageException">A price in a market an earlier step removes, or a market made again without its lists.</exception>
     internal static (WriteOperation Planned, string Warning)? CommerceEarlier(PlanStep step, IReadOnlyList<PlanStep> steps, IReadOnlyList<PlanStepResult> checks)
     {
         var earlier = steps.Where(s => s.Index < step.Index).ToList();
         object? Checked(PlanStep s) => checks.FirstOrDefault(c => c.Index == s.Index)?.Result;
+        // The earlier steps on a market, and the last of them that removes it with none after it that makes it again.
+        List<PlanStep> OnMarket(string id) => earlier
+            .Where(s => s.Operation is MarketOperation market && string.Equals(market.Market.Trim(), id.Trim(), StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        static PlanStep? Removing(List<PlanStep> onMarket) =>
+            onMarket.LastOrDefault(s => ((MarketOperation)s.Operation).Remove) is { } removal
+            && !onMarket.Any(s => s.Index > removal.Index && !((MarketOperation)s.Operation).Remove) ? removal : null;
         switch (step.Operation)
         {
+            case MarketOperation market:
+            {
+                if (Removing(OnMarket(market.Market)) is not { } removal)
+                {
+                    return null;
+                }
+                var id = market.Market.Trim();
+                if (market.Remove)
+                {
+                    return (market, $"Operation {removal.Index} removes the market '{id}' first: the site finds it gone when the plan runs.");
+                }
+                if (market.Currencies is not { Count: > 0 } || market.Languages is not { Count: > 0 })
+                {
+                    throw new UsageException(
+                        $"Operation {removal.Index} removes the market '{id}', so this step makes it again: a new market needs its currencies and languages.",
+                        "Give the step its currencies and languages, or leave out the removal.");
+                }
+                return (market, $"Operation {removal.Index} removes the market '{id}' first, so this step makes it again: the dry run checked it against the market as the site has it, and the site checks it when the plan runs.");
+            }
             case PriceOperation price:
             {
-                var making = earlier
-                    .Where(s => s.Operation is MarketOperation market && string.Equals(market.Market.Trim(), price.Market.Trim(), StringComparison.OrdinalIgnoreCase))
+                var onMarket = OnMarket(price.Market);
+                if (Removing(onMarket) is { } removal)
+                {
+                    throw new UsageException(
+                        $"Operation {removal.Index} removes the market '{price.Market.Trim()}' (and its prices), so the site would refuse this price in it when the plan runs.",
+                        "Leave out the price or the removal, or make the market again in a step between them (a market step with its currencies and languages).");
+                }
+                if (onMarket.LastOrDefault(s => ((MarketOperation)s.Operation).Remove) is { } removed)
+                {
+                    // Made again after a removal: checked against the currencies the steps since give it.
+                    if (onMarket.LastOrDefault(s => s.Index > removed.Index && ((MarketOperation)s.Operation).Currencies is { Count: > 0 }) is not { } again)
+                    {
+                        // The step that makes it again is refused itself.
+                        return null;
+                    }
+                    var currencies = ((MarketOperation)again.Operation).Currencies!.Select(c => c.Trim().ToUpperInvariant()).Distinct(StringComparer.Ordinal).ToList();
+                    return (price with { PlannedCurrencies = currencies },
+                        $"Operation {again.Index} makes the market '{price.Market.Trim()}' again ({string.Join(", ", currencies)}) after operation {removed.Index} removes it: the dry run checked this price against that, and the site checks the market when the plan runs.");
+                }
+                var making = onMarket
                     .Select(s => (Step: s, Result: Checked(s) as Protocol.MarketResult))
                     .LastOrDefault(m => m.Result is { Status: Protocol.CommerceWriteStatus.Created }
                         || m.Result is { Status: Protocol.CommerceWriteStatus.Updated } updated && updated.Changes.Contains("currencies"));
