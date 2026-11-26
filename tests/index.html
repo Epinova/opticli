@@ -51,20 +51,43 @@ main { --bg: var(--p3); --c: var(--p3-ink); }
 .run-steps li > div p { color: var(--soft); max-width: 70ch; margin-top: 6px; }
 .run-steps li > div p code, .run-steps a { color: var(--ink); }
 
-/* Four files: the code is the content here, in the screencast's dark. */
-.files { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px 24px; }
-.files figure { margin: 0; min-width: 0; display: grid; gap: 10px; align-content: start; }
-.files figure.wide { grid-column: 1 / -1; }
-.files figcaption { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
-.files figcaption b { font: 1rem var(--mono); }
-.files figcaption span { color: var(--soft); }
+/* Four files: the code is the content here, in the screencast's dark. Each file in the order you'd write it, its code
+   on the left and numbered notes in the margin, level with the line they're about; pointing at either lights both.
+   Without script the notes stack beside the code. */
 pre.code { margin: 0; padding: 20px 22px; border-radius: 18px; background: var(--code-bg); color: #dfe4e8; font: .88rem/1.7 var(--mono); overflow-x: auto; }
 pre.code .c { color: #8a949e; }
 pre.code .k { color: #8fb2ff; }
 pre.code .s { color: #93dfaa; }
-.files .note { color: var(--soft); max-width: 80ch; }
-.files .note code { color: var(--ink); }
-@media (max-width: 900px) { .files { grid-template-columns: minmax(0, 1fr); } }
+pre.code ::selection { background: #3a4f78; color: #fff; }
+.annotated { list-style: none; margin: 0; padding: 0; }
+.annotated > li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(15rem, 22rem); gap: 14px 44px; padding: 36px 0; border-top: 1px solid color-mix(in srgb, var(--ink) 14%, var(--ground)); }
+.annotated > li:last-child { border-bottom: 1px solid color-mix(in srgb, var(--ink) 14%, var(--ground)); }
+.annotated .head { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
+.annotated .head h3 { font: 400 1.2rem var(--mono); }
+.annotated .head p { color: var(--soft); }
+.annotated pre.code { position: relative; align-self: start; padding-left: 52px; }
+.annotated pre.code .ln { display: block; min-height: 1lh; position: relative; width: max-content; min-width: calc(100% + 74px); margin: 0 -22px 0 -52px; padding: 0 22px 0 52px; transition: background-color .25s var(--ease); }
+.annotated pre.code .ln[data-n]::before { content: attr(data-n); position: absolute; left: 16px; top: 50%; translate: 0 -50%; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: #f2c39b; color: #2a1a0c; font: 700 .72rem/1 var(--sans); transition: scale .25s var(--ease); }
+.annotated pre.code mark { padding: 1px 3px; margin: -1px -3px; border-radius: 5px; background: none; color: inherit; text-decoration: underline 1.5px rgba(242, 195, 155, .55); text-underline-offset: .3em; transition: background-color .25s var(--ease); }
+.annotated .ln.on { background: rgba(242, 195, 155, .08); }
+.annotated .ln.on::before { scale: 1.15; }
+.annotated .ln.on mark { background: rgba(242, 195, 155, .22); color: #ffdcbd; text-decoration-color: transparent; }
+.annotated .ln.on mark :is(.s, .k) { color: inherit; }
+.notes { position: relative; list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; align-content: start; }
+.notes.placed { display: block; }
+.notes.placed li { position: absolute; left: 0; right: 0; }
+.notes li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 12px; color: color-mix(in srgb, var(--ink) 72%, var(--ground)); transition: color .25s var(--ease); }
+.notes li::before { content: attr(data-n); display: grid; place-items: center; width: 20px; height: 20px; margin-top: .2em; border-radius: 50%; background: var(--c); color: var(--ground); font: 700 .72rem/1 var(--sans); }
+.notes li.on { color: var(--ink); }
+.notes code { color: var(--ink); }
+.notes p { max-width: 46ch; }
+.files-note { margin-top: 28px; color: var(--soft); max-width: 80ch; }
+.files-note code { color: var(--ink); }
+@media (max-width: 1180px) {
+  .annotated > li { grid-template-columns: minmax(0, 1fr); }
+  .notes.placed { display: grid; height: auto !important; }
+  .notes.placed li { position: static; }
+}
 
 /* Get started. */
 .start { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 32px 56px; padding: 40px; border-radius: 26px; background: color-mix(in srgb, var(--bg) 55%, var(--ground)); }
@@ -130,81 +153,54 @@ pre.code .s { color: #93dfaa; }
   </section>
 
   <section class="part" id="files" aria-labelledby="files-h">
-    <div class="part-head"><h2 id="files-h">Four files</h2><p>A seed plan, a global setup, the config and your tests. The plan is an ordinary opticli plan.</p></div>
-    <div class="files">
-      <figure>
-        <figcaption><b>e2e/seed.ts</b><span>content every test can read</span></figcaption>
-<pre class="code"><span class="k">import type</span> { Plan } <span class="k">from</span> <span class="s">'@epinova/opticli'</span>;
-
-<span class="k">export const</span> seedPlan = {
-  guidNamespace: <span class="s">'0d6a8a5e-…'</span>, <span class="c">// any GUID; keep it</span>
-  operations: [
-    { op: <span class="s">'create'</span>, id: <span class="s">'root'</span>, parent: <span class="s">'/en/'</span>,
-      type: <span class="s">'StandardPage'</span>, name: <span class="s">'Test fixtures'</span>,
-      properties: { PageVisibleInMenu: <span class="k">false</span> } },
-    { op: <span class="s">'create'</span>, id: <span class="s">'article'</span>, parent: <span class="s">'$root'</span>,
-      type: <span class="s">'ArticlePage'</span>, name: <span class="s">'Seeded article'</span>,
-      properties: { MainBody: <span class="s">'&lt;p&gt;Hello&lt;/p&gt;'</span> } },
-  ],
-} <span class="k">as const satisfies</span> Plan;</pre>
-      </figure>
-      <figure>
-        <figcaption><b>e2e/global-setup.ts</b><span>start, seed, stop</span></figcaption>
-<pre class="code"><span class="k">import</span> { defineSetup } <span class="k">from</span> <span class="s">'@epinova/opticli/playwright'</span>;
-<span class="k">import</span> { seedPlan } <span class="k">from</span> <span class="s">'./seed.ts'</span>;
-
-<span class="k">export default</span> defineSetup({
-  plan: seedPlan,
-  planDir: <span class="k">import</span>.meta.dirname,
-});</pre>
-      </figure>
-      <figure>
-        <figcaption><b>playwright.config.ts</b><span>where test pages go</span></figcaption>
-<pre class="code"><span class="k">import</span> { defineConfig } <span class="k">from</span> <span class="s">'@playwright/test'</span>;
-<span class="k">import type</span> { OptiCliWorkerOptions }
-  <span class="k">from</span> <span class="s">'@epinova/opticli/playwright'</span>;
-
-<span class="k">export default</span> defineConfig&lt;{}, OptiCliWorkerOptions&gt;({
-  testDir: <span class="s">'./e2e'</span>,
-  globalSetup: <span class="s">'./e2e/global-setup.ts'</span>,
-  use: {
-    <span class="c">// a hidden page per worker, below the seed's root</span>
-    opticliSandbox: { parent: <span class="s">'$root'</span>, type: <span class="s">'StandardPage'</span>,
-      properties: { PageVisibleInMenu: <span class="k">false</span> } },
-  },
-});</pre>
-      </figure>
-      <figure>
-        <figcaption><b>e2e/fixtures.ts</b><span>typed by your plan</span></figcaption>
-<pre class="code"><span class="k">import</span> { createTest } <span class="k">from</span> <span class="s">'@epinova/opticli/playwright'</span>;
-<span class="k">import type</span> { seedPlan } <span class="k">from</span> <span class="s">'./seed.ts'</span>;
-
-<span class="k">export const</span> test = createTest&lt;<span class="k">typeof</span> seedPlan&gt;();
-<span class="k">export</span> { expect } <span class="k">from</span> <span class="s">'@epinova/opticli/playwright'</span>;</pre>
-      </figure>
-      <figure class="wide">
-        <figcaption><b>e2e/article.spec.ts</b><span>seeded content, and content of the test's own</span></figcaption>
-<pre class="code"><span class="k">import</span> { expect, test } <span class="k">from</span> <span class="s">'./fixtures.ts'</span>;
-
-test(<span class="s">'the seeded article'</span>, <span class="k">async</span> ({ page, seed }) =&gt; {
-  <span class="k">await</span> page.goto(seed.urls.article!);   <span class="c">// 'article' is a step id: a typo doesn't compile</span>
-  <span class="k">await</span> expect(page.getByText(<span class="s">'Hello'</span>)).toBeVisible();
-});
-
-test(<span class="s">'a draft is not visible until it is published'</span>, <span class="k">async</span> ({ page, cms }) =&gt; {
-  <span class="k">const</span> created = <span class="k">await</span> cms.page(<span class="s">'StandardPage'</span>, <span class="s">'Draft test'</span>, { MainBody: <span class="s">'&lt;p&gt;Published text&lt;/p&gt;'</span> });
-  <span class="k">const</span> draft = <span class="k">await</span> cms.set(created.ref, { MainBody: <span class="s">'&lt;p&gt;Draft text&lt;/p&gt;'</span> });
-
-  <span class="k">await</span> page.goto(created.url);
-  <span class="k">await</span> expect(page.getByText(<span class="s">'Draft text'</span>)).toHaveCount(0);
-
-  <span class="k">await</span> cms.publish(draft.version!);
-  <span class="k">await</span> page.reload();
-  <span class="k">await</span> expect(page.getByText(<span class="s">'Draft text'</span>)).toBeVisible();
-});                                       <span class="c">// the page goes to the recycle bin here</span></pre>
-        <p class="note">A failed write throws <code>OptiCliError</code> with opticli's error code (<code>not_found</code>, <code>validation</code>, …) and its hint, such as the type's property names after a typo.</p>
-      </figure>
-    </div>
+    <div class="part-head"><h2 id="files-h">Four files</h2><p>A seed plan, a global setup, the config and your tests, in the order you'd write them. The plan is an ordinary opticli plan.</p></div>
+    <ol class="annotated">
+      <li>
+        <div class="head"><h3>e2e/seed.ts</h3><p>content every test can read</p></div>
+<pre class="code"><span class="ln" data-l="1"><span class="k">import</span> <span class="k">type</span> { Plan } <span class="k">from</span> <span class="s">'@epinova/opticli'</span>;</span><span class="ln" data-l="2"></span><span class="ln" data-l="3"><span class="k">export</span> <span class="k">const</span> seedPlan = {</span><span class="ln" data-l="4" data-n="1">  <mark>guidNamespace</mark>: <span class="s">'0d6a8a5e-…'</span>,</span><span class="ln" data-l="5">  operations: [</span><span class="ln" data-l="6" data-n="2">    { op: <span class="s">'create'</span>, <mark>id: <span class="s">'root'</span></mark>, parent: <span class="s">'/en/'</span>,</span><span class="ln" data-l="7">      type: <span class="s">'StandardPage'</span>, name: <span class="s">'Test fixtures'</span>,</span><span class="ln" data-l="8">      properties: { PageVisibleInMenu: <span class="k">false</span> } },</span><span class="ln" data-l="9" data-n="3">    { op: <span class="s">'create'</span>, <mark>id: <span class="s">'article'</span></mark>, parent: <span class="s">'$root'</span>,</span><span class="ln" data-l="10">      type: <span class="s">'ArticlePage'</span>, name: <span class="s">'Seeded article'</span>,</span><span class="ln" data-l="11">      properties: { MainBody: <span class="s">'&lt;p&gt;Hello&lt;/p&gt;'</span> } },</span><span class="ln" data-l="12">  ],</span><span class="ln" data-l="13" data-n="4">} <mark><span class="k">as</span> <span class="k">const</span></mark> <span class="k">satisfies</span> Plan;</span></pre>
+        <ol class="notes">
+          <li data-n="1" data-line="4"><p>Any GUID, kept fixed: the seeded content gets the same GUIDs on every machine.</p></li>
+          <li data-n="2" data-line="6"><p>Every step has an id. Later steps refer to it with a <code>$</code>, as <code>$root</code> below.</p></li>
+          <li data-n="3" data-line="9"><p>Your tests open this page as <code>seed.urls.article</code>.</p></li>
+          <li data-n="4" data-line="13"><p><code>as const</code> keeps the ids exact, so the fixtures can type them.</p></li>
+        </ol>
+      </li>
+      <li>
+        <div class="head"><h3>e2e/global-setup.ts</h3><p>start, seed, stop</p></div>
+<pre class="code"><span class="ln" data-l="1"><span class="k">import</span> { defineSetup } <span class="k">from</span> <span class="s">'@epinova/opticli/playwright'</span>;</span><span class="ln" data-l="2"><span class="k">import</span> { seedPlan } <span class="k">from</span> <span class="s">'./seed.ts'</span>;</span><span class="ln" data-l="3"></span><span class="ln" data-l="4" data-n="1"><span class="k">export</span> <span class="k">default</span> <mark>defineSetup</mark>({</span><span class="ln" data-l="5" data-n="2">  <mark>plan</mark>: seedPlan,</span><span class="ln" data-l="6" data-n="3">  <mark>planDir</mark>: <span class="k">import</span>.meta.dirname,</span><span class="ln" data-l="7">});</span></pre>
+        <ol class="notes">
+          <li data-n="1" data-line="4"><p>Starts the site with <code>opticli serve</code>, or uses the one already running.</p></li>
+          <li data-n="2" data-line="5"><p>Applied on every run, putting back what a test changed.</p></li>
+          <li data-n="3" data-line="6"><p>Where the plan's files are, for uploads and <code>@file</code> values.</p></li>
+        </ol>
+      </li>
+      <li>
+        <div class="head"><h3>playwright.config.ts</h3><p>where test pages go</p></div>
+<pre class="code"><span class="ln" data-l="1"><span class="k">import</span> { defineConfig } <span class="k">from</span> <span class="s">'@playwright/test'</span>;</span><span class="ln" data-l="2"><span class="k">import</span> <span class="k">type</span> { OptiCliWorkerOptions }</span><span class="ln" data-l="3">  <span class="k">from</span> <span class="s">'@epinova/opticli/playwright'</span>;</span><span class="ln" data-l="4"></span><span class="ln" data-l="5"><span class="k">export</span> <span class="k">default</span> defineConfig&lt;{}, OptiCliWorkerOptions&gt;({</span><span class="ln" data-l="6">  testDir: <span class="s">'./e2e'</span>,</span><span class="ln" data-l="7">  globalSetup: <span class="s">'./e2e/global-setup.ts'</span>,</span><span class="ln" data-l="8">  use: {</span><span class="ln" data-l="9" data-n="1">    <mark>opticliSandbox</mark>: { parent: <span class="s">'$root'</span>, type: <span class="s">'StandardPage'</span>,</span><span class="ln" data-l="10">      properties: { PageVisibleInMenu: <span class="k">false</span> } },</span><span class="ln" data-l="11">  },</span><span class="ln" data-l="12">});</span></pre>
+        <ol class="notes">
+          <li data-n="1" data-line="9"><p>Each worker gets a hidden page of its own below <code>$root</code>. Test pages go there, so parallel workers never touch each other's content.</p></li>
+        </ol>
+      </li>
+      <li>
+        <div class="head"><h3>e2e/fixtures.ts</h3><p>typed by your plan</p></div>
+<pre class="code"><span class="ln" data-l="1"><span class="k">import</span> { createTest } <span class="k">from</span> <span class="s">'@epinova/opticli/playwright'</span>;</span><span class="ln" data-l="2"><span class="k">import</span> <span class="k">type</span> { seedPlan } <span class="k">from</span> <span class="s">'./seed.ts'</span>;</span><span class="ln" data-l="3"></span><span class="ln" data-l="4" data-n="1"><span class="k">export</span> <span class="k">const</span> test = <mark>createTest&lt;<span class="k">typeof</span> seedPlan&gt;</mark>();</span><span class="ln" data-l="5"><span class="k">export</span> { expect } <span class="k">from</span> <span class="s">'@epinova/opticli/playwright'</span>;</span></pre>
+        <ol class="notes">
+          <li data-n="1" data-line="4"><p>Types <code>seed</code> by your plan: <code>seed.urls</code> and <code>seed.refs</code> have a key for each step id.</p></li>
+        </ol>
+      </li>
+      <li>
+        <div class="head"><h3>e2e/article.spec.ts</h3><p>seeded content, and content of the test's own</p></div>
+<pre class="code"><span class="ln" data-l="1"><span class="k">import</span> { expect, test } <span class="k">from</span> <span class="s">'./fixtures.ts'</span>;</span><span class="ln" data-l="2"></span><span class="ln" data-l="3">test(<span class="s">'the seeded article'</span>, <span class="k">async</span> ({ page, seed }) =&gt; {</span><span class="ln" data-l="4" data-n="1">  <span class="k">await</span> page.goto(<mark>seed.urls.article</mark>!);</span><span class="ln" data-l="5">  <span class="k">await</span> expect(page.getByText(<span class="s">'Hello'</span>)).toBeVisible();</span><span class="ln" data-l="6">});</span><span class="ln" data-l="7"></span><span class="ln" data-l="8">test(<span class="s">'a draft shows once it is published'</span>, <span class="k">async</span> ({ page, cms }) =&gt; {</span><span class="ln" data-l="9" data-n="2">  <span class="k">const</span> created = <span class="k">await</span> <mark>cms.page</mark>(<span class="s">'StandardPage'</span>, <span class="s">'Draft test'</span>,</span><span class="ln" data-l="10">    { MainBody: <span class="s">'&lt;p&gt;Published text&lt;/p&gt;'</span> });</span><span class="ln" data-l="11" data-n="3">  <span class="k">const</span> draft = <span class="k">await</span> <mark>cms.set</mark>(created.ref,</span><span class="ln" data-l="12">    { MainBody: <span class="s">'&lt;p&gt;Draft text&lt;/p&gt;'</span> });</span><span class="ln" data-l="13"></span><span class="ln" data-l="14">  <span class="k">await</span> page.goto(created.url);</span><span class="ln" data-l="15">  <span class="k">await</span> expect(page.getByText(<span class="s">'Draft text'</span>)).toHaveCount(0);</span><span class="ln" data-l="16"></span><span class="ln" data-l="17" data-n="4">  <span class="k">await</span> <mark>cms.publish</mark>(draft.version!);</span><span class="ln" data-l="18">  <span class="k">await</span> page.reload();</span><span class="ln" data-l="19">  <span class="k">await</span> expect(page.getByText(<span class="s">'Draft text'</span>)).toBeVisible();</span><span class="ln" data-l="20" data-n="5"><mark>});</mark></span></pre>
+        <ol class="notes">
+          <li data-n="1" data-line="4"><p>A step id from the plan: a typo doesn't compile.</p></li>
+          <li data-n="2" data-line="9"><p>Creates a page through the CMS in the worker's sandbox, publishes it and returns its URL.</p></li>
+          <li data-n="3" data-line="11"><p>Saves a draft. Visitors still see the published version.</p></li>
+          <li data-n="4" data-line="17"><p>Publishes it, through the CMS with its cache and events, so the page shows it at once.</p></li>
+          <li data-n="5" data-line="20"><p>The test's page goes to the recycle bin here, even when the test failed.</p></li>
+        </ol>
+      </li>
+    </ol>
+    <p class="files-note">A failed write throws <code>OptiCliError</code> with opticli's error code (<code>not_found</code>, <code>validation</code>, …) and its hint, such as the type's property names after a typo.</p>
   </section>
 
   <section class="part shelf-field" id="limits" aria-labelledby="limits-h">
@@ -266,6 +262,36 @@ for (const b of document.querySelectorAll('.copy')) b.addEventListener('click', 
 import { loop, begin, sleep, state, toggleMarkup } from '../motion.js?v=27bfa18b96';
 import { decorate } from '../halftone.js?v=c3d0da6f61';
 decorate();
+
+// Four files: each margin note level with its line (pushed down when the one above runs long), and pointing at a note
+// or its line lights both.
+const wide = matchMedia('(min-width: 1181px)');
+const annotated = [...document.querySelectorAll('.annotated > li')];
+for (const row of annotated) for (const note of row.querySelectorAll('.notes li')) {
+  const ln = row.querySelector(`.ln[data-l="${note.dataset.line}"]`);
+  const on = (v) => { ln.classList.toggle('on', v); note.classList.toggle('on', v); };
+  for (const el of [ln, note]) { el.addEventListener('pointerenter', () => on(true)); el.addEventListener('pointerleave', () => on(false)); }
+}
+function placeNotes() {
+  for (const row of annotated) {
+    const notes = row.querySelector('.notes');
+    notes.classList.toggle('placed', wide.matches);
+    if (!wide.matches) { notes.style.height = ''; continue; }
+    const base = notes.getBoundingClientRect().top;
+    let floor = 0;
+    for (const note of notes.querySelectorAll('li')) {
+      const r = row.querySelector(`.ln[data-l="${note.dataset.line}"]`).getBoundingClientRect();
+      const top = Math.max(r.top - base + (r.height - 20) / 2 - 3, floor);
+      note.style.top = `${top}px`;
+      floor = top + note.offsetHeight + 12;
+    }
+    notes.style.height = `${floor}px`;
+  }
+}
+wide.addEventListener('change', placeNotes);
+addEventListener('resize', placeNotes);
+document.fonts.ready.then(placeNotes);
+placeNotes();
 
 const run = document.querySelector('.run');
 const toggle = run.querySelector('.mtoggle');
