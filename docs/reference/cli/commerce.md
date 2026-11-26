@@ -126,12 +126,14 @@ opticli set code:women --lang sv DisplayName=Dam --publish
   in that language. `translate` saves into that language as `set --lang` does (`existing: true`), and neither counts
   Commerce's copy as someone else's draft: the translation is published without `--include-draft`. The copy is left
   out only while it is what Commerce made: the first version in that language, saved by `system` (or with no user
-  name) within a second of a save in another language, with every culture-specific property empty but the `SeoUri`
-  Commerce makes for the language (`<name>-sv.aspx`). A draft someone else saved in that language, a later version,
-  or a first version that gives the language a value, still stops the publish, as for any content
-  (`details.reason: "pendingDraft"`; see [Writing](commands.md#writing-needs-opticli-serve)). What a job or an import
-  saves as `system`, or without a user name, right after a save in another language and with no value of that language
-  passes as Commerce's copy; it carries only shared values, which are the master language's.
+  name) within a second of a save in another language, with every culture-specific property as a new item of its type
+  has it (Commerce builds the copy from the type's defaults, so a value the model's `SetDefaultValues` gives is
+  allowed; empty where it gives none), and the `SeoUri` Commerce makes for the language (`<name>-sv.aspx`). A draft
+  someone else saved in that language, a later version, or a first version that gives the language a value of its own,
+  still stops the publish, as for any content (`details.reason: "pendingDraft"`; see
+  [Writing](commands.md#writing-needs-opticli-serve)). What a job or an import saves as `system`, or without a user
+  name, right after a save in another language and with only the type's defaults in that language passes as Commerce's
+  copy; it carries only shared values, which are the master language's.
 - **Commerce 15** makes a language branch as the CMS does: `translate` makes it (`set --lang` on an item without the
   branch is `not_found`, and says to translate it first). A `translate` of a branch that exists saves into it as `set
   --lang` does, so a plan's `translate` step runs again `unchanged` on either major.

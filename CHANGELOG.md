@@ -40,7 +40,7 @@ again to update the skill.
   in each language of its catalog (as `system`), which opticli counted as someone else's draft, so publishing a
   translation was a `conflict` and confirming it also waved through real drafts. Commerce's copy is left out now, only
   as long as it is what Commerce made: the first version in that language, saved by Commerce right after a save in
-  another language, with no value of that language but the address Commerce gives it. A draft someone else saved in
+  another language, with no value of that language but the type's defaults and the address Commerce gives it. A draft someone else saved in
   that language, or a later one, still stops the publish. Commerce 15 makes no such copies, so there nothing is left
   out.
 - **Fix: `commerce get --lang` on Commerce 15 showed a language never published without its draft's values** (the
