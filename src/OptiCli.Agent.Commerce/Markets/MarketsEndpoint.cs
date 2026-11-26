@@ -1,4 +1,5 @@
 using System.Globalization;
+using EPiServer.Framework.Cache;
 using Mediachase.Commerce;
 using Mediachase.Commerce.Catalog.Managers;
 using Mediachase.Commerce.Markets;
@@ -25,11 +26,11 @@ internal static class MarketsEndpoint
         var before = existing is null ? null : ToMarket(existing);
         if (body.Remove)
         {
-            return Remove(markets, body, before);
+            return Remove(markets, request.Context.RequestServices.GetRequiredService<ISynchronizedObjectInstanceCache>(), body, before);
         }
         var wanted = Wanted(id, body, before);
         // Before a dry run answers: Commerce refuses a currency it doesn't know only when saving (a foreign key).
-        RequireKnown(wanted.Currencies, KnownCurrencies());
+        RequireKnownCurrencies(wanted, KnownCurrencies());
         // Commerce keeps market names unique, also only when saving.
         if (markets.GetAllMarkets().FirstOrDefault(m => !string.Equals(m.MarketId.Value, id, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(m.MarketName?.Trim(), wanted.Name.Trim(), StringComparison.OrdinalIgnoreCase)) is { } named)
@@ -75,7 +76,7 @@ internal static class MarketsEndpoint
     /// count a market's prices short of reading every entry's (a catalog's list is refused, a node's has only its own
     /// entries), so the result doesn't say how many.
     /// </summary>
-    private static MarketResult Remove(IMarketService markets, MarketRequest body, CommerceMarket? before)
+    private static MarketResult Remove(IMarketService markets, ISynchronizedObjectInstanceCache cache, MarketRequest body, CommerceMarket? before)
     {
         RequireOnlyId(body);
         if (string.Equals(body.Id?.Trim(), MarketId.Default.Value, StringComparison.OrdinalIgnoreCase))
@@ -90,9 +91,29 @@ internal static class MarketsEndpoint
         if (!body.DryRun)
         {
             markets.DeleteMarket(new MarketId(before.Id));
+            ForgetCachedPrices(cache);
         }
         return new MarketResult(before, CommerceWriteStatus.Removed, [], body.DryRun);
     }
+
+    /// <summary>
+    /// Commerce's price caches, every entry's, on every server. The database removed the market's prices with it, but
+    /// Commerce's price services keep each entry's rows they read in the cache until a save of that entry's prices: without
+    /// this, reads still show the removed market's rows, and price writes match rows that are gone. Commerce has no call to
+    /// clear them (it only drops one entry's after saving its prices, and the removal can't name the entries), so this
+    /// removes the master keys every cached entry depends on (<c>PriceDetailDatabase</c>'s and <c>PriceServiceDatabase</c>'s,
+    /// the same on Commerce 14 and 15); the synchronized <see cref="IObjectInstanceCache.Remove"/> tells the other servers.
+    /// </summary>
+    internal static void ForgetCachedPrices(ISynchronizedObjectInstanceCache cache)
+    {
+        foreach (var key in PriceCacheMasterKeys)
+        {
+            cache.Remove(key);
+        }
+    }
+
+    /// <summary>The master keys of Commerce's price caches: <c>IPriceDetailService</c>'s and <c>IPriceService</c>'s.</summary>
+    internal static readonly IReadOnlyList<string> PriceCacheMasterKeys = ["EP:PriceDetailsMasterKey", "EP:CatalogKeyPricesMasterCacheKey"];
 
     /// <exception cref="AgentException">A removal that gives more than the id.</exception>
     internal static void RequireOnlyId(MarketRequest body)
@@ -214,6 +235,14 @@ internal static class MarketsEndpoint
             return null;
         }
     }
+
+    /// <summary>
+    /// The currencies Commerce will save for the market are ones it knows: its list and its default, which Commerce's save
+    /// adds to a list that lacks it (a market without lists, written with SQL).
+    /// </summary>
+    /// <exception cref="AgentException">A currency Commerce doesn't have.</exception>
+    internal static void RequireKnownCurrencies(CommerceMarket wanted, IReadOnlyCollection<string>? known) =>
+        RequireKnown(WithDefaultsListed(wanted).Currencies, known);
 
     /// <exception cref="AgentException">A currency Commerce doesn't have.</exception>
     internal static void RequireKnown(IEnumerable<string> currencies, IReadOnlyCollection<string>? known)

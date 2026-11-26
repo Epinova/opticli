@@ -287,6 +287,21 @@ public class CommerceRulesTests
         Assert.Contains("no currency XYZ", ex.Message);
     }
 
+    [Fact]
+    public void A_new_default_currency_of_a_market_without_lists_must_be_one_Commerce_has()
+    {
+        // A market written with SQL: Commerce's save adds the default to its empty list, so the default is what's checked.
+        var before = new CommerceMarket("BARE", "Bare", true, "USD", [], "en", [], [], null, false);
+        var known = new HashSet<string>(["USD", "EUR"], StringComparer.OrdinalIgnoreCase);
+        var wanted = MarketsEndpoint.Wanted("BARE", new MarketRequest("BARE") { DefaultCurrency = "XQZ" }, before);
+
+        var ex = Assert.Throws<AgentException>(() => MarketsEndpoint.RequireKnownCurrencies(wanted, known));
+        Assert.Equal(AgentErrorCodes.Usage, ex.Code);
+        Assert.Contains("no currency XQZ", ex.Message);
+        MarketsEndpoint.RequireKnownCurrencies(MarketsEndpoint.Wanted("BARE", new MarketRequest("BARE") { DefaultCurrency = "EUR" }, before), known);
+        MarketsEndpoint.RequireKnownCurrencies(MarketsEndpoint.Wanted("BARE", new MarketRequest("BARE") { Name = "Renamed" }, before), known);
+    }
+
     [Theory]
     [InlineData("xx-YY")]
     [InlineData("klingon")]
