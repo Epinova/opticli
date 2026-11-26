@@ -192,9 +192,9 @@ public sealed partial class WriteExecutor
         $"No catalog content '{reference.Trim()}' ({what}).",
         $"A catalog ref is {CatalogRefSyntax.Description}. Codes and catalog names are the same in every database; the id before __ is this database's.");
 
-    private static UsageException CatalogOnlyCreateAndSet(string reference) => new(
-        $"{reference} is catalog content (Optimizely Commerce): opticli changes it with create and set ({CatalogOptions}), and its relations, prices and stock with the commerce commands.",
-        "Publish a draft with `opticli set <ref> --publish` and the change; move, delete, translate and the rest aren't supported for catalog content: use Commerce's catalog UI.");
+    private static UsageException CatalogOnlyCreateSetAndTranslate(string reference) => new(
+        $"{reference} is catalog content (Optimizely Commerce): opticli changes it with create, set and translate ({CatalogOptions}), and its relations, prices and stock with the commerce commands.",
+        "Publish a draft with `opticli set <ref> --publish` and the change; move, delete, translate --remove and the rest aren't supported for catalog content: use Commerce's catalog UI.");
 
     /// <summary>
     /// <c>create</c> of catalog content: what catalog content doesn't take is refused before anything is sent, and a plan's

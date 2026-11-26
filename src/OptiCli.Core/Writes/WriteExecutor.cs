@@ -1820,7 +1820,7 @@ public sealed partial class WriteExecutor(
         target.Stored is not null
             ? target
             : target.Catalog is not null
-                ? throw CatalogOnlyCreateAndSet(reference)
+                ? throw CatalogOnlyCreateSetAndTranslate(reference)
                 : throw new UsageException($"{reference} is content from a content provider; opticli can only change content stored in the CMS database.");
 
     /// <exception cref="UsageException">Not a ref.</exception>
