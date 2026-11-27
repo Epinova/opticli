@@ -357,7 +357,8 @@ none of this works. Everything goes through the running site; catalog content is
   Prices and stock are on variants and packages, not products. `--price-type` is `all` (default), `user` or `group`
   (with `--price-code`), or a price type of the site's own by its key in lower case (`member`; `opticli commerce` lists
   them as `priceTypes`), which takes any `--price-code` or none. Each write prints `status`: `created`, `updated`,
-  `unchanged`, `removed` or `absent`, and takes `--dry-run`.
+  `unchanged`, `removed` or `absent`, and takes `--dry-run`. A removal on a shared database is refused
+  (`details.reason: "sharedDatabase"`) unless `--allow-destructive`: it is for good there, so ask the user first.
 - **Plans:** every write is a step (`create`, `set` and `translate` for catalog content, `relation`, `price`,
   `warehouse`, `inventory`, `market`), so a test seed is one plan with a `guidNamespace`: run it with `apply --update-existing` and a
   second run is all `unchanged`. A `$id` of catalog content is its `id__CatalogContent` ref, also in a CMS page's

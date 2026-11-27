@@ -18,6 +18,12 @@ public sealed record RelationOperation(string Parent, string Child, bool Remove 
 
     public int? SortOrder { get; init; }
 
+    /// <summary>
+    /// With <c>Remove</c> on a shared database: remove it there for good (<c>--allow-destructive</c>, a plan step's
+    /// <c>allowDestructive</c>); refused without it.
+    /// </summary>
+    public bool AllowDestructive { get; init; }
+
     internal override Task<WriteOutcome<RelationResult>> RunOnAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken) =>
         executor.RelationAsync(this, dryRun, cancellationToken);
 
@@ -50,6 +56,12 @@ public sealed record PriceOperation(string Entry, string Market, string Currency
     public DateTimeOffset? ValidUntil { get; init; }
 
     public bool Remove { get; init; }
+
+    /// <summary>
+    /// With <c>Remove</c> on a shared database: remove it there for good (<c>--allow-destructive</c>, a plan step's
+    /// <c>allowDestructive</c>); refused without it.
+    /// </summary>
+    public bool AllowDestructive { get; init; }
 
     /// <summary>
     /// A plan's dry run only: an earlier step makes the market or gives it these currencies, so the dry run checks the
@@ -143,6 +155,12 @@ public sealed record MarketOperation(string Market) : WriteOperation<MarketResul
 
     /// <summary>Remove the market instead (only the id may be given); Commerce removes its prices with it.</summary>
     public bool Remove { get; init; }
+
+    /// <summary>
+    /// With <c>Remove</c> on a shared database: remove it there for good (<c>--allow-destructive</c>, a plan step's
+    /// <c>allowDestructive</c>); refused without it.
+    /// </summary>
+    public bool AllowDestructive { get; init; }
 
     internal override Task<WriteOutcome<MarketResult>> RunOnAsync(WriteExecutor executor, bool dryRun, CancellationToken cancellationToken) =>
         executor.MarketAsync(this, dryRun, cancellationToken);

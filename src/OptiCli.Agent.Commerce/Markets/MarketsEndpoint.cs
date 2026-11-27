@@ -15,6 +15,7 @@ internal static class MarketsEndpoint
 {
     public static MarketResult Write(AgentRequest request, MarketRequest body)
     {
+        SharedRemovals.Check(request, body.Remove, body.AllowDestructive, $"market {body.Id} (with its prices)");
         var id = body.Id?.Trim() ?? "";
         if (id.Length == 0 || id.Length > 8 || !id.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_'))
         {

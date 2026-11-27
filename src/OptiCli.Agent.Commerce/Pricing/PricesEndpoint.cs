@@ -21,6 +21,7 @@ internal static class PricesEndpoint
 {
     public static PriceResult Write(AgentRequest request, PriceRequest body)
     {
+        SharedRemovals.Check(request, body.Remove, body.AllowDestructive, "a price");
         var services = request.Context.RequestServices;
         var entry = PricedEntry(new CatalogContentFinder(services), body.Entry);
         // In a plan's dry run, an earlier step may make the market or change its currencies: check against those.

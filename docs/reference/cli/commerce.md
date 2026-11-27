@@ -171,7 +171,7 @@ opticli set code:P-1001-S --values '{"CommerceMediaCollection": [{"ref": "<media
 | Command | Does |
 |---|---|
 | `commerce relation add <parent> <child> [--quantity <n>] [--sort-order <n>] [--dry-run]` | relates catalog content |
-| `commerce relation remove <parent> <child> [--dry-run]` | removes the relation |
+| `commerce relation remove <parent> <child> [--allow-destructive] [--dry-run]` | removes the relation |
 | `commerce relations <ref>` | its `children` and `parents`, each `{ref, code, name, kind, quantity, sortOrder}` |
 
 Which relation it is follows from the two (`kind`): a product and a variant (`variant`), a bundle or a package and an
@@ -186,7 +186,7 @@ quantity, sortOrder, dryRun}`: `created`, `updated` (another quantity or sort or
 | Command | Does |
 |---|---|
 | `commerce price set <entry> --market <id> --currency <code> --amount <n> [--price-type <type>] [--price-code <code>] [--min-quantity <n>] [--valid-from <time>] [--valid-until <time>] [--dry-run]` | makes or updates one price |
-| `commerce price remove <entry> --market <id> --currency <code> [--price-type] [--price-code] [--min-quantity] [--valid-from] [--dry-run]` | removes one price |
+| `commerce price remove <entry> --market <id> --currency <code> [--price-type] [--price-code] [--min-quantity] [--valid-from] [--allow-destructive] [--dry-run]` | removes one price |
 | `commerce prices <entry>` | every price of the entry: `{market, currency, amount, priceType, priceCode, minQuantity, validFrom, validUntil}` |
 
 Commerce keeps prices on variants and packages; a product or bundle is a `usage` error. A price is keyed by market,
@@ -244,7 +244,7 @@ code, stock, status, before, dryRun}`. In a plan: `{"op": "warehouse", "code": "
 | Command | Does |
 |---|---|
 | `commerce market set <id> [--name] [--enabled] [--currencies <a,b>] [--default-currency] [--languages <a,b>] [--default-language] [--countries <a,b>] [--description] [--prices-include-tax] [--dry-run]` | makes or changes a market |
-| `commerce market remove <id> [--dry-run]` | removes a market, and Commerce its prices |
+| `commerce market remove <id> [--allow-destructive] [--dry-run]` | removes a market, and Commerce its prices |
 | `commerce markets` | the markets: `{id, name, enabled, defaultCurrency, currencies, defaultLanguage, languages, countries, description, pricesIncludeTax}` |
 
 A market id is 1 to 8 letters, digits, `-` or `_`; Commerce comes with `DEFAULT`. A new market needs `--currencies` and
@@ -343,3 +343,9 @@ A Commerce command, or a catalog ref in `create`, `set` or a plan, on a site wit
 nothing. With no site running at all, it is `unreachable`, as for every write. A value Commerce doesn't take (a currency,
 a country, a price on a product, a relation between a variant and a product) is `usage`; a market or warehouse that
 doesn't exist is `not_found`. Writes against a shared database pass the drift check as every write does.
+
+A removal (`relation remove`, `price remove`, `market remove`, a plan step with `"remove": true`) is for good: Commerce
+has no recycle bin. On a shared database (shared mode, see [Databases](databases.md)) it is refused (`refused`, exit 3,
+`details.reason: "sharedDatabase"`), in a dry run too, unless `--allow-destructive` (a plan step's
+`"allowDestructive": true`) confirms it. A local database needs neither. A sealed apply to production never runs
+Commerce steps at all (see [Writing to production](databases.md#writing-to-production)).

@@ -54,6 +54,15 @@ internal static class CommerceCommand
         return command;
     }
 
+    /// <summary>
+    /// <c>--allow-destructive</c> of a removal: on a shared database it removes for good (Commerce has no recycle bin) and
+    /// is refused without it.
+    /// </summary>
+    private static Option<bool> AllowDestructive() => new("--allow-destructive")
+    {
+        Description = "On a shared database (shared mode), remove it for good: Commerce has no recycle bin, and it is your colleagues' data too. Without it the removal is refused there (exit 3). Never implied: ask the user first.",
+    };
+
     private static Command RelationChange(GlobalOptions options, bool remove)
     {
         var parent = new Argument<string>("parent") { Description = $"The product, bundle, package or node. {Refs}" };
@@ -61,6 +70,7 @@ internal static class CommerceCommand
         var quantity = new Option<decimal?>("--quantity") { Description = "A bundle's or package's entry: how many (default 1 for a new one).", HelpName = "n" };
         var sortOrder = new Option<int?>("--sort-order") { Description = "Where it sorts among the parent's children (default 0 for a new one).", HelpName = "n" };
         var write = new WriteOptions();
+        var allowDestructive = AllowDestructive();
         var command = new Command(remove ? "remove" : "add", remove
             ? """
               Remove a relation (Commerce's IRelationRepository): a product's variant, a bundle's or package's entry, an
@@ -82,6 +92,10 @@ internal static class CommerceCommand
             command.Options.Add(quantity);
             command.Options.Add(sortOrder);
         }
+        else
+        {
+            command.Options.Add(allowDestructive);
+        }
         command.Options.Add(write.DryRun);
         WriteCommands.Mark(command);
         CommandRunner.SetHandler<RelationResult>(command, options, async (context, cancellationToken) =>
@@ -92,6 +106,7 @@ internal static class CommerceCommand
             {
                 Quantity = remove ? null : parse.GetValue(quantity),
                 SortOrder = remove ? null : parse.GetValue(sortOrder),
+                AllowDestructive = remove && parse.GetValue(allowDestructive),
             };
             return WriteOptions.Result(await context.Writes(session).RunAsync(operation, parse.GetValue(write.DryRun), cancellationToken));
         });
@@ -159,9 +174,14 @@ internal static class CommerceCommand
         command.Options.Add(priceCode);
         command.Options.Add(minQuantity);
         command.Options.Add(validFrom);
+        var allowDestructive = AllowDestructive();
         if (!remove)
         {
             command.Options.Add(validUntil);
+        }
+        else
+        {
+            command.Options.Add(allowDestructive);
         }
         command.Options.Add(write.DryRun);
         WriteCommands.Mark(command);
@@ -177,6 +197,7 @@ internal static class CommerceCommand
                 ValidFrom = Time(parse.GetValue(validFrom), "--valid-from"),
                 ValidUntil = remove ? null : Time(parse.GetValue(validUntil), "--valid-until"),
                 Remove = remove,
+                AllowDestructive = remove && parse.GetValue(allowDestructive),
             };
             return WriteOptions.Result(await context.Writes(session).RunAsync(operation, parse.GetValue(write.DryRun), cancellationToken));
         });
@@ -362,14 +383,16 @@ internal static class CommerceCommand
             {"op": "market", "market": "NORDIC", "remove": true}.
             Example: opticli commerce market remove NORDIC
             """);
+        var removeAllowDestructive = AllowDestructive();
         remove.Arguments.Add(removeId);
+        remove.Options.Add(removeAllowDestructive);
         remove.Options.Add(removeWrite.DryRun);
         WriteCommands.Mark(remove);
         CommandRunner.SetHandler<MarketResult>(remove, options, async (context, cancellationToken) =>
         {
             var parse = context.Parse;
             await using var session = await context.OpenContentAsync(cancellationToken);
-            var operation = new MarketOperation(parse.GetValue(removeId)!) { Remove = true };
+            var operation = new MarketOperation(parse.GetValue(removeId)!) { Remove = true, AllowDestructive = parse.GetValue(removeAllowDestructive) };
             return WriteOptions.Result(await context.Writes(session).RunAsync(operation, parse.GetValue(removeWrite.DryRun), cancellationToken));
         });
         command.Subcommands.Add(remove);

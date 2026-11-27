@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace OptiCli.Protocol;
 
 /// <summary>What a Commerce write did (or would do, for a dry run) to the one thing it names.</summary>
@@ -53,6 +55,14 @@ public sealed record RelationRequest(string Parent, string Child, bool Remove = 
     public int? SortOrder { get; init; }
 
     public bool DryRun { get; init; }
+
+    /// <summary>
+    /// With <c>Remove</c> on a shared database (shared mode): the developer confirmed removing it for good there
+    /// (<c>--allow-destructive</c>, a plan step's <c>allowDestructive</c>), as Commerce has no recycle bin. Left out when
+    /// false: an older agent refuses fields it doesn't know.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool AllowDestructive { get; init; }
 }
 
 /// <summary>Result of a relation write.</summary>
@@ -126,6 +136,14 @@ public sealed record PriceRequest(string Entry, string Market, string Currency, 
     public bool Remove { get; init; }
 
     public bool DryRun { get; init; }
+
+    /// <summary>
+    /// With <c>Remove</c> on a shared database (shared mode): the developer confirmed removing it for good there
+    /// (<c>--allow-destructive</c>, a plan step's <c>allowDestructive</c>), as Commerce has no recycle bin. Left out when
+    /// false: an older agent refuses fields it doesn't know.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool AllowDestructive { get; init; }
 
     /// <summary>
     /// Dry run only (ignored otherwise): an earlier step of the plan makes this market, or gives it these currencies. The
@@ -241,6 +259,14 @@ public sealed record MarketRequest(string Id)
     public bool Remove { get; init; }
 
     public bool DryRun { get; init; }
+
+    /// <summary>
+    /// With <c>Remove</c> on a shared database (shared mode): the developer confirmed removing it for good there
+    /// (<c>--allow-destructive</c>, a plan step's <c>allowDestructive</c>), as Commerce has no recycle bin. Left out when
+    /// false: an older agent refuses fields it doesn't know.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool AllowDestructive { get; init; }
 }
 
 /// <param name="Market">The market as it is now (as it was, for a removal); null when a removal found none (<c>absent</c>).</param>

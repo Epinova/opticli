@@ -936,6 +936,8 @@ export interface CommerceRelationAddOptions extends CommonOptions {
 
 /** Options of `opticli commerce relation remove`. */
 export interface CommerceRelationRemoveOptions extends CommonOptions {
+  /** On a shared database (shared mode), remove it for good: Commerce has no recycle bin, and it is your colleagues' data too. Without it the removal is refused there (exit 3). Never implied: ask the user first. */
+  allowDestructive?: boolean;
   /** Validate and show the before/after diff without saving anything. */
   dryRun?: boolean;
 }
@@ -976,6 +978,8 @@ export interface CommercePriceRemoveOptions extends CommonOptions {
   minQuantity?: string;
   /** When it starts (UTC unless it has an offset), part of the key. Default: the price with the rest of the key that has no end (the base price); a new one starts today. */
   validFrom?: string;
+  /** On a shared database (shared mode), remove it for good: Commerce has no recycle bin, and it is your colleagues' data too. Without it the removal is refused there (exit 3). Never implied: ask the user first. */
+  allowDestructive?: boolean;
   /** Validate and show the before/after diff without saving anything. */
   dryRun?: boolean;
 }
@@ -1042,6 +1046,8 @@ export interface CommerceMarketSetOptions extends CommonOptions {
 
 /** Options of `opticli commerce market remove`. */
 export interface CommerceMarketRemoveOptions extends CommonOptions {
+  /** On a shared database (shared mode), remove it for good: Commerce has no recycle bin, and it is your colleagues' data too. Without it the removal is refused there (exit 3). Never implied: ask the user first. */
+  allowDestructive?: boolean;
   /** Validate and show the before/after diff without saving anything. */
   dryRun?: boolean;
 }

@@ -17,6 +17,7 @@ public sealed partial class WriteExecutor
             Quantity = op.Quantity,
             SortOrder = op.SortOrder,
             DryRun = dryRun,
+            AllowDestructive = op.AllowDestructive,
         };
         return await CommerceAsync<RelationRequest, RelationResult>(AgentRoutes.CommerceRelations, request, op, cancellationToken);
     }
@@ -36,6 +37,7 @@ public sealed partial class WriteExecutor
             ValidUntil = op.ValidUntil?.UtcDateTime,
             Remove = op.Remove,
             DryRun = dryRun,
+            AllowDestructive = op.AllowDestructive,
             PlannedCurrencies = dryRun ? op.PlannedCurrencies : null,
         };
         return await CommerceAsync<PriceRequest, PriceResult>(AgentRoutes.CommercePrices, request, op, cancellationToken);
@@ -97,6 +99,7 @@ public sealed partial class WriteExecutor
             PricesIncludeTax = op.PricesIncludeTax,
             Remove = op.Remove,
             DryRun = dryRun,
+            AllowDestructive = op.AllowDestructive,
         }, op, cancellationToken);
 
     /// <summary>The ref the agent takes for the catalog content a ref names.</summary>

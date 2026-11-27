@@ -45,11 +45,11 @@ public sealed partial class WritePlan
         ["site"] = ["name*", "startPage*", "hosts*", "https", "siteAssets"],
         ["language"] = ["lang*", "enabled"],
         // Optimizely Commerce (the site's Commerce agent).
-        ["relation"] = ["parent*", "child*", "remove", "quantity", "sortOrder"],
-        ["price"] = ["entry*", "market*", "currency*", "amount", "priceType", "priceCode", "minQuantity", "validFrom", "validUntil", "remove"],
+        ["relation"] = ["parent*", "child*", "remove", "allowDestructive", "quantity", "sortOrder"],
+        ["price"] = ["entry*", "market*", "currency*", "amount", "priceType", "priceCode", "minQuantity", "validFrom", "validUntil", "remove", "allowDestructive"],
         ["warehouse"] = ["code*", "name", "active", "primary", "fulfillmentCenter", "pickupLocation", "deliveryLocation", "sortOrder"],
         ["inventory"] = ["entry*", "warehouse*", "inStock", "backorder", "preorder", "tracked"],
-        ["market"] = ["market*", "name", "enabled", "currencies", "defaultCurrency", "languages", "defaultLanguage", "countries", "description", "pricesIncludeTax", "remove"],
+        ["market"] = ["market*", "name", "enabled", "currencies", "defaultCurrency", "languages", "defaultLanguage", "countries", "description", "pricesIncludeTax", "remove", "allowDestructive"],
     };
 
     /// <summary>
@@ -405,6 +405,7 @@ public sealed partial class WritePlan
             {
                 Quantity = reader.Decimal("quantity"),
                 SortOrder = reader.Int("sortOrder"),
+                AllowDestructive = reader.Bool("allowDestructive"),
             },
             "price" => new PriceOperation(reader.Ref("entry"), reader.String("market") ?? "", reader.String("currency") ?? "", reader.Decimal("amount"))
             {
@@ -414,6 +415,7 @@ public sealed partial class WritePlan
                 ValidFrom = reader.Time("validFrom"),
                 ValidUntil = reader.Time("validUntil"),
                 Remove = reader.Bool("remove"),
+                AllowDestructive = reader.Bool("allowDestructive"),
             },
             "warehouse" => new WarehouseOperation(reader.String("code") ?? "")
             {
@@ -444,6 +446,7 @@ public sealed partial class WritePlan
                 Description = reader.String("description"),
                 PricesIncludeTax = reader.OptionalBool("pricesIncludeTax"),
                 Remove = reader.Bool("remove"),
+                AllowDestructive = reader.Bool("allowDestructive"),
             },
             _ => new DeleteOperation(reader.Ref("ref"), reader.Bool("ignoreReferences")),
         };

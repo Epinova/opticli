@@ -16,6 +16,7 @@ internal static class RelationsEndpoint
 {
     public static RelationResult Write(AgentRequest request, RelationRequest body)
     {
+        SharedRemovals.Check(request, body.Remove, body.AllowDestructive, "a catalog relation");
         var finder = new CatalogContentFinder(request.Context.RequestServices);
         var parent = finder.Require(body.Parent, "parent");
         var child = finder.Require(body.Child, "child");
