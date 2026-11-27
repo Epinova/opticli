@@ -21,7 +21,7 @@ namespace OptiCli.Mcp.Tools;
 /// </remarks>
 internal sealed class CmsUiMetadata(IServiceProvider services, ILogger<CmsUiMetadata> logger) : IEditUiMetadata
 {
-    public IReadOnlyDictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>? Restricted(IContentData owner)
+    public IReadOnlyDictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>? Restricted(IContentData owner, IContent? model = null)
     {
         if (services.GetService<ExtensibleMetadataProvider>() is not { } provider)
         {
@@ -30,16 +30,18 @@ internal sealed class CmsUiMetadata(IServiceProvider services, ILogger<CmsUiMeta
         try
         {
             var all = new Dictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>(ReferenceEqualityComparer.Instance);
+            // A shared block's values held on a plain block (a takeover): the block itself is the model, as in its own form.
+            IContentData form = model ?? owner;
 #if CMS13
-            Walk(PropertiesOf(provider.GetExtendedMetadataForType(typeof(ContentData), () => owner)), owner, all);
+            Walk(PropertiesOf(provider.GetExtendedMetadataForType(typeof(ContentData), () => form)), owner, all);
 #else
-            Walk(provider.GetExtendedMetadataForType(typeof(ContentData), () => owner).Properties, owner, all);
+            Walk(provider.GetExtendedMetadataForType(typeof(ContentData), () => form).Properties, owner, all);
 #endif
             return all;
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
-            if (owner is BlockData and not IContent && AsTheEditUiDoes(provider, owner) is { } blocks)
+            if (model is null && owner is BlockData and not IContent && AsTheEditUiDoes(provider, owner) is { } blocks)
             {
                 return blocks;
             }

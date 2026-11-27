@@ -1356,6 +1356,8 @@ internal sealed class PropertyWriter(
     private BlockData Plain(IContent block, ContentType type)
     {
         var plain = blocks.Create(type);
+        // The block's values: an editor sees and changes them as in the block's own form.
+        call.Properties.ValuesOf(plain, block);
         foreach (var property in plain.Property.Where(p => !p.IsMetaData))
         {
             if (block.Property[property.Name] is not { } stored)
@@ -1416,6 +1418,8 @@ internal sealed class PropertyWriter(
         var block = blocks.Create(type);
         if (existing is not null)
         {
+            // Saved as the existing block: judged by its access rights and metadata, as in its own form (not the page's).
+            call.Properties.ValuesOf(block, existing);
             Baseline(block, Plain(existing, type));
         }
         ApplyTo(block, values, where);

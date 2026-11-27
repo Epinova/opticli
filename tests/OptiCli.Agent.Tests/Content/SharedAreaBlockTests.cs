@@ -376,7 +376,8 @@ public class SharedAreaBlockTests
         }
 
         /// <param name="publishing">The publishing gate (the MCP module's AllowPublish): throws where publishing is off.</param>
-        public Site(CmsCaller caller = CmsCaller.Developer, Action? publishing = null)
+        /// <param name="tabs">The site's tabs; none by default.</param>
+        public Site(CmsCaller caller = CmsCaller.Developer, Action? publishing = null, TabDefinition[]? tabs = null)
         {
             var handlers = new Dictionary<string, Delegate?>();
             var (events, eventsRecorder) = Recorder<IContentEvents>.Create();
@@ -436,7 +437,7 @@ public class SharedAreaBlockTests
                 .AddSingleton(Approvals(this))
                 .AddSingleton(Sites(Applications))
                 .AddSingleton(new EPiServer.Web.SystemDefinition(new ContentReference(1), new ContentReference(2), new ContentReference(4), AssetsRoot))
-                .AddSingleton(EditUiPropertiesTests.Tabs())
+                .AddSingleton(EditUiPropertiesTests.Tabs(tabs ?? []))
                 .AddSingleton<IPrincipalAccessor>(new CmsCallTests.PrincipalAccessor(new GenericPrincipal(new GenericIdentity("editor"), [])))
                 .BuildServiceProvider();
             Call = new CmsCall(services, CancellationToken.None, caller, publishing);
@@ -1185,6 +1186,40 @@ public class SharedAreaBlockTests
         Assert.Equal(AgentErrorCodes.Refused, refused.Code);
         Assert.Empty(site.Store.Saves);
         Assert.Equal("Old", Title(site.Store.Latest(locked.ContentLink.ID)));
+    }
+
+    [Theory]
+    [InlineData(AccessLevel.Read | AccessLevel.Edit, AccessLevel.FullAccess, false)]
+    [InlineData(AccessLevel.FullAccess, AccessLevel.Read | AccessLevel.Edit | AccessLevel.Create, true)]
+    public void A_block_of_the_pages_folder_taken_over_shows_a_tabs_properties_by_the_editors_access_to_the_block(AccessLevel onBlock, AccessLevel onPage, bool shown)
+    {
+        // The block's own form in the edit UI decides, as for editing the block itself: not the page's access rights.
+        const int Settings = 42;
+        var site = new Site(CmsCaller.Editor, tabs: [new TabDefinition { ID = Settings, Name = "Settings", RequiredAccess = AccessLevel.Publish }])
+        {
+            Defaults = block => block.Property["Title"].OwnerTab = Settings,
+        };
+        var page = Neutral(site, site.Page(folder: true));
+        var block = Neutral(site, site.Block(site.Folder(page).ContentLink, "Intro", "Old"));
+        page = OwnerOf(site, block, Ref(block));
+        ((Shared)site.Store.Latest(block.ContentLink.ID)).Access = onBlock;
+        site.Store.Items[page.ContentLink.ID].ForEach(v => ((Page)v.Content).Access = onPage);
+        site.Store.Saves.Clear();
+        const string json = """{"Area": [{"type": "ItemBlock", "name": "Intro", "properties": {"Title": "New"}}]}""";
+
+        if (!shown)
+        {
+            var refused = Assert.Throws<AgentException>(() => site.Write(site.Flow(), page, json));
+            Assert.Contains("Title", refused.Message);
+            Assert.Empty(site.Store.Saves);
+            return;
+        }
+        var flow = site.Flow();
+        var (writable, before) = site.Write(flow, page, json);
+        var result = site.Save(flow, writable, before);
+
+        Assert.Equal(SharedBlockActions.Updated, Assert.Single(result.SharedBlocks!).Action);
+        Assert.Equal("New", Title(site.Store.Latest(block.ContentLink.ID)));
     }
 
     [Fact]

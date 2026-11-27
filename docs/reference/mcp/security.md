@@ -11,9 +11,11 @@
     publish, unpublish or discard in it, and can't add it to content;
   - properties the edit UI hides or locks for the editor: not displayed in edit mode (`[ScaffoldColumn(false)]`),
     read-only (`[Editable(false)]`), on a tab whose required access they lack on the content (in an inline block or a
-    block list's item too, by the content it is in; not in a local block, which the edit UI shows whatever its tab), or
+    block list's item too, by the content it is in; not in a local block, which the edit UI shows whatever its tab; in a
+    shared block of the content's "For this page" folder that a write takes over, by that block, as in its own form), or
     hidden or locked for them by an editor descriptor or metadata extender. The module asks the CMS UI's own metadata,
-    as the edit UI's form builds it (local blocks nested in their content's), and when that can't be built for an item,
+    as the edit UI's form builds it (local blocks nested in their content's; a taken-over block's for the block itself),
+    and when that can't be built for an item,
     the model's settings decide what is shown and nothing of the item may be changed. `get_content` leaves these
     properties out, and so do diffs, also inside local blocks and block lists; writing them is refused, and a block list
     rewritten keeps what its items had of them. `get_content_type` leaves out what the type's settings hide or lock;
