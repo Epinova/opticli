@@ -687,6 +687,7 @@ CommerceMarket.id
 CommerceMarket.languages
 CommerceMarket.name
 CommerceMarket.pricesIncludeTax
+CommerceMarketRemoveOptions.allowDestructive?
 CommerceMarketRemoveOptions.connection?
 CommerceMarketRemoveOptions.connectionName?
 CommerceMarketRemoveOptions.db?
@@ -718,6 +719,7 @@ CommercePrice.priceCode
 CommercePrice.priceType
 CommercePrice.validFrom
 CommercePrice.validUntil?
+CommercePriceRemoveOptions.allowDestructive?
 CommercePriceRemoveOptions.connection?
 CommercePriceRemoveOptions.connectionName?
 CommercePriceRemoveOptions.currency
@@ -752,6 +754,7 @@ CommerceRelationAddOptions.db?
 CommerceRelationAddOptions.dryRun?
 CommerceRelationAddOptions.quantity?
 CommerceRelationAddOptions.sortOrder?
+CommerceRelationRemoveOptions.allowDestructive?
 CommerceRelationRemoveOptions.connection?
 CommerceRelationRemoveOptions.connectionName?
 CommerceRelationRemoveOptions.db?
