@@ -1617,7 +1617,7 @@ public class SharedAreaBlockTests
         var planned = Assert.Single(dry.Validation!, i => i.Code == ValidationIssueCodes.NewerPublished);
         Assert.Equal("warning", planned.Severity);
         Assert.Contains($"older than the published version {newer}, published by colleague@example.com", planned.Message);
-        Assert.Contains("would replace (the publish needs includeDraft", planned.Message);
+        Assert.EndsWith("would replace that version, and the changes published in it; the publish needs includeDraft to confirm that.", planned.Message);
 
         // Confirmed, it goes live, and the result says whose published version it replaced.
         var result = PublishVersion(site, older, includeDraft: true);

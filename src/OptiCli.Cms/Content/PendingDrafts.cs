@@ -236,8 +236,10 @@ internal static class PendingDrafts
 
     /// <summary>The warning of a publish that replaces (or replaced) a newer published version.</summary>
     /// <param name="replaces">"replaces", "would replace", "will replace", "replaced".</param>
-    public static ValidationIssue Replaced(ContentReference version, ContentVersion published, string replaces) => new(null,
-        $"Version {version} is older than the published {DescribePublished(published)}: publishing it {replaces} that version, and the changes published in it.",
+    /// <param name="confirm">For a dry run that the real publish would refuse unconfirmed: the option that confirms it.</param>
+    public static ValidationIssue Replaced(ContentReference version, ContentVersion published, string replaces, string? confirm = null) => new(null,
+        $"Version {version} is older than the published {DescribePublished(published)}: publishing it {replaces} that version, and the changes published in it"
+        + (confirm is null ? "." : $"; the publish needs {confirm} to confirm that."),
         "warning")
     {
         Code = ValidationIssueCodes.NewerPublished,

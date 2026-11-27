@@ -121,9 +121,8 @@ internal static class PublishOperation
         if (newer is not null)
         {
             var unconfirmed = body.DryRun && !othersConfirmed && PendingDrafts.PublishedByOthers(newer, call.UserName);
-            issues = [.. issues, PendingDrafts.Replaced(version.ContentLink, newer,
-                body.DryRun ? unconfirmed ? $"would replace (the publish needs {call.ForCaller("--include-draft", "includeDraft")} to confirm that)" : "would replace"
-                : scheduling ? "will replace" : "replaced")];
+            issues = [.. issues, PendingDrafts.Replaced(version.ContentLink, newer, body.DryRun ? "would replace" : scheduling ? "will replace" : "replaced",
+                unconfirmed ? call.ForCaller("--include-draft", "includeDraft") : null)];
         }
         if (!body.DryRun && ValidationErrors.HasErrors(issues))
         {
