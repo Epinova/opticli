@@ -9,6 +9,20 @@ public class SiteProcessTests : IDisposable
 
     public void Dispose() => _root.Dispose();
 
+    [Fact]
+    public void A_sites_frameworks_are_read_from_its_runtimeconfig()
+    {
+        var web = _root.Write("Site.runtimeconfig.json", """
+            {"runtimeOptions": {"tfm": "net10.0", "frameworks": [
+              {"name": "Microsoft.NETCore.App", "version": "10.0.0"}, {"name": "Microsoft.AspNetCore.App", "version": "10.0.0"}]}}
+            """);
+        var console = _root.Write("Tool.runtimeconfig.json", """{"runtimeOptions": {"framework": {"name": "Microsoft.NETCore.App", "version": "8.0.0"}}}""");
+
+        Assert.Equal([("Microsoft.NETCore.App", "10"), ("Microsoft.AspNetCore.App", "10")], SiteProcess.Frameworks(web));
+        Assert.Equal([("Microsoft.NETCore.App", "8")], SiteProcess.Frameworks(console));
+        Assert.Null(SiteProcess.Frameworks(_root.Combine("missing.runtimeconfig.json")));
+    }
+
     [Theory]
     [InlineData("setsid")]
     [InlineData("perl")]

@@ -105,16 +105,54 @@ public static class SiteProcess
     public static string DotnetHost()
     {
         var current = Environment.ProcessPath;
-        if (current is not null && Path.GetFileNameWithoutExtension(current).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+        return current is not null && Path.GetFileNameWithoutExtension(current).Equals("dotnet", StringComparison.OrdinalIgnoreCase)
+            ? current
+            : "dotnet";
+    }
+
+    /// <summary>
+    /// For a sealed run: the host of the .NET installation opticli runs on (a global tool runs from its own launcher, so
+    /// <see cref="DotnetHost"/> would be the first <c>dotnet</c> on PATH), when it has every framework the site's
+    /// <c>runtimeconfig.json</c> asks for, in its major version; otherwise <see cref="DotnetHost"/>.
+    /// </summary>
+    public static string OwnDotnetHost(string siteDll)
+    {
+        var current = DotnetHost();
+        if (current != "dotnet")
         {
             return current;
         }
-        // A global tool runs from its own launcher: the host of the runtime opticli runs on (…/shared/Microsoft.NETCore.App/x.y.z/),
-        // not whichever `dotnet` comes first on PATH.
         var runtime = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
         var root = Path.GetFullPath(Path.Combine(runtime, "..", "..", ".."));
         var host = Path.Combine(root, OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet");
-        return File.Exists(host) ? host : "dotnet";
+        var frameworks = Frameworks(Path.ChangeExtension(siteDll, ".runtimeconfig.json"));
+        return File.Exists(host) && frameworks is { Count: > 0 } && frameworks.All(f => Has(root, f.Name, f.Major)) ? host : current;
+    }
+
+    private static bool Has(string root, string framework, string major)
+    {
+        var folder = Path.Combine(root, "shared", framework);
+        return Directory.Exists(folder) && Directory.EnumerateDirectories(folder, $"{major}.*").Any();
+    }
+
+    /// <summary>The frameworks a runtimeconfig.json names, with their major versions; null when it can't be read.</summary>
+    internal static IReadOnlyList<(string Name, string Major)>? Frameworks(string runtimeConfig)
+    {
+        try
+        {
+            using var stream = File.OpenRead(runtimeConfig);
+            var options = System.Text.Json.Nodes.JsonNode.Parse(stream)?["runtimeOptions"];
+            var listed = options?["frameworks"]?.AsArray().ToList() ?? (options?["framework"] is { } one ? [one] : []);
+            return listed
+                .Select(f => (Name: f?["name"]?.GetValue<string>(), Version: f?["version"]?.GetValue<string>()))
+                .Where(f => !string.IsNullOrEmpty(f.Name) && !string.IsNullOrEmpty(f.Version))
+                .Select(f => (f.Name!, f.Version!.Split('.')[0]))
+                .ToList();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     public static DateTimeOffset? StartTime(Process process)

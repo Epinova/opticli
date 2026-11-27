@@ -387,7 +387,7 @@ What a seal doesn't cover:
   (search indexing, webhooks, emails, cache warmers) and configuration run as they do locally, in `Development`, with your
   local settings (search index and webhook endpoints included). Of your shell's environment, the site gets only what the
   system and .NET need (`PATH`, `HOME`, temp folders, locale, `DOTNET_ROOT`, TLS certificate and proxy settings), and it
-  runs on the .NET host opticli runs on: configuration in environment variables (`EPiServer__...`), profilers and extra
+  runs on the .NET host opticli runs on (when that has the site's runtime): configuration in environment variables (`EPiServer__...`), profilers and extra
   dependencies stay behind, so settings belong in the sealed `appsettings*.json` or user secrets. The seal makes sure the build is the one that was sealed;
   it can't say what that code does. Review what the agent changed in the code before you run a sealed apply.
 - **Media** only with production's blob storage (above). **Deletes, unpublish steps, access rights and Commerce data**

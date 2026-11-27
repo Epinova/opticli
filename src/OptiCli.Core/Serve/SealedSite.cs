@@ -75,7 +75,7 @@ public static class SealedSite
         var listening = new ConcurrentQueue<string>();
         await using var log = OpenLog(request.LogPath);
         var gate = new object();
-        using var process = SiteProcess.StartAttached(SiteProcess.DotnetHost(), request.Output.Dll, request.Project.Directory, Environment(request), redirectInput: true);
+        using var process = SiteProcess.StartAttached(SiteProcess.OwnDotnetHost(request.Output.Dll), request.Output.Dll, request.Project.Directory, Environment(request), redirectInput: true);
         void Copy(string? line)
         {
             if (line is null)
