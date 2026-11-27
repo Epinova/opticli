@@ -426,6 +426,46 @@ internal sealed class AuthorizationServer(
         {
             return clientLimited;
         }
+
+        var now = time.GetUtcNow();
+        // The code or refresh token first. A client_id that is a URL makes the site fetch its metadata document, and
+        // anyone can send any client_id: it is only fetched once what was presented names that client. A refresh token
+        // that was already rotated out (reused) still goes on, to the reuse detection below.
+        var isUrl = ClientMetadataDocument.IsUrl(credentials.ClientId);
+        AuthorizationCode? record = null;
+        var refreshHash = "";
+        Grant? found = null;
+        Grant? reused = null;
+        switch (grantType)
+        {
+            case "authorization_code":
+                // Only for a metadata document client, which has no secret: a confidential client that gets its
+                // authentication wrong keeps its code.
+                if (isUrl)
+                {
+                    record = await TakeCodeAsync(form, context.RequestAborted);
+                    if (record is null || !string.Equals(record.ClientId, credentials.ClientId, StringComparison.Ordinal))
+                    {
+                        audit.TokenRefused(grantType, credentials.ClientId, "invalid_grant (code)");
+                        return OAuthJson.Error(context, "invalid_grant", "The code is unknown, used, expired, for another client, or for another redirect_uri.");
+                    }
+                }
+                break;
+            case "refresh_token":
+                var refresh = form["refresh_token"].ToString();
+                refreshHash = refresh.Length == 0 ? "" : Secrets.Hash(refresh);
+                found = refreshHash.Length == 0 ? null : await store.FindGrantByRefreshAsync(refreshHash, context.RequestAborted);
+                reused = found is not null || refreshHash.Length == 0 ? null : await store.FindGrantByPreviousRefreshAsync(refreshHash, context.RequestAborted);
+                if (isUrl && (found is null ? reused is null : !string.Equals(found.ClientId, credentials.ClientId, StringComparison.Ordinal)))
+                {
+                    audit.TokenRefused(grantType, credentials.ClientId, "invalid_grant (refresh token)");
+                    return OAuthJson.Error(context, "invalid_grant", "The refresh token is unknown, already used, expired, or revoked.");
+                }
+                break;
+            default:
+                return OAuthJson.Error(context, "unsupported_grant_type", "Supported grant types: authorization_code, refresh_token.");
+        }
+
         var client = await clients.ResolveAsync(credentials.ClientId, context.RequestAborted);
         if (client is null || !credentials.Authenticates(client))
         {
@@ -438,7 +478,6 @@ internal sealed class AuthorizationServer(
                 StatusCodes.Status401Unauthorized);
         }
 
-        var now = time.GetUtcNow();
         var newRefresh = RefreshPrefix + Secrets.New();
         // A refresh extends the connection by RefreshTokenLifetime, but never past ConnectionLifetime from its start.
         DateTimeOffset GrantExpires(DateTimeOffset created)
@@ -453,8 +492,7 @@ internal sealed class AuthorizationServer(
         {
             case "authorization_code":
             {
-                var code = form["code"].ToString();
-                var record = code.Length == 0 ? null : await store.TakeCodeAsync(Secrets.Hash(code), context.RequestAborted);
+                record ??= await TakeCodeAsync(form, context.RequestAborted);
                 if (record is null || record.Expires <= now || !string.Equals(record.ClientId, client.ClientId, StringComparison.Ordinal)
                     || !string.Equals(record.RedirectUri, form["redirect_uri"].ToString(), StringComparison.Ordinal))
                 {
@@ -492,10 +530,7 @@ internal sealed class AuthorizationServer(
             }
             case "refresh_token":
             {
-                var refresh = form["refresh_token"].ToString();
-                var refreshHash = refresh.Length == 0 ? "" : Secrets.Hash(refresh);
-                var found = refreshHash.Length == 0 ? null : await store.FindGrantByRefreshAsync(refreshHash, context.RequestAborted);
-                if (found is null && refreshHash.Length > 0 && await store.FindGrantByPreviousRefreshAsync(refreshHash, context.RequestAborted) is { } reused)
+                if (reused is not null)
                 {
                     if (string.Equals(reused.ClientId, client.ClientId, StringComparison.Ordinal) && now - reused.RefreshIssued <= Options.RefreshTokenReuseGrace)
                     {
@@ -566,7 +601,7 @@ internal sealed class AuthorizationServer(
                 break;
             }
             default:
-                return OAuthJson.Error(context, "unsupported_grant_type", "Supported grant types: authorization_code, refresh_token.");
+                throw new InvalidOperationException($"Grant type {grantType} was checked above.");
         }
 
         cache.Evict(grant.GrantId);
@@ -584,6 +619,10 @@ internal sealed class AuthorizationServer(
     }
 
     // --- Helpers ---------------------------------------------------------------------------------------------------
+
+    /// <summary>The form's code, taken from the store (a code works once, whatever happens next); null for none or an unknown one.</summary>
+    private async Task<AuthorizationCode?> TakeCodeAsync(IFormCollection form, CancellationToken cancellationToken) =>
+        form["code"].ToString() is { Length: > 0 } code ? await store.TakeCodeAsync(Secrets.Hash(code), cancellationToken) : null;
 
     /// <returns>The body, or null when it is longer than <paramref name="limit"/>.</returns>
     private static async Task<byte[]?> ReadLimitedAsync(Stream body, int limit, CancellationToken cancellationToken)

@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Hosting;
@@ -9,8 +8,8 @@ namespace OptiCli.Mcp.OAuth;
 /// <summary>
 /// Finds the client behind a <c>client_id</c>: one that registered itself (DCR), or an HTTPS URL whose metadata
 /// document describes the client (CIMD), fetched with care: public addresses only, checked on the connected socket, no
-/// redirects or proxies, at most <see cref="ClientMetadataDocument.MaxBytes"/> in <see cref="FetchTimeout"/>, and cached
-/// for <see cref="CacheFor"/>.
+/// redirects or proxies, at most <see cref="ClientMetadataDocument.MaxBytes"/> in <see cref="FetchTimeout"/>, at most
+/// <see cref="MaxConcurrentFetches"/> at a time, and cached for <see cref="CacheFor"/>.
 /// </summary>
 internal sealed class ClientResolver : IDisposable
 {
@@ -21,7 +20,18 @@ internal sealed class ClientResolver : IDisposable
 
     public static readonly TimeSpan FetchTimeout = TimeSpan.FromSeconds(5);
 
-    private const int MaxCached = 1000;
+    /// <summary>
+    /// The most documents (and failures) kept. The least recently used goes first, so made-up client_ids can't push out
+    /// the documents in use.
+    /// </summary>
+    internal const int MaxCached = 1000;
+
+    /// <summary>
+    /// The most documents fetched at once, for the whole site: each fetch can take <see cref="FetchTimeout"/>, and a
+    /// client_id is the caller's to choose. A request that finds every slot taken for <see cref="FetchTimeout"/> gets no
+    /// client, and nothing is cached for it.
+    /// </summary>
+    internal const int MaxConcurrentFetches = 4;
 
     /// <summary>Set on a request for a loopback document in Development, the only case the socket check lets loopback through.</summary>
     internal static readonly HttpRequestOptionsKey<bool> AllowLoopback = new("OptiCli.Mcp.AllowLoopback");
@@ -31,7 +41,12 @@ internal sealed class ClientResolver : IDisposable
     private readonly ILogger<ClientResolver> _logger;
     private readonly TimeProvider _time;
     private readonly HttpClient _http;
-    private readonly ConcurrentDictionary<string, (RegisteredClient? Client, DateTimeOffset Until)> _documents = new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim _fetching = new(MaxConcurrentFetches, MaxConcurrentFetches);
+    private readonly object _lock = new();
+    private readonly Dictionary<string, LinkedListNode<Entry>> _documents = new(StringComparer.Ordinal);
+
+    /// <summary>The cached documents, most recently used first.</summary>
+    private readonly LinkedList<Entry> _recent = new();
 
     public ClientResolver(IOAuthStore store, IHostEnvironment environment, ILogger<ClientResolver> logger, TimeProvider time)
         : this(store, environment, logger, time, CreateHandler())
@@ -60,23 +75,69 @@ internal sealed class ClientResolver : IDisposable
             return await _store.FindClientAsync(clientId, cancellationToken);
         }
         var now = _time.GetUtcNow();
-        if (_documents.TryGetValue(clientId, out var cached) && cached.Until > now)
+        if (Cached(clientId, now) is { } cached)
         {
             return cached.Client;
         }
-        var (client, error) = await FetchAsync(clientId, cancellationToken);
+        if (!await _fetching.WaitAsync(FetchTimeout, cancellationToken))
+        {
+            _logger.LogWarning("Client metadata document {ClientId} not fetched: {Count} others were being fetched for {Seconds} seconds.",
+                McpAudit.Clean(clientId), MaxConcurrentFetches, FetchTimeout.TotalSeconds);
+            return null;
+        }
+        RegisteredClient? client;
+        string? error;
+        try
+        {
+            (client, error) = await FetchAsync(clientId, cancellationToken);
+        }
+        finally
+        {
+            _fetching.Release();
+        }
         cancellationToken.ThrowIfCancellationRequested();
         if (error is not null)
         {
             // Both are the caller's to choose (the reason may name the URL's host): cleaned, so they can't forge log lines.
             _logger.LogWarning("Client metadata document {ClientId} refused: it {Reason}.", McpAudit.Clean(clientId), McpAudit.Clean(error));
         }
-        if (_documents.Count >= MaxCached)
-        {
-            _documents.Clear();
-        }
-        _documents[clientId] = (client, now.Add(client is null ? FailureCacheFor : CacheFor));
+        Cache(new Entry(clientId, client, now.Add(client is null ? FailureCacheFor : CacheFor)));
         return client;
+    }
+
+    private sealed record Entry(string ClientId, RegisteredClient? Client, DateTimeOffset Until);
+
+    /// <returns>The cached document (or failure) for <paramref name="clientId"/>, now the most recently used; null when there is none, or it expired.</returns>
+    private Entry? Cached(string clientId, DateTimeOffset now)
+    {
+        lock (_lock)
+        {
+            if (!_documents.TryGetValue(clientId, out var node) || node.Value.Until <= now)
+            {
+                return null;
+            }
+            _recent.Remove(node);
+            _recent.AddFirst(node);
+            return node.Value;
+        }
+    }
+
+    /// <summary>Caches <paramref name="entry"/> as the most recently used, making room by dropping the least recently used.</summary>
+    private void Cache(Entry entry)
+    {
+        lock (_lock)
+        {
+            if (_documents.Remove(entry.ClientId, out var old))
+            {
+                _recent.Remove(old);
+            }
+            while (_documents.Count >= MaxCached && _recent.Last is { } last)
+            {
+                _recent.RemoveLast();
+                _documents.Remove(last.Value.ClientId);
+            }
+            _documents[entry.ClientId] = _recent.AddFirst(entry);
+        }
     }
 
     private async Task<(RegisteredClient? Client, string? Error)> FetchAsync(string clientId, CancellationToken cancellationToken)
@@ -173,7 +234,11 @@ internal sealed class ClientResolver : IDisposable
     private static bool Allowed(IPAddress address, bool allowLoopback) =>
         NetworkAddresses.IsPublic(address) || (allowLoopback && IPAddress.IsLoopback(address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address));
 
-    public void Dispose() => _http.Dispose();
+    public void Dispose()
+    {
+        _http.Dispose();
+        _fetching.Dispose();
+    }
 
     /// <summary>The socket check refused the address; the message says why, without anything secret.</summary>
     internal sealed class RefusedAddressException(string message) : IOException(message);

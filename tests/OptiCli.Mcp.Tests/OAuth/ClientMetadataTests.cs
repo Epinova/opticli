@@ -105,6 +105,7 @@ public sealed class ClientResolverTests : IAsyncLifetime
     private WebApplication _server = null!;
     private string _origin = "";
     private readonly ManualTime _time = new();
+    private int _counted;
 
     public async Task InitializeAsync()
     {
@@ -118,6 +119,11 @@ public sealed class ClientResolverTests : IAsyncLifetime
         _server.MapGet("/elsewhere.json", (HttpContext c) => Results.Text(
             $$"""{"client_id":"{{c.Request.Scheme}}://{{c.Request.Host}}{{c.Request.Path}}","client_name":"Claude","redirect_uris":["https://claude.ai/api/mcp/auth_callback","https://attacker.example/cb"]}""",
             "application/json"));
+        _server.MapGet("/counted.json", (HttpContext c) =>
+        {
+            Interlocked.Increment(ref _counted);
+            return Results.Text(Document(c, "Counted client"), "application/json");
+        });
         _server.MapGet("/slow.json", async (HttpContext c) =>
         {
             await Task.Delay(TimeSpan.FromSeconds(30), c.RequestAborted);
@@ -235,6 +241,30 @@ public sealed class ClientResolverTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_token_request_with_a_made_up_code_or_refresh_token_fetches_no_document()
+    {
+        await using var site = await TestSite.StartAsync(environment: Environments.Development);
+        var clientId = _origin + "/counted.json";
+
+        var refresh = await site.TokenAsync(new() { ["grant_type"] = "refresh_token", ["refresh_token"] = "ocr_madeup", ["client_id"] = clientId });
+        Assert.Equal("invalid_grant", await AuthorizationServerTests.Error(refresh));
+        var code = await site.TokenAsync(new()
+        {
+            ["grant_type"] = "authorization_code", ["code"] = "madeup", ["redirect_uri"] = "http://127.0.0.1/callback", ["client_id"] = clientId,
+            ["code_verifier"] = TestSite.Verifier(),
+        });
+        Assert.Equal("invalid_grant", await AuthorizationServerTests.Error(code));
+        // A real refresh token of another client doesn't get it fetched either.
+        var other = await site.ConnectAsync();
+        var theirs = await site.TokenAsync(new() { ["grant_type"] = "refresh_token", ["refresh_token"] = other.Refresh, ["client_id"] = clientId });
+        Assert.Equal("invalid_grant", await AuthorizationServerTests.Error(theirs));
+
+        Assert.Equal(0, _counted);
+        // The other client's connection is untouched.
+        Assert.Single(await site.Store.ListGrantsAsync(null, default));
+    }
+
+    [Fact]
     public async Task A_metadata_document_clients_return_address_on_another_host_is_refused_at_authorize()
     {
         await using var site = await TestSite.StartAsync(environment: Environments.Development);
@@ -252,11 +282,100 @@ public sealed class ClientResolverTests : IAsyncLifetime
         Assert.DoesNotContain("class=\"warning\"", await claude.Content.ReadAsStringAsync());
     }
 
-    private sealed class Environment(string name) : IHostEnvironment
+    internal sealed class Environment(string name) : IHostEnvironment
     {
         public string EnvironmentName { get; set; } = name;
         public string ApplicationName { get; set; } = "Test";
         public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
         public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
+}
+
+/// <summary>How many documents the resolver fetches at once, and which it keeps: with a stand-in for the network.</summary>
+public sealed class ClientResolverLimitsTests
+{
+    private readonly ManualTime _time = new();
+
+    private ClientResolver Resolver(HttpMessageHandler handler) =>
+        new(new InMemoryOAuthStore(), new ClientResolverTests.Environment(Environments.Production), NullLogger<ClientResolver>.Instance, _time, handler);
+
+    private static string ClientId(int i) => $"https://client{i}.example.com/client.json";
+
+    [Fact]
+    public async Task At_most_four_documents_are_fetched_at_once()
+    {
+        var network = new Network { Hold = new TaskCompletionSource() };
+        using var resolver = Resolver(network);
+        var resolving = Enumerable.Range(0, 10).Select(i => resolver.ResolveAsync(ClientId(i), default)).ToList();
+        while (network.Fetches < ClientResolver.MaxConcurrentFetches)
+        {
+            await Task.Delay(10);
+        }
+        await Task.Delay(200);
+        Assert.Equal(ClientResolver.MaxConcurrentFetches, network.Fetches);
+
+        network.Hold.SetResult();
+        var clients = await Task.WhenAll(resolving);
+        Assert.All(clients, Assert.NotNull);
+        Assert.Equal(10, network.Fetches);
+        Assert.Equal(ClientResolver.MaxConcurrentFetches, network.MostAtOnce);
+    }
+
+    [Fact]
+    public async Task A_full_cache_drops_the_least_recently_used_document()
+    {
+        var network = new Network();
+        using var resolver = Resolver(network);
+        for (var i = 0; i < ClientResolver.MaxCached; i++)
+        {
+            await resolver.ResolveAsync(ClientId(i), default);
+        }
+        // Used again, so client1 is now the least recently used.
+        await resolver.ResolveAsync(ClientId(0), default);
+        await resolver.ResolveAsync(ClientId(ClientResolver.MaxCached), default);
+        var fetched = network.Fetches;
+
+        await resolver.ResolveAsync(ClientId(0), default);
+        await resolver.ResolveAsync(ClientId(2), default);
+        Assert.Equal(fetched, network.Fetches);
+        await resolver.ResolveAsync(ClientId(1), default);
+        Assert.Equal(fetched + 1, network.Fetches);
+    }
+
+    /// <summary>Answers every request with a valid document for its URL, once <see cref="Hold"/> (if any) is done.</summary>
+    private sealed class Network : HttpMessageHandler
+    {
+        private int _fetches;
+        private int _now;
+        private int _most;
+
+        public TaskCompletionSource? Hold { get; init; }
+
+        public int Fetches => Volatile.Read(ref _fetches);
+
+        public int MostAtOnce => Volatile.Read(ref _most);
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _fetches);
+            var now = Interlocked.Increment(ref _now);
+            int most;
+            while ((most = Volatile.Read(ref _most)) < now && Interlocked.CompareExchange(ref _most, now, most) != most)
+            {
+            }
+            try
+            {
+                if (Hold is not null)
+                {
+                    await Hold.Task.WaitAsync(cancellationToken);
+                }
+                var document = $$"""{"client_id":"{{request.RequestUri}}","client_name":"Client","redirect_uris":["https://claude.ai/api/mcp/auth_callback"]}""";
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(document, Encoding.UTF8, "application/json") };
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _now);
+            }
+        }
     }
 }
