@@ -32,9 +32,37 @@ internal sealed record WriteToolType(Type Tool, Type Args, string Name, string? 
 
     internal const string PlanTokenDescription = "The planToken the dry run returned (it works for 30 minutes); required when dryRun is false.";
 
-    /// <summary>What every write tool's description ends with.</summary>
-    internal const string Workflow =
-        "It saves drafts only, never publishing. Call it with dryRun: true first and show the user the steps it reports; then, once they agree, call it again with the same arguments, dryRun: false and the planToken the dry run returned. A run that stops at a failed step keeps the steps before it: tell the user which were saved.";
+    /// <summary>How every write tool's description goes on, after what it does: the steps and the dry run.</summary>
+    internal const string DryRunWorkflow =
+        "Call it with dryRun: true first and show the user the steps it reports; then, once they agree, call it again with the same arguments, dryRun: false and the planToken the dry run returned. A run that stops at a failed step keeps the steps before it: tell the user which were saved.";
+
+    /// <summary>
+    /// What a write tool's description ends with: what its steps do to the site, from the kinds it declares, then
+    /// <see cref="DryRunWorkflow"/>. Drafts only for updates and creates; a move changes the live URLs of published content,
+    /// and the recycle bin takes content off the site, so those are said where the tool declares them.
+    /// </summary>
+    internal static string Workflow(ContentPlanKinds kinds)
+    {
+        var drafts = (kinds & (ContentPlanKinds.Update | ContentPlanKinds.Create)) != 0;
+        var moves = (kinds & ContentPlanKinds.Move) != 0;
+        var trashes = (kinds & ContentPlanKinds.Trash) != 0;
+        if (!moves && !trashes)
+        {
+            return "It saves drafts only, never publishing. " + DryRunWorkflow;
+        }
+        string[] does = [.. new[] { drafts ? "saves drafts" : null, moves ? "moves content" : null, trashes ? "puts content in the recycle bin" : null }.OfType<string>()];
+        var steps = does.Length == 1 ? does[0] : $"{string.Join(", ", does[..^1])} and {does[^1]}";
+        var effects = new List<string>();
+        if (moves)
+        {
+            effects.Add("Moving published content changes its live URL, and those of the content below it.");
+        }
+        if (trashes)
+        {
+            effects.Add("Content put in the recycle bin, and the content below it, goes off the site until an editor restores it.");
+        }
+        return $"It {steps}, and never publishes. {string.Join(" ", effects)} {DryRunWorkflow}";
+    }
 
     /// <summary>How the arguments are read: a required one missing, <c>null</c> for one that isn't nullable, or one the type doesn't have, is refused.</summary>
     internal static readonly JsonSerializerOptions Strict = new(McpJsonUtilities.DefaultOptions)
@@ -120,7 +148,7 @@ internal sealed class WriteTool<TTool, TArgs> : McpServerTool where TTool : clas
         {
             Name = type.Name,
             Title = type.Title,
-            Description = type.Description.TrimEnd() + " " + WriteToolType.Workflow,
+            Description = type.Description.TrimEnd() + " " + WriteToolType.Workflow(type.Kinds),
             InputSchema = JsonSerializer.SerializeToElement(schema),
             Annotations = new ToolAnnotations
             {
