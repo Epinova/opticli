@@ -78,6 +78,9 @@ internal static class McpSiteSettings
     /// <summary>The CMS edit UI's path, relative to the site: <c>EPiServer/CMS/</c> on CMS 12, <c>Optimizely/CMS/</c> on CMS 13.</summary>
     public static string EditUiPath => CmsMajor >= 13 ? "Optimizely/CMS/" : "EPiServer/CMS/";
 
+    /// <summary>The MCP module's default path, relative to the site: under the edit UI's on each major.</summary>
+    public static string ModulePath => CmsMajor >= 13 ? "optimizely/opticli" : "episerver/opticli";
+
     /// <summary>The fixture's test users, by name; their roles are in McpFixture.cs.</summary>
     public static string Password(string user)
     {

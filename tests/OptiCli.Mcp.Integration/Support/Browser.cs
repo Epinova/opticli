@@ -102,7 +102,7 @@ internal sealed partial class Browser : IDisposable
 
     /// <summary>The connections page (<c>/episerver/opticli/connections</c>), signing in first if needed.</summary>
     public Task<string> ConnectionsAsync(CancellationToken cancellationToken) =>
-        PageAsync(new Uri(_http.BaseAddress!, "episerver/opticli/connections"), cancellationToken);
+        PageAsync(new Uri(_http.BaseAddress!, $"{McpSiteSettings.ModulePath}/connections"), cancellationToken);
 
     /// <summary>A page of the site as this editor sees it (a CMS preview, say), signing in first if needed.</summary>
     public async Task<string> PageAsync(Uri url, CancellationToken cancellationToken)

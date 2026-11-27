@@ -20,7 +20,7 @@ public sealed class NoPublishTests(SharedSessions sessions)
         var site = McpSiteSettings.NoPublishUrl!;
         using (var http = new HttpClient { BaseAddress = site })
         {
-            using var metadata = await http.GetAsync(".well-known/oauth-authorization-server/episerver/opticli");
+            using var metadata = await http.GetAsync($".well-known/oauth-authorization-server/{McpSiteSettings.ModulePath}");
             var scopes = SignInTests.Strings(JsonDocument.Parse(await metadata.Content.ReadAsStringAsync()).RootElement.GetProperty("scopes_supported"));
             Assert.Equal(["content:read", "content:write"], scopes);
         }

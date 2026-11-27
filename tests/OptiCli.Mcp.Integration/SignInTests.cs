@@ -18,14 +18,14 @@ public sealed class SignInTests(SharedSessions sessions)
         using var anonymous = await http.PostAsync(McpSession.McpPath, new StringContent("{}", System.Text.Encoding.UTF8, "application/json"));
         Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
         var challenge = anonymous.Headers.WwwAuthenticate.ToString();
-        var metadataUrl = new Uri(site, ".well-known/oauth-protected-resource/episerver/opticli/mcp");
+        var metadataUrl = new Uri(site, $".well-known/oauth-protected-resource/{McpSiteSettings.ModulePath}/mcp");
         Assert.Contains($"resource_metadata=\"{metadataUrl}\"", challenge);
         Assert.Contains("content:publish", challenge);
         var resource = await JsonAsync(http, metadataUrl);
         Assert.Equal(new Uri(site, McpSession.McpPath).ToString(), resource.GetProperty("resource").GetString());
         var issuer = resource.GetProperty("authorization_servers")[0].GetString()!;
-        Assert.Equal(new Uri(site, "episerver/opticli").ToString(), issuer);
-        var server = await JsonAsync(http, new Uri(site, ".well-known/oauth-authorization-server/episerver/opticli"));
+        Assert.Equal(new Uri(site, McpSiteSettings.ModulePath).ToString(), issuer);
+        var server = await JsonAsync(http, new Uri(site, $".well-known/oauth-authorization-server/{McpSiteSettings.ModulePath}"));
         Assert.Equal(issuer, server.GetProperty("issuer").GetString());
         Assert.True(server.GetProperty("client_id_metadata_document_supported").GetBoolean());
         Assert.Equal(["S256"], server.GetProperty("code_challenge_methods_supported").EnumerateArray().Select(e => e.GetString()));
@@ -61,7 +61,7 @@ public sealed class SignInTests(SharedSessions sessions)
     public async Task Only_claudes_and_loopback_return_addresses_may_register_and_the_metadata_is_never_cached()
     {
         using var http = new HttpClient { BaseAddress = McpSiteSettings.Url! };
-        async Task<HttpResponseMessage> Register(string redirect) => await http.PostAsync("episerver/opticli/oauth/register", new StringContent(
+        async Task<HttpResponseMessage> Register(string redirect) => await http.PostAsync($"{McpSiteSettings.ModulePath}/oauth/register", new StringContent(
             JsonSerializer.Serialize(new { redirect_uris = new[] { redirect }, client_name = "Claude", token_endpoint_auth_method = "none" }), System.Text.Encoding.UTF8, "application/json"));
 
         using var elsewhere = await Register("https://attacker.example/cb");
@@ -70,7 +70,7 @@ public sealed class SignInTests(SharedSessions sessions)
         using var claude = await Register("https://claude.ai/api/mcp/auth_callback");
         Assert.Equal(HttpStatusCode.Created, claude.StatusCode);
 
-        foreach (var path in new[] { ".well-known/oauth-protected-resource/episerver/opticli/mcp", ".well-known/oauth-authorization-server/episerver/opticli" })
+        foreach (var path in new[] { $".well-known/oauth-protected-resource/{McpSiteSettings.ModulePath}/mcp", $".well-known/oauth-authorization-server/{McpSiteSettings.ModulePath}" })
         {
             using var metadata = await http.GetAsync(path);
             Assert.True(metadata.Headers.CacheControl?.NoStore, path);
