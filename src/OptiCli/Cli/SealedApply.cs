@@ -324,7 +324,7 @@ internal static class SealedApply
         {
             terminal.WriteLine($"  accepts: {leftovers.Count} content type(s)/properties only the database of {target} has (code removed, or newer code there than this build), as they are; the plan doesn't write them (checked), and any other difference stops the run: {Printable.Of(string.Join(", ", leftovers))}");
         }
-        terminal.WriteLine($"  never:   deletes, unpublish steps, access rights{(summary.Media > 0 ? $"; media files only to the blob storage of {target}, asked next" : "")}");
+        terminal.WriteLine($"  never:   deletes, unpublish steps, access rights, Commerce data{(summary.Media > 0 ? $"; media files only to the blob storage of {target}, asked next" : "")}");
         terminal.WriteLine();
     }
 

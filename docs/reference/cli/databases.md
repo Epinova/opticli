@@ -260,8 +260,9 @@ opticli apply /path/to/plan.json --db prod --seal 7f3a9c1e0b7d4e55  # the user, 
 dry run, as `apply --dry-run` does; the development database must be `local`, with its site running on this build),
 reads production over SQL with its saved read-only login, and writes nothing there:
 - the plan may only create, change, move, translate and publish content, and upload media files, by GUID (or `$id` of
-  what it creates): `delete`, `unpublish`, `access`, `discard`, `site`, `language`, a translation's `remove`,
-  `includeDraft`, `force`, `"project"`, version ids and a blueprint not named by GUID are refused (`refused`, exit 3, `details.reason: "sealedPlan"`, every problem listed), and so are content ids
+  what it creates): every other op is refused, among them `delete`, `unpublish`, `access`, `discard`, `site`,
+  `language` and the Commerce ops (`relation`, `price`, `warehouse`, `inventory`, `market`), and so are a translation's
+  `remove`, `includeDraft`, `force`, `"project"`, version ids and a blueprint not named by GUID are refused (`refused`, exit 3, `details.reason: "sealedPlan"`, every problem listed), and so are content ids
   and URLs (in refs, a ContentArea item's `ref`, the value of a reference property), which name other content in another
   database. A create or upload needs a fixed GUID (`guid`, or `guidNamespace`), so a second run can't make a copy (an
   upload with `replace` keeps the media's own GUID). An
@@ -386,8 +387,10 @@ What a seal doesn't cover:
   (search indexing, webhooks, emails, cache warmers) and configuration run as they do locally, in `Development`, with your
   local settings (search index and webhook endpoints included). The seal makes sure the build is the one that was sealed;
   it can't say what that code does. Review what the agent changed in the code before you run a sealed apply.
-- **Media** only with production's blob storage (above). **Deletes, unpublish steps and access rights**: never (an expiry
-  that has passed still takes content offline, see above). Do those in production's edit UI.
+- **Media** only with production's blob storage (above). **Deletes, unpublish steps, access rights and Commerce data**
+  (prices, stock, markets, warehouses, catalog relations): never (an expiry that has passed still takes content offline,
+  see above). Do those in production's edit UI, or in Commerce's own UI. The run's site refuses them too, whatever it is
+  sent: in a sealed run the agent answers only reads and the writes a sealed plan has, never with `includeDraft`.
 - **With the event bus, the run's site is one more server of production** for the run's minutes: it receives production's
   cache events too and sends its own, as a deployed instance does.
 - Content an editor changes after the last check, while the plan runs, is caught by each step's own checks (a newer

@@ -58,6 +58,12 @@ public class SealedPlanTests
     [InlineData("""{"op": "set", "ref": "/en/about-us/", "properties": {"Heading": "x"}}""", "refers to '/en/about-us/'")]
     [InlineData($$$"""{"op": "move", "ref": "{{{Page}}}", "to": "5"}""", "refers to '5'")]
     [InlineData($$$"""{"op": "area", "ref": "{{{Page}}}", "property": "MainContentArea", "action": "add", "item": "42"}""", "refers to '42'")]
+    [InlineData("""{"op": "market", "market": "NORDIC", "remove": true}""", "changes Commerce data")]
+    [InlineData("""{"op": "market", "market": "NORDIC", "name": "Nordic"}""", "changes Commerce data")]
+    [InlineData($$$"""{"op": "price", "entry": "{{{Page}}}", "market": "DEFAULT", "currency": "USD", "amount": 10}""", "changes Commerce data")]
+    [InlineData($$$"""{"op": "inventory", "entry": "{{{Page}}}", "warehouse": "default", "inStock": 5}""", "changes Commerce data")]
+    [InlineData("""{"op": "warehouse", "code": "oslo"}""", "changes Commerce data")]
+    [InlineData($$$"""{"op": "relation", "parent": "{{{Start}}}", "child": "{{{Page}}}", "remove": true}""", "changes Commerce data")]
     [InlineData($$$"""{"op": "set", "ref": "{{{Page}}}", "properties": {"MainContentArea": [{"ref": "42"}]}}""", "properties.MainContentArea[0].ref is '42'")]
     [InlineData($$$"""{"op": "set", "ref": "{{{Page}}}", "properties": {"Related": "17"}}""", "properties.Related is '17'")]
     [InlineData($$$"""{"op": "set", "ref": "{{{Page}}}", "properties": {"Pages": ["{{{Page}}}", "17_3"]}}""", "properties.Pages[1] is '17_3'")]
@@ -71,6 +77,15 @@ public class SealedPlanTests
 
         Assert.Equal(SealedPlan.Reason, SealStoreTests.Reason(refused));
         Assert.Contains(SealedPlan.Problems(plan, Model()), p => p.Contains(expected, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Every_op_a_plan_can_have_is_either_allowed_or_refused_with_a_reason()
+    {
+        // A new op is refused by default; this makes adding one a decision, with a reason the user reads.
+        var unclassified = WritePlan.Fields.Keys.Where(op => !SealedPlan.AllowedOps.Contains(op) && !SealedPlan.RefusedOps.ContainsKey(op)).ToList();
+        Assert.Empty(unclassified);
+        Assert.Empty(SealedPlan.AllowedOps.Intersect(SealedPlan.RefusedOps.Keys));
     }
 
     [Fact]

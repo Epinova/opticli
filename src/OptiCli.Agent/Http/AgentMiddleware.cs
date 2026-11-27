@@ -44,11 +44,15 @@ internal static class AgentMiddleware
             RequestGuard.Check(context, context.RequestServices.GetRequiredService<AgentSettings>());
             var route = AgentRouter.Match(context.Request.Method, context.Request.Path.Value);
 
+            var handler = route.Extension?.Handler ?? (Handlers.TryGetValue(route.Endpoint, out var found) ? found : throw new InvalidOperationException($"Unhandled endpoint {route.Endpoint}."));
+            if (StdinSecrets.Sealed)
+            {
+                SealedRunGuard.Check(route, handler);
+            }
+
             using (OptiCliPrincipal.Enter(context))
             {
-                var (status, data) = route.Extension is { } extension
-                    ? await extension.Handler.Run(new AgentRequest(context, route.Argument))
-                    : await DispatchAsync(new AgentRequest(context, route.Argument), route.Endpoint);
+                var (status, data) = await handler.Run(new AgentRequest(context, route.Argument));
                 await WriteAsync(context, status, new AgentResponse<object>(true, data, Meta));
             }
         }
@@ -63,9 +67,6 @@ internal static class AgentMiddleware
             await WriteAsync(context, failure.Status, new AgentResponse<object>(false, null, Meta, failure.ToError()));
         }
     }
-
-    private static async Task<(int Status, object Data)> DispatchAsync(AgentRequest request, AgentEndpoint endpoint) =>
-        Handlers.TryGetValue(endpoint, out var handler) ? await handler.Run(request) : throw new InvalidOperationException($"Unhandled endpoint {endpoint}.");
 
     /// <summary>
     /// What runs each endpoint. Every write is made with <see cref="Write{T}"/>, which passes <see cref="DriftGate"/> once
@@ -145,6 +146,10 @@ internal static class AgentMiddleware
         new(true, async request =>
         {
             var body = await read(request);
+            if (StdinSecrets.Sealed && body is not null)
+            {
+                SealedRunGuard.CheckBody(body);
+            }
             DriftGate.Check(request, dryRun(body));
             return await handle(request, body);
         });

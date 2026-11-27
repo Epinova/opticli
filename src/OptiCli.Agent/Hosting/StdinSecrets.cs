@@ -14,6 +14,12 @@ internal static class StdinSecrets
     public static bool Expected =>
         string.Equals(Environment.GetEnvironmentVariable(AgentProtocol.SecretsVariable)?.Trim(), AgentProtocol.SecretsFromStdin, StringComparison.Ordinal);
 
+    /// <summary>
+    /// <see cref="Expected"/> as it was when the agent first looked (the startup hook), so the site's own code can't turn
+    /// the sealed run's limits off by changing the environment (<see cref="Http.SealedRunGuard"/>).
+    /// </summary>
+    public static bool Sealed { get; } = Expected;
+
     /// <summary>What <see cref="Read"/> set, for <see cref="Forget"/> and <see cref="Given"/>.</summary>
     private static IReadOnlyDictionary<string, string> _set = new Dictionary<string, string>();
 

@@ -16,7 +16,16 @@ public static class SealedPlan
     /// <summary><c>details.reason</c> of the refusal.</summary>
     public const string Reason = "sealedPlan";
 
-    /// <summary>Ops a sealed plan never has, with why.</summary>
+    /// <summary>
+    /// The ops a sealed plan may have. Every other op is refused, also one added to plans later: a new op runs against
+    /// production only once it is added here, with what the seal checks of it (<see cref="TouchedBy"/>).
+    /// </summary>
+    public static readonly IReadOnlySet<string> AllowedOps = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "create", "set", "area", "composition", "block", "upload", "translate", "publish", "move", "restore",
+    };
+
+    /// <summary>Why a sealed plan never has these ops; an op in neither list is refused without a reason of its own.</summary>
     public static readonly IReadOnlyDictionary<string, string> RefusedOps = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["delete"] = "deletes content",
@@ -25,7 +34,17 @@ public static class SealedPlan
         ["discard"] = "deletes a draft",
         ["site"] = "changes site definitions",
         ["language"] = "changes language branches",
+        // Commerce: prices and stock change with every order, and markets, warehouses and relations aren't content the
+        // seal compares with production, so a sealed run can't tell what it would replace or remove.
+        ["relation"] = CommerceRefused,
+        ["price"] = CommerceRefused,
+        ["warehouse"] = CommerceRefused,
+        ["inventory"] = CommerceRefused,
+        ["market"] = CommerceRefused,
     };
+
+    private const string CommerceRefused =
+        "changes Commerce data (catalog relations, prices, warehouses, stock or markets), which a sealed apply doesn't check against production";
 
     /// <summary>Why a sealed plan doesn't put drafts in a project.</summary>
     public const string ProjectRefused =
@@ -90,9 +109,9 @@ public static class SealedPlan
             {
                 problems.Add($"{where} has \"project\": it {ProjectRefused}.");
             }
-            if (RefusedOps.TryGetValue(op.Kind, out var why))
+            if (!AllowedOps.Contains(op.Kind))
             {
-                problems.Add($"{where} {why}.");
+                problems.Add($"{where} {RefusedOps.GetValueOrDefault(op.Kind, "is a step a sealed apply doesn't run")}.");
                 continue;
             }
             if (op is TranslateOperation { Remove: true })

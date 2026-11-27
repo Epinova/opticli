@@ -126,8 +126,8 @@ Add `--lang <code>` to choose a language branch (default: the item's master lang
   has), never fake a terminal for it (`script`, `expect`, `unbuffer`), never pass it input, and never edit, copy, write or
   delete anything in the `seals` folder or `seal.key`. A refusal while sealing (`sealedPlan`, `modelDiffers`,
   `sealValidation`) or a `conflict` the user reports from the run (`productionChanged`, `planChanged`, `buildChanged`,
-  `sealExpired`) means: fix the plan, or pull and seal again. A sealed plan never deletes, unpublishes or changes access:
-  tell the user to do those in production's edit UI. Media goes in only with `sync push --media` (or `upload` steps by
+  `sealExpired`) means: fix the plan, or pull and seal again. A sealed plan never deletes, unpublishes, changes access or
+  changes Commerce data (prices, stock, markets): tell the user to do those in production's edit UI. Media goes in only with `sync push --media` (or `upload` steps by
   GUID) on a site whose build has the CMS's Azure blob provider; the user's run then asks for production's blob storage.
   When the site has the CMS's Azure event provider, the run also offers production's event bus, so no restart is
   needed; never ask the user for those connection strings yourself (the run asks). After the user's run, if the result
