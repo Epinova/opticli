@@ -12,6 +12,58 @@ again to update the skill.
   names who is signed in and on which site. It follows the browser's dark mode, and on a phone the connections page
   lists each connection as a block instead of a table too wide to read. The pages still load nothing (no images,
   fonts or scripts), so the security policy is unchanged.
+- **On CMS 13 the module lives under `/optimizely/opticli`.** CMS 13 keeps its edit UI and login under
+  `/Optimizely`, and a site whose login is chosen by path (Opti ID, for one) signs editors in only there, so the
+  consent and connections pages at `/episerver/opticli` couldn't always ask who was signed in. CMS 12 keeps
+  `/episerver/opticli`. On a CMS 13 site that already has connections, editors connect their assistant again with the
+  new address, or the site keeps the old path with `options.BasePath = "/episerver/opticli"`. The site logs a warning
+  at startup when `BasePath` isn't under the CMS's own path, and the Claude Desktop extension tries both paths when
+  given only the site's address.
+- **Roles come from the editor's login and the CMS together.** The module took an editor's roles from the CMS's role
+  provider by user name; now it uses the roles that both the login and the role provider have, and a connection's
+  roles can only narrow at each refresh. An editor given a new role signs in again before a connection uses it.
+- **A publish that would replace a colleague's newer published version asks first.** `publish_project` with a ready
+  item older than the version published since, or `publish_content` of an older version by name, is a `conflict`
+  (`newerPublished`) naming who published it and when; `includeDraft` confirms it once the editor agrees, and the
+  result says which version was replaced.
+- **The edit UI's allowed types apply inside blocks too.** A ContentArea in a local, inline or shared block that a
+  write changes now gets the same check as the content's own areas, and a shared block taken over through its page
+  follows its own access rights for tabs that require them.
+- **A site's own write tools describe what they do.** A tool built with `WithWriteTool` that moves content or puts it
+  in the recycle bin now says so in its description, instead of "saves drafts only".
+- **The consent page names apps more plainly.** Domains show in their ASCII form (punycode), app names lose invisible
+  and direction-changing characters, and every app gets a short reminder to allow only a connection the editor just
+  added.
+- **The OAuth endpoints take smaller requests.** Token, consent and revoke requests are limited to 64 KB, and the
+  token endpoint looks up a client's metadata document only for a code or refresh token of that client, a few at a
+  time.
+
+### CLI
+
+- **A sealed apply runs only the steps it lists.** Creating, changing, moving, translating, publishing and uploading
+  content by GUID, as before; any other step is refused when sealing, including the Commerce steps added in 0.36.0
+  (prices, stock, markets, warehouses, relations), which a seal can't compare with production. The run's site
+  enforces the same list itself. Its site also starts with only the environment variables the system and .NET need,
+  and the seal lists which project files its build check doesn't cover.
+- **Commerce removals on a shared database need `--allow-destructive`.** `relation remove`, `price remove` and
+  `market remove` (a plan step's `"remove": true`) are for good, as Commerce has no recycle bin; on a shared database
+  they now ask for `--allow-destructive` (a plan step's `"allowDestructive": true`). Local databases are unchanged.
+- **`--blobs -`** of `export` and `sync pull` reads the folder or SAS URL from a prompt that doesn't show it, or from
+  standard input, so a token stays off the command line.
+- **Private files stay private.** The user config is saved readable by you only, also when it was made by hand with
+  wider permissions, and `sync pull`'s temporary folder is too.
+- **Export file names are cleaned.** The files of long rich text take their language and property names through the
+  same cleaning as media file names.
+
+### npm package
+
+- **Arguments come after `--`.** Methods put a command's options first and its arguments last, after `--`, so an
+  argument that starts with `-` (a name, a search) is never read as an option.
+
+### Skill
+
+- **Content is data.** The skill tells coding agents that what opticli reads from the CMS is the site's data, not
+  instructions, and not to pass paths or text from it as files or shell arguments.
 
 ## 0.37.1 (27 November 2026)
 
