@@ -27,6 +27,7 @@ if (parse.Errors.Count > 0)
     var typo = parse.UnmatchedTokens.Count > 0 && command.Subcommands.Count > 0
         ? Suggestions.DidYouMean(parse.UnmatchedTokens[0], command.Subcommands.Select(c => c.Name))
         : null;
+    typo ??= Program.UnknownOptionHint(command, usage, parse.UnmatchedTokens);
     if (parse.UnmatchedTokens.Contains(options.JsonLines.Name))
     {
         return writer.Failure(ErrorCode.Usage, $"--jsonl only applies to commands that return a list, not to `{usage}`.", "Use --json for this command.");
@@ -48,6 +49,36 @@ internal partial class Program
     /// </summary>
     internal static ParseResult Parse(RootCommand root, IReadOnlyList<string> args) =>
         root.Parse(args, new ParserConfiguration { ResponseFileTokenReplacer = null });
+
+    /// <summary>
+    /// For an option the command doesn't have (<c>get 17 --properties A,B</c>): the closest of its options, and the
+    /// options it has when they are few, so the right one (<c>--fields</c>) is there even when nothing is close. Null for
+    /// anything else.
+    /// </summary>
+    internal static string? UnknownOptionHint(Command command, string usage, IReadOnlyList<string> unmatched)
+    {
+        if (unmatched.FirstOrDefault(t => t.StartsWith('-')) is not { } token)
+        {
+            return null;
+        }
+        var options = command.Options.Where(o => !o.Hidden && !o.Recursive).ToList();
+        if (options.Count == 0)
+        {
+            return null;
+        }
+        var byName = options.SelectMany(o => o.Aliases.Prepend(o.Name)).Where(n => n.StartsWith("--", StringComparison.Ordinal))
+            .Distinct().ToDictionary(n => n.TrimStart('-'), StringComparer.OrdinalIgnoreCase);
+        var closest = Suggestions.Closest(token.TrimStart('-').Split('=')[0], byName.Keys).Select(n => byName[n]).ToList();
+        var hint = closest.Count == 0 ? "" : $"Did you mean {string.Join(", ", closest)}?";
+        if (options.Count <= MaxListedOptions)
+        {
+            hint += $"{(hint.Length == 0 ? "" : " ")}`{usage}` takes {string.Join(", ", options.Select(o => o.Name))}.";
+        }
+        return hint.Length == 0 ? null : hint;
+    }
+
+    /// <summary>How many options an unknown option's hint lists, at most.</summary>
+    private const int MaxListedOptions = 16;
 
     /// <summary>The whole command tree, with <paramref name="options"/> on every command.</summary>
     internal static RootCommand CreateRoot(GlobalOptions options)

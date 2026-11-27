@@ -238,6 +238,30 @@ test('a command that runs too long is stopped, as a timeout', async () => {
   assert.ok(error instanceof OptiCliError);
   assert.equal(error.code, 'timeout');
   assert.match(error.message, /no answer within 0\.3 s/);
+  // Only this process was stopped: the message mustn't read as if the site was.
+  assert.match(error.message, /this opticli process was stopped\. A site that opticli serve runs keeps running/);
+});
+
+test("the client's timeoutMs is every call's, apply's too, unless the call gives its own", async () => {
+  fake([
+    { match: 'get', delayMs: 5_000, envelope: ok({ ref: '1' }) },
+    { match: 'apply', delayMs: 5_000, envelope: ok({ dryRun: true, operations: [], created: {} }) },
+  ]);
+  const cli = new OptiCli({ command: fakeCommand, timeoutMs: 300 });
+  assert.equal(cli.timeoutMs, 300);
+
+  const get = await cli.get('1').catch((e) => e);
+  assert.equal(get.code, 'timeout');
+  assert.match(get.message, /no answer within 0\.3 s/);
+
+  const apply = await cli.apply({ operations: [] }, { dryRun: true }).catch((e) => e);
+  assert.equal(apply.code, 'timeout');
+  assert.match(apply.message, /no answer within 0\.3 s/);
+
+  const own = await cli.run(['get', '1'], { timeoutMs: 200 }).catch((e) => e);
+  assert.match(own.message, /no answer within 0\.2 s/);
+
+  assert.throws(() => new OptiCliSync({ command: fakeCommand, timeoutMs: 300 }).runSync(['get', '1']), (e) => e.code === 'timeout' && /within 0\.3 s/.test(e.message));
 });
 
 test('a relative project is resolved against cwd, so apply in the plan folder finds the same site', async () => {

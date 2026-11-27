@@ -262,7 +262,12 @@ content it shows. `--at` and `--display` only apply to `add`; `--display` is che
     nothing.
   - Local block: `{"Hero":{"Heading":"Hi","Link":"/en/about/"}}`.
   - Block list (`IList<SomeBlock>`, shown by `get` as `BlockList`): an array of such objects, replacing the whole list:
-    `{"Persons":[{"Name":"Kari","Biography":"<p>...</p>","Image":"63__provider"},{"Name":"Per"}]}`.
+    `{"Persons":[{"Name":"Kari","Biography":"<p>...</p>","Image":"63__provider"},{"Name":"Per"}]}`. An item keeps what
+    the item of its type at the same position had of properties the edit UI shows no one (`[ScaffoldColumn(false)]`,
+    such as a key the site's `SetDefaultValues` makes) unless it names them, so a list written again changes nothing.
+  - List of the site's own items (`IList<SomeClass>` with a `PropertyList<T>`): an array of its items as objects, not
+    JSON text in a string. A time counts as unchanged when it is the same instant (`08:00:00Z` and `09:00:00+01:00`),
+    as the CMS reads a list's times back as local times.
   - Content provider content (e.g. DAM images, shown by `get` as `63__provider`) works wherever a content ref does:
     `HeroImage=63__provider`, a ContentArea item `{"ref":"63__provider"}`, or its GUID.
   - Link (`LinkItem`): `{"Button":{"href":"456","text":"Read more"}}`, optionally with `title` and `target`. `Button=456` or `Button=/en/about/` changes

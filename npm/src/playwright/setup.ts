@@ -34,7 +34,7 @@ export interface SetupOptions {
   /** Leave a site that setup started running after the tests, or after setup failed. Default: `OPTICLI_KEEP_SITE=1`. */
   keepSite?: boolean;
   /** How to run opticli, and which project. */
-  opticli?: Pick<OptiCliOptions, 'command' | 'project' | 'cwd' | 'profile'>;
+  opticli?: Pick<OptiCliOptions, 'command' | 'project' | 'cwd' | 'profile' | 'timeoutMs'>;
 }
 
 /** What setup hands the workers, in {@link stateVariable}. */
@@ -42,7 +42,7 @@ export interface SeedState<Id extends string = string> {
   /** Where the browser reaches the site. */
   baseURL: string;
   /** How setup ran opticli, so the workers run the same. */
-  opticli: { command: readonly string[]; project?: string; cwd?: string; profile?: string };
+  opticli: { command: readonly string[]; project?: string; cwd?: string; profile?: string; timeoutMs?: number };
   /** The plan's step `id` → content ref. */
   refs: Record<Id, ContentRef>;
   /**
@@ -103,7 +103,8 @@ export function defineSetup(options: SetupOptions = {}): () => Promise<() => Pro
       }
       process.env[stateVariable] = JSON.stringify(await seed(opticli, served, options));
     } catch (error) {
-      // Playwright runs no teardown when setup fails: stop the site setup started here.
+      // Playwright runs no teardown when setup fails: stop the site setup started here, and say so, as the next run starts it again.
+      if (startedSite && !keepSite) console.warn('opticli: setup failed, so the site it started is stopped (OPTICLI_KEEP_SITE=1 leaves it running).');
       await teardown().catch((stopError) => console.warn(`opticli: couldn't stop the site: ${stopError}`));
       throw error;
     }
@@ -132,7 +133,7 @@ async function seed(opticli: OptiCli, served: OkEnvelope<AgentStatus>, options: 
 
   const state: SeedState = {
     baseURL,
-    opticli: { command: opticli.command, project: opticli.project, cwd: opticli.cwd, profile: opticli.profile },
+    opticli: { command: opticli.command, project: opticli.project, cwd: opticli.cwd, profile: opticli.profile, timeoutMs: opticli.timeoutMs },
     refs: {},
     urls: {},
     sites: {},

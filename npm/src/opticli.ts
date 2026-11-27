@@ -35,6 +35,11 @@ export interface OptiCliOptions {
   profile?: string;
   /** Called with `meta.warnings` of every successful command. */
   onWarnings?: (warnings: string[], args: readonly string[]) => void;
+  /**
+   * How long every call waits for opticli, in milliseconds, unless the call's own `timeoutMs` (the run options, after
+   * the options object) says otherwise. Default: 120 s, and 10 minutes for `apply`.
+   */
+  timeoutMs?: number;
 }
 
 /** `create`'s options: its flags, except the type, name and values, which are parameters. */
@@ -81,6 +86,8 @@ export class OptiCli extends OptiCliCommands {
   readonly project?: string;
   readonly cwd?: string;
   readonly profile?: string;
+  /** The constructor's `timeoutMs`: how long a call waits unless it says otherwise. */
+  readonly timeoutMs?: number;
   readonly #onWarnings?: OptiCliOptions['onWarnings'];
 
   constructor(options: OptiCliOptions = {}) {
@@ -90,12 +97,13 @@ export class OptiCli extends OptiCliCommands {
     this.project = s.project;
     this.cwd = s.cwd;
     this.profile = s.profile;
+    this.timeoutMs = s.timeoutMs;
     this.#onWarnings = s.onWarnings;
   }
 
   /** Runs any opticli command with `--json` and returns its envelope; throws OptiCliError when `ok` is false. */
   async run<T>(args: readonly string[], options: RunOptions = {}): Promise<OkEnvelope<T>> {
-    const { stdout, stderr, exitCode } = await exec(this.command, fullArgs(this, args), options.cwd ?? this.cwd, options);
+    const { stdout, stderr, exitCode } = await exec(this.command, fullArgs(this, args), options.cwd ?? this.cwd, { ...options, timeoutMs: options.timeoutMs ?? this.timeoutMs });
     return envelope<T>(stdout, stderr, exitCode, args, this.#onWarnings);
   }
 
@@ -130,7 +138,7 @@ export class OptiCli extends OptiCliCommands {
   apply(plan: string, options?: ApplyCallOptions & { sealFor?: undefined }, call?: RunOptions): Promise<AppliedPlan>;
   apply(plan: Plan | string, options?: ApplyCallOptions, call?: RunOptions): Promise<AppliedPlan | SealResult>;
   async apply(plan: Plan | string, options: ApplyCallOptions = {}, call?: RunOptions): Promise<AppliedPlan | SealResult> {
-    const [args, run] = applyArgs(plan, options, call);
+    const [args, run] = applyArgs(plan, options, call, this.timeoutMs);
     return (await this.run<AppliedPlan | SealResult>(args, run)).data;
   }
 }
@@ -145,6 +153,8 @@ export class OptiCliSync extends OptiCliCommandsSync {
   readonly project?: string;
   readonly cwd?: string;
   readonly profile?: string;
+  /** The constructor's `timeoutMs`: how long a call waits unless it says otherwise. */
+  readonly timeoutMs?: number;
   readonly #onWarnings?: OptiCliOptions['onWarnings'];
 
   constructor(options: OptiCliOptions = {}) {
@@ -154,12 +164,13 @@ export class OptiCliSync extends OptiCliCommandsSync {
     this.project = s.project;
     this.cwd = s.cwd;
     this.profile = s.profile;
+    this.timeoutMs = s.timeoutMs;
     this.#onWarnings = s.onWarnings;
   }
 
   /** Runs any opticli command with `--json` and returns its envelope, blocking; throws OptiCliError when `ok` is false. */
   runSync<T>(args: readonly string[], options: RunOptions = {}): OkEnvelope<T> {
-    const { stdout, stderr, exitCode } = execSync(this.command, fullArgs(this, args), options.cwd ?? this.cwd, options);
+    const { stdout, stderr, exitCode } = execSync(this.command, fullArgs(this, args), options.cwd ?? this.cwd, { ...options, timeoutMs: options.timeoutMs ?? this.timeoutMs });
     return envelope<T>(stdout, stderr, exitCode, args, this.#onWarnings);
   }
 
@@ -183,7 +194,7 @@ export class OptiCliSync extends OptiCliCommandsSync {
   apply(plan: string, options?: ApplyCallOptions & { sealFor?: undefined }, call?: RunOptions): AppliedPlan;
   apply(plan: Plan | string, options?: ApplyCallOptions, call?: RunOptions): AppliedPlan | SealResult;
   apply(plan: Plan | string, options: ApplyCallOptions = {}, call?: RunOptions): AppliedPlan | SealResult {
-    const [args, run] = applyArgs(plan, options, call);
+    const [args, run] = applyArgs(plan, options, call, this.timeoutMs);
     return this.runSync<AppliedPlan | SealResult>(args, run).data;
   }
 }
@@ -198,10 +209,11 @@ function setArgs(ref: ContentRef, properties: Properties, options: SetCallOption
   return argv(['set'], [ref], { ...options, ...values(properties) }, optionsOf('set'));
 }
 
-function applyArgs(plan: Plan | string, { baseDir, ...options }: ApplyCallOptions, call: RunOptions = {}): [string[], RunOptions] {
+/** `apply`'s command line and run options; it waits the call's timeoutMs, else the client's, else 10 minutes. */
+function applyArgs(plan: Plan | string, { baseDir, ...options }: ApplyCallOptions, call: RunOptions = {}, clientTimeoutMs?: number): [string[], RunOptions] {
   const file = typeof plan === 'string';
   const args = argv(['apply'], [file ? plan : '-'], options, optionsOf('apply'));
-  return [args, { ...call, input: file ? call.input : JSON.stringify(plan), cwd: baseDir ?? call.cwd, timeoutMs: call.timeoutMs ?? 600_000 }];
+  return [args, { ...call, input: file ? call.input : JSON.stringify(plan), cwd: baseDir ?? call.cwd, timeoutMs: call.timeoutMs ?? clientTimeoutMs ?? 600_000 }];
 }
 
 /** `--values` for a non-empty properties object. */
@@ -216,6 +228,7 @@ interface Settings {
   project?: string;
   cwd?: string;
   profile?: string;
+  timeoutMs?: number;
   onWarnings?: OptiCliOptions['onWarnings'];
 }
 
@@ -227,6 +240,7 @@ function settings(options: OptiCliOptions): Settings {
     project: project ? resolve(options.cwd ?? process.cwd(), project) : undefined,
     cwd: options.cwd,
     profile: options.profile ?? (process.env.OPTICLI_PROFILE || undefined),
+    timeoutMs: options.timeoutMs,
     onWarnings: options.onWarnings,
   };
 }
@@ -259,8 +273,9 @@ interface Exited {
 const defaultTimeoutMs = 120_000;
 
 function timedOut(args: readonly string[], timeoutMs: number): OptiCliError {
-  const hint = 'For a command that takes longer, pass a longer timeoutMs (the run options, after the options object).';
-  return new OptiCliError({ code: 'timeout', message: `no answer within ${timeoutMs / 1000} s; it was stopped`, hint }, null, args);
+  const message = `no answer within ${timeoutMs / 1000} s, so this opticli process was stopped. A site that opticli serve runs keeps running, and a write may have been saved there anyway: read it before you run it again`;
+  const hint = "For a command that takes longer, give a longer timeoutMs: the client's (new OptiCli({ timeoutMs })), or the call's (the run options, after the options object).";
+  return new OptiCliError({ code: 'timeout', message, hint }, null, args);
 }
 
 function notInstalled(command: readonly string[], error: Error): Error {

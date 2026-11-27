@@ -56,6 +56,13 @@
     {"op": "create", "id": "languages", "guid": "6e0a3c1d-4f3b-4c55-8d0e-2b7f5a9c1e03", "parent": "$edge", "type": "EdgePage", "name": "Language settings root", "publish": true,
      "properties": {"Local": {"Title": "Only in English", "Code": "F1"}}},
     {"op": "create", "id": "languageChild", "parent": "$languages", "type": "StandardPage", "name": "Falls back to English", "publish": true,
-     "properties": {"MainBody": "<p>No Swedish branch; Swedish visitors get this.</p>"}}
+     "properties": {"MainBody": "<p>No Swedish branch; Swedish visitors get this.</p>"}},
+
+    // A block list whose items get a key from SetDefaultValues that the edit UI hides, and a list of plain items with
+    // times: run again, both must stay unchanged.
+    {"op": "create", "id": "lists", "parent": "$edge", "type": "EdgePage", "name": "Lists", "publish": true,
+     "properties": {
+       "ListItems": [{"Text": "First"}, {"Text": "Second"}],
+       "Periods": [{"Opens": "1900-01-01T08:00:00Z", "Closes": "1900-01-01T20:00:00Z"}, {"Opens": "1900-01-01T09:30:00", "Closes": null}]}}
   ]
 }

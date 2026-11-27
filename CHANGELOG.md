@@ -3,6 +3,36 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## 0.37.1 (27 November 2026)
+
+### CLI and MCP module
+
+- **A block list written again changes nothing when its items have a key the site makes.** A block list's item type
+  can have a property the edit UI hides (`[ScaffoldColumn(false)]`) that the site fills in `SetDefaultValues`, such
+  as a `Guid` to tell items apart. A write builds each item anew, so for the CLI and plans that value was new on every
+  write: a plan run again with `--update-existing` saved the step again (`saved`, never `unchanged`), and the site lost
+  the keys it pairs items by. Now an item keeps what the item of its type at the same position had of such
+  properties, unless the item names them (`"Key": null` still clears it), as an edit in the CMS does. Editors already
+  kept them.
+- **Times in a list of the site's own items no longer count as a change.** A `PropertyList<T>` whose items have
+  `DateTime` values (opening hours, say) came back `changed` on every run of the same plan: the CMS reads a list's
+  times back as local times (`09:00:00+01:00`), so they never matched the value written (`08:00:00Z`). A value that is
+  the current one with its times as the same instants is now left as it is.
+- **An unknown option names the command's options.** `opticli get 17 --properties Heading` said only
+  "Unrecognized command or argument". The hint now suggests the closest option (`--feilds` → `--fields`) and, for a
+  command with a few options, lists them, so `--fields` is there.
+
+### npm package
+
+- **`new OptiCli({ timeoutMs })`** (and `OptiCliSync`) sets how long every call waits, unless the call gives its own
+  `timeoutMs`; it was ignored before. `apply` keeps its 10 minutes unless one of them is given. The Playwright setup's
+  `opticli` option takes it too, and the workers' clients get it.
+- **A timeout says what was stopped.** "no answer within 120 s; it was stopped" read as if the site was stopped. The
+  message now says that only that opticli process was stopped, that a site `opticli serve` runs keeps running, and that
+  a write may have been saved anyway.
+- **The Playwright setup says when it stops the site.** When setup fails, it stops a site it started (unless
+  `keepSite`), and now writes a line saying so.
+
 ## 0.37.0 (26 November 2026)
 
 ### Optimizely Commerce

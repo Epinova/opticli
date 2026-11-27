@@ -33,6 +33,31 @@ public class ParseErrorTests
     }
 
     [Fact]
+    public async Task A_mistyped_option_gets_a_did_you_mean_hint_and_the_commands_options()
+    {
+        var run = await Opticli.RunAsync("get", "17", "--feilds", "Heading", "--json");
+
+        Assert.Equal(1, run.ExitCode);
+        var hint = run.Error().GetProperty("hint").GetString()!;
+        Assert.StartsWith("Did you mean --fields?", hint, StringComparison.Ordinal);
+        Assert.Contains("Run `opticli get --help` for usage.", hint, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_option_named_otherwise_lists_the_options_the_command_has()
+    {
+        // Nothing is close to --properties but --all-properties: the list has the option meant.
+        var run = await Opticli.RunAsync("get", "17", "--properties", "Heading,MainBody", "--json");
+
+        Assert.Equal(1, run.ExitCode);
+        var hint = run.Error().GetProperty("hint").GetString()!;
+        Assert.Contains("`opticli get` takes ", hint, StringComparison.Ordinal);
+        Assert.Contains("--fields", hint, StringComparison.Ordinal);
+        // Global options (--json, --project) aren't the command's own: --help has them.
+        Assert.DoesNotContain("--project", hint, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Text_sends_a_parse_error_to_stderr_even_when_stdout_is_redirected()
     {
         var run = await Opticli.RunProcessAsync("get", "--text");

@@ -336,10 +336,39 @@ public class PropertyWriterTests
         Assert.Contains("would lose items", dropped.Message);
         Assert.Throws<AgentException>(() => Writer(CmsCaller.Editor).Writer.Apply(Stored(), Values(new { Items = new[] { new { Secret = "x" } } })));
 
-        // The developer writes the list as given.
+        // The developer's item keeps what the edit UI shows no one too (a key the site's SetDefaultValues makes), so a
+        // list written again as before changes nothing.
         var developer = Stored();
         Writer(CmsCaller.Developer).Writer.Apply(developer, Values(new { Items = new[] { new { Title = "Renamed" } } }));
-        Assert.Null(Assert.Single((List<ItemBlock>)developer.Property["Items"].Value).Property["Secret"].Value);
+        Assert.Equal("kept", Assert.Single((List<ItemBlock>)developer.Property["Items"].Value).Property["Secret"].Value);
+    }
+
+    [Fact]
+    public void The_developer_writes_a_hidden_value_of_a_block_list_item_that_is_named_and_new_items_get_the_types_defaults()
+    {
+        LinksBlock Stored()
+        {
+            var block = Block();
+            var item = ItemBlock.Create();
+            item.Property["Title"].Value = "First";
+            item.Property["Secret"].Value = "kept";
+            block.Property.Add(nameof(LinksBlock.Items), new PropertyItems { PropertyDefinitionID = 4, Value = new List<ItemBlock> { item } });
+            return block;
+        }
+
+        var named = Stored();
+        Writer(CmsCaller.Developer).Writer.Apply(named, Values(new { Items = new[] { new { Title = "First", Secret = "given" } } }));
+        Assert.Equal("given", Assert.Single((List<ItemBlock>)named.Property["Items"].Value).Property["Secret"].Value);
+
+        var cleared = Stored();
+        Writer(CmsCaller.Developer).Writer.Apply(cleared, Values(new { Items = new[] { new { Title = "First", Secret = (string?)null } } }));
+        Assert.Null(Assert.Single((List<ItemBlock>)cleared.Property["Items"].Value).Property["Secret"].Value);
+
+        // An item past the end of the current list is new: nothing to keep.
+        var longer = Stored();
+        Writer(CmsCaller.Developer).Writer.Apply(longer, Values(new { Items = new[] { new { Title = "First" }, new { Title = "Second" } } }));
+        var items = (List<ItemBlock>)longer.Property["Items"].Value;
+        Assert.Equal(["kept", null], items.Select(i => (string?)i.Property["Secret"].Value));
     }
 
     [Fact]
@@ -482,6 +511,8 @@ public class PropertyWriterTests
         public Nested? Deep { get; set; }
 
         public KeyValuePair<string, ContentReference?> Pair { get; set; }
+
+        public DateTime? At { get; set; }
     }
 
     /// <summary>A list item's member that holds more of itself.</summary>
@@ -523,6 +554,44 @@ public class PropertyWriterTests
         public override void ParseToSelf(string value) => throw new NotImplementedException("ParseItem must be explicitly implemented");
 
         protected override void SetDefaultValue() => _value = null;
+    }
+
+    [Fact]
+    public void A_list_of_the_sites_own_items_written_again_with_its_times_in_another_zone_is_left_as_it_is()
+    {
+        // The CMS reads a list's times back as local times, whatever was written: the same instant must change nothing.
+        var at = DateTimeOffset.Parse("1900-01-01T08:00:00Z", System.Globalization.CultureInfo.InvariantCulture).LocalDateTime;
+        LinksBlock Stored(out List<Teaser> teasers)
+        {
+            var block = Block();
+            teasers = [new Teaser { Text = "Open", At = at }];
+            block.Property.Add(nameof(LinksBlock.Teasers), new PropertyTeasers { PropertyDefinitionID = 5, Value = teasers });
+            return block;
+        }
+
+        var same = Stored(out var stored);
+        Writer(CmsCaller.Developer).Writer.Apply(same, Values(new { Teasers = new[] { new { Text = "Open", At = "1900-01-01T08:00:00Z" } } }));
+        Assert.Same(stored, same.Property["Teasers"].Value);
+
+        var later = Stored(out stored);
+        Writer(CmsCaller.Developer).Writer.Apply(later, Values(new { Teasers = new[] { new { Text = "Open", At = "1900-01-01T08:30:00Z" } } }));
+        Assert.NotSame(stored, later.Property["Teasers"].Value);
+
+        var renamed = Stored(out stored);
+        Writer(CmsCaller.Developer).Writer.Apply(renamed, Values(new { Teasers = new[] { new { Text = "Closed", At = "1900-01-01T08:00:00Z" } } }));
+        Assert.Equal("Closed", Assert.Single((IList<Teaser>)renamed.Property["Teasers"].Value).Text);
+    }
+
+    [Theory]
+    [InlineData("1900-01-01T08:00:00Z", "1900-01-01T10:00:00+02:00", true)]
+    [InlineData("1900-01-01T08:00:00Z", "1900-01-01T08:00:01Z", false)]
+    [InlineData("2026-11-27", "2026-11-27T00:00:00", false)]
+    [InlineData("1/1/2026", "2026-01-01T00:00:00", false)]
+    public void Times_in_a_structured_value_are_the_same_when_they_are_the_same_instant(string a, string b, bool same)
+    {
+        Assert.Equal(same, PropertyWriter.SameStructured(new[] { new { At = a } }, new[] { new { At = b } }));
+        Assert.True(PropertyWriter.SameStructured(new[] { new { At = a } }, new[] { new { At = a } }));
+        Assert.False(PropertyWriter.SameStructured(new[] { new { At = a } }, new[] { new { At = a }, new { At = a } }));
     }
 
     [Fact]

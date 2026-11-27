@@ -980,10 +980,66 @@ internal sealed class PropertyWriter(
                 ParseText(property, value.GetRawText());
                 return;
             default:
-                property.Value = Structured(property, value);
+                var structured = Structured(property, value);
+                // A list of the site's own items (PropertyList<T>), or another object of its own, that is the current
+                // value with its times written otherwise (the CMS reads them back in the server's time zone): left as it
+                // is, so writing it again (a plan run again with --update-existing) changes nothing.
+                if (structured is not (IEnumerable<IContentData> or IEnumerable<ContentReference>) && SameStructured(property.Value, structured))
+                {
+                    return;
+                }
+                property.Value = structured;
                 return;
         }
     }
+
+    /// <summary>
+    /// Whether <paramref name="given"/> is <paramref name="current"/> as JSON, where times count as the same when they
+    /// are the same instant (<c>1900-01-01T08:00:00Z</c> and <c>1900-01-01T09:00:00+01:00</c>; one without an offset is
+    /// local, as the CMS reads it). The CMS stores a list's items as JSON and reads their times back as local times,
+    /// whatever the value written had, so a value compared as written would always differ.
+    /// </summary>
+    internal static bool SameStructured(object? current, object? given)
+    {
+        if (current is null || given is null)
+        {
+            return false;
+        }
+        try
+        {
+            return SameJson(JsonSerializer.SerializeToElement(current, AgentJson.Options), JsonSerializer.SerializeToElement(given, AgentJson.Options));
+        }
+        catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException or JsonException)
+        {
+            // A value JSON can't show: compared as different, so it is written as before.
+            return false;
+        }
+    }
+
+    private static bool SameJson(JsonElement a, JsonElement b)
+    {
+        switch (a.ValueKind, b.ValueKind)
+        {
+            case (JsonValueKind.Object, JsonValueKind.Object):
+                var left = a.EnumerateObject().ToDictionary(p => p.Name, p => p.Value, StringComparer.Ordinal);
+                var right = b.EnumerateObject().ToList();
+                return left.Count == right.Count && right.All(p => left.TryGetValue(p.Name, out var other) && SameJson(other, p.Value));
+            case (JsonValueKind.Array, JsonValueKind.Array):
+                return a.GetArrayLength() == b.GetArrayLength() && a.EnumerateArray().Zip(b.EnumerateArray()).All(pair => SameJson(pair.First, pair.Second));
+            case (JsonValueKind.String, JsonValueKind.String):
+                return string.Equals(a.GetString(), b.GetString(), StringComparison.Ordinal) || SameInstant(a.GetString()!, b.GetString()!);
+            default:
+                return a.ValueKind == b.ValueKind && a.GetRawText() == b.GetRawText();
+        }
+    }
+
+    /// <summary>Two ISO 8601 times (as JSON writes a DateTime) of the same instant; one without an offset is local.</summary>
+    private static bool SameInstant(string a, string b) =>
+        IsoTime(a) is { } x && IsoTime(b) is { } y && x.UtcDateTime == y.UtcDateTime;
+
+    private static DateTimeOffset? IsoTime(string text) =>
+        text.Length >= 19 && char.IsAsciiDigit(text[0]) && text[4] == '-' && text[7] == '-' && text[10] == 'T'
+            && DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var time) ? time : null;
 
     /// <summary>
     /// Text for a property, parsed by the property itself (<c>ParseToSelf</c>). A property type that can't be set from text
@@ -1049,9 +1105,10 @@ internal sealed class PropertyWriter(
     }
 
     /// <summary>
-    /// A block list: one new block per object, with the object's values set like a local block's. For an editor, each new
-    /// block keeps what the item at its index had that they can't see or change (it would otherwise be lost unseen), and
-    /// a shorter list is refused when an item it drops has such a value.
+    /// A block list: one new block per object, with the object's values set like a local block's. Each new block keeps what
+    /// the item of its type at its index had that the edit UI shows no one, unless the object names it (the developer), or
+    /// that the editor can't see or change (it would otherwise be lost unseen). For an editor, a shorter list is refused
+    /// when an item it drops has such a value.
     /// </summary>
     private System.Collections.IList BlockList(PropertyData property, Type element, JsonElement value)
     {
@@ -1070,8 +1127,9 @@ internal sealed class PropertyWriter(
             {
                 _blockBaselines[block] = replaced;
             }
-            Apply(block, item.Deserialize<Dictionary<string, JsonElement>>(AgentJson.Options));
-            foreach (var kept in replaced is null ? [] : Unseen(replaced))
+            var given = item.Deserialize<Dictionary<string, JsonElement>>(AgentJson.Options)!;
+            Apply(block, given);
+            foreach (var kept in replaced is null ? [] : call.Properties.Checks ? Unseen(replaced) : HiddenNotGiven(replaced, given.Keys))
             {
                 block.Property[kept.Name].Value = kept.Value;
             }
@@ -1084,6 +1142,17 @@ internal sealed class PropertyWriter(
                 "Keep as many items as it has, or ask someone who may change those values to edit the list in the CMS. Nothing was saved.");
         }
         return list;
+    }
+
+    /// <summary>
+    /// For the developer: the properties of <paramref name="block"/> the edit UI shows no one (a key the site's
+    /// <c>SetDefaultValues</c> makes) that <paramref name="given"/> doesn't name. The item that replaces it keeps them, as an
+    /// edit in the CMS does; without that, such a value would be new on every write, and a plan never <c>unchanged</c>.
+    /// </summary>
+    private static IEnumerable<PropertyData> HiddenNotGiven(IContentData block, IEnumerable<string> given)
+    {
+        var named = new HashSet<string>(given, StringComparer.OrdinalIgnoreCase);
+        return block.Property.Where(p => !p.IsMetaData && !named.Contains(p.Name) && EditUiProperties.HiddenFromEveryone(block, p)).ToList();
     }
 
     /// <summary>The properties of <paramref name="block"/> the caller can't see or change: none for the developer.</summary>

@@ -100,10 +100,8 @@ internal sealed class EditUiProperties(CmsCall call, bool check)
             return PropertyAccess.Editable;
         }
         Hold(owner, property);
-        var member = property.IsMetaData ? null : owner.GetOriginalType().GetProperty(property.Name, BindingFlags.Public | BindingFlags.Instance);
-        var attributes = member?.GetCustomAttributes(inherit: true).OfType<Attribute>().ToList() ?? [];
-        // Built-in metadata the writer allows (PageURLSegment, ...) is on the edit UI's settings, whatever its definition says.
-        if ((!property.IsMetaData && !property.DisplayEditUI) || attributes.OfType<ScaffoldColumnAttribute>().Any(a => !a.Scaffold) || !TabShown(owner, property))
+        var attributes = Attributes(owner, property);
+        if (HiddenByModel(property, attributes) || !TabShown(owner, property))
         {
             return PropertyAccess.Hidden;
         }
@@ -117,6 +115,23 @@ internal sealed class EditUiProperties(CmsCall call, bool check)
         }
         return access;
     }
+
+    /// <summary>
+    /// Whether the edit UI shows <paramref name="property"/> of <paramref name="owner"/> to no one: not displayed in edit
+    /// mode (admin mode's setting, <c>[ScaffoldColumn(false)]</c>). A value only the site sets, such as a key its
+    /// <c>SetDefaultValues</c> makes. For every caller, the developer too; tabs and the CMS UI's metadata are per editor.
+    /// </summary>
+    public static bool HiddenFromEveryone(IContentData owner, PropertyData property) => HiddenByModel(property, Attributes(owner, property));
+
+    private static List<Attribute> Attributes(IContentData owner, PropertyData property)
+    {
+        var member = property.IsMetaData ? null : owner.GetOriginalType().GetProperty(property.Name, BindingFlags.Public | BindingFlags.Instance);
+        return member?.GetCustomAttributes(inherit: true).OfType<Attribute>().ToList() ?? [];
+    }
+
+    // Built-in metadata the writer allows (PageURLSegment, ...) is on the edit UI's settings, whatever its definition says.
+    private static bool HiddenByModel(PropertyData property, List<Attribute> attributes) =>
+        (!property.IsMetaData && !property.DisplayEditUI) || attributes.OfType<ScaffoldColumnAttribute>().Any(a => !a.Scaffold);
 
     /// <summary>Whether the caller sees <paramref name="property"/> at all: <c>get_content</c> leaves out the rest, as the edit UI does.</summary>
     /// <remarks>A read-only property is left out too: what the editor can't change is no business of their assistant.</remarks>

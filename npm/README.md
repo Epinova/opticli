@@ -120,8 +120,8 @@ playwright.config, or trust it (`dotnet dev-certs https --trust`).
 | `https` | `OPTICLI_HTTPS=1`, else `"https"` in opticli's user config | Also serve the site on `https://localhost:<port>` (`serve --https`) and browse it there, for a site that redirects HTTP to HTTPS. A site that runs already without an HTTPS address fails setup: stop it first. |
 | `httpsPort` | `OPTICLI_HTTPS_PORT`, else `"httpsPort"` in opticli's user config | That HTTPS address's port (`serve --https-port`, implies `https`): fixed, so site hosts with the port (`alloy.localhost:5001`) are right on every run. A taken port fails setup. |
 | `build` | `OPTICLI_BUILD=1` | Build the site before starting it (`serve --build`). |
-| `keepSite` | `OPTICLI_KEEP_SITE=1` | Leave a site that setup started running. |
-| `opticli` | see below | `command`, `project`, `cwd`, `profile`. |
+| `keepSite` | `OPTICLI_KEEP_SITE=1` | Leave a site that setup started running, after the tests or after setup failed (setup says when it stops one). |
+| `opticli` | see below | `command`, `project`, `cwd`, `profile`, `timeoutMs`. |
 
 ### Fixtures
 
@@ -229,7 +229,8 @@ takes what the command takes and returns what it prints (`data` of its JSON):
 - Arguments are parameters, in the order `opticli <command> --help` gives them, optional ones too; flags are an
   options object named after them (`--include-draft` → `includeDraft`, a repeatable flag an array). When an optional
   argument is left out, the options may come first: `cli.whereUsed({ type: 'TeaserBlock' })`. After the options, a
-  run options object: `{ timeoutMs, cwd, input }`.
+  run options object: `{ timeoutMs, cwd, input }`. A `timeoutMs` given to the client (`new OptiCli({ timeoutMs })`)
+  is every call's that gives none.
 - The return type is the command's JSON result. Where an option changes what it prints, the type follows it.
 - Your editor shows each command's and option's help.
 
@@ -317,8 +318,9 @@ Playwright loads the config in every worker too, so the call runs once per proce
 A command that fails throws `OptiCliError` with opticli's `code` (`not_found`, `validation`, `conflict`, ...),
 `exitCode`, `hint`, `details` and `version`; see opticli's
 [exit codes](https://github.com/Epinova/opticli/blob/main/docs/reference/cli/output.md#output-and-exit-codes). A command that doesn't answer within
-`timeoutMs` (120 seconds; longer for `serve` starting a site, `apply` and `jobsRun`) is stopped and throws `code`
-`timeout`. Calls that can't be right throw a `TypeError` before opticli runs: an option the command doesn't have (also
+`timeoutMs` (the call's, else the client's, else 120 seconds; longer for `serve` starting a site, `apply` and
+`jobsRun`) is stopped and throws `code` `timeout`. Only that opticli process is stopped: a site `opticli serve` runs
+keeps running, and a write may have been saved there anyway, so read it before you run it again. Calls that can't be right throw a `TypeError` before opticli runs: an option the command doesn't have (also
 from plain JavaScript, where TypeScript doesn't check), a value of the wrong kind, too many arguments.
 
 ### Projects in tests

@@ -3,7 +3,7 @@ title: Read the site from Node.js scripts and playwright.config
 summary: Call opticli's commands as typed methods from a Node.js script, and build Playwright projects from the site's own data, such as one project per enabled language.
 audience: developers
 order: 7
-written-for: 0.34.0
+written-for: 0.37.1
 ---
 
 A test suite or a build script often needs to know something about the site before it starts: which languages are
@@ -119,7 +119,9 @@ try {
 ```
 
 A command that doesn't answer within two minutes is stopped and throws `code` `timeout`. Pass a longer `timeoutMs`
-in the run options, after the options object: `cli.search('Alloy', {}, { timeoutMs: 300_000 })`.
+in the run options, after the options object: `cli.search('Alloy', {}, { timeoutMs: 300_000 })`, or to the client for
+every call: `new OptiCli({ timeoutMs: 300_000 })`. Only that opticli process is stopped; a site `opticli serve` runs
+keeps running.
 
 ## If something goes wrong
 

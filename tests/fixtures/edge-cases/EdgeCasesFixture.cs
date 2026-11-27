@@ -46,6 +46,43 @@ public class EdgePage : PageData
     /// <summary>Not culture-specific itself; its Title is.</summary>
     [Display(Order = 30)]
     public virtual EdgeLocalBlock Local { get; set; }
+
+    /// <summary>A block list whose items have a key the site makes (<see cref="EdgeListItemBlock.Key"/>).</summary>
+    [Display(Order = 40)]
+    public virtual IList<EdgeListItemBlock> ListItems { get; set; }
+
+    /// <summary>A list of plain items with times (<see cref="EdgePeriodsProperty"/>).</summary>
+    [Display(Order = 50)]
+    public virtual IList<EdgePeriod> Periods { get; set; }
+}
+
+/// <summary>A block list's item with a key that <c>SetDefaultValues</c> makes and the edit UI hides, as sites do to tell items apart.</summary>
+[ContentType(GUID = "3B0C4A5E-0D1F-4E5A-9C7B-6A1D2E3F4A05", DisplayName = "Edge list item", AvailableInEditMode = false)]
+public class EdgeListItemBlock : BlockData
+{
+    public virtual string Text { get; set; }
+
+    [ScaffoldColumn(false)]
+    public virtual string Key { get; set; }
+
+    public override void SetDefaultValues(EPiServer.DataAbstraction.ContentType contentType)
+    {
+        base.SetDefaultValues(contentType);
+        Key = Guid.NewGuid().ToString();
+    }
+}
+
+/// <summary>A list property's item (<see cref="EdgePeriodsProperty"/>): times, which a list stores as JSON.</summary>
+public class EdgePeriod
+{
+    public virtual DateTime? Opens { get; set; }
+
+    public virtual DateTime? Closes { get; set; }
+}
+
+[EPiServer.PlugIn.PropertyDefinitionTypePlugIn]
+public class EdgePeriodsProperty : PropertyList<EdgePeriod>
+{
 }
 
 [ContentType(GUID = "3B0C4A5E-0D1F-4E5A-9C7B-6A1D2E3F4A02", DisplayName = "Edge local block", AvailableInEditMode = false)]

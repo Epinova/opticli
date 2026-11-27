@@ -1501,6 +1501,7 @@ OptiCli.set
 OptiCli.sites
 OptiCli.sitesAll
 OptiCli.sql
+OptiCli.timeoutMs
 OptiCli.translate
 OptiCli.trash
 OptiCli.trashAll
@@ -1707,6 +1708,7 @@ OptiCliOptions.cwd?
 OptiCliOptions.onWarnings?
 OptiCliOptions.profile?
 OptiCliOptions.project?
+OptiCliOptions.timeoutMs?
 OptiCliSync.access
 OptiCliSync.allowedIn
 OptiCliSync.allowedInAll
@@ -1783,6 +1785,7 @@ OptiCliSync.set
 OptiCliSync.sites
 OptiCliSync.sitesAll
 OptiCliSync.sql
+OptiCliSync.timeoutMs
 OptiCliSync.translate
 OptiCliSync.trash
 OptiCliSync.trashAll
