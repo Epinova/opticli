@@ -20,10 +20,12 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # SDK 10 reads opticli.slnx; the 8 runtime runs the net8.0 test projects.
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: |
             8.0.x
@@ -66,16 +68,18 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
 
       - name: Pack
         working-directory: mcp-extension
         run: |
-          npm ci --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
           node build.mjs
 
       - name: Check
@@ -88,14 +92,16 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
 
       # The generator runs the CLI (`opticli schema --json`): SDK 10 builds it (and its CMS 13 agent), the 8 runtime runs it.
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: |
             8.0.x
@@ -109,7 +115,7 @@ jobs:
         env:
           OPTICLI: ${{ github.workspace }}/src/OptiCli/bin/Release/net8.0/opticli.dll
         run: |
-          npm ci --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
           npm run generate
           # Untracked files too: a new generated file that wasn't committed.
           if [ -n "$(git status --porcelain -- src/generated)" ]; then

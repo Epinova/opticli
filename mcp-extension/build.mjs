@@ -39,7 +39,7 @@ writeFileSync(join(stage, "manifest.json"), JSON.stringify(manifest, null, 2) + 
 const windows = process.platform === "win32";
 const run = (cmd, args) => execFileSync(cmd, args, { cwd: stage, stdio: "inherit", shell: windows });
 const mcpb = join(root, "node_modules", ".bin", windows ? "mcpb.cmd" : "mcpb");
-run("npm", ["ci", "--omit=dev", "--no-audit", "--no-fund"]);
+run("npm", ["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"]);
 run(mcpb, ["validate", "manifest.json"]);
 run(mcpb, ["pack", ".", join(root, "dist", file)]);
 rmSync(stage, { recursive: true, force: true });

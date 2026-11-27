@@ -8,7 +8,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import type { Envelope, OkEnvelope } from './envelope.ts';
-import { argv, OptiCliCommands, OptiCliCommandsSync, optionsOf } from './generated/commands.ts';
+import { argv, OptiCliCommands, OptiCliCommandsSync, optionsOf, withOptions } from './generated/commands.ts';
 import type { ApplyOptions, CreateOptions, RunOptions, SetOptions } from './generated/options.ts';
 import type { ErrorBody, ErrorCode, SealResult, WriteOutput } from './generated/types.ts';
 import type { AppliedPlan, CreatedContent, SavedContent } from './results.ts';
@@ -245,9 +245,12 @@ function settings(options: OptiCliOptions): Settings {
   };
 }
 
-/** The command line with what every call passes: `--json`, the project and the profile. */
+/**
+ * The command line with what every call passes: `--json`, the project and the profile. They go before a `--` (after
+ * it, everything is an argument), else at the end.
+ */
 function fullArgs(settings: Pick<Settings, 'project' | 'profile'>, args: readonly string[]): string[] {
-  return [...args, '--json', ...(settings.project ? ['--project', settings.project] : []), ...(settings.profile ? ['--profile', settings.profile] : [])];
+  return withOptions(args, ['--json', ...(settings.project ? ['--project', settings.project] : []), ...(settings.profile ? ['--profile', settings.profile] : [])]);
 }
 
 /** The envelope opticli printed; throws OptiCliError when it is `ok: false` or not JSON. */

@@ -1,0 +1,11 @@
+# Weekly pull requests that move the workflows' actions to their newest release: each is pinned to a commit SHA, with
+# its version in a comment, and Dependabot updates both.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']

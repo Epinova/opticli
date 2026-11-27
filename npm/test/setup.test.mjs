@@ -39,7 +39,8 @@ test('setup starts the site, seeds the plan, hands the workers its state, and st
   assert.deepEqual(state.urls, { root: '/en/fixtures/' });
   assert.deepEqual(state.opticli, { command: fakeCommand, project: '/sites/alloy' });
   const apply = calls().find((c) => c.args[0] === 'apply');
-  assert.deepEqual(apply.args.slice(0, 4), ['apply', '-', '--update-existing', '--publish']);
+  assert.deepEqual(apply.args.slice(0, 3), ['apply', '--update-existing', '--publish']);
+  assert.deepEqual(apply.args.slice(-2), ['--', '-']);
   assert.equal(apply.cwd, dir);
 
   await teardown();

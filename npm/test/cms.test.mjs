@@ -6,7 +6,11 @@ import { fake, fakeCommand, ok } from './fake.mjs';
 
 const sandbox = '100';
 const cms = () => new Cms(new OptiCli({ command: fakeCommand }), sandbox);
-const deletes = (calls) => calls().filter((c) => c.args[0] === 'delete').map((c) => c.args[1]);
+/** A command line's arguments: what follows its `--`. */
+const positional = (args) => (args.includes('--') ? args.slice(args.indexOf('--') + 1) : []);
+/** A command line's options: what comes before its `--`. */
+const options = (args) => (args.includes('--') ? args.slice(0, args.indexOf('--')) : args);
+const deletes = (calls) => calls().filter((c) => c.args[0] === 'delete').map((c) => positional(c.args)[0]);
 
 test('a page goes below the sandbox and to the recycle bin after the test, with what was made below it', async () => {
   const { calls } = fake([
@@ -110,7 +114,7 @@ test('a page on another site the served one answers gets that site address, one 
   await c.cleanup();
 });
 
-const projectDeletes = (calls) => calls().filter((c) => c.args[0] === 'projects' && c.args[1] === 'delete').map((c) => c.args[2]);
+const projectDeletes = (calls) => calls().filter((c) => c.args[0] === 'projects' && c.args[1] === 'delete').map((c) => positional(c.args)[0]);
 
 test('a page into a project is a draft there, unless told to publish', async () => {
   const { calls } = fake([
@@ -124,7 +128,7 @@ test('a page into a project is a draft there, unless told to publish', async () 
 
   const [create, set] = calls().map((x) => x.args);
   assert.ok(!create.includes('--publish'));
-  assert.deepEqual(create.slice(-5), ['--request-approval', '--in-project', 'Spring campaign', '--ready', '--json']);
+  assert.deepEqual(options(create).slice(-5), ['--request-approval', '--in-project', 'Spring campaign', '--ready', '--json']);
   assert.ok(set.includes('--in-project'));
 });
 
@@ -137,7 +141,7 @@ test('a scheduled page is not also published (opticli refuses --publish with --p
 
   const [scheduled, published] = calls().map((x) => x.args);
   assert.ok(!scheduled.includes('--publish'));
-  assert.deepEqual(scheduled.slice(-3), ['--publish-at', '2030-01-01T00:00:00Z', '--json']);
+  assert.deepEqual(options(scheduled).slice(-3), ['--publish-at', '2030-01-01T00:00:00Z', '--json']);
   assert.ok(published.includes('--publish'));
 });
 
@@ -169,7 +173,7 @@ test("apply removes a project the plan made after its content, and never one tha
   });
   await c.cleanup();
 
-  const order = calls().map((x) => x.args.slice(0, 2).join(' '));
+  const order = calls().map((x) => (x.args[0] === 'delete' ? ['delete', ...positional(x.args)] : x.args.slice(0, 2)).join(' '));
   assert.deepEqual(deletes(calls), ['30']);
   assert.deepEqual(projectDeletes(calls), ['4']);
   assert.ok(order.indexOf('delete 30') < order.indexOf('projects delete'));

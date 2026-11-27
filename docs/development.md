@@ -425,16 +425,28 @@ changed, which CI checks anyway. Commit on `main` and push it, then push a match
 git tag v0.23.1 && git push origin v0.23.1
 ```
 
-The [release workflow](../.github/workflows/release.yml) checks that the tag matches both versions and is on `main`,
-runs the unit tests, checks that the CLI package holds both site agent builds and starts, and publishes it to nuget.org together
-with `OptiCli.Mcp` and `OptiCli.Mcp.Cms13` at the same version (trusted publishing, environment `nuget`). Then it
-creates the GitHub release, with the version's CHANGELOG section as its notes (the job fails without a heading
-`## X.Y.Z (date)`) and the Claude Desktop extension `opticli-cms.mcpb` attached.
+The [release workflow](../.github/workflows/release.yml) runs in four jobs:
+
+- `build` checks that the tag matches both versions and is on `main`, runs the unit tests, packs `OptiCli`,
+  `OptiCli.Mcp` and `OptiCli.Mcp.Cms13`, checks that the CLI package holds both site agent builds and starts, packs and
+  checks the Claude Desktop extension, and builds and tests the npm package. It hands the `.nupkg` files,
+  `opticli-cms.mcpb` and `npm/dist` on as artifacts. It is the only job that runs this repository's code and its
+  dependencies, and it has no `id-token` permission, so nothing it runs can get the token that publishes.
+- `publish-nuget` (environment `nuget`: its required reviewers approve the push) downloads the three packages, checks
+  they are this version's, logs in to nuget.org through trusted publishing and pushes them. It checks out nothing.
+- `publish-npm` follows, for the npm package (below).
+- `github-release` creates the GitHub release once the packages are on nuget.org, with the version's CHANGELOG section
+  as its notes (the job fails without a heading `## X.Y.Z (date)`) and the extension attached.
+
+The workflows' actions are pinned to commit SHAs, with the version in a comment; Dependabot proposes updates weekly
+([.github/dependabot.yml](../.github/dependabot.yml)). Each project's `packages.lock.json` pins its NuGet packages:
+a local restore updates it after a package change (commit it), and CI and the release restore in locked mode, so they
+fail when it is out of date.
 
 The npm package `@epinova/opticli` ([npm/](../npm)), in the npm organization `epinova`, follows with the same version,
 through npm trusted publishing, once the repository variable `NPM_PUBLISH` is `true`. Trusted publishing needs the package to exist, so the first version is published by hand:
 
-1. Release the version as above. With `NPM_PUBLISH` unset, the workflow skips the npm job.
+1. Release the version as above. With `NPM_PUBLISH` unset, the workflow skips the `publish-npm` job.
 2. From the tag: `cd npm && npm ci && npm test`, then `npm login` (as a member of `epinova` who may publish) and
    `npm publish ./dist --access public` (two-factor authentication on).
 3. On npmjs.com, in the package's settings, add a trusted publisher: GitHub Actions, repository `Epinova/opticli` (as GitHub spells it: npm compares it, and `repository` in npm/package.json, case-sensitively),

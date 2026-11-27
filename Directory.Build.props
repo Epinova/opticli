@@ -9,6 +9,10 @@
     <!-- The version prints as 0.5.0, not 0.5.0+commit, so it compares with the skill's opticli-version. -->
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Authors>opticli contributors</Authors>
+    <!-- Each project's packages.lock.json pins every package, transitive ones too, with its hash. A restore here updates
+         it after a package change (commit it); CI (GitHub Actions sets CI=true) restores exactly what it says, or fails. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
   </PropertyGroup>
 
 </Project>
