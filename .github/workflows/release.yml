@@ -2,7 +2,12 @@
 # (CMS 13), all with the same version, to nuget.org when a version tag (v1.2.3) is pushed, then creates the GitHub
 # release with the MCP module's Claude Desktop extension (opticli-cms.mcpb) attached.
 # Authenticates with nuget.org trusted publishing: no API key is stored in the repository. The npm package (npm/) follows,
-# once the repository variable NPM_PUBLISH is true; see the npm job.
+# once the repository variable NPM_PUBLISH is true; see the publish-npm job.
+#
+# Only the build job runs the repository's code and its dependencies (NuGet packages, npm packages), and it can't get
+# the OIDC token that publishes (no id-token permission). It builds, tests, packs and checks everything, and hands the
+# packages on as artifacts. The publish jobs check out nothing and build nothing: they download those artifacts, log in
+# and push.
 name: Release
 
 on:
@@ -10,20 +15,18 @@ on:
     tags: ['v*']
 
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
-    # Named in the nuget.org trusted publishing policy; add required reviewers to it to approve each release.
-    environment: nuget
     permissions:
       contents: read
-      id-token: write # lets NuGet/login exchange the workflow's OIDC token for a short-lived API key
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0 # the main check below needs the branch history
+          persist-credentials: false
 
       # SDK 10 reads opticli.slnx; the 8 runtime runs the net8.0 test projects.
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: |
             8.0.x
@@ -47,6 +50,7 @@ jobs:
             exit 1
           fi
 
+      # Restores what the packages.lock.json files say, or fails (RestoreLockedMode, as CI=true here).
       - name: Build
         run: dotnet build opticli.slnx -c Release
 
@@ -71,72 +75,123 @@ jobs:
           .github/scripts/check-package.sh artifacts
           .github/scripts/check-mcp-package.sh artifacts "${GITHUB_REF_NAME#v}"
 
-      # Packed and checked before anything is pushed; the release job below attaches it.
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
 
+      # No dependency of the extension or the npm package has an install script.
       - name: Pack the Claude Desktop extension
         working-directory: mcp-extension
         run: |
-          npm ci --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
           node build.mjs
 
       - name: Check the extension
         run: .github/scripts/check-mcp-extension.sh mcp-extension/dist/opticli-cms.mcpb "${GITHUB_REF_NAME#v}"
 
-      - uses: actions/upload-artifact@v4
+      # npm test builds npm/dist, which publish-npm publishes.
+      - name: Build and test the npm package
+        working-directory: npm
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run typecheck
+          npm test
+          version="$(node -p "require('./dist/package.json').version")"
+          if [ "$version" != "${GITHUB_REF_NAME#v}" ]; then
+            echo "::error::npm/dist has version $version, not ${GITHUB_REF_NAME#v}."
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nuget
+          path: artifacts/*.nupkg
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: extension
           path: mcp-extension/dist/opticli-cms.mcpb
           if-no-files-found: error
 
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: npm
+          path: npm/dist
+          if-no-files-found: error
+
+  # Pushes the three packages the build job made. Checks out nothing and runs none of the repository's code.
+  publish-nuget:
+    needs: build
+    runs-on: ubuntu-latest
+    # Named in the nuget.org trusted publishing policy; add required reviewers to it to approve each release.
+    environment: nuget
+    permissions:
+      id-token: write # lets NuGet/login exchange the workflow's OIDC token for a short-lived API key
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: nuget
+          path: artifacts
+
+      - name: Check the packages are this version's three
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          expected="$(printf '%s\n' "OptiCli.$version.nupkg" "OptiCli.Mcp.$version.nupkg" "OptiCli.Mcp.Cms13.$version.nupkg" | sort)"
+          found="$(find artifacts -mindepth 1 -printf '%f\n' | sort)"
+          if [ "$found" != "$expected" ]; then
+            echo "::error::Expected $(tr '\n' ' ' <<<"$expected"), found $(tr '\n' ' ' <<<"$found")."
+            exit 1
+          fi
+
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: 10.0.x
+
       - name: Log in to nuget.org
         id: login
-        uses: NuGet/login@v1
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
         with:
           user: ${{ secrets.NUGET_USER }}
 
       - name: Push
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
         run: >
           dotnet nuget push "artifacts/*.nupkg"
-          --api-key "${{ steps.login.outputs.NUGET_API_KEY }}"
+          --api-key "$NUGET_API_KEY"
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
 
-  # The npm package (npm/), after the CLI is on nuget.org, so the opticli it needs can be installed. npm trusted
-  # publishing (this workflow and the environment npm, named in the package's settings on npmjs.com) needs the package to
-  # exist, so the first version is published by hand and NPM_PUBLISH set to true after; until then this job is skipped. A
-  # version that is on npm already (that first one) is left as it is.
-  npm:
-    needs: publish
+  # The npm package (npm/dist from the build job), after the CLI is on nuget.org, so the opticli it needs can be
+  # installed. npm trusted publishing (this workflow and the environment npm, named in the package's settings on
+  # npmjs.com) needs the package to exist, so the first version is published by hand and NPM_PUBLISH set to true after;
+  # until then this job is skipped. A version that is on npm already (that first one) is left as it is. Checks out
+  # nothing and runs none of the repository's code.
+  publish-npm:
+    needs: [build, publish-nuget]
     if: vars.NPM_PUBLISH == 'true'
     runs-on: ubuntu-latest
     environment: npm
     permissions:
-      contents: read
       id-token: write # npm exchanges the workflow's OIDC token for the publish, and signs its provenance
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: npm
+          path: dist
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
       # Trusted publishing needs npm 11.5.1 or newer; Node 22 comes with npm 10.
       - name: Update npm
-        run: npm install -g npm@11
-
-      - name: Build and test
-        working-directory: npm
-        run: |
-          npm ci --no-audit --no-fund
-          npm run typecheck
-          npm test
+        run: npm install -g npm@11.21.3 --ignore-scripts --no-audit --no-fund
 
       - name: Publish
-        working-directory: npm/dist
+        working-directory: dist
         run: |
           version="$(node -p "require('./package.json').version")"
           if [ "$version" != "${GITHUB_REF_NAME#v}" ]; then
@@ -147,20 +202,23 @@ jobs:
             echo "@epinova/opticli@$version is on npm already."
             exit 0
           fi
-          npm publish --access public
+          npm publish --access public --ignore-scripts
 
   # The GitHub release, after the packages are on nuget.org: the version's CHANGELOG section as notes, and the extension
   # as an asset (the same name every release, so .../releases/latest/download/opticli-cms.mcpb always has the newest).
   # A re-run replaces the asset of a release that already exists.
   github-release:
-    needs: publish
+    needs: [build, publish-nuget]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
+      # For CHANGELOG.md; gh gets its token from GH_TOKEN below, so the checkout keeps none.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: extension
 
