@@ -43,6 +43,33 @@ public sealed class SealedSiteTests : IDisposable
     }
 
     [Fact]
+    public async Task Of_the_inherited_environment_only_what_the_system_and_dotnet_need_stays()
+    {
+        var launch = await LaunchAsync();
+        string[] inherited =
+        [
+            "PATH", "HOME", "TMPDIR", "LC_ALL", "XDG_RUNTIME_DIR", "DOTNET_ROOT", "SSL_CERT_DIR", "HTTPS_PROXY",
+            "CORECLR_ENABLE_PROFILING", "CORECLR_PROFILER_PATH", "DOTNET_ADDITIONAL_DEPS", "DOTNET_SHARED_STORE", "EPiServer__Cms__X",
+            "ASPNETCORE_ENVIRONMENT", SiteEnvironment.StartupHooksVariable,
+        ];
+
+        var variables = SealedSite.Environment(launch, inherited);
+        var removed = variables.Where(v => v.Value is null).Select(v => v.Key).ToHashSet();
+
+        foreach (var kept in new[] { "PATH", "HOME", "TMPDIR", "LC_ALL", "XDG_RUNTIME_DIR", "DOTNET_ROOT", "SSL_CERT_DIR", "HTTPS_PROXY" })
+        {
+            Assert.DoesNotContain(kept, removed);
+        }
+        foreach (var dropped in new[] { "CORECLR_ENABLE_PROFILING", "CORECLR_PROFILER_PATH", "DOTNET_ADDITIONAL_DEPS", "DOTNET_SHARED_STORE", "EPiServer__Cms__X" })
+        {
+            Assert.Contains(dropped, removed);
+        }
+        // What the run sets itself is set once, never removed after.
+        Assert.Single(variables, v => v.Key == "ASPNETCORE_ENVIRONMENT");
+        Assert.Equal("/opticli/agent/cms12/OptiCli.Agent.dll", Assert.Single(variables, v => v.Key == SiteEnvironment.StartupHooksVariable).Value);
+    }
+
+    [Fact]
     public async Task Productions_event_bus_and_blob_storage_go_on_the_stdin_line_only()
     {
         var launch = await LaunchAsync() with

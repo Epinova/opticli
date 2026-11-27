@@ -127,21 +127,42 @@ public static class SealedSite
     }
 
     /// <summary>
-    /// The site's environment: shared mode for production, the agent as its only startup hook, and nothing secret. Inherited
-    /// variables that would name another connection, token or hosting startup are removed.
+    /// What the site keeps of the environment it inherits: what the operating system, the .NET host, TLS and a proxy need.
+    /// Everything else is dropped, so what runs with production's write login is the sealed build and its settings, not a
+    /// profiler, extra dependencies or configuration overrides (<c>EPiServer__...</c>) the shell happens to have.
     /// </summary>
-    internal static IReadOnlyList<KeyValuePair<string, string?>> Environment(SealedLaunch request)
+    internal static readonly IReadOnlySet<string> KeptVariables = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        var inherited = System.Environment.GetEnvironmentVariables().Keys.OfType<string>().ToList();
-        var removed = SiteEnvironment.CompetingConnectionVariables(request.ConnectionName, inherited)
+        "PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "TEMP", "TMP", "LANG", "LANGUAGE", "TZ",
+        "DOTNET_ROOT", "DOTNET_ROOT(x86)", "DOTNET_ROOT_X64", "DOTNET_ROOT_X86", "DOTNET_ROOT_ARM64",
+        "SSL_CERT_FILE", "SSL_CERT_DIR", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
+        // Windows: what its own APIs and the user profile need.
+        "SystemRoot", "windir", "SystemDrive", "ComSpec", "PATHEXT", "OS", "ProgramData", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432",
+        "CommonProgramFiles", "CommonProgramFiles(x86)", "CommonProgramW6432", "APPDATA", "LOCALAPPDATA", "USERPROFILE", "HOMEDRIVE",
+        "HOMEPATH", "USERNAME", "USERDOMAIN", "COMPUTERNAME", "PUBLIC", "ALLUSERSPROFILE", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE",
+    };
+
+    private static bool Kept(string name) =>
+        KeptVariables.Contains(name) || name.StartsWith("LC_", StringComparison.Ordinal) || name.StartsWith("XDG_", StringComparison.Ordinal);
+
+    /// <summary>
+    /// The site's environment: shared mode for production, the agent as its only startup hook, and nothing secret. Of what it
+    /// inherits, only <see cref="KeptVariables"/> stay.
+    /// </summary>
+    /// <param name="inherited">The variables this process has; null reads them.</param>
+    internal static IReadOnlyList<KeyValuePair<string, string?>> Environment(SealedLaunch request, IEnumerable<string>? inherited = null)
+    {
+        var names = (inherited ?? System.Environment.GetEnvironmentVariables().Keys.OfType<string>()).ToList();
+        var removed = SiteEnvironment.CompetingConnectionVariables(request.ConnectionName, names)
             .Append(ConnectionVariables.Name(request.ConnectionName))
             .Concat([AgentProtocol.TokenVariable, AgentProtocol.DatabaseVariable, AgentProtocol.SchedulerVariable, AgentProtocol.ConnectionNameVariable,
                 // Production's event bus and blob storage come from the terminal only.
                 AgentProtocol.EventsConnectionVariable, AgentProtocol.EventsTopicVariable, AgentProtocol.BlobsConnectionVariable, AgentProtocol.BlobsContainerVariable,
                 AgentProtocol.SqlTokenVariable, AgentProtocol.SqlTokenExpiresVariable,
                 "ASPNETCORE_HOSTINGSTARTUPASSEMBLIES", "ASPNETCORE_PREVENTHOSTINGSTARTUP", "ASPNETCORE_HTTPS_PORT"])
+            .Concat(names.Where(name => !Kept(name)))
             .Distinct(StringComparer.Ordinal);
-        var variables = new List<KeyValuePair<string, string?>>(removed.Select(name => new KeyValuePair<string, string?>(name, null)))
+        var set = new List<KeyValuePair<string, string?>>
         {
             new("ASPNETCORE_ENVIRONMENT", "Development"),
             new("ASPNETCORE_URLS", SiteEnvironment.Url(request.Port)),
@@ -153,13 +174,15 @@ public static class SealedSite
         };
         if (request.SiteEndpoints is { Count: > 0 })
         {
-            variables.Add(new(KestrelEndpoints.UrlVariable(KestrelEndpoints.Http), SiteEnvironment.Url(request.Port)));
+            set.Add(new(KestrelEndpoints.UrlVariable(KestrelEndpoints.Http), SiteEnvironment.Url(request.Port)));
         }
         if (!string.Equals(request.ConnectionName, AgentProtocol.DefaultConnectionName, StringComparison.Ordinal))
         {
-            variables.Add(new(AgentProtocol.ConnectionNameVariable, request.ConnectionName));
+            set.Add(new(AgentProtocol.ConnectionNameVariable, request.ConnectionName));
         }
-        return variables;
+        // What the run sets itself replaces the inherited value; it isn't removed first.
+        var given = set.Select(v => v.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return [.. removed.Where(name => !given.Contains(name)).Select(name => new KeyValuePair<string, string?>(name, null)), .. set];
     }
 
     /// <summary>

@@ -105,9 +105,16 @@ public static class SiteProcess
     public static string DotnetHost()
     {
         var current = Environment.ProcessPath;
-        return current is not null && Path.GetFileNameWithoutExtension(current).Equals("dotnet", StringComparison.OrdinalIgnoreCase)
-            ? current
-            : "dotnet";
+        if (current is not null && Path.GetFileNameWithoutExtension(current).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+        {
+            return current;
+        }
+        // A global tool runs from its own launcher: the host of the runtime opticli runs on (…/shared/Microsoft.NETCore.App/x.y.z/),
+        // not whichever `dotnet` comes first on PATH.
+        var runtime = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
+        var root = Path.GetFullPath(Path.Combine(runtime, "..", "..", ".."));
+        var host = Path.Combine(root, OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet");
+        return File.Exists(host) ? host : "dotnet";
     }
 
     public static DateTimeOffset? StartTime(Process process)
