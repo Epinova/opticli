@@ -41,7 +41,7 @@ internal sealed class ConnectionsPage(
         string Time(DateTimeOffset? at) => at is { } value ? value.UtcDateTime.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture) : "never";
         var rows = string.Concat(grants.Select(g => $"""
             <tr>
-              <td>{H(g.ClientName)}<br><code>{H(g.ClientId)}</code></td>
+              <td>{H(ClientMetadataDocument.CleanName(g.ClientName, "MCP client"))}<br><code>{H(g.ClientId)}</code></td>
               {(admin ? $"<td data-label=\"Editor\">{H(g.UserName)}</td>" : "")}
               <td data-label="Allowed">{H(g.Scope)}</td>
               <td data-label="Connected">{Time(g.Created)}</td>

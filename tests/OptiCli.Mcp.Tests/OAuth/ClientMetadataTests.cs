@@ -83,6 +83,49 @@ public class ClientMetadataDocumentTests
     }
 
     [Theory]
+    // Bidi controls: the name would read "Claude" followed by another app's name, reversed.
+    [InlineData("Claude\u202Eppa.live\u202C", "Claudeppa.live")]
+    [InlineData("\u2066Claude\u2069", "Claude")]
+    // Zero-width spaces, joiners, the byte order mark, a soft hyphen, line and paragraph separators.
+    [InlineData("Cl\u200Ba\u200Cu\u200Dd\uFEFFe\u00AD", "Claude")]
+    [InlineData("Claude\u2028Desktop\u2029", "ClaudeDesktop")]
+    // A tag character, outside the BMP (Cf as well).
+    [InlineData("Claude\U000E0041", "Claude")]
+    // What a name may have: letters of any script, accents, emoji.
+    [InlineData("Ærlig Klient ✓ 😀", "Ærlig Klient ✓ 😀")]
+    [InlineData("\u202E\u200B", "fallback")]
+    public void Invisible_and_direction_changing_characters_are_removed_from_names(string name, string shown) =>
+        Assert.Equal(shown, ClientMetadataDocument.CleanName(name, "fallback"));
+
+    [Theory]
+    [InlineData("https://claude.ai/api/mcp/auth_callback", "claude.ai")]
+    [InlineData("https://сlaude.ai/cb", "xn--laude-0ye.ai")]
+    [InlineData("http://127.0.0.1:53682/callback", "127.0.0.1:53682")]
+    [InlineData("http://[::1]:53682/callback", "[::1]:53682")]
+    public void A_return_address_is_shown_with_its_host_in_punycode(string url, string shown) =>
+        Assert.Equal(shown, AuthorizationServer.IdnAuthority(new Uri(url)));
+
+    [Fact]
+    public void A_lone_surrogate_is_removed_from_a_name() =>
+        Assert.Equal("Claude", ClientMetadataDocument.CleanName("Claude\uD800", "fallback"));
+
+    [Fact]
+    public void A_name_is_not_cut_inside_a_character()
+    {
+        var name = ClientMetadataDocument.CleanName(new string('a', ClientMetadataDocument.MaxNameLength - 1) + "😀b", "fallback");
+        Assert.Equal(new string('a', ClientMetadataDocument.MaxNameLength - 1), name);
+    }
+
+    [Fact]
+    public void Without_a_name_a_lookalike_host_is_shown_in_punycode()
+    {
+        // Cyrillic es (U+0441) in place of the Latin "c".
+        const string id = "https://\u0441laude.ai/oauth/metadata.json";
+        var client = Parse($$"""{"client_id":"{{id}}","redirect_uris":["https://claude.ai/api/mcp/auth_callback"]}""", id).Client!;
+        Assert.StartsWith("xn--", client.ClientName);
+    }
+
+    [Theory]
     [InlineData("https://client.example/oauth/metadata.json", false, true)]
     [InlineData("https://client.example:8443/metadata", false, true)]
     [InlineData("http://client.example/metadata", false, false)]
@@ -340,6 +383,38 @@ public sealed class ClientResolverLimitsTests
         Assert.Equal(fetched, network.Fetches);
         await resolver.ResolveAsync(ClientId(1), default);
         Assert.Equal(fetched + 1, network.Fetches);
+    }
+
+    [Fact]
+    public async Task The_consent_page_shows_a_lookalike_domain_in_punycode_and_a_caution()
+    {
+        // Cyrillic es (U+0441) in place of the Latin "c", and a name that turns its end around.
+        const string clientId = "https://\u0441laude.ai/oauth/client.json";
+        var document = $$"""{"client_id":"{{clientId}}","client_name":"Claude\u202Eai.edualc\u202C","redirect_uris":["https://claude.ai/api/mcp/auth_callback"]}""";
+        await using var site = await TestSite.StartAsync(after: s => s.AddSingleton(sp => new ClientResolver(sp.GetRequiredService<IOAuthStore>(),
+            sp.GetRequiredService<IHostEnvironment>(), NullLogger<ClientResolver>.Instance, sp.GetRequiredService<TimeProvider>(), new Fixed(document))));
+
+        var page = await site.Browser("editor").GetAsync(TestSite.AuthorizeUrl(clientId, Pkce.Challenge(TestSite.Verifier()), "https://claude.ai/api/mcp/auth_callback"));
+        var html = await page.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, page.StatusCode);
+        Assert.Contains($"published by <b>{new Uri(clientId).IdnHost}</b>", html);
+        Assert.StartsWith("xn--", new Uri(clientId).IdnHost);
+        Assert.DoesNotContain("\u0441laude", html, StringComparison.Ordinal);
+        // Ordinal: a culture-aware search ignores the bidi control, and finds it anywhere.
+        Assert.DoesNotContain("\u202E", html, StringComparison.Ordinal);
+        Assert.Contains("Connect Claudeai.edualc?", html);
+        // Every app gets the caution; only one that registered itself gets the warning.
+        Assert.Contains("Only allow it if you just added this connection yourself.", html);
+        Assert.DoesNotContain("class=\"warning\"", html);
+        Assert.Contains("sent back to <b>claude.ai</b>", html);
+    }
+
+    /// <summary>Answers every request with the same document.</summary>
+    private sealed class Fixed(string document) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(document, Encoding.UTF8, "application/json") });
     }
 
     /// <summary>Answers every request with a valid document for its URL, once <see cref="Hold"/> (if any) is done.</summary>

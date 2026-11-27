@@ -216,7 +216,7 @@ internal sealed class AuthorizationServer(
         if (!RedirectUris.IsPermitted(redirect, Options.AllowedRedirectHosts))
         {
             return (null, Message(context, HttpStatusCode.BadRequest, "Return address not allowed",
-                $"The app asked to be sent back to {new Uri(redirect).Host}, which this site doesn't accept for AI assistant connections. Only connect apps the site's administrators allow."));
+                $"The app asked to be sent back to {new Uri(redirect).IdnHost}, which this site doesn't accept for AI assistant connections. Only connect apps the site's administrators allow."));
         }
 
         var state = Get("state");
@@ -276,9 +276,11 @@ internal sealed class AuthorizationServer(
 
         var form = antiforgery.GetAndStoreTokens(context);
         var redirect = new Uri(request.RedirectUri);
-        // An app that registered itself chose its own name: said plainly, where the editor looks.
+        // Any app names itself, so the editor is told to allow only a connection they just started. One that registered
+        // itself gets that said plainly; one with a metadata document is named by its domain, in punycode (IdnHost), so
+        // a lookalike in another script doesn't read as the real one.
         var identity = ClientMetadataDocument.IsUrl(request.Client.ClientId)
-            ? $"<p class=\"muted\">The app's description is published by <b>{H(new Uri(request.Client.ClientId).Host)}</b>.</p>"
+            ? $"<p>The app's description is published by <b>{H(new Uri(request.Client.ClientId).IdnHost)}</b>. Only allow it if you just added this connection yourself.</p>"
             : "<p class=\"warning\"><b>The app registered itself under this name; the site can't confirm who made it.</b> Only allow it if you just added this connection yourself, from the app you expect.</p>";
         // Read is what every call needs, so it can't be unticked; the others are the editor's choice.
         var scopes = string.Concat(request.Scope.Split(' ').Select(s => s == Scopes.Read
@@ -289,9 +291,9 @@ internal sealed class AuthorizationServer(
         return Render(context, HttpStatusCode.OK, "Connect an AI assistant", $"""
             <form method="post" action="{H(action)}">
               <div class="panel">
-                <h1>Connect {H(request.Client.ClientName)}?</h1>
+                <h1>Connect {H(ClientMetadataDocument.CleanName(request.Client.ClientName, "MCP client"))}?</h1>
                 {identity}
-                <p>If you allow it, you'll be sent back to <b>{H(redirect.Authority)}</b>, and the app will act as you, with your access rights in the CMS. Untick what it shouldn't do. It may:</p>
+                <p>If you allow it, you'll be sent back to <b>{H(IdnAuthority(redirect))}</b>, and the app will act as you, with your access rights in the CMS. Untick what it shouldn't do. It may:</p>
                 <ul class="scopes">{scopes}</ul>
                 {noPublish}
               </div>
@@ -620,6 +622,13 @@ internal sealed class AuthorizationServer(
     }
 
     // --- Helpers ---------------------------------------------------------------------------------------------------
+
+    /// <summary>A URL's host and port as the consent page shows them: the host in punycode, as for the app's own domain.</summary>
+    internal static string IdnAuthority(Uri uri)
+    {
+        var host = uri.HostNameType == UriHostNameType.Dns ? uri.IdnHost : uri.Host;
+        return uri.IsDefaultPort ? host : $"{host}:{uri.Port}";
+    }
 
     /// <summary>The form's code, taken from the store (a code works once, whatever happens next); null for none or an unknown one.</summary>
     private async Task<AuthorizationCode?> TakeCodeAsync(IFormCollection form, CancellationToken cancellationToken) =>
