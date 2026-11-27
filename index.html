@@ -105,9 +105,10 @@ h1 { font-weight: 800; font-size: clamp(2.5rem, 5.6vw, 4.8rem); line-height: 1.0
 /* Guides: two per area in the area's ink, plain on the ground like the releases, each column ending in a link to the rest.
    The tests guides live under "For developers" on the guides page. */
 .guides-home { margin-top: 112px; }
-.guides-home .head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 20px 72px; align-items: end; }
+/* The lead sits under the heading, on the columns' left edge, not floating in a second column that lines up with nothing. */
+.guides-home .head { display: grid; gap: 12px; }
 .guides-home h2 { font-weight: 800; font-size: clamp(2rem, 3.4vw, 3rem); line-height: 1.05; letter-spacing: -.03em; }
-.guides-home .head p { color: var(--soft); max-width: 56ch; }
+.guides-home .head p { color: var(--soft); font-size: 1.12rem; max-width: 56ch; }
 .gcols { margin-top: 40px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; }
 .gcol { --c: var(--p1-ink); display: flex; flex-direction: column; }
 .gcol.p2 { --c: var(--p2-ink); }
@@ -122,7 +123,7 @@ h1 { font-weight: 800; font-size: clamp(2.5rem, 5.6vw, 4.8rem); line-height: 1.0
 .gcol li span { color: var(--soft); font-size: .97rem; }
 .gcol .rest { margin-top: auto; padding-top: 14px; border-top: 1px solid color-mix(in srgb, var(--ink) 14%, var(--ground)); display: inline-flex; gap: 8px; align-items: center; font-weight: 700; color: var(--c); text-decoration: none; }
 .gcol .rest:hover { text-decoration: underline; }
-@media (max-width: 900px) { .guides-home .head { grid-template-columns: minmax(0, 1fr); } .gcols { grid-template-columns: minmax(0, 1fr); max-width: 640px; } .gcol .rest { margin-top: 0; } }
+@media (max-width: 900px) { .gcols { grid-template-columns: minmax(0, 1fr); max-width: 640px; } .gcol .rest { margin-top: 0; } }
 
 
 
