@@ -30,7 +30,7 @@
   <div class="guide-head">
     <h1>Connect your assistant to the CMS</h1>
     <p class="lead">Connect Claude or another assistant to your Optimizely site, sign in with your own CMS account, and check that it works.</p>
-    <p class="guide-meta">Written for opticli 0.34.2 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/editors/connect-your-assistant.md">Edit on GitHub</a></p>
+    <p class="guide-meta">Written for opticli 0.38.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/editors/connect-your-assistant.md">Edit on GitHub</a></p>
   </div>
   <div class="guide-body">
     <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#steps">Steps</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
@@ -61,7 +61,7 @@ Claude on the web (claude.ai) or Claude Code, or another assistant with that kin
 <td>the Claude Desktop extension, which adds the rest</td>
 </tr>
 <tr>
-<td>The full address, such as <code>https://www.example.com/episerver/opticli/mcp</code></td>
+<td>The full address, such as <code>https://www.example.com/episerver/opticli/mcp</code> (<code>/optimizely/opticli/mcp</code> on CMS 13)</td>
 <td>every other assistant</td>
 </tr>
 </tbody>
@@ -86,8 +86,10 @@ is refused until your developer allows it (see &quot;If something goes wrong&quo
 Then a consent page asks <strong>Connect</strong> followed by the assistant's name. It shows:</p>
 <ul>
 <li>who you are signed in as;</li>
-<li>who published the assistant's description, or a warning that the app named itself and the site can't confirm who
-made it. Only allow it if you added the connection yourself, just now;</li>
+<li>who published the assistant's description (for Claude, <code>claude.ai</code>), or a warning that the app named itself and the
+site can't confirm who made it. Either way, only allow it if you added the connection yourself, just now. The page
+writes a domain with letters outside a–z (from another alphabet, or æ, ø, å) as <code>xn--</code> and a code: such a domain
+isn't <code>claude.ai</code>, however much it looked like it elsewhere;</li>
 <li>what the assistant may do, with a checkbox each: read the content you have access to (always), create content and
 change drafts, and, only where the site allows it, publish and unpublish content.</li>
 </ul>
@@ -107,7 +109,8 @@ it has no more rights than you have.</p>
 <div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-2">Copy</button></div><pre><code id="code-2">Find the &quot;About us&quot; page and tell me what&#x27;s on it.</code></pre></div>
 <p>The assistant finds the page, reads it and sums it up. Nothing is changed by reading.</p>
 <h3 id="6-see-or-revoke-your-connections">6. See or revoke your connections</h3>
-<p>Open <code>/episerver/opticli/connections</code> on the site (your developer may have moved it). It lists the assistants you
+<p>Open <code>/episerver/opticli/connections</code> on the site (<code>/optimizely/opticli/connections</code> on CMS 13; your developer may have
+moved it). It lists the assistants you
 connected, what you allowed each one, when it connected and when it was last used. <strong>Revoke</strong> cuts an assistant off
 at once. A connection also ends on its own after a while (30 days unless your developer changed it), and then you sign
 in again the same way.</p>

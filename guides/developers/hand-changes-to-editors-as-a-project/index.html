@@ -30,7 +30,7 @@
   <div class="guide-head">
     <h1>Hand a batch of changes to editors as a project</h1>
     <p class="lead">Put the drafts a plan or your coding agent makes in a CMS project, so an editor reviews them together in the CMS and they go live in one go, when someone decides they should.</p>
-    <p class="guide-meta">Written for opticli 0.33.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/developers/hand-changes-to-editors-as-a-project.md">Edit on GitHub</a></p>
+    <p class="guide-meta">Written for opticli 0.38.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/developers/hand-changes-to-editors-as-a-project.md">Edit on GitHub</a></p>
   </div>
   <div class="guide-body">
     <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#steps">Steps</a></li><li><a href="#running-the-plan-again">Running the plan again</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
@@ -127,7 +127,8 @@ opticli<span class="t-w"> </span>projects<span class="t-w"> </span>publish<span 
 <p>Only the items marked ready go live (<code>published</code>, or <code>scheduled</code> with <code>--at</code>); the rest stay drafts (<code>notReady</code>). Every
 ready item is checked first, as <code>publish</code> checks one, and one problem stops it with nothing published. On a terminal it
 shows what goes live, whose changes go with it and what stays behind, and asks. Changes of the colleague who marked an
-item ready (<code>readyBy</code>) need no confirming; anyone else's unpublished changes in a ready item need <code>--include-draft</code>.
+item ready (<code>readyBy</code>) need no confirming; anyone else's unpublished changes in a ready item need <code>--include-draft</code>, and
+so does a ready item older than a version someone else published since, which would replace their published changes.
 <code>projects reactivate</code> cancels a scheduled publish: the items become drafts again, to mark ready again.</p>
 <h2 id="running-the-plan-again">Running the plan again</h2>
 <p>Run the same plan again after a change: the project is found by its name (<code>existing</code>) and the drafts are saved into it
@@ -164,6 +165,10 @@ production.</p>
 <tr>
 <td><code>pendingDraft</code> on <code>projects ready</code> or <code>projects publish</code></td>
 <td>A colleague's unpublished changes. Ask them, then <code>--include-draft</code>.</td>
+</tr>
+<tr>
+<td><code>newerPublished</code> on <code>projects publish</code></td>
+<td>A colleague published a newer version of a ready item, which the publish would replace. Ask them, then <code>--include-draft</code>; or save the item again into the project from its published version.</td>
 </tr>
 <tr>
 <td>A typo in the plan's project name made a second project</td>

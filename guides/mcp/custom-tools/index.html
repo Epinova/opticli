@@ -30,7 +30,7 @@
   <div class="guide-head">
     <h1>Write your first site-specific tool</h1>
     <p class="lead">Add a read tool and a write tool of your own to the MCP module, so editors&#x27; assistants can find Alloy product pages without a teaser and fill them in as drafts.</p>
-    <p class="guide-meta">Written for opticli 0.33.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/mcp/custom-tools.md">Edit on GitHub</a></p>
+    <p class="guide-meta">Written for opticli 0.38.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/mcp/custom-tools.md">Edit on GitHub</a></p>
   </div>
   <div class="guide-body">
     <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#build-the-tools">Build the tools</a></li><li><a href="#name-and-describe-them-well">Name and describe them well</a></li><li><a href="#try-the-dry-run-and-confirm-flow">Try the dry run and confirm flow</a></li><li><a href="#put-the-drafts-in-a-project">Put the drafts in a project</a></li><li><a href="#test-it">Test it</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
@@ -39,7 +39,9 @@
 types matter, where they live, what &quot;done&quot; looks like. In this guide you add two tools to an Alloy site. The read
 tool, <code>list_products_missing_teaser</code>, lists product pages (Alloy Track, Alloy Plan, Alloy Meet) that have no teaser
 text of their own. The write tool, <code>fill_product_teasers</code>, writes the teasers the assistant drafted, as drafts, after a
-dry run the editor has seen. Both run as the signed-in editor, with their access rights and the module's audit log.</p>
+dry run the editor has seen. Both run as the signed-in editor, with their access rights and the module's audit log.
+For things that aren't CMS content (offers or events in a system of their own), see
+<a href="../../mcp/action-tools/">Let assistants change things outside the CMS</a>.</p>
 <h2 id="before-you-start">Before you start</h2>
 <ul>
 <li>The module installed and working in your site: see <a href="../../mcp/install-the-module/">Install the MCP module in your site</a>.</li>
@@ -165,7 +167,8 @@ anything else.</p>
 or <code>products</code>. Names are 1 to 128 letters, digits, <code>_</code>, <code>-</code> and <code>.</code>, and can't be one of the module's own
 (<code>get_content</code>, <code>update_content</code>, <code>delete_content</code> and the rest, whether offered or not).</li>
 <li><strong>Describe</strong> what the tool does and what to do with its result (&quot;read each one with get_content&quot;). Leave out the dry
-run workflow on a write tool: the module appends it to the description itself.</li>
+run workflow on a write tool, and what its steps do to the site: the module appends both to the description itself,
+from the tool's <code>Kinds</code> (drafts only, or that a move changes live URLs and the recycle bin takes content off the site).</li>
 <li><strong>Describe every argument</strong> and say where its value comes from (&quot;as list_products_missing_teaser gives it&quot;).</li>
 <li><strong>Fail on purpose</strong> with <code>OptiCliToolException(code, message, hint)</code>, using <code>usage</code>, <code>not_found</code>, <code>refused</code> or
 <code>conflict</code>. The assistant follows the hint. Anything else your tool throws is logged and reaches the assistant as
@@ -240,6 +243,7 @@ hint tells the assistant to do the rest in further runs.</li>
 <h2 id="related">Related</h2>
 <ul>
 <li><a href="../../mcp/install-the-module/">Install the MCP module in your site</a></li>
+<li><a href="../../mcp/action-tools/">Let assistants change things outside the CMS</a>, with action tools</li>
 <li><a href="../../mcp/hardening/">Take the MCP module to production</a></li>
 <li>README: <a href="https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/tools.md#custom-tools">Custom tools</a>, with every <code>ContentPlan</code> step (create,
 create in a &quot;For this page&quot; folder, move, trash) and the rules a tool must follow</li>
@@ -248,7 +252,7 @@ one of its own</li>
 </ul>
     </article>
   </div>
-  <section class="more" aria-labelledby="more-h"><h2 id="more-h">More guides for the MCP module</h2><ol class="guide-list"><li><a href="../../mcp/install-the-module/"><b>Install the MCP module in your site</b><span>Add the opticli MCP module to a CMS 12 or CMS 13 site, decide what assistants may do, and connect a first assistant to check that it works.</span></a></li><li><a href="../../mcp/hardening/"><b>Take the MCP module to production</b><span>Configure the MCP module for a shared or production environment, from which assistants may connect and how the site is reached to error pages, uploads, the audit log and preview links.</span></a></li></ol></section>
+  <section class="more" aria-labelledby="more-h"><h2 id="more-h">More guides for the MCP module</h2><ol class="guide-list"><li><a href="../../mcp/install-the-module/"><b>Install the MCP module in your site</b><span>Add the opticli MCP module to a CMS 12 or CMS 13 site, decide what assistants may do, and connect a first assistant to check that it works.</span></a></li><li><a href="../../mcp/action-tools/"><b>Let assistants change things outside the CMS</b><span>Write action tools so editors&#x27; assistants can save and publish events in a calendar service the site keeps outside the CMS, with the same dry run, confirmation and audit as content changes.</span></a></li><li><a href="../../mcp/hardening/"><b>Take the MCP module to production</b><span>Configure the MCP module for a shared or production environment, from which assistants may connect and how the site is reached to error pages, uploads, the audit log and preview links.</span></a></li></ol></section>
 </div>
 </main>
 

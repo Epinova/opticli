@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Let assistants change things outside the CMS · opticli guides</title>
+<meta name="description" content="Write action tools so editors&#x27; assistants can save and publish events in a calendar service the site keeps outside the CMS, with the same dry run, confirmation and audit as content changes.">
+<meta property="og:title" content="Let assistants change things outside the CMS · opticli guides">
+<meta property="og:description" content="Write action tools so editors&#x27; assistants can save and publish events in a calendar service the site keeps outside the CMS, with the same dry run, confirmation and audit as content changes.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://epinova.github.io/opticli/guides/mcp/action-tools/">
+<meta name="twitter:card" content="summary">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="../../../fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../../style.css?v=80f830025b">
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <a class="mark" href="../../../">opticli<span>.</span></a>
+    <nav aria-label="Areas">
+      <a class="area" href="../../../cli/"><span class="lg">Coding agents</span><span class="sm">Agents</span></a><a class="area" href="../../../editors/">Editors</a><a class="area" href="../../../tests/">Tests</a><a class="sec guides" href="../../../guides/" aria-current="page">Guides</a><a class="sec" href="https://github.com/epinova/opticli">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap" data-area="editors">
+<div class="guide">
+  <p class="crumbs"><a href="../../">Guides</a> <span aria-hidden="true">/</span> <a href="../../#mcp">For the MCP module</a></p>
+  <div class="guide-head">
+    <h1>Let assistants change things outside the CMS</h1>
+    <p class="lead">Write action tools so editors&#x27; assistants can save and publish events in a calendar service the site keeps outside the CMS, with the same dry run, confirmation and audit as content changes.</p>
+    <p class="guide-meta">Written for opticli 0.38.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/mcp/action-tools.md">Edit on GitHub</a></p>
+  </div>
+  <div class="guide-body">
+    <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#what-the-module-does-and-what-your-code-does">What the module does, and what your code does</a></li><li><a href="#build-the-tools">Build the tools</a></li><li><a href="#try-the-dry-run-and-confirm-flow">Try the dry run and confirm flow</a></li><li><a href="#test-it">Test it</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
+    <article class="prose">
+<p>Not everything editors work on is CMS content. Offers in a commerce system, events in a calendar service, a search
+index: the site has its own code and editor UI for them. An action tool lets the assistant change them too, in the same
+flow as the module's own changes: a dry run the editor sees, a confirmation, a token that runs only what was shown, the
+publish gate and the audit log. In this guide an Alloy site keeps its events in a calendar service
+(<code>calendar.example.com</code>), with drafts and publishing of its own. You add two tools: <code>save_event</code>, which saves an
+event's draft, and <code>publish_event</code>, which puts it live.</p>
+<h2 id="before-you-start">Before you start</h2>
+<ul>
+<li>The module installed and working in your site: see <a href="../../mcp/install-the-module/">Install the MCP module in your site</a>.</li>
+<li>opticli 0.38.0 or newer.</li>
+<li>Read <a href="../../mcp/custom-tools/">Write your first site-specific tool</a> first: action tools take arguments, names and
+descriptions the same way.</li>
+<li>The service's client in the site, here <code>IEventCalendar</code>, with <code>GetAsync</code>, <code>SaveDraftAsync</code>, <code>PublishAsync</code> and
+<code>Validate</code>. Each event belongs to a calendar page in the CMS.</li>
+</ul>
+<h2 id="what-the-module-does-and-what-your-code-does">What the module does, and what your code does</h2>
+<p>A write tool returns a plan, and the module makes the changes itself, with the CMS's access checks. An action tool
+makes the change in its own code, which the module can't see. So two things are yours:</p>
+<ul>
+<li><strong>The preview is honest.</strong> It lists everything the run will change, with the values before and after.</li>
+<li><strong>The editor may make the change.</strong> The calendar service doesn't know the CMS's access rights. Check them on the
+content the event belongs to, its calendar page, with <code>IOptiCliEditor.HasAccess</code>, and check that the event is on
+that page: the assistant names both, and an event id can name any event.</li>
+</ul>
+<p>The module does the rest: the scopes, the publish and delete gates, the token, a record that makes each token run once,
+and an audit line per thing changed.</p>
+<h2 id="build-the-tools">Build the tools</h2>
+<h3 id="1-write-the-save-tool">1. Write the save tool</h3>
+<div class="snippet lang-csharp"><div class="snippet-bar"><span>C#</span></div><pre><code id="code-1"><span class="t-k">using</span><span class="t-w"> </span><span class="t-nn">System.ComponentModel</span><span class="t-p">;</span>
+<span class="t-k">using</span><span class="t-w"> </span><span class="t-nn">EPiServer.Core</span><span class="t-p">;</span>
+<span class="t-k">using</span><span class="t-w"> </span><span class="t-nn">EPiServer.Security</span><span class="t-p">;</span>
+<span class="t-k">using</span><span class="t-w"> </span><span class="t-nn">OptiCli.Mcp</span><span class="t-p">;</span>
+
+<span class="t-k">public</span><span class="t-w"> </span><span class="t-k">sealed</span><span class="t-w"> </span><span class="t-k">record</span><span class="t-w"> </span><span class="t-nf">SaveEventArgs</span><span class="t-p">(</span>
+<span class="t-w">    </span><span class="t-na">[property: Description(&quot;The id of the calendar page the event is on.&quot;)]</span><span class="t-w"> </span><span class="t-kt">int</span><span class="t-w"> </span><span class="t-n">Calendar</span><span class="t-p">,</span>
+<span class="t-w">    </span><span class="t-na">[property: Description(&quot;The event&#39;s title.&quot;)]</span><span class="t-w"> </span><span class="t-kt">string</span><span class="t-w"> </span><span class="t-n">Title</span><span class="t-p">,</span>
+<span class="t-w">    </span><span class="t-na">[property: Description(&quot;When it starts, ISO 8601.&quot;)]</span><span class="t-w"> </span><span class="t-n">DateTimeOffset</span><span class="t-w"> </span><span class="t-n">Starts</span><span class="t-p">,</span>
+<span class="t-w">    </span><span class="t-na">[property: Description(&quot;The event&#39;s id; leave it out to create one.&quot;)]</span><span class="t-w"> </span><span class="t-kt">string?</span><span class="t-w"> </span><span class="t-n">Event</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-k">null</span><span class="t-p">);</span>
+
+<span class="t-na">[OptiCliActionTool(&quot;save_event&quot;, Title = &quot;Save event&quot;, Effects = ActionEffects.Change)]</span>
+<span class="t-na">[Description(&quot;Saves an event in the calendar as a draft, or creates one. Editors review drafts in the calendar&#39;s own editor.&quot;)]</span>
+<span class="t-k">public</span><span class="t-w"> </span><span class="t-k">sealed</span><span class="t-w"> </span><span class="t-k">class</span><span class="t-w"> </span><span class="t-nf">SaveEventTool</span><span class="t-p">(</span><span class="t-n">IOptiCliEditor</span><span class="t-w"> </span><span class="t-n">editor</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">IEventCalendar</span><span class="t-w"> </span><span class="t-n">calendar</span><span class="t-p">)</span><span class="t-w"> </span><span class="t-p">:</span><span class="t-w"> </span><span class="t-n">IOptiCliActionTool</span><span class="t-o">&lt;</span><span class="t-n">SaveEventArgs</span><span class="t-o">&gt;</span>
+<span class="t-p">{</span>
+<span class="t-w">    </span><span class="t-k">public</span><span class="t-w"> </span><span class="t-k">async</span><span class="t-w"> </span><span class="t-n">Task</span><span class="t-o">&lt;</span><span class="t-n">ActionPreview</span><span class="t-o">&gt;</span><span class="t-w"> </span><span class="t-n">PreviewAsync</span><span class="t-p">(</span><span class="t-n">SaveEventArgs</span><span class="t-w"> </span><span class="t-n">args</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">CancellationToken</span><span class="t-w"> </span><span class="t-n">cancellationToken</span><span class="t-p">)</span>
+<span class="t-w">    </span><span class="t-p">{</span>
+<span class="t-w">        </span><span class="t-kt">var</span><span class="t-w"> </span><span class="t-n">page</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-n">editor</span><span class="t-p">.</span><span class="t-n">Load</span><span class="t-o">&lt;</span><span class="t-n">IContent</span><span class="t-o">&gt;</span><span class="t-p">(</span><span class="t-k">new</span><span class="t-w"> </span><span class="t-n">ContentReference</span><span class="t-p">(</span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Calendar</span><span class="t-p">));</span>
+<span class="t-w">        </span><span class="t-k">if</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-o">!</span><span class="t-n">editor</span><span class="t-p">.</span><span class="t-n">HasAccess</span><span class="t-p">(</span><span class="t-n">page</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">AccessLevel</span><span class="t-p">.</span><span class="t-n">Edit</span><span class="t-p">))</span>
+<span class="t-w">        </span><span class="t-p">{</span>
+<span class="t-w">            </span><span class="t-k">throw</span><span class="t-w"> </span><span class="t-k">new</span><span class="t-w"> </span><span class="t-nf">OptiCliToolException</span><span class="t-p">(</span><span class="t-s">&quot;refused&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s">&quot;You can&#39;t edit events on this calendar.&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s">&quot;Ask someone with Edit access on the calendar page.&quot;</span><span class="t-p">);</span>
+<span class="t-w">        </span><span class="t-p">}</span>
+<span class="t-w">        </span><span class="t-kt">var</span><span class="t-w"> </span><span class="t-n">current</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Event</span><span class="t-w"> </span><span class="t-k">is</span><span class="t-w"> </span><span class="t-k">null</span><span class="t-w"> </span><span class="t-o">?</span><span class="t-w"> </span><span class="t-k">null</span><span class="t-w"> </span><span class="t-p">:</span><span class="t-w"> </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-n">calendar</span><span class="t-p">.</span><span class="t-n">GetAsync</span><span class="t-p">(</span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Event</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">cancellationToken</span><span class="t-p">);</span>
+<span class="t-w">        </span><span class="t-k">if</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Event</span><span class="t-w"> </span><span class="t-k">is</span><span class="t-w"> </span><span class="t-k">not</span><span class="t-w"> </span><span class="t-k">null</span><span class="t-w"> </span><span class="t-o">&amp;&amp;</span><span class="t-w"> </span><span class="t-n">current</span><span class="t-o">?.</span><span class="t-n">Calendar</span><span class="t-w"> </span><span class="t-o">!=</span><span class="t-w"> </span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Calendar</span><span class="t-p">)</span>
+<span class="t-w">        </span><span class="t-p">{</span>
+<span class="t-w">            </span><span class="t-c1">// Missing, or on another calendar page, whose access rights weren&#39;t checked.</span>
+<span class="t-w">            </span><span class="t-k">throw</span><span class="t-w"> </span><span class="t-k">new</span><span class="t-w"> </span><span class="t-nf">OptiCliToolException</span><span class="t-p">(</span><span class="t-s">&quot;not_found&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s">$&quot;No event {args.Event} on this calendar.&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s">&quot;list_events gives the ids.&quot;</span><span class="t-p">);</span>
+<span class="t-w">        </span><span class="t-p">}</span>
+
+<span class="t-w">        </span><span class="t-kt">var</span><span class="t-w"> </span><span class="t-n">preview</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-k">new</span><span class="t-w"> </span><span class="t-n">ActionPreview</span><span class="t-p">();</span>
+<span class="t-w">        </span><span class="t-kt">var</span><span class="t-w"> </span><span class="t-n">target</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-n">preview</span><span class="t-p">.</span><span class="t-n">Add</span><span class="t-p">(</span><span class="t-s">&quot;event&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">current</span><span class="t-o">?.</span><span class="t-n">Id</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Title</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">ActionEffects</span><span class="t-p">.</span><span class="t-n">Change</span><span class="t-p">);</span>
+<span class="t-w">        </span><span class="t-k">if</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-n">current</span><span class="t-w"> </span><span class="t-k">is</span><span class="t-w"> </span><span class="t-k">not</span><span class="t-w"> </span><span class="t-k">null</span><span class="t-p">)</span>
+<span class="t-w">        </span><span class="t-p">{</span>
+<span class="t-w">            </span><span class="t-n">target</span><span class="t-p">.</span><span class="t-n">Version</span><span class="t-p">(</span><span class="t-n">current</span><span class="t-p">.</span><span class="t-n">SavedUtc</span><span class="t-p">.</span><span class="t-n">ToString</span><span class="t-p">(</span><span class="t-s">&quot;O&quot;</span><span class="t-p">)).</span><span class="t-n">Links</span><span class="t-p">(</span><span class="t-n">editUrl</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-n">current</span><span class="t-p">.</span><span class="t-n">EditUrl</span><span class="t-p">);</span>
+<span class="t-w">        </span><span class="t-p">}</span>
+<span class="t-w">        </span><span class="t-k">if</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Title</span><span class="t-w"> </span><span class="t-o">!=</span><span class="t-w"> </span><span class="t-n">current</span><span class="t-o">?.</span><span class="t-n">Title</span><span class="t-p">)</span>
+<span class="t-w">        </span><span class="t-p">{</span>
+<span class="t-w">            </span><span class="t-n">target</span><span class="t-p">.</span><span class="t-n">Change</span><span class="t-p">(</span><span class="t-s">&quot;title&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">current</span><span class="t-o">?.</span><span class="t-n">Title</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Title</span><span class="t-p">);</span>
+<span class="t-w">        </span><span class="t-p">}</span>
+<span class="t-w">        </span><span class="t-k">if</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Starts</span><span class="t-w"> </span><span class="t-o">!=</span><span class="t-w"> </span><span class="t-n">current</span><span class="t-o">?.</span><span class="t-n">Starts</span><span class="t-p">)</span>
+<span class="t-w">        </span><span class="t-p">{</span>
+<span class="t-w">            </span><span class="t-n">target</span><span class="t-p">.</span><span class="t-n">Change</span><span class="t-p">(</span><span class="t-s">&quot;starts&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">current</span><span class="t-o">?.</span><span class="t-n">Starts</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Starts</span><span class="t-p">);</span>
+<span class="t-w">        </span><span class="t-p">}</span>
+<span class="t-w">        </span><span class="t-k">if</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-k">await</span><span class="t-w"> </span><span class="t-n">calendar</span><span class="t-p">.</span><span class="t-n">TitleTakenAsync</span><span class="t-p">(</span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Calendar</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Title</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">current</span><span class="t-o">?.</span><span class="t-n">Id</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">cancellationToken</span><span class="t-p">))</span>
+<span class="t-w">        </span><span class="t-p">{</span>
+<span class="t-w">            </span><span class="t-n">target</span><span class="t-p">.</span><span class="t-n">Problem</span><span class="t-p">(</span><span class="t-s">$&quot;Another event on this calendar is called {args.Title}.&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s">&quot;title&quot;</span><span class="t-p">);</span>
+<span class="t-w">        </span><span class="t-p">}</span>
+<span class="t-w">        </span><span class="t-k">return</span><span class="t-w"> </span><span class="t-n">preview</span><span class="t-p">;</span>
+<span class="t-w">    </span><span class="t-p">}</span>
+
+<span class="t-w">    </span><span class="t-k">public</span><span class="t-w"> </span><span class="t-k">async</span><span class="t-w"> </span><span class="t-n">Task</span><span class="t-w"> </span><span class="t-nf">RunAsync</span><span class="t-p">(</span><span class="t-n">SaveEventArgs</span><span class="t-w"> </span><span class="t-n">args</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">ActionPreview</span><span class="t-w"> </span><span class="t-n">preview</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">ActionRun</span><span class="t-w"> </span><span class="t-n">run</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">CancellationToken</span><span class="t-w"> </span><span class="t-n">cancellationToken</span><span class="t-p">)</span>
+<span class="t-w">    </span><span class="t-p">{</span>
+<span class="t-w">        </span><span class="t-kt">var</span><span class="t-w"> </span><span class="t-n">saved</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-n">calendar</span><span class="t-p">.</span><span class="t-n">SaveDraftAsync</span><span class="t-p">(</span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Calendar</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Event</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Title</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Starts</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">run</span><span class="t-p">.</span><span class="t-n">Key</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">cancellationToken</span><span class="t-p">);</span>
+<span class="t-w">        </span><span class="t-n">run</span><span class="t-p">.</span><span class="t-n">Done</span><span class="t-p">(</span><span class="t-n">preview</span><span class="t-p">.</span><span class="t-n">Targets</span><span class="t-p">[</span><span class="t-mi">0</span><span class="t-p">],</span><span class="t-w"> </span><span class="t-s">&quot;saved&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">id</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-n">saved</span><span class="t-p">.</span><span class="t-n">Id</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">editUrl</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-n">saved</span><span class="t-p">.</span><span class="t-n">EditUrl</span><span class="t-p">);</span>
+<span class="t-w">    </span><span class="t-p">}</span>
+<span class="t-p">}</span></code></pre></div>
+<ul>
+<li><code>Add</code> names the thing the call changes: its kind, its id (<code>null</code> for one the run creates), what the user knows it
+by, and its effect. A call that changes several things adds a target for each, in the order <code>RunAsync</code> changes them.</li>
+<li><code>Change</code> adds only the fields that change. The dry run shows them, and the token covers them.</li>
+<li><code>Version</code> is the version the change is made from. If someone saves the event between the dry run and the run, the
+run is refused with a <code>conflict</code>. Without a version, the <code>before</code> values do that for the fields the tool changes.</li>
+<li><code>Problem</code> stops the dry run from giving a token. Put the service's own validation here, so the assistant hears about
+it before the editor agrees, not after.</li>
+<li><code>run.Done</code> reports a target as soon as it is done. If the next one throws, the result still says this one was done.</li>
+<li><code>run.Key</code> is the same for every call with the token. Pass it to a service that takes a key to ignore a repeated
+request.</li>
+</ul>
+<h3 id="2-write-the-publish-tool">2. Write the publish tool</h3>
+<p>The same shape, with <code>ActionEffects.Live</code>: publishing changes what visitors see.</p>
+<div class="snippet lang-csharp"><div class="snippet-bar"><span>C#</span></div><pre><code id="code-2"><span class="t-k">public</span><span class="t-w"> </span><span class="t-k">sealed</span><span class="t-w"> </span><span class="t-k">record</span><span class="t-w"> </span><span class="t-nf">PublishEventArgs</span><span class="t-p">(</span>
+<span class="t-w">    </span><span class="t-na">[property: Description(&quot;The id of the calendar page the event is on.&quot;)]</span><span class="t-w"> </span><span class="t-kt">int</span><span class="t-w"> </span><span class="t-n">Calendar</span><span class="t-p">,</span>
+<span class="t-w">    </span><span class="t-na">[property: Description(&quot;The event&#39;s id (list_events).&quot;)]</span><span class="t-w"> </span><span class="t-kt">string</span><span class="t-w"> </span><span class="t-n">Event</span><span class="t-p">);</span>
+
+<span class="t-na">[OptiCliActionTool(&quot;publish_event&quot;, Title = &quot;Publish event&quot;, Effects = ActionEffects.Live)]</span>
+<span class="t-na">[Description(&quot;Publishes an event&#39;s draft in the calendar, so visitors see it.&quot;)]</span>
+<span class="t-k">public</span><span class="t-w"> </span><span class="t-k">sealed</span><span class="t-w"> </span><span class="t-k">class</span><span class="t-w"> </span><span class="t-nf">PublishEventTool</span><span class="t-p">(</span><span class="t-n">IOptiCliEditor</span><span class="t-w"> </span><span class="t-n">editor</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">IEventCalendar</span><span class="t-w"> </span><span class="t-n">calendar</span><span class="t-p">)</span><span class="t-w"> </span><span class="t-p">:</span><span class="t-w"> </span><span class="t-n">IOptiCliActionTool</span><span class="t-o">&lt;</span><span class="t-n">PublishEventArgs</span><span class="t-o">&gt;</span>
+<span class="t-p">{</span>
+<span class="t-w">    </span><span class="t-k">public</span><span class="t-w"> </span><span class="t-k">async</span><span class="t-w"> </span><span class="t-n">Task</span><span class="t-o">&lt;</span><span class="t-n">ActionPreview</span><span class="t-o">&gt;</span><span class="t-w"> </span><span class="t-n">PreviewAsync</span><span class="t-p">(</span><span class="t-n">PublishEventArgs</span><span class="t-w"> </span><span class="t-n">args</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">CancellationToken</span><span class="t-w"> </span><span class="t-n">cancellationToken</span><span class="t-p">)</span>
+<span class="t-w">    </span><span class="t-p">{</span>
+<span class="t-w">        </span><span class="t-kt">var</span><span class="t-w"> </span><span class="t-n">page</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-n">editor</span><span class="t-p">.</span><span class="t-n">Load</span><span class="t-o">&lt;</span><span class="t-n">IContent</span><span class="t-o">&gt;</span><span class="t-p">(</span><span class="t-k">new</span><span class="t-w"> </span><span class="t-n">ContentReference</span><span class="t-p">(</span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Calendar</span><span class="t-p">));</span>
+<span class="t-w">        </span><span class="t-k">if</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-o">!</span><span class="t-n">editor</span><span class="t-p">.</span><span class="t-n">HasAccess</span><span class="t-p">(</span><span class="t-n">page</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">AccessLevel</span><span class="t-p">.</span><span class="t-n">Publish</span><span class="t-p">))</span>
+<span class="t-w">        </span><span class="t-p">{</span>
+<span class="t-w">            </span><span class="t-k">throw</span><span class="t-w"> </span><span class="t-k">new</span><span class="t-w"> </span><span class="t-nf">OptiCliToolException</span><span class="t-p">(</span><span class="t-s">&quot;refused&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s">&quot;You can&#39;t publish events on this calendar.&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s">&quot;Ask someone with Publish access on the calendar page.&quot;</span><span class="t-p">);</span>
+<span class="t-w">        </span><span class="t-p">}</span>
+<span class="t-w">        </span><span class="t-kt">var</span><span class="t-w"> </span><span class="t-n">item</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-n">calendar</span><span class="t-p">.</span><span class="t-n">GetAsync</span><span class="t-p">(</span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Event</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">cancellationToken</span><span class="t-p">);</span>
+<span class="t-w">        </span><span class="t-k">if</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-n">item</span><span class="t-w"> </span><span class="t-k">is</span><span class="t-w"> </span><span class="t-k">null</span><span class="t-w"> </span><span class="t-o">||</span><span class="t-w"> </span><span class="t-n">item</span><span class="t-p">.</span><span class="t-n">Calendar</span><span class="t-w"> </span><span class="t-o">!=</span><span class="t-w"> </span><span class="t-n">args</span><span class="t-p">.</span><span class="t-n">Calendar</span><span class="t-p">)</span>
+<span class="t-w">        </span><span class="t-p">{</span>
+<span class="t-w">            </span><span class="t-c1">// Missing, or on another calendar page, whose access rights weren&#39;t checked.</span>
+<span class="t-w">            </span><span class="t-k">throw</span><span class="t-w"> </span><span class="t-k">new</span><span class="t-w"> </span><span class="t-nf">OptiCliToolException</span><span class="t-p">(</span><span class="t-s">&quot;not_found&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s">$&quot;No event {args.Event} on this calendar.&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s">&quot;list_events gives the ids.&quot;</span><span class="t-p">);</span>
+<span class="t-w">        </span><span class="t-p">}</span>
+<span class="t-w">        </span><span class="t-kt">var</span><span class="t-w"> </span><span class="t-n">preview</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-k">new</span><span class="t-w"> </span><span class="t-n">ActionPreview</span><span class="t-p">();</span>
+<span class="t-w">        </span><span class="t-kt">var</span><span class="t-w"> </span><span class="t-n">target</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-n">preview</span><span class="t-p">.</span><span class="t-n">Add</span><span class="t-p">(</span><span class="t-s">&quot;event&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">item</span><span class="t-p">.</span><span class="t-n">Id</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">item</span><span class="t-p">.</span><span class="t-n">Title</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">ActionEffects</span><span class="t-p">.</span><span class="t-n">Live</span><span class="t-p">)</span>
+<span class="t-w">            </span><span class="t-p">.</span><span class="t-n">Version</span><span class="t-p">(</span><span class="t-n">item</span><span class="t-p">.</span><span class="t-n">SavedUtc</span><span class="t-p">.</span><span class="t-n">ToString</span><span class="t-p">(</span><span class="t-s">&quot;O&quot;</span><span class="t-p">))</span>
+<span class="t-w">            </span><span class="t-p">.</span><span class="t-n">Change</span><span class="t-p">(</span><span class="t-s">&quot;status&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">item</span><span class="t-p">.</span><span class="t-n">Status</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s">&quot;published&quot;</span><span class="t-p">)</span>
+<span class="t-w">            </span><span class="t-p">.</span><span class="t-n">Links</span><span class="t-p">(</span><span class="t-n">url</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-n">item</span><span class="t-p">.</span><span class="t-n">PublicUrl</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">editUrl</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-n">item</span><span class="t-p">.</span><span class="t-n">EditUrl</span><span class="t-p">);</span>
+<span class="t-w">        </span><span class="t-k">foreach</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-kt">var</span><span class="t-w"> </span><span class="t-n">error</span><span class="t-w"> </span><span class="t-k">in</span><span class="t-w"> </span><span class="t-n">calendar</span><span class="t-p">.</span><span class="t-n">Validate</span><span class="t-p">(</span><span class="t-n">item</span><span class="t-p">))</span>
+<span class="t-w">        </span><span class="t-p">{</span>
+<span class="t-w">            </span><span class="t-n">target</span><span class="t-p">.</span><span class="t-n">Problem</span><span class="t-p">(</span><span class="t-n">error</span><span class="t-p">.</span><span class="t-n">Message</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">error</span><span class="t-p">.</span><span class="t-n">Field</span><span class="t-p">);</span>
+<span class="t-w">        </span><span class="t-p">}</span>
+<span class="t-w">        </span><span class="t-k">if</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-n">item</span><span class="t-p">.</span><span class="t-n">Featured</span><span class="t-p">)</span>
+<span class="t-w">        </span><span class="t-p">{</span>
+<span class="t-w">            </span><span class="t-n">preview</span><span class="t-p">.</span><span class="t-n">Note</span><span class="t-p">(</span><span class="t-s">&quot;It is featured: visitors see it on the front page too.&quot;</span><span class="t-p">);</span>
+<span class="t-w">        </span><span class="t-p">}</span>
+<span class="t-w">        </span><span class="t-k">return</span><span class="t-w"> </span><span class="t-n">preview</span><span class="t-p">;</span>
+<span class="t-w">    </span><span class="t-p">}</span>
+
+<span class="t-w">    </span><span class="t-k">public</span><span class="t-w"> </span><span class="t-k">async</span><span class="t-w"> </span><span class="t-n">Task</span><span class="t-w"> </span><span class="t-nf">RunAsync</span><span class="t-p">(</span><span class="t-n">PublishEventArgs</span><span class="t-w"> </span><span class="t-n">args</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">ActionPreview</span><span class="t-w"> </span><span class="t-n">preview</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">ActionRun</span><span class="t-w"> </span><span class="t-n">run</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">CancellationToken</span><span class="t-w"> </span><span class="t-n">cancellationToken</span><span class="t-p">)</span>
+<span class="t-w">    </span><span class="t-p">{</span>
+<span class="t-w">        </span><span class="t-kt">var</span><span class="t-w"> </span><span class="t-n">target</span><span class="t-w"> </span><span class="t-o">=</span><span class="t-w"> </span><span class="t-n">preview</span><span class="t-p">.</span><span class="t-n">Targets</span><span class="t-p">[</span><span class="t-mi">0</span><span class="t-p">];</span>
+<span class="t-w">        </span><span class="t-k">await</span><span class="t-w"> </span><span class="t-n">calendar</span><span class="t-p">.</span><span class="t-n">PublishAsync</span><span class="t-p">(</span><span class="t-n">target</span><span class="t-p">.</span><span class="t-n">Id</span><span class="t-o">!</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">run</span><span class="t-p">.</span><span class="t-n">Key</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">cancellationToken</span><span class="t-p">);</span>
+<span class="t-w">        </span><span class="t-n">run</span><span class="t-p">.</span><span class="t-n">Done</span><span class="t-p">(</span><span class="t-n">target</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-s">&quot;published&quot;</span><span class="t-p">);</span>
+<span class="t-w">    </span><span class="t-p">}</span>
+<span class="t-p">}</span></code></pre></div>
+<p>A <code>Live</code> target needs the site to let assistants publish (<code>AllowPublish</code>) and the editor to have approved
+<code>content:publish</code>, as <code>publish_content</code> does. Where they haven't, the assistant gets <code>publishingOff</code> and tells the
+editor to publish in the calendar's own editor.</p>
+<h3 id="3-register-them">3. Register them</h3>
+<div class="snippet lang-csharp"><div class="snippet-bar"><span>C#</span></div><pre><code id="code-3"><span class="t-n">services</span><span class="t-p">.</span><span class="t-n">AddOptiCliMcp</span><span class="t-p">()</span>
+<span class="t-w">    </span><span class="t-p">.</span><span class="t-n">WithActionTool</span><span class="t-o">&lt;</span><span class="t-n">SaveEventTool</span><span class="t-o">&gt;</span><span class="t-p">()</span>
+<span class="t-w">    </span><span class="t-p">.</span><span class="t-n">WithActionTool</span><span class="t-o">&lt;</span><span class="t-n">PublishEventTool</span><span class="t-o">&gt;</span><span class="t-p">()</span>
+<span class="t-w">    </span><span class="t-p">.</span><span class="t-n">WithInstructions</span><span class="t-p">(</span><span class="t-s">&quot;Events live in the calendar service, not in the CMS: change them with save_event and publish_event, never with update_content.&quot;</span><span class="t-p">);</span></code></pre></div>
+<p>The module checks names, attributes and argument types at startup, as for the other tools.</p>
+<h2 id="try-the-dry-run-and-confirm-flow">Try the dry run and confirm flow</h2>
+<p>Rebuild, connect Claude Code as an editor, and ask:</p>
+<div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-4">Copy</button></div><pre><code id="code-4">Move the summer concert on the Events calendar to 20 June at 19:00, and publish it once I&#x27;ve seen the change.</code></pre></div>
+<p>The assistant calls <code>save_event</code> with <code>dryRun: true</code>. The answer shows the target and its changes:</p>
+<div class="snippet lang-json"><div class="snippet-bar"><span>JSON</span></div><pre><code id="code-5"><span class="t-p">{</span>
+<span class="t-w">  </span><span class="t-nt">&quot;tool&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;save_event&quot;</span><span class="t-p">,</span>
+<span class="t-w">  </span><span class="t-nt">&quot;dryRun&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-kc">true</span><span class="t-p">,</span>
+<span class="t-w">  </span><span class="t-nt">&quot;valid&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-kc">true</span><span class="t-p">,</span>
+<span class="t-w">  </span><span class="t-nt">&quot;planToken&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;CfDJ8…&quot;</span><span class="t-p">,</span>
+<span class="t-w">  </span><span class="t-nt">&quot;planTokenExpires&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;2026-11-27T14:30:00+00:00&quot;</span><span class="t-p">,</span>
+<span class="t-w">  </span><span class="t-nt">&quot;targets&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">[</span>
+<span class="t-w">    </span><span class="t-p">{</span>
+<span class="t-w">      </span><span class="t-nt">&quot;target&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-mi">1</span><span class="t-p">,</span>
+<span class="t-w">      </span><span class="t-nt">&quot;kind&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;event&quot;</span><span class="t-p">,</span>
+<span class="t-w">      </span><span class="t-nt">&quot;id&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;ev-1042&quot;</span><span class="t-p">,</span>
+<span class="t-w">      </span><span class="t-nt">&quot;label&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;Summer concert&quot;</span><span class="t-p">,</span>
+<span class="t-w">      </span><span class="t-nt">&quot;effect&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;change&quot;</span><span class="t-p">,</span>
+<span class="t-w">      </span><span class="t-nt">&quot;version&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;2026-11-20T09:12:44.0000000Z&quot;</span><span class="t-p">,</span>
+<span class="t-w">      </span><span class="t-nt">&quot;changes&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">[</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-w"> </span><span class="t-nt">&quot;field&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;starts&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;before&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;2027-06-21T19:00:00+02:00&quot;</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-nt">&quot;after&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;2027-06-20T19:00:00+02:00&quot;</span><span class="t-w"> </span><span class="t-p">}</span><span class="t-w"> </span><span class="t-p">],</span>
+<span class="t-w">      </span><span class="t-nt">&quot;editUrl&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;https://calendar.example.com/edit/ev-1042&quot;</span>
+<span class="t-w">    </span><span class="t-p">}</span>
+<span class="t-w">  </span><span class="t-p">]</span>
+<span class="t-p">}</span></code></pre></div>
+<p>When you agree, the assistant calls the tool again with the same arguments, <code>dryRun: false</code> and the token. Then it does
+the same for <code>publish_event</code>. Each result has the <code>editUrl</code> and <code>url</code> you gave the target, which the assistant gives you
+instead of a link into CMS edit mode.</p>
+<p>A token runs once. If the call times out and the assistant tries again with the same token, the module answers with
+what the first call did and runs nothing again. If the site stopped in the middle of a run, the answer says so, and the
+assistant asks you to check the event before a new dry run.</p>
+<h2 id="test-it">Test it</h2>
+<ul>
+<li><strong>Access rights.</strong> Take Edit access on the calendar page away from your test editor. The dry run must be refused,
+and a calendar page they can't read must look missing (<code>not_found</code>). An event of another calendar page, named with
+a page they may edit, must be <code>not_found</code> too.</li>
+<li><strong>Change under the token.</strong> Do a dry run, save the event in the calendar's own editor, then confirm. The run must be
+a <code>conflict</code>.</li>
+<li><strong>Run twice.</strong> Confirm with the same token again. The answer has <code>repeated: true</code> and the service gets no second
+request.</li>
+<li><strong>Publishing off.</strong> With <code>AllowPublish</code> off, <code>publish_event</code> must answer <code>publishingOff</code> before it asks the service
+for anything.</li>
+<li><strong>Check the audit log.</strong> With <code>OptiCli.Mcp.Audit</code> at Information, a real run has a line per target with its effect,
+outcome and <code>event:ev-1042</code>. Titles and values aren't logged.</li>
+</ul>
+<h2 id="if-something-goes-wrong">If something goes wrong</h2>
+<ul>
+<li><strong>The assistant gets <code>internal</code>:</strong> your tool threw something other than <code>OptiCliToolException</code>, previewed a target
+with an effect its <code>Effects</code> don't have, or returned from <code>RunAsync</code> without reporting a target. The site's log has
+the details.</li>
+<li><strong>&quot;The changes aren't the ones the dry run showed&quot; on every run:</strong> the preview isn't the same for the same state.
+Look for the current time, new GUIDs or an unsorted list in it.</li>
+<li><strong>A create runs again after a timeout:</strong> the same token can't do that, but a new dry run will preview the create
+again if it doesn't find the event the first run made. Pass <code>run.Key</code> to the service, or look the event up by title
+in the preview.</li>
+</ul>
+<h2 id="related">Related</h2>
+<ul>
+<li><a href="../../mcp/custom-tools/">Write your first site-specific tool</a></li>
+<li>Reference: <a href="https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/tools.md#action-tools">Action tools</a>, with every member of the
+preview, the effects and what they need, and the rules a tool must follow</li>
+</ul>
+    </article>
+  </div>
+  <section class="more" aria-labelledby="more-h"><h2 id="more-h">More guides for the MCP module</h2><ol class="guide-list"><li><a href="../../mcp/install-the-module/"><b>Install the MCP module in your site</b><span>Add the opticli MCP module to a CMS 12 or CMS 13 site, decide what assistants may do, and connect a first assistant to check that it works.</span></a></li><li><a href="../../mcp/custom-tools/"><b>Write your first site-specific tool</b><span>Add a read tool and a write tool of your own to the MCP module, so editors&#x27; assistants can find Alloy product pages without a teaser and fill them in as drafts.</span></a></li><li><a href="../../mcp/hardening/"><b>Take the MCP module to production</b><span>Configure the MCP module for a shared or production environment, from which assistants may connect and how the site is reached to error pages, uploads, the audit log and preview links.</span></a></li></ol></section>
+</div>
+</main>
+
+<footer class="wrap">
+  <p>opticli is open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>, with the source <a href="https://github.com/epinova/opticli">on GitHub</a>. It is an independent project, not affiliated with or endorsed by Optimizely.</p>
+</footer>
+<script>
+for (const b of document.querySelectorAll('[data-copy]')) b.addEventListener('click', () => {
+  const text = document.getElementById(b.dataset.copy).textContent;
+  const done = (label) => { b.textContent = label; b.dataset.done = ''; setTimeout(() => { b.textContent = 'Copy'; delete b.dataset.done; }, 1600); };
+  if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => done('Copied'), () => done('Select and copy'));
+  else done('Select and copy');
+});
+</script>
+</body>
+</html>

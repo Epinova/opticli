@@ -30,7 +30,7 @@
   <div class="guide-head">
     <h1>Install the MCP module in your site</h1>
     <p class="lead">Add the opticli MCP module to a CMS 12 or CMS 13 site, decide what assistants may do, and connect a first assistant to check that it works.</p>
-    <p class="guide-meta">Written for opticli 0.35.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/mcp/install-the-module.md">Edit on GitHub</a></p>
+    <p class="guide-meta">Written for opticli 0.38.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/mcp/install-the-module.md">Edit on GitHub</a></p>
   </div>
   <div class="guide-body">
     <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#install-and-connect">Install and connect</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
@@ -202,8 +202,10 @@ default.</p>
 <p>The full list of options, with token lifetimes and rate limits, is in the README under
 <a href="https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/configuration.md#options">Options</a>.</p>
 <h3 id="4-run-the-site-and-check-the-endpoint">4. Run the site and check the endpoint</h3>
-<p>Start the site as you normally do. With the default <code>BasePath</code>, the MCP endpoint is <code>/episerver/opticli/mcp</code>. A request
-without a token must get a 401 that points to the OAuth metadata, never a redirect to the login page:</p>
+<p>Start the site as you normally do. With the default <code>BasePath</code>, the MCP endpoint is <code>/episerver/opticli/mcp</code> on CMS 12
+and <code>/optimizely/opticli/mcp</code> on CMS 13: under the edit UI's own path on each, where the CMS's login signs editors in.
+The examples here use CMS 12's; on CMS 13, put <code>optimizely</code> where they have <code>episerver</code>. A request without a token must
+get a 401 that points to the OAuth metadata, never a redirect to the login page:</p>
 <div class="snippet lang-bash"><div class="snippet-bar"><span>Terminal</span><button class="copy" type="button" data-copy="code-5">Copy</button></div><pre><code id="code-5">curl<span class="t-w"> </span>-i<span class="t-w"> </span>-X<span class="t-w"> </span>POST<span class="t-w"> </span>https://localhost:5001/episerver/opticli/mcp</code></pre></div>
 <div class="snippet lang-text"><div class="snippet-bar"><span>Output</span></div><pre><code id="code-6">HTTP/1.1 401 Unauthorized
 WWW-Authenticate: Bearer resource_metadata=&quot;https://localhost:5001/.well-known/oauth-protected-resource/episerver/opticli/mcp&quot;, scope=&quot;content:read content:write&quot;</code></pre></div>
@@ -233,7 +235,7 @@ approved and what the site allows:</p>
 <div class="snippet lang-prompt"><div class="snippet-bar"><span>You type</span><button class="copy" type="button" data-copy="code-10">Copy</button></div><pre><code id="code-10">Find the Alloy Plan product page and show me its teaser text. Then suggest a shorter one, as a dry run only.</code></pre></div>
 <p>The assistant should show you the change its dry run reports and save nothing until you agree. Let it save the draft,
 open the <code>editUrl</code> it gives you, and check the draft in the edit UI: the CMS shows you as the one who saved it.</p>
-<p>Finally, open <code>/episerver/opticli/connections</code> in your browser. You see the connection you just made, with its scopes,
+<p>Finally, open <code>/episerver/opticli/connections</code> (on CMS 13 <code>/optimizely/opticli/connections</code>) in your browser. You see the connection you just made, with its scopes,
 and can revoke it there.</p>
 <h2 id="if-something-goes-wrong">If something goes wrong</h2>
 <ul>
@@ -243,7 +245,13 @@ code. Moving a site from CMS 12 to 13 later is the same swap.</li>
 <li><strong>The 401 is a 405, or has no <code>WWW-Authenticate</code>:</strong> something in front of the site rewrites it. The module already
 switches off the site's status code pages for its own requests; check proxies and other middleware.</li>
 <li><strong>&quot;… isn't an editor on this site, so it can't connect an AI assistant&quot;:</strong> the account isn't in <code>AllowedRoles</code>.
-Roles are checked as the CMS knows them now, not from the login cookie.</li>
+The roles that count are those both the login and the CMS's role provider have now: an editor given a role after
+signing in signs out and in again.</li>
+<li><strong>The consent or connections page sends you to a login that doesn't sign you in (or fails), on CMS 13:</strong> the
+module's path isn't under <code>/Optimizely</code>, where the CMS's login (Opti ID) signs editors in. The default path is, and
+the module logs a warning at startup when <code>BasePath</code> isn't. A site set up on CMS 13 with opticli 0.37 or earlier had
+<code>/episerver/opticli</code>: see
+<a href="https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/install.md#on-cms-13">On CMS 13</a>.</li>
 <li><strong><code>UNABLE_TO_VERIFY_LEAF_SIGNATURE</code> in Claude Code:</strong> the development certificate. Use plain http on loopback or a
 certificate signed by a test CA.</li>
 <li><strong>Publishing is refused with a hint to save a draft:</strong> <code>AllowPublish</code> is off, or the editor unticked publishing on
@@ -260,7 +268,7 @@ the consent page. Change the option, then have them connect again.</li>
 </ul>
     </article>
   </div>
-  <section class="more" aria-labelledby="more-h"><h2 id="more-h">More guides for the MCP module</h2><ol class="guide-list"><li><a href="../../mcp/custom-tools/"><b>Write your first site-specific tool</b><span>Add a read tool and a write tool of your own to the MCP module, so editors&#x27; assistants can find Alloy product pages without a teaser and fill them in as drafts.</span></a></li><li><a href="../../mcp/hardening/"><b>Take the MCP module to production</b><span>Configure the MCP module for a shared or production environment, from which assistants may connect and how the site is reached to error pages, uploads, the audit log and preview links.</span></a></li></ol></section>
+  <section class="more" aria-labelledby="more-h"><h2 id="more-h">More guides for the MCP module</h2><ol class="guide-list"><li><a href="../../mcp/custom-tools/"><b>Write your first site-specific tool</b><span>Add a read tool and a write tool of your own to the MCP module, so editors&#x27; assistants can find Alloy product pages without a teaser and fill them in as drafts.</span></a></li><li><a href="../../mcp/action-tools/"><b>Let assistants change things outside the CMS</b><span>Write action tools so editors&#x27; assistants can save and publish events in a calendar service the site keeps outside the CMS, with the same dry run, confirmation and audit as content changes.</span></a></li><li><a href="../../mcp/hardening/"><b>Take the MCP module to production</b><span>Configure the MCP module for a shared or production environment, from which assistants may connect and how the site is reached to error pages, uploads, the audit log and preview links.</span></a></li></ol></section>
 </div>
 </main>
 

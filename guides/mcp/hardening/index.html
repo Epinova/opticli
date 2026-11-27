@@ -30,7 +30,7 @@
   <div class="guide-head">
     <h1>Take the MCP module to production</h1>
     <p class="lead">Configure the MCP module for a shared or production environment, from which assistants may connect and how the site is reached to error pages, uploads, the audit log and preview links.</p>
-    <p class="guide-meta">Written for opticli 0.30.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/mcp/hardening.md">Edit on GitHub</a></p>
+    <p class="guide-meta">Written for opticli 0.38.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/mcp/hardening.md">Edit on GitHub</a></p>
   </div>
   <div class="guide-body">
     <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#harden-the-site">Harden the site</a></li><li><a href="#checklist">Checklist</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
@@ -86,12 +86,14 @@ site's own <code>AllowedHosts</code> limits the whole site. For a host of its ow
 <p>Web assistants call the site from their provider's cloud, not from the editor's browser. Claude's custom connectors
 (claude.ai, Claude Desktop without the extension, mobile) need the site to be publicly reachable. A site that is only
 on a VPN or split DNS can't be used with them; its editors use the desktop extension instead.</p>
-<p>If you restrict <code>/episerver</code> by IP address, allow Anthropic's outbound range, <code>160.79.104.0/21</code>, for the MCP endpoint
-(<code>/episerver/opticli/mcp</code>), the <code>/.well-known</code> metadata documents and the <code>register</code> and <code>token</code> endpoints. The login,
+<p>If you restrict <code>/episerver</code> (on CMS 13 <code>/optimizely</code>) by IP address, allow Anthropic's outbound range,
+<code>160.79.104.0/21</code>, for the MCP endpoint (<code>/episerver/opticli/mcp</code>, on CMS 13 <code>/optimizely/opticli/mcp</code>), the
+<code>/.well-known</code> metadata documents and the <code>register</code> and <code>token</code> endpoints. The login,
 <code>authorize</code> and the connections page open in the editor's own browser, so they need what the CMS login needs.</p>
 <p>The site also needs outbound HTTPS: for a client with a metadata document, as Claude has, the module fetches that
-document from the client's own URL. claude.ai calls <code>register</code> and <code>token</code> from addresses all its users share; if many
-editors hit 429 there, raise <code>RateLimits.TokenPerAddressPerMinute</code>. Rate limits count per instance.</p>
+document from the client's own URL, at most four at a time, and only at the token endpoint once the code or token it
+was given names that client. claude.ai calls <code>register</code> and <code>token</code> from addresses all its users share; if many editors
+hit 429 there, raise <code>RateLimits.TokenPerAddressPerMinute</code>. Rate limits count per instance.</p>
 <h3 id="4-run-it-beside-another-mcp-server">4. Run it beside another MCP server</h3>
 <p>A site can run another MCP server built on the MCP C# SDK, its own or Optimizely's <code>Optimizely.Cms.Opal.Tools</code> on
 CMS 13. Register it after <code>AddOptiCliMcp()</code> and map it at a path of its own:</p>
@@ -109,8 +111,8 @@ the log says why. The details are under <a href="https://github.com/Epinova/opti
 header that tells the client where to sign in. Check that nothing in front of the site rewrites errors either.</p>
 <p>The consent and connections pages send their own <code>X-Frame-Options: DENY</code>, <code>Content-Security-Policy</code> and
 <code>Referrer-Policy</code>. Middleware that sets the site's security headers as the response starts replaces them, and
-<code>frame-ancestors</code> only works as a header. Have such middleware leave <code>/episerver/opticli</code> alone, or set only what the
-response doesn't have yet:</p>
+<code>frame-ancestors</code> only works as a header. Have such middleware leave <code>/episerver/opticli</code> (on CMS 13
+<code>/optimizely/opticli</code>) alone, or set only what the response doesn't have yet:</p>
 <div class="snippet lang-csharp"><div class="snippet-bar"><span>C#</span></div><pre><code id="code-5"><span class="t-n">app</span><span class="t-p">.</span><span class="t-n">Use</span><span class="t-p">(</span><span class="t-k">async</span><span class="t-w"> </span><span class="t-p">(</span><span class="t-n">context</span><span class="t-p">,</span><span class="t-w"> </span><span class="t-n">next</span><span class="t-p">)</span><span class="t-w"> </span><span class="t-o">=&gt;</span>
 <span class="t-p">{</span>
 <span class="t-w">    </span><span class="t-n">context</span><span class="t-p">.</span><span class="t-n">Response</span><span class="t-p">.</span><span class="t-n">OnStarting</span><span class="t-p">(()</span><span class="t-w"> </span><span class="t-o">=&gt;</span>
@@ -140,7 +142,8 @@ again through the site's login, where the identity provider has its say.</p>
 <code>OptiCli.Mcp.Audit</code> category at Information level, never with tokens, links, secrets or property values. A site that
 logs Warning and up drops them unless you raise that category:</p>
 <div class="snippet lang-json"><div class="snippet-bar"><span>JSON</span></div><pre><code id="code-7"><span class="t-p">{</span><span class="t-nt">&quot;Logging&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-nt">&quot;LogLevel&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-p">{</span><span class="t-nt">&quot;OptiCli.Mcp.Audit&quot;</span><span class="t-p">:</span><span class="t-w"> </span><span class="t-s2">&quot;Information&quot;</span><span class="t-p">}}}</span></code></pre></div>
-<p>At <code>/episerver/opticli/connections</code> editors see and revoke their own connections; WebAdmins and CmsAdmins see and
+<p>At <code>/episerver/opticli/connections</code> (on CMS 13 <code>/optimizely/opticli/connections</code>) editors see and revoke their own
+connections; WebAdmins and CmsAdmins see and
 revoke everyone's. Tell your administrators it is there.</p>
 <h3 id="8-decide-on-preview-links">8. Decide on preview links</h3>
 <p>Every write result gives the editor <code>editUrl</code> and <code>previewUrl</code>, the CMS's own links, which open only for someone signed
@@ -163,7 +166,9 @@ without a reason.</li>
 <li>Web assistants can reach the MCP endpoint, metadata, <code>register</code> and <code>token</code>; IP filters allow <code>160.79.104.0/21</code>.</li>
 <li>The site can make outbound HTTPS requests.</li>
 <li>Another MCP server, if any, is registered after <code>AddOptiCliMcp()</code> and mapped at its own path.</li>
-<li>Security header middleware leaves <code>/episerver/opticli</code> alone or only adds missing headers; media gets <code>nosniff</code>.</li>
+<li>Security header middleware leaves the module's path (<code>/episerver/opticli</code>, on CMS 13 <code>/optimizely/opticli</code>) alone
+or only adds missing headers; media gets <code>nosniff</code>.</li>
+<li>No startup warning says that <code>BasePath</code> isn't under the CMS's protected path.</li>
 <li>The CMS's script parser removes script on save (CMS 12.15 or newer).</li>
 <li><code>maxAllowedContentLength</code> on IIS matches <code>MaxUploadBytes</code>.</li>
 <li><code>ConnectionLifetime</code> is 1 to 7 days on a site with external logins.</li>
@@ -198,7 +203,7 @@ module itself means the file is over <code>MaxUploadBytes</code>.</li>
 </ul>
     </article>
   </div>
-  <section class="more" aria-labelledby="more-h"><h2 id="more-h">More guides for the MCP module</h2><ol class="guide-list"><li><a href="../../mcp/install-the-module/"><b>Install the MCP module in your site</b><span>Add the opticli MCP module to a CMS 12 or CMS 13 site, decide what assistants may do, and connect a first assistant to check that it works.</span></a></li><li><a href="../../mcp/custom-tools/"><b>Write your first site-specific tool</b><span>Add a read tool and a write tool of your own to the MCP module, so editors&#x27; assistants can find Alloy product pages without a teaser and fill them in as drafts.</span></a></li></ol></section>
+  <section class="more" aria-labelledby="more-h"><h2 id="more-h">More guides for the MCP module</h2><ol class="guide-list"><li><a href="../../mcp/install-the-module/"><b>Install the MCP module in your site</b><span>Add the opticli MCP module to a CMS 12 or CMS 13 site, decide what assistants may do, and connect a first assistant to check that it works.</span></a></li><li><a href="../../mcp/custom-tools/"><b>Write your first site-specific tool</b><span>Add a read tool and a write tool of your own to the MCP module, so editors&#x27; assistants can find Alloy product pages without a teaser and fill them in as drafts.</span></a></li><li><a href="../../mcp/action-tools/"><b>Let assistants change things outside the CMS</b><span>Write action tools so editors&#x27; assistants can save and publish events in a calendar service the site keeps outside the CMS, with the same dry run, confirmation and audit as content changes.</span></a></li></ol></section>
 </div>
 </main>
 
