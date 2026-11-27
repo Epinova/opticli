@@ -42,10 +42,10 @@ internal sealed class ConnectionsPage(
         var rows = string.Concat(grants.Select(g => $"""
             <tr>
               <td>{H(g.ClientName)}<br><code>{H(g.ClientId)}</code></td>
-              {(admin ? $"<td>{H(g.UserName)}</td>" : "")}
-              <td>{H(g.Scope)}</td>
-              <td>{Time(g.Created)}</td>
-              <td>{Time(g.LastUsed)}</td>
+              {(admin ? $"<td data-label=\"Editor\">{H(g.UserName)}</td>" : "")}
+              <td data-label="Allowed">{H(g.Scope)}</td>
+              <td data-label="Connected">{Time(g.Created)}</td>
+              <td data-label="Last used">{Time(g.LastUsed)}</td>
               <td><form method="post" action="{action}">
                 <input type="hidden" name="{H(form.FormFieldName)}" value="{H(form.RequestToken)}">
                 <input type="hidden" name="grant" value="{H(g.GrantId)}">
@@ -56,16 +56,18 @@ internal sealed class ConnectionsPage(
         var table = grants.Count == 0
             ? "<p>No AI assistants are connected.</p>"
             : $"""
-              <table>
+              <div class="table"><table>
                 <tr><th>App</th>{(admin ? "<th>Editor</th>" : "")}<th>Allowed</th><th>Connected</th><th>Last used</th><th></th></tr>
                 {rows}
-              </table>
+              </table></div>
               """;
         var scope = admin ? "every editor's connections (you are a CMS administrator)" : "the AI assistants you connected";
         return Render(context, HttpStatusCode.OK, "AI assistant connections", $"""
+            <div class="panel">
             <h1>AI assistant connections</h1>
             <p>Signed in as <b>{H(user)}</b>. These are {scope}. Revoking one cuts the app off at once; it has to be connected again.</p>
             {table}
+            </div>
             """);
     }
 

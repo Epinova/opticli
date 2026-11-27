@@ -166,7 +166,7 @@ public sealed class ConnectionsPageTests : IAsyncLifetime
         var browser = _site.Browser("admin");
         var html = await (await browser.GetAsync("/episerver/opticli/connections")).Content.ReadAsStringAsync();
         Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(html, "Revoke</button>").Count);
-        Assert.Contains("<td>other</td>", html);
+        Assert.Contains(">other</td>", html);
 
         var form = Browser.Inputs(html);
         Assert.Equal(HttpStatusCode.SeeOther, (await browser.PostFormAsync("/episerver/opticli/connections", form)).StatusCode);

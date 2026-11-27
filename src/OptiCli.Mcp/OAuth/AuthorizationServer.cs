@@ -278,25 +278,29 @@ internal sealed class AuthorizationServer(
         var redirect = new Uri(request.RedirectUri);
         // An app that registered itself chose its own name: said plainly, where the editor looks.
         var identity = ClientMetadataDocument.IsUrl(request.Client.ClientId)
-            ? $"<p>The app's description is published by <b>{H(new Uri(request.Client.ClientId).Host)}</b>.</p>"
+            ? $"<p class=\"muted\">The app's description is published by <b>{H(new Uri(request.Client.ClientId).Host)}</b>.</p>"
             : "<p class=\"warning\"><b>The app registered itself under this name; the site can't confirm who made it.</b> Only allow it if you just added this connection yourself, from the app you expect.</p>";
         // Read is what every call needs, so it can't be unticked; the others are the editor's choice.
         var scopes = string.Concat(request.Scope.Split(' ').Select(s => s == Scopes.Read
-            ? $"<li><label><input type=\"checkbox\" checked disabled> {H(Scopes.Describe(s))} (always)</label></li>"
-            : $"<li><label><input type=\"checkbox\" name=\"scope\" value=\"{H(s)}\" checked> {H(Scopes.Describe(s))}</label></li>"));
+            ? $"<li><label><input type=\"checkbox\" checked disabled> <span>{H(Scopes.Describe(s))}<small>Always</small></span></label></li>"
+            : $"<li><label><input type=\"checkbox\" name=\"scope\" value=\"{H(s)}\" checked> <span>{H(Scopes.Describe(s))}</span></label></li>"));
         var noPublish = Options.AllowPublish ? "" : "<p class=\"muted\">This site doesn't let AI assistants publish: an editor publishes in the CMS.</p>";
         var action = context.Request.PathBase + context.Request.Path + context.Request.QueryString;
         return Render(context, HttpStatusCode.OK, "Connect an AI assistant", $"""
-            <h1>Connect {H(request.Client.ClientName)}?</h1>
-            <p>Signed in as <b>{H(user)}</b>.</p>
-            {identity}
-            <p>If you allow it, you'll be sent back to <b>{H(redirect.Authority)}</b>, and the app will act as you, with your access rights in the CMS. Untick what it shouldn't do. It may:</p>
             <form method="post" action="{H(action)}">
-              <ul class="scopes">{scopes}</ul>
-              {noPublish}
-              <input type="hidden" name="{H(form.FormFieldName)}" value="{H(form.RequestToken)}">
-              <button type="submit" name="decision" value="allow">Allow</button>
-              <button type="submit" name="decision" value="deny">Deny</button>
+              <div class="panel">
+                <h1>Connect {H(request.Client.ClientName)}?</h1>
+                {identity}
+                <p>If you allow it, you'll be sent back to <b>{H(redirect.Authority)}</b>, and the app will act as you, with your access rights in the CMS. Untick what it shouldn't do. It may:</p>
+                <ul class="scopes">{scopes}</ul>
+                {noPublish}
+              </div>
+              <div class="shelf">
+                <p>Signed in as <b>{H(user)}</b> on <b>{H(context.Request.Host.Host)}</b></p>
+                <input type="hidden" name="{H(form.FormFieldName)}" value="{H(form.RequestToken)}">
+                <button type="submit" name="decision" value="allow">Allow</button>
+                <button type="submit" name="decision" value="deny">Deny</button>
+              </div>
             </form>
             <p class="muted">You can see and revoke your connections at <a href="{H(context.Request.PathBase + McpUrls.ConnectionsPath(Options))}">AI assistant connections</a>.</p>
             """, formTarget: redirect.GetLeftPart(UriPartial.Authority));

@@ -3,6 +3,16 @@
 Every release is on [nuget.org](https://www.nuget.org/packages/OptiCli). After updating, run `opticli skill install`
 again to update the skill.
 
+## Unreleased
+
+### MCP module
+
+- **The consent, connections and error pages have opticli's look.** The page an editor sees after signing in was
+  plain text and two grey buttons. It is now a coloured panel with Allow and Deny on a dark bar below it, which also
+  names who is signed in and on which site. It follows the browser's dark mode, and on a phone the connections page
+  lists each connection as a block instead of a table too wide to read. The pages still load nothing (no images,
+  fonts or scripts), so the security policy is unchanged.
+
 ## 0.37.1 (27 November 2026)
 
 ### CLI and MCP module

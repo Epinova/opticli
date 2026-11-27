@@ -290,7 +290,7 @@ public sealed class AuthorizationServerTests : IAsyncLifetime
         var (clientId, _) = await site.RegisterAsync();
         var html = await (await site.Browser("editor").GetAsync(TestSite.AuthorizeUrl(clientId, Pkce.Challenge(TestSite.Verifier())))).Content.ReadAsStringAsync();
         Assert.Equal(["content:write", "content:publish"], Browser.Ticked(html).Select(t => t.Value));
-        Assert.Contains("checked disabled> " + Scopes.Describe(Scopes.Read), html);
+        Assert.Contains("checked disabled> <span>" + Scopes.Describe(Scopes.Read) + "<small>Always</small>", html);
 
         var readOnly = await site.ConnectAsync(allow: []);
         Assert.Equal("content:read", readOnly.Scope);
@@ -298,8 +298,8 @@ public sealed class AuthorizationServerTests : IAsyncLifetime
         Assert.Equal("content:read content:write", noPublish.Scope);
         Assert.Contains(site.Audit.Audit, m => m.Contains("authorize allowed") && m.EndsWith("scope content:read content:write", StringComparison.Ordinal));
         var page = await (await site.Browser("editor").GetAsync("/episerver/opticli/connections")).Content.ReadAsStringAsync();
-        Assert.Contains("<td>content:read</td>", page);
-        Assert.Contains("<td>content:read content:write</td>", page);
+        Assert.Contains(">content:read</td>", page);
+        Assert.Contains(">content:read content:write</td>", page);
     }
 
     [Fact]
