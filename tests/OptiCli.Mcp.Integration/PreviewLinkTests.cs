@@ -47,7 +47,7 @@ public sealed class PreviewLinkTests(SharedSessions sessions)
 
             var updated = await editor.OkAsync("update_content", new { reference = page, name = draftName, baseVersion });
             var link = updated.GetProperty("assistantPreviewUrl").GetString()!;
-            Assert.StartsWith(new Uri(site, "episerver/opticli/preview/").ToString(), link, StringComparison.Ordinal);
+            Assert.StartsWith(new Uri(site, $"{McpSiteSettings.ModulePath}/preview/").ToString(), link, StringComparison.Ordinal);
             var expires = DateTimeOffset.Parse(updated.GetProperty("assistantPreviewExpires").GetString()!, CultureInfo.InvariantCulture);
             Assert.InRange(expires - DateTimeOffset.UtcNow, TimeSpan.FromMinutes(9), TimeSpan.FromMinutes(11));
             // The user's own link is unchanged, and neither carries the CMS's preview token.
@@ -80,7 +80,7 @@ public sealed class PreviewLinkTests(SharedSessions sessions)
                 new(HttpMethod.Get, link + "/extra"),
                 new(HttpMethod.Get, link + "?preview_token=abc"),
                 new(HttpMethod.Get, link + "?epieditmode=true"),
-                new(HttpMethod.Get, new Uri(site, "episerver/opticli/preview/")),
+                new(HttpMethod.Get, new Uri(site, $"{McpSiteSettings.ModulePath}/preview/")),
                 // Other spellings of the same payload, and the same link on another host.
                 new(HttpMethod.Get, link + "=="),
                 new(HttpMethod.Get, link.Replace("/preview/", "/PREVIEW/", StringComparison.Ordinal)),
@@ -284,7 +284,7 @@ public sealed class PreviewLinkTests(SharedSessions sessions)
 
             // The path is the site's like any other: its own 404 page, not the module's answer.
             using var anonymous = Anonymous();
-            using var response = await anonymous.GetAsync(new Uri(site, "episerver/opticli/preview/x"));
+            using var response = await anonymous.GetAsync(new Uri(site, $"{McpSiteSettings.ModulePath}/preview/x"));
             Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
             Assert.DoesNotContain(NotValid, await response.Content.ReadAsStringAsync());
             Assert.False(response.Headers.Contains("X-Robots-Tag"));

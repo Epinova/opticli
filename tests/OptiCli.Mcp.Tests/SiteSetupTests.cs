@@ -175,6 +175,17 @@ public sealed class ConnectionsPageTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task The_role_store_does_not_make_a_login_without_an_administrator_role_an_administrator()
+    {
+        _site.Roles.Set("other", "WebEditors");
+        await _site.ConnectAsync("other");
+        // The role store says WebAdmins, but this login only has WebEditors: it sees its own connections, not everyone's.
+        var html = await (await _site.Browser("admin", cookieRoles: "WebEditors").GetAsync("/episerver/opticli/connections")).Content.ReadAsStringAsync();
+        Assert.Contains("No AI assistants are connected.", html);
+        Assert.DoesNotContain(">other</td>", html);
+    }
+
+    [Fact]
     public async Task An_editor_cannot_revoke_someone_elses()
     {
         _site.Roles.Set("other", "WebEditors");
@@ -238,7 +249,6 @@ public class OptionsTests
     {
         await using var site = await TestSite.StartAsync();
         var options = site.Options;
-        Assert.Equal("/episerver/opticli", options.BasePath);
         Assert.False(options.AllowPublish);
         Assert.False(options.AllowDelete);
         Assert.Equal(10 * 1024 * 1024, options.MaxUploadBytes);
@@ -411,6 +421,34 @@ public class OptionsTests
         // After the site's own endpoints (here its error page), as the reference says: nothing to warn about.
         await using var after = await TestSite.StartAsync(services: s => s.AddSingleton<IEndpointRoutingExtension, NoRoutes>(), statusCodePages: true);
         Assert.DoesNotContain("first endpoint mapping", after.Audit.All);
+    }
+
+    [Fact]
+    public async Task The_default_path_is_under_the_cms_edit_uis_own()
+    {
+#if CMS13
+        Assert.Equal("/optimizely/opticli", new OptiCliMcpOptions().BasePath);
+#else
+        Assert.Equal("/episerver/opticli", new OptiCliMcpOptions().BasePath);
+#endif
+        await using var site = await TestSite.StartAsync(o => o.BasePath = OptiCliMcpOptions.DefaultBasePath);
+        Assert.True(OptiCliMcpExtensions.IsUnder(site.Options.BasePath, OptiCliMcpExtensions.ProtectedRoot(site.Services)!));
+        Assert.DoesNotContain("isn't under the CMS's protected path", site.Audit.All);
+    }
+
+    [Fact]
+    public async Task A_path_outside_the_cms_edit_uis_own_is_warned_about()
+    {
+        await using var outside = await TestSite.StartAsync(o => o.BasePath = "/tools/opticli");
+        Assert.Contains("BasePath /tools/opticli isn't under the CMS's protected path", outside.Audit.All);
+
+        // A site that moved the CMS's protected modules there too.
+        await using var moved = await TestSite.StartAsync(o => o.BasePath = "/tools/opticli",
+            services: s => s.Configure<EPiServer.Shell.Modules.ProtectedModuleOptions>(o => o.RootPath = "~/Tools/"));
+        Assert.DoesNotContain("isn't under the CMS's protected path", moved.Audit.All);
+
+        Assert.True(OptiCliMcpExtensions.IsUnder("/EPiServer/opticli", "/episerver"));
+        Assert.False(OptiCliMcpExtensions.IsUnder("/episerverx/opticli", "/episerver"));
     }
 
     /// <summary>An add-on's routes, registered with the CMS's extension point: what <c>MapContent()</c> maps.</summary>

@@ -101,7 +101,17 @@ env ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS="$URL" "${settings[@]}" \
   setsid dotnet "$DLL" > "$LOG" 2>&1 < /dev/null &
 echo $! > "$PIDFILE"
 
-metadata="$URL/.well-known/oauth-protected-resource/episerver/opticli/mcp"
+# The module's default path: /episerver/opticli on CMS 12, /optimizely/opticli on CMS 13.
+module=
+answers() {
+  for path in episerver/opticli optimizely/opticli; do
+    if [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$URL/.well-known/oauth-protected-resource/$path/mcp")" = 200 ]; then
+      module=$path
+      return 0
+    fi
+  done
+  return 1
+}
 for _ in $(seq 300); do
   if ! kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
     echo "The site exited while starting; the end of $LOG:" >&2
@@ -109,18 +119,18 @@ for _ in $(seq 300); do
     rm -f "$PIDFILE"
     exit 1
   fi
-  if [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$metadata")" = 200 ]; then
+  if answers; then
     break
   fi
   sleep 1
 done
-if [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$metadata")" != 200 ]; then
-  echo "The MCP module didn't answer on $metadata in 5 minutes; see $LOG." >&2
+if ! answers; then
+  echo "The MCP module didn't answer on $URL/.well-known/oauth-protected-resource/{episerver,optimizely}/opticli/mcp in 5 minutes; see $LOG." >&2
   exit 1
 fi
 if grep -E '\[(mcp-fixture|edge-cases)\] setup failed' -A3 "$LOG" >&2; then
   exit 1
 fi
-publish=$(curl -s "$URL/.well-known/oauth-authorization-server/episerver/opticli" | jq -r '.scopes_supported | index("content:publish") != null')
+publish=$(curl -s "$URL/.well-known/oauth-authorization-server/$module" | jq -r '.scopes_supported | index("content:publish") != null')
 blocks=$(curl -s --max-time 5 "$URL/opticli-fixture/inline-blocks" || true)
 echo "running: $URL (pid $(cat "$PIDFILE"), publishing allowed: $publish, new area blocks: ${blocks:-unknown}, log $LOG)"

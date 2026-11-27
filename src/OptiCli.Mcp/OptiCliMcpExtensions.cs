@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using EPiServer.Shell.Modules;
 using EPiServer.Web.Routing;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
@@ -145,6 +146,12 @@ public static class OptiCliMcpExtensions
             logger.LogWarning(
                 "OptiCli:Mcp:AllowedRedirectHosts is [\"*\"]: any app that registers itself may have the codes editors approve sent to any https host it names. Only do this for a site that knowingly accepts web apps other than Claude; list their hosts instead where you can.");
         }
+        if (options.BasePath.Length > 0 && ProtectedRoot(endpoints.ServiceProvider) is { } root && !IsUnder(options.BasePath, root))
+        {
+            logger.LogWarning(
+                "OptiCli:Mcp:BasePath {BasePath} isn't under the CMS's protected path {Root}. A login that picks its scheme by path, as Opti ID does on CMS 13, may not sign editors in there, so they can't connect an assistant or open the connections page; the default BasePath is under it.",
+                options.BasePath, root);
+        }
         var all = new List<IEndpointConventionBuilder>();
 
         if (!McpServerIsolation.Installed(endpoints.ServiceProvider.GetRequiredService<IOptions<HttpServerTransportOptions>>().Value))
@@ -173,10 +180,11 @@ public static class OptiCliMcpExtensions
         }
         all.Add(endpoints.MapPost(McpUrls.RegisterPath(options), Handle(c => Server(c).Register(c))).AllowAnonymous());
         all.Add(endpoints.MapGet(McpUrls.AuthorizePath(options), Handle(c => Server(c).AuthorizePage(c))).AllowAnonymous());
-        all.Add(endpoints.MapPost(McpUrls.AuthorizePath(options), Handle(c => Server(c).AuthorizeConsent(c))).AllowAnonymous());
-        all.Add(endpoints.MapPost(McpUrls.TokenPath(options), Handle(c => Server(c).Token(c))).AllowAnonymous());
+        // The form posts take small forms only (FormLimit); registration reads its JSON with a limit of its own.
+        all.Add(endpoints.MapPost(McpUrls.AuthorizePath(options), FormLimit.Wrap(Handle(c => Server(c).AuthorizeConsent(c)), json: false)).AllowAnonymous());
+        all.Add(endpoints.MapPost(McpUrls.TokenPath(options), FormLimit.Wrap(Handle(c => Server(c).Token(c)), json: true)).AllowAnonymous());
         all.Add(endpoints.MapGet(McpUrls.ConnectionsPath(options), Handle(c => Connections(c).Show(c))).AllowAnonymous());
-        all.Add(endpoints.MapPost(McpUrls.ConnectionsPath(options), Handle(c => Connections(c).Revoke(c))).AllowAnonymous());
+        all.Add(endpoints.MapPost(McpUrls.ConnectionsPath(options), FormLimit.Wrap(Handle(c => Connections(c).Revoke(c)), json: false)).AllowAnonymous());
 
         foreach (var builder in all)
         {
@@ -195,6 +203,30 @@ public static class OptiCliMcpExtensions
         }
         return endpoints;
     }
+
+    /// <returns>
+    /// Where the CMS's protected modules (its edit UI) live, as a path: <c>/EPiServer</c> on CMS 12 and
+    /// <c>/Optimizely</c> on CMS 13 by default (<see cref="ProtectedModuleOptions"/>'s <c>RootPath</c>); null when it can't be
+    /// read, as on a site without the CMS UI.
+    /// </returns>
+    internal static string? ProtectedRoot(IServiceProvider services)
+    {
+        string? rootPath;
+        try
+        {
+            rootPath = services.GetService<IOptions<ProtectedModuleOptions>>()?.Value.RootPath;
+        }
+        catch (Exception e) when (e is InvalidOperationException or OptionsValidationException or TypeLoadException or FileNotFoundException)
+        {
+            return null;
+        }
+        var path = (rootPath ?? "").TrimStart('~').Trim('/');
+        return path.Length == 0 || path.Contains("://", StringComparison.Ordinal) ? null : "/" + path;
+    }
+
+    /// <summary>Whether <paramref name="path"/> is <paramref name="root"/> or below it, ignoring case, as routing does.</summary>
+    internal static bool IsUnder(string path, string root) =>
+        path.Equals(root, StringComparison.OrdinalIgnoreCase) || path.StartsWith(root + "/", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>A plain request delegate that writes the handler's result: no parameter binding to second-guess.</summary>
     private static RequestDelegate Handle(Func<HttpContext, Task<IResult>> handler) => async context => await (await handler(context)).ExecuteAsync(context);

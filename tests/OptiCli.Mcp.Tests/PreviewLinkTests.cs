@@ -595,9 +595,9 @@ public sealed class PreviewLinkTests
     {
         var request = new DefaultHttpContext().Request;
         request.Path = PathString.FromUriComponent(path);
-        Assert.Equal(token, PreviewLinkMiddleware.Token(request, new OptiCliMcpOptions()));
+        Assert.Equal(token, PreviewLinkMiddleware.Token(request, Cms12Path));
         request.QueryString = new QueryString("?x=1");
-        Assert.Null(PreviewLinkMiddleware.Token(request, new OptiCliMcpOptions()));
+        Assert.Null(PreviewLinkMiddleware.Token(request, Cms12Path));
     }
 
     [Fact]
@@ -715,8 +715,11 @@ public sealed class PreviewLinkTests
         Assert.Equal((false, TimeSpan.FromMinutes(5)), (site.Options.AllowPreviewLinks, site.Options.PreviewLinkLifetime));
     }
 
+    /// <summary>The options with CMS 12's path on both majors, as <see cref="TestSite"/> has them.</summary>
+    private static OptiCliMcpOptions Cms12Path => new() { BasePath = "/episerver/opticli" };
+
     private static PreviewLinks Links(TimeProvider time, IDataProtectionProvider? protection = null) =>
-        new(protection ?? new EphemeralDataProtectionProvider(), Options.Create(new OptiCliMcpOptions()), time);
+        new(protection ?? new EphemeralDataProtectionProvider(), Options.Create(Cms12Path), time);
 
     private static string Token(string url) => url[(url.LastIndexOf('/') + 1)..];
 

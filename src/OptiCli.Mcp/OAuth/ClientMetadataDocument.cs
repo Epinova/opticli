@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using System.Text.Json;
 
 namespace OptiCli.Mcp.OAuth;
@@ -102,7 +104,8 @@ internal static class ClientMetadataDocument
             {
                 return (null, $"needs 1 to {MaxRedirectUris} redirect_uris, each https or http on a loopback address");
             }
-            var host = new Uri(clientId).Host;
+            // As punycode, like the consent page shows it: a lookalike domain in Unicode reads as the real one.
+            var host = new Uri(clientId).IdnHost;
             return (new RegisteredClient
             {
                 ClientId = clientId,
@@ -116,11 +119,29 @@ internal static class ClientMetadataDocument
         }
     }
 
-    /// <summary>A client's own name, made safe to show: no control characters, at most <see cref="MaxNameLength"/> characters.</summary>
+    /// <summary>
+    /// A client's own name, made safe to show: no control characters, no invisible formatting characters (Unicode
+    /// category Cf: the bidi controls that turn text around, zero-width spaces and joiners) and no line breaks, at most
+    /// <see cref="MaxNameLength"/> characters. Bidi controls could make a name read as another one on the consent page.
+    /// </summary>
     public static string CleanName(string? name, string fallback)
     {
-        var clean = new string((name ?? "").Where(c => !char.IsControl(c)).ToArray()).Trim();
-        return clean.Length is > 0 and <= MaxNameLength ? clean : clean.Length > MaxNameLength ? clean[..MaxNameLength] : fallback;
+        var kept = new StringBuilder();
+        foreach (var rune in (name ?? "").EnumerateRunes())
+        {
+            if (Rune.GetUnicodeCategory(rune) is not (UnicodeCategory.Control or UnicodeCategory.Format or UnicodeCategory.LineSeparator
+                or UnicodeCategory.ParagraphSeparator or UnicodeCategory.Surrogate) && rune != Rune.ReplacementChar)
+            {
+                kept.Append(rune);
+            }
+        }
+        var clean = kept.ToString().Trim();
+        if (clean.Length > MaxNameLength)
+        {
+            // Not between the two halves of a character outside the BMP.
+            clean = clean[..(char.IsHighSurrogate(clean[MaxNameLength - 1]) ? MaxNameLength - 1 : MaxNameLength)].TrimEnd();
+        }
+        return clean.Length > 0 ? clean : fallback;
     }
 
     /// <summary>An absent list is fine (the defaults are the code flow); a present one must include <paramref name="value"/>.</summary>

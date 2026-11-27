@@ -359,6 +359,55 @@ public sealed class AuthorizationServerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_consent_post_from_nobody_is_refused_before_its_form_is_read()
+    {
+        var (clientId, _) = await _site.RegisterAsync();
+        var url = TestSite.AuthorizeUrl(clientId, Pkce.Challenge(TestSite.Verifier()));
+        var response = await _site.Browser(null).PostFormAsync(url, new() { ["decision"] = "allow" });
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Contains("Not signed in", await response.Content.ReadAsStringAsync());
+        Assert.Equal(0, _site.Store.CodeCount);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_form_post_larger_than_64_kb_gets_a_413(bool withLength)
+    {
+        var (clientId, _) = await _site.RegisterAsync();
+        var form = "grant_type=refresh_token&client_id=" + clientId + "&refresh_token=" + new string('x', FormLimit.Bytes);
+        HttpContent Body()
+        {
+            var bytes = Encoding.ASCII.GetBytes(form);
+            HttpContent content = withLength ? new ByteArrayContent(bytes) : new StreamContent(new UnknownLength(bytes));
+            content.Headers.ContentType = new MediaTypeHeaderValue("application/x-www-form-urlencoded");
+            return content;
+        }
+
+        var token = await _site.Client().PostAsync("/episerver/opticli/oauth/token", Body());
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, token.StatusCode);
+        Assert.Equal("invalid_request", await Error(token));
+
+        var browser = _site.Browser("editor");
+        var consent = await browser.SendAsync(new HttpRequestMessage(HttpMethod.Post, TestSite.AuthorizeUrl(clientId, Pkce.Challenge(TestSite.Verifier()))) { Content = Body() });
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, consent.StatusCode);
+        Assert.Contains("Too large", await consent.Content.ReadAsStringAsync());
+
+        var revoke = await browser.SendAsync(new HttpRequestMessage(HttpMethod.Post, "/episerver/opticli/connections") { Content = Body() });
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, revoke.StatusCode);
+
+        // Just under the limit, the form is read as usual.
+        form = "grant_type=refresh_token&client_id=" + clientId + "&refresh_token=ocr_" + new string('x', FormLimit.Bytes - 200);
+        Assert.Equal("invalid_grant", await Error(await _site.Client().PostAsync("/episerver/opticli/oauth/token", Body())));
+    }
+
+    /// <summary>A body whose length isn't known up front, as a chunked request's isn't.</summary>
+    private sealed class UnknownLength(byte[] bytes) : MemoryStream(bytes)
+    {
+        public override bool CanSeek => false;
+    }
+
+    [Fact]
     public async Task Another_users_antiforgery_token_is_refused()
     {
         var (clientId, _) = await _site.RegisterAsync();
@@ -733,14 +782,50 @@ public sealed class AuthorizationServerTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task A_refresh_picks_up_the_editors_current_roles()
+    public async Task A_refresh_drops_roles_the_editor_lost_but_never_adds_any()
     {
-        _site.Roles.Set("growing", "WebEditors");
-        var tokens = await _site.ConnectAsync("growing");
-        _site.Roles.Set("growing", "WebEditors", "ProductEditors");
-        await _site.TokenAsync(RefreshForm(tokens));
-        var grant = Assert.Single(await _site.Store.ListGrantsAsync("growing", default));
-        Assert.Equal(new[] { "WebEditors", "ProductEditors" }, grant.Roles);
+        _site.Roles.Set("changing", "WebEditors", "NewsEditors");
+        var tokens = await _site.ConnectAsync("changing");
+        // A role given after the connection was made only comes with a new sign-in; a role taken away goes at once.
+        _site.Roles.Set("changing", "WebEditors", "ProductEditors");
+        var refreshed = await Tokens.ReadAsync(await _site.TokenAsync(RefreshForm(tokens)), tokens.ClientId);
+        var grant = Assert.Single(await _site.Store.ListGrantsAsync("changing", default));
+        Assert.Equal(new[] { "WebEditors" }, grant.Roles);
+
+        // Nor when the role store can't say: the connection keeps what it had.
+        _site.Roles.Unavailable = true;
+        await _site.TokenAsync(RefreshForm(refreshed));
+        Assert.Equal(new[] { "WebEditors" }, Assert.Single(await _site.Store.ListGrantsAsync("changing", default)).Roles);
+    }
+
+    [Fact]
+    public async Task The_role_store_does_not_make_a_login_without_the_role_an_editor()
+    {
+        // A visitor's login (another provider, say) under the name of an editor the CMS's role store knows.
+        var (clientId, _) = await _site.RegisterAsync();
+        var url = TestSite.AuthorizeUrl(clientId, Pkce.Challenge(TestSite.Verifier()));
+        var response = await _site.Browser("editor", cookieRoles: "Customers").GetAsync(url);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Contains(_site.Audit.Audit, m => m.Contains("refused (not an editor)") && m.Contains("editor"));
+
+        // The editor's own login, with the role, connects.
+        Assert.True((await _site.AuthorizeAsync(clientId, TestSite.Verifier())).ContainsKey("code"));
+    }
+
+    [Fact]
+    public async Task A_connection_gets_the_roles_both_the_login_and_the_role_store_have()
+    {
+        _site.Roles.Set("both", "WebEditors", "NewsEditors");
+        var (clientId, _) = await _site.RegisterAsync();
+        var verifier = TestSite.Verifier();
+        // WebAdmins only in the login, NewsEditors only in the store.
+        var back = await _site.AuthorizeAsync(clientId, verifier, "both", cookieRoles: "WebEditors,WebAdmins");
+        Assert.Equal(HttpStatusCode.OK, (await _site.TokenAsync(new()
+        {
+            ["grant_type"] = "authorization_code", ["code"] = back["code"], ["redirect_uri"] = TestSite.RedirectUri, ["client_id"] = clientId,
+            ["code_verifier"] = verifier, ["resource"] = "http://localhost/episerver/opticli/mcp",
+        })).StatusCode);
+        Assert.Equal(new[] { "WebEditors" }, Assert.Single(await _site.Store.ListGrantsAsync("both", default)).Roles);
     }
 
     [Fact]

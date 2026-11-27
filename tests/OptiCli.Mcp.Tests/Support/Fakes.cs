@@ -5,7 +5,10 @@ using OptiCli.Mcp.OAuth;
 
 namespace OptiCli.Mcp.Tests.Support;
 
-/// <summary>The site's role store, faked: editors have the roles set here, whatever their login says.</summary>
+/// <summary>
+/// The site's role store, faked: editors have the roles set here. A test login has them as its role claims unless the
+/// test gives it others (<see cref="TestLogin"/>).
+/// </summary>
 internal sealed class FakeEditorRoles : IEditorRoles
 {
     private readonly ConcurrentDictionary<string, IReadOnlyList<string>> _roles = new(StringComparer.OrdinalIgnoreCase)
@@ -37,6 +40,9 @@ internal sealed class FakeEditorRoles : IEditorRoles
 
     /// <summary>Deletes a user: no account, no roles.</summary>
     public void Delete(string user) => _roles.TryRemove(user, out _);
+
+    /// <summary>The roles set for <paramref name="user"/>, whether or not the store is <see cref="Unavailable"/>: what their login gets.</summary>
+    public IReadOnlyList<string> Stored(string user) => _roles.TryGetValue(user, out var roles) ? roles : [];
 
     public Task<IReadOnlyList<string>?> GetRolesAsync(string userName, CancellationToken cancellationToken) =>
         Task.FromResult(Unavailable ? null : _roles.TryGetValue(userName, out var roles) ? roles : (IReadOnlyList<string>)[]);

@@ -3,7 +3,7 @@ title: Connect your assistant to the CMS
 summary: Connect Claude or another assistant to your Optimizely site, sign in with your own CMS account, and check that it works.
 audience: editors
 order: 1
-written-for: 0.34.2
+written-for: 0.38.0
 ---
 
 By the end of this guide your AI assistant is connected to your Optimizely CMS site. It works as you: it sees what you
@@ -26,7 +26,7 @@ There are two forms of the address. Which one you need depends on the assistant:
 | Address | Used by |
 |---|---|
 | The site itself, such as `https://www.example.com` | the Claude Desktop extension, which adds the rest |
-| The full address, such as `https://www.example.com/episerver/opticli/mcp` | every other assistant |
+| The full address, such as `https://www.example.com/episerver/opticli/mcp` (`/optimizely/opticli/mcp` on CMS 13) | every other assistant |
 
 Your developer may give you an address on a host of its own instead. Use the one they give you.
 
@@ -55,8 +55,10 @@ The first time the assistant uses the site, your browser opens the site's own lo
 Then a consent page asks **Connect** followed by the assistant's name. It shows:
 
 - who you are signed in as;
-- who published the assistant's description, or a warning that the app named itself and the site can't confirm who
-  made it. Only allow it if you added the connection yourself, just now;
+- who published the assistant's description (for Claude, `claude.ai`), or a warning that the app named itself and the
+  site can't confirm who made it. Either way, only allow it if you added the connection yourself, just now. The page
+  writes a domain with letters outside a–z (from another alphabet, or æ, ø, å) as `xn--` and a code: such a domain
+  isn't `claude.ai`, however much it looked like it elsewhere;
 - what the assistant may do, with a checkbox each: read the content you have access to (always), create content and
   change drafts, and, only where the site allows it, publish and unpublish content.
 
@@ -88,7 +90,8 @@ The assistant finds the page, reads it and sums it up. Nothing is changed by rea
 
 ### 6. See or revoke your connections
 
-Open `/episerver/opticli/connections` on the site (your developer may have moved it). It lists the assistants you
+Open `/episerver/opticli/connections` on the site (`/optimizely/opticli/connections` on CMS 13; your developer may have
+moved it). It lists the assistants you
 connected, what you allowed each one, when it connected and when it was last used. **Revoke** cuts an assistant off
 at once. A connection also ends on its own after a while (30 days unless your developer changed it), and then you sign
 in again the same way.

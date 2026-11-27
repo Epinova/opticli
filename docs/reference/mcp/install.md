@@ -84,14 +84,31 @@ System.InvalidOperationException: This site runs CMS 13: use the OptiCli.Mcp.Cms
 (or "This site runs CMS 12: use the OptiCli.Mcp package instead of OptiCli.Mcp.Cms13.").
 
 **Moving a site from CMS 12 to 13** is one package swap: replace `OptiCli.Mcp` with `OptiCli.Mcp.Cms13` at the same
-version, and leave `Startup.cs` and the `OptiCli:Mcp` configuration as they are. Connections are kept in Dynamic Data
-Store stores with the same names on both, so they carry over when the database's store data does; otherwise editors
-connect their assistant once more after the upgrade.
+version, and leave `Startup.cs` and the `OptiCli:Mcp` configuration as they are. The module's default path moves with
+it, from `/episerver/opticli` to `/optimizely/opticli` (see [On CMS 13](#on-cms-13)), so editors connect their
+assistant again at the new address, or the site sets `BasePath` to `/episerver/opticli` to keep the old one.
+Connections are kept in Dynamic Data Store stores with the same names on both, so they carry over when the database's
+store data does and the path stays the same; otherwise editors connect their assistant once more after the upgrade.
 
 ## On CMS 13
 
 Everything else under [MCP server for editors](#mcp-server-for-editors) holds on CMS 13 too. What is different there:
 
+- **The module's path:** `/optimizely/opticli` by default (the MCP endpoint is `/optimizely/opticli/mcp`, the
+  connections page `/optimizely/opticli/connections`), where CMS 12 has `/episerver/opticli`. On each major that is under
+  the CMS's own protected path (`/Optimizely` on CMS 13, `/EPiServer` on CMS 12), where the CMS's login signs editors in.
+  Opti ID only signs editors in there (and in its `AdditionalPaths`), so at `/episerver/opticli` on CMS 13 the consent
+  and connections pages got no CMS sign-in. A site that set the module up on CMS 13 with opticli 0.37 or earlier, at
+  `/episerver/opticli`, either has editors connect their assistant again at the new address (the old connections stop
+  working, and stay on the connections page until they expire or are revoked there), or keeps the old path, where its
+  own login signs editors in:
+
+  ```csharp
+  services.AddOptiCliMcp(o => o.BasePath = "/episerver/opticli");
+  ```
+
+  The module logs a warning at startup when `BasePath` isn't under the CMS's protected path. The Claude Desktop extension
+  tries both paths for a site address without one (see [Connecting Claude](connecting.md#connecting-claude)).
 - **Visual Builder.** `get_content` of an experience gives its composition: sections, rows, columns and elements, with
   their display templates and settings and the elements' properties. It follows the same rules as every other read:
   properties the edit UI hides or locks are left out (an element's tabs are shown as the edit UI shows them, as a local
@@ -101,7 +118,7 @@ Everything else under [MCP server for editors](#mcp-server-for-editors) holds on
   change compositions through the MCP server yet**: an experience's other properties can be changed, and `Layout` is
   refused. Developers change compositions with `opticli composition` (see [Visual Builder](../cli/cms13.md#visual-builder)).
 - **Edit links:** `editUrl` and `previewUrl` come from the CMS, so they open CMS 13's edit UI, under `/Optimizely/CMS/`
-  instead of `/EPiServer/CMS/`. The module's own paths (`/episerver/opticli/...`) are the same on both.
+  instead of `/EPiServer/CMS/`.
 - **Uploads** follow the CMS's `MediaFileOptions` (`EPiServer:Cms:MediaFile`), which CMS 13's edit UI uses in place of
   the CMS UI's upload settings: its `FileSizeLimit` (30,000,000 bytes by default; the lower of it and `MaxUploadBytes`
   applies) and its `AllowedFileExtensions`, matched as the edit UI matches them, whole and with the dot (`.jpg`; `jpg`

@@ -20,9 +20,17 @@ internal static class PreviewTokens
     /// <summary>The query parameter and <c>Authorization</c> scheme the CMS reads a preview token from.</summary>
     public const string Parameter = "preview_token";
 
+    /// <summary>
+    /// The cookie CMS 13's edit UI keeps a preview token in. Its path is <c>{PathBase}/Optimizely/CMS/Content</c>, so a
+    /// browser doesn't send it to the module's pages today, but those are under <c>/Optimizely</c> on CMS 13 too, and a
+    /// CMS update could widen it.
+    /// </summary>
+    public const string Cookie = ".EPiServer.PreviewToken";
+
     /// <summary>Whether <paramref name="request"/> carries a preview token, as the CMS looks for one.</summary>
     public static bool InRequest(HttpRequest request) =>
         request.Query[Parameter].Any(v => !string.IsNullOrEmpty(v))
         || (AuthenticationHeaderValue.TryParse(request.Headers.Authorization.ToString(), out var header)
-            && header.Scheme.Equals(Parameter, StringComparison.OrdinalIgnoreCase));
+            && header.Scheme.Equals(Parameter, StringComparison.OrdinalIgnoreCase))
+        || !string.IsNullOrEmpty(request.Cookies[Cookie]);
 }

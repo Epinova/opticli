@@ -64,11 +64,16 @@
   drawing uploads. A file named as a raster image (`.jpg`, `.png`, ...) that starts like markup is refused too. Have the
   site send `X-Content-Type-Options: nosniff` with its media, so a browser never takes a file for anything but what its
   content type says.
-- **The role gate** (`AllowedRoles`) is checked against the editor's roles as they are now (the CMS UI's role
-  provider), not the ones in their login cookie: at consent and at every token refresh. So is their account, where the
-  site manages it: an ASP.NET Identity user who is disabled, locked out or deleted gets no consent and no new tokens.
-  An editor who fails either at a refresh gets no new tokens, and the connection is deleted; the access token they
-  have works until it expires (`AccessTokenLifetime`).
+- **The role gate** (`AllowedRoles`) is checked against the roles the editor's login has that the CMS UI's role
+  provider still has for them: both, at consent and at every token refresh. The role provider only takes roles away:
+  it answers for a user name, whereas the login is the site's word for who signed in, so a login without an editor role
+  (a visitor's, through another login provider, under the name of an editor) isn't made one by the role provider, and
+  the same goes for the administrator roles on the connections page. When the role provider can't say, the login's roles
+  count. A connection keeps the roles it was allowed with, less any the role provider no longer has at a refresh, so
+  its roles only narrow: an editor given a role after connecting has it in a new connection, after signing in again.
+  Their account is checked too, where the site manages it: an ASP.NET Identity user who is disabled, locked out or
+  deleted gets no consent and no new tokens. An editor who fails either at a refresh gets no new tokens, and the connection is
+  deleted; the access token they have works until it expires (`AccessTokenLifetime`).
 - **External logins** (Microsoft Entra ID, Opti ID, any OpenID Connect provider): the account is managed by the
   identity provider, not the CMS, so for a user the CMS synchronized from one the module doesn't judge the account at
   all, whatever a user provider for such users reports, and the roles decide. Those roles are only as current as the
@@ -116,9 +121,13 @@
   tell. The Projects gadget's own Publish (in the CMS) puts every unpublished item of a project live, ready or not,
   without asking about anyone's changes.
 - **The consent page** lists what the app may do, with a checkbox each: reading is required, writing and (where the
-  site allows it) publishing can be unticked, and the connection gets only what was left ticked. For an app that
+  site allows it) publishing can be unticked, and the connection gets only what was left ticked. Every app names
+  itself, so the page tells the editor to allow only a connection they just added themselves. For an app that
   registered itself, a warning says plainly that it chose its own name and the site can't confirm who made it; an app
-  with a metadata document is named with the domain that publishes it. The connections page shows each connection's
+  with a metadata document is named with the domain that publishes it. That domain, and the address the editor is sent
+  back to, are shown with the host in punycode (`xn--...`), so a lookalike domain in another script doesn't read as the
+  real one. An app's name loses control characters, invisible formatting characters (bidi controls, zero-width spaces
+  and joiners) and line separators, and is cut at 100 characters. The connections page shows each connection's
   scopes.
 - **OAuth:** PKCE (S256) is required; codes work once, for 5 minutes. Refresh tokens rotate, as a compare-and-swap, so
   of two refreshes with the same token only one succeeds and a connection revoked meanwhile stays revoked. The refresh
@@ -130,9 +139,13 @@
   against their connection on every use, so revoking one cuts the client off at once (another instance of a
   load-balanced site notices within 30 seconds). Codes, secrets and refresh tokens are stored as hashes only. Redirect
   URIs must match exactly (any port for http on a loopback address), and be on a loopback address or one of `AllowedRedirectHosts`. The
-  consent page can't be framed and checks an antiforgery token. Client metadata documents are only fetched from public
-  addresses (in Development also over http from a loopback address), checked on the connected socket, without redirects. Registration, authorization and token requests are
-  rate-limited (`RateLimits`). Registered clients without a connection are deleted a day after they registered, and
+  consent page can't be framed and checks an antiforgery token, after it has checked that someone is signed in. Client
+  metadata documents are only fetched from public addresses (in Development also over http from a loopback address),
+  checked on the connected socket, without redirects, at most 4 at a time for the whole site, and kept for 10 minutes
+  (the least recently used go first when 1,000 are kept). The token endpoint fetches one only once the code or refresh
+  token it was given names that client, so a made-up `client_id` costs no request. The token endpoint, the consent post
+  and a revoke on the connections page take forms of at most 64 KB (larger ones get a 413). Registration, authorization
+  and token requests are rate-limited (`RateLimits`). Registered clients without a connection are deleted a day after they registered, and
   registration stops at 5,000 of them; the cleanup runs in the background, a bounded amount at a time.
 - **Load-balanced sites:** the Dynamic Data Store has no conditional update, so a refresh's compare-and-swap is
   atomic within an instance only. Two instances given the same refresh token within milliseconds could both rotate
@@ -232,11 +245,12 @@
 - **Security headers:** the module's pages (consent, connections, its error pages) send `X-Frame-Options: DENY`, a
   `Content-Security-Policy` with `default-src 'none'`, `frame-ancestors 'none'` and a `form-action` limited to the
   module and the client's redirect, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff` and
-  `Cache-Control: no-store`. Neither page takes a CMS preview token (`preview_token`) as a sign-in: such a request
-  gets a 400. Middleware that sets a site's own security headers as the response starts replaces
+  `Cache-Control: no-store`. Neither page takes a CMS preview token (`preview_token` in the query or the
+  `Authorization` header, or CMS 13's `.EPiServer.PreviewToken` cookie) as a sign-in: such a request gets a 400. Middleware that sets a site's own security headers as the response starts replaces
   them, and the module can't set its own later than that. The page also carries its policy and referrer policy in
   `meta` elements, which the browser applies besides the site's header, but `frame-ancestors` and `X-Frame-Options`
-  only work as headers. So have such middleware leave `{BasePath}` (`/episerver/opticli`) alone, or only set headers
+  only work as headers. So have such middleware leave `{BasePath}` (`/episerver/opticli`, on CMS 13
+  `/optimizely/opticli`) alone, or only set headers
   the response doesn't already have; or check that the site's own values forbid framing.
 - **Whatever the headers:** a page the browser asks for to show in a frame (`Sec-Fetch-Dest: iframe`, `frame`,
   `fencedframe`, `object` or `embed`) gets a 403 page instead, and the consent and revoke posts are refused when the

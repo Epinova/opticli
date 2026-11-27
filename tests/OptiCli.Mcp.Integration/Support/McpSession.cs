@@ -46,7 +46,7 @@ internal sealed record SessionOptions
 /// </summary>
 internal sealed class McpSession : IAsyncDisposable
 {
-    public const string McpPath = "episerver/opticli/mcp";
+    public static string McpPath => McpSiteSettings.ModulePath + "/mcp";
 
     /// <summary>Any loopback port works (RFC 8252); nothing listens there: the browser stops at the redirect.</summary>
     public static readonly Uri RedirectUri = new("http://127.0.0.1:53682/callback");
@@ -214,7 +214,7 @@ internal sealed class McpSession : IAsyncDisposable
         {
             form["scope"] = scope;
         }
-        var request = new HttpRequestMessage(HttpMethod.Post, "episerver/opticli/oauth/token");
+        var request = new HttpRequestMessage(HttpMethod.Post, $"{McpSiteSettings.ModulePath}/oauth/token");
         switch (tokens.TokenEndpointAuthMethod)
         {
             case "client_secret_basic":

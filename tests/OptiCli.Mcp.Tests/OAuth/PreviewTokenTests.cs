@@ -103,6 +103,34 @@ public sealed class PreviewTokenTests : IAsyncLifetime
 
         Assert.Equal(found, PreviewTokens.InRequest(context.Request));
     }
+
+    [Theory]
+    [InlineData(".EPiServer.PreviewToken=abc", true)]
+    [InlineData("other=1; .EPiServer.PreviewToken=abc", true)]
+    [InlineData(".EPiServer.PreviewToken=", false)]
+    [InlineData(".EPiServer.Login=abc", false)]
+    public void CMS_13s_preview_token_cookie_counts_too(string cookie, bool found)
+    {
+        // Its path is under /Optimizely/CMS/Content, and the module is under /optimizely on CMS 13.
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/optimizely/opticli/oauth/authorize";
+        context.Request.Headers.Cookie = cookie;
+
+        Assert.Equal(found, PreviewTokens.InRequest(context.Request));
+    }
+
+    [Fact]
+    public async Task The_consent_page_refuses_a_request_with_the_preview_token_cookie()
+    {
+        var (clientId, _) = await _site.RegisterAsync();
+        var request = new HttpRequestMessage(HttpMethod.Get, TestSite.AuthorizeUrl(clientId, Pkce.Challenge(TestSite.Verifier())));
+        request.Headers.Add("Cookie", ".EPiServer.PreviewToken=editor");
+
+        var response = await _site.Browser("editor").SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("Not with a preview link", await response.Content.ReadAsStringAsync());
+    }
 }
 
 /// <summary>

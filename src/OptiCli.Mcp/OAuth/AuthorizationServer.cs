@@ -216,7 +216,7 @@ internal sealed class AuthorizationServer(
         if (!RedirectUris.IsPermitted(redirect, Options.AllowedRedirectHosts))
         {
             return (null, Message(context, HttpStatusCode.BadRequest, "Return address not allowed",
-                $"The app asked to be sent back to {new Uri(redirect).Host}, which this site doesn't accept for AI assistant connections. Only connect apps the site's administrators allow."));
+                $"The app asked to be sent back to {new Uri(redirect).IdnHost}, which this site doesn't accept for AI assistant connections. Only connect apps the site's administrators allow."));
         }
 
         var state = Get("state");
@@ -276,9 +276,11 @@ internal sealed class AuthorizationServer(
 
         var form = antiforgery.GetAndStoreTokens(context);
         var redirect = new Uri(request.RedirectUri);
-        // An app that registered itself chose its own name: said plainly, where the editor looks.
+        // Any app names itself, so the editor is told to allow only a connection they just started. One that registered
+        // itself gets that said plainly; one with a metadata document is named by its domain, in punycode (IdnHost), so
+        // a lookalike in another script doesn't read as the real one.
         var identity = ClientMetadataDocument.IsUrl(request.Client.ClientId)
-            ? $"<p class=\"muted\">The app's description is published by <b>{H(new Uri(request.Client.ClientId).Host)}</b>.</p>"
+            ? $"<p>The app's description is published by <b>{H(new Uri(request.Client.ClientId).IdnHost)}</b>. Only allow it if you just added this connection yourself.</p>"
             : "<p class=\"warning\"><b>The app registered itself under this name; the site can't confirm who made it.</b> Only allow it if you just added this connection yourself, from the app you expect.</p>";
         // Read is what every call needs, so it can't be unticked; the others are the editor's choice.
         var scopes = string.Concat(request.Scope.Split(' ').Select(s => s == Scopes.Read
@@ -289,9 +291,9 @@ internal sealed class AuthorizationServer(
         return Render(context, HttpStatusCode.OK, "Connect an AI assistant", $"""
             <form method="post" action="{H(action)}">
               <div class="panel">
-                <h1>Connect {H(request.Client.ClientName)}?</h1>
+                <h1>Connect {H(ClientMetadataDocument.CleanName(request.Client.ClientName, "MCP client"))}?</h1>
                 {identity}
-                <p>If you allow it, you'll be sent back to <b>{H(redirect.Authority)}</b>, and the app will act as you, with your access rights in the CMS. Untick what it shouldn't do. It may:</p>
+                <p>If you allow it, you'll be sent back to <b>{H(IdnAuthority(redirect))}</b>, and the app will act as you, with your access rights in the CMS. Untick what it shouldn't do. It may:</p>
                 <ul class="scopes">{scopes}</ul>
                 {noPublish}
               </div>
@@ -316,6 +318,11 @@ internal sealed class AuthorizationServer(
         {
             return refused;
         }
+        // Signed in first: a post from nobody isn't read any further, as a form or for its client.
+        if (SignedInName(context) is not { } user)
+        {
+            return Message(context, HttpStatusCode.Forbidden, "Not signed in", "Sign in to the site first, then connect again from the app.");
+        }
         if (!context.Request.HasFormContentType || !await antiforgery.IsRequestValidAsync(context))
         {
             return Message(context, HttpStatusCode.BadRequest, "Page expired", "The page expired. Go back to the app and connect again.");
@@ -324,10 +331,6 @@ internal sealed class AuthorizationServer(
         if (request is null)
         {
             return error!;
-        }
-        if (SignedInName(context) is not { } user)
-        {
-            return Message(context, HttpStatusCode.Forbidden, "Not signed in", "Sign in to the site first, then connect again from the app.");
         }
         var (current, roles) = await gate.CurrentAsync(context.User, context.RequestAborted);
         if (await gate.RefusalAsync(current, Options, context.RequestAborted) is { } refusal)
@@ -426,6 +429,46 @@ internal sealed class AuthorizationServer(
         {
             return clientLimited;
         }
+
+        var now = time.GetUtcNow();
+        // The code or refresh token first. A client_id that is a URL makes the site fetch its metadata document, and
+        // anyone can send any client_id: it is only fetched once what was presented names that client. A refresh token
+        // that was already rotated out (reused) still goes on, to the reuse detection below.
+        var isUrl = ClientMetadataDocument.IsUrl(credentials.ClientId);
+        AuthorizationCode? record = null;
+        var refreshHash = "";
+        Grant? found = null;
+        Grant? reused = null;
+        switch (grantType)
+        {
+            case "authorization_code":
+                // Only for a metadata document client, which has no secret: a confidential client that gets its
+                // authentication wrong keeps its code.
+                if (isUrl)
+                {
+                    record = await TakeCodeAsync(form, context.RequestAborted);
+                    if (record is null || !string.Equals(record.ClientId, credentials.ClientId, StringComparison.Ordinal))
+                    {
+                        audit.TokenRefused(grantType, credentials.ClientId, "invalid_grant (code)");
+                        return OAuthJson.Error(context, "invalid_grant", "The code is unknown, used, expired, for another client, or for another redirect_uri.");
+                    }
+                }
+                break;
+            case "refresh_token":
+                var refresh = form["refresh_token"].ToString();
+                refreshHash = refresh.Length == 0 ? "" : Secrets.Hash(refresh);
+                found = refreshHash.Length == 0 ? null : await store.FindGrantByRefreshAsync(refreshHash, context.RequestAborted);
+                reused = found is not null || refreshHash.Length == 0 ? null : await store.FindGrantByPreviousRefreshAsync(refreshHash, context.RequestAborted);
+                if (isUrl && (found is null ? reused is null : !string.Equals(found.ClientId, credentials.ClientId, StringComparison.Ordinal)))
+                {
+                    audit.TokenRefused(grantType, credentials.ClientId, "invalid_grant (refresh token)");
+                    return OAuthJson.Error(context, "invalid_grant", "The refresh token is unknown, already used, expired, or revoked.");
+                }
+                break;
+            default:
+                return OAuthJson.Error(context, "unsupported_grant_type", "Supported grant types: authorization_code, refresh_token.");
+        }
+
         var client = await clients.ResolveAsync(credentials.ClientId, context.RequestAborted);
         if (client is null || !credentials.Authenticates(client))
         {
@@ -438,7 +481,6 @@ internal sealed class AuthorizationServer(
                 StatusCodes.Status401Unauthorized);
         }
 
-        var now = time.GetUtcNow();
         var newRefresh = RefreshPrefix + Secrets.New();
         // A refresh extends the connection by RefreshTokenLifetime, but never past ConnectionLifetime from its start.
         DateTimeOffset GrantExpires(DateTimeOffset created)
@@ -453,8 +495,7 @@ internal sealed class AuthorizationServer(
         {
             case "authorization_code":
             {
-                var code = form["code"].ToString();
-                var record = code.Length == 0 ? null : await store.TakeCodeAsync(Secrets.Hash(code), context.RequestAborted);
+                record ??= await TakeCodeAsync(form, context.RequestAborted);
                 if (record is null || record.Expires <= now || !string.Equals(record.ClientId, client.ClientId, StringComparison.Ordinal)
                     || !string.Equals(record.RedirectUri, form["redirect_uri"].ToString(), StringComparison.Ordinal))
                 {
@@ -492,10 +533,7 @@ internal sealed class AuthorizationServer(
             }
             case "refresh_token":
             {
-                var refresh = form["refresh_token"].ToString();
-                var refreshHash = refresh.Length == 0 ? "" : Secrets.Hash(refresh);
-                var found = refreshHash.Length == 0 ? null : await store.FindGrantByRefreshAsync(refreshHash, context.RequestAborted);
-                if (found is null && refreshHash.Length > 0 && await store.FindGrantByPreviousRefreshAsync(refreshHash, context.RequestAborted) is { } reused)
+                if (reused is not null)
                 {
                     if (string.Equals(reused.ClientId, client.ClientId, StringComparison.Ordinal) && now - reused.RefreshIssued <= Options.RefreshTokenReuseGrace)
                     {
@@ -566,7 +604,7 @@ internal sealed class AuthorizationServer(
                 break;
             }
             default:
-                return OAuthJson.Error(context, "unsupported_grant_type", "Supported grant types: authorization_code, refresh_token.");
+                throw new InvalidOperationException($"Grant type {grantType} was checked above.");
         }
 
         cache.Evict(grant.GrantId);
@@ -584,6 +622,17 @@ internal sealed class AuthorizationServer(
     }
 
     // --- Helpers ---------------------------------------------------------------------------------------------------
+
+    /// <summary>A URL's host and port as the consent page shows them: the host in punycode, as for the app's own domain.</summary>
+    internal static string IdnAuthority(Uri uri)
+    {
+        var host = uri.HostNameType == UriHostNameType.Dns ? uri.IdnHost : uri.Host;
+        return uri.IsDefaultPort ? host : $"{host}:{uri.Port}";
+    }
+
+    /// <summary>The form's code, taken from the store (a code works once, whatever happens next); null for none or an unknown one.</summary>
+    private async Task<AuthorizationCode?> TakeCodeAsync(IFormCollection form, CancellationToken cancellationToken) =>
+        form["code"].ToString() is { Length: > 0 } code ? await store.TakeCodeAsync(Secrets.Hash(code), cancellationToken) : null;
 
     /// <returns>The body, or null when it is longer than <paramref name="limit"/>.</returns>
     private static async Task<byte[]?> ReadLimitedAsync(Stream body, int limit, CancellationToken cancellationToken)

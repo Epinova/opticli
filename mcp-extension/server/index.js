@@ -8,11 +8,34 @@ import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const DEFAULT_PATH = "/episerver/opticli/mcp";
+// The module's default paths: CMS 12's, then CMS 13's (opticli 0.38 and later; a CMS 13 site set up before that, or
+// with BasePath set to the old path, has the first).
+const DEFAULT_PATHS = ["/episerver/opticli/mcp", "/optimizely/opticli/mcp"];
 
 function fail(message) {
   console.error(`opticli: ${message}`);
   process.exit(1);
+}
+
+// Whether url answers as the module's MCP endpoint does without a token: 401 with a Bearer challenge. Anything else
+// (404, a redirect to a login page, no answer) isn't it.
+async function isMcpEndpoint(url) {
+  try {
+    const response = await fetch(url, { method: "POST", redirect: "manual", signal: AbortSignal.timeout(10000) });
+    return response.status === 401 && /^Bearer\b/i.test(response.headers.get("www-authenticate") ?? "");
+  } catch (error) {
+    console.error(`opticli: no answer from ${url} (${error.message})`);
+    return false;
+  }
+}
+
+// For a bare site address, the default path the site has, the first one when neither answers (mcp-remote then says why).
+async function withDefaultPath(base) {
+  const candidates = DEFAULT_PATHS.map((path) => new URL(path, base).href);
+  for (const candidate of candidates) {
+    if (await isMcpEndpoint(candidate)) return candidate;
+  }
+  return candidates[0];
 }
 
 function endpoint(input) {
@@ -37,8 +60,14 @@ function endpoint(input) {
   }
 
   const path = url.pathname.replace(/\/+$/, "");
-  if (path === "" || /\/episerver$/i.test(path)) {
-    url.pathname = DEFAULT_PATH;
+  if (path === "") {
+    url.pathname = "/";
+    return withDefaultPath(url.href);
+  }
+  if (/\/episerver$/i.test(path)) {
+    url.pathname = DEFAULT_PATHS[0];
+  } else if (/\/optimizely$/i.test(path)) {
+    url.pathname = DEFAULT_PATHS[1];
   } else if (/\/opticli$/i.test(path)) {
     url.pathname = `${path}/mcp`;
   } else {
@@ -152,7 +181,7 @@ function forgetUnusedRegistration(url) {
   }
 }
 
-const url = endpoint(process.argv[2]);
+const url = await endpoint(process.argv[2]);
 console.error(`opticli: connecting to ${url}`);
 importDesktopSession();
 forgetUnusedRegistration(url);
