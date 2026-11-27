@@ -30,7 +30,7 @@
   <div class="guide-head">
     <h1>Read the site from Node.js scripts and playwright.config</h1>
     <p class="lead">Call opticli&#x27;s commands as typed methods from a Node.js script, and build Playwright projects from the site&#x27;s own data, such as one project per enabled language.</p>
-    <p class="guide-meta">Written for opticli 0.34.0 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/developers/node-scripts-and-playwright-config.md">Edit on GitHub</a></p>
+    <p class="guide-meta">Written for opticli 0.37.1 · <a href="https://github.com/Epinova/opticli/blob/main/docs/guides/developers/node-scripts-and-playwright-config.md">Edit on GitHub</a></p>
   </div>
   <div class="guide-body">
     <nav class="toc" aria-labelledby="toc-h"><p id="toc-h">On this page</p><ol><li><a href="#before-you-start">Before you start</a></li><li><a href="#steps">Steps</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#related">Related</a></li></ol></nav>
@@ -116,7 +116,9 @@ returns the JSON envelope.</p>
 <span class="t-w">  </span><span class="t-k">else</span><span class="t-w"> </span><span class="t-k">throw</span><span class="t-w"> </span><span class="t-nx">e</span><span class="t-p">;</span>
 <span class="t-p">}</span></code></pre></div>
 <p>A command that doesn't answer within two minutes is stopped and throws <code>code</code> <code>timeout</code>. Pass a longer <code>timeoutMs</code>
-in the run options, after the options object: <code>cli.search('Alloy', {}, { timeoutMs: 300_000 })</code>.</p>
+in the run options, after the options object: <code>cli.search('Alloy', {}, { timeoutMs: 300_000 })</code>, or to the client for
+every call: <code>new OptiCli({ timeoutMs: 300_000 })</code>. Only that opticli process is stopped; a site <code>opticli serve</code> runs
+keeps running.</p>
 <h2 id="if-something-goes-wrong">If something goes wrong</h2>
 <table>
 <thead>
