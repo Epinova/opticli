@@ -35,7 +35,7 @@
 
 | What | Linux / macOS | Windows |
 |---|---|---|
-| User config | `$XDG_CONFIG_HOME/opticli/config.json` (default `~/.config/opticli/config.json`) | `%APPDATA%\opticli\config.json` |
+| User config | `$XDG_CONFIG_HOME/opticli/config.json` (default `~/.config/opticli/config.json`), readable by you only (made so at every save, as it may hold connection strings with passwords) | `%APPDATA%\opticli\config.json` |
 | `serve` state, start lock, logs (the last 3 runs) and, against a shared database, what `serve` compared before the start | `$XDG_STATE_HOME/opticli/` (default `~/.local/state/opticli/`) | `%LOCALAPPDATA%\opticli\` |
 | IDE mode: where the IDE's site says it listens, with its token (`<project>.ide.json`, written and removed by the site), and opticli's copies of the agent that builds name as their startup hook (`agent/`) | `$XDG_STATE_HOME/opticli/`, readable by you only | `%LOCALAPPDATA%\opticli\` |
 | Generated passwords of `users add` | `$XDG_STATE_HOME/opticli/users/<project>/<name>.txt`, readable by you only (the folders too) | `%LOCALAPPDATA%\opticli\users\<project>\<name>.txt`, in your user profile, which other users can't read by default (opticli sets no ACL of its own) |

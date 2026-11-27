@@ -385,7 +385,16 @@ public static class UserConfig
 
     private static void Save(string configFile, JsonObject root)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(configFile)!);
+        var folder = Path.GetDirectoryName(configFile)!;
+        if (OperatingSystem.IsWindows() || Directory.Exists(folder))
+        {
+            Directory.CreateDirectory(folder);
+        }
+        else
+        {
+            // Holds connection strings with passwords: the user's own, as the state folder is.
+            Directory.CreateDirectory(folder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
         Replace(configFile, root.ToJsonString(WriteOptions) + System.Environment.NewLine);
     }
 
@@ -429,8 +438,8 @@ public static class UserConfig
 
     /// <summary>
     /// Writes through a temporary file next to it (unique, so two opticli runs can't mix their writes) that is renamed
-    /// over it. On Unix the temporary file is created with the config file's mode, user-only for a new one: the config
-    /// may hold a connection string.
+    /// over it. On Unix the file is user-only (read and write) whatever mode it had: the config may hold a connection string
+    /// with a password, and a file made by hand may have been readable by everyone.
     /// </summary>
     internal static void Replace(string configFile, string content)
     {
@@ -439,8 +448,8 @@ public static class UserConfig
         UnixFileMode? mode = null;
         if (!OperatingSystem.IsWindows())
         {
-            mode = File.Exists(configFile) ? File.GetUnixFileMode(configFile) : UnixFileMode.UserRead | UnixFileMode.UserWrite;
-            options.UnixCreateMode = mode.Value & (UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            mode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            options.UnixCreateMode = mode.Value;
         }
         try
         {
@@ -448,10 +457,9 @@ public static class UserConfig
             {
                 writer.Write(content);
             }
-            if (mode is { } original && !OperatingSystem.IsWindows())
+            if (mode is { } userOnly && !OperatingSystem.IsWindows())
             {
-                // Exactly the original mode, which the umask may have narrowed at creation; never wider before this.
-                File.SetUnixFileMode(temporary, original);
+                File.SetUnixFileMode(temporary, userOnly);
             }
             File.Move(temporary, configFile, overwrite: true);
         }

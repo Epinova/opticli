@@ -162,7 +162,8 @@ opticli apply about-us/plan.json --update-existing --dry-run    # against the de
   plan was read, and the version written of each branch; `apply` doesn't read it.
 - **Media**: the files come from `--blobs`, a folder holding the blob containers (a copy of the site's
   `App_Data/blobs`) or an Azure blob container's `https://` URL with a SAS token (read with a plain GET; the token is
-  never shown), or, for a local database, from the project's file blob folder (`EPiServer:Cms:FileBlobProvider:Path`,
+  never shown). On the command line the token is visible to other processes (`ps`) and in the shell's history: give
+  `--blobs -` to paste the URL at a prompt that doesn't show it, or to pipe it in (`... | opticli export ... --blobs -`). Or, for a local database, from the project's file blob folder (`EPiServer:Cms:FileBlobProvider:Path`,
   also from the environment). Media whose file isn't found is left out and listed; `--no-media` leaves all media out.
   Applied again, an upload whose file changed gets the new file.
 - **The result** counts items, steps, kinds, types, languages, files and `texts`, and `heldBack` (values a later `set`

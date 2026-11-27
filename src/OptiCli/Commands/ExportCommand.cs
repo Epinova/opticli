@@ -63,7 +63,7 @@ internal static class ExportCommand
         var noMedia = new Option<bool>("--no-media") { Description = "Leave media out: no files are read, and media is referred to by GUID (listed in externalRefs)." };
         var blobs = new Option<string?>("--blobs")
         {
-            Description = "Where media files are: a folder holding the blob containers (a copy of the site's App_Data/blobs), or the Azure container's https:// URL with a SAS token. Default for a local database: the project's file blob folder.",
+            Description = "Where media files are: a folder holding the blob containers (a copy of the site's App_Data/blobs), or the Azure container's https:// URL with a SAS token. Default for a local database: the project's file blob folder." + BlobsOption.Description,
             HelpName = "dir|url",
         };
         var site = new Option<string?>("--site") { Description = "Without a ref: export the site's start page with everything below it, its assets and the global assets. With a ref: the site a path ref belongs to.", HelpName = "name|host" };
@@ -114,7 +114,7 @@ internal static class ExportCommand
                 throw new UsageException("--no-media reads no files; leave --blobs out.");
             }
             var current = context.Environment.CurrentDirectory;
-            using var blobSource = parse.GetValue(blobs) is { } blobsValue ? BlobSource.Parse(blobsValue, current) : null;
+            using var blobSource = parse.GetValue(blobs) is { } blobsValue ? BlobSource.Parse(BlobsOption.Resolve(blobsValue), current) : null;
 
             var readAt = DateTime.UtcNow;
             await using var session = await context.OpenContentAsync(cancellationToken);
@@ -183,7 +183,7 @@ internal static class ExportCommand
             var plan = ExportPlanBuilder.Build(items);
             foreach (var (path, text) in plan.Texts)
             {
-                var file = Path.Combine(folder, path);
+                var file = Core.Export.ExportFiles.Inside(folder, path);
                 Directory.CreateDirectory(Path.GetDirectoryName(file)!);
                 await File.WriteAllTextAsync(file, text, new UTF8Encoding(false), cancellationToken);
             }

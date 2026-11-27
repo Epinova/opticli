@@ -9,7 +9,7 @@ public class UserConfigTests : IDisposable
     public void Dispose() => _root.Dispose();
 
     [Fact]
-    public void A_new_config_file_is_user_only_and_an_existing_one_keeps_its_mode()
+    public void The_config_file_is_user_only_also_when_it_was_readable_by_others()
     {
         if (OperatingSystem.IsWindows())
         {
@@ -21,10 +21,10 @@ public class UserConfigTests : IDisposable
         UserConfig.Replace(file, "{}");
         Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(file));
 
-        const UnixFileMode shared = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead;
-        File.SetUnixFileMode(file, shared);
+        // Made by hand, readable by everyone: it may hold a connection string with a password.
+        File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
         UserConfig.Replace(file, """{"projects": {}}""");
-        Assert.Equal(shared, File.GetUnixFileMode(file));
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(file));
         Assert.Equal("""{"projects": {}}""", File.ReadAllText(file));
     }
 

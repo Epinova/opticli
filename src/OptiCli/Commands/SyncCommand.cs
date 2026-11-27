@@ -45,7 +45,7 @@ internal static class SyncCommand
         var strict = new Option<bool>("--strict") { Description = "Fail (exit 5) when the source has content types or properties the local build lacks or has as another type, instead of skipping that content and dropping those values." };
         var blobs = new Option<string?>("--blobs")
         {
-            Description = "Where the source's media files are: a folder holding the blob containers (a copy of its App_Data/blobs), or the Azure container's https:// URL with a SAS token. Default for a local source: the project's file blob folder.",
+            Description = "Where the source's media files are: a folder holding the blob containers (a copy of its App_Data/blobs), or the Azure container's https:// URL with a SAS token. Default for a local source: the project's file blob folder." + BlobsOption.Description,
             HelpName = "dir|url",
         };
         var output = new Option<string?>("--out") { Description = "Keep the plan the sync applies (plan.json, files/, texts/) in this folder, new or empty. Default: a temporary folder, removed afterwards.", HelpName = "dir" };
@@ -113,7 +113,7 @@ internal static class SyncCommand
             {
                 throw new UsageException($"--from names the database sync pull writes to ('{sourceChosen.Database}' on '{sourceChosen.Server}').", "Give the other environment's database: `opticli db list` shows them.");
             }
-            using var blobSource = parse.GetValue(blobs) is { } blobsValue ? BlobSource.Parse(blobsValue, current) : null;
+            using var blobSource = parse.GetValue(blobs) is { } blobsValue ? BlobSource.Parse(BlobsOption.Resolve(blobsValue), current) : null;
 
             await using var targetSession = await context.OpenContentAsync(cancellationToken);
             var writes = context.Writes(targetSession, updateExisting: true, ask: false);
@@ -149,7 +149,7 @@ internal static class SyncCommand
             var media = blobSource ?? LocalBlobs(context, project, sourceChosen.IsLocal == true, warnings);
             var (blobRoot, _) = BlobLocator.Root(project.Directory, context.Environment.Variables);
             var keep = parse.GetValue(output) is { } kept ? Folder(kept, current) : null;
-            var folder = keep ?? Path.Combine(Path.GetTempPath(), $"opticli-sync-{Guid.NewGuid():N}");
+            var folder = keep ?? PrivateTemporary();
             var state = SyncState.Load(
                 SyncState.PathFor(context.Environment, project.Directory, sourceChosen.Target!, targetChosen.Target!),
                 project.Directory, sourceChosen.Target!, targetChosen.Target!);
@@ -307,6 +307,24 @@ internal static class SyncCommand
 
     private static SyncDatabase Database(ConnectionCandidate candidate) =>
         new(candidate.Server, candidate.Database, candidate.Role is { } role ? DatabaseRoles.Name(role) : null);
+
+    /// <summary>
+    /// The temporary folder a pull writes its plan to, readable by the user only: it holds the source's content (production's
+    /// too) until the pull removes it.
+    /// </summary>
+    private static string PrivateTemporary()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), $"opticli-sync-{Guid.NewGuid():N}");
+        if (OperatingSystem.IsWindows())
+        {
+            Directory.CreateDirectory(folder);
+        }
+        else
+        {
+            Directory.CreateDirectory(folder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+        return folder;
+    }
 
     /// <summary><c>--out</c>: a new or empty folder (the plan's files are written there and kept).</summary>
     internal static string Folder(string output, string current)
