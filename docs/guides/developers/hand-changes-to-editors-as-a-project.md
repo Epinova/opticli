@@ -3,7 +3,7 @@ title: Hand a batch of changes to editors as a project
 summary: Put the drafts a plan or your coding agent makes in a CMS project, so an editor reviews them together in the CMS and they go live in one go, when someone decides they should.
 audience: developers
 order: 6
-written-for: 0.33.0
+written-for: 0.38.0
 ---
 
 A feature often comes with content: a new section, a campaign across the start page and a few product pages, a
@@ -144,7 +144,8 @@ opticli projects publish "Spring campaign" --at 2027-03-01T06:00Z
 Only the items marked ready go live (`published`, or `scheduled` with `--at`); the rest stay drafts (`notReady`). Every
 ready item is checked first, as `publish` checks one, and one problem stops it with nothing published. On a terminal it
 shows what goes live, whose changes go with it and what stays behind, and asks. Changes of the colleague who marked an
-item ready (`readyBy`) need no confirming; anyone else's unpublished changes in a ready item need `--include-draft`.
+item ready (`readyBy`) need no confirming; anyone else's unpublished changes in a ready item need `--include-draft`, and
+so does a ready item older than a version someone else published since, which would replace their published changes.
 `projects reactivate` cancels a scheduled publish: the items become drafts again, to mark ready again.
 
 ## Running the plan again
@@ -166,6 +167,7 @@ production.
 | `projectsDisabled` | The site's edit UI has neither project mode nor the Projects gadget (`EPiServer:CmsUI:ProjectUI`). Turn one on, or save without a project. |
 | `nothingReady` | No item is marked ready: `projects ready <project> --all`, or mark the ones that should go live. |
 | `pendingDraft` on `projects ready` or `projects publish` | A colleague's unpublished changes. Ask them, then `--include-draft`. |
+| `newerPublished` on `projects publish` | A colleague published a newer version of a ready item, which the publish would replace. Ask them, then `--include-draft`; or save the item again into the project from its published version. |
 | A typo in the plan's project name made a second project | The dry run's `projects` shows `toCreate`; check it before the run. Delete the stray one with the `undo` command. |
 
 ## Related

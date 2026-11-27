@@ -27,6 +27,35 @@ public class PendingDraftsTests
         Assert.Equal(11, PendingDrafts.NewestByOthers(versions, baseVersion: 11, Agent)?.Id);
     }
 
+    private static EPiServer.DataAbstraction.ContentVersion Stored(int id, EPiServer.Core.VersionStatus status, string? savedBy, string? publishedBy = null) =>
+        new(new EPiServer.Core.ContentReference(123, id), "News", status, Monday.AddHours(id), savedBy, publishedBy ?? savedBy, 0, "en", true, false);
+
+    [Fact]
+    public void A_published_version_newer_than_the_one_a_publish_puts_live_is_replaced_by_it()
+    {
+        EPiServer.DataAbstraction.ContentVersion[] branch =
+        [
+            Stored(12, EPiServer.Core.VersionStatus.Published, "colleague@example.com", publishedBy: "lead@example.com"),
+            Stored(11, EPiServer.Core.VersionStatus.CheckedIn, "editor@example.com"),
+            Stored(10, EPiServer.Core.VersionStatus.PreviouslyPublished, "editor@example.com"),
+        ];
+
+        var newer = PendingDrafts.NewerPublished(branch, baseVersion: 11);
+        Assert.Equal(12, newer?.ContentLink.WorkID);
+        Assert.Null(PendingDrafts.NewerPublished(branch, baseVersion: 12));
+        Assert.Null(PendingDrafts.NewerPublished(branch, baseVersion: 13));
+        Assert.Null(PendingDrafts.NewerPublished(branch.Skip(1), baseVersion: 11));
+
+        // Who published it: whoever set its status, else whoever saved it.
+        Assert.Equal("lead@example.com", PendingDrafts.PublishedBy(newer!));
+        Assert.True(PendingDrafts.PublishedByOthers(newer!, "editor@example.com"));
+        Assert.False(PendingDrafts.PublishedByOthers(newer!, "Lead@example.com "));
+        Assert.True(PendingDrafts.PublishedByOthers(Stored(12, EPiServer.Core.VersionStatus.Published, "", ""), "editor@example.com"));
+        Assert.Equal("version 123_12, published by lead@example.com (2025-01-27 21:00:00Z)", PendingDrafts.DescribePublished(newer!));
+        Assert.Equal("version 123_12, published without a user name (a scheduled job or import) (2025-01-27 21:00:00Z)",
+            PendingDrafts.DescribePublished(Stored(12, EPiServer.Core.VersionStatus.Published, null, null)));
+    }
+
     [Fact]
     public void Drafts_saved_by_opticli_are_not()
     {

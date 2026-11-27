@@ -101,7 +101,10 @@
   but the assistant sets it itself; what the site allows is decided by
   `AllowPublish`, `AllowDelete` and the editor's access rights. It is needed also when the assistant publishes a
   version it names (`version`, or a `123_456` reference): unlike the CLI's `publish --version`, where naming the version
-  is the developer's choice, the assistant picks it. A review request (`requestApproval`) is never refused for someone
+  is the developer's choice, the assistant picks it. A named version older than the published one, which someone else
+  published since, would replace their published changes: that is a `conflict` with `reason: "newerPublished"`, whose
+  message names who published it and when, and `includeDraft` confirms it too. The editor's own newer published version
+  needs no confirmation. Either way the result's warning says whose published version was replaced. A review request (`requestApproval`) is never refused for someone
   else's changes, as the reviewer sees the whole version, but its result (and an `update_content` dry run's) names them
   in `pendingDraft`, so the assistant can tell the editor. It never puts a colleague's draft of a block of the content's
   "For this page" folder live along with a publish: such a block stays a draft unless the assistant names it in
@@ -111,7 +114,10 @@
   the changes of whoever marked an item ready (`readyBy`): a colleague who marked their own draft ready in the CMS, the
   reviewer who approved it under an approval sequence (the CMS records the reviewer), or the developer's opticli
   (`readyBy: "opticli"`). Changes of anyone else that a ready version carries still need `includeDraft`, and the result
-  names whose changes went live either way. Because the CMS records whoever marks a version ready as the one who saved
+  names whose changes went live either way. A ready item older than its published version (someone published a newer
+  one after the item was marked ready) would replace that published version: unless the editor published it, that is
+  a `newerPublished` problem, confirmed with `includeDraft` also when the colleague who marked the item ready published
+  it, since marking it ready came first. Because the CMS records whoever marks a version ready as the one who saved
   it, `mark_ready_to_publish` of a draft someone else saved needs `includeDraft` too: after it, the publish couldn't
   tell. The Projects gadget's own Publish (in the CMS) puts every unpublished item of a project live, ready or not,
   without asking about anyone's changes.

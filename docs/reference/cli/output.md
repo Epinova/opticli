@@ -26,7 +26,7 @@
 | 4 | `unreachable` | database or site agent not reachable, or a query failed on the server (a write that timed out may still have been saved) |
 | 4 | `login_failed` | the database server answered but refused the login: the identity has no user in the database (`error.details.identity` names it, also for Microsoft Entra), a wrong password, or a database that doesn't exist |
 | 4 | `timeout` | `jobs run --timeout` ran out: the job goes on running |
-| 5 | `conflict` / `validation` / `drift` | a newer version exists, a publish would include someone else's unpublished changes (`details.reason: "pendingDraft"`), the CMS rejected the values, or a write against a shared database that differs from the build wasn't confirmed (`details` is the drift report) |
+| 5 | `conflict` / `validation` / `drift` | a newer version exists, a publish would include someone else's unpublished changes (`details.reason: "pendingDraft"`), a project item would replace a newer version someone else published (`"newerPublished"`), the CMS rejected the values, or a write against a shared database that differs from the build wasn't confirmed (`details` is the drift report) |
 | 6 | `needs_selection` | the user must choose the development database first (`error.details.choices`) |
 | 7 | `job_failed` | a job `jobs run` ran didn't succeed: it failed, couldn't start, or was stopped or aborted (`error.details` has its status and message) |
 | 130 | `cancelled` | interrupted (Ctrl+C); an `apply` reports what it saved until then |

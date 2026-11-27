@@ -74,6 +74,25 @@ public sealed class ToolTests
     }
 
     [Fact]
+    public async Task Replacing_a_newer_version_someone_else_published_is_asked_about_as_their_drafts_are()
+    {
+        await using var site = await TestSite.StartAsync(o => o.AllowPublish = true);
+        await using var client = await Connect(site);
+        var tools = (await client.ListToolsAsync()).ToDictionary(t => t.Name, t => t.ProtocolTool);
+
+        // A refusal with reason newerPublished is confirmed with includeDraft, after asking the user, on both publish tools.
+        var instructions = McpInstructions.For(new OptiCliMcpOptions { AllowPublish = true });
+        Assert.Contains("or with reason newerPublished (the version would replace a newer one someone else published, replacing their published changes), tell the user whose changes they are and ask before retrying with includeDraft. This applies also when you publish a version you named.", instructions);
+        Assert.Contains("whose newer published version an older ready item would replace (newerPublished, which needs includeDraft)", McpInstructions.ProjectPublishing);
+        Assert.Contains("needs includeDraft when someone else published it", tools["publish_content"].Description);
+        Assert.Contains("replace a newer version someone else published (a refusal with reason newerPublished): only after asking the user",
+            tools["publish_content"].InputSchema.GetProperty("properties").GetProperty("includeDraft").GetProperty("description").GetString());
+        Assert.Contains("(a problem with reason newerPublished, or a warning)", tools["publish_project"].Description);
+        Assert.Contains("replace the newer version someone else published of a ready item older than it (newerPublished): only after asking the user",
+            tools["publish_project"].InputSchema.GetProperty("properties").GetProperty("includeDraft").GetProperty("description").GetString());
+    }
+
+    [Fact]
     public async Task Publishing_a_project_is_offered_whether_or_not_the_site_allows_publishing()
     {
         await using var site = await TestSite.StartAsync(o => o.AllowPublish = true);
@@ -266,7 +285,8 @@ public sealed class ToolTests
         // The instructions: ask the user before retrying with includeDraft, for a block's draft as for the content's; and
         // others' drafts of the content's blocks go along only when named.
         var instructions = McpInstructions.For(new OptiCliMcpOptions());
-        Assert.Contains("when it has a path, a write would save a new version of a block over a draft someone else saved, replacing their changes), tell the user whose changes they are and ask before retrying with includeDraft", instructions);
+        Assert.Contains("when it has a path, a write would save a new version of a block over a draft someone else saved, replacing their changes), or with reason newerPublished", instructions);
+        Assert.Contains("tell the user whose changes they are and ask before retrying with includeDraft", instructions);
         Assert.Contains("includeDraft never puts someone else's drafts of the content's blocks live along with it: a dry run's warnings name those, and only naming them in publish_content's blocks does", instructions);
         Assert.Contains("and so does a block whose draft someone else saved: naming it in blocks is what puts their changes live, includeDraft doesn't, so ask the user first", McpInstructions.SharedBlocks);
     }

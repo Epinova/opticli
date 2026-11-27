@@ -28,7 +28,7 @@ internal sealed class WriteTools(IHttpContextAccessor http, IOptions<OptiCliMcpO
 
     internal const string PublishAt = "Schedule publishing for this time (ISO 8601 with offset, e.g. 2026-10-05T08:00:00+02:00): only when the user asked for it.";
 
-    internal const string IncludeDraft = "Also put live the unpublished changes someone else saved (the pendingDraft of a refused call): only after asking the user.";
+    internal const string IncludeDraft = "Also put live the unpublished changes someone else saved (the pendingDraft of a refused call), or replace a newer version someone else published (a refusal with reason newerPublished): only after asking the user.";
 
     internal const string IncludeDraftWrite = "Confirms someone else's unpublished changes that the call was refused for (its pendingDraft), only after asking the user: with publish, they go live too; a pendingDraft with a path is a draft of a block of the content's \"For this page\" folder that a whole-area write would save the block's new version over, replacing their changes. It never puts someone else's draft of another block live along with a publish: only naming the block in publish_content's blocks does.";
 

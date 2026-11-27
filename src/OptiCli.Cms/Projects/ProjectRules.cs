@@ -176,8 +176,12 @@ internal static class ProjectRules
         var listed = string.Join("; ", problems.Take(5).Select(p => p.Problem!.Message));
         var more = problems.Count > 5 ? $"; and {problems.Count - 5} more" : "";
         var message = $"Can't {action} project {project}: {problems.Count} of {items.Count} item(s) can't go ahead. {listed}{more}";
+        // Someone else's drafts going live and their newer published versions replaced: both confirmed by includeDraft.
+        var confirmable = reasons.All(r => r is AgentErrorReasons.PendingDraft or AgentErrorReasons.NewerPublished);
         var hint = pendingOnly
             ? "Ask whether those changes should go live too; if so, retry with includeDraft. Nothing was changed."
+            : confirmable
+                ? "Tell the user whose changes those are: their unpublished changes would go live (pendingDraft), or their newer published version would be replaced (newerPublished). Ask whether to go ahead; if so, retry with includeDraft. Nothing was changed."
             : shared == AgentErrorReasons.ApprovalSequence
                 ? approvalHint ?? "Retry with requestApproval to send those items for review instead (their reviewers then approve them). Nothing was changed."
                 : "Each item's problem is in error.project; fix them (or leave those items out) and retry. Nothing was changed.";

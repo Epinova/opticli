@@ -794,8 +794,11 @@ compared (`checked: false`).
   names that one). After an approval, `readyBy` is the reviewer (the CMS records them). `projects ready` of an item
   whose version someone else saved is a `conflict` (`pendingDraft`) without `--include-draft`: the CMS records whoever
   marks a version ready as the one who saved it.
+- A ready item older than a version someone else published since would replace their published changes: its problem
+  is a `conflict` with reason `newerPublished` (who published it, and when). Ask the user; `--include-draft` confirms it,
+  and the item's warning (`code: "newerPublished"`) then names the version it replaces.
 - A refusal over items (`details.reason`: `projectItems`, or the reason all of them share: `pendingDraft`,
-  `approvalSequence`, `inReview`) has `details.project` with every item and its `problem` (`code`, `message`,
+  `newerPublished`, `approvalSequence`, `inReview`) has `details.project` with every item and its `problem` (`code`, `message`,
   `reason`); nothing was changed. `nothingReady`: no item is ready. `projectsDisabled` (exit 3): the site's edit UI has
   neither project mode nor the Projects gadget.
 - `projects publish` on a terminal shows what goes live and what stays behind and asks; elsewhere it publishes as asked.

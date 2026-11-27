@@ -60,6 +60,13 @@ public static class AgentErrorReasons
     public const string PendingDraft = Protocol.PendingDraft.Reason;
 
     /// <summary>
+    /// Conflict: the version a publish would put live is older than the published version, which someone else published
+    /// since, so their published changes would be replaced. The message names who published it and when; retry with
+    /// <c>includeDraft</c> to confirm, as for <see cref="PendingDraft"/>.
+    /// </summary>
+    public const string NewerPublished = "newerPublished";
+
+    /// <summary>
     /// Refused: the content has an approval sequence, so it can't be published directly. Retry with
     /// <c>requestApproval</c> to start the sequence.
     /// </summary>
@@ -198,4 +205,10 @@ public static class ValidationIssueCodes
     /// exists (<c>ReferencingContentValidator</c>); the message names the reference's ID or GUID.
     /// </summary>
     public const string UnresolvedReference = "unresolvedReference";
+
+    /// <summary>
+    /// A warning of a publish whose version is older than the published version (<see cref="AgentErrorReasons.NewerPublished"/>):
+    /// the publish replaces (or replaced) that published version. The message names who published it and when.
+    /// </summary>
+    public const string NewerPublished = AgentErrorReasons.NewerPublished;
 }

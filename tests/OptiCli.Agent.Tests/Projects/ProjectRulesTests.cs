@@ -132,6 +132,22 @@ public class ProjectRulesTests
     private static PendingDraft Pending(string version) => new(version, "colleague@example.com", DateTime.UtcNow, []);
 
     [Fact]
+    public void A_refusal_over_newer_published_versions_is_confirmed_by_includeDraft_also_mixed_with_others_drafts()
+    {
+        var replaced = new ProjectItemProblem(AgentErrorCodes.Conflict, "1: would replace the published version 1_9", AgentErrorReasons.NewerPublished);
+
+        var only = ProjectRules.Refusal("publish", "3 ('Launch')", Result, [Item(1, replaced), Item(2)]);
+        Assert.Equal((AgentErrorCodes.Conflict, AgentErrorReasons.NewerPublished), (only.Code, only.Reason));
+        Assert.Contains("retry with includeDraft", only.Hint);
+
+        var mixed = ProjectRules.Refusal("publish", "3 ('Launch')", Result,
+            [Item(1, replaced), Item(3, new ProjectItemProblem(AgentErrorCodes.Conflict, "3: a draft", AgentErrorReasons.PendingDraft), Pending("3_9"))]);
+        Assert.Equal(AgentErrorReasons.ProjectItems, mixed.Reason);
+        Assert.Contains("retry with includeDraft", mixed.Hint);
+        Assert.Contains("newerPublished", mixed.Hint);
+    }
+
+    [Fact]
     public void A_refusal_has_the_code_of_its_most_serious_problem_and_carries_every_item()
     {
         List<ProjectItemResult> items =

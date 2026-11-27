@@ -1468,6 +1468,105 @@ public class SharedAreaBlockTests
         Assert.Empty(site.Store.Saves);
     }
 
+    /// <summary>
+    /// A page with a version the editor saved (<paramref name="olderAction"/>: a draft, or marked ready) that is older than
+    /// the version <paramref name="publishedBy"/> published after it.
+    /// </summary>
+    private static (Page Page, ContentReference Older, ContentReference Newer) OlderThanPublished(Site site, SaveAction olderAction = SaveAction.Save, string publishedBy = "colleague@example.com")
+    {
+        var page = Neutral(site, site.Page());
+        site.Store.SavedBy = "editor";
+        var older = (Page)((IReadOnly)page).CreateWritableClone();
+        older.Property["Title"].Value = "Older";
+        var olderLink = site.Store.Save(older, olderAction | SaveAction.ForceNewVersion, null);
+        site.Store.SavedBy = publishedBy;
+        var newer = (Page)((IReadOnly)site.Store.Get(olderLink)!).CreateWritableClone();
+        newer.Property["Title"].Value = "Newer";
+        var newerLink = site.Store.Save(newer, SaveAction.Publish, null);
+        site.Store.SavedBy = AgentProtocol.PrincipalName;
+        site.Store.Saves.Clear();
+        return (page, olderLink, newerLink);
+    }
+
+    private static WriteResult PublishVersion(Site site, ContentReference version, bool includeDraft = false, bool dryRun = false) =>
+        PublishOperation.Run(site.Call, version.ToString(), new PublishRequest { IncludeDraft = includeDraft, DryRun = dryRun }, site.Flow(shared: false));
+
+    [Fact]
+    public void An_editors_publish_of_a_version_older_than_a_colleagues_published_one_needs_includeDraft()
+    {
+        var site = new Site(CmsCaller.Editor);
+        var (page, older, newer) = OlderThanPublished(site);
+
+        var refused = Assert.Throws<AgentException>(() => PublishVersion(site, older));
+
+        Assert.Equal((AgentErrorCodes.Conflict, AgentErrorReasons.NewerPublished), (refused.Code, refused.Reason));
+        Assert.Contains($"would replace the published version {newer}, published by colleague@example.com (", refused.Message);
+        Assert.Contains("includeDraft", refused.Hint);
+        Assert.Empty(site.Store.Saves);
+        Assert.Equal("Newer", Title(site.Stored(page.ContentLink.ToReferenceWithoutVersion())));
+
+        // The dry run passes, and says what the publish would replace and that it needs confirming.
+        var dry = PublishVersion(site, older, dryRun: true);
+        Assert.True(dry.Valid);
+        var planned = Assert.Single(dry.Validation!, i => i.Code == ValidationIssueCodes.NewerPublished);
+        Assert.Equal("warning", planned.Severity);
+        Assert.Contains($"older than the published version {newer}, published by colleague@example.com", planned.Message);
+        Assert.Contains("would replace (the publish needs includeDraft", planned.Message);
+
+        // Confirmed, it goes live, and the result says whose published version it replaced.
+        var result = PublishVersion(site, older, includeDraft: true);
+        Assert.True(result.Published);
+        Assert.Equal(newer.WorkID, result.PreviouslyPublished);
+        Assert.Contains(result.Validation!, i => i.Code == ValidationIssueCodes.NewerPublished && i.Message.Contains("publishing it replaced that version"));
+        Assert.Equal("Older", Title(site.Stored(page.ContentLink.ToReferenceWithoutVersion())));
+    }
+
+    [Theory]
+    [InlineData(true, "colleague@example.com")]
+    [InlineData(false, "editor")]
+    public void A_named_version_older_than_the_published_one_goes_live_with_a_warning_for_the_developer_or_over_the_editors_own(bool developer, string publishedBy)
+    {
+        // The developer named the version (opticli publish --version); the editor replaces only their own published version.
+        var site = new Site(developer ? CmsCaller.Developer : CmsCaller.Editor);
+        var (page, older, newer) = OlderThanPublished(site, publishedBy: publishedBy);
+
+        var dry = PublishVersion(site, older, dryRun: true);
+        var result = PublishVersion(site, older);
+
+        Assert.DoesNotContain("includeDraft", Assert.Single(dry.Validation!, i => i.Code == ValidationIssueCodes.NewerPublished).Message);
+        Assert.True(result.Published);
+        var warning = Assert.Single(result.Validation!, i => i.Code == ValidationIssueCodes.NewerPublished);
+        Assert.Contains($"version {newer}, published by {publishedBy}", warning.Message);
+        Assert.Equal("Older", Title(site.Stored(page.ContentLink.ToReferenceWithoutVersion())));
+    }
+
+    [Fact]
+    public async Task A_project_publish_of_a_ready_item_older_than_a_colleagues_published_version_needs_includeDraft()
+    {
+        var site = new Site(CmsCaller.Editor);
+        var (page, older, newer) = OlderThanPublished(site, SaveAction.CheckIn);
+        site.Projects.Add(1, "Launch");
+        site.Projects.AddItem(1, older, null);
+
+        var dry = await ProjectPublishOperation.RunAsync(site.Call, "1", new ProjectPublishRequest { DryRun = true });
+
+        Assert.False(dry.Valid);
+        var item = Assert.Single(dry.Published!);
+        Assert.Equal((AgentErrorCodes.Conflict, AgentErrorReasons.NewerPublished), (item.Problem!.Code, item.Problem.Reason));
+        Assert.Contains($"would replace the published version {newer}, published by colleague@example.com", item.Problem.Message);
+
+        var refused = await Assert.ThrowsAsync<AgentException>(() => ProjectPublishOperation.RunAsync(site.Call, "1", new ProjectPublishRequest()));
+        Assert.Equal((AgentErrorCodes.Conflict, AgentErrorReasons.NewerPublished), (refused.Code, refused.Reason));
+        Assert.Contains("retry with includeDraft", refused.Hint);
+        Assert.Equal("Newer", Title(site.Stored(page.ContentLink.ToReferenceWithoutVersion())));
+
+        var confirmed = await ProjectPublishOperation.RunAsync(site.Call, "1", new ProjectPublishRequest { DryRun = true, IncludeDraft = true });
+        Assert.True(confirmed.Valid);
+        var warning = Assert.Single(Assert.Single(confirmed.Published!).Validation!, i => i.Code == ValidationIssueCodes.NewerPublished);
+        Assert.Contains($"version {newer}, published by colleague@example.com", warning.Message);
+        Assert.Contains("would replace", warning.Message);
+    }
+
     /// <summary>A block of <paramref name="folder"/> that is published (<paramref name="title"/>) and has a newer draft (<paramref name="draft"/>).</summary>
     private static IContent LiveWithDraft(Site site, ContentReference folder, string name, string title, string draft)
     {

@@ -59,7 +59,7 @@ internal static class ProjectPublishOperation
         }
         var visible = all.Where(i => i.Version is null || call.CanRead(i.Version)).ToList();
         var plans = visible.Select(item => item.State == ProjectItemState.Ready
-            ? Check(call, flow, projects, item, action, body.IncludeDraft)
+            ? Check(call, flow, projects, item, action, body.IncludeDraft, body.DryRun)
             : new ItemPlan(item, new ProjectItemResult { Content = projects.Summary(item), Outcome = ProjectRules.PublishOutcome(item.State, scheduling) })).ToList();
         var ready = plans.Where(p => p.Item.State == ProjectItemState.Ready).ToList();
         // Where the site's edit UI makes new blocks in an area shared: the drafts of the blocks of each item's own "For this
@@ -179,7 +179,7 @@ internal static class ProjectPublishOperation
     private sealed record ItemPlan(LoadedItem Item, ProjectItemResult Result);
 
     /// <summary>The checks a single publish of the ready item's version makes, as a problem when one fails.</summary>
-    private static ItemPlan Check(CmsCall call, WriteFlow flow, ProjectContext projects, LoadedItem item, SaveAction action, bool includeDraft)
+    private static ItemPlan Check(CmsCall call, WriteFlow flow, ProjectContext projects, LoadedItem item, SaveAction action, bool includeDraft, bool dryRun)
     {
         var outcome = WriteFlow.Kind(action) == SaveAction.Schedule ? ProjectItemOutcomes.Scheduled : ProjectItemOutcomes.Published;
         var version = item.Version!;
@@ -223,7 +223,21 @@ internal static class ProjectPublishOperation
                     $"Publishing {what} would also put live {unconfirmed.Describe()}{(readyBy is null ? "" : $" ({readyBy} marked it ready, but those changes aren't theirs)")}.",
                     AgentErrorReasons.PendingDraft), pending: unconfirmed, readyBy: readyBy);
             }
+            // A ready version older than the published one (published since it was marked ready) replaces it, and the changes
+            // published in it: someone else's need includeDraft, also when the one who marked it ready published them, as
+            // marking it ready came before.
+            var newer = PendingDrafts.NewerPublished(branch, version.ContentLink.WorkID);
+            if (newer is not null && !includeDraft && PendingDrafts.PublishedByOthers(newer, call.UserName))
+            {
+                return Problem(new ProjectItemProblem(AgentErrorCodes.Conflict, PendingDrafts.ReplacesMessage(what, version.ContentLink, newer), AgentErrorReasons.NewerPublished),
+                    pending: pending, readyBy: readyBy);
+            }
             var warnings = issues.ToList();
+            if (newer is not null)
+            {
+                warnings.Add(PendingDrafts.Replaced(version.ContentLink, newer,
+                    dryRun ? "would replace" : WriteFlow.Kind(action) == SaveAction.Schedule ? "will replace" : "replaced"));
+            }
             if (version is IVersionable { StopPublish: { } stop } && stop <= DateTime.Now)
             {
                 warnings.Add(new ValidationIssue(PropertyWriter.StopPublishKey,

@@ -78,7 +78,12 @@ from the gadget than from opticli.
 - Before anything is published, every ready item goes through `publish`'s checks: an approval sequence (the version must
   have been approved), validation, and other people's unpublished changes. One problem stops the whole publish with
   nothing published, each item's `problem` in `details.project` (`details.reason` is the one the problems share, such as
-  `pendingDraft`, else `projectItems`). No item ready is a `conflict` (`details.reason: "nothingReady"`). A passed
+  `pendingDraft`, else `projectItems`).
+- A ready item older than its published version (someone published a newer version after it was saved) would replace
+  that published version and the changes in it: when someone other than opticli published it, that is the item's
+  problem, `conflict` with reason `newerPublished`, naming who published it and when. `--include-draft` confirms it, as
+  it does other people's drafts (on a terminal, the prompt asks about both). The item's warnings then say which published
+  version it replaces (`code: "newerPublished"`). No item ready is a `conflict` (`details.reason: "nothingReady"`). A passed
   stop-publish date is a warning.
 - **Marking an item ready is consent to publish it.** The changes of whoever marked an item ready (`readyBy`) go live
   without `--include-draft`, also their own older drafts in it; after an approval that is the reviewer, whom the CMS
@@ -87,7 +92,8 @@ from the gadget than from opticli.
   either way.
 - On a terminal (stdin, stdout and stderr), `projects publish` first does a dry run, shows what goes live and whose
   changes go with it, what stays behind and what is published already, and asks; no is a `conflict` (exit 5, "Not
-  published, as answered"). Elsewhere it publishes as asked, and other people's changes need `--include-draft`.
+  published, as answered"). Elsewhere it publishes as asked, and other people's changes, and their newer published
+  versions an item would replace, need `--include-draft`.
 - It publishes through the site's `ProjectPublisher` (a site's own one too) and waits until every item has been tried.
   The result has `published[]` (or `scheduled[]` and `scheduledFor`), `notReady[]`, `alreadyPublished[]`, `failed[]`
   (each with the CMS's message in `error`; the publish's own in `siteError`), and per item `previouslyPublished`. When an item fails, the others still go
