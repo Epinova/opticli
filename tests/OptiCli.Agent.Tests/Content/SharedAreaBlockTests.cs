@@ -377,7 +377,8 @@ public class SharedAreaBlockTests
 
         /// <param name="publishing">The publishing gate (the MCP module's AllowPublish): throws where publishing is off.</param>
         /// <param name="tabs">The site's tabs; none by default.</param>
-        public Site(CmsCaller caller = CmsCaller.Developer, Action? publishing = null, TabDefinition[]? tabs = null)
+        /// <param name="metadata">The CMS edit UI's metadata; none by default.</param>
+        public Site(CmsCaller caller = CmsCaller.Developer, Action? publishing = null, TabDefinition[]? tabs = null, IEditUiMetadata? metadata = null)
         {
             var handlers = new Dictionary<string, Delegate?>();
             var (events, eventsRecorder) = Recorder<IContentEvents>.Create();
@@ -422,6 +423,7 @@ public class SharedAreaBlockTests
             var services = new ServiceCollection()
                 .AddSingleton(types)
                 .AddSingleton(repository)
+                .AddSingleton<IContentLoader>(repository)
                 .AddSingleton(versions)
                 .AddSingleton(validation)
                 .AddSingleton(events)
@@ -438,9 +440,12 @@ public class SharedAreaBlockTests
                 .AddSingleton(Sites(Applications))
                 .AddSingleton(new EPiServer.Web.SystemDefinition(new ContentReference(1), new ContentReference(2), new ContentReference(4), AssetsRoot))
                 .AddSingleton(EditUiPropertiesTests.Tabs(tabs ?? []))
-                .AddSingleton<IPrincipalAccessor>(new CmsCallTests.PrincipalAccessor(new GenericPrincipal(new GenericIdentity("editor"), [])))
-                .BuildServiceProvider();
-            Call = new CmsCall(services, CancellationToken.None, caller, publishing);
+                .AddSingleton<IPrincipalAccessor>(new CmsCallTests.PrincipalAccessor(new GenericPrincipal(new GenericIdentity("editor"), [])));
+            if (metadata is not null)
+            {
+                services.AddSingleton(metadata);
+            }
+            Call = new CmsCall(services.BuildServiceProvider(), CancellationToken.None, caller, publishing);
         }
 
         /// <summary>A page of versions, its total count in the out parameter.</summary>
@@ -1220,6 +1225,72 @@ public class SharedAreaBlockTests
 
         Assert.Equal(SharedBlockActions.Updated, Assert.Single(result.SharedBlocks!).Action);
         Assert.Equal("New", Title(site.Store.Latest(block.ContentLink.ID)));
+    }
+
+    /// <summary>
+    /// The CMS edit UI's metadata, faked: a BoxBlock's Area takes only ItemBlocks (as an editor descriptor for its UIHint
+    /// would set), and nothing is hidden or locked.
+    /// </summary>
+    private sealed class ItemsOnly : IEditUiMetadata
+    {
+        public IReadOnlyDictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>? Restricted(IContentData owner, IContent? model = null) =>
+            new Dictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>(ReferenceEqualityComparer.Instance) { [owner] = new Dictionary<string, PropertyAccess>() };
+
+        public IReadOnlyDictionary<string, EditUiTypes>? Types(ContentType type) => type.ID == BoxType
+            ? new Dictionary<string, EditUiTypes> { ["Area"] = new([typeof(PropertyWriterTests.ItemBlock).FullName!.ToLowerInvariant()], []) }
+            : null;
+    }
+
+    /// <summary>The paths of the errors a dry run of the write reports.</summary>
+    private static List<string?> Errors(Site site, WriteFlow flow, Page page, string json)
+    {
+        var (writable, before) = site.Write(flow, page, json);
+        return [.. (site.Save(flow, writable, before, dryRun: true).Validation ?? []).Where(i => i.Severity == "error").Select(i => i.Property)];
+    }
+
+    [Fact]
+    public void The_edit_uis_types_are_checked_in_the_local_inline_and_new_shared_blocks_a_write_changes()
+    {
+        var site = new Site(CmsCaller.Editor, metadata: new ItemsOnly());
+        var page = Neutral(site, site.Page(folder: true));
+        const string boxInBox = """{"Area": [{"type": "BoxBlock", "properties": {"Area": [{"type": "BoxBlock", "properties": {"Title": "y"}}]}}]}""";
+
+        // A local block's area, against the local block's type.
+        Assert.Equal(["Hero.Area"], Errors(site, site.Flow(shared: false), page, """{"Hero": {"Area": [{"type": "BoxBlock", "properties": {"Title": "x"}}]}}"""));
+        Assert.Empty(Errors(site, site.Flow(shared: false), page, """{"Hero": {"Area": [{"type": "ItemBlock", "properties": {"Title": "x"}}]}}"""));
+        // An inline block's area (the page's own area takes any block).
+        Assert.Equal(["Area[0].Area"], Errors(site, site.Flow(shared: false), page, boxInBox));
+        // A new shared block's area, where the site makes new blocks shared.
+        Assert.Equal(["Area[0].Area"], Errors(site, site.Flow(), page, boxInBox));
+        Assert.Empty(Errors(site, site.Flow(), page, """{"Area": [{"type": "BoxBlock", "properties": {"Area": [{"type": "ItemBlock", "properties": {"Title": "y"}}]}}]}"""));
+        Assert.DoesNotContain(site.Store.Saves, s => s.Kind != typeof(ContentAssetFolder));
+    }
+
+    [Fact]
+    public void What_a_local_block_or_a_taken_over_block_held_already_may_stay_but_nothing_more()
+    {
+        var site = new Site(CmsCaller.Editor, metadata: new ItemsOnly());
+        var page = Neutral(site, site.Page(folder: true));
+        // Shared blocks are no ItemBlocks to the rule (their class is Shared): an area with the rule doesn't take them.
+        var held = Neutral(site, site.Block(AssetsRoot, "Held", "h"));
+        var added = Neutral(site, site.Block(AssetsRoot, "Added", "a"));
+        var outer = Neutral(site, site.Block(site.Folder(page).ContentLink, "Outer", "Old", type: BoxType));
+        var area = new ContentArea();
+        area.Items.Add(Ref(held));
+        site.Store.Latest(outer.ContentLink.ID).Property["Area"].Value = area;
+        var withHero = (Page)((IReadOnly)site.Store.Latest(page.ContentLink.ID)).CreateWritableClone();
+        ((BlockData)withHero.Property["Hero"].Value).Property["Area"].Value = area.CreateWritableClone();
+        site.Store.Save(withHero, SaveAction.Publish, null);
+        page = OwnerOf(site, outer, Ref(outer));
+        site.Store.Saves.Clear();
+        var h = held.ContentLink.ID;
+        var a = added.ContentLink.ID;
+
+        Assert.Empty(Errors(site, site.Flow(), page, $$$"""{"Hero": {"Title": "Changed", "Area": [{"ref": "{{{h}}}"}]}}"""));
+        Assert.Equal(["Hero.Area"], Errors(site, site.Flow(), page, $$$"""{"Hero": {"Area": [{"ref": "{{{h}}}"}, {"ref": "{{{a}}}"}]}}"""));
+        Assert.Empty(Errors(site, site.Flow(), page, $$$"""{"Area": [{"type": "BoxBlock", "name": "Outer", "properties": {"Title": "New", "Area": [{"ref": "{{{h}}}"}]}}]}"""));
+        Assert.Equal(["Area[0].Area"], Errors(site, site.Flow(), page, $$$"""{"Area": [{"type": "BoxBlock", "name": "Outer", "properties": {"Title": "New", "Area": [{"ref": "{{{h}}}"}, {"ref": "{{{a}}}"}]}}]}"""));
+        Assert.Empty(site.Store.Saves);
     }
 
     [Fact]

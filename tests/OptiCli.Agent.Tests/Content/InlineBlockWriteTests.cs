@@ -75,6 +75,8 @@ public class InlineBlockWriteTests
         [System.ComponentModel.DataAnnotations.ScaffoldColumn(false)]
         public virtual string? Secret { get; set; }
 
+        /// <summary>With a UIHint, so an editor descriptor may set its types (<see cref="EditUiTypeRules"/>).</summary>
+        [System.ComponentModel.DataAnnotations.UIHint("items")]
         public virtual ContentArea? Area { get; set; }
 
         public virtual PropertyWriterTests.ItemBlock? Inner { get; set; }

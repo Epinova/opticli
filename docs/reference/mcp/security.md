@@ -26,7 +26,9 @@
   - the types such an editor descriptor sets: the CMS checks only `[AllowedTypes]` on save, so content that a write
     adds to one of these ContentAreas or reference properties, and that the edit UI wouldn't offer there, is a
     validation error (`valid: false` in a dry run), as for `[AllowedTypes]`. What the property already holds may stay.
-    The content's own properties are checked, not those of blocks inside it;
+    Every content item and block the write changes is checked against its own type: the content's properties, those of
+    the local and inline blocks in it, and those of the shared blocks it makes or takes over in the content's "For this
+    page" folder. What a block's property held before may stay too (a block taken over: its latest version);
   - content references: every one is looked up as the editor, also in rich text (embedded blocks), so an assistant
     can't point to content the edit UI's pickers wouldn't offer, or learn from a dry run that it exists. The CMS's own
     text forms of a ContentArea or a reference list, which skip that, are refused: give an array of refs;
