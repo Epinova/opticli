@@ -53,7 +53,17 @@ header nav { display: flex; gap: 26px; margin-left: auto; font-weight: 600; }
 header nav a { text-decoration: none; color: var(--soft); }
 header nav a:hover { color: var(--ink); }
 header nav .area { color: var(--ink); }
-@media (max-width: 760px) { header nav .sec { display: none; } header nav { gap: 16px; font-size: .95rem; } }
+/* On a phone the header stays one row: GitHub moves to the footer, "Coding agents" shortens to "Agents", and Guides stays. */
+header nav .sm { display: none; }
+@media (max-width: 760px) {
+  header .wrap { gap: 16px; }
+  header nav { gap: 16px; font-size: .95rem; }
+  header nav .sec { display: none; }
+  header nav .sec.guides { display: inline; color: var(--ink); }
+  header nav .lg { display: none; }
+  header nav .sm { display: inline; }
+}
+@media (max-width: 370px) { .mark { font-size: 1.3rem; } header nav { gap: 13px; font-size: .92rem; } }
 header nav a[aria-current="page"] { color: var(--ink); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: .5em; }
 
 /* Actions */

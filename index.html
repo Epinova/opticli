@@ -12,7 +12,7 @@
 <meta name="twitter:card" content="summary">
 <meta name="color-scheme" content="light dark">
 <link rel="preload" href="fonts/schibsted-grotesk.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=47224649ae">
+<link rel="stylesheet" href="style.css?v=80f830025b">
 <script>
 // Before the first paint: the examples start empty, so hide what the first play builds up. motion.js takes over;
 // without it (no script, a failed load) the page shows everything again after 3 seconds.
@@ -102,6 +102,29 @@ h1 { font-weight: 800; font-size: clamp(2.5rem, 5.6vw, 4.8rem); line-height: 1.0
 .release .all { display: inline-block; margin-top: 16px; font-weight: 700; }
 @media (max-width: 900px) { .release { grid-template-columns: minmax(0, 1fr); } }
 
+/* Guides: two per area in the area's ink, plain on the ground like the releases, each column ending in a link to the rest.
+   The tests guides live under "For developers" on the guides page. */
+.guides-home { margin-top: 112px; }
+.guides-home .head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 20px 72px; align-items: end; }
+.guides-home h2 { font-weight: 800; font-size: clamp(2rem, 3.4vw, 3rem); line-height: 1.05; letter-spacing: -.03em; }
+.guides-home .head p { color: var(--soft); max-width: 56ch; }
+.gcols { margin-top: 40px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; }
+.gcol { --c: var(--p1-ink); display: flex; flex-direction: column; }
+.gcol.p2 { --c: var(--p2-ink); }
+.gcol.p3 { --c: var(--p3-ink); }
+.gcol h3 { display: flex; align-items: center; gap: 12px; font-weight: 800; font-size: 1.3rem; letter-spacing: -.015em; padding-bottom: 14px; }
+.gcol h3::before { content: ""; flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--c); }
+.gcol ol { list-style: none; margin: 0; padding: 0; }
+.gcol li { border-top: 1px solid color-mix(in srgb, var(--ink) 14%, var(--ground)); }
+.gcol li a { display: grid; gap: 4px; padding: 16px 0; text-decoration: none; }
+.gcol li a:hover b { text-decoration: underline; text-decoration-thickness: 2px; }
+.gcol li b { font-weight: 700; font-size: 1.08rem; line-height: 1.35; }
+.gcol li span { color: var(--soft); font-size: .97rem; }
+.gcol .rest { margin-top: auto; padding-top: 14px; border-top: 1px solid color-mix(in srgb, var(--ink) 14%, var(--ground)); display: inline-flex; gap: 8px; align-items: center; font-weight: 700; color: var(--c); text-decoration: none; }
+.gcol .rest:hover { text-decoration: underline; }
+@media (max-width: 900px) { .guides-home .head { grid-template-columns: minmax(0, 1fr); } .gcols { grid-template-columns: minmax(0, 1fr); max-width: 640px; } .gcol .rest { margin-top: 0; } }
+
+
 
 </style>
 </head>
@@ -114,7 +137,7 @@ h1 { font-weight: 800; font-size: clamp(2.5rem, 5.6vw, 4.8rem); line-height: 1.0
   <div class="wrap">
     <a class="mark" href="./">opticli<span>.</span></a>
     <nav aria-label="Areas">
-      <a class="area" href="cli/">Coding agents</a><a class="area" href="editors/">Editors</a><a class="area" href="tests/">Tests</a><a class="sec" href="guides/">Guides</a><a class="sec" href="https://github.com/epinova/opticli">GitHub</a>
+      <a class="area" href="cli/"><span class="lg">Coding agents</span><span class="sm">Agents</span></a><a class="area" href="editors/">Editors</a><a class="area" href="tests/">Tests</a><a class="sec guides" href="guides/">Guides</a><a class="sec" href="https://github.com/epinova/opticli">GitHub</a>
     </nav>
   </div>
 </header>
@@ -195,10 +218,43 @@ h1 { font-weight: 800; font-size: clamp(2.5rem, 5.6vw, 4.8rem); line-height: 1.0
         <p><b>Fixes from a review of every write and the MCP module.</b> Plans check more in their dry run, so they don't stop half-way, and <code>serve</code> warns when no site answers on its address.</p></li>
     </ol>
   </section>
+
+  <section class="guides-home" aria-labelledby="guides-h">
+    <div class="head">
+      <h2 id="guides-h">Guides</h2>
+      <p>One task from start to finish, with the commands, prompts and results along the way.</p>
+    </div>
+    <div class="gcols">
+      <div class="gcol">
+        <h3>For coding agents</h3>
+        <ol>
+          <li><a href="guides/developers/find-content-and-code/"><b>Find content and the code behind it</b><span>From a URL or a name to the content item, its C# class and Razor view.</span></a></li>
+          <li><a href="guides/developers/restored-production-database/"><b>Work on a restored production database</b><span>Sites on localhost, a local login, and scheduled jobs kept quiet.</span></a></li>
+        </ol>
+        <a class="rest" href="guides/#developers">All developer guides <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      </div>
+      <div class="gcol p2">
+        <h3>For editors</h3>
+        <ol>
+          <li><a href="guides/editors/connect-your-assistant/"><b>Connect your assistant to the CMS</b><span>Sign in with your own CMS account and check that it works.</span></a></li>
+          <li><a href="guides/editors/translate-a-page/"><b>Translate a page with your assistant</b><span>Review the translation as a draft and publish it when you say so.</span></a></li>
+        </ol>
+        <a class="rest" href="guides/#editors">All editor guides <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      </div>
+      <div class="gcol p3">
+        <h3>For tests</h3>
+        <ol>
+          <li><a href="guides/developers/playwright-seed-content/"><b>Seed CMS content for Playwright tests</b><span>Start the site, seed what tests read, and give each test pages of its own.</span></a></li>
+          <li><a href="guides/developers/build-a-test-database/"><b>Build a test database from scratch</b><span>One seed plan adds the languages, the content and the sites.</span></a></li>
+        </ol>
+        <a class="rest" href="guides/#developers">All test guides <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      </div>
+    </div>
+  </section>
 </main>
 
 <footer class="wrap">
-  <p>opticli is open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>. It is an independent project, not affiliated with or endorsed by Optimizely.</p>
+  <p>opticli is open source under the MPL-2.0, made at <a href="https://github.com/epinova">Epinova</a>, with the source <a href="https://github.com/epinova/opticli">on GitHub</a>. It is an independent project, not affiliated with or endorsed by Optimizely.</p>
 </footer>
 
 <script>
