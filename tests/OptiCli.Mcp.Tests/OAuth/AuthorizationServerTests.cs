@@ -359,6 +359,55 @@ public sealed class AuthorizationServerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_consent_post_from_nobody_is_refused_before_its_form_is_read()
+    {
+        var (clientId, _) = await _site.RegisterAsync();
+        var url = TestSite.AuthorizeUrl(clientId, Pkce.Challenge(TestSite.Verifier()));
+        var response = await _site.Browser(null).PostFormAsync(url, new() { ["decision"] = "allow" });
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Contains("Not signed in", await response.Content.ReadAsStringAsync());
+        Assert.Equal(0, _site.Store.CodeCount);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_form_post_larger_than_64_kb_gets_a_413(bool withLength)
+    {
+        var (clientId, _) = await _site.RegisterAsync();
+        var form = "grant_type=refresh_token&client_id=" + clientId + "&refresh_token=" + new string('x', FormLimit.Bytes);
+        HttpContent Body()
+        {
+            var bytes = Encoding.ASCII.GetBytes(form);
+            HttpContent content = withLength ? new ByteArrayContent(bytes) : new StreamContent(new UnknownLength(bytes));
+            content.Headers.ContentType = new MediaTypeHeaderValue("application/x-www-form-urlencoded");
+            return content;
+        }
+
+        var token = await _site.Client().PostAsync("/episerver/opticli/oauth/token", Body());
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, token.StatusCode);
+        Assert.Equal("invalid_request", await Error(token));
+
+        var browser = _site.Browser("editor");
+        var consent = await browser.SendAsync(new HttpRequestMessage(HttpMethod.Post, TestSite.AuthorizeUrl(clientId, Pkce.Challenge(TestSite.Verifier()))) { Content = Body() });
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, consent.StatusCode);
+        Assert.Contains("Too large", await consent.Content.ReadAsStringAsync());
+
+        var revoke = await browser.SendAsync(new HttpRequestMessage(HttpMethod.Post, "/episerver/opticli/connections") { Content = Body() });
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, revoke.StatusCode);
+
+        // Just under the limit, the form is read as usual.
+        form = "grant_type=refresh_token&client_id=" + clientId + "&refresh_token=ocr_" + new string('x', FormLimit.Bytes - 200);
+        Assert.Equal("invalid_grant", await Error(await _site.Client().PostAsync("/episerver/opticli/oauth/token", Body())));
+    }
+
+    /// <summary>A body whose length isn't known up front, as a chunked request's isn't.</summary>
+    private sealed class UnknownLength(byte[] bytes) : MemoryStream(bytes)
+    {
+        public override bool CanSeek => false;
+    }
+
+    [Fact]
     public async Task Another_users_antiforgery_token_is_refused()
     {
         var (clientId, _) = await _site.RegisterAsync();

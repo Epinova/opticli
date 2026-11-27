@@ -180,10 +180,11 @@ public static class OptiCliMcpExtensions
         }
         all.Add(endpoints.MapPost(McpUrls.RegisterPath(options), Handle(c => Server(c).Register(c))).AllowAnonymous());
         all.Add(endpoints.MapGet(McpUrls.AuthorizePath(options), Handle(c => Server(c).AuthorizePage(c))).AllowAnonymous());
-        all.Add(endpoints.MapPost(McpUrls.AuthorizePath(options), Handle(c => Server(c).AuthorizeConsent(c))).AllowAnonymous());
-        all.Add(endpoints.MapPost(McpUrls.TokenPath(options), Handle(c => Server(c).Token(c))).AllowAnonymous());
+        // The form posts take small forms only (FormLimit); registration reads its JSON with a limit of its own.
+        all.Add(endpoints.MapPost(McpUrls.AuthorizePath(options), FormLimit.Wrap(Handle(c => Server(c).AuthorizeConsent(c)), json: false)).AllowAnonymous());
+        all.Add(endpoints.MapPost(McpUrls.TokenPath(options), FormLimit.Wrap(Handle(c => Server(c).Token(c)), json: true)).AllowAnonymous());
         all.Add(endpoints.MapGet(McpUrls.ConnectionsPath(options), Handle(c => Connections(c).Show(c))).AllowAnonymous());
-        all.Add(endpoints.MapPost(McpUrls.ConnectionsPath(options), Handle(c => Connections(c).Revoke(c))).AllowAnonymous());
+        all.Add(endpoints.MapPost(McpUrls.ConnectionsPath(options), FormLimit.Wrap(Handle(c => Connections(c).Revoke(c)), json: false)).AllowAnonymous());
 
         foreach (var builder in all)
         {

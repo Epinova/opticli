@@ -316,6 +316,11 @@ internal sealed class AuthorizationServer(
         {
             return refused;
         }
+        // Signed in first: a post from nobody isn't read any further, as a form or for its client.
+        if (SignedInName(context) is not { } user)
+        {
+            return Message(context, HttpStatusCode.Forbidden, "Not signed in", "Sign in to the site first, then connect again from the app.");
+        }
         if (!context.Request.HasFormContentType || !await antiforgery.IsRequestValidAsync(context))
         {
             return Message(context, HttpStatusCode.BadRequest, "Page expired", "The page expired. Go back to the app and connect again.");
@@ -324,10 +329,6 @@ internal sealed class AuthorizationServer(
         if (request is null)
         {
             return error!;
-        }
-        if (SignedInName(context) is not { } user)
-        {
-            return Message(context, HttpStatusCode.Forbidden, "Not signed in", "Sign in to the site first, then connect again from the app.");
         }
         var (current, roles) = await gate.CurrentAsync(context.User, context.RequestAborted);
         if (await gate.RefusalAsync(current, Options, context.RequestAborted) is { } refusal)
