@@ -7,7 +7,7 @@ which wins. In configuration, an `AllowedRoles` or `AllowedRedirectHosts` list r
 
 | Option | Default | Meaning |
 |---|---|---|
-| `BasePath` | `/episerver/opticli` | where the module lives: the MCP endpoint is `{BasePath}/mcp`, the OAuth issuer `{origin}{BasePath}`; `""` for a host of its own (with `RequireHost`) |
+| `BasePath` | `/episerver/opticli` on CMS 12, `/optimizely/opticli` on CMS 13 | where the module lives: the MCP endpoint is `{BasePath}/mcp`, the OAuth issuer `{origin}{BasePath}`; `""` for a host of its own (with `RequireHost`). The default is under the CMS's own protected path on each major (see [On CMS 13](install.md#on-cms-13)) |
 | `RequireHost` | none | only answer on this host name (`host` or `host:port`), e.g. an editors' host |
 | `AllowedRoles` | WebEditors, WebAdmins, CmsEditors, CmsAdmins, Administrators | who may connect an assistant at all; the CMS's access rights then decide per item |
 | `AllowedRedirectHosts` | claude.ai, claude.com | the hosts an app's return address (OAuth redirect URI) may be on, https only, matched exactly (no subdomains or wildcards); a loopback address on the editor's own machine is always allowed. `["*"]` allows any https host, and logs a warning at startup (see below) |
@@ -62,16 +62,21 @@ The options are checked at startup, and a site with a bad value doesn't start (`
 `AccessTokenLifetime` at most `RefreshTokenLifetime` and at most `ConnectionLifetime`, `RefreshTokenReuseGrace` from 0
 (every reuse revokes) to `AccessTokenLifetime`, rate limits positive.
 
+At startup the module also logs a warning when `BasePath` isn't under the CMS's protected path
+(`ProtectedModuleOptions.RootPath`: `/EPiServer` on CMS 12, `/Optimizely` on CMS 13). A login that picks its scheme by
+path, as Opti ID does, may not sign editors in there, so they can't connect an assistant or open the connections page.
+
 ## Endpoints
 
-With the default `BasePath`, on the site's own host:
+With the default `BasePath` on CMS 12, on the site's own host. On CMS 13 every path has `/optimizely/opticli` where
+this one has `/episerver/opticli` (`https://www.example.com/optimizely/opticli/mcp`, and so on).
 
 | URL | What it is |
 |---|---|
 | `https://www.example.com/episerver/opticli/mcp` | the MCP endpoint (Streamable HTTP): the URL to give the assistant |
 | `/.well-known/oauth-protected-resource/episerver/opticli/mcp` | protected resource metadata (RFC 9728) |
 | `/.well-known/oauth-authorization-server/episerver/opticli` | authorization server metadata (RFC 8414), also as `/.well-known/openid-configuration/episerver/opticli` and `/episerver/opticli/.well-known/openid-configuration` |
-| `/episerver/opticli/oauth/register`, `/oauth/authorize`, `/oauth/token` | client registration, sign-in and consent, tokens |
+| `/episerver/opticli/oauth/register`, `/oauth/authorize`, `/oauth/token` | client registration, sign-in and consent, tokens; the consent post and the token endpoint take forms of at most 64 KB (413 otherwise) |
 | `/episerver/opticli/connections` | the editor's connections, with Revoke |
 | `/episerver/opticli/preview/{payload}` | the assistant's preview links, unless `AllowPreviewLinks` is turned off |
 
@@ -111,7 +116,8 @@ module sees to it that each endpoint serves only its own server:
 
 ## Connections and audit log
 
-At `/episerver/opticli/connections` an editor sees the assistants they connected (app, the scopes they allowed, when
+At `{BasePath}/connections` (`/episerver/opticli/connections` on CMS 12, `/optimizely/opticli/connections` on CMS 13)
+an editor sees the assistants they connected (app, the scopes they allowed, when
 connected and last used, which is updated at most once a minute) and can revoke them. WebAdmins and CmsAdmins see and
 revoke everyone's.
 

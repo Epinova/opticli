@@ -14,8 +14,10 @@ connects, the editor's browser opens the site's login page, then the module's co
 - **Claude Desktop extension (recommended for editors):**
   [opticli-cms.mcpb](https://github.com/epinova/opticli/releases/latest/download/opticli-cms.mcpb), attached to every
   [GitHub release](https://github.com/epinova/opticli/releases). Send it to the editors. They open the file (or drag it
-  into Claude Desktop's Settings → Extensions) and fill in the site's address: `https://www.example.com` gets the
-  default path, and a full endpoint URL works for another `BasePath` or a dedicated host. The first time Claude uses it,
+  into Claude Desktop's Settings → Extensions) and fill in the site's address: for `https://www.example.com` the
+  extension tries the default paths, CMS 12's `/episerver/opticli/mcp` and then CMS 13's `/optimizely/opticli/mcp`, and
+  takes the one that answers as the MCP endpoint does. A full endpoint URL works for another `BasePath` or a dedicated
+  host. The first time Claude uses it,
   the editor's browser opens the site's login page, then the consent page. The extension connects from the editor's
   own machine (through [mcp-remote](https://www.npmjs.com/package/mcp-remote), which keeps the sign-in in
   `~/.mcp-auth`), and nobody has to add a connector for the organization. Claude Desktop runs it with its own Node.js,
@@ -24,8 +26,8 @@ connects, the editor's browser opens the site's login page, then the module's co
   connector with the MCP endpoint's URL (on Team and Enterprise plans an owner may have to add it for the
   organization). Claude opens the site's login page, then the module's consent page. Connectors call the site from
   Anthropic's cloud, so the site must be publicly reachable (below).
-- **Claude Code:** `claude mcp add --transport http cms https://www.example.com/episerver/opticli/mcp`, then `/mcp` in
-  Claude Code to sign in.
+- **Claude Code:** `claude mcp add --transport http cms https://www.example.com/episerver/opticli/mcp` (on CMS 13
+  `https://www.example.com/optimizely/opticli/mcp`), then `/mcp` in Claude Code to sign in.
 
 **A Claude Desktop extension for one site** has the address built in, so editors aren't asked for it, and a name of
 its own, so an editor can install several side by side (test and production); the generic one installs once. Build it
@@ -72,7 +74,7 @@ CIMD register themselves (dynamic client registration, DCR).
 
 **The site must be publicly reachable for web-based assistants.** Claude's custom connectors (claude.ai, Claude Desktop
 and mobile), for one, call the site from Anthropic's cloud, not from the editor's machine, so a site that is only on a
-VPN, a private network or split DNS can't be used with them. A site that restricts `/episerver` by IP address must allow Anthropic's outbound range,
+VPN, a private network or split DNS can't be used with them. A site that restricts `/episerver` (on CMS 13 `/optimizely`) by IP address must allow Anthropic's outbound range,
 `160.79.104.0/21`, for the MCP endpoint, the metadata documents and the `register` and `token` endpoints. The login,
 `authorize` and the connections page open in the editor's own browser, so they need what the CMS login needs.
 Assistants on the editor's own machine, such as Claude Desktop with the extension and Claude Code, connect from there

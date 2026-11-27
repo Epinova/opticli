@@ -100,7 +100,7 @@ internal sealed partial class Browser : IDisposable
             : throw Unexpected(post.StatusCode, await post.Content.ReadAsStringAsync(cancellationToken), $"Signing in as {_user} failed");
     }
 
-    /// <summary>The connections page (<c>/episerver/opticli/connections</c>), signing in first if needed.</summary>
+    /// <summary>The connections page (<c>{ModulePath}/connections</c>), signing in first if needed.</summary>
     public Task<string> ConnectionsAsync(CancellationToken cancellationToken) =>
         PageAsync(new Uri(_http.BaseAddress!, $"{McpSiteSettings.ModulePath}/connections"), cancellationToken);
 

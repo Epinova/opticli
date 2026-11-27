@@ -3,7 +3,7 @@ title: Take the MCP module to production
 summary: Configure the MCP module for a shared or production environment, from which assistants may connect and how the site is reached to error pages, uploads, the audit log and preview links.
 audience: mcp
 order: 3
-written-for: 0.30.0
+written-for: 0.38.0
 ---
 
 On your machine the module works with its defaults. A shared test environment or production adds a proxy or load
@@ -81,13 +81,15 @@ Web assistants call the site from their provider's cloud, not from the editor's 
 (claude.ai, Claude Desktop without the extension, mobile) need the site to be publicly reachable. A site that is only
 on a VPN or split DNS can't be used with them; its editors use the desktop extension instead.
 
-If you restrict `/episerver` by IP address, allow Anthropic's outbound range, `160.79.104.0/21`, for the MCP endpoint
-(`/episerver/opticli/mcp`), the `/.well-known` metadata documents and the `register` and `token` endpoints. The login,
+If you restrict `/episerver` (on CMS 13 `/optimizely`) by IP address, allow Anthropic's outbound range,
+`160.79.104.0/21`, for the MCP endpoint (`/episerver/opticli/mcp`, on CMS 13 `/optimizely/opticli/mcp`), the
+`/.well-known` metadata documents and the `register` and `token` endpoints. The login,
 `authorize` and the connections page open in the editor's own browser, so they need what the CMS login needs.
 
 The site also needs outbound HTTPS: for a client with a metadata document, as Claude has, the module fetches that
-document from the client's own URL. claude.ai calls `register` and `token` from addresses all its users share; if many
-editors hit 429 there, raise `RateLimits.TokenPerAddressPerMinute`. Rate limits count per instance.
+document from the client's own URL, at most four at a time, and only at the token endpoint once the code or token it
+was given names that client. claude.ai calls `register` and `token` from addresses all its users share; if many editors
+hit 429 there, raise `RateLimits.TokenPerAddressPerMinute`. Rate limits count per instance.
 
 ### 4. Run it beside another MCP server
 
@@ -114,8 +116,8 @@ header that tells the client where to sign in. Check that nothing in front of th
 
 The consent and connections pages send their own `X-Frame-Options: DENY`, `Content-Security-Policy` and
 `Referrer-Policy`. Middleware that sets the site's security headers as the response starts replaces them, and
-`frame-ancestors` only works as a header. Have such middleware leave `/episerver/opticli` alone, or set only what the
-response doesn't have yet:
+`frame-ancestors` only works as a header. Have such middleware leave `/episerver/opticli` (on CMS 13
+`/optimizely/opticli`) alone, or set only what the response doesn't have yet:
 
 ```csharp
 app.Use(async (context, next) =>
@@ -161,7 +163,8 @@ logs Warning and up drops them unless you raise that category:
 {"Logging": {"LogLevel": {"OptiCli.Mcp.Audit": "Information"}}}
 ```
 
-At `/episerver/opticli/connections` editors see and revoke their own connections; WebAdmins and CmsAdmins see and
+At `/episerver/opticli/connections` (on CMS 13 `/optimizely/opticli/connections`) editors see and revoke their own
+connections; WebAdmins and CmsAdmins see and
 revoke everyone's. Tell your administrators it is there.
 
 ### 8. Decide on preview links
@@ -191,7 +194,9 @@ runs in the editor's name. If that is more than you want to give away, turn it o
 - Web assistants can reach the MCP endpoint, metadata, `register` and `token`; IP filters allow `160.79.104.0/21`.
 - The site can make outbound HTTPS requests.
 - Another MCP server, if any, is registered after `AddOptiCliMcp()` and mapped at its own path.
-- Security header middleware leaves `/episerver/opticli` alone or only adds missing headers; media gets `nosniff`.
+- Security header middleware leaves the module's path (`/episerver/opticli`, on CMS 13 `/optimizely/opticli`) alone
+  or only adds missing headers; media gets `nosniff`.
+- No startup warning says that `BasePath` isn't under the CMS's protected path.
 - The CMS's script parser removes script on save (CMS 12.15 or newer).
 - `maxAllowedContentLength` on IIS matches `MaxUploadBytes`.
 - `ConnectionLifetime` is 1 to 7 days on a site with external logins.

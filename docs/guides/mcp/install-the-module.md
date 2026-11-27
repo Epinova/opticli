@@ -3,7 +3,7 @@ title: Install the MCP module in your site
 summary: Add the opticli MCP module to a CMS 12 or CMS 13 site, decide what assistants may do, and connect a first assistant to check that it works.
 audience: mcp
 order: 1
-written-for: 0.35.0
+written-for: 0.38.0
 ---
 
 The MCP module turns your Optimizely site into an MCP server with its own OAuth sign-in. Editors connect an AI
@@ -150,8 +150,10 @@ The full list of options, with token lifetimes and rate limits, is in the README
 
 ### 4. Run the site and check the endpoint
 
-Start the site as you normally do. With the default `BasePath`, the MCP endpoint is `/episerver/opticli/mcp`. A request
-without a token must get a 401 that points to the OAuth metadata, never a redirect to the login page:
+Start the site as you normally do. With the default `BasePath`, the MCP endpoint is `/episerver/opticli/mcp` on CMS 12
+and `/optimizely/opticli/mcp` on CMS 13: under the edit UI's own path on each, where the CMS's login signs editors in.
+The examples here use CMS 12's; on CMS 13, put `optimizely` where they have `episerver`. A request without a token must
+get a 401 that points to the OAuth metadata, never a redirect to the login page:
 
 ```bash
 curl -i -X POST https://localhost:5001/episerver/opticli/mcp
@@ -211,7 +213,7 @@ Find the Alloy Plan product page and show me its teaser text. Then suggest a sho
 The assistant should show you the change its dry run reports and save nothing until you agree. Let it save the draft,
 open the `editUrl` it gives you, and check the draft in the edit UI: the CMS shows you as the one who saved it.
 
-Finally, open `/episerver/opticli/connections` in your browser. You see the connection you just made, with its scopes,
+Finally, open `/episerver/opticli/connections` (on CMS 13 `/optimizely/opticli/connections`) in your browser. You see the connection you just made, with its scopes,
 and can revoke it there.
 
 ## If something goes wrong
@@ -222,7 +224,13 @@ and can revoke it there.
 - **The 401 is a 405, or has no `WWW-Authenticate`:** something in front of the site rewrites it. The module already
   switches off the site's status code pages for its own requests; check proxies and other middleware.
 - **"… isn't an editor on this site, so it can't connect an AI assistant":** the account isn't in `AllowedRoles`.
-  Roles are checked as the CMS knows them now, not from the login cookie.
+  The roles that count are those both the login and the CMS's role provider have now: an editor given a role after
+  signing in signs out and in again.
+- **The consent or connections page sends you to a login that doesn't sign you in (or fails), on CMS 13:** the
+  module's path isn't under `/Optimizely`, where the CMS's login (Opti ID) signs editors in. The default path is, and
+  the module logs a warning at startup when `BasePath` isn't. A site set up on CMS 13 with opticli 0.37 or earlier had
+  `/episerver/opticli`: see
+  [On CMS 13](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/install.md#on-cms-13).
 - **`UNABLE_TO_VERIFY_LEAF_SIGNATURE` in Claude Code:** the development certificate. Use plain http on loopback or a
   certificate signed by a test CA.
 - **Publishing is refused with a hint to save a draft:** `AllowPublish` is off, or the editor unticked publishing on
