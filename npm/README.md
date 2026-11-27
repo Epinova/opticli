@@ -263,6 +263,10 @@ Commerce (`commerce`, `commerceGet`, `commerceChildren`, `commerceTree`, `commer
 takes the `relation`, `price`, `warehouse`, `inventory` and `market` steps), `serve` and `sql`. Commands for the terminal or for setting up (`db`, `doctor`, `sync`, `export`, `drift`, `ide`, `env`, ...)
 aren't: `run(['drift'])` runs any command and returns its envelope (`data`, `meta`).
 
+A method puts its options first and its arguments last, after `--`, so an argument that starts with `-` (a name, a
+search) stays an argument: `cli.get('--publish')` runs `opticli get -- --publish`. `run` passes its arguments as you
+give them; add the `--` yourself before a value that could start with `-`.
+
 Three are written by hand, to take more than the command line can:
 
 - `create(parent, type, name, properties?, options?)` and `set(ref, properties, options?)` take the property values as

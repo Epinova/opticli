@@ -24,12 +24,12 @@ function recorder(pages = []) {
   return { calls, async: new Async(), sync: new Sync() };
 }
 
-test('arguments, then options: a value after its flag, a flag for true, nothing for false', async () => {
+test('options, then -- and the arguments: a value after its flag, a flag for true, nothing for false', async () => {
   const { calls, async: cli } = recorder();
 
   await cli.get('123', { lang: 'sv', full: true, expand: false, version: 'latest' });
 
-  assert.deepEqual(calls[0].args, ['get', '123', '--lang', 'sv', '--version', 'latest', '--full']);
+  assert.deepEqual(calls[0].args, ['get', '--lang', 'sv', '--version', 'latest', '--full', '--', '123']);
 });
 
 test('the data is what the method returns', async () => {
@@ -63,10 +63,10 @@ test('--values is the properties object as JSON', async () => {
 
   await cli.translate('123', { lang: 'sv', values, dryRun: true });
 
-  assert.deepEqual(calls[0].args, ['translate', '123', '--lang', 'sv', '--values', JSON.stringify(values), '--dry-run']);
+  assert.deepEqual(calls[0].args, ['translate', '--lang', 'sv', '--values', JSON.stringify(values), '--dry-run', '--', '123']);
 });
 
-test('an optional argument stays positional, before every option', async () => {
+test('an optional argument stays positional, after every option and the --', async () => {
   const { calls, async: cli } = recorder([{}, {}, { data: [], meta: {} }, { data: [], meta: {} }, { data: [], meta: {} }]);
 
   await cli.translate('123', ['Heading=Hej', 'Intro=Hi'], { lang: 'sv' });
@@ -76,11 +76,11 @@ test('an optional argument stays positional, before every option', async () => {
   await cli.jobsLog('Empty trash');
 
   assert.deepEqual(calls.map((c) => c.args), [
-    ['translate', '123', 'Heading=Hej', 'Intro=Hi', '--lang', 'sv'],
-    ['area', '1', 'MainArea', 'add', '123', '--dry-run'],
-    ['projects', 'Spring campaign'],
-    ['where-used', '123', '--pages'],
-    ['jobs', 'log', 'Empty trash'],
+    ['translate', '--lang', 'sv', '--', '123', 'Heading=Hej', 'Intro=Hi'],
+    ['area', '--dry-run', '--', '1', 'MainArea', 'add', '123'],
+    ['projects', '--', 'Spring campaign'],
+    ['where-used', '--pages', '--', '123'],
+    ['jobs', 'log', '--', 'Empty trash'],
   ]);
 });
 
@@ -100,7 +100,7 @@ test('left out, an optional argument gives its place to the options object', asy
     ['where-used', '--pages'],
     ['projects'],
     ['projects', '--limit', '5'],
-    ['translate', '123', '--lang', 'sv'],
+    ['translate', '--lang', 'sv', '--', '123'],
     ['jobs', 'log', '--failed'],
   ]);
   assert.deepEqual(calls[0].options, { timeoutMs: 5000 });
@@ -126,13 +126,13 @@ test('undefined followed by more values is the optional argument left out, as th
 
   assert.deepEqual(calls.map((c) => c.args), [
     ['where-used', '--pages'],
-    ['where-used', '123', '--pages'],
+    ['where-used', '--pages', '--', '123'],
     ['where-used'],
     ['projects'],
     ['jobs', 'log', '--failed'],
     ['where-used', '--type', 'TeaserBlock'],
-    ['projects', 'ready', '12', '--all'],
-    ['area', '1', 'MainArea', 'add', '--dry-run'],
+    ['projects', 'ready', '--all', '--', '12'],
+    ['area', '--dry-run', '--', '1', 'MainArea', 'add'],
   ]);
   assert.deepEqual(calls.slice(2, 6).map((c) => c.options), [{ timeoutMs: 5000 }, { cwd: '/site' }, { timeoutMs: 7000 }, { timeoutMs: 3000 }]);
 
@@ -161,10 +161,10 @@ test('a required list argument is spread; a subcommand is its words', async () =
   await cli.projectsRemove('12', ['123', '456']);
 
   assert.deepEqual(calls.map((c) => c.args), [
-    ['languages', 'enable', 'sv', 'no', '--dry-run'],
+    ['languages', 'enable', '--dry-run', '--', 'sv', 'no'],
     ['block', 'create', '--type', 'TeaserBlock', '--name', 'Teaser', '--for', '123'],
-    ['projects', 'ready', '12', '--all', '--request-approval', '--comment', 'Campaign texts'],
-    ['projects', 'remove', '12', '123', '456'],
+    ['projects', 'ready', '--all', '--request-approval', '--comment', 'Campaign texts', '--', '12'],
+    ['projects', 'remove', '--', '12', '123', '456'],
   ]);
 });
 
@@ -175,8 +175,8 @@ test('the options every command takes: another database', async () => {
   await cli.sql('SELECT 1', { connectionName: 'Other', limit: 10 });
 
   assert.deepEqual(calls.map((c) => c.args), [
-    ['get', '1', '--db', 'staging'],
-    ['sql', 'SELECT 1', '--limit', '10', '--connection-name', 'Other'],
+    ['get', '--db', 'staging', '--', '1'],
+    ['sql', '--limit', '10', '--connection-name', 'Other', '--', 'SELECT 1'],
   ]);
 });
 
@@ -211,7 +211,7 @@ test("the run options reach run; serve's start and jobs run wait longer by defau
   sync.serve({ logs: true, tail: 20 });
   await cli.serve({ stop: true }, { cwd: '/site' });
 
-  assert.deepEqual(calls[0], { args: ['users', 'add', 'editor', '--password-stdin'], options: { input: 'secret', cwd: '/site' } });
+  assert.deepEqual(calls[0], { args: ['users', 'add', '--password-stdin', '--', 'editor'], options: { input: 'secret', cwd: '/site' } });
   assert.equal(calls[1].options.timeoutMs, (60 + 600) * 1000);
   assert.equal(calls[2].options.timeoutMs, 5000);
   assert.equal(calls[3].options.timeoutMs, 90_000);
@@ -270,7 +270,41 @@ test('the sync class makes the same command lines', () => {
   sync.translate('123', { lang: 'sv', remove: true });
 
   assert.deepEqual(calls.map((c) => c.args), [
-    ['access', '123', '--grant', 'Authenticated=Read', '--revoke', 'Everyone', '--dry-run'],
-    ['translate', '123', '--lang', 'sv', '--remove'],
+    ['access', '--grant', 'Authenticated=Read', '--revoke', 'Everyone', '--dry-run', '--', '123'],
+    ['translate', '--lang', 'sv', '--remove', '--', '123'],
   ]);
+});
+
+test('an argument that starts with - stays an argument, after the --', async () => {
+  const { calls, async: cli, sync } = recorder([{}, {}, { data: [], meta: {} }, {}]);
+
+  await cli.get('--publish');
+  await cli.publish('-1', { dryRun: true });
+  await cli.search('--help');
+  sync.projectsRemove('--all', ['--', '-x']);
+
+  assert.deepEqual(calls.map((c) => c.args), [
+    ['get', '--', '--publish'],
+    ['publish', '--dry-run', '--', '-1'],
+    ['search', '--', '--help'],
+    ['projects', 'remove', '--', '--all', '--', '-x'],
+  ]);
+});
+
+test("a list iterator's --cursor goes before the --, with the other options", async () => {
+  const pages = () => [
+    { data: [{ ref: '2' }], meta: { next: 'c2' } },
+    { data: [{ ref: '3' }], meta: {} },
+  ];
+  const asyncRun = recorder(pages());
+  const syncRun = recorder(pages());
+
+  for await (const _ of asyncRun.async.childrenAll('--1', { limit: 1 }));
+  for (const _ of syncRun.sync.childrenAll('--1', { limit: 1 }));
+
+  assert.deepEqual(asyncRun.calls.map((c) => c.args), [
+    ['children', '--limit', '1', '--', '--1'],
+    ['children', '--limit', '1', '--cursor', 'c2', '--', '--1'],
+  ]);
+  assert.deepEqual(syncRun.calls.map((c) => c.args), asyncRun.calls.map((c) => c.args));
 });

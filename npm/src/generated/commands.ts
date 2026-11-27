@@ -260,11 +260,12 @@ function split(
 }
 
 /**
- * The command line: the command, its arguments, then its options. A flag is given for true; a three-state flag
- * (`explicitFalse`) is `--name false` for false. An array repeats the option; an object is sent as JSON.
+ * The command line: the command, its options, then `--` and its arguments, so an argument that starts with `-` (a
+ * name, a search) is never read as an option. A flag is given for true; a three-state flag (`explicitFalse`) is
+ * `--name false` for false. An array repeats the option; an object is sent as JSON.
  */
 export function argv(command: readonly string[], args: readonly unknown[], options: object | undefined, spec: Readonly<Record<string, Flag>>): string[] {
-  const line = [...command, ...args.flatMap((a) => (Array.isArray(a) ? a.map(String) : a === undefined ? [] : [String(a)]))];
+  const positional = args.flatMap((a) => (Array.isArray(a) ? a.map(String) : a === undefined ? [] : [String(a)]));
   const given = (options ?? {}) as Record<string, unknown>;
   for (const name of Object.keys(given)) {
     if (!Object.hasOwn(spec, name)) throw new TypeError(`opticli ${command.join(' ')} has no option '${name}'.`);
@@ -285,7 +286,16 @@ export function argv(command: readonly string[], args: readonly unknown[], optio
       flags.push(option, String(value));
     }
   }
-  return [...line, ...flags];
+  return positional.length ? [...command, ...flags, '--', ...positional] : [...command, ...flags];
+}
+
+/**
+ * A command line with more options: before its `--` (after which everything is an argument), else at the end. The
+ * first `--` is `argv`'s: opticli takes no option value `--`.
+ */
+export function withOptions(args: readonly string[], options: readonly string[]): string[] {
+  const end = args.indexOf('--');
+  return end < 0 ? [...args, ...options] : [...args.slice(0, end), ...options, ...args.slice(end)];
 }
 
 /** The options spec of a command, for a hand-written method that builds its command line with `argv`. */
@@ -319,7 +329,7 @@ export abstract class OptiCliCommands {
     yield* page.data;
     const seen = new Set<string>();
     while (page.meta?.next) {
-      page = await this.run<T[]>([...args, '--cursor', nextCursor(args, page.meta.next, seen)], call);
+      page = await this.run<T[]>(withOptions(args, ['--cursor', nextCursor(args, page.meta.next, seen)]), call);
       yield* page.data;
     }
   }
@@ -2097,7 +2107,7 @@ export abstract class OptiCliCommandsSync {
     yield* page.data;
     const seen = new Set<string>();
     while (page.meta?.next) {
-      page = this.runSync<T[]>([...args, '--cursor', nextCursor(args, page.meta.next, seen)], call);
+      page = this.runSync<T[]>(withOptions(args, ['--cursor', nextCursor(args, page.meta.next, seen)]), call);
       yield* page.data;
     }
   }

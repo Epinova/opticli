@@ -14,7 +14,7 @@ test('a command runs with --json and the project, and returns its data', async (
   const item = await cli.get('123', { lang: 'sv' });
 
   assert.deepEqual(item, { ref: '123', name: 'News' });
-  assert.deepEqual(calls()[0].args, ['get', '123', '--lang', 'sv', '--json', '--project', '/sites/alloy']);
+  assert.deepEqual(calls()[0].args, ['get', '--lang', 'sv', '--json', '--project', '/sites/alloy', '--', '123']);
 });
 
 test('an error envelope throws OptiCliError with its code, exit code, hint, details and version', async () => {
@@ -55,7 +55,8 @@ test('writes send properties as --values JSON, and their flags', async () => {
 
   assert.equal(result.url, '/en/hello/');
   const args = calls()[0].args;
-  assert.deepEqual(args.slice(0, 6), ['create', '/en/', '--type', 'StandardPage', '--name', 'Hello']);
+  assert.deepEqual(args.slice(0, 5), ['create', '--type', 'StandardPage', '--name', 'Hello']);
+  assert.deepEqual(args.slice(-2), ['--', '/en/']);
   assert.deepEqual(JSON.parse(args[args.indexOf('--values') + 1]), { MainBody: '<p>Hi</p>', MainContentArea: [{ ref: '7' }] });
   assert.ok(args.includes('--publish'));
   assert.deepEqual(args.slice(args.indexOf('--lang'), args.indexOf('--lang') + 2), ['--lang', 'en']);
@@ -66,7 +67,7 @@ test('a write without properties sends no --values', async () => {
 
   await new OptiCli({ command: fakeCommand }).set('9', {}, { name: 'Renamed' });
 
-  assert.deepEqual(calls()[0].args, ['set', '9', '--name', 'Renamed', '--json']);
+  assert.deepEqual(calls()[0].args, ['set', '--name', 'Renamed', '--json', '--', '9']);
 });
 
 test('apply sends the plan on stdin and runs in its folder', async () => {
@@ -76,7 +77,7 @@ test('apply sends the plan on stdin and runs in its folder', async () => {
   await new OptiCli({ command: fakeCommand }).apply(plan, { baseDir: dir, updateExisting: true, publish: true });
 
   const call = calls()[0];
-  assert.deepEqual(call.args, ['apply', '-', '--update-existing', '--publish', '--json']);
+  assert.deepEqual(call.args, ['apply', '--update-existing', '--publish', '--json', '--', '-']);
   assert.deepEqual(JSON.parse(call.stdin), plan);
   assert.equal(call.cwd, dir);
 });
@@ -92,8 +93,8 @@ test('writes into a project: inProject, ready and requestApproval are their flag
   await cli.set('9', { Heading: 'Hi' }, { inProject: '4', requestApproval: true, dryRun: true });
 
   assert.equal(created.project.item, 'added');
-  assert.deepEqual(calls()[0].args, ['create', '/en/', '--type', 'StandardPage', '--name', 'Hello', '--in-project', 'Spring campaign', '--ready', '--json']);
-  assert.deepEqual(calls()[1].args, ['set', '9', '--values', '{"Heading":"Hi"}', '--dry-run', '--request-approval', '--in-project', '4', '--json']);
+  assert.deepEqual(calls()[0].args, ['create', '--type', 'StandardPage', '--name', 'Hello', '--in-project', 'Spring campaign', '--ready', '--json', '--', '/en/']);
+  assert.deepEqual(calls()[1].args, ['set', '--values', '{"Heading":"Hi"}', '--dry-run', '--request-approval', '--in-project', '4', '--json', '--', '9']);
 });
 
 test("a hand-written write refuses an option its command lacks, as the generated ones do", async () => {
@@ -117,7 +118,7 @@ test("apply sends a plan's project with it, and runs a plan file by its path", a
   assert.deepEqual(run.projects, projects);
   assert.equal(run.created.news, '9');
   assert.deepEqual(JSON.parse(calls()[0].stdin), plan);
-  assert.deepEqual(calls()[1].args, ['apply', 'plan.json', '--dry-run', '--json']);
+  assert.deepEqual(calls()[1].args, ['apply', '--dry-run', '--json', '--', 'plan.json']);
   assert.equal(calls()[1].stdin, '');
   assert.equal(calls()[1].cwd, dir);
 });
@@ -129,7 +130,7 @@ test('sql returns the columns and rows as opticli prints them', async () => {
   const result = await new OptiCli({ command: fakeCommand }).sql('SELECT LanguageID, Enabled FROM tblLanguageBranch', { limit: 10 });
 
   assert.deepEqual(result, data);
-  assert.deepEqual(calls()[0].args, ['sql', 'SELECT LanguageID, Enabled FROM tblLanguageBranch', '--limit', '10', '--json']);
+  assert.deepEqual(calls()[0].args, ['sql', '--limit', '10', '--json', '--', 'SELECT LanguageID, Enabled FROM tblLanguageBranch']);
 });
 
 test('a value starting with @ reaches opticli as it is', async () => {
@@ -137,7 +138,28 @@ test('a value starting with @ reaches opticli as it is', async () => {
 
   await new OptiCli({ command: fakeCommand }).search('@alloy');
 
-  assert.deepEqual(calls()[0].args, ['search', '@alloy', '--json']);
+  assert.deepEqual(calls()[0].args, ['search', '--json', '--', '@alloy']);
+});
+
+test("an argument that starts with - reaches opticli after a --, with the options before it; run's line stays as given", async () => {
+  const { calls } = fake([
+    { match: 'get --publish', envelope: ok({ ref: '1' }) },
+    { match: 'set -x', envelope: ok({ ref: '1' }) },
+    { match: 'drift', envelope: ok({}) },
+  ]);
+  const cli = new OptiCli({ command: fakeCommand, project: '/sites/alloy' });
+
+  await cli.get('--publish');
+  await cli.set('-x', {}, { name: '-- not an option' });
+  await cli.run(['drift', '--since', '2030-01-01', '--', '-y']);
+  await cli.run(['drift']);
+
+  assert.deepEqual(calls().map((c) => c.args), [
+    ['get', '--json', '--project', '/sites/alloy', '--', '--publish'],
+    ['set', '--name', '-- not an option', '--json', '--project', '/sites/alloy', '--', '-x'],
+    ['drift', '--since', '2030-01-01', '--json', '--project', '/sites/alloy', '--', '-y'],
+    ['drift', '--json', '--project', '/sites/alloy'],
+  ]);
 });
 
 test('the sync client runs the same command lines, and runSync returns the envelope', () => {
@@ -160,9 +182,9 @@ test('the sync client runs the same command lines, and runSync returns the envel
   const flags = ['--json', '--project', '/sites/alloy', '--profile', 'Alloy'];
   assert.deepEqual(calls().map((c) => c.args), [
     ['languages', ...flags],
-    ['projects', 'Spring campaign', ...flags],
-    ['create', '1', '--type', 'StandardPage', '--name', 'Hello', '--values', '{"MainBody":"<p>Hi</p>"}', '--publish', ...flags],
-    ['apply', '-', '--dry-run', ...flags],
+    ['projects', ...flags, '--', 'Spring campaign'],
+    ['create', '--type', 'StandardPage', '--name', 'Hello', '--values', '{"MainBody":"<p>Hi</p>"}', '--publish', ...flags, '--', '1'],
+    ['apply', '--dry-run', ...flags, '--', '-'],
   ]);
   assert.deepEqual(JSON.parse(calls()[3].stdin), { operations: [] });
 });
@@ -271,7 +293,7 @@ test('a relative project is resolved against cwd, so apply in the plan folder fi
   await cli.apply({ operations: [] }, { baseDir: dir });
 
   assert.equal(cli.project, '/repo/src/Site');
-  assert.deepEqual(calls()[0].args.slice(-2), ['--project', '/repo/src/Site']);
+  assert.deepEqual(calls()[0].args.slice(-4), ['--project', '/repo/src/Site', '--', '-']);
 });
 
 test('the command: OPTICLI first (a dll runs with dotnet), then a tool manifest, then opticli on PATH', () => {
