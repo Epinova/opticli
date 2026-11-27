@@ -34,12 +34,17 @@ internal interface IEditUiMetadata
     /// The edit UI's metadata for <paramref name="owner"/>: content, with the local blocks in it as the edit UI nests them
     /// (each block by instance), or a block on its own (a block list's item, a block just made).
     /// </summary>
+    /// <param name="model">
+    /// The content the edit UI builds the form for, when it isn't <paramref name="owner"/>: the shared block whose values
+    /// <paramref name="owner"/> holds (<see cref="EditUiProperties.ValuesOf"/>). The result is keyed by
+    /// <paramref name="owner"/> and its own local blocks all the same.
+    /// </param>
     /// <returns>
     /// For the owner and each block in it, every property the edit UI hides or locks, by name, with how; null when it
     /// can't tell. Then the model's own settings decide what is shown, and nothing of it may be changed
     /// (<see cref="EditUiProperties"/>).
     /// </returns>
-    IReadOnlyDictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>? Restricted(IContentData owner);
+    IReadOnlyDictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>? Restricted(IContentData owner, IContent? model = null);
 
     /// <summary>
     /// The types the edit UI lets each property of <paramref name="type"/> hold, from its metadata for a new item of the
@@ -88,6 +93,9 @@ internal sealed class EditUiProperties(CmsCall call, bool check)
 
     /// <summary>The content last asked about: what a block no property was seen to hold (one a write just made) is in.</summary>
     private IContent? _content;
+
+    /// <summary>Blocks that hold a shared block's values (<see cref="ValuesOf"/>), with that block: the edit UI's model for their metadata.</summary>
+    private readonly Dictionary<IContentData, IContent> _models = new(ReferenceEqualityComparer.Instance);
 
     /// <summary>Whether anything is checked: for an editor; never for the developer, who sees and changes everything.</summary>
     public bool Checks => check;
@@ -153,6 +161,22 @@ internal sealed class EditUiProperties(CmsCall call, bool check)
                 : c.Property.Equals(PropertyValues.CompositionKey, StringComparison.OrdinalIgnoreCase) ? ShownComposition(content, c)
                 : c)
             .OfType<PropertyChange>()];
+
+    /// <summary>
+    /// Remembers that <paramref name="values"/>, a block that isn't content, holds the values of the shared block
+    /// <paramref name="block"/>: a block of the content's "For this page" folder that a write takes over, whose values the
+    /// writer builds as an inline block's. The edit UI edits such a block in its own form, so its tabs are shown by the
+    /// caller's access to the block, not to the content that shows it, and its metadata is built for the block (with its
+    /// own access rights and content link), as for editing the block itself.
+    /// </summary>
+    public void ValuesOf(BlockData values, IContent block)
+    {
+        if (check && values is not IContent)
+        {
+            _held[values] = (block, false);
+            _models[values] = block;
+        }
+    }
 
     /// <summary>
     /// Remembers that <paramref name="block"/>, which isn't content, is an inline section or element of the Visual
@@ -464,7 +488,7 @@ internal sealed class EditUiProperties(CmsCall call, bool check)
         {
             return _metadata[owner] = new Dictionary<string, PropertyAccess>();
         }
-        var built = metadata.Restricted(owner);
+        var built = metadata.Restricted(owner, _models.GetValueOrDefault(owner));
         // The local blocks of content come with it, as the edit UI nests them.
         foreach (var (inner, restricted) in built ?? new Dictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>())
         {

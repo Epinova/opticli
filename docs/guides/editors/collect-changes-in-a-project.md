@@ -3,7 +3,7 @@ title: Collect changes in a project and publish them together
 summary: Have your assistant put the drafts of a campaign or a new section in a CMS project, review them together in the CMS, and publish them in one go, now or at a set time.
 audience: editors
 order: 5
-written-for: 0.33.0
+written-for: 0.38.0
 ---
 
 Some changes belong together: a spring campaign that touches the start page, three product pages and a new teaser,
@@ -112,7 +112,8 @@ The assistant first shows you what will happen, and publishes only once you conf
 - **what goes live**: every page marked ready;
 - **whose changes go with it**: if a colleague marked a page ready, their changes on it go live without the assistant
   asking again, since marking it ready was their decision. Changes someone else saved that nobody marked ready, the
-  assistant asks you about first;
+  assistant asks you about first. So it does when a colleague published a newer version of a ready page after it was
+  marked ready: publishing the project would replace their published changes with the older ready version;
 - **what stays behind**: pages that are still drafts or in review. They stay exactly as they are, in the project.
 
 If any ready page has a problem (a required field is empty, say), nothing is published, and the assistant tells you

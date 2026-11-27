@@ -1,3 +1,6 @@
+using System.Globalization;
+using EPiServer.Core;
+using EPiServer.DataAbstraction;
 using OptiCli.Protocol;
 
 namespace OptiCli.Cms.Content;
@@ -185,6 +188,62 @@ internal static class PendingDrafts
     /// <exception cref="AgentException"><c>conflict</c> with <see cref="AgentException.PendingDraft"/>.</exception>
     public static PendingDraft? Require(PendingDraft? pending, bool confirmed, bool dryRun, string what, string? language) =>
         pending is null || confirmed || dryRun ? pending : throw Unconfirmed(what, language, pending);
+
+    /// <summary>
+    /// The branch's published version when it is newer than <paramref name="baseVersion"/>, the version a publish would put
+    /// live: that publish replaces it, and with it the changes published since <paramref name="baseVersion"/> was saved
+    /// (the CMS publishes an older version as it is). Null when there is no published version, or it isn't newer.
+    /// </summary>
+    /// <param name="branch">Every version of the branch.</param>
+    public static ContentVersion? NewerPublished(IEnumerable<ContentVersion> branch, int baseVersion) =>
+        branch.FirstOrDefault(v => v.Status == VersionStatus.Published) is { } published && published.ContentLink.WorkID > baseVersion ? published : null;
+
+    /// <summary>Who published <paramref name="published"/>, as the CMS recorded it: whoever set its status, else whoever saved it.</summary>
+    public static string? PublishedBy(ContentVersion published) =>
+        string.IsNullOrWhiteSpace(published.StatusChangedBy) ? published.SavedBy : published.StatusChangedBy;
+
+    /// <summary>
+    /// Whether replacing <paramref name="published"/> needs the caller's confirmation (<c>includeDraft</c>): someone else
+    /// published it, or nobody signed in did (a scheduled job or import). The caller's own published version needs none;
+    /// the result's warning still says it is replaced.
+    /// </summary>
+    public static bool PublishedByOthers(ContentVersion published, string self) => !SavedBy(PublishedBy(published), self);
+
+    /// <summary>"version 42_12, published by X (2026-11-01 08:00:00Z)".</summary>
+    public static string DescribePublished(ContentVersion published)
+    {
+        var by = PublishedBy(published);
+        var who = string.IsNullOrWhiteSpace(by) ? "without a user name (a scheduled job or import)" : $"by {by.Trim()}";
+        return $"version {published.ContentLink}, published {who} ({published.Saved.ToUniversalTime().ToString("u", CultureInfo.InvariantCulture)})";
+    }
+
+    /// <summary>What publishing <paramref name="version"/> over the newer <paramref name="published"/> does, for a refusal.</summary>
+    /// <param name="what">The content, e.g. <c>123 ('News')</c>, <c>123 ('News') in 'en'</c>.</param>
+    public static string ReplacesMessage(string what, ContentReference version, ContentVersion published) =>
+        $"Publishing version {version} of {what} would replace the published {DescribePublished(published)}, which is newer: the changes published in it would be replaced.";
+
+    /// <summary>The conflict a publish of an older version fails with, unconfirmed, when someone else published the newer one.</summary>
+    /// <param name="what">The content, with its language when it has one.</param>
+    public static AgentException ReplacesPublished(string what, ContentReference version, ContentVersion published) =>
+        new(AgentErrorCodes.Conflict, ReplacesMessage(what, version, published), ReplacesPublishedHint)
+        {
+            Reason = AgentErrorReasons.NewerPublished,
+        };
+
+    /// <summary>The hint of <see cref="ReplacesPublished"/>.</summary>
+    public const string ReplacesPublishedHint =
+        "Tell the user whose published changes those are and ask whether to replace them; if so, retry with includeDraft. To keep them, save the change again on the published version. Nothing was published.";
+
+    /// <summary>The warning of a publish that replaces (or replaced) a newer published version.</summary>
+    /// <param name="replaces">"replaces", "would replace", "will replace", "replaced".</param>
+    /// <param name="confirm">For a dry run that the real publish would refuse unconfirmed: the option that confirms it.</param>
+    public static ValidationIssue Replaced(ContentReference version, ContentVersion published, string replaces, string? confirm = null) => new(null,
+        $"Version {version} is older than the published {DescribePublished(published)}: publishing it {replaces} that version, and the changes published in it"
+        + (confirm is null ? "." : $"; the publish needs {confirm} to confirm that."),
+        "warning")
+    {
+        Code = ValidationIssueCodes.NewerPublished,
+    };
 
     /// <summary>The conflict a publish without confirmation fails with.</summary>
     /// <param name="what">The content, e.g. <c>123 ('News')</c>.</param>

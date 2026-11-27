@@ -22,6 +22,14 @@ public sealed class ProjectWrites(WriteExecutor executor)
     public const string PendingDraftHint =
         "details.project lists each ready item, and pendingDraft on an item the unpublished changes someone else saved that it would put live (not those of whoever marked it ready, readyBy, which need no confirming). Ask the user whether those should go live too, and only if so run again with --include-draft. To leave them out, save the item again into the project from its published version (opticli set <ref> ... --from published --in-project <project> --ready). Nothing was published.";
 
+    /// <summary>What to do about a project publish that would replace a newer version someone else published.</summary>
+    public const string NewerPublishedHint =
+        "details.project lists each ready item; one whose problem is newerPublished is older than its published version, which someone else published after it was saved, so publishing the project would replace their published changes. Ask the user whether to replace them, and only if so run again with --include-draft. To keep them, save the item again into the project from its published version (opticli set <ref> ... --from published --in-project <project> --ready). Nothing was published.";
+
+    /// <summary>A project publish refused for both: other people's unpublished changes, and newer versions they published.</summary>
+    public const string ConfirmableHint =
+        "details.project lists each ready item: pendingDraft on an item is the unpublished changes someone else saved that it would put live (not those of whoever marked it ready, readyBy), and a problem with reason newerPublished an item older than the version someone else published since, whose published changes it would replace. Ask the user about both, and only if they agree run again with --include-draft. Nothing was published.";
+
     /// <summary>A refusal over several items with different problems.</summary>
     public const string ProjectItemsHint =
         "details.project lists every item, each one that stops it with problem (code, message). Fix those items, or take them out of the project (opticli projects remove), then run again. Nothing was changed.";
@@ -113,7 +121,10 @@ public sealed class ProjectWrites(WriteExecutor executor)
             return await SendAsync(HttpMethod.Post, route, request, dryRun: false, cancellationToken);
         }
         var carried = Live(preview).Count(i => i.PendingDraft is not null);
-        var withDrafts = carried > 0 ? $", with the other people's changes {(carried == 1 ? "it carries" : "they carry")}" : "";
+        // Items older than a version someone else published since: the yes confirms replacing those too.
+        var replacing = Live(preview).Count(ReplacesNewer);
+        var withDrafts = (carried > 0 ? $", with the other people's changes {(carried == 1 ? "it carries" : "they carry")}" : "")
+            + (replacing > 0 ? $"{(carried > 0 ? " and" : ",")} replacing {Count(replacing, "newer published version")}" : "");
         var question = at is null
             ? $"Publish {Count(Live(preview).Count, "item")} now{withDrafts}?"
             : $"Schedule {Count(Live(preview).Count, "item")}{withDrafts}?";
@@ -122,8 +133,11 @@ public sealed class ProjectWrites(WriteExecutor executor)
             throw new ConflictException($"Not {(at is null ? "published" : "scheduled")}, as answered; nothing was published.",
                 "The project stays as it is; its items are still marked ready.");
         }
-        return await SendAsync(HttpMethod.Post, route, request with { IncludeDraft = includeDraft || carried > 0 }, dryRun: false, cancellationToken);
+        return await SendAsync(HttpMethod.Post, route, request with { IncludeDraft = includeDraft || carried > 0 || replacing > 0 }, dryRun: false, cancellationToken);
     }
+
+    /// <summary>Whether an item replaces a newer published version (the agent's warning, <see cref="ValidationIssueCodes.NewerPublished"/>).</summary>
+    private static bool ReplacesNewer(ProjectItemResult item) => item.Validation?.Any(v => v.Code == ValidationIssueCodes.NewerPublished) == true;
 
     public Task<ProjectResult> ReactivateAsync(string project, bool dryRun, CancellationToken cancellationToken) =>
         SendAsync(HttpMethod.Post, AgentRoutes.ProjectReactivate(project), new ProjectReactivateRequest { DryRun = dryRun }, dryRun, cancellationToken);
@@ -257,6 +271,12 @@ public sealed class ProjectWrites(WriteExecutor executor)
         }
     }
 
+    /// <summary>Whether every problem of a refused publish is one <c>--include-draft</c> confirms: others' drafts, newer published versions.</summary>
+    private static bool Confirmable(ProjectResult? project) =>
+        project is not null
+        && (project.Published ?? []).Concat(project.Scheduled ?? []).Concat(project.Items ?? []).Select(i => i.Problem).OfType<ProjectItemProblem>().ToList() is { Count: > 0 } problems
+        && problems.All(p => p.Reason is AgentErrorReasons.PendingDraft or AgentErrorReasons.NewerPublished);
+
     /// <summary>The agent's errors about project items, with hints that name the options instead of request fields.</summary>
     internal static OptiCliException? Translate(OptiCliException ex, string route)
     {
@@ -268,6 +288,8 @@ public sealed class ProjectWrites(WriteExecutor executor)
         return details.Reason switch
         {
             AgentErrorReasons.PendingDraft => new ConflictException(ex.Message, ready ? ReadyPendingDraftHint : PendingDraftHint) { Details = details },
+            AgentErrorReasons.NewerPublished => new ConflictException(ex.Message, NewerPublishedHint) { Details = details },
+            AgentErrorReasons.ProjectItems when !ready && Confirmable(details.Project) => new ConflictException(ex.Message, ConfirmableHint) { Details = details },
             AgentErrorReasons.ApprovalSequence when ready => new RefusedException(ex.Message, ReadyApprovalHint) { Details = details },
             AgentErrorReasons.ProjectItems => OptiCliException.Create(ex.Code, ex.Message, ProjectItemsHint, details),
             AgentErrorReasons.InReview => new ConflictException(ex.Message, ApprovalRules.InReviewHint) { Details = details },

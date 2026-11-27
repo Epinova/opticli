@@ -349,9 +349,9 @@ internal sealed class WriteFlow
         using (shared?.AsInline(writable))
         {
             // For an editor, also the types the edit UI lets a property hold where an editor descriptor sets them, which the
-            // CMS's own validation doesn't know.
+            // CMS's own validation doesn't know: of the content, the blocks in it and the shared blocks it makes or takes over.
             issues = (precheck ?? []).Concat(Writer.Warnings).Concat(sharedIssues).Concat(ValidationErrors.Validate(Call, writable, action))
-                .Concat(Call.Properties.Checks ? EditUiTypeRules.Check(Call, writable, before) : []).ToList();
+                .Concat(Call.Properties.Checks ? EditUiTypeRules.Check(Call, writable, before, shared?.All) : []).ToList();
         }
         var valid = !ValidationErrors.HasErrors(issues);
         var published = Kind(action) == SaveAction.Publish;

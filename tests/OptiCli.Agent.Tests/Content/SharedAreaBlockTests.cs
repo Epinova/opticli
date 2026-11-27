@@ -376,7 +376,9 @@ public class SharedAreaBlockTests
         }
 
         /// <param name="publishing">The publishing gate (the MCP module's AllowPublish): throws where publishing is off.</param>
-        public Site(CmsCaller caller = CmsCaller.Developer, Action? publishing = null)
+        /// <param name="tabs">The site's tabs; none by default.</param>
+        /// <param name="metadata">The CMS edit UI's metadata; none by default.</param>
+        public Site(CmsCaller caller = CmsCaller.Developer, Action? publishing = null, TabDefinition[]? tabs = null, IEditUiMetadata? metadata = null)
         {
             var handlers = new Dictionary<string, Delegate?>();
             var (events, eventsRecorder) = Recorder<IContentEvents>.Create();
@@ -421,6 +423,7 @@ public class SharedAreaBlockTests
             var services = new ServiceCollection()
                 .AddSingleton(types)
                 .AddSingleton(repository)
+                .AddSingleton<IContentLoader>(repository)
                 .AddSingleton(versions)
                 .AddSingleton(validation)
                 .AddSingleton(events)
@@ -436,10 +439,13 @@ public class SharedAreaBlockTests
                 .AddSingleton(Approvals(this))
                 .AddSingleton(Sites(Applications))
                 .AddSingleton(new EPiServer.Web.SystemDefinition(new ContentReference(1), new ContentReference(2), new ContentReference(4), AssetsRoot))
-                .AddSingleton(EditUiPropertiesTests.Tabs())
-                .AddSingleton<IPrincipalAccessor>(new CmsCallTests.PrincipalAccessor(new GenericPrincipal(new GenericIdentity("editor"), [])))
-                .BuildServiceProvider();
-            Call = new CmsCall(services, CancellationToken.None, caller, publishing);
+                .AddSingleton(EditUiPropertiesTests.Tabs(tabs ?? []))
+                .AddSingleton<IPrincipalAccessor>(new CmsCallTests.PrincipalAccessor(new GenericPrincipal(new GenericIdentity("editor"), [])));
+            if (metadata is not null)
+            {
+                services.AddSingleton(metadata);
+            }
+            Call = new CmsCall(services.BuildServiceProvider(), CancellationToken.None, caller, publishing);
         }
 
         /// <summary>A page of versions, its total count in the out parameter.</summary>
@@ -1187,6 +1193,106 @@ public class SharedAreaBlockTests
         Assert.Equal("Old", Title(site.Store.Latest(locked.ContentLink.ID)));
     }
 
+    [Theory]
+    [InlineData(AccessLevel.Read | AccessLevel.Edit, AccessLevel.FullAccess, false)]
+    [InlineData(AccessLevel.FullAccess, AccessLevel.Read | AccessLevel.Edit | AccessLevel.Create, true)]
+    public void A_block_of_the_pages_folder_taken_over_shows_a_tabs_properties_by_the_editors_access_to_the_block(AccessLevel onBlock, AccessLevel onPage, bool shown)
+    {
+        // The block's own form in the edit UI decides, as for editing the block itself: not the page's access rights.
+        const int Settings = 42;
+        var site = new Site(CmsCaller.Editor, tabs: [new TabDefinition { ID = Settings, Name = "Settings", RequiredAccess = AccessLevel.Publish }])
+        {
+            Defaults = block => block.Property["Title"].OwnerTab = Settings,
+        };
+        var page = Neutral(site, site.Page(folder: true));
+        var block = Neutral(site, site.Block(site.Folder(page).ContentLink, "Intro", "Old"));
+        page = OwnerOf(site, block, Ref(block));
+        ((Shared)site.Store.Latest(block.ContentLink.ID)).Access = onBlock;
+        site.Store.Items[page.ContentLink.ID].ForEach(v => ((Page)v.Content).Access = onPage);
+        site.Store.Saves.Clear();
+        const string json = """{"Area": [{"type": "ItemBlock", "name": "Intro", "properties": {"Title": "New"}}]}""";
+
+        if (!shown)
+        {
+            var refused = Assert.Throws<AgentException>(() => site.Write(site.Flow(), page, json));
+            Assert.Contains("Title", refused.Message);
+            Assert.Empty(site.Store.Saves);
+            return;
+        }
+        var flow = site.Flow();
+        var (writable, before) = site.Write(flow, page, json);
+        var result = site.Save(flow, writable, before);
+
+        Assert.Equal(SharedBlockActions.Updated, Assert.Single(result.SharedBlocks!).Action);
+        Assert.Equal("New", Title(site.Store.Latest(block.ContentLink.ID)));
+    }
+
+    /// <summary>
+    /// The CMS edit UI's metadata, faked: a BoxBlock's Area takes only ItemBlocks (as an editor descriptor for its UIHint
+    /// would set), and nothing is hidden or locked.
+    /// </summary>
+    private sealed class ItemsOnly : IEditUiMetadata
+    {
+        public IReadOnlyDictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>? Restricted(IContentData owner, IContent? model = null) =>
+            new Dictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>(ReferenceEqualityComparer.Instance) { [owner] = new Dictionary<string, PropertyAccess>() };
+
+        public IReadOnlyDictionary<string, EditUiTypes>? Types(ContentType type) => type.ID == BoxType
+            ? new Dictionary<string, EditUiTypes> { ["Area"] = new([typeof(PropertyWriterTests.ItemBlock).FullName!.ToLowerInvariant()], []) }
+            : null;
+    }
+
+    /// <summary>The paths of the errors a dry run of the write reports.</summary>
+    private static List<string?> Errors(Site site, WriteFlow flow, Page page, string json)
+    {
+        var (writable, before) = site.Write(flow, page, json);
+        return [.. (site.Save(flow, writable, before, dryRun: true).Validation ?? []).Where(i => i.Severity == "error").Select(i => i.Property)];
+    }
+
+    [Fact]
+    public void The_edit_uis_types_are_checked_in_the_local_inline_and_new_shared_blocks_a_write_changes()
+    {
+        var site = new Site(CmsCaller.Editor, metadata: new ItemsOnly());
+        var page = Neutral(site, site.Page(folder: true));
+        const string boxInBox = """{"Area": [{"type": "BoxBlock", "properties": {"Area": [{"type": "BoxBlock", "properties": {"Title": "y"}}]}}]}""";
+
+        // A local block's area, against the local block's type.
+        Assert.Equal(["Hero.Area"], Errors(site, site.Flow(shared: false), page, """{"Hero": {"Area": [{"type": "BoxBlock", "properties": {"Title": "x"}}]}}"""));
+        Assert.Empty(Errors(site, site.Flow(shared: false), page, """{"Hero": {"Area": [{"type": "ItemBlock", "properties": {"Title": "x"}}]}}"""));
+        // An inline block's area (the page's own area takes any block).
+        Assert.Equal(["Area[0].Area"], Errors(site, site.Flow(shared: false), page, boxInBox));
+        // A new shared block's area, where the site makes new blocks shared.
+        Assert.Equal(["Area[0].Area"], Errors(site, site.Flow(), page, boxInBox));
+        Assert.Empty(Errors(site, site.Flow(), page, """{"Area": [{"type": "BoxBlock", "properties": {"Area": [{"type": "ItemBlock", "properties": {"Title": "y"}}]}}]}"""));
+        Assert.DoesNotContain(site.Store.Saves, s => s.Kind != typeof(ContentAssetFolder));
+    }
+
+    [Fact]
+    public void What_a_local_block_or_a_taken_over_block_held_already_may_stay_but_nothing_more()
+    {
+        var site = new Site(CmsCaller.Editor, metadata: new ItemsOnly());
+        var page = Neutral(site, site.Page(folder: true));
+        // Shared blocks are no ItemBlocks to the rule (their class is Shared): an area with the rule doesn't take them.
+        var held = Neutral(site, site.Block(AssetsRoot, "Held", "h"));
+        var added = Neutral(site, site.Block(AssetsRoot, "Added", "a"));
+        var outer = Neutral(site, site.Block(site.Folder(page).ContentLink, "Outer", "Old", type: BoxType));
+        var area = new ContentArea();
+        area.Items.Add(Ref(held));
+        site.Store.Latest(outer.ContentLink.ID).Property["Area"].Value = area;
+        var withHero = (Page)((IReadOnly)site.Store.Latest(page.ContentLink.ID)).CreateWritableClone();
+        ((BlockData)withHero.Property["Hero"].Value).Property["Area"].Value = area.CreateWritableClone();
+        site.Store.Save(withHero, SaveAction.Publish, null);
+        page = OwnerOf(site, outer, Ref(outer));
+        site.Store.Saves.Clear();
+        var h = held.ContentLink.ID;
+        var a = added.ContentLink.ID;
+
+        Assert.Empty(Errors(site, site.Flow(), page, $$$"""{"Hero": {"Title": "Changed", "Area": [{"ref": "{{{h}}}"}]}}"""));
+        Assert.Equal(["Hero.Area"], Errors(site, site.Flow(), page, $$$"""{"Hero": {"Area": [{"ref": "{{{h}}}"}, {"ref": "{{{a}}}"}]}}"""));
+        Assert.Empty(Errors(site, site.Flow(), page, $$$"""{"Area": [{"type": "BoxBlock", "name": "Outer", "properties": {"Title": "New", "Area": [{"ref": "{{{h}}}"}]}}]}"""));
+        Assert.Equal(["Area[0].Area"], Errors(site, site.Flow(), page, $$$"""{"Area": [{"type": "BoxBlock", "name": "Outer", "properties": {"Title": "New", "Area": [{"ref": "{{{h}}}"}, {"ref": "{{{a}}}"}]}}]}"""));
+        Assert.Empty(site.Store.Saves);
+    }
+
     [Fact]
     public void A_publish_doesnt_publish_along_a_block_draft_the_editor_may_not_publish()
     {
@@ -1466,6 +1572,105 @@ public class SharedAreaBlockTests
         }
         Assert.False(result.Saved);
         Assert.Empty(site.Store.Saves);
+    }
+
+    /// <summary>
+    /// A page with a version the editor saved (<paramref name="olderAction"/>: a draft, or marked ready) that is older than
+    /// the version <paramref name="publishedBy"/> published after it.
+    /// </summary>
+    private static (Page Page, ContentReference Older, ContentReference Newer) OlderThanPublished(Site site, SaveAction olderAction = SaveAction.Save, string publishedBy = "colleague@example.com")
+    {
+        var page = Neutral(site, site.Page());
+        site.Store.SavedBy = "editor";
+        var older = (Page)((IReadOnly)page).CreateWritableClone();
+        older.Property["Title"].Value = "Older";
+        var olderLink = site.Store.Save(older, olderAction | SaveAction.ForceNewVersion, null);
+        site.Store.SavedBy = publishedBy;
+        var newer = (Page)((IReadOnly)site.Store.Get(olderLink)!).CreateWritableClone();
+        newer.Property["Title"].Value = "Newer";
+        var newerLink = site.Store.Save(newer, SaveAction.Publish, null);
+        site.Store.SavedBy = AgentProtocol.PrincipalName;
+        site.Store.Saves.Clear();
+        return (page, olderLink, newerLink);
+    }
+
+    private static WriteResult PublishVersion(Site site, ContentReference version, bool includeDraft = false, bool dryRun = false) =>
+        PublishOperation.Run(site.Call, version.ToString(), new PublishRequest { IncludeDraft = includeDraft, DryRun = dryRun }, site.Flow(shared: false));
+
+    [Fact]
+    public void An_editors_publish_of_a_version_older_than_a_colleagues_published_one_needs_includeDraft()
+    {
+        var site = new Site(CmsCaller.Editor);
+        var (page, older, newer) = OlderThanPublished(site);
+
+        var refused = Assert.Throws<AgentException>(() => PublishVersion(site, older));
+
+        Assert.Equal((AgentErrorCodes.Conflict, AgentErrorReasons.NewerPublished), (refused.Code, refused.Reason));
+        Assert.Contains($"would replace the published version {newer}, published by colleague@example.com (", refused.Message);
+        Assert.Contains("includeDraft", refused.Hint);
+        Assert.Empty(site.Store.Saves);
+        Assert.Equal("Newer", Title(site.Stored(page.ContentLink.ToReferenceWithoutVersion())));
+
+        // The dry run passes, and says what the publish would replace and that it needs confirming.
+        var dry = PublishVersion(site, older, dryRun: true);
+        Assert.True(dry.Valid);
+        var planned = Assert.Single(dry.Validation!, i => i.Code == ValidationIssueCodes.NewerPublished);
+        Assert.Equal("warning", planned.Severity);
+        Assert.Contains($"older than the published version {newer}, published by colleague@example.com", planned.Message);
+        Assert.EndsWith("would replace that version, and the changes published in it; the publish needs includeDraft to confirm that.", planned.Message);
+
+        // Confirmed, it goes live, and the result says whose published version it replaced.
+        var result = PublishVersion(site, older, includeDraft: true);
+        Assert.True(result.Published);
+        Assert.Equal(newer.WorkID, result.PreviouslyPublished);
+        Assert.Contains(result.Validation!, i => i.Code == ValidationIssueCodes.NewerPublished && i.Message.Contains("publishing it replaced that version"));
+        Assert.Equal("Older", Title(site.Stored(page.ContentLink.ToReferenceWithoutVersion())));
+    }
+
+    [Theory]
+    [InlineData(true, "colleague@example.com")]
+    [InlineData(false, "editor")]
+    public void A_named_version_older_than_the_published_one_goes_live_with_a_warning_for_the_developer_or_over_the_editors_own(bool developer, string publishedBy)
+    {
+        // The developer named the version (opticli publish --version); the editor replaces only their own published version.
+        var site = new Site(developer ? CmsCaller.Developer : CmsCaller.Editor);
+        var (page, older, newer) = OlderThanPublished(site, publishedBy: publishedBy);
+
+        var dry = PublishVersion(site, older, dryRun: true);
+        var result = PublishVersion(site, older);
+
+        Assert.DoesNotContain("includeDraft", Assert.Single(dry.Validation!, i => i.Code == ValidationIssueCodes.NewerPublished).Message);
+        Assert.True(result.Published);
+        var warning = Assert.Single(result.Validation!, i => i.Code == ValidationIssueCodes.NewerPublished);
+        Assert.Contains($"version {newer}, published by {publishedBy}", warning.Message);
+        Assert.Equal("Older", Title(site.Stored(page.ContentLink.ToReferenceWithoutVersion())));
+    }
+
+    [Fact]
+    public async Task A_project_publish_of_a_ready_item_older_than_a_colleagues_published_version_needs_includeDraft()
+    {
+        var site = new Site(CmsCaller.Editor);
+        var (page, older, newer) = OlderThanPublished(site, SaveAction.CheckIn);
+        site.Projects.Add(1, "Launch");
+        site.Projects.AddItem(1, older, null);
+
+        var dry = await ProjectPublishOperation.RunAsync(site.Call, "1", new ProjectPublishRequest { DryRun = true });
+
+        Assert.False(dry.Valid);
+        var item = Assert.Single(dry.Published!);
+        Assert.Equal((AgentErrorCodes.Conflict, AgentErrorReasons.NewerPublished), (item.Problem!.Code, item.Problem.Reason));
+        Assert.Contains($"would replace the published version {newer}, published by colleague@example.com", item.Problem.Message);
+
+        var refused = await Assert.ThrowsAsync<AgentException>(() => ProjectPublishOperation.RunAsync(site.Call, "1", new ProjectPublishRequest()));
+        Assert.Equal((AgentErrorCodes.Conflict, AgentErrorReasons.NewerPublished), (refused.Code, refused.Reason));
+        Assert.Contains("retry with includeDraft", refused.Hint);
+        Assert.Equal("Newer", Title(site.Stored(page.ContentLink.ToReferenceWithoutVersion())));
+
+        var confirmed = await ProjectPublishOperation.RunAsync(site.Call, "1", new ProjectPublishRequest { DryRun = true, IncludeDraft = true });
+        Assert.True(confirmed.Valid);
+        var warning = Assert.Single(Assert.Single(confirmed.Published!).Validation!, i => i.Code == ValidationIssueCodes.NewerPublished);
+        Assert.Contains($"version {newer}, published by colleague@example.com", warning.Message);
+        Assert.Contains("would replace", warning.Message);
     }
 
     /// <summary>A block of <paramref name="folder"/> that is published (<paramref name="title"/>) and has a newer draft (<paramref name="draft"/>).</summary>

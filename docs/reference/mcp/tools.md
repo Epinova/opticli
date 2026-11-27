@@ -8,7 +8,7 @@ need others (see [Custom tools](#custom-tools)).
 | `whoami` | `content:read` | who the editor is, the scopes they approved, and what the site allows (publishing, deleting, upload size, preview links) |
 | `get_content`, `list_children`, `resolve_url`, `find_content`, `get_content_type`, `list_versions`, `view_media` | `content:read` | read content, content types, versions and images as the editor |
 | `create_content`, `update_content`, `add_language`, `upload_media`, `move_content`, `discard_draft` | `content:write` | change content, as a draft unless told otherwise, with a dry run first |
-| `publish_content`, `unpublish_content` | `content:publish` | offered on every site, refused without `AllowPublish` (`publishingOff`) |
+| `publish_content`, `unpublish_content` | `content:publish` | offered on every site, refused without `AllowPublish` (`publishingOff`); a version older than one someone else published since is a `conflict` (`newerPublished`) until `includeDraft` confirms it ([Security](security.md)) |
 | `delete_content` | `content:write` | to the recycle bin; offered only with `AllowDelete` |
 | `list_projects`, `get_project`, `create_project`, `mark_ready_to_publish`, `remove_from_project`, `publish_project`, `reactivate_project` | see [Projects](#projects-for-editors-assistants) | CMS projects |
 
@@ -38,7 +38,9 @@ lists the projects that hold a version of the content (`projects`: `id`, `name`,
 - **Ready only.** `publish_project` puts live only the items marked Ready to publish; the rest stay as they are, and
   the result lists them (`notReady`, `alreadyPublished`) beside what went live (`published`, or `scheduled`), each item
   with its `editUrl`, and what went live with its `url` too. Every ready item is checked first, as `publish_content` checks one: one problem stops
-  the publish and nothing goes live. The server's instructions tell the assistant to dry-run first, show the editor
+  the publish and nothing goes live. A ready item older than a version someone else published since would replace their
+  published changes: its problem is `newerPublished`, naming who published it and when, and `includeDraft` confirms it,
+  as it does a colleague's unpublished changes (`pendingDraft`); the item's warnings then say which version it replaces. The server's instructions tell the assistant to dry-run first, show the editor
   what goes live, whose changes go with it and what stays behind, and publish only when they ask. The result's
   `siteChanges` says what the site's own code did meanwhile, as far as it ran on the publish's own thread (see
   [CMS projects](../cli/cms-projects.md#cms-projects)).
@@ -185,7 +187,10 @@ and when it expires (`planTokenExpires`); a plan with a step that would be refus
 content the editor can't read (or that doesn't exist) is refused whole, `not_found`, naming no step or id. With `dryRun: false`
 and the token, the module calls `PlanAsync` again, refuses the run (`conflict`) if the plan isn't the one the dry run
 showed, checks every step again, and saves them in order. The tool's description tells the assistant to do the dry run
-first and show the user the changes.
+first and show the user the changes. After your `[Description]`, the module adds what the tool's steps do to the site,
+from its `Kinds`: "saves drafts only, never publishing" for `Update` and `Create`; with `Move`, that moving published
+content changes its live URL and those of the content below it; with `Trash`, that content put in the recycle bin goes
+off the site until an editor restores it.
 
 | Step | What it does |
 |---|---|

@@ -79,7 +79,7 @@ public sealed class WriteToolTests
         var tools = (await client.ListToolsAsync()).ToDictionary(t => t.Name, t => t.ProtocolTool);
         var rename = tools["test_rename"];
         Assert.Equal("Test: rename", rename.Title);
-        Assert.Equal("Renames content. " + WriteToolType.Workflow, rename.Description);
+        Assert.Equal("Renames content. " + WriteToolType.Workflow(ContentPlanKinds.Update), rename.Description);
         Assert.Equal((false, false, false, false), (rename.Annotations!.ReadOnlyHint, rename.Annotations.DestructiveHint, rename.Annotations.IdempotentHint, rename.Annotations.OpenWorldHint));
         Assert.Equal("Test: rename", rename.Annotations.Title);
         var schema = rename.InputSchema;
@@ -96,6 +96,29 @@ public sealed class WriteToolTests
         // Moves make it destructive, as move_content is.
         Assert.True(tools["test_build"].Annotations!.DestructiveHint);
         Assert.Null(tools["test_build"].Title);
+        Assert.EndsWith(WriteToolType.Workflow(ContentPlanKinds.Create | ContentPlanKinds.Update | ContentPlanKinds.Move), tools["test_build"].Description);
+    }
+
+    [Theory]
+    [InlineData(ContentPlanKinds.Update, "It saves drafts only, never publishing. ", null)]
+    [InlineData(ContentPlanKinds.Create | ContentPlanKinds.Update, "It saves drafts only, never publishing. ", null)]
+    [InlineData(ContentPlanKinds.Update | ContentPlanKinds.Move, "It saves drafts and moves content, and never publishes. Moving published content changes its live URL", "recycle bin")]
+    [InlineData(ContentPlanKinds.Move, "It moves content, and never publishes. Moving published content changes its live URL", "drafts")]
+    [InlineData(ContentPlanKinds.Trash, "It puts content in the recycle bin, and never publishes. Content put in the recycle bin, and the content below it, goes off the site", "URL")]
+    [InlineData(ContentPlanKinds.Create | ContentPlanKinds.Update | ContentPlanKinds.Move | ContentPlanKinds.Trash,
+        "It saves drafts, moves content and puts content in the recycle bin, and never publishes. Moving published content changes its live URL, and those of the content below it. Content put in the recycle bin", null)]
+    public void A_write_tools_description_says_what_its_kinds_of_steps_do_to_the_site(ContentPlanKinds kinds, string starts, string? notSaid)
+    {
+        var workflow = WriteToolType.Workflow(kinds);
+
+        Assert.StartsWith(starts, workflow, StringComparison.Ordinal);
+        Assert.EndsWith(WriteToolType.DryRunWorkflow, workflow, StringComparison.Ordinal);
+        if (notSaid is not null)
+        {
+            Assert.DoesNotContain(notSaid, workflow, StringComparison.Ordinal);
+        }
+        // Only a tool that saves nothing but drafts says it saves drafts only.
+        Assert.Equal((kinds & (ContentPlanKinds.Move | ContentPlanKinds.Trash)) == 0, workflow.Contains("drafts only", StringComparison.Ordinal));
     }
 
     [Fact]

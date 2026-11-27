@@ -252,4 +252,32 @@ public class ProjectWritesTests
         // The publish's own approval hint (save the items again for review) stays as the site words it.
         Assert.Null(ProjectWrites.Translate(Refusal(AgentErrorCodes.Refused, AgentErrorReasons.ApprovalSequence), AgentRoutes.ProjectPublish("12")));
     }
+
+    [Fact]
+    public void A_project_publish_refused_over_newer_published_versions_is_confirmed_with_include_draft()
+    {
+        ProjectItemResult Item(int id, string reason) => new()
+        {
+            Content = new ContentSummary { Ref = $"{id}_456", Id = id, Guid = Guid.Empty, Name = "News" },
+            Outcome = ProjectItemOutcomes.Published,
+            Problem = new ProjectItemProblem(AgentErrorCodes.Conflict, $"{id}: x", reason),
+        };
+        OptiCliException Refusal(string reason, params ProjectItemResult[] items) => AgentErrors.ToException(new AgentError(AgentErrorCodes.Conflict, "Can't publish project 12.", "Retry with includeDraft.")
+        {
+            Reason = reason,
+            Project = new ProjectResult { Project = new ProjectSummary { Id = 12, Name = "Spring", Status = "active" }, Valid = false, Published = items },
+        });
+
+        var newer = ProjectWrites.Translate(Refusal(AgentErrorReasons.NewerPublished, Item(123, AgentErrorReasons.NewerPublished)), AgentRoutes.ProjectPublish("12"));
+        Assert.IsType<ConflictException>(newer);
+        Assert.Equal(ProjectWrites.NewerPublishedHint, newer!.Hint);
+        Assert.Contains("--include-draft", newer.Hint);
+
+        // Both kinds at once: --include-draft confirms them together.
+        var both = ProjectWrites.Translate(Refusal(AgentErrorReasons.ProjectItems, Item(123, AgentErrorReasons.NewerPublished), Item(124, AgentErrorReasons.PendingDraft)), AgentRoutes.ProjectPublish("12"));
+        Assert.Equal(ProjectWrites.ConfirmableHint, both!.Hint);
+        // With another problem among them, the item list's hint.
+        var other = ProjectWrites.Translate(Refusal(AgentErrorReasons.ProjectItems, Item(123, AgentErrorReasons.NewerPublished), Item(124, AgentErrorReasons.InReview)), AgentRoutes.ProjectPublish("12"));
+        Assert.Equal(ProjectWrites.ProjectItemsHint, other!.Hint);
+    }
 }

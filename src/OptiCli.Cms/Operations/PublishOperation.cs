@@ -98,6 +98,13 @@ internal static class PublishOperation
                 ? flow.Locator.PendingDraft(branch, version)
                 : null;
         var previouslyPublished = ContentLocator.PublishedVersion(branch);
+        // A named version older than the published one replaces it, and the changes published in it: someone else's need
+        // confirming, as their drafts do (the developer's named version confirms them; the latest version is never older).
+        var newer = publishing || scheduling ? PendingDrafts.NewerPublished(branch, version.ContentLink.WorkID) : null;
+        if (newer is not null && !othersConfirmed && !body.DryRun && PendingDrafts.PublishedByOthers(newer, call.UserName))
+        {
+            throw PendingDrafts.ReplacesPublished(versionLanguage is null ? what : $"{what} in '{versionLanguage.Name}'", version.ContentLink, newer);
+        }
 
         var writable = (IContent)((IReadOnly)version).CreateWritableClone();
         WriteFlow.ScheduleAt(writable, action, body.PublishAt);
@@ -110,6 +117,12 @@ internal static class PublishOperation
         if (cleared is not null)
         {
             issues = [.. issues, cleared];
+        }
+        if (newer is not null)
+        {
+            var unconfirmed = body.DryRun && !othersConfirmed && PendingDrafts.PublishedByOthers(newer, call.UserName);
+            issues = [.. issues, PendingDrafts.Replaced(version.ContentLink, newer, body.DryRun ? "would replace" : scheduling ? "will replace" : "replaced",
+                unconfirmed ? call.ForCaller("--include-draft", "includeDraft") : null)];
         }
         if (!body.DryRun && ValidationErrors.HasErrors(issues))
         {

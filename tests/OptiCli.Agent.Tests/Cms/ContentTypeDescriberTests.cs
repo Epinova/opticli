@@ -101,7 +101,7 @@ public class ContentTypeDescriberTests
     /// <summary>The CMS UI's metadata, faked: these types for any content type, or none to be had (null).</summary>
     private sealed class Metadata(Dictionary<string, EditUiTypes>? types) : IEditUiMetadata
     {
-        public IReadOnlyDictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>? Restricted(IContentData owner) => null;
+        public IReadOnlyDictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>? Restricted(IContentData owner, IContent? model = null) => null;
 
         public IReadOnlyDictionary<string, EditUiTypes>? Types(ContentType type) => types;
     }

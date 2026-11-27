@@ -3,7 +3,7 @@ title: Write your first site-specific tool
 summary: Add a read tool and a write tool of your own to the MCP module, so editors' assistants can find Alloy product pages without a teaser and fill them in as drafts.
 audience: mcp
 order: 2
-written-for: 0.33.0
+written-for: 0.38.0
 ---
 
 The module's own tools work on any content, one item at a time. A tool of your own can know your site: which page
@@ -157,7 +157,8 @@ The assistant picks tools by name and description, so these are your user interf
   or `products`. Names are 1 to 128 letters, digits, `_`, `-` and `.`, and can't be one of the module's own
   (`get_content`, `update_content`, `delete_content` and the rest, whether offered or not).
 - **Describe** what the tool does and what to do with its result ("read each one with get_content"). Leave out the dry
-  run workflow on a write tool: the module appends it to the description itself.
+  run workflow on a write tool, and what its steps do to the site: the module appends both to the description itself,
+  from the tool's `Kinds` (drafts only, or that a move changes live URLs and the recycle bin takes content off the site).
 - **Describe every argument** and say where its value comes from ("as list_products_missing_teaser gives it").
 - **Fail on purpose** with `OptiCliToolException(code, message, hint)`, using `usage`, `not_found`, `refused` or
   `conflict`. The assistant follows the hint. Anything else your tool throws is logged and reaches the assistant as

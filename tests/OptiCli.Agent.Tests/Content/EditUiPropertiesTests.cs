@@ -82,6 +82,36 @@ public class EditUiPropertiesTests
     }
 
     [Fact]
+    public void A_shared_blocks_values_held_on_a_plain_block_are_judged_by_that_blocks_tab_access_and_metadata()
+    {
+        // A block of the page's "For this page" folder that a write takes over: its values are built on a plain block.
+        var metadata = new Metadata([]);
+        var editor = Editor(metadata);
+        var page = new CmsCallTests.Secured(new ContentReference(5), AccessLevel.FullAccess);
+        page.Property.Add("Teaser", new PropertyString { PropertyDefinitionID = 2 });
+        var block = new CmsCallTests.Secured(new ContentReference(6), AccessLevel.Read | AccessLevel.Edit);
+        var values = FieldsBlock.Create();
+        values.Property["Teaser"].OwnerTab = AdminTab;
+        var other = FieldsBlock.Create();
+        other.Property["Teaser"].OwnerTab = AdminTab;
+        editor.Access(page, page.Property["Teaser"]);
+
+        editor.ValuesOf(values, block);
+
+        // Its tab by the block's access rights, which lack the tab's; a block no property holds, by the page's.
+        Assert.Equal(PropertyAccess.Hidden, editor.Access(values, values.Property["Teaser"]));
+        Assert.Equal(PropertyAccess.Editable, editor.Access(other, other.Property["Teaser"]));
+        Assert.Equal(PropertyAccess.Editable, editor.Access(values, values.Property["Heading"]));
+        // Its metadata is built for the block itself, as its own form in the edit UI is.
+        Assert.Same(block, metadata.Models[values]);
+        Assert.Null(metadata.Models[other]);
+        // The developer is never asked.
+        var developer = Developer();
+        developer.ValuesOf(values, block);
+        Assert.Equal(PropertyAccess.Editable, developer.Access(values, values.Property["Teaser"]));
+    }
+
+    [Fact]
     public void The_CMS_UIs_metadata_hides_or_locks_more_but_never_opens_what_the_model_closes()
     {
         var block = FieldsBlock.Create();
@@ -350,8 +380,14 @@ public class EditUiPropertiesTests
     /// <summary>The CMS UI's metadata, faked: the same restrictions for every owner, or none to be had (null).</summary>
     private sealed class Metadata(Dictionary<string, PropertyAccess>? restricted) : IEditUiMetadata
     {
-        public IReadOnlyDictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>? Restricted(IContentData owner) =>
-            restricted is null ? null : new Dictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>(ReferenceEqualityComparer.Instance) { [owner] = restricted };
+        /// <summary>The model each owner's metadata was built for (null: the owner itself).</summary>
+        public Dictionary<IContentData, IContent?> Models { get; } = new(ReferenceEqualityComparer.Instance);
+
+        public IReadOnlyDictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>? Restricted(IContentData owner, IContent? model = null)
+        {
+            Models[owner] = model;
+            return restricted is null ? null : new Dictionary<IContentData, IReadOnlyDictionary<string, PropertyAccess>>(ReferenceEqualityComparer.Instance) { [owner] = restricted };
+        }
 
         public IReadOnlyDictionary<string, EditUiTypes>? Types(ContentType type) => null;
     }
