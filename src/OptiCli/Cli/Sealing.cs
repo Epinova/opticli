@@ -60,6 +60,7 @@ internal static class Sealing
     [
         "production's servers keep what they have cached unless the user gives production's event bus (Azure Service Bus) at the run: without it, restart the site (every instance) after the run; the result's restartNeeded says which",
         "the run starts this build in Development against production: its startup code, event handlers (search indexing, webhooks, emails) and configuration run with it",
+        "the build is the output folder, the project's appsettings*.json and user secrets: other files the site reads from the project folder at run time (Razor views compiled at run time, App_Data, modules, other configuration files) aren't part of the seal",
         "media files only reach production when the user gives its blob storage (Azure) at the run; without it, a plan with upload steps is refused there",
         "deletes, unpublish steps, access rights and Commerce data (prices, stock, markets, warehouses, catalog relations): a sealed apply never does them; an expiry (StopPublish) that has passed, set by the plan, still takes content offline (summary.expiring counts those steps)",
     ];

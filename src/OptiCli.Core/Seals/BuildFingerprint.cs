@@ -8,7 +8,9 @@ namespace OptiCli.Core.Seals;
 /// <summary>
 /// The site build a sealed apply runs against production, as a hash: every file in its output folder, the project's
 /// <c>appsettings*.json</c> (the site's content root) and its user secrets. Code changed after the seal would run with
-/// production's write login, so the run refuses a build that differs. The git commit is only shown, to the user.
+/// production's write login, so the run refuses a build that differs. The git commit is only shown, to the user. Other
+/// files the site reads from its content root (the project folder) at run time aren't hashed; the seal says so
+/// (<c>notChecked</c>), as that folder holds the whole source tree and what the build copies to its output is hashed there.
 /// </summary>
 /// <param name="Output">The site DLL the run starts.</param>
 /// <param name="Built">When the DLL was written (UTC).</param>
