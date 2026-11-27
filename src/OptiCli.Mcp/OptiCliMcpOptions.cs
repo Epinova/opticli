@@ -11,11 +11,24 @@ public sealed class OptiCliMcpOptions
 
     /// <summary>
     /// Where the module lives: the MCP endpoint is <c>{BasePath}/mcp</c> and the authorization server's issuer is
-    /// <c>{origin}{BasePath}</c>. Defaults to <c>/episerver/opticli</c>, so a site's own MCP server and OAuth metadata at
-    /// the root stay untouched. <c>""</c> puts the module at the root of a host of its own, and then needs
-    /// <see cref="RequireHost"/>.
+    /// <c>{origin}{BasePath}</c>. Defaults to <c>/episerver/opticli</c> on CMS 12 and <c>/optimizely/opticli</c> on
+    /// CMS 13, under the CMS's own protected path on each, so a site's own MCP server and OAuth metadata at the root stay
+    /// untouched. <c>""</c> puts the module at the root of a host of its own, and then needs <see cref="RequireHost"/>.
     /// </summary>
-    public string BasePath { get; set; } = "/episerver/opticli";
+    /// <remarks>
+    /// The CMS's protected modules live under <c>/EPiServer</c> on CMS 12 and <c>/Optimizely</c> on CMS 13, and a login
+    /// that picks its scheme by path, as Opti ID does on CMS 13, only signs editors in there. A site whose connections
+    /// were made on CMS 13 at <c>/episerver/opticli</c> (opticli 0.37 and earlier) sets that path here to keep them.
+    /// </remarks>
+    public string BasePath { get; set; } = DefaultBasePath;
+
+#if CMS13
+    /// <summary>The default <see cref="BasePath"/>: under the CMS 13 edit UI's <c>/Optimizely</c>.</summary>
+    internal const string DefaultBasePath = "/optimizely/opticli";
+#else
+    /// <summary>The default <see cref="BasePath"/>: under the CMS 12 edit UI's <c>/EPiServer</c>.</summary>
+    internal const string DefaultBasePath = "/episerver/opticli";
+#endif
 
     /// <summary>
     /// Only answer on this host name (<c>host</c> or <c>host:port</c>, e.g. an editors' host), so the module can't be

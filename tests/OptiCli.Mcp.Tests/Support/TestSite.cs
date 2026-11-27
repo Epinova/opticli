@@ -51,9 +51,11 @@ internal sealed class TestSite : IAsyncDisposable
         var site = new TestSite();
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environment });
         builder.WebHost.UseTestServer();
-        // Limits high enough for any test, unless the test sets its own (limits, or the configuration).
+        // Limits high enough for any test, unless the test sets its own (limits, or the configuration). The tests use
+        // CMS 12's path on both majors (CMS 13's default is /optimizely/opticli, OptionsTests).
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
+            ["OptiCli:Mcp:BasePath"] = "/episerver/opticli",
             ["OptiCli:Mcp:RateLimits:RegisterPerMinute"] = "1000",
             ["OptiCli:Mcp:RateLimits:TokenPerMinute"] = "1000",
             ["OptiCli:Mcp:RateLimits:TokenPerAddressPerMinute"] = "1000",
@@ -67,6 +69,7 @@ internal sealed class TestSite : IAsyncDisposable
             .AddScheme<AuthenticationSchemeOptions, TestLogin>(TestLogin.Scheme, null);
         builder.Services.AddSingleton<IOAuthStore>(site.Store);
         builder.Services.AddSingleton<IEditorRoles>(site.Roles);
+        builder.Services.AddSingleton(site.Roles);
         builder.Services.AddSingleton<TimeProvider>(site.Time);
         services?.Invoke(builder.Services);
         var mcp = builder.Services.AddOptiCliMcp(o =>
@@ -161,9 +164,10 @@ internal sealed class TestSite : IAsyncDisposable
     /// <summary>The whole sign-in as a browser does it: authorize page, consent, code.</summary>
     /// <param name="allow">The scopes the editor leaves ticked on the consent page; all that are offered when null.</param>
     /// <returns>The query of the redirect back to the client.</returns>
-    public async Task<Dictionary<string, string>> AuthorizeAsync(string clientId, string verifier, string user = "editor", string decision = "allow", string? scope = null, string[]? allow = null)
+    /// <param name="cookieRoles">The role claims in the editor's login; the role store's when null.</param>
+    public async Task<Dictionary<string, string>> AuthorizeAsync(string clientId, string verifier, string user = "editor", string decision = "allow", string? scope = null, string[]? allow = null, string? cookieRoles = null)
     {
-        var browser = Browser(user);
+        var browser = Browser(user, cookieRoles);
         var url = AuthorizeUrl(clientId, Pkce.Challenge(verifier), scope: scope);
         var page = await browser.GetAsync(url);
         Assert.Equal(HttpStatusCode.OK, page.StatusCode);
@@ -222,8 +226,12 @@ internal sealed record Tokens(string ClientId, string Access, string Refresh, st
     }
 }
 
-/// <summary>The site's own login, faked: signed in as the <c>X-Test-User</c> header; a challenge goes to <c>/login</c>.</summary>
-internal sealed class TestLogin(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder)
+/// <summary>
+/// The site's own login, faked: signed in as the <c>X-Test-User</c> header, with the roles in <c>X-Test-Roles</c> as its
+/// role claims, or without that header the roles the role store has for the user, as a login made at sign-in has them. A
+/// challenge goes to <c>/login</c>.
+/// </summary>
+internal sealed class TestLogin(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder, FakeEditorRoles roles)
     : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
     public new const string Scheme = "TestLogin";
@@ -234,9 +242,12 @@ internal sealed class TestLogin(IOptionsMonitor<AuthenticationSchemeOptions> opt
         {
             return Task.FromResult(AuthenticateResult.NoResult());
         }
-        // The roles "in the login cookie": what the module must not trust over the role store.
+        // The roles "in the login cookie": the module narrows them to what the role store has now, never widens them.
+        var cookieRoles = Request.Headers.TryGetValue("X-Test-Roles", out var header)
+            ? header.ToString().Split(',', StringSplitOptions.RemoveEmptyEntries)
+            : roles.Stored(user);
         var claims = new List<Claim> { new(ClaimTypes.Name, user) };
-        claims.AddRange(Request.Headers["X-Test-Roles"].ToString().Split(',', StringSplitOptions.RemoveEmptyEntries).Select(r => new Claim(ClaimTypes.Role, r)));
+        claims.AddRange(cookieRoles.Select(r => new Claim(ClaimTypes.Role, r)));
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, Scheme));
         return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme)));
     }

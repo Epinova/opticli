@@ -8,8 +8,9 @@ namespace OptiCli.Mcp.OAuth;
 
 /// <summary>
 /// Where an editor's roles and account come from. A login cookie keeps the roles it was issued with, and keeps working
-/// for a while after the account is disabled, so the module asks this instead, at consent and on every token refresh:
-/// an editor who loses their role, or whose account is disabled or deleted, stops getting tokens.
+/// for a while after the account is disabled, so the module asks this as well, at consent and on every token refresh:
+/// an editor who loses their role, or whose account is disabled or deleted, stops getting tokens. The roles here only
+/// take roles away from those the login has (<see cref="EditorGate.CurrentAsync"/>), never add any.
 /// </summary>
 public interface IEditorRoles
 {
@@ -194,21 +195,33 @@ internal sealed class EditorGate(IEditorRoles roles)
     public static readonly string[] AdminRoles = ["WebAdmins", "CmsAdmins"];
 
     /// <summary>
-    /// The signed-in user with their roles as they are now: their name, and the roles the role store has for them (or,
-    /// when it can't say, the roles in their login). Virtual roles the login added as claims are left out: the CMS works
-    /// them out again on every check, so they aren't frozen into a grant.
+    /// The signed-in user with their roles as they are now: their name, and the roles their login has that the role store
+    /// still has for them (all their login's roles when the store can't say). The store only takes roles away: the login
+    /// is the site's word for who signed in, whereas the store answers for a name, and on a site with more than one login
+    /// (editors in ASP.NET Identity, visitors through another provider) a visitor may have an editor's name. Virtual
+    /// roles the login added as claims are left out: the CMS works them out again on every check, so they aren't frozen
+    /// into a grant.
     /// </summary>
+    /// <remarks>An editor given a role after signing in has it here once they sign in again.</remarks>
     public async Task<(ClaimsPrincipal Principal, IReadOnlyList<string> Roles)> CurrentAsync(ClaimsPrincipal signedIn, CancellationToken cancellationToken)
     {
         var name = signedIn.Identity?.Name ?? "";
-        var current = await roles.GetRolesAsync(name, cancellationToken)
-            ?? signedIn.Identities.SelectMany(i => i.FindAll(i.RoleClaimType)).Select(c => c.Value).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var login = signedIn.Identities.SelectMany(i => i.FindAll(i.RoleClaimType)).Select(c => c.Value).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var current = Narrowed(await roles.GetRolesAsync(name, cancellationToken), login);
         return (Principal(name, current, signedIn.Identity?.AuthenticationType), current);
     }
 
-    /// <summary>The roles a user has now, for a refresh, where nobody is signed in; <paramref name="fallback"/> when the role store can't say.</summary>
-    public async Task<IReadOnlyList<string>> CurrentRolesAsync(string userName, IReadOnlyList<string> fallback, CancellationToken cancellationToken) =>
-        await roles.GetRolesAsync(userName, cancellationToken) ?? fallback;
+    /// <summary>
+    /// The roles a user has now, for a refresh, where nobody is signed in: those of <paramref name="granted"/> (the
+    /// connection's roles) that the role store still has, or all of them when it can't say. So a connection's roles only
+    /// ever narrow.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> CurrentRolesAsync(string userName, IReadOnlyList<string> granted, CancellationToken cancellationToken) =>
+        Narrowed(await roles.GetRolesAsync(userName, cancellationToken), granted);
+
+    /// <summary>The roles in <paramref name="held"/> that <paramref name="stored"/> has too; all of <paramref name="held"/> when the store can't say (null).</summary>
+    internal static IReadOnlyList<string> Narrowed(IReadOnlyList<string>? stored, IReadOnlyList<string> held) =>
+        stored is null ? held : stored.Where(r => held.Contains(r, StringComparer.OrdinalIgnoreCase)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
     /// <summary>Whether a user with these roles may connect: one of <see cref="OptiCliMcpOptions.AllowedRoles"/>.</summary>
     public bool MayConnect(ClaimsPrincipal user, OptiCliMcpOptions options) =>
@@ -230,6 +243,7 @@ internal sealed class EditorGate(IEditorRoles roles)
         return await roles.IsActiveAsync(user.Identity?.Name ?? "", cancellationToken) == false ? GateRefusal.AccountDisabled : null;
     }
 
+    /// <summary>Whether <paramref name="user"/>, with their current roles (<see cref="CurrentAsync"/>), administers connections.</summary>
     public bool IsAdmin(ClaimsPrincipal user) => user.Identity?.IsAuthenticated == true && AdminRoles.Any(role => roles.IsInRole(user, role));
 
     /// <summary>A principal with just a name and roles: what the gate and the CMS judge an editor by.</summary>

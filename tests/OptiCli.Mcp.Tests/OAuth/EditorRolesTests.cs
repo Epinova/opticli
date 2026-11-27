@@ -5,12 +5,14 @@ using EPiServer.Shell.Security;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using OptiCli.Mcp.OAuth;
+using OptiCli.Mcp.Tests.Support;
 
 namespace OptiCli.Mcp.Tests.OAuth;
 
 /// <summary>
 /// Whether an editor's account is active, as <see cref="CmsEditorRoles"/> works it out from the CMS's user provider and
-/// its synchronized users: only an account the site itself manages (ASP.NET Identity) can be disabled here.
+/// its synchronized users: only an account the site itself manages (ASP.NET Identity) can be disabled here. And the
+/// roles the gate goes by (<see cref="EditorGate"/>): the login's, which the role store only narrows.
 /// </summary>
 public class EditorRolesTests
 {
@@ -98,6 +100,72 @@ public class EditorRolesTests
         Assert.True(CmsEditorRoles.ManagesAccounts(new SiteUserProvider()));
         Assert.False(CmsEditorRoles.ManagesAccounts(new FakeUserProvider("SynchronizedUsers")));
     }
+
+    // --- The role gate: the login's roles, narrowed by the role store ----------------------------------------------
+
+    [Fact]
+    public async Task A_login_without_the_role_is_refused_though_the_role_store_has_it()
+    {
+        var store = new FakeEditorRoles();
+        store.Set("jane", "WebEditors", "WebAdmins");
+        var gate = new EditorGate(store);
+
+        // A visitor's login under an editor's name: the store answers for the name, not for the login.
+        var (current, roles) = await gate.CurrentAsync(Login("jane", "Customers"), default);
+        Assert.Empty(roles);
+        Assert.Equal(GateRefusal.NotAnEditor, await gate.RefusalAsync(current, Options, default));
+        Assert.False(gate.IsAdmin(current));
+
+        // An editor's login without the administrator role isn't made one by the store either.
+        (current, roles) = await gate.CurrentAsync(Login("jane", "WebEditors"), default);
+        Assert.Equal(new[] { "WebEditors" }, roles);
+        Assert.Null(await gate.RefusalAsync(current, Options, default));
+        Assert.False(gate.IsAdmin(current));
+    }
+
+    [Fact]
+    public async Task A_role_the_store_no_longer_has_is_dropped_from_the_login()
+    {
+        var store = new FakeEditorRoles();
+        store.Set("jane", "WebEditors");
+        var (current, roles) = await new EditorGate(store).CurrentAsync(Login("jane", "WebEditors", "WebAdmins"), default);
+        Assert.Equal(new[] { "WebEditors" }, roles);
+        Assert.False(new EditorGate(store).IsAdmin(current));
+    }
+
+    [Fact]
+    public async Task When_the_role_store_cannot_say_the_logins_roles_count()
+    {
+        var store = new FakeEditorRoles { Unavailable = true };
+        var gate = new EditorGate(store);
+        var (current, roles) = await gate.CurrentAsync(Login("jane", "WebAdmins"), default);
+        Assert.Equal(new[] { "WebAdmins" }, roles);
+        Assert.True(gate.IsAdmin(current));
+    }
+
+    [Fact]
+    public async Task The_logins_own_role_claim_type_is_read()
+    {
+        var store = new FakeEditorRoles();
+        store.Set("jane", "WebEditors");
+        var identity = new ClaimsIdentity([new Claim("name", "jane"), new Claim("roles", "WebEditors")], "oidc", "name", "roles");
+        var (_, roles) = await new EditorGate(store).CurrentAsync(new ClaimsPrincipal(identity), default);
+        Assert.Equal(new[] { "WebEditors" }, roles);
+    }
+
+    [Fact]
+    public async Task A_refresh_keeps_only_the_granted_roles_the_store_still_has()
+    {
+        var store = new FakeEditorRoles();
+        store.Set("jane", "WebEditors", "WebAdmins");
+        var gate = new EditorGate(store);
+        Assert.Equal(new[] { "WebEditors" }, await gate.CurrentRolesAsync("jane", ["WebEditors", "NewsEditors"], default));
+        store.Unavailable = true;
+        Assert.Equal(new[] { "WebEditors", "NewsEditors" }, await gate.CurrentRolesAsync("jane", ["WebEditors", "NewsEditors"], default));
+    }
+
+    private static ClaimsPrincipal Login(string name, params string[] roles) =>
+        new(new ClaimsIdentity([new Claim(ClaimTypes.Name, name), .. roles.Select(r => new Claim(ClaimTypes.Role, r))], "Identity.Application"));
 
     private static FakeUserProvider Identity(params FakeUser[] users) => new(CmsEditorRoles.AspNetIdentityProviderName, users);
 
