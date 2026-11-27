@@ -296,6 +296,21 @@ public class ExportPlanBuilderTests
     }
 
     [Fact]
+    public void A_text_files_name_stays_in_texts_whatever_the_database_calls_its_language()
+    {
+        var text = "<p>" + new string('x', 50) + "</p>";
+        var page = Page(PageA, Start, order: 0, $$$"""{"MainBody": {"type": "XhtmlString", "value": "{{{text}}}"}}""",
+            otherBranches: Branch("../../x/", "Sv", $$$"""{"MainBody": {"type": "XhtmlString", "value": "{{{text}}}"}}"""));
+
+        var plan = ExportPlanBuilder.Build([page], textFileLength: 20);
+
+        Assert.All(plan.Texts.Keys, path => Assert.Equal("texts", Path.GetDirectoryName(path)));
+        var folder = Path.Combine(Path.GetTempPath(), "export");
+        Assert.All(plan.Texts.Keys, path => Assert.StartsWith(folder, ExportFiles.Inside(folder, path)));
+        Assert.Throws<InvalidOperationException>(() => ExportFiles.Inside(folder, "../outside.html"));
+    }
+
+    [Fact]
     public void Long_rich_text_goes_to_a_file_the_plan_reads()
     {
         var text = "<p>" + new string('x', 50) + "</p>";

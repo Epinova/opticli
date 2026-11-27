@@ -22,4 +22,18 @@ public static class ExportFiles
         var text = new string(name.Select(c => c < 32 || "<>:\"/\\|?*".Contains(c) ? '_' : c).ToArray()).Trim().TrimEnd('.');
         return text.Length == 0 ? "file" : text;
     }
+
+    /// <summary>
+    /// <paramref name="path"/> (relative, as a plan names a file) inside <paramref name="folder"/>: the full path to write.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">It would be outside the folder.</exception>
+    public static string Inside(string folder, string path)
+    {
+        var root = Path.GetFullPath(folder);
+        var file = Path.GetFullPath(Path.Combine(root, path));
+        var relative = Path.GetRelativePath(root, file);
+        return relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) || Path.IsPathRooted(relative)
+            ? throw new InvalidOperationException($"{path} is outside {root}.")
+            : file;
+    }
 }

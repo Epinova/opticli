@@ -572,7 +572,7 @@ public sealed class SyncPull(ContentSession source, ContentSession target, Write
     {
         foreach (var (path, text) in texts)
         {
-            var file = Path.Combine(folder, path);
+            var file = Export.ExportFiles.Inside(folder, path);
             Directory.CreateDirectory(Path.GetDirectoryName(file)!);
             await File.WriteAllTextAsync(file, text, new UTF8Encoding(false), cancellationToken);
         }

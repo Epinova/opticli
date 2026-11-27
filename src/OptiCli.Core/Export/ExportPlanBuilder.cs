@@ -512,7 +512,8 @@ public static class ExportPlanBuilder
             {
                 // Escaped as a value: the file holds the text itself.
                 var content = text.StartsWith("@@", StringComparison.Ordinal) ? text[1..] : text;
-                var path = $"texts/{item.Guid:N}{(branch.Language is { } language ? $".{language}" : "")}.{name}.html";
+                // Names from the database: cleaned, so no language or property name can make a path outside texts/.
+                var path = $"texts/{item.Guid:N}{(branch.Language is { } language ? $".{ExportFiles.Safe(language)}" : "")}.{ExportFiles.Safe(name)}.html";
                 texts[path] = content;
                 values[name] = $"@{path}";
             }
