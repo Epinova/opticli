@@ -232,9 +232,10 @@ API controller with a named route, a route an add-on registers with the CMS (tog
 endpoint name" when the module is mapped before `MapContent()`), and four test
 users (`mcp-admin`, `mcp-editor`, `mcp-product`, `mcp-visitor`) with generated passwords in
 `App_Data/mcp-test-users.json`, editing rights for WebEditors from the root, and the "Alloy Meet" page hidden from
-everyone but administrators and product editors, who may edit it but not publish it. It also adds a client ID metadata
-document to `wwwroot` (fetched over http on loopback, which the module allows only in Development), then builds the
-site and starts it with `serve.sh` on `http://127.0.0.1:5180` (`MCP_PORT`).
+everyone but administrators and product editors, who may edit it but not publish it. Then it builds the site and
+starts it with `serve.sh` on `http://127.0.0.1:5180` (`MCP_PORT`). `serve.sh` writes a client ID metadata document for
+the port it serves on, `wwwroot/mcp-test-client-<port>.json` (fetched over http on loopback, which the module allows
+only in Development; its `client_id` is its own URL, so each port has its own).
 
 It also adds `McpCustomToolsFixture.cs`, for the [custom tools](reference/mcp/tools.md#custom-tools) tests: test-only tools of the site's own,
 all named `fixture_...`, chained on `AddOptiCliMcp(...)` with `WithTools`, `WithWriteTool` and `WithInstructions` (read

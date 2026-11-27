@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Starts (or stops) the MCP test site that setup.sh built, on a loopback port, in Development, and waits until the
-# MCP module answers. The site runs in the background; its output goes to App_Data/mcp-site-<port>.log.
+# MCP module answers. The site runs in the background; its output goes to App_Data/mcp-site-<port>.log. It writes the
+# client ID metadata document for the port, wwwroot/mcp-test-client-<port>.json, for the sign-in tests.
 #
 #   serve.sh <site-dir> [--port <port>] [--no-publish] [--no-preview-links] [--inline-blocks on|off] [--stop]
 #
@@ -18,7 +19,7 @@
 set -euo pipefail
 
 if [ $# -lt 1 ]; then
-  sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 fi
 SITE=$(cd "$1" && pwd)
@@ -95,6 +96,19 @@ fi
 if [ -n "$INLINE_BLOCKS" ]; then
   settings+=("EPiServer__CmsUI__UI__InlineBlocksInContentAreaEnabled=$INLINE_BLOCKS")
 fi
+# A client ID metadata document on the site itself, for the CIMD test: the module fetches http loopback documents only
+# in Development. Its client_id must be its own URL, so each port gets its own (instances share the site's wwwroot).
+mkdir -p "$SITE/wwwroot"
+cat > "$SITE/wwwroot/mcp-test-client-$PORT.json" <<EOF
+{
+  "client_id": "$URL/mcp-test-client-$PORT.json",
+  "client_name": "opticli E2E tests (CIMD)",
+  "redirect_uris": ["http://127.0.0.1:53682/callback"],
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "token_endpoint_auth_method": "none"
+}
+EOF
 cd "$SITE"
 # setsid: the site outlives this shell (and the container session that ran it).
 env ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS="$URL" "${settings[@]}" \

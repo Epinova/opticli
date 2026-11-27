@@ -4,8 +4,8 @@
 # added, McpFixture.cs (test users and access rights, content types for the access and edit UI rules, a language only
 # administrators may edit, a search fixture, a named API route, an add-on route, a custom error page),
 # McpCustomToolsFixture.cs (the site's own read and write tools for the module, and a server of the site's own at
-# /site-mcp), custom error pages and the site's controllers in Startup.cs, and a client ID metadata document. Then
-# starts it with serve.sh.
+# /site-mcp), and custom error pages and the site's controllers in Startup.cs. Then starts it with serve.sh (which
+# writes the site's client ID metadata document for the port it serves on).
 # The edge-case site and its database are not changed.
 #
 #   setup.sh [<edge-site-dir> [<target-dir> [<source-db> [<target-db>]]]]
@@ -159,19 +159,6 @@ patch(f"{target}/Startup.cs", [
             endpoints.MapMcp("/site-mcp");"""),
 ])
 PY
-
-# A client ID metadata document on the site itself, for the CIMD test: the module fetches http loopback documents
-# only in Development. Its client_id must be its own URL, so it names the port.
-cat > "$TARGET/wwwroot/mcp-test-client.json" <<EOF
-{
-  "client_id": "http://127.0.0.1:$PORT/mcp-test-client.json",
-  "client_name": "opticli E2E tests (CIMD)",
-  "redirect_uris": ["http://127.0.0.1:53682/callback"],
-  "grant_types": ["authorization_code", "refresh_token"],
-  "response_types": ["code"],
-  "token_endpoint_auth_method": "none"
-}
-EOF
 
 exists=$(sqlcmd -h -1 -W -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM sys.databases WHERE name = N'$TARGET_DB'")
 if [ "${FRESH:-0}" = 1 ] || [ "$exists" = 0 ]; then

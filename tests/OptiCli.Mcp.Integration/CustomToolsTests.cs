@@ -109,7 +109,7 @@ public sealed class CustomToolsTests(SharedSessions sessions)
     }
 
     [McpSiteFact]
-    public async Task Hidden_content_in_a_plan_is_a_not_found_step_and_nothing_of_it_shows()
+    public async Task Hidden_content_in_a_plan_refuses_it_whole_as_not_found_and_nothing_of_it_shows()
     {
         var editor = await sessions.ForAsync(TestUsers.Editor);
         var product = await sessions.ForAsync(TestUsers.Product);
@@ -119,40 +119,38 @@ public sealed class CustomToolsTests(SharedSessions sessions)
         var sandbox = await CreateAsync(editor, start);
         try
         {
-            // Planned from content the site loaded without an access check: each step is refused as not_found.
+            // Planned from content the site loaded without an access check: the whole plan is refused as not_found, word
+            // for word the same however the plan uses the hidden content and beside however much readable content, naming
+            // no step or id, so a tool that planned from ids it didn't check can't tell which (or how many) are hidden.
+            string? refusal = null;
             foreach (var (tool, arguments) in new (string, object)[]
             {
                 ("fixture_set_teaser", new { ids = hidden, text = "x", from = "loader", dryRun = true }),
+                ("fixture_set_teaser", new { ids = $"{sandbox},{hidden}", text = "x", from = "loader", dryRun = true }),
                 ("fixture_move", new { ids = hidden, destination = int.Parse(sandbox), @unchecked = true, dryRun = true }),
                 ("fixture_move", new { ids = sandbox, destination = int.Parse(hidden), @unchecked = true, dryRun = true }),
                 ("fixture_trash", new { ids = hidden, @unchecked = true, dryRun = true }),
             })
             {
-                var dry = await editor.OkAsync(tool, arguments);
-                Assert.False(dry.GetProperty("valid").GetBoolean());
-                Assert.False(dry.TryGetProperty("planToken", out _));
-                var error = Assert.Single(dry.GetProperty("steps").EnumerateArray()).GetProperty("error");
-                Assert.Equal(("not_found", missing), (error.GetProperty("code").GetString(), error.GetProperty("message").GetString()));
-                Assert.DoesNotContain("Alloy Meet", dry.GetRawText());
-                Assert.DoesNotContain("ProductPage", dry.GetRawText());
+                var whole = await editor.ErrorAsync(tool, arguments);
+                Assert.Equal("not_found", whole.GetProperty("code").GetString());
+                refusal ??= whole.GetRawText();
+                Assert.Equal(refusal, whole.GetRawText());
+                Assert.DoesNotContain(hidden, whole.GetRawText());
+                Assert.DoesNotContain("tep", whole.GetProperty("message").GetString());
+                Assert.False(whole.TryGetProperty("steps", out _));
+                Assert.DoesNotContain("Alloy Meet", whole.GetRawText());
+                Assert.DoesNotContain("ProductPage", whole.GetRawText());
             }
-            // Hidden content as a value of readable content's (an area edit, a ContentArea value): the step is refused
-            // exactly as for content that doesn't exist.
+            // Hidden content as a value of readable content's (an area edit, a ContentArea value): the plan is refused
+            // whole exactly as for content that doesn't exist, and as above.
             foreach (var property in new[] { "addToArea", "areaItem" })
             {
-                var steps = new List<JsonElement>();
                 foreach (var id in new[] { Missing, hidden })
                 {
-                    var dry = await editor.OkAsync("fixture_set_teaser", new Dictionary<string, object?> { ["ids"] = sandbox, ["text"] = "x", [property] = int.Parse(id), ["dryRun"] = true });
-                    Assert.False(dry.GetProperty("valid").GetBoolean());
-                    Assert.False(dry.TryGetProperty("planToken", out _));
-                    Assert.DoesNotContain("Alloy Meet", dry.GetRawText());
-                    Assert.DoesNotContain("ProductPage", dry.GetRawText());
-                    steps.Add(Assert.Single(dry.GetProperty("steps").EnumerateArray()).GetProperty("error"));
+                    var whole = await editor.ErrorAsync("fixture_set_teaser", new Dictionary<string, object?> { ["ids"] = sandbox, ["text"] = "x", [property] = int.Parse(id), ["dryRun"] = true });
+                    Assert.Equal(refusal, whole.GetRawText());
                 }
-                Assert.Equal("not_found", steps[1].GetProperty("code").GetString());
-                Assert.Equal(steps[0].GetProperty("message").GetString()!.Replace(Missing, hidden, StringComparison.Ordinal), steps[1].GetProperty("message").GetString());
-                Assert.Equal(Hint(steps[0]), Hint(steps[1]));
             }
             Assert.Null(WritingTests.Property(await editor.OkAsync("get_content", new { reference = sandbox, version = "latest" }), "TeaserText"));
 

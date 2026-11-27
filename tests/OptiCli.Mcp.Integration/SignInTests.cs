@@ -127,7 +127,8 @@ public sealed class SignInTests(SharedSessions sessions)
     [McpSiteFact]
     public async Task A_client_identified_by_a_metadata_document_connects_without_registering()
     {
-        var document = new Uri(McpSiteSettings.Url!, "mcp-test-client.json");
+        // serve.sh writes it for the port it serves on: its client_id must be its own URL.
+        var document = new Uri(McpSiteSettings.Url!, $"mcp-test-client-{McpSiteSettings.Url!.Port}.json");
         await using var session = await McpSession.ConnectAsync(TestUsers.Editor, new SessionOptions { ClientMetadataDocument = document });
 
         Assert.DoesNotContain(session.Traffic.Requests, r => r.Path.EndsWith("/oauth/register", StringComparison.Ordinal));
