@@ -77,6 +77,35 @@ public static class OptiCliMcpBuilderExtensions
     }
 
     /// <summary>
+    /// Offers the site's own action tool to editors' assistants on the module's MCP endpoint: a change outside the CMS's
+    /// content (an external system's offers, a search index, a translation service). <typeparamref name="T"/> implements
+    /// <see cref="IOptiCliActionTool{TArgs}"/>, which previews the change and makes it, and has
+    /// <see cref="OptiCliActionToolAttribute"/> (its name, title and effects) and <c>[Description]</c>. The module makes
+    /// its MCP tool: <c>TArgs</c>' properties as arguments, plus <c>dryRun</c> and <c>planToken</c>; it runs the dry run,
+    /// the token, the gates, the record that makes a token run once, and the audit.
+    /// </summary>
+    /// <remarks>
+    /// The tool needs the <c>content:write</c> scope; a target that changes what visitors see
+    /// (<see cref="ActionEffects.Live"/>) also needs the site to let assistants publish and the <c>content:publish</c>
+    /// scope. One that may delete (<see cref="ActionEffects.Delete"/>) is offered only where the site allows deleting
+    /// (<see cref="OptiCliMcpOptions.AllowDelete"/>). The module can't see what the tool's code changes: the tool answers
+    /// for its preview being honest and for checking that the editor may make the change
+    /// (<see cref="IOptiCliEditor.HasAccess"/>). The class is made for every call from the request's services, as a read
+    /// tool's is; take <see cref="IOptiCliEditor"/> there.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// <typeparamref name="T"/> has no <c>[OptiCliActionTool]</c> or <c>[Description]</c>, no effects, a name that is
+    /// taken or isn't a valid MCP tool name, an arguments type the module can't use, or was registered before. The message
+    /// names the class.
+    /// </exception>
+    public static IOptiCliMcpBuilder WithActionTool<T>(this IOptiCliMcpBuilder builder) where T : class
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        CustomTools.Of(builder.Services).AddActionTool(typeof(T));
+        return builder;
+    }
+
+    /// <summary>
     /// Adds <paramref name="text"/> to the instructions the module's server gives assistants, after the module's own,
     /// under a heading that says they come from the site: how to work with the site's own tools and content, e.g.
     /// "Product pages live below Products; search them with search_products, not find_content." Each call adds a line.

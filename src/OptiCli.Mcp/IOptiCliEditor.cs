@@ -58,6 +58,15 @@ public interface IOptiCliEditor
     bool CanRead(IContent content);
 
     /// <summary>
+    /// Whether the editor has <paramref name="level"/> access to <paramref name="content"/>, as the CMS checks it: Edit,
+    /// Publish, Delete, … False for content they can't read, the same as no access. For an action tool, which changes
+    /// things outside the CMS: check the access rights of the content the thing belongs to (an event on its calendar
+    /// page) before previewing a change to it.
+    /// </summary>
+    /// <remarks>Content without access rights of its own (not <c>ISecurable</c>) passes every check, as the CMS treats it: check the content it belongs to instead.</remarks>
+    bool HasAccess(IContent content, EPiServer.Security.AccessLevel level);
+
+    /// <summary>
     /// Loads <paramref name="links"/> and keeps what the editor may read, in the same order: what a search index or the
     /// site's own code found, made safe to return. Content that no longer exists is left out too.
     /// </summary>

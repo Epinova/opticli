@@ -7,6 +7,18 @@ again to update the skill.
 
 ### MCP module
 
+- **A site's own tools can change things outside the CMS's content.** An action tool
+  (`WithActionTool<T>()`, `IOptiCliActionTool<TArgs>`) changes what a site keeps elsewhere: offers or events in a
+  system of their own, a search index, a translation service. It previews the change, a target per thing it changes
+  with the values before and after, and the module runs the same flow as for content: the dry run the assistant shows
+  the editor, a token that runs only what the dry run showed, the publish gate for a change visitors see, the delete
+  gate, and an audit line per target. A token runs once: the module keeps a record of each run, and the same token
+  again answers with what the first call did, so an assistant can safely repeat a call that got no answer. See
+  [Action tools](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/tools.md#action-tools) and the new
+  guide [Let assistants change things outside the CMS](https://github.com/Epinova/opticli/blob/main/docs/guides/mcp/action-tools.md).
+- **`IOptiCliEditor.HasAccess(content, level)`** tells a site's tool whether the editor has Edit, Publish or other
+  access to content, as the CMS checks it. A site with its own implementation of `IOptiCliEditor` (a fake in its tests)
+  adds the member.
 - **The consent, connections and error pages have opticli's look.** The page an editor sees after signing in was
   plain text and two grey buttons. It is now a coloured panel with Allow and Deny on a dark bar below it, which also
   names who is signed in and on which site. It follows the browser's dark mode, and on a phone the connections page

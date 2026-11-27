@@ -11,6 +11,8 @@ types matter, where they live, what "done" looks like. In this guide you add two
 tool, `list_products_missing_teaser`, lists product pages (Alloy Track, Alloy Plan, Alloy Meet) that have no teaser
 text of their own. The write tool, `fill_product_teasers`, writes the teasers the assistant drafted, as drafts, after a
 dry run the editor has seen. Both run as the signed-in editor, with their access rights and the module's audit log.
+For things that aren't CMS content (offers or events in a system of their own), see
+[Let assistants change things outside the CMS](action-tools.md).
 
 ## Before you start
 
@@ -255,6 +257,7 @@ the assistant to ask before putting changes in one. The editor then reviews and 
 ## Related
 
 - [Install the MCP module in your site](install-the-module.md)
+- [Let assistants change things outside the CMS](action-tools.md), with action tools
 - [Take the MCP module to production](hardening.md)
 - README: [Custom tools](https://github.com/Epinova/opticli/blob/main/docs/reference/mcp/tools.md#custom-tools), with every `ContentPlan` step (create,
   create in a "For this page" folder, move, trash) and the rules a tool must follow

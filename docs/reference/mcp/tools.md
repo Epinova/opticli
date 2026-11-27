@@ -71,10 +71,11 @@ lists the projects that hold a version of the content (`projects`: `id`, `name`,
 ## Custom tools
 
 A site can offer editors' assistants tools of its own beside the module's: a search in the site's own index, a report,
-a change across many pages. They run on the module's endpoint only, as the signed-in editor, with the same sign-in,
-scopes, audit log and errors as the module's tools. A tool that changes content doesn't save anything itself: it returns
-a plan, and the module checks it with a dry run the assistant shows the user, then runs it through its own content
-operations, as drafts.
+a change across many pages, a change in a system outside the CMS. They run on the module's endpoint only, as the
+signed-in editor, with the same sign-in, scopes, audit log and errors as the module's tools. A tool that changes content
+doesn't save anything itself: it returns a plan, and the module checks it with a dry run the assistant shows the user,
+then runs it through its own content operations, as drafts. A tool that changes something outside the CMS's content (an
+[action tool](#action-tools)) makes the change itself, in the same flow of dry run and token.
 
 `AddOptiCliMcp` returns a builder (`IOptiCliMcpBuilder`) to add them with:
 
@@ -82,6 +83,7 @@ operations, as drafts.
 services.AddOptiCliMcp()
     .WithTools<ArticleSearchTools>()              // read tools: every tool method of the class
     .WithWriteTool<ReplaceInDescriptionsTool>()   // a write tool, one class each
+    .WithActionTool<PublishEventTool>()           // an action tool, one class each
     .WithInstructions("Search article pages with search_articles, which searches their text.");
 ```
 
@@ -95,7 +97,7 @@ that ignores what it returns compiles as before, and one that chained other regi
 class needs no `[McpServerToolType]`, and is better off without it: the SDK's `WithToolsFromAssembly()` picks up classes
 that have it for the site's other MCP servers (the module removes them there, but there is no point). The class is made
 for every call from the request's services, so it takes the site's services, and `IOptiCliEditor`, in its constructor.
-A read or write tool class or method with `[Authorize]` (or another ASP.NET Core authorization attribute) stops the site
+A read, write or action tool class or method with `[Authorize]` (or another ASP.NET Core authorization attribute) stops the site
 at startup: the module doesn't apply them, so the tool would be open to every editor connected to it. Check what the
 tool needs in the tool itself; it always runs as the signed-in editor, with their access rights.
 
@@ -125,7 +127,8 @@ public sealed class ArticleSearchTools(IOptiCliEditor editor, IArticleIndex inde
 
 `IOptiCliEditor` is the editor the call runs for: `Name`, `Roles`, `Scopes` and `HasScope`, and the content as they
 may read it: `Load<T>` (as `get_content` loads it: the published version, or the newest with `latest: true`; `not_found`
-alike for content that doesn't exist and content they can't read), `CanRead`, `Readable`, and `Describe` (a
+alike for content that doesn't exist and content they can't read), `CanRead`, `HasAccess(content, level)` (the CMS's
+access check, `Edit`, `Publish` and so on; `false` for content they can't read), `Readable`, and `Describe` (a
 `ContentDescription`: the fields the module's tools give for content, with `url` and `editUrl`). A tool fails on
 purpose with `OptiCliToolException(code, message, hint)`, which the assistant gets as the module's own JSON error
 (`usage`, `not_found`, `refused`, `conflict`). The CMS's own not-found and access-denied exceptions become `not_found`
@@ -262,7 +265,136 @@ What a site's tools must allow for:
   step on content an earlier step trashes), fails as a fault of the site: `internal`, with the details in its log.
 - **Names.** Every tool needs a name of its own: none of the module's tools' (`delete_content` included, whether it is
   offered or not), none of the site's others'. Names, attributes and argument types are checked at startup:
-  `WithTools`, `WithWriteTool` or `MapOptiCliMcp()` throws an `InvalidOperationException` that names the class and
+  `WithTools`, `WithWriteTool`, `WithActionTool` or `MapOptiCliMcp()` throws an `InvalidOperationException` that names the class and
   method.
 - **Audit.** Every call is in the audit log, as the module's own are, and a write tool's real run adds a line per step
   (its kind, the content and the outcome).
+
+### Action tools
+
+An action tool changes something outside the CMS's content: offers or events in an external system, a search index, a
+translation service. The module runs the same flow as for a write tool (the dry run the assistant shows the user, a
+token that runs only what the dry run showed, the scopes, the publish and delete gates, the audit), but the change
+itself is the tool's own code. So the tool answers for two things the module can't check: that its preview lists
+everything the run changes, and that the editor may make the change. For the second, check the CMS's access rights on
+the content the thing belongs to with `IOptiCliEditor.HasAccess`, and throw `OptiCliToolException("refused", ...)`
+where they fall short. Check that the thing does belong to that content: the assistant names both, and an id can name
+anything.
+
+The class implements `IOptiCliActionTool<TArgs>`, with `PreviewAsync` (what a call would do now, changing nothing) and
+`RunAsync` (doing it), and has `[OptiCliActionTool]`, with its name, title and the most its calls may do (`Effects`),
+and a `[Description]`:
+
+```csharp
+using System.ComponentModel;
+using EPiServer.Core;
+using EPiServer.Security;
+using OptiCli.Mcp;
+
+public sealed record PublishEventArgs(
+    [property: Description("The id of the calendar page the event is on.")] int Calendar,
+    [property: Description("The event's id (list_events).")] string Event);
+
+[OptiCliActionTool("publish_event", Title = "Publish event", Effects = ActionEffects.Live)]
+[Description("Publishes an event in the site's event calendar, so visitors see it.")]
+public sealed class PublishEventTool(IOptiCliEditor editor, IEventCalendar calendar) : IOptiCliActionTool<PublishEventArgs>
+{
+    public async Task<ActionPreview> PreviewAsync(PublishEventArgs args, CancellationToken cancellationToken)
+    {
+        // not_found for a page the editor can't read; refused without Publish access on it.
+        var page = editor.Load<IContent>(new ContentReference(args.Calendar));
+        if (!editor.HasAccess(page, AccessLevel.Publish))
+        {
+            throw new OptiCliToolException("refused", "You can't publish events on this calendar.", "Ask someone with Publish access on the calendar page.");
+        }
+        var item = await calendar.GetAsync(args.Event, cancellationToken);
+        if (item is null || item.Calendar != args.Calendar)
+        {
+            // Missing, or on another calendar page, whose access rights weren't checked.
+            throw new OptiCliToolException("not_found", $"No event {args.Event} on this calendar.");
+        }
+        var preview = new ActionPreview();
+        var target = preview.Add("event", item.Id, item.Title, ActionEffects.Live)
+            .Version(item.SavedUtc.ToString("O"))
+            .Change("status", item.Status, "published")
+            .Links(url: item.PublicUrl, editUrl: item.EditUrl);
+        foreach (var error in calendar.Validate(item))
+        {
+            target.Problem(error.Message, error.Field);
+        }
+        return preview;
+    }
+
+    public async Task RunAsync(PublishEventArgs args, ActionPreview preview, ActionRun run, CancellationToken cancellationToken)
+    {
+        var target = preview.Targets[0];
+        // run.Key: the calendar ignores a request it has had with the same key.
+        await calendar.PublishAsync(target.Id!, run.Key, cancellationToken);
+        run.Done(target, "published");
+    }
+}
+```
+
+The preview:
+
+| Member | What it is |
+|---|---|
+| `preview.Add(kind, id, label, effect)` | a thing the call changes, in the order the run changes them: what it is (`event`), its id (`null` for one the run creates), what the user knows it by (a title), and one effect |
+| `target.Change(field, before, after)` | a field that changes, from its value now to its value after the run; only fields that change. Values are written as JSON (System.Text.Json) |
+| `target.Version(version)` | the version the change is made from, as the system keeps it (a version number, a saved time, an ETag) |
+| `target.Problem(message, field)` | something that keeps it from running (a validator's error, a name that is taken): the dry run is then not `valid` and gives no token |
+| `target.Links(url, editUrl)` | where the user sees it, and where they review or edit it |
+| `preview.Note(text)` | a line for the user that isn't a change ("reaches the 14 stores of this chain") |
+
+`Effects` (`ActionEffects`, flags) are what the tool's calls may do, and each target has one of them:
+
+| Effect | What it means | What it needs |
+|---|---|---|
+| `Change` | changes something visitors don't see (a draft, a setting the site applies later, a reindex) | `content:write`, as every action does |
+| `Live` | changes what visitors see (publishes, unpublishes, a live update) | also `AllowPublish` and `content:publish`, as `publish_content` does: checked from the preview's targets, and up front for a tool whose only effect is `Live`, before its preview is asked for |
+| `Delete` | deletes something | `AllowDelete`: the tool is offered only where the site allows deleting |
+
+A target of an effect the tool didn't declare fails as a fault of the site (`internal`, logged).
+
+The assistant sees `TArgs`' properties plus `dryRun` and `planToken`, read as strictly as a write tool's. With
+`dryRun: true` the module calls `PreviewAsync` and answers with each target (`target`, `kind`, `id` or `new`, `label`,
+`effect`, `version`, `changes`, `problems`, `url`, `editUrl`), the `notes`, `valid`, and, when nothing has a problem, a
+`planToken` and `planTokenExpires`. With the token, it calls `PreviewAsync` again (on the same instance as
+`RunAsync`), refuses the run (`conflict`) if the preview isn't the one the dry run showed, and calls `RunAsync` with that
+preview. `RunAsync` reports each target on `run` as soon as it is done: `run.Done(target, outcome, id, url, editUrl)`,
+where `outcome` is a word or two (`saved`, `published`, `deleted`) and `id` the one a created target got. To stop at a
+target, throw: the first target not reported is the one that failed, those before it stay done, those after it didn't
+run, and nothing is undone. A `RunAsync` that returns without reporting every target is a fault of the site: the result
+lists those as `notReported`. A call cancelled during the run (or a `RunAsync` that throws an `McpException` of its
+own) leaves the target it was on `unknown`: it may or may not have changed. The run's result has each target's
+`status` (the outcome, `failed`, `notRun`, `notReported`, `unknown`) and links. An empty preview runs nothing:
+`RunAsync` isn't called.
+After your `[Description]`, the module adds that the tool changes things outside the CMS's content, which the CMS's edit
+UI doesn't show, what its effects do to the site, and the dry run workflow. The server instructions tell the assistant
+to give the user the result's `url` and `editUrl`, not CMS edit mode. The tool is annotated as reaching an open world
+(`openWorldHint`), and as destructive when it may change what visitors see or delete.
+
+What an action tool must allow for:
+
+- **Preview from the current state, the same way every time.** The token covers every target's kind, id, label,
+  effect, changes and version (not notes, links or problems). Something changed between the dry run and the run gives
+  another preview and a `conflict`: set `Version` where the system has one; without it, the `before` values of
+  `Change` show a change to the fields the tool changes. No timestamps of now, new GUIDs or random order.
+- **A token runs once.** The module records each run in the CMS's Dynamic Data Store, by its token (a hash of it, never
+  the token), whether or not the targets have versions. The same token again answers with the first run's result
+  (`repeated: true`, `ranAt`) and runs nothing, so a call that got no answer is safe to repeat. A run that started and
+  never recorded an end (still running, or the site stopped during it) is a `conflict` that says so: the user checks
+  what was changed before a new dry run. A call cancelled during the run records its end, with the target it was on
+  `unknown`. The record is kept for 30 minutes after its token expires. Two instances of a
+  load-balanced site given the same token within the same moment could both run it.
+- **A run cut off midway.** If the site stops during `RunAsync`, what the external system did isn't known. Pass
+  `run.Key` (the same for every call with the token, 64 hexadecimal characters) to a system that takes a key to ignore
+  a repeated request. For one that doesn't, find an existing item in the preview (by name, say) rather than always
+  previewing a create, so a new dry run shows what is left.
+- **No transaction, no resume, no scheduling.** As for write tools: a run stops at the first target that fails, and a
+  new dry run shows what is left when previews come from the current state. A call is either CMS steps (a write tool) or
+  action targets, never both.
+- **`MaxPlanSteps`** caps the targets of one call, as it caps a plan's steps.
+- **Audit.** A real run adds a line per target as it is reported (its number, effect, outcome and `kind:id`, or
+  `kind:new`), and one for a target that failed or wasn't reported. Labels and values aren't logged: they are the
+  site's text.

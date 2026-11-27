@@ -24,6 +24,7 @@ internal sealed partial class CustomTools
 
     private readonly List<Type> _readTools = [];
     private readonly List<WriteToolType> _writeTools = [];
+    private readonly List<ActionToolType> _actionTools = [];
     private readonly HashSet<Type> _types = [];
     private readonly HashSet<Type> _declaring = [];
     private readonly Dictionary<string, string> _names = new(StringComparer.Ordinal);
@@ -34,6 +35,9 @@ internal sealed partial class CustomTools
 
     /// <summary>The write tools, in the order the site registered them.</summary>
     public IReadOnlyList<WriteToolType> WriteTools => _writeTools;
+
+    /// <summary>The action tools, in the order the site registered them.</summary>
+    public IReadOnlyList<ActionToolType> ActionTools => _actionTools;
 
     /// <summary>The site's lines for the server instructions, in order.</summary>
     public IReadOnlyList<string> Instructions => _instructions;
@@ -119,6 +123,21 @@ internal sealed partial class CustomTools
         _names.Add(tool.Name, type.FullName!);
         _types.Add(type);
         _writeTools.Add(tool);
+    }
+
+    /// <summary>
+    /// Records an action tool, after checking it (<see cref="ActionToolTypes.Of"/>): its <c>[OptiCliActionTool]</c> name,
+    /// effects and <c>[Description]</c>, and its arguments type.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The class isn't a valid action tool; the message says why, naming the class.</exception>
+    public void AddActionTool(Type type)
+    {
+        RefuseTwice(type);
+        RefuseAuthorize(type, $"WithActionTool<{type.FullName}>()");
+        var tool = ActionToolTypes.Of(type, CheckName);
+        _names.Add(tool.Name, type.FullName!);
+        _types.Add(type);
+        _actionTools.Add(tool);
     }
 
     /// <summary>

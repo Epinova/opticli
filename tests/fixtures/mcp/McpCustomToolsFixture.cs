@@ -1,7 +1,8 @@
 // Copied into the MCP test site by setup.sh, for the MCP module's end-to-end tests (tests/OptiCli.Mcp.Integration,
 // CustomToolsTests): the site's own tools on the module's endpoint, as a site adds them with AddOptiCliMcp()
-// .WithTools<T>() / .WithWriteTool<T>() / .WithInstructions(...) (Startup.cs, patched by setup.sh). Test-only and
-// generic: they work on Alloy's pages and blocks, by property and type names both Alloy templates (CMS 12 and 13) share.
+// .WithTools<T>() / .WithWriteTool<T>() / .WithActionTool<T>() / .WithInstructions(...) (Startup.cs, patched by setup.sh).
+// Test-only and generic: they work on Alloy's pages and blocks, by property and type names both Alloy templates (CMS 12
+// and 13) share. The action tools work on notes on pages, kept outside the CMS's content in App_Data/mcp-fixture-notes.json.
 // Some load content with IContentLoader, which checks no access rights, on purpose: the module must keep content the
 // editor can't read out of their results and plans all the same.
 //
@@ -11,8 +12,10 @@
 #nullable enable
 using System.ComponentModel;
 using System.Globalization;
+using System.Text.Json;
 using EPiServer;
 using EPiServer.Core;
+using EPiServer.Security;
 using ModelContextProtocol.Server;
 using OptiCli.Mcp;
 
@@ -32,13 +35,21 @@ public static class McpCustomToolsFixture
     }
 
     /// <summary>The module's custom tools.</summary>
-    public static IOptiCliMcpBuilder WithFixtureTools(this IOptiCliMcpBuilder builder) => builder
+    public static IOptiCliMcpBuilder WithFixtureTools(this IOptiCliMcpBuilder builder)
+    {
+        builder.Services.AddSingleton<FixtureNotes>();
+        return builder.WithFixtureToolTypes();
+    }
+
+    private static IOptiCliMcpBuilder WithFixtureToolTypes(this IOptiCliMcpBuilder builder) => builder
         .WithTools<McpFixtureReadTools>()
         .WithWriteTool<FixtureSetTeaserTool>()
         .WithWriteTool<FixtureBuildSectionTool>()
         .WithWriteTool<FixtureCreateTool>()
         .WithWriteTool<FixtureMoveTool>()
         .WithWriteTool<FixtureTrashTool>()
+        .WithActionTool<FixtureSaveNoteTool>()
+        .WithActionTool<FixturePublishNoteTool>()
         .WithInstructions(Instructions);
 
     /// <summary>
@@ -290,5 +301,159 @@ public sealed class FixtureTrashTool(IOptiCliEditor editor, IContentLoader loade
             plan.Trash(args.Unchecked ? loader.Get<IContent>(link) : editor.Load<IContent>(link));
         }
         return Task.FromResult(plan);
+    }
+}
+
+/// <summary>
+/// Notes on pages, kept outside the CMS's content as a site's external system would keep its own things: a draft and a
+/// published text per page, and a version that goes up on every change. In App_Data/mcp-fixture-notes.json, so they
+/// survive a restart; one lock for the file.
+/// </summary>
+public sealed class FixtureNotes(IWebHostEnvironment environment)
+{
+    public sealed record Note(string? Draft, string? Published, int Version);
+
+    private readonly object _lock = new();
+
+    private string File => Path.Combine(environment.ContentRootPath, "App_Data", "mcp-fixture-notes.json");
+
+    public Note Get(int page)
+    {
+        lock (_lock)
+        {
+            return Read().GetValueOrDefault(page) ?? new Note(null, null, 0);
+        }
+    }
+
+    public Note Set(int page, Func<Note, Note> change)
+    {
+        lock (_lock)
+        {
+            var notes = Read();
+            var note = change(notes.GetValueOrDefault(page) ?? new Note(null, null, 0));
+            notes[page] = note with { Version = note.Version + 1 };
+            System.IO.File.WriteAllText(File, JsonSerializer.Serialize(notes));
+            return notes[page];
+        }
+    }
+
+    private Dictionary<int, Note> Read() =>
+        System.IO.File.Exists(File) ? JsonSerializer.Deserialize<Dictionary<int, Note>>(System.IO.File.ReadAllText(File)) ?? [] : [];
+
+    /// <summary>
+    /// The page a note belongs to, for the editor, with the access <paramref name="level"/> to change its note:
+    /// <c>not_found</c> for a page they can't read (as for one that doesn't exist), <c>refused</c> without that access.
+    /// </summary>
+    internal static IContent Page(IOptiCliEditor editor, int page, AccessLevel level)
+    {
+        var content = editor.Load<IContent>(new ContentReference(page));
+        return editor.HasAccess(content, level)
+            ? content
+            : throw new OptiCliToolException("refused", $"You don't have {level} access to page {page}, so you can't change its note.", "Ask someone who has that access on the page.");
+    }
+}
+
+public sealed record SaveNoteArgs(
+    [property: Description("The id of the page the note is on.")] int Page,
+    [property: Description("The note's new draft text, at most 200 characters.")] string Text);
+
+/// <summary>An action tool that saves a draft outside the CMS: needs Edit access on the page.</summary>
+[OptiCliActionTool("fixture_save_note", Title = "Fixture: save note", Effects = ActionEffects.Change)]
+[Description("Test-only: saves the draft of a page's note, kept outside the CMS's content.")]
+public sealed class FixtureSaveNoteTool(IOptiCliEditor editor, FixtureNotes notes) : IOptiCliActionTool<SaveNoteArgs>
+{
+    public Task<ActionPreview> PreviewAsync(SaveNoteArgs args, CancellationToken cancellationToken)
+    {
+        var page = FixtureNotes.Page(editor, args.Page, AccessLevel.Edit);
+        var note = notes.Get(args.Page);
+        var preview = new ActionPreview();
+        var target = preview.Add("note", args.Page.ToString(CultureInfo.InvariantCulture), page.Name, ActionEffects.Change)
+            .Version(note.Version.ToString(CultureInfo.InvariantCulture))
+            .Links(editUrl: editor.Describe(page).EditUrl);
+        if (note.Draft != args.Text)
+        {
+            target.Change("draft", note.Draft, args.Text);
+        }
+        if (args.Text.Length > 200)
+        {
+            target.Problem($"A note has at most 200 characters; this one has {args.Text.Length}.", "draft");
+        }
+        return Task.FromResult(preview);
+    }
+
+    public Task RunAsync(SaveNoteArgs args, ActionPreview preview, ActionRun run, CancellationToken cancellationToken)
+    {
+        notes.Set(args.Page, n => n with { Draft = args.Text });
+        run.Done(preview.Targets[0], "saved");
+        return Task.CompletedTask;
+    }
+}
+
+public sealed record PublishNoteArgs(
+    [property: Description("The ids of the pages whose notes to publish (or discard), comma-separated.")] string Pages,
+    [property: Description("Discard the drafts rather than publish them.")] bool Discard = false);
+
+/// <summary>
+/// An action tool that changes what visitors see or deletes: publishes the drafts of pages' notes (Publish access), or
+/// discards them (Edit access). A draft whose text is "fail on publish" makes its publish fail, after the notes before it.
+/// </summary>
+[OptiCliActionTool("fixture_publish_note", Title = "Fixture: publish note", Effects = ActionEffects.Live | ActionEffects.Delete)]
+[Description("Test-only: publishes the drafts of pages' notes, or discards them.")]
+public sealed class FixturePublishNoteTool(IOptiCliEditor editor, FixtureNotes notes) : IOptiCliActionTool<PublishNoteArgs>
+{
+    public const string FailOnPublish = "fail on publish";
+
+    public Task<ActionPreview> PreviewAsync(PublishNoteArgs args, CancellationToken cancellationToken)
+    {
+        var preview = new ActionPreview();
+        foreach (var id in args.Pages.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var number = int.TryParse(id, NumberStyles.None, CultureInfo.InvariantCulture, out var n)
+                ? n
+                : throw new OptiCliToolException("usage", $"'{id}' isn't a page id.", "Give page ids, comma-separated.");
+            var page = FixtureNotes.Page(editor, number, args.Discard ? AccessLevel.Edit : AccessLevel.Publish);
+            var note = notes.Get(number);
+            var target = preview.Add("note", id, page.Name, args.Discard ? ActionEffects.Delete : ActionEffects.Live)
+                .Version(note.Version.ToString(CultureInfo.InvariantCulture))
+                .Links(editUrl: editor.Describe(page).EditUrl);
+            if (note.Draft is null)
+            {
+                target.Problem("The note has no draft.");
+            }
+            else if (args.Discard)
+            {
+                target.Change("draft", note.Draft, null);
+            }
+            else
+            {
+                target.Change("published", note.Published, note.Draft);
+            }
+        }
+        if (!args.Discard)
+        {
+            preview.Note("Visitors see a published note under the page's heading.");
+        }
+        return Task.FromResult(preview);
+    }
+
+    public Task RunAsync(PublishNoteArgs args, ActionPreview preview, ActionRun run, CancellationToken cancellationToken)
+    {
+        foreach (var target in preview.Targets)
+        {
+            var page = int.Parse(target.Id!, CultureInfo.InvariantCulture);
+            if (args.Discard)
+            {
+                notes.Set(page, n => n with { Draft = null });
+                run.Done(target, "discarded");
+                continue;
+            }
+            if (notes.Get(page).Draft == FailOnPublish)
+            {
+                throw new OptiCliToolException("refused", "The note service refused the note.", "Change the note's text.");
+            }
+            notes.Set(page, n => n with { Published = n.Draft, Draft = null });
+            run.Done(target, "published");
+        }
+        return Task.CompletedTask;
     }
 }

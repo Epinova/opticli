@@ -107,6 +107,13 @@ internal sealed class OptiCliEditor : IOptiCliEditor
         return Call.CanRead(content);
     }
 
+    public bool HasAccess(IContent content, EPiServer.Security.AccessLevel level)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        var call = Call;
+        return call.CanRead(content) && call.Allows(content, level);
+    }
+
     public IReadOnlyList<IContent> Readable(IEnumerable<ContentReference> links, string? lang = null)
     {
         ArgumentNullException.ThrowIfNull(links);

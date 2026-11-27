@@ -15,7 +15,8 @@ internal static class McpInstructions
     /// (<c>UIOptions.InlineBlocksInContentAreaEnabled</c> off), which the writes follow: the line about those blocks is
     /// only for such a site.
     /// </param>
-    public static string For(OptiCliMcpOptions site, IReadOnlyList<string>? fromSite = null, bool sharedBlocks = false)
+    /// <param name="actionTools">The site offers action tools (<see cref="OptiCliMcpBuilderExtensions.WithActionTool{T}"/>): the line about them is only for such a site.</param>
+    public static string For(OptiCliMcpOptions site, IReadOnlyList<string>? fromSite = null, bool sharedBlocks = false, bool actionTools = false)
     {
         var lines = new List<string>
         {
@@ -38,6 +39,10 @@ internal static class McpInstructions
         if (sharedBlocks)
         {
             lines.Insert(lines.Count - 1, site.AllowPublish ? SharedBlocks : SharedBlocksPublishOff);
+        }
+        if (actionTools)
+        {
+            lines.Insert(lines.Count - 1, ActionTools);
         }
         if (!site.AllowDelete)
         {
@@ -71,6 +76,10 @@ internal static class McpInstructions
     /// <summary>New blocks in a ContentArea where the site makes them shared, where the site doesn't let assistants publish.</summary>
     internal const string SharedBlocksPublishOff =
         "9. This site makes a new block in a ContentArea ({type, properties}) a shared block in the content's \"For this page\" folder: the result's sharedBlocks lists it with its ref; change it later by that ref, and keep an area's blocks by writing back the {ref} items get_content gives. Those blocks are drafts too, and publishing the content in the CMS doesn't publish them: tell the user to publish them as well. Until then the preview shows a changed block's published version (the result says so).";
+
+    /// <summary>The site's action tools: changes outside the CMS's content.</summary>
+    internal const string ActionTools =
+        "Some of the site's own tools are action tools: their descriptions say they change things outside the CMS's content, which the CMS's edit UI doesn't show. Run them as write tools (dryRun first, show the user the changes, then the planToken once they agree), and give the user the result's url and editUrl rather than sending them to CMS edit mode. If a call with a planToken gets no answer, call it again with the same planToken: it never runs twice, and answers with what the first call did.";
 
     /// <summary>A lifetime as the model reads it best: "10 minutes", "1 minute", "90 seconds".</summary>
     internal static string Duration(TimeSpan lifetime) =>

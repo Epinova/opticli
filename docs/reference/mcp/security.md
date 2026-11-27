@@ -161,6 +161,8 @@
   atomic within an instance only. Two instances given the same refresh token within milliseconds could both rotate
   it (the later one wins, and the other new refresh token never works), and a revocation on one instance in the same
   milliseconds as a refresh on another could be undone by it. Taking a code has the same window, which PKCE covers.
+  Starting an [action tool](tools.md#action-tools)'s run has it too: two instances given the same token within
+  milliseconds could both run it.
 - **What an editor can still tell about content they can't read:** that a page they can read has a parent (its
   `parent` id, which they can't open), and that a ContentArea or content reference they can read points to something
   (its id, which they can't open). Both are by design: a bare id, never the content's name, type or values.

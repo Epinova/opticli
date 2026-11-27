@@ -7,7 +7,7 @@ namespace OptiCli.Mcp.Tools;
 /// <summary>
 /// Every tool the module's server offers: its own and the site's (<see cref="CustomTools"/>), made once, at startup
 /// (<see cref="OptiCliMcpExtensions.MapOptiCliMcp"/>): read tools as the MCP SDK's <c>WithTools&lt;T&gt;()</c> makes them,
-/// the site's write tools by the module (<see cref="WriteTool{TTool, TArgs}"/>).
+/// the site's write and action tools by the module (<see cref="WriteTool{TTool, TArgs}"/>, <see cref="ActionTool{TTool, TArgs}"/>).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -25,7 +25,7 @@ namespace OptiCli.Mcp.Tools;
 internal sealed class ModuleTools
 {
     /// <param name="Custom">The site's, not the module's: its exceptions are mapped by <see cref="ToolErrors.InnerFilter"/>.</param>
-    /// <param name="Deletes">Offered only where the site allows deleting (<see cref="OptiCliMcpOptions.AllowDelete"/>): <c>delete_content</c>, and a write tool that may trash.</param>
+    /// <param name="Deletes">Offered only where the site allows deleting (<see cref="OptiCliMcpOptions.AllowDelete"/>): <c>delete_content</c>, a write tool that may trash, and an action tool that may delete.</param>
     internal sealed record Entry(McpServerTool Tool, bool Custom, bool Deletes);
 
     private readonly HashSet<McpServerTool> _custom = new(ReferenceEqualityComparer.Instance);
@@ -65,6 +65,20 @@ internal sealed class ModuleTools
             }
             // A tool that may trash is offered where deleting is, as delete_content.
             all.Add(new Entry(tool, Custom: true, Deletes: (write.Kinds & ContentPlanKinds.Trash) != 0));
+        }
+        foreach (var action in site.ActionTools)
+        {
+            McpServerTool tool;
+            try
+            {
+                tool = action.Make();
+            }
+            catch (System.Reflection.TargetInvocationException e) when (e.InnerException is { } inner)
+            {
+                throw new InvalidOperationException($"WithActionTool<{action.Tool.FullName}>(): the module can't make its tool: {inner.Message}", inner);
+            }
+            // A tool that may delete is offered where deleting is, as delete_content.
+            all.Add(new Entry(tool, Custom: true, Deletes: (action.Effects & ActionEffects.Delete) != 0));
         }
         if (all.GroupBy(e => e.Tool.ProtocolTool.Name, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1) is { } twice)
         {

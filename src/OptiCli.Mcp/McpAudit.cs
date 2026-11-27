@@ -80,6 +80,15 @@ internal sealed class McpAudit(ILoggerFactory loggers)
     }
 
     /// <summary>
+    /// One target of a site's action tool's real run (<see cref="Tools.ActionRunner"/>), as the tool reported it done, or
+    /// the one it failed on: its effect, and what it is as <c>kind:id</c>. Never its label or values, which are the
+    /// site's text.
+    /// </summary>
+    public void ActionTarget(string user, string clientId, string tool, int target, string effect, string what, string outcome) =>
+        _logger.LogInformation("MCP tool {Tool} target {Target} {Effect} {Outcome}: user {User}, client {ClientId}, {What}",
+            Clean(tool), target, effect, Clean(outcome), Clean(user), Clean(clientId), Clean(what));
+
+    /// <summary>
     /// A preview link opened (<see cref="Preview.PreviewLinkMiddleware"/>): the version and language it names, the
     /// editor and client of its connection (<c>-</c> for a link that couldn't be read), and the outcome. Never the link.
     /// </summary>

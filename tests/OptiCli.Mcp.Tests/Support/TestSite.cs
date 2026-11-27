@@ -15,6 +15,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OptiCli.Mcp.OAuth;
+using OptiCli.Mcp.Tools;
 
 namespace OptiCli.Mcp.Tests.Support;
 
@@ -27,6 +28,7 @@ internal sealed class TestSite : IAsyncDisposable
     public const string RedirectUri = "http://127.0.0.1:53682/callback";
 
     public InMemoryOAuthStore Store { get; } = new();
+    public InMemoryActionRunStore Runs { get; } = new();
     public FakeEditorRoles Roles { get; } = new();
     public ManualTime Time { get; } = new();
     public AuditLog Audit { get; } = new();
@@ -68,6 +70,7 @@ internal sealed class TestSite : IAsyncDisposable
         builder.Services.AddAuthentication(o => o.DefaultScheme = TestLogin.Scheme)
             .AddScheme<AuthenticationSchemeOptions, TestLogin>(TestLogin.Scheme, null);
         builder.Services.AddSingleton<IOAuthStore>(site.Store);
+        builder.Services.AddSingleton<IActionRunStore>(site.Runs);
         builder.Services.AddSingleton<IEditorRoles>(site.Roles);
         builder.Services.AddSingleton(site.Roles);
         builder.Services.AddSingleton<TimeProvider>(site.Time);

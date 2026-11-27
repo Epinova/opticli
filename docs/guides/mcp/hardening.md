@@ -2,7 +2,7 @@
 title: Take the MCP module to production
 summary: Configure the MCP module for a shared or production environment, from which assistants may connect and how the site is reached to error pages, uploads, the audit log and preview links.
 audience: mcp
-order: 3
+order: 4
 written-for: 0.38.0
 ---
 

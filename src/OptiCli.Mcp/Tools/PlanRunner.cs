@@ -75,7 +75,7 @@ internal sealed class PlanRunner(
     internal const string TokenPurpose = "OptiCli.Mcp.PlanToken";
 
     /// <summary>How long a dry run's plan token works.</summary>
-    internal static readonly TimeSpan TokenLifetime = TimeSpan.FromMinutes(30);
+    internal static readonly TimeSpan TokenLifetime = PlanTokens.Lifetime;
 
     private readonly IDataProtector _tokens = protection.CreateProtector(TokenPurpose, tool);
 
@@ -114,9 +114,8 @@ internal sealed class PlanRunner(
         };
         if (runnable)
         {
-            // Whole seconds, as the token carries it.
-            var expires = DateTimeOffset.FromUnixTimeSeconds(time.GetUtcNow().Add(TokenLifetime).ToUnixTimeSeconds());
-            result["planToken"] = _tokens.Protect(FormattableString.Invariant($"{expires.ToUnixTimeSeconds()}.{Hash(plan, arguments, checks)}"));
+            var (token, expires) = PlanTokens.Issue(_tokens, time, Hash(plan, arguments, checks));
+            result["planToken"] = token;
             result["planTokenExpires"] = expires;
         }
         result["steps"] = new JsonArray(checks.Select(c => (JsonNode)Report(plan, c)).ToArray());
@@ -198,19 +197,9 @@ internal sealed class PlanRunner(
     /// <exception cref="McpException"><c>usage</c> for a token this tool's dry run didn't give.</exception>
     private (string Hash, DateTimeOffset Expires) Unprotect(string planToken)
     {
-        string payload;
-        try
+        if (PlanTokens.Read(_tokens, planToken) is { } read)
         {
-            payload = _tokens.Unprotect(planToken);
-        }
-        catch (CryptographicException)
-        {
-            payload = "";
-        }
-        var dot = payload.IndexOf('.', StringComparison.Ordinal);
-        if (dot > 0 && long.TryParse(payload.AsSpan(0, dot), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var seconds))
-        {
-            return (payload[(dot + 1)..], DateTimeOffset.FromUnixTimeSeconds(seconds));
+            return read;
         }
         throw ToolErrors.Usage("planToken isn't one this tool's dry run gave. Nothing was changed.",
             "Run the tool with dryRun: true, show the user the changes, then run it with the planToken that dry run returned.");

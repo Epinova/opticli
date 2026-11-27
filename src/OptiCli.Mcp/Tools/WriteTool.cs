@@ -72,6 +72,51 @@ internal sealed record WriteToolType(Type Tool, Type Args, string Name, string? 
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
     };
 
+    /// <summary>A write or action tool's own arguments, read strictly, and the module's (<see cref="DryRun"/>, <see cref="PlanToken"/>).</summary>
+    /// <returns>The arguments, and them again as JSON as the tool read them (with its defaults), for the plan token.</returns>
+    /// <exception cref="McpException"><c>usage</c> for arguments that don't fit.</exception>
+    internal static (TArgs Args, JsonNode Normalized, bool DryRun, string? PlanToken) Arguments<TArgs>(IDictionary<string, JsonElement>? arguments)
+    {
+        var own = new JsonObject();
+        var dryRun = false;
+        string? planToken = null;
+        foreach (var (name, value) in arguments ?? new Dictionary<string, JsonElement>())
+        {
+            switch (name)
+            {
+                case DryRun:
+                    dryRun = value.ValueKind switch
+                    {
+                        JsonValueKind.True => true,
+                        JsonValueKind.False or JsonValueKind.Null => false,
+                        _ => throw ToolErrors.Usage("The arguments don't fit the tool's schema: 'dryRun' must be true or false.", "Check the tool's input schema."),
+                    };
+                    break;
+                case PlanToken:
+                    planToken = value.ValueKind switch
+                    {
+                        JsonValueKind.String when value.GetString() is { Length: > 0 } token => token,
+                        JsonValueKind.String or JsonValueKind.Null => null,
+                        _ => throw ToolErrors.Usage("The arguments don't fit the tool's schema: 'planToken' must be the string the dry run returned.", "Check the tool's input schema."),
+                    };
+                    break;
+                default:
+                    own[name] = JsonNode.Parse(value.GetRawText());
+                    break;
+            }
+        }
+        try
+        {
+            var args = own.Deserialize<TArgs>(Strict)
+                ?? throw ToolErrors.Usage("The arguments don't fit the tool's schema: they are missing.", "Check the tool's input schema.");
+            return (args, JsonSerializer.SerializeToNode(args, Strict) ?? new JsonObject(), dryRun, planToken);
+        }
+        catch (JsonException e)
+        {
+            throw ToolErrors.Usage($"The arguments don't fit the tool's schema: {e.Message}", "Check the tool's input schema.");
+        }
+    }
+
     /// <summary>Its MCP tool.</summary>
     public McpServerTool Make() => (McpServerTool)Activator.CreateInstance(typeof(WriteTool<,>).MakeGenericType(Tool, Args), this)!;
 
@@ -104,7 +149,7 @@ internal sealed record WriteToolType(Type Tool, Type Args, string Name, string? 
         schema["properties"] = properties;
         if (properties.FirstOrDefault(p => p.Key.Equals(DryRun, StringComparison.OrdinalIgnoreCase) || p.Key.Equals(PlanToken, StringComparison.OrdinalIgnoreCase)) is { Key: { } taken })
         {
-            throw new InvalidOperationException($"{where}: the arguments type {args.FullName} has a property '{taken}': dryRun and planToken are the module's own arguments of every write tool. Rename it.");
+            throw new InvalidOperationException($"{where}: the arguments type {args.FullName} has a property '{taken}': dryRun and planToken are the module's own arguments of every write and action tool. Rename it.");
         }
         try
         {
@@ -178,7 +223,7 @@ internal sealed class WriteTool<TTool, TArgs> : McpServerTool where TTool : clas
             // Not offered without it (ModuleTools); should it be called regardless.
             ToolGates.Deleting(site);
         }
-        var (args, normalized, dryRun, planToken) = Arguments(request.Params?.Arguments);
+        var (args, normalized, dryRun, planToken) = WriteToolType.Arguments<TArgs>(request.Params?.Arguments);
         if (!dryRun && planToken is null)
         {
             throw ToolErrors.Usage("This tool runs only with the planToken of its dry run. Nothing was changed.",
@@ -214,51 +259,6 @@ internal sealed class WriteTool<TTool, TArgs> : McpServerTool where TTool : clas
             }
         }
     }
-
-    /// <summary>The tool's own arguments, read strictly, and the module's.</summary>
-    /// <returns>The arguments, and them again as JSON as the tool read them (with its defaults), for the plan token.</returns>
-    /// <exception cref="McpException"><c>usage</c> for arguments that don't fit.</exception>
-    private static (TArgs Args, JsonNode Normalized, bool DryRun, string? PlanToken) Arguments(IDictionary<string, JsonElement>? arguments)
-    {
-        var own = new JsonObject();
-        var dryRun = false;
-        string? planToken = null;
-        foreach (var (name, value) in arguments ?? new Dictionary<string, JsonElement>())
-        {
-            switch (name)
-            {
-                case WriteToolType.DryRun:
-                    dryRun = value.ValueKind switch
-                    {
-                        JsonValueKind.True => true,
-                        JsonValueKind.False or JsonValueKind.Null => false,
-                        _ => throw ToolErrors.Usage("The arguments don't fit the tool's schema: 'dryRun' must be true or false.", "Check the tool's input schema."),
-                    };
-                    break;
-                case WriteToolType.PlanToken:
-                    planToken = value.ValueKind switch
-                    {
-                        JsonValueKind.String when value.GetString() is { Length: > 0 } token => token,
-                        JsonValueKind.String or JsonValueKind.Null => null,
-                        _ => throw ToolErrors.Usage("The arguments don't fit the tool's schema: 'planToken' must be the string the dry run returned.", "Check the tool's input schema."),
-                    };
-                    break;
-                default:
-                    own[name] = JsonNode.Parse(value.GetRawText());
-                    break;
-            }
-        }
-        try
-        {
-            var args = own.Deserialize<TArgs>(WriteToolType.Strict)
-                ?? throw ToolErrors.Usage("The arguments don't fit the tool's schema: they are missing.", "Check the tool's input schema.");
-            return (args, JsonSerializer.SerializeToNode(args, WriteToolType.Strict) ?? new JsonObject(), dryRun, planToken);
-        }
-        catch (JsonException e)
-        {
-            throw ToolErrors.Usage($"The arguments don't fit the tool's schema: {e.Message}", "Check the tool's input schema.");
-        }
-    }
 }
 
 /// <summary>The checks <see cref="OptiCliMcpBuilderExtensions.WithWriteTool{T}"/> makes of a write tool class.</summary>
@@ -279,6 +279,10 @@ internal static class WriteToolTypes
             throw new InvalidOperationException(interfaces.Count == 0
                 ? $"{where}: the class doesn't implement IOptiCliWriteTool<TArgs>."
                 : $"{where}: the class implements IOptiCliWriteTool<TArgs> for more than one arguments type ({string.Join(", ", interfaces.Select(i => i.GetGenericArguments()[0].Name))}); a write tool has one.");
+        }
+        if (type.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IOptiCliActionTool<>)))
+        {
+            throw new InvalidOperationException($"{where}: the class is an action tool too (IOptiCliActionTool<TArgs>). A class is one tool: make the write and the action tool classes of their own.");
         }
         var attribute = type.GetCustomAttribute<OptiCliWriteToolAttribute>(inherit: false)
             ?? throw new InvalidOperationException($"{where}: the class has no [OptiCliWriteTool]. Give it its name and kinds, e.g. [OptiCliWriteTool(\"retag_articles\", Title = \"Retag articles\", Kinds = ContentPlanKinds.Update)].");

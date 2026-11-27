@@ -203,7 +203,9 @@ internal static class McpServerIsolation
         var site = services.GetRequiredService<IOptions<OptiCliMcpOptions>>().Value;
         server.ServerInfo = new() { Name = ServerName, Version = OptiCliMcpExtensions.Version };
         var custom = services.GetService<CustomTools>();
-        server.ServerInstructions = McpInstructions.For(site, custom?.Instructions, OptiCli.Cms.Compat.InlineBlocks.EditUiCreatesThem(services) == false);
+        server.ServerInstructions = McpInstructions.For(site, custom?.Instructions, OptiCli.Cms.Compat.InlineBlocks.EditUiCreatesThem(services) == false,
+            // Only for action tools the site offers: one that may delete isn't offered where deleting is off.
+            actionTools: custom?.ActionTools.Any(a => site.AllowDelete || (a.Effects & ActionEffects.Delete) == 0) == true);
         server.Capabilities = null;
         server.Handlers = new();
         // Another server's handlers for any request method (experimental in the SDK, but what it would run): none here.

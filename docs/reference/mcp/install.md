@@ -57,8 +57,8 @@ then maps the site's controllers a second time. A site with a named route then f
 endpoint name". The module logs a warning when it is the site's first endpoint mapping.
 
 The module adds a bearer scheme of its own for the MCP endpoint, and leaves the site's default authentication scheme
-as it is: editors sign in with whatever the site uses (ASP.NET Identity, Microsoft Entra ID, Opti ID). Connections are
-kept in the Dynamic Data Store, and access tokens (and the assistant's preview links, if the site allows them) are
+as it is: editors sign in with whatever the site uses (ASP.NET Identity, Microsoft Entra ID, Opti ID). Connections
+(and the record of each [action tool](tools.md#action-tools) run) are kept in the Dynamic Data Store, and access tokens (and the assistant's preview links, if the site allows them) are
 protected with the site's Data Protection keys, which every instance of a load-balanced site already shares for its
 login cookies.
 

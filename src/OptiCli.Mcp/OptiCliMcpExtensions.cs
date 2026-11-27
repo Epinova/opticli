@@ -116,6 +116,8 @@ public static class OptiCliMcpExtensions
         services.AddScoped<IOptiCliEditor>(OptiCliEditor.From);
         // What checks and runs the steps of a site's write tool's plan, as the editor (a test registers its own first).
         services.TryAddScoped<IContentPlanSteps, CmsPlanSteps>();
+        // Where action tools' runs are recorded, so a token runs once (a test registers its own first).
+        services.TryAddSingleton<IActionRunStore, DdsActionRunStore>();
         McpServerIsolation.Register(services);
         return new OptiCliMcpBuilder(services);
     }
